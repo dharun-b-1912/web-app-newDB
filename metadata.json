@@ -1,0 +1,6 @@
+{
+  "name": "WorkForceOS Enterprise HRMS",
+  "description": "Enterprise HRMS platform providing full workforce, organization, RBAC, employee directory, and analytics foundation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

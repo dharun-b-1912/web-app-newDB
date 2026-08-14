@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* WorkForceOS Brand Design Tokens */
+    --primary-950: #042B1E;
+    --primary-900: #07563D;
+    --primary-800: #0B6B4D;
+    --primary-700: #12805C;
+    --primary-600: #198F67;
+    --primary-500: #239E70;
+    --primary-400: #48B98A;
+    --primary-300: #86D0AE;
+    --primary-200: #BDE8D1;
+    --primary-100: #E3F6EB;
+    --primary-50:  #F0FBF5;
+
+    --neutral-950: #0F172A;
+    --neutral-900: #1E293B;
+    --neutral-800: #334155;
+    --neutral-700: #475569;
+    --neutral-600: #64748B;
+    --neutral-500: #94A3B8;
+    --neutral-400: #CBD5E1;
+    --neutral-300: #E2E8F0;
+    --neutral-200: #F1F5F9;
+    --neutral-100: #F8FAFC;
+    --neutral-50:  #FAFAFC;
+    --white:        #FFFFFF;
+
+    --color-success: #16845B;
+    --color-warning: #D89A16;
+    --color-danger:  #D94B4B;
+    --color-info:    #3478D4;
+
+    /* Spacing & Radii */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-card: 16px;
+    --radius-lg: 20px;
+    --radius-pill: 999px;
+
+    /* Shadows */
+    --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.02);
+    --shadow-card: 0 4px 16px -2px rgba(0, 0, 0, 0.03), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+    --shadow-popover: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+  }
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: var(--neutral-100);
+  color: var(--neutral-900);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom scrollbar styling for dense enterprise views */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--neutral-200);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--neutral-400);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--neutral-500);
+}
