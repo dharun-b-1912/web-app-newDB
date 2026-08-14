@@ -1,5 +1,10 @@
+// src/components/shell/Topbar.tsx
+// ============================================================
+// WorkForceOS — Top Command Header Bar
+// ============================================================
+
 import React from 'react';
-import { Search, MapPin, Sparkles, Shield } from 'lucide-react';
+import { Search, MapPin, Sparkles, Shield, Globe } from 'lucide-react';
 import { CompanySelector } from './CompanySelector';
 import { UserMenu } from './UserMenu';
 import { NotificationsCenter } from './NotificationsCenter';
@@ -15,24 +20,47 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
   const { activeCompany } = useTenant();
   const { primaryRole, roleProfile } = usePermission();
 
+  const isSuperAdmin = primaryRole === 'Super Admin';
+
   return (
     <header className="h-16 bg-white border-b border-gray-200/80 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20 shrink-0">
-      {/* Left Area: Company Switcher & Location Badge */}
+      {/* Left Area */}
       <div className="flex items-center gap-2.5 shrink-0">
-        <CompanySelector />
-        
-        {activeCompany && (
-          <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 rounded-xl border border-gray-200/60 text-xs font-semibold text-gray-600 whitespace-nowrap shrink-0">
-            <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-            <span>{activeCompany.city}, {activeCompany.country}</span>
-          </div>
-        )}
+        {isSuperAdmin ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#07563D] text-white rounded-xl font-bold text-xs shadow-xs shrink-0">
+              <Shield className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+              <span>Platform Control Plane</span>
+            </div>
 
-        {/* Role & Scope Indicator Badge */}
-        <div className="hidden 2xl:flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-[#07563D] rounded-xl border border-emerald-200/60 text-xs font-bold whitespace-nowrap shrink-0">
-          <Shield className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-          <span>{primaryRole} ({roleProfile.defaultScope})</span>
-        </div>
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-[#07563D] rounded-full border border-emerald-300 text-[10px] font-black uppercase tracking-wider shrink-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>PRODUCTION</span>
+            </div>
+
+            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 rounded-xl border border-gray-200 text-xs font-semibold text-gray-500 shrink-0">
+              <Globe className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <span>India (ap-south-1)</span>
+            </div>
+          </div>
+        ) : (
+          <>
+            <CompanySelector />
+            
+            {activeCompany && (
+              <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 rounded-xl border border-gray-200/60 text-xs font-semibold text-gray-600 whitespace-nowrap shrink-0">
+                <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                <span>{activeCompany.city}, {activeCompany.country}</span>
+              </div>
+            )}
+
+            {/* Role & Scope Indicator Badge */}
+            <div className="hidden 2xl:flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-[#07563D] rounded-xl border border-emerald-200/60 text-xs font-bold whitespace-nowrap shrink-0">
+              <Shield className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+              <span>{primaryRole} ({roleProfile.defaultScope})</span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Center: Global Search Bar */}
@@ -43,9 +71,13 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
         >
           <span className="flex items-center gap-2 min-w-0">
             <Search className="w-4 h-4 text-gray-400 shrink-0" />
-            <span className="truncate whitespace-nowrap text-xs text-gray-400 font-medium">Search employees, departments, reports...</span>
+            <span className="truncate whitespace-nowrap text-xs text-gray-400 font-medium">
+              {isSuperAdmin
+                ? 'Search organizations, invoices, audit events (Ctrl + K)...'
+                : 'Search employees, departments, reports...'}
+            </span>
           </span>
-          <kbd className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-bold text-gray-400 bg-white rounded-md border border-gray-200 shadow-2xs shrink-0 ml-2">
+          <kbd className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-bold text-gray-400 bg-white rounded-md border border-gray-200 shadow-2xs shrink-0 ml-2 font-mono">
             Ctrl + K
           </kbd>
         </button>
@@ -67,8 +99,8 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
             onClick={onOpenAiAssistant}
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-[#07563D] border border-emerald-200/80 rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
-            <Sparkles className="w-3.5 h-3.5 shrink-0" />
-            <span>HR Assistant</span>
+            <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <span>{isSuperAdmin ? 'WorkForceOS Copilot' : 'HR Assistant'}</span>
           </button>
         )}
 

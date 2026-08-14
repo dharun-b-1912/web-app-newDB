@@ -131,26 +131,51 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
 
   const platformGroups: NavGroup[] = [
     {
-      groupName: 'PLATFORM CONTROL',
+      groupName: 'PLATFORM',
       items: [
-        { id: 'platform-dashboard', label: 'Platform Dashboard', icon: LayoutDashboard },
-        { id: 'platform-tenants', label: 'Tenant Management', icon: Building2, badge: 428 },
-        { id: 'platform-subscriptions', label: 'Subscriptions', icon: CircleDollarSign },
-        { id: 'platform-plans', label: 'Plans & Pricing', icon: Package },
-        { id: 'platform-billing', label: 'Billing & Payments', icon: CreditCard, badge: 6 },
-        { id: 'platform-usage', label: 'Usage & Metering', icon: Activity },
-        { id: 'platform-features', label: 'Feature Flags', icon: SlidersHorizontal },
-        { id: 'platform-security', label: 'Security Dashboard', icon: Lock },
-        { id: 'platform-support', label: 'Support Center', icon: HelpCircle, badge: 12 },
-        { id: 'platform-settings', label: 'Platform Settings', icon: Settings },
+        { id: 'platform-dashboard', label: 'Command Center', icon: LayoutDashboard },
+        { id: 'platform-tenants', label: 'Organizations', icon: Building2, badge: 428 },
+        { id: 'platform-tenant-health', label: 'Platform Health', icon: Activity },
+        { id: 'platform-incidents', label: 'Incidents', icon: ShieldAlert, badge: 1 },
       ],
     },
     {
       groupName: 'SAAS BUSINESS',
       items: [
-        { id: 'saas-revenue', label: 'Revenue Dashboard', icon: LineChart },
-        { id: 'saas-churn', label: 'Churn & Retention', icon: TrendingUp },
-        { id: 'saas-trials', label: 'Trial Management', icon: Hourglass, badge: 37 },
+        { id: 'saas-revenue', label: 'Revenue & Growth', icon: LineChart },
+        { id: 'platform-subscriptions', label: 'Subscriptions', icon: Package },
+        { id: 'platform-billing', label: 'Billing & Invoices', icon: CreditCard, badge: 1 },
+        { id: 'platform-usage', label: 'Usage & Metering', icon: BarChart3 },
+      ],
+    },
+    {
+      groupName: 'PRODUCT',
+      items: [
+        { id: 'platform-features', label: 'Feature Flags', icon: SlidersHorizontal },
+        { id: 'platform-plans', label: 'Tier Entitlements', icon: Layers },
+      ],
+    },
+    {
+      groupName: 'SECURITY',
+      items: [
+        { id: 'platform-security', label: 'Security Center', icon: ShieldCheck },
+        { id: 'platform-sessions', label: 'Active Sessions', icon: Laptop },
+        { id: 'platform-audit', label: 'Audit Log', icon: History },
+      ],
+    },
+    {
+      groupName: 'OPERATIONS',
+      items: [
+        { id: 'platform-support', label: 'Support Center', icon: HelpCircle, badge: 12 },
+        { id: 'platform-jobs', label: 'Background Jobs', icon: Workflow },
+        { id: 'platform-webhooks', label: 'Webhooks & Mesh', icon: Send },
+      ],
+    },
+    {
+      groupName: 'SYSTEM',
+      items: [
+        { id: 'platform-settings', label: 'Platform Settings', icon: Settings },
+        { id: 'platform-api', label: 'API & Integrations', icon: KeyRound },
       ],
     },
   ];
