@@ -4,23 +4,48 @@
 // ============================================================
 
 import React, { useState } from 'react';
-import { Key, Webhook, Sliders, Shield, Plus, Copy, Check, RefreshCw, Trash2, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+import {
+  Key,
+  Webhook,
+  Sliders,
+  Shield,
+  Plus,
+  Copy,
+  Check,
+  RefreshCw,
+  Trash2,
+  AlertTriangle,
+  Eye,
+  EyeOff,
+  X,
+} from 'lucide-react';
 import { platformApiKeyService, platformWebhookService } from '../../../services/platform';
 import { PlatformApiKey, WebhookEndpoint, WebhookDeliveryItem } from '../../../types/platformAdmin';
+import { PageHeader, EnterpriseDataTable } from '../../../components/workforce';
+import { Button } from '../../../components/ui/Button';
+import { StatusBadge } from '../../../components/ui/StatusBadge';
+import { Tabs } from '../../../components/ui/Tabs';
+import { Switch } from '../../../components/ui/Switch';
 
 export const PlatformSettingsView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'api_keys' | 'webhooks' | 'maintenance'>('api_keys');
+  const [activeTab, setActiveTab] = useState<string>('api_keys');
 
   // API Keys State
-  const [apiKeys, setApiKeys] = useState<PlatformApiKey[]>(() => platformApiKeyService.getKeys());
+  const [apiKeys, setApiKeys] = useState<PlatformApiKey[]>(() =>
+    platformApiKeyService.getKeys()
+  );
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyGeneratedSecret, setNewKeyGeneratedSecret] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   // Webhooks State
-  const [endpoints] = useState<WebhookEndpoint[]>(() => platformWebhookService.getEndpoints());
-  const [deliveries, setDeliveries] = useState<WebhookDeliveryItem[]>(() => platformWebhookService.getDeliveries());
+  const [endpoints] = useState<WebhookEndpoint[]>(() =>
+    platformWebhookService.getEndpoints()
+  );
+  const [deliveries, setDeliveries] = useState<WebhookDeliveryItem[]>(() =>
+    platformWebhookService.getDeliveries()
+  );
 
   // Maintenance State
   const [maintenanceMode, setMaintenanceMode] = useState(false);
@@ -41,294 +66,323 @@ export const PlatformSettingsView: React.FC = () => {
 
   const handleRevokeKey = async (id: string) => {
     const updated = await platformApiKeyService.revokeApiKey(id);
-    setApiKeys(apiKeys.map(k => (k.id === id ? updated : k)));
+    setApiKeys(apiKeys.map((k) => (k.id === id ? updated : k)));
   };
 
   const handleReplayWebhook = async (deliveryId: string) => {
     const updated = await platformWebhookService.replayWebhook(deliveryId);
-    setDeliveries(deliveries.map(d => (d.id === deliveryId ? updated : d)));
+    setDeliveries(deliveries.map((d) => (d.id === deliveryId ? updated : d)));
   };
+
+  const keyColumns = [
+    {
+      id: 'name',
+      header: 'Key Name & Prefix',
+      sortable: true,
+      accessor: (k: PlatformApiKey) => (
+        <div>
+          <div className="font-bold text-slate-900 text-xs">{k.name}</div>
+          <div className="font-mono text-[11px] text-slate-500">
+            {k.key_prefix}••••••••••••••••
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'scopes',
+      header: 'Assigned Scopes',
+      accessor: (k: PlatformApiKey) => (
+        <div className="flex gap-1 flex-wrap">
+          {k.scopes.map((scope) => (
+            <span
+              key={scope}
+              className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-mono text-[10px] border border-slate-200"
+            >
+              {scope}
+            </span>
+          ))}
+        </div>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      sortable: true,
+      accessor: (k: PlatformApiKey) => <StatusBadge status={k.status} size="xs" />,
+    },
+    {
+      id: 'rate_limit',
+      header: 'Rate Limit',
+      accessor: (k: PlatformApiKey) => (
+        <span className="font-mono text-xs text-slate-700 font-bold">
+          {k.rate_limit_per_min} req/min
+        </span>
+      ),
+    },
+    {
+      id: 'created',
+      header: 'Created At',
+      sortable: true,
+      accessor: (k: PlatformApiKey) => (
+        <span className="font-mono text-xs text-slate-500">{k.created_at}</span>
+      ),
+    },
+    {
+      id: 'actions',
+      header: 'Action',
+      align: 'right' as const,
+      accessor: (k: PlatformApiKey) => (
+        <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+          {k.status === 'Active' && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleRevokeKey(k.id)}
+              className="h-7 text-xs px-2 text-red-600 hover:bg-red-50"
+            >
+              Revoke
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ];
+
+  const deliveryColumns = [
+    {
+      id: 'event',
+      header: 'Webhook Event',
+      sortable: true,
+      accessor: (d: WebhookDeliveryItem) => (
+        <div>
+          <div className="font-mono font-bold text-slate-900 text-xs">{d.event_type}</div>
+          <div className="text-[10px] text-slate-400 font-mono">ID: {d.id}</div>
+        </div>
+      ),
+    },
+    {
+      id: 'endpoint',
+      header: 'Endpoint Target',
+      accessor: (d: WebhookDeliveryItem) => (
+        <span className="font-mono text-xs text-slate-700">{d.endpoint_id}</span>
+      ),
+    },
+    {
+      id: 'response',
+      header: 'Status Code',
+      sortable: true,
+      accessor: (d: WebhookDeliveryItem) => (
+        <StatusBadge
+          status={d.http_status === 200 ? '200 OK' : `${d.http_status} Error`}
+          size="xs"
+        />
+      ),
+    },
+    {
+      id: 'duration',
+      header: 'Latency',
+      sortable: true,
+      accessor: (d: WebhookDeliveryItem) => (
+        <span className="font-mono text-xs text-slate-700">{d.latency_ms}ms</span>
+      ),
+    },
+    {
+      id: 'time',
+      header: 'Delivered At',
+      sortable: true,
+      accessor: (d: WebhookDeliveryItem) => (
+        <span className="font-mono text-xs text-slate-500">{d.delivered_at}</span>
+      ),
+    },
+    {
+      id: 'actions',
+      header: 'Action',
+      align: 'right' as const,
+      accessor: (d: WebhookDeliveryItem) => (
+        <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => handleReplayWebhook(d.id)}
+            className="h-7 text-xs px-2"
+            leftIcon={<RefreshCw className="w-3 h-3" />}
+          >
+            Replay
+          </Button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-[#07563D] border border-emerald-200 uppercase tracking-wider">
-              Platform Configurations
-            </span>
-            <span className="text-xs font-semibold text-gray-500 font-mono">HMAC SHA-256 Webhooks</span>
-          </div>
-          <h1 className="text-2xl font-black text-gray-900 mt-1">Platform Settings & Integrations</h1>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Manage developer REST API master keys, outbound webhook meshes, and global system maintenance toggles.
-          </p>
-        </div>
-
-        {activeTab === 'api_keys' && (
-          <button
-            onClick={() => {
-              setNewKeyGeneratedSecret(null);
-              setNewKeyName('');
-              setIsKeyModalOpen(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-[#07563D] hover:bg-[#064733] text-white rounded-xl font-bold text-xs shadow-sm transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Generate Master API Key
-          </button>
-        )}
-      </div>
-
-      {/* Tabs */}
-      <div className="flex border-b border-gray-200 bg-white px-6 rounded-2xl shadow-2xs gap-6 text-xs font-bold">
-        <button
-          onClick={() => setActiveTab('api_keys')}
-          className={`py-3.5 border-b-2 transition-all cursor-pointer ${
-            activeTab === 'api_keys' ? 'border-[#07563D] text-[#07563D]' : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          REST Developer API Keys ({apiKeys.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('webhooks')}
-          className={`py-3.5 border-b-2 transition-all cursor-pointer ${
-            activeTab === 'webhooks' ? 'border-[#07563D] text-[#07563D]' : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Outbound Webhook Mesh ({endpoints.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('maintenance')}
-          className={`py-3.5 border-b-2 transition-all cursor-pointer ${
-            activeTab === 'maintenance' ? 'border-[#07563D] text-[#07563D]' : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Maintenance Mode & Global Switches
-        </button>
-      </div>
-
-      {/* TAB 1: API KEYS */}
-      {activeTab === 'api_keys' && (
-        <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-6 space-y-4">
-          <h3 className="text-base font-extrabold text-gray-900">Active REST Master API Keys</h3>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                  <th className="py-3 px-4">Key Name</th>
-                  <th className="py-3 px-4">Key Prefix</th>
-                  <th className="py-3 px-4">Authorized Scopes</th>
-                  <th className="py-3 px-4">Rate Limit</th>
-                  <th className="py-3 px-4">Last Used</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 font-medium">
-                {apiKeys.map(k => (
-                  <tr key={k.id} className="hover:bg-gray-50/60">
-                    <td className="py-3.5 px-4 font-bold text-gray-900">{k.name}</td>
-                    <td className="py-3.5 px-4 font-mono text-gray-600 font-bold">{k.key_prefix}...</td>
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {k.scopes.map(s => (
-                          <span key={s} className="px-1.5 py-0.5 bg-gray-100 text-gray-700 text-[10px] rounded-md font-mono">
-                            {s}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 font-mono">{k.rate_limit_per_min} req/min</td>
-                    <td className="py-3.5 px-4 text-gray-500 text-[11px]">{k.last_used_at || 'Never'}</td>
-                    <td className="py-3.5 px-4">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        k.status === 'Active' ? 'bg-emerald-100 text-[#07563D]' : 'bg-red-100 text-red-800'
-                      }`}>
-                        {k.status}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      {k.status === 'Active' && (
-                        <button
-                          onClick={() => handleRevokeKey(k.id)}
-                          className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-[10px] font-bold cursor-pointer transition-all border border-red-200"
-                        >
-                          Revoke
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: WEBHOOKS */}
-      {activeTab === 'webhooks' && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-6 space-y-4">
-            <h3 className="text-base font-extrabold text-gray-900">Registered Webhook Endpoints</h3>
-            <div className="space-y-3">
-              {endpoints.map(ep => (
-                <div key={ep.id} className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 flex items-center justify-between text-xs">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-gray-900">{ep.tenant_name}</span>
-                      <span className="font-mono text-emerald-700 font-bold">{ep.url}</span>
-                    </div>
-                    <div className="text-xs text-gray-600 mt-1">{ep.description}</div>
-                    <div className="flex items-center gap-1.5 mt-2">
-                      {ep.events.map(ev => (
-                        <span key={ev} className="px-2 py-0.5 bg-emerald-50 text-[#07563D] text-[10px] rounded-md font-mono font-bold">
-                          {ev}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="text-right font-mono text-gray-700">
-                    <div className="font-bold text-emerald-700">{ep.success_rate_pct}% Success</div>
-                    <div className="text-[10px] text-gray-400">Last delivery: {ep.last_delivery_at}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-6 space-y-4">
-            <h3 className="text-base font-extrabold text-gray-900">Recent Webhook Deliveries & Replay Desk</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-gray-50/80 border-b border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                    <th className="py-3 px-4">Event Type</th>
-                    <th className="py-3 px-4">HTTP Status</th>
-                    <th className="py-3 px-4">Latency</th>
-                    <th className="py-3 px-4">Delivered At</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-right">Replay</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 font-medium">
-                  {deliveries.map(d => (
-                    <tr key={d.id} className="hover:bg-gray-50/60">
-                      <td className="py-3 px-4 font-mono font-bold text-gray-900">{d.event_type}</td>
-                      <td className="py-3 px-4 font-mono font-bold text-gray-700">{d.http_status}</td>
-                      <td className="py-3 px-4 font-mono">{d.latency_ms}ms</td>
-                      <td className="py-3 px-4 text-gray-500 text-[11px] font-mono">{d.delivered_at}</td>
-                      <td className="py-3 px-4">
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                          d.status === 'Delivered' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {d.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => handleReplayWebhook(d.id)}
-                          className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600 hover:text-[#07563D] transition-colors cursor-pointer"
-                          title="Replay Event"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: MAINTENANCE */}
-      {activeTab === 'maintenance' && (
-        <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-6 space-y-6">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-5">
-            <div>
-              <h3 className="text-base font-extrabold text-gray-900">Platform Maintenance Mode</h3>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Displays a friendly maintenance banner across tenant portals while Super Admins perform database migrations.
-              </p>
-            </div>
-            <button
-              onClick={() => setMaintenanceMode(!maintenanceMode)}
-              className={`px-4 py-2 rounded-xl text-xs font-black text-white transition-all cursor-pointer ${
-                maintenanceMode ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-900 hover:bg-gray-800'
-              }`}
-            >
-              {maintenanceMode ? 'Disable Maintenance' : 'Enable Maintenance Mode'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* API Key Modal */}
+      {/* Generate API Key Modal */}
       {isKeyModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-950/60 backdrop-blur-xs">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-200 p-6 space-y-4 text-xs">
-            <h3 className="text-lg font-black text-gray-900">Generate Master REST API Key</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#064E3B] bg-[#ECFDF5] px-2 py-0.5 rounded-md border border-[#A7F3D0]">
+                  Developer Credentials
+                </span>
+                <h3 className="text-lg font-bold text-slate-900 mt-1">
+                  Generate Master API Key
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsKeyModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
             {!newKeyGeneratedSecret ? (
-              <form onSubmit={handleGenerateKey} className="space-y-4">
+              <form onSubmit={handleGenerateKey} className="space-y-4 text-xs">
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">Key Description Name *</label>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    API Key Descriptive Identifier <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
                     required
                     value={newKeyName}
-                    onChange={e => setNewKeyName(e.target.value)}
-                    placeholder="e.g. SAP Integration Server Key"
-                    className="w-full p-2.5 rounded-xl border border-gray-300 focus:border-[#07563D] outline-hidden font-medium"
+                    onChange={(e) => setNewKeyName(e.target.value)}
+                    placeholder="e.g. Production Billing Sync Bot"
+                    className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#047857] outline-none"
                   />
                 </div>
 
-                <div className="pt-2 flex justify-end gap-3">
-                  <button type="button" onClick={() => setIsKeyModalOpen(false)} className="px-4 py-2 font-bold text-gray-600">
+                <div className="pt-2 flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsKeyModalOpen(false)}
+                  >
                     Cancel
-                  </button>
-                  <button type="submit" className="px-5 py-2 bg-[#07563D] text-white rounded-xl font-bold cursor-pointer">
-                    Generate Key Secret
-                  </button>
+                  </Button>
+                  <Button type="submit" variant="primary">
+                    Create API Key
+                  </Button>
                 </div>
               </form>
             ) : (
-              <div className="space-y-4">
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs leading-relaxed">
-                  <strong>Save this secret now!</strong> It will never be shown again in plain text.
+              <div className="space-y-4 text-xs">
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 space-y-1">
+                  <span className="font-bold block">Save your Secret Token Now!</span>
+                  <p className="text-[11px] leading-relaxed">
+                    This raw secret token will only be shown once. If lost, you will need to regenerate a new key.
+                  </p>
                 </div>
 
-                <div className="p-3 bg-gray-950 text-emerald-400 font-mono text-xs rounded-xl flex items-center justify-between">
-                  <span className="break-all">{newKeyGeneratedSecret}</span>
+                <div className="p-3 bg-slate-900 text-emerald-400 font-mono text-xs rounded-xl flex items-center justify-between gap-2 break-all">
+                  <span>{newKeyGeneratedSecret}</span>
                   <button
+                    type="button"
                     onClick={() => {
                       navigator.clipboard.writeText(newKeyGeneratedSecret);
                       setCopied(true);
                       setTimeout(() => setCopied(false), 2000);
                     }}
-                    className="p-1.5 hover:bg-gray-800 rounded-lg text-gray-300 ml-2"
+                    className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-white shrink-0 cursor-pointer"
                   >
                     {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                   </button>
                 </div>
 
                 <div className="pt-2 flex justify-end">
-                  <button
+                  <Button
+                    variant="primary"
                     onClick={() => {
                       setIsKeyModalOpen(false);
                       setNewKeyGeneratedSecret(null);
                     }}
-                    className="px-5 py-2 bg-gray-900 text-white rounded-xl font-bold cursor-pointer"
                   >
-                    I Have Saved My Secret
-                  </button>
+                    Done
+                  </Button>
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Page Header */}
+      <PageHeader
+        title="Platform Settings & Integrations"
+        description="Manage developer REST API master keys, outbound webhook meshes, and global system maintenance toggles."
+        badge={<StatusBadge status="HMAC SHA-256 Webhooks" size="xs" />}
+        actions={
+          activeTab === 'api_keys' ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setNewKeyGeneratedSecret(null);
+                setNewKeyName('');
+                setIsKeyModalOpen(true);
+              }}
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
+              Generate Master API Key
+            </Button>
+          ) : null
+        }
+      />
+
+      {/* Tab Navigation */}
+      <Tabs
+        tabs={[
+          { id: 'api_keys', label: 'REST Developer API Keys', badge: apiKeys.length },
+          { id: 'webhooks', label: 'Outbound Webhook Deliveries', badge: deliveries.length },
+          { id: 'maintenance', label: 'System Maintenance Controls' },
+        ]}
+        activeTab={activeTab}
+        onChange={setActiveTab}
+      />
+
+      {/* Tab Content */}
+      {activeTab === 'api_keys' && (
+        <EnterpriseDataTable
+          columns={keyColumns}
+          data={apiKeys}
+          keyExtractor={(k) => k.id}
+          pageSize={10}
+        />
+      )}
+
+      {activeTab === 'webhooks' && (
+        <EnterpriseDataTable
+          columns={deliveryColumns}
+          data={deliveries}
+          keyExtractor={(d) => d.id}
+          pageSize={10}
+        />
+      )}
+
+      {activeTab === 'maintenance' && (
+        <div className="bg-white p-6 rounded-xl border border-slate-200/90 shadow-2xs space-y-5 max-w-2xl">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h4 className="text-sm font-bold text-slate-900">
+                Platform Maintenance Window Toggle
+              </h4>
+              <p className="text-xs text-slate-500 mt-0.5">
+                When enabled, tenants will receive a high-visibility scheduled maintenance header warning. Read-only database replica failover will be triggered.
+              </p>
+            </div>
+            <Switch
+              checked={maintenanceMode}
+              onCheckedChange={setMaintenanceMode}
+            />
+          </div>
+
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+            <span className="text-slate-500">Scheduled Window:</span>
+            <span className="font-mono font-bold text-slate-900">
+              Sunday 02:00 AM – 04:00 AM IST
+            </span>
           </div>
         </div>
       )}

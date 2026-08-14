@@ -1,9 +1,47 @@
 import React from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../../lib/utils';
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
-  size?: 'sm' | 'md' | 'lg';
+export const buttonVariants = cva(
+  'inline-flex items-center justify-center font-medium font-sans transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#047857] focus-visible:ring-offset-1 disabled:opacity-50 disabled:pointer-events-none cursor-pointer whitespace-nowrap active:scale-[0.99] select-none rounded-[10px]',
+  {
+    variants: {
+      variant: {
+        primary:
+          'bg-[#07563D] hover:bg-[#064E3B] text-white shadow-sm border border-transparent active:bg-[#064E3B] font-semibold',
+        secondary:
+          'bg-[#ECFDF5] hover:bg-[#D1FAE5] text-[#07563D] border border-[#A7F3D0] shadow-xs font-semibold',
+        outline:
+          'bg-white hover:bg-[#F9FAFB] text-[#0F172B] border border-[#E7EAF0] shadow-xs hover:border-slate-300 font-medium',
+        ghost:
+          'bg-transparent hover:bg-[#F9FAFB] text-[#62748E] hover:text-[#0F172B]',
+        danger:
+          'bg-[#DC2626] hover:bg-[#B91C1C] text-white shadow-sm border border-transparent font-semibold',
+        warning:
+          'bg-[#D89A16] hover:bg-[#B45309] text-white shadow-sm border border-transparent font-semibold',
+        success:
+          'bg-[#15845B] hover:bg-[#0F5A3E] text-white shadow-sm border border-transparent font-semibold',
+        link:
+          'text-[#047857] underline-offset-4 hover:underline p-0 h-auto font-medium',
+      },
+      size: {
+        sm: 'text-xs px-2.5 py-1.5 h-8 gap-1.5 rounded-[8px]',
+        md: 'text-[13.5px] px-3.5 py-2 h-9 gap-2 rounded-[10px]',
+        lg: 'text-base px-5 py-2.5 h-11 gap-2.5 rounded-[12px] font-semibold',
+        icon: 'h-9 w-9 p-0 rounded-[10px]',
+        'icon-sm': 'h-7 w-7 p-0 rounded-[8px]',
+      },
+    },
+    defaultVariants: {
+      variant: 'primary',
+      size: 'md',
+    },
+  }
+);
+
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {
   isLoading?: boolean;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
@@ -24,32 +62,15 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
-    const baseStyles =
-      'inline-flex items-center justify-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg cursor-pointer whitespace-nowrap';
-
-    const variants = {
-      primary: 'bg-[#07563D] hover:bg-[#0B6B4D] text-white shadow-sm border border-transparent',
-      secondary: 'bg-emerald-50 hover:bg-emerald-100 text-[#07563D] border border-emerald-200/60',
-      outline: 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 shadow-sm',
-      ghost: 'bg-transparent hover:bg-gray-100 text-gray-700',
-      danger: 'bg-red-600 hover:bg-red-700 text-white shadow-sm',
-    };
-
-    const sizes = {
-      sm: 'text-xs px-2.5 py-1.5 h-8 gap-1.5',
-      md: 'text-sm px-4 py-2 h-10 gap-2',
-      lg: 'text-base px-5 py-2.5 h-12 gap-2.5',
-    };
-
     return (
       <button
         ref={ref}
         disabled={disabled || isLoading}
-        className={cn(baseStyles, variants[variant], sizes[size], className)}
+        className={cn(buttonVariants({ variant: variant as any, size: size as any }), className)}
         {...props}
       >
         {isLoading ? (
-          <span className="inline-block animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent mr-1" />
+          <span className="inline-block animate-spin rounded-full h-3.5 w-3.5 border-2 border-current border-t-transparent mr-1.5" />
         ) : (
           leftIcon
         )}

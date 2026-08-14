@@ -1,443 +1,320 @@
-import React, { useState } from 'react';
+// src/features/platform/subviews/SaasBusinessView.tsx
+// ============================================================
+// WorkForceOS — SaaS Business & Revenue Analytics Executive Console
+// ============================================================
+
+import React, { useState, useMemo } from 'react';
 import {
   TrendingUp,
-  TrendingDown,
   ArrowUpRight,
-  ArrowDownRight,
-  Award,
-  Hourglass,
-  Gift,
-  RefreshCw,
-  Users,
-  CircleDollarSign,
-  Activity,
-  BarChart3,
+  Download,
+  Calendar,
+  Layers,
+  CreditCard,
+  Building2,
+  Package,
+  ArrowRight,
+  ExternalLink,
 } from 'lucide-react';
-import { platformAdminApi } from '../../../services/platformAdminApi';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
+import { Button } from '../../../components/ui/Button';
+import { cn } from '../../../lib/utils';
+import {
+  platformTenantService,
+  platformSubscriptionService,
+  platformBillingService,
+  usePlatformRealtime,
+} from '../../../services/platform';
 
-const MONTHLY_MRR = [
-  { month: 'Mar', mrr: 15.2 },
-  { month: 'Apr', mrr: 15.8 },
-  { month: 'May', mrr: 16.1 },
-  { month: 'Jun', mrr: 16.7 },
-  { month: 'Jul', mrr: 17.4 },
-  { month: 'Aug', mrr: 18.4 },
-];
+export interface SaasBusinessViewProps {
+  onNavigateTab?: (tab: string, payload?: any) => void;
+}
 
-const TRIALS = [
-  { id: 'TRL-101', company: 'ByteForge Systems', plan: 'Professional', started: '2026-07-30', expires: '2026-08-25', employees: 40, contact: 'Kiran V', status: 'Active' },
-  { id: 'TRL-102', company: 'Nimbus Cloud Solutions', plan: 'Business', started: '2026-08-01', expires: '2026-08-29', employees: 110, contact: 'Priya S', status: 'Active' },
-  { id: 'TRL-103', company: 'OmniRetail Pvt Ltd', plan: 'Starter', started: '2026-07-28', expires: '2026-08-11', employees: 25, contact: 'Arun M', status: 'Expired' },
-  { id: 'TRL-104', company: 'CyberSoft Global Tech', plan: 'Professional', started: '2026-08-01', expires: '2026-08-25', employees: 120, contact: 'Anish K', status: 'Active' },
-];
+export const SaasBusinessView: React.FC<SaasBusinessViewProps> = ({ onNavigateTab }) => {
+  usePlatformRealtime();
+  const [metricView, setMetricView] = useState<'mrr' | 'arr'>('mrr');
 
-const RENEWALS = [
-  { tenant: 'TechCorp Solutions Pvt Ltd', plan: 'Business', amount: 85000, date: '2026-08-01', status: 'Upcoming' },
-  { tenant: 'Zenith Logistics & Supply Chain', plan: 'Enterprise', amount: 248000, date: '2026-08-10', status: 'Overdue' },
-  { tenant: 'Acme Technologies Pvt Ltd', plan: 'Enterprise', amount: 171100, date: '2027-01-15', status: 'Auto-Renew' },
-];
+  // Dynamic Domain Data
+  const orgs = platformTenantService.getOrganizations().items;
+  const subscriptions = platformSubscriptionService.getSubscriptions();
+  const invoices = platformBillingService.getInvoices();
 
-const COUPONS = [
-  { code: 'LAUNCH50', discount: '50% off first 3 months', used: 12, limit: 50, plan: 'All', expires: '2026-12-31', status: 'Active' },
-  { code: 'ENT2026', discount: '₹30,000 off Enterprise Annual', used: 4, limit: 10, plan: 'Enterprise', expires: '2026-09-30', status: 'Active' },
-  { code: 'STARTUP25', discount: '25% off Starter/Pro 6 months', used: 28, limit: 30, plan: 'Starter/Pro', expires: '2026-08-31', status: 'Expiring Soon' },
-];
+  const totalMrr = orgs.reduce((sum, o) => sum + (o.mrr || 0), 0);
+  const totalArr = totalMrr * 12;
+  const activeOrgsCount = orgs.filter((o) => o.status === 'Active').length;
+  const newSubsCount = subscriptions.filter((s) => s.status === 'Active' || s.status === 'Trial').length;
+  const arpu = orgs.length > 0 ? Math.round(totalMrr / orgs.length) : 0;
 
-const MiniBar: React.FC<{ value: number; max: number }> = ({ value, max }) => (
-  <div className="flex items-end gap-0.5 h-8">
-    {MONTHLY_MRR.map((m, i) => {
-      const pct = (m.mrr / max) * 100;
-      const isLast = i === MONTHLY_MRR.length - 1;
-      return (
-        <div key={m.month} className="flex flex-col items-center gap-0.5 flex-1">
-          <div
-            className={`w-full rounded-t-sm transition-all ${isLast ? 'bg-[#07563D]' : 'bg-emerald-200'}`}
-            style={{ height: `${pct}%` }}
-          />
-        </div>
-      );
-    })}
-  </div>
-);
+  // Plan Performance Calculation
+  const planPerformance = useMemo(() => {
+    const plans = [
+      { name: 'Starter', color: '#64748B' },
+      { name: 'Professional', color: '#047857' },
+      { name: 'Business', color: '#2563EB' },
+      { name: 'Enterprise', color: '#7C3AED' },
+    ];
 
-export const SaasBusinessView: React.FC = () => {
-  const metrics = platformAdminApi.getDashboardMetrics();
-  const [activeTab, setActiveTab] = useState<'overview' | 'trials' | 'renewals' | 'coupons'>('overview');
+    return plans.map((p) => {
+      const planOrgs = orgs.filter((o) => o.plan?.toLowerCase() === p.name.toLowerCase());
+      const planMrr = planOrgs.reduce((sum, o) => sum + (o.mrr || 0), 0);
+      return {
+        name: p.name,
+        tenants: planOrgs.length,
+        mrr: planMrr > 0 ? `₹${(planMrr / 100000).toFixed(1)}L` : '₹0',
+        growth: 'Nominal',
+        churn: '0.0%',
+        color: p.color,
+      };
+    });
+  }, [orgs]);
 
-  const TAB_LIST = [
-    { id: 'overview', label: 'Revenue Overview' },
-    { id: 'trials', label: 'Trial Management', badge: 37 },
-    { id: 'renewals', label: 'Renewals & Churn' },
-    { id: 'coupons', label: 'Coupons & Discounts' },
-  ] as const;
+  // Dynamic Chart Data
+  const chartData = useMemo(() => {
+    const mrrInLakhs = Number((totalMrr / 100000).toFixed(1));
+    const arrInCrores = Number((totalArr / 10000000).toFixed(2));
+
+    return [
+      { month: 'Current', mrr: mrrInLakhs, arr: arrInCrores },
+    ];
+  }, [totalMrr, totalArr]);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs">
-        <h1 className="text-2xl font-black text-gray-900">SaaS Business & Revenue Analytics</h1>
-        <p className="text-xs text-gray-500 mt-0.5">
-          MRR/ARR growth, Net Revenue Retention (NRR), customer LTV, trial conversions, churn intelligence, and coupon management.
-        </p>
-      </div>
+    <div className="space-y-6 pb-16 font-sans">
+      {/* 1. Page Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#E7EAF0] pb-5">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-[#0F172B] tracking-tight">Revenue & Growth</h1>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-full bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0]">
+              <span className="h-2 w-2 rounded-full bg-[#10B981] animate-pulse" />
+              ● Realtime Revenue Engine
+            </span>
+          </div>
+          <p className="text-[13.5px] text-[#64748B] mt-1 max-w-3xl">
+            Monitor recurring revenue, subscription growth, retention, expansion, and commercial performance across all organizations.
+          </p>
+        </div>
 
-      {/* Tab Bar */}
-      <div className="flex gap-1 bg-gray-100/80 p-1 rounded-xl w-fit">
-        {TAB_LIST.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeTab === tab.id
-                ? 'bg-white text-[#07563D] shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-1.5 border-[#CBD5E1] text-[#334155] hover:bg-[#F8FAFC]"
           >
-            {tab.label}
-            {'badge' in tab && (
-              <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[10px] font-black">
-                {tab.badge}
-              </span>
-            )}
-          </button>
-        ))}
+            <Calendar className="h-4 w-4 text-[#64748B]" />
+            Live Snapshot
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const dataStr = JSON.stringify({ totalMrr, totalArr, activeOrgsCount, subscriptionsCount: subscriptions.length }, null, 2);
+              const blob = new Blob([dataStr], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `workforceos-revenue-report-${new Date().toISOString().split('T')[0]}.json`;
+              a.click();
+            }}
+            className="flex items-center gap-1.5 border-[#CBD5E1] text-[#334155] hover:bg-[#F8FAFC]"
+          >
+            <Download className="h-4 w-4 text-[#64748B]" />
+            Export JSON
+          </Button>
+        </div>
       </div>
 
-      {/* OVERVIEW TAB */}
-      {activeTab === 'overview' && (
-        <>
-          {/* KPI Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-2">
-              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Annual Recurring Revenue (ARR)</span>
-              <div className="text-3xl font-black text-gray-900">₹{(metrics.arr / 10000000).toFixed(2)} Cr</div>
-              <div className="text-xs font-bold text-emerald-700 flex items-center gap-1">
-                <ArrowUpRight className="w-3.5 h-3.5" /><span>+14.0% YoY Growth</span>
-              </div>
+      {/* 2. 6 Executive Commercial KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-xs">
+          <span className="text-[11px] font-semibold text-[#64748B] block">MRR</span>
+          <strong className="text-2xl font-bold text-[#0F172B] block mt-1">
+            ₹{totalMrr > 0 ? (totalMrr / 100000).toFixed(1) + 'L' : '0'}
+          </strong>
+          <span className="text-[10px] font-semibold text-[#047857] flex items-center gap-0.5">
+            <ArrowUpRight className="h-3 w-3" /> Live Run-Rate
+          </span>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-xs">
+          <span className="text-[11px] font-semibold text-[#64748B] block">ARR</span>
+          <strong className="text-2xl font-bold text-[#047857] block mt-1">
+            ₹{totalArr > 0 ? (totalArr / 10000000).toFixed(2) + 'Cr' : '0'}
+          </strong>
+          <span className="text-[10px] font-semibold text-[#047857] flex items-center gap-0.5">
+            <ArrowUpRight className="h-3 w-3" /> Annualized
+          </span>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-xs">
+          <span className="text-[11px] font-semibold text-[#64748B] block">Active Organizations</span>
+          <strong className="text-2xl font-bold text-[#0F172B] block mt-1">{activeOrgsCount}</strong>
+          <span className="text-[10px] font-semibold text-[#047857]">Active database tenants</span>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-xs">
+          <span className="text-[11px] font-semibold text-[#64748B] block">Total Contracts</span>
+          <strong className="text-2xl font-bold text-[#2563EB] block mt-1">{subscriptions.length}</strong>
+          <span className="text-[10px] text-[#2563EB] font-semibold">Active Agreements</span>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-xs">
+          <span className="text-[11px] font-semibold text-[#64748B] block">Invoices Issued</span>
+          <strong className="text-2xl font-bold text-[#0F172B] block mt-1">{invoices.length}</strong>
+          <span className="text-[10px] font-semibold text-[#047857]">
+            {invoices.filter((i) => i.status === 'Paid').length} paid
+          </span>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-xs">
+          <span className="text-[11px] font-semibold text-[#64748B] block">ARPU (Avg Revenue)</span>
+          <strong className="text-2xl font-bold text-[#0F172B] block mt-1">
+            ₹{arpu.toLocaleString()}
+          </strong>
+          <span className="text-[10px] font-semibold text-[#047857]">Per tenant average</span>
+        </div>
+      </div>
+
+      {/* 3. Cross-Navigation Jump Bar */}
+      <div className="bg-[#F8FAFC] p-3 rounded-2xl border border-[#E2E8F0] flex items-center justify-between flex-wrap gap-3 text-xs">
+        <span className="font-bold text-[#0F172B] flex items-center gap-1.5">
+          <TrendingUp className="h-4 w-4 text-[#047857]" /> Quick Operations Navigation:
+        </span>
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => onNavigateTab?.('platform-subscriptions')}
+            className="text-[#047857] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+          >
+            <span>View Subscription Growth</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+          <span className="text-[#CBD5E1]">•</span>
+          <button
+            type="button"
+            onClick={() => onNavigateTab?.('platform-billing')}
+            className="text-[#047857] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+          >
+            <span>View Invoices & Collections</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+          <span className="text-[#CBD5E1]">•</span>
+          <button
+            type="button"
+            onClick={() => onNavigateTab?.('platform-usage')}
+            className="text-[#047857] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+          >
+            <span>View Usage & Metering</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* 4. Recurring Revenue Trends Chart & Plan Performance Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Left 2 Cols: Area Chart */}
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-[#E2E8F0] p-5 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-sm text-[#0F172B]">Recurring Revenue Growth (MRR / ARR)</h3>
+              <p className="text-xs text-[#64748B]">Real-time expansion & net revenue telemetry</p>
             </div>
-            <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-2">
-              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Monthly Recurring Revenue (MRR)</span>
-              <div className="text-3xl font-black text-gray-900">₹{(metrics.mrr / 100000).toFixed(1)} L</div>
-              <div className="text-xs font-bold text-emerald-700 flex items-center gap-1">
-                <TrendingUp className="w-3.5 h-3.5" /><span>+8.7% MoM</span>
-              </div>
-            </div>
-            <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-2">
-              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Net Retention Rate (NRR)</span>
-              <div className="text-3xl font-black text-gray-900">{metrics.netRetentionRate}%</div>
-              <div className="text-xs font-bold text-emerald-700 flex items-center gap-1">
-                <Award className="w-3.5 h-3.5" /><span>Best-in-class SaaS Metric</span>
-              </div>
-            </div>
-            <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-2">
-              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Monthly Churn Rate</span>
-              <div className="text-3xl font-black text-gray-900">{metrics.churnRate}%</div>
-              <div className="text-xs font-bold text-rose-600 flex items-center gap-1">
-                <ArrowDownRight className="w-3.5 h-3.5" /><span>-0.3% from last month</span>
-              </div>
+
+            <div className="flex items-center bg-[#F1F5F9] p-1 rounded-xl text-xs">
+              <button
+                type="button"
+                onClick={() => setMetricView('mrr')}
+                className={cn(
+                  'px-3 py-1 rounded-lg font-bold transition-all cursor-pointer',
+                  metricView === 'mrr' ? 'bg-white text-[#0F172B] shadow-xs' : 'text-[#64748B]'
+                )}
+              >
+                MRR (Lakhs)
+              </button>
+              <button
+                type="button"
+                onClick={() => setMetricView('arr')}
+                className={cn(
+                  'px-3 py-1 rounded-lg font-bold transition-all cursor-pointer',
+                  metricView === 'arr' ? 'bg-white text-[#0F172B] shadow-xs' : 'text-[#64748B]'
+                )}
+              >
+                ARR (Crores)
+              </button>
             </div>
           </div>
 
-          {/* MRR Trend + Plan Mix */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                <div>
-                  <h3 className="text-sm font-extrabold text-gray-900">MRR Growth Trend</h3>
-                  <p className="text-[11px] text-gray-500">Last 6 months (₹ Lakhs)</p>
+          <div className="h-64 w-full pt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#047857" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="#047857" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                <XAxis dataKey="month" stroke="#94A3B8" fontSize={11} tickLine={false} />
+                <YAxis stroke="#94A3B8" fontSize={11} tickLine={false} />
+                <Tooltip />
+                <Area
+                  type="monotone"
+                  dataKey={metricView === 'mrr' ? 'mrr' : 'arr'}
+                  stroke="#047857"
+                  strokeWidth={2.5}
+                  fillOpacity={1}
+                  fill="url(#colorRev)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Right 1 Col: Plan Performance Breakdown */}
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-5 shadow-xs space-y-4">
+          <div>
+            <h3 className="font-bold text-sm text-[#0F172B]">Plan Performance & Contribution</h3>
+            <p className="text-xs text-[#64748B]">Revenue distribution across active subscription tiers</p>
+          </div>
+
+          <div className="space-y-3">
+            {planPerformance.map((p) => (
+              <div
+                key={p.name}
+                className="p-3.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] hover:border-[#047857] transition-all space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => onNavigateTab?.('platform-plans', { presetFilter: p.name })}
+                    className="font-bold text-xs text-[#0F172B] hover:text-[#047857] hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{p.name}</span>
+                    <ExternalLink className="h-3 w-3 text-[#94A3B8]" />
+                  </button>
+                  <span className="font-bold text-xs text-[#047857]">{p.mrr}</span>
                 </div>
-                <BarChart3 className="w-4 h-4 text-gray-400" />
-              </div>
-              <div className="flex items-end gap-2 h-24">
-                {MONTHLY_MRR.map((m, i) => {
-                  const max = Math.max(...MONTHLY_MRR.map(x => x.mrr));
-                  const pct = (m.mrr / max) * 100;
-                  const isLast = i === MONTHLY_MRR.length - 1;
-                  return (
-                    <div key={m.month} className="flex flex-col items-center gap-1 flex-1">
-                      <div className="text-[9px] font-bold text-gray-600">₹{m.mrr}L</div>
-                      <div
-                        className={`w-full rounded-t-lg transition-all ${isLast ? 'bg-[#07563D]' : 'bg-emerald-200'}`}
-                        style={{ height: `${pct * 0.6}px` }}
-                      />
-                      <div className="text-[9px] text-gray-500 font-semibold">{m.month}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                <div>
-                  <h3 className="text-sm font-extrabold text-gray-900">Revenue by Plan Mix</h3>
-                  <p className="text-[11px] text-gray-500">MRR contribution breakdown</p>
+                <div className="flex items-center justify-between text-[11px] text-[#64748B]">
+                  <span>{p.tenants} Organizations</span>
+                  <span className="text-[#047857] font-semibold">{p.growth}</span>
+                  <span>Churn: {p.churn}</span>
                 </div>
-                <CircleDollarSign className="w-4 h-4 text-gray-400" />
               </div>
-              <div className="space-y-3">
-                {[
-                  { plan: 'Enterprise', mrr: '₹12.4L', pct: 67, color: 'bg-[#07563D]' },
-                  { plan: 'Business', mrr: '₹3.8L', pct: 21, color: 'bg-emerald-400' },
-                  { plan: 'Professional', mrr: '₹1.6L', pct: 9, color: 'bg-blue-500' },
-                  { plan: 'Starter', mrr: '₹0.6L', pct: 3, color: 'bg-gray-400' },
-                ].map(p => (
-                  <div key={p.plan} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs font-semibold text-gray-700">
-                      <span>{p.plan}</span>
-                      <span className="font-bold text-gray-900">{p.mrr} ({p.pct}%)</span>
-                    </div>
-                    <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-                      <div className={`${p.color} h-full rounded-full`} style={{ width: `${p.pct}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* TRIALS TAB */}
-      {activeTab === 'trials' && (
-        <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-6 space-y-4">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-            <div>
-              <h3 className="text-sm font-extrabold text-gray-900">Trial Organizations</h3>
-              <p className="text-[11px] text-gray-500">Active 14-day evaluation accounts — monitor conversion pipeline</p>
-            </div>
-            <span className="px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-full text-xs font-bold">
-              {TRIALS.filter(t => t.status === 'Active').length} Active Trials
-            </span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                  <th className="py-3 px-4">Trial ID & Company</th>
-                  <th className="py-3 px-4">Plan</th>
-                  <th className="py-3 px-4">Employees</th>
-                  <th className="py-3 px-4">Contact</th>
-                  <th className="py-3 px-4">Expires</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 text-xs">
-                {TRIALS.map(t => (
-                  <tr key={t.id} className="hover:bg-gray-50/60">
-                    <td className="py-3 px-4">
-                      <div className="font-bold text-gray-900">{t.company}</div>
-                      <div className="text-[10px] text-gray-400 font-mono">{t.id}</div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 bg-gray-100 text-gray-800 font-bold text-[10px] rounded-md">{t.plan}</span>
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-gray-800">{t.employees}</td>
-                    <td className="py-3 px-4 text-gray-700">{t.contact}</td>
-                    <td className="py-3 px-4 font-mono text-gray-600">{t.expires}</td>
-                    <td className="py-3 px-4">
-                      <span className={`px-2 py-0.5 font-bold text-[10px] rounded-md border ${
-                        t.status === 'Active'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                          : 'bg-gray-100 text-gray-600 border-gray-200'
-                      }`}>
-                        {t.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      {t.status === 'Active' && (
-                        <button
-                          onClick={() => alert(`Converting ${t.company} to paid subscription`)}
-                          className="px-2.5 py-1 bg-[#07563D] hover:bg-[#064733] text-white font-bold text-[10px] rounded-lg cursor-pointer transition-colors"
-                        >
-                          Convert to Paid
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            ))}
           </div>
         </div>
-      )}
-
-      {/* RENEWALS TAB */}
-      {activeTab === 'renewals' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-2">
-              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Upcoming Renewals (30 Days)</span>
-              <div className="text-3xl font-black text-gray-900">₹8.2L</div>
-              <div className="text-xs text-emerald-700 font-bold flex items-center gap-1"><RefreshCw className="w-3.5 h-3.5" /> 12 Accounts Due</div>
-            </div>
-            <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-2">
-              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Overdue / Payment Stuck</span>
-              <div className="text-3xl font-black text-rose-600">₹2.48L</div>
-              <div className="text-xs text-rose-600 font-bold flex items-center gap-1"><TrendingDown className="w-3.5 h-3.5" /> 1 Account Suspended</div>
-            </div>
-            <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-2">
-              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Churn This Month</span>
-              <div className="text-3xl font-black text-gray-900">2.4%</div>
-              <div className="text-xs text-emerald-700 font-bold flex items-center gap-1"><ArrowDownRight className="w-3.5 h-3.5" /> Down from 2.7% last month</div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-6 space-y-4">
-            <h3 className="text-sm font-extrabold text-gray-900 border-b border-gray-100 pb-3">Renewal Pipeline</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                    <th className="py-3 px-4">Tenant</th>
-                    <th className="py-3 px-4">Plan</th>
-                    <th className="py-3 px-4">Invoice Amount (incl. GST)</th>
-                    <th className="py-3 px-4">Renewal Date</th>
-                    <th className="py-3 px-4">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 text-xs">
-                  {RENEWALS.map(r => (
-                    <tr key={r.tenant} className="hover:bg-gray-50/60">
-                      <td className="py-3 px-4 font-bold text-gray-900">{r.tenant}</td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-800 font-bold text-[10px] rounded-md">{r.plan}</span>
-                      </td>
-                      <td className="py-3 px-4 font-bold text-gray-900">₹{r.amount.toLocaleString()}</td>
-                      <td className="py-3 px-4 font-mono text-gray-600">{r.date}</td>
-                      <td className="py-3 px-4">
-                        <span className={`px-2 py-0.5 font-bold text-[10px] rounded-md border ${
-                          r.status === 'Auto-Renew'
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                            : r.status === 'Upcoming'
-                            ? 'bg-blue-50 text-blue-800 border-blue-200'
-                            : 'bg-rose-50 text-rose-800 border-rose-200'
-                        }`}>
-                          {r.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* COUPONS TAB */}
-      {activeTab === 'coupons' && (
-        <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-6 space-y-4">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-            <div>
-              <h3 className="text-sm font-extrabold text-gray-900">Coupon & Discount Registry</h3>
-              <p className="text-[11px] text-gray-500">Manage promotional codes, discount rules, and usage analytics</p>
-            </div>
-            <button
-              onClick={() => alert('Create Coupon Modal')}
-              className="px-3 py-1.5 bg-[#07563D] hover:bg-[#064733] text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer transition-colors"
-            >
-              + Create Coupon
-            </button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                  <th className="py-3 px-4">Coupon Code</th>
-                  <th className="py-3 px-4">Discount</th>
-                  <th className="py-3 px-4">Applicable Plan</th>
-                  <th className="py-3 px-4">Usage</th>
-                  <th className="py-3 px-4">Expires</th>
-                  <th className="py-3 px-4">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 text-xs">
-                {COUPONS.map(c => (
-                  <tr key={c.code} className="hover:bg-gray-50/60">
-                    <td className="py-3 px-4 font-mono font-bold text-[#07563D]">{c.code}</td>
-                    <td className="py-3 px-4 font-semibold text-gray-800">{c.discount}</td>
-                    <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 bg-gray-100 text-gray-700 font-bold text-[10px] rounded-md">{c.plan}</span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 bg-gray-100 h-1.5 rounded-full overflow-hidden">
-                          <div className="bg-[#07563D] h-full" style={{ width: `${(c.used / c.limit) * 100}%` }} />
-                        </div>
-                        <span className="font-bold text-[11px] text-gray-700">{c.used}/{c.limit}</span>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 font-mono text-gray-600">{c.expires}</td>
-                    <td className="py-3.5 px-4">
-                      <span className={`px-2.5 py-0.5 font-black text-[10px] rounded-full uppercase border ${
-                        c.status === 'Active'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                          : 'bg-amber-50 text-amber-800 border-amber-200'
-                      }`}>
-                        {c.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* COHORTS TAB */}
-      {activeTab === 'cohorts' && (
-        <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-6 space-y-4">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-            <div>
-              <h3 className="text-base font-black text-gray-900">Customer Retention Cohort Analysis</h3>
-              <p className="text-xs text-gray-500 mt-0.5">Month-by-month customer net retention percentage tracking</p>
-            </div>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-[#07563D] border border-emerald-200">
-              91.4% Avg 6M Retention
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                  <th className="py-3 px-4">Cohort Month</th>
-                  <th className="py-3 px-4">Size</th>
-                  <th className="py-3 px-4">M1</th>
-                  <th className="py-3 px-4">M2</th>
-                  <th className="py-3 px-4">M3</th>
-                  <th className="py-3 px-4">M6</th>
-                  <th className="py-3 px-4">M12</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 font-medium">
-                {[
-                  { cohort: 'Jan 2026', size: 34, m1: 100, m2: 97, m3: 94, m6: 91, m12: 88 },
-                  { cohort: 'Feb 2026', size: 28, m1: 100, m2: 96, m3: 93, m6: 89, m12: 87 },
-                  { cohort: 'Mar 2026', size: 42, m1: 100, m2: 98, m3: 95, m6: 92, m12: 90 },
-                  { cohort: 'Apr 2026', size: 38, m1: 100, m2: 97, m3: 94, m6: 91, m12: 89 },
-                  { cohort: 'May 2026', size: 45, m1: 100, m2: 98, m3: 96, m6: 93, m12: 91 },
-                  { cohort: 'Jun 2026', size: 52, m1: 100, m2: 98, m3: 95, m6: 94, m12: 92 },
-                ].map(r => (
-                  <tr key={r.cohort} className="hover:bg-gray-50/60">
-                    <td className="py-3.5 px-4 font-bold text-gray-900">{r.cohort}</td>
-                    <td className="py-3.5 px-4 font-mono">{r.size} orgs</td>
-                    <td className="py-3.5 px-4 bg-emerald-100 text-emerald-900 font-bold font-mono text-center">{r.m1}%</td>
-                    <td className="py-3.5 px-4 bg-emerald-100/80 text-emerald-900 font-bold font-mono text-center">{r.m2}%</td>
-                    <td className="py-3.5 px-4 bg-emerald-50 text-emerald-800 font-bold font-mono text-center">{r.m3}%</td>
-                    <td className="py-3.5 px-4 bg-emerald-50/60 text-emerald-800 font-bold font-mono text-center">{r.m6}%</td>
-                    <td className="py-3.5 px-4 bg-gray-50 text-gray-700 font-mono text-center">{r.m12}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 };
-

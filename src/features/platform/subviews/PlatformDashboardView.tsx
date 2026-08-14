@@ -1,21 +1,21 @@
 // src/features/platform/subviews/PlatformDashboardView.tsx
 // ============================================================
-// WorkForceOS — Platform Control Center 2.0 (Master Command Console)
+// WorkForceOS — Platform Control Center 2.0 (Master Command Cockpit)
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Building2,
   Users,
   CircleDollarSign,
-  TrendingUp,
   Activity,
   ShieldCheck,
+  ShieldAlert,
+  Flame,
   AlertTriangle,
   Plus,
   ArrowUpRight,
   Search,
-  ShieldAlert,
   Server,
   Database,
   Cpu,
@@ -26,438 +26,928 @@ import {
   CheckCircle2,
   Clock,
   ChevronRight,
-  Workflow,
   Sparkles,
   Lock,
   Layers,
   ArrowRight,
+  Radio,
+  RefreshCw,
+  Sliders,
+  Globe,
+  HardDrive,
+  BarChart3,
+  FileText,
+  Workflow,
+  RotateCcw,
+  Zap,
 } from 'lucide-react';
 import {
   platformHealthService,
   platformIncidentService,
+  platformCustomerHealthService,
+  platformSubscriptionService,
+  platformBillingService,
   platformJobService,
   platformAuditService,
+  usePlatformRealtime,
 } from '../../../services/platform';
-import { SubsystemTelemetry, TenantActionAlert } from '../../../types/platformAdmin';
+import { SubsystemTelemetry } from '../../../types/platformAdmin';
 import { SubsystemHealthDrawer } from '../components/SubsystemHealthDrawer';
 import { CommandPaletteModal } from '../components/CommandPaletteModal';
+import { WorkForceCopilotDrawer } from '../components/WorkForceCopilotDrawer';
+import { Button } from '../../../components/ui/Button';
+import { cn } from '../../../lib/utils';
 
 export interface PlatformDashboardViewProps {
-  onNavigateTab: (tab: string) => void;
+  onNavigateTab: (tab: string, payload?: { tenantId?: string; presetFilter?: string; search?: string }) => void;
 }
 
-const sampleActionAlerts: TenantActionAlert[] = [
-  {
-    id: 'alt-01',
-    severity: 'High',
-    category: 'Billing',
-    tenant_id: 'org-zenith-04',
-    tenant_name: 'Zenith Logistics & Supply Chain',
-    title: 'August Subscription Invoice Overdue',
-    description: 'Invoice #INV-2026-0802 (₹2.47L) is 4 days past due. Auto-debit retry failed.',
-    recommended_action: 'Review invoice reconciliation ledger or send reminder',
-    action_tab: 'platform-billing',
-    created_at: '2 hours ago',
-  },
-  {
-    id: 'alt-02',
-    severity: 'Medium',
-    category: 'Usage',
-    tenant_id: 'org-innovate-05',
-    tenant_name: 'Innovate Labs Pvt Ltd',
-    title: 'Starter Seat Quota at 90% Capacity',
-    description: '45 of 50 employee licenses allocated. High candidate for Professional plan upgrade.',
-    recommended_action: 'Trigger plan expansion recommendation to account owner',
-    action_tab: 'platform-subscriptions',
-    created_at: '5 hours ago',
-  },
-  {
-    id: 'alt-03',
-    severity: 'Medium',
-    category: 'Lifecycle',
-    tenant_id: 'org-cyber-03',
-    tenant_name: 'CyberSoft Global Tech Ltd',
-    title: 'Enterprise Trial Expiring in 11 Days',
-    description: '120 employees onboarded. No billing payment method registered yet.',
-    recommended_action: 'Contact primary admin anish@cybersoft.com for conversion',
-    action_tab: 'platform-tenants',
-    created_at: '1 day ago',
-  },
-];
+export const PlatformDashboardView: React.FC<PlatformDashboardViewProps> = ({
+  onNavigateTab,
+}) => {
+  // Realtime hook with automatic live stream update
+  usePlatformRealtime(undefined, () => {
+    platformAuditService.getAuditEvents(20).then((res) => setAuditEvents(res));
+  });
 
-const liveActivityEvents = [
-  { id: 'act-1', text: 'Acme Technologies upgraded to Enterprise Tier', meta: 'Subscription #SUB-2026-001 • MRR +₹85,000', time: '2m ago', type: 'billing' },
-  { id: 'act-2', text: 'Invoice payment received from Zenith Logistics', meta: '₹42,800 via Razorpay Auto-Debit (UTR #928310)', time: '5m ago', type: 'payment' },
-  { id: 'act-3', text: 'Tenant provisioning completed: Nova Technologies', meta: '10 stages verified • 50 seats allocated in Coimbatore partition', time: '8m ago', type: 'tenant' },
-  { id: 'act-4', text: 'Feature flag WHATSAPP_ALERTS rolled out to 100%', meta: 'Targeted to Professional, Business, and Enterprise plans', time: '11m ago', type: 'flag' },
-  { id: 'act-5', text: 'Nightly database backup snapshot verified', meta: 'S3 cold vault hash verified (2.84 GB)', time: '25m ago', type: 'system' },
-];
-
-export const PlatformDashboardView: React.FC<PlatformDashboardViewProps> = ({ onNavigateTab }) => {
-  const metrics = platformHealthService.getDashboardMetrics();
-  const health = platformHealthService.getSystemHealth();
-  const activeIncidents = platformIncidentService.getActiveIncidents();
-
+  // State
   const [selectedSubsystem, setSelectedSubsystem] = useState<SubsystemTelemetry | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activityFilter, setActivityFilter] = useState<string>('all');
+  const [isActivityPaused, setIsActivityPaused] = useState(false);
 
-  const isDegraded = activeIncidents.length > 0;
+  // Live Services Telemetry
+  const metrics = platformHealthService.getDashboardMetrics();
+  const health = platformHealthService.getSystemHealth();
+  const operationalStatus = platformIncidentService.getPlatformOperationalStatus();
+  const activeIncidents = platformIncidentService.getActiveIncidents();
+  const portfolioHealth = platformCustomerHealthService.getPortfolioMetrics();
+  const priorityAccounts = platformCustomerHealthService
+    .getTenantsHealth()
+    .filter((t) => t.health_grade === 'At Risk' || t.health_grade === 'Critical')
+    .slice(0, 3);
+  const subMetrics = platformSubscriptionService.getMetrics();
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      setIsRefreshing(false);
+    }, 450);
+  };
+
+  const [auditEvents, setAuditEvents] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    platformAuditService.getAuditEvents(20).then((res) => setAuditEvents(res));
+  }, []);
+
+  // Dynamic Operational Attention Items (Computed from Realtime Telemetry)
+  const attentionItems = useMemo(() => {
+    const items: Array<{
+      id: string;
+      priority: string;
+      category: string;
+      title: string;
+      description: string;
+      impact: string;
+      actionLabel: string;
+      actionTab: string;
+      payload?: any;
+      badgeClass: string;
+    }> = [];
+
+    // 1. Active incidents
+    activeIncidents.forEach((inc) => {
+      items.push({
+        id: `inc-${inc.id}`,
+        priority: inc.severity.includes('SEV-1') || inc.severity.includes('SEV-2') ? 'HIGH' : 'MEDIUM',
+        category: 'Platform',
+        title: `${inc.severity} Incident: ${inc.title}`,
+        description: inc.description,
+        impact: `${inc.affected_tenants_count || 0} tenants affected • ${inc.status}`,
+        actionLabel: 'Open Incident',
+        actionTab: 'platform-incidents',
+        badgeClass: 'bg-[#FEF2F2] text-[#DC2626] border-[#FCA5A5]',
+      });
+    });
+
+    // 2. Overdue Invoices
+    const overdueInvoices = platformBillingService.getInvoices().filter((i) => i.status === 'Overdue');
+    overdueInvoices.forEach((inv) => {
+      items.push({
+        id: `inv-${inv.id}`,
+        priority: 'HIGH',
+        category: 'Billing',
+        title: `Overdue Invoice: ${inv.tenant_name}`,
+        description: `Invoice #${inv.invoice_number} (₹${inv.total?.toLocaleString()}) is past due date ${inv.due_date}.`,
+        impact: `₹${inv.total?.toLocaleString()} at risk • ${inv.status}`,
+        actionLabel: 'Resolve Billing',
+        actionTab: 'platform-billing',
+        payload: { presetFilter: 'overdue' },
+        badgeClass: 'bg-[#FEF2F2] text-[#DC2626] border-[#FCA5A5]',
+      });
+    });
+
+    // 3. At-risk / Critical Accounts
+    priorityAccounts.forEach((t) => {
+      items.push({
+        id: `risk-${t.tenant_id}`,
+        priority: t.health_grade === 'Critical' ? 'HIGH' : 'MEDIUM',
+        category: 'Retention',
+        title: `${t.tenant_name} (${t.health_grade})`,
+        description: t.primary_risk || 'Health score dropped below threshold',
+        impact: `${t.health_score}/100 Health • ${t.mrr_formatted} MRR`,
+        actionLabel: 'Intervene',
+        actionTab: 'platform-tenant-health',
+        payload: { tenantId: t.tenant_id },
+        badgeClass: t.health_grade === 'Critical' ? 'bg-[#FEF2F2] text-[#DC2626] border-[#FCA5A5]' : 'bg-[#FFF7ED] text-[#C2410C] border-[#FFEDD5]',
+      });
+    });
+
+    // 4. Failed background jobs
+    const failedJobs = platformJobService.getJobs().filter((j) => j.status === 'Failed');
+    failedJobs.forEach((job) => {
+      items.push({
+        id: `job-${job.id}`,
+        priority: 'MEDIUM',
+        category: 'Background Job',
+        title: `Job Failed: ${job.name}`,
+        description: job.error_message || 'Execution error during scheduled worker run.',
+        impact: `Attempt ${job.attempt_count}/${job.max_attempts} • ${job.status}`,
+        actionLabel: 'View Queue',
+        actionTab: 'platform-jobs',
+        badgeClass: 'bg-[#FFF7ED] text-[#C2410C] border-[#FFEDD5]',
+      });
+    });
+
+    return items;
+  }, [activeIncidents, priorityAccounts]);
+
+  // Live Activity Events (Streamed from Audit Log & Telemetry)
+  const liveEvents = useMemo(() => {
+    return auditEvents.map((a) => ({
+      id: a.id,
+      category: a.resource_type || 'Operations',
+      text: `${a.actor_name}: ${a.action.replace(/_/g, ' ')}`,
+      detail: a.reason || `${a.resource_type} ${a.resource_id}`,
+      time: a.time_ago || 'Recently',
+      tab: a.resource_type === 'Tenant' ? 'platform-tenants' : a.resource_type === 'Incident' ? 'platform-incidents' : 'platform-audit',
+    }));
+  }, [auditEvents]);
+
+  const filteredEvents = useMemo(() => {
+    if (activityFilter === 'all') return liveEvents;
+    return liveEvents.filter((e) => e.category.toLowerCase() === activityFilter.toLowerCase());
+  }, [activityFilter, liveEvents]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-16 font-sans">
       {/* Subsystem Health Inspector Drawer */}
       <SubsystemHealthDrawer
         subsystem={selectedSubsystem}
         onClose={() => setSelectedSubsystem(null)}
       />
 
-      {/* Global Command Palette Modal */}
+      {/* Global Command Palette Modal (Ctrl + K) */}
       <CommandPaletteModal
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
-        onNavigateTab={onNavigateTab}
+        onNavigateTab={(tab) => onNavigateTab(tab)}
       />
 
-      {/* Global Status Bar Banner */}
-      <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs shadow-2xs ${
-        isDegraded ? 'bg-amber-500/10 border-amber-500/30 text-amber-950' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-950'
-      }`}>
-        <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-xl text-white shrink-0 ${isDegraded ? 'bg-amber-600' : 'bg-[#07563D]'}`}>
-            {isDegraded ? <AlertTriangle className="w-4 h-4 animate-pulse" /> : <ShieldCheck className="w-4 h-4" />}
+      {/* WorkForceOS Copilot Assistant Drawer */}
+      <WorkForceCopilotDrawer
+        isOpen={isCopilotOpen}
+        onClose={() => setIsCopilotOpen(false)}
+        onNavigateTab={(tab) => onNavigateTab(tab)}
+      />
+
+      {/* ============================================================
+          1. HEADER & GLOBAL TELEMETRY BAR
+         ============================================================ */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#E2E8F0] pb-5">
+        <div>
+          <div className="text-xs font-semibold text-[#047857] flex items-center gap-1.5 mb-1">
+            <span>Platform Admin</span>
+            <ChevronRight className="h-3 w-3 text-[#94A3B8]" />
+            <span>Control Center</span>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${isDegraded ? 'bg-amber-500 animate-ping' : 'bg-emerald-500'}`} />
-              <strong className="font-bold text-xs">
-                {isDegraded ? 'Partial Service Degradation — 1 active incident' : 'All Platform Microservices Operational'}
-              </strong>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl font-bold text-[#0F172B] tracking-tight">Platform Control Center</h1>
+
+            <div className="flex items-center gap-1.5 font-sans">
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-[0.03em] bg-[#ECFDF5] text-[#047857] border border-[#15845B]/30">
+                ● PRODUCTION
+              </span>
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1]">
+                ap-south-1 (Mumbai Primary)
+              </span>
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0] flex items-center gap-1">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#047857] opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#047857]"></span>
+                </span>
+                Realtime Active
+              </span>
             </div>
-            <p className="text-[11px] text-gray-600 mt-0.5">
-              {isDegraded
-                ? `${activeIncidents[0].title} (Lead: ${activeIncidents[0].lead_engineer})`
-                : 'All 12 microservice clusters, RLS partitions, and background queues reporting 99.98% SLA.'}
+          </div>
+
+          <p className="text-[13.5px] text-[#64748B] mt-1">
+            Monitor platform health, customer operations, revenue, and infrastructure from one unified command center.
+          </p>
+        </div>
+
+        {/* Top-Right Quick Controls */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsCopilotOpen(true)}
+            className="text-[#047857] hover:bg-[#ECFDF5] border-[#A7F3D0] text-xs font-semibold"
+          >
+            <Sparkles className="w-3.5 h-3.5 mr-1.5 text-[#047857]" />
+            WorkForceOS Copilot
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsCommandPaletteOpen(true)}
+            className="text-xs font-semibold border-[#CBD5E1] text-[#334155] hover:bg-[#F8FAFC]"
+          >
+            <Search className="w-3.5 h-3.5 mr-1.5 text-[#94A3B8]" />
+            Search Command
+            <kbd className="ml-1.5 px-1.5 py-0.5 rounded-[4px] bg-[#F1F5F9] border border-[#CBD5E1] text-[10px] font-mono text-[#64748B]">
+              Ctrl+K
+            </kbd>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onNavigateTab('platform-incidents')}
+            className={cn(
+              'text-xs font-semibold',
+              activeIncidents.length > 0
+                ? 'text-[#C2410C] border-[#FFEDD5] bg-[#FFF7ED] hover:bg-[#FFEDD5]'
+                : 'text-[#334155] border-[#CBD5E1] hover:bg-[#F8FAFC]'
+            )}
+          >
+            <Flame className={cn('w-3.5 h-3.5 mr-1', activeIncidents.length > 0 ? 'text-[#C2410C]' : 'text-[#94A3B8]')} />
+            Incidents ({activeIncidents.length})
+          </Button>
+
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => onNavigateTab('platform-tenants')}
+            className="bg-[#047857] hover:bg-[#036246] text-white text-xs font-semibold shadow-xs"
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            Provision Organization
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="border-[#CBD5E1] text-[#64748B] hover:bg-[#F8FAFC]"
+          >
+            <RefreshCw className={cn('w-3.5 h-3.5', isRefreshing && 'animate-spin')} />
+          </Button>
+        </div>
+      </div>
+
+      {/* ============================================================
+          2. DYNAMIC GLOBAL PLATFORM STATUS BANNER
+         ============================================================ */}
+      <div
+        className={cn(
+          'p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs transition-all',
+          operationalStatus.statusTone === 'healthy'
+            ? 'bg-[#ECFDF5] border-[#A7F3D0] text-[#065F46]'
+            : operationalStatus.statusTone === 'warning'
+              ? 'bg-[#FEF3C7] border-[#FDE68A] text-[#92400E]'
+              : 'bg-[#FEF2F2] border-[#FCA5A5] text-[#991B1B]'
+        )}
+      >
+        <div className="flex items-center gap-3">
+          {operationalStatus.statusTone === 'healthy' ? (
+            <CheckCircle2 className="h-6 w-6 text-[#047857]" />
+          ) : operationalStatus.statusTone === 'warning' ? (
+            <AlertTriangle className="h-6 w-6 text-[#D97706] animate-pulse" />
+          ) : (
+            <Flame className="h-6 w-6 text-[#DC2626] animate-pulse" />
+          )}
+
+          <div>
+            <strong className="text-sm font-bold block">
+              {operationalStatus.statusText}
+            </strong>
+            <p className="text-xs opacity-90 mt-0.5">
+              Uptime SLA: <strong>99.98%</strong> • {operationalStatus.degradedServicesCount} services degraded • {operationalStatus.activeIncidentsCount} active incident • {operationalStatus.tenantsImpactedCount} tenants impacted
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[11px] font-mono text-gray-500 hidden md:inline">Checked 12s ago</span>
-          {isDegraded && (
-            <button
-              onClick={() => onNavigateTab('platform-support')}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+        <div className="flex items-center gap-2">
+          {activeIncidents.length > 0 ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => onNavigateTab('platform-incidents')}
+              className="bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-semibold shadow-xs"
             >
-              View Incident
-            </button>
+              <Flame className="h-3.5 w-3.5 mr-1" /> Open Incident Command
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onNavigateTab('platform-tenant-health')}
+              className="bg-white text-[#047857] border-[#A7F3D0] text-xs font-semibold"
+            >
+              View Platform Health →
+            </Button>
           )}
         </div>
       </div>
 
-      {/* Header Command Action Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-[#07563D] border border-emerald-300 uppercase tracking-wider">
-              ● PRODUCTION
-            </span>
-            <span className="text-xs font-semibold text-gray-500 font-mono">India (ap-south-1) • Super Admin</span>
-          </div>
-          <h1 className="text-2xl font-black text-gray-900 mt-1">Platform Control Center</h1>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Monitor platform health, customer operations, revenue and infrastructure from one command center.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={() => setIsCommandPaletteOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold text-xs transition-all cursor-pointer border border-gray-200"
-          >
-            <Search className="w-3.5 h-3.5 text-gray-500" />
-            <span>Search anything...</span>
-            <kbd className="px-1.5 py-0.5 rounded bg-white text-[10px] font-mono border border-gray-300">Ctrl+K</kbd>
-          </button>
-
-          <button
-            onClick={() => onNavigateTab('platform-support')}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold text-xs transition-all cursor-pointer border border-gray-200"
-          >
-            <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
-            <span>Incidents</span>
-          </button>
-
-          <button
-            onClick={() => onNavigateTab('platform-tenants')}
-            className="flex items-center gap-2 px-4 py-2 bg-[#07563D] hover:bg-[#064733] text-white rounded-xl font-bold text-xs shadow-sm transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Provision Organization
-          </button>
-        </div>
-      </div>
-
-      {/* 4 Analytical Primary KPI Cards with Sparklines */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* ============================================================
+          3. CORE 6-KPI METRICS ROW (ACTIONABLE & CONNECTED)
+         ============================================================ */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {/* KPI 1: Organizations */}
         <div
           onClick={() => onNavigateTab('platform-tenants')}
-          className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs hover:border-emerald-400 transition-all cursor-pointer group flex flex-col justify-between"
+          className="p-4 bg-white rounded-2xl border border-[#E2E8F0] shadow-xs hover:border-[#047857] transition-all cursor-pointer group"
         >
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Organizations</span>
-              <div className="p-2 bg-emerald-50 rounded-xl text-[#07563D] group-hover:scale-110 transition-transform">
-                <Building2 className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2 mt-2">
-              <div className="text-3xl font-black text-gray-900">{metrics.totalOrganizations}</div>
-              <span className="text-xs font-bold text-emerald-700 flex items-center">
-                <ArrowUpRight className="w-3 h-3" /> +12.4%
-              </span>
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              <strong className="text-gray-800">{metrics.activeOrganizations} Active</strong> · {metrics.trialOrganizations} Trial
-            </div>
+          <div className="flex items-center justify-between text-[#64748B] text-[11px] font-semibold">
+            <span>ORGANIZATIONS</span>
+            <Building2 className="h-3.5 w-3.5 text-[#047857]" />
           </div>
-          {/* Mini Sparkline Visualization */}
-          <div className="mt-3 pt-3 border-t border-gray-100 flex items-end gap-1 h-6">
-            {[32, 45, 54, 65, 78, 88, 100].map((h, i) => (
-              <div
-                key={i}
-                className={`flex-1 rounded-t-xs ${i === 6 ? 'bg-[#07563D]' : 'bg-emerald-200'}`}
-                style={{ height: `${h}%` }}
-              />
-            ))}
-          </div>
+          <strong className="text-2xl font-bold text-[#0F172B] block mt-1 group-hover:text-[#047857] transition-colors">
+            {metrics.totalOrganizations}
+          </strong>
+          <span className="text-[10px] text-[#047857] font-semibold block">↑ 12.4% vs last month</span>
+          <span className="text-[10px] text-[#64748B] block mt-0.5">{metrics.activeOrganizations} Active · {metrics.trialOrganizations} Trial</span>
         </div>
 
         {/* KPI 2: MRR */}
         <div
           onClick={() => onNavigateTab('saas-revenue')}
-          className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs hover:border-emerald-400 transition-all cursor-pointer group flex flex-col justify-between"
+          className="p-4 bg-white rounded-2xl border border-[#E2E8F0] shadow-xs hover:border-[#047857] transition-all cursor-pointer group"
         >
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Monthly Recurring Revenue</span>
-              <div className="p-2 bg-emerald-50 rounded-xl text-[#07563D] group-hover:scale-110 transition-transform">
-                <CircleDollarSign className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2 mt-2">
-              <div className="text-3xl font-black text-gray-900">₹{(metrics.mrr / 100000).toFixed(1)}L</div>
-              <span className="text-xs font-bold text-emerald-700 flex items-center">
-                <ArrowUpRight className="w-3 h-3" /> +8.7%
-              </span>
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              vs ₹16.9L last month · <strong className="text-gray-800">ARR ₹{(metrics.arr / 10000000).toFixed(2)}Cr</strong>
-            </div>
+          <div className="flex items-center justify-between text-[#64748B] text-[11px] font-semibold">
+            <span>RECURRING REVENUE</span>
+            <CircleDollarSign className="h-3.5 w-3.5 text-[#047857]" />
           </div>
-          <div className="mt-3 pt-3 border-t border-gray-100 flex items-end gap-1 h-6">
-            {[40, 50, 62, 70, 78, 90, 100].map((h, i) => (
-              <div
-                key={i}
-                className={`flex-1 rounded-t-xs ${i === 6 ? 'bg-[#07563D]' : 'bg-emerald-200'}`}
-                style={{ height: `${h}%` }}
-              />
-            ))}
-          </div>
+          <strong className="text-2xl font-bold text-[#0F172B] block mt-1 group-hover:text-[#047857] transition-colors">
+            ₹{(metrics.mrr / 100000).toFixed(1)}L
+          </strong>
+          <span className="text-[10px] text-[#047857] font-semibold block">↑ 8.7% MoM</span>
+          <span className="text-[10px] text-[#64748B] block mt-0.5">ARR: ₹{(metrics.arr / 10000000).toFixed(2)}Cr</span>
         </div>
 
         {/* KPI 3: Active Users */}
         <div
-          onClick={() => onNavigateTab('platform-users')}
-          className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs hover:border-emerald-400 transition-all cursor-pointer group flex flex-col justify-between"
+          onClick={() => onNavigateTab('platform-usage')}
+          className="p-4 bg-white rounded-2xl border border-[#E2E8F0] shadow-xs hover:border-[#047857] transition-all cursor-pointer group"
         >
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Active Platform Users</span>
-              <div className="p-2 bg-emerald-50 rounded-xl text-[#07563D] group-hover:scale-110 transition-transform">
-                <Users className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2 mt-2">
-              <div className="text-3xl font-black text-gray-900">{metrics.activeUsers.toLocaleString()}</div>
-              <span className="text-xs font-bold text-emerald-700 flex items-center">
-                <ArrowUpRight className="w-3 h-3" /> +6.2%
-              </span>
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              <strong className="text-gray-800">90.1% DAU</strong> across all organizations
-            </div>
+          <div className="flex items-center justify-between text-[#64748B] text-[11px] font-semibold">
+            <span>ACTIVE PLATFORM USERS</span>
+            <Users className="h-3.5 w-3.5 text-[#2563EB]" />
           </div>
-          <div className="mt-3 pt-3 border-t border-gray-100 flex items-end gap-1 h-6">
-            {[50, 58, 65, 72, 80, 92, 100].map((h, i) => (
-              <div
-                key={i}
-                className={`flex-1 rounded-t-xs ${i === 6 ? 'bg-[#07563D]' : 'bg-emerald-200'}`}
-                style={{ height: `${h}%` }}
-              />
-            ))}
-          </div>
+          <strong className="text-2xl font-bold text-[#0F172B] block mt-1 group-hover:text-[#2563EB] transition-colors">
+            {metrics.activeUsers.toLocaleString()}
+          </strong>
+          <span className="text-[10px] text-[#2563EB] font-semibold block">↑ 6.2% vs last week</span>
+          <span className="text-[10px] text-[#64748B] block mt-0.5">90.1% DAU across tenants</span>
         </div>
 
-        {/* KPI 4: Health SLA */}
+        {/* KPI 4: Platform Health */}
         <div
-          onClick={() => setSelectedSubsystem(health.subsystems[0])}
-          className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs hover:border-emerald-400 transition-all cursor-pointer group flex flex-col justify-between"
+          onClick={() => onNavigateTab('platform-tenant-health')}
+          className="p-4 bg-white rounded-2xl border border-[#E2E8F0] shadow-xs hover:border-[#047857] transition-all cursor-pointer group"
         >
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Platform Health & SLA</span>
-              <div className="p-2 bg-emerald-50 rounded-xl text-[#07563D] group-hover:scale-110 transition-transform">
-                <Activity className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2 mt-2">
-              <div className="text-3xl font-black text-gray-900">{health.overallUptimePercent}%</div>
-              <span className="text-xs font-bold text-emerald-700">Healthy</span>
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              <strong className="text-gray-800">Health Score {metrics.customerHealthScore}/100</strong> · {metrics.churnRate}% Churn
-            </div>
+          <div className="flex items-center justify-between text-[#64748B] text-[11px] font-semibold">
+            <span>PLATFORM HEALTH</span>
+            <Activity className="h-3.5 w-3.5 text-[#047857]" />
           </div>
-          <div className="mt-3 pt-3 border-t border-gray-100 flex items-end gap-1 h-6">
-            {[98, 99, 99, 100, 99, 100, 100].map((h, i) => (
-              <div
-                key={i}
-                className="flex-1 rounded-t-xs bg-emerald-500"
-                style={{ height: `${h}%` }}
-              />
-            ))}
+          <strong className="text-2xl font-bold text-[#0F172B] block mt-1 group-hover:text-[#047857] transition-colors">
+            99.98%
+          </strong>
+          <span className="text-[10px] text-[#047857] font-semibold block">Healthy (94.2/100)</span>
+          <span className="text-[10px] text-[#64748B] block mt-0.5">14 Tenants At Risk</span>
+        </div>
+
+        {/* KPI 5: Attention Required */}
+        <div
+          onClick={() => onNavigateTab('platform-incidents')}
+          className="p-4 bg-white rounded-2xl border border-[#E2E8F0] shadow-xs hover:border-[#D97706] transition-all cursor-pointer group"
+        >
+          <div className="flex items-center justify-between text-[#64748B] text-[11px] font-semibold">
+            <span>ATTENTION REQUIRED</span>
+            <AlertTriangle className="h-3.5 w-3.5 text-[#D97706]" />
           </div>
+          <strong className="text-2xl font-bold text-[#D97706] block mt-1">
+            {attentionItems.length}
+          </strong>
+          <span className="text-[10px] text-[#DC2626] font-semibold block">2 High · 3 Medium · 1 Low</span>
+          <span className="text-[10px] text-[#64748B] block mt-0.5">Operational action items</span>
+        </div>
+
+        {/* KPI 6: Security Posture */}
+        <div
+          onClick={() => onNavigateTab('platform-security')}
+          className="p-4 bg-white rounded-2xl border border-[#E2E8F0] shadow-xs hover:border-[#047857] transition-all cursor-pointer group"
+        >
+          <div className="flex items-center justify-between text-[#64748B] text-[11px] font-semibold">
+            <span>SECURITY POSTURE</span>
+            <ShieldCheck className="h-3.5 w-3.5 text-[#047857]" />
+          </div>
+          <strong className="text-2xl font-bold text-[#0F172B] block mt-1 group-hover:text-[#047857] transition-colors">
+            98/100
+          </strong>
+          <span className="text-[10px] text-[#047857] font-semibold block">SOC-2 Type II Certified</span>
+          <span className="text-[10px] text-[#64748B] block mt-0.5">0 Critical Vulnerabilities</span>
         </div>
       </div>
 
-      {/* 12-Column Grid (Row 1: Platform Health 8-col + Attention Required 4-col) */}
+      {/* ============================================================
+          4. MAIN 12-COLUMN OPERATIONAL GRID
+             Left (8 Cols): CORE PLATFORM SERVICES
+             Right (4 Cols): ATTENTION REQUIRED ACTION QUEUE
+         ============================================================ */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Col 8: Platform Health Subsystem Mesh */}
-        <div className="lg:col-span-8 bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+        {/* LEFT (8 COLS): CORE PLATFORM SERVICES */}
+        <div className="lg:col-span-8 bg-white p-5 rounded-3xl border border-[#E2E8F0] shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-black uppercase text-gray-500 tracking-wider">Observability Mesh</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-[#07563D]">
-                  12/12 Live Probes
+                <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#64748B]">
+                  LIVE SUBSYSTEM MESH
+                </span>
+                <span className={cn(
+                  'px-2 py-0.5 rounded-full text-[10px] font-bold border',
+                  health.subsystems.filter(s => s.status !== 'Operational').length > 0
+                    ? 'bg-[#FEF3C7] text-[#92400E] border-[#FDE68A]'
+                    : 'bg-[#ECFDF5] text-[#047857] border-[#A7F3D0]'
+                )}>
+                  {health.subsystems.filter(s => s.status !== 'Operational').length > 0
+                    ? `${health.subsystems.filter(s => s.status !== 'Operational').length} Degraded · ${health.subsystems.filter(s => s.status === 'Operational').length} Operational`
+                    : `All ${health.subsystems.length} Subsystems Operational`}
                 </span>
               </div>
-              <h2 className="text-base font-black text-gray-900 mt-0.5">Platform Infrastructure & Service Health</h2>
+              <h2 className="text-lg font-bold text-[#0F172B] mt-0.5 tracking-tight">
+                Core Platform Services
+              </h2>
             </div>
             <button
+              type="button"
               onClick={() => setSelectedSubsystem(health.subsystems[0])}
-              className="text-xs font-bold text-[#07563D] hover:underline cursor-pointer"
+              className="text-xs font-semibold text-[#047857] hover:underline cursor-pointer flex items-center gap-1"
             >
-              Inspect Diagnostics
+              <span>Inspect Diagnostics</span>
+              <ArrowRight className="h-3 w-3" />
             </button>
           </div>
 
+          {/* 12 Live Services Cards Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {health.subsystems.slice(0, 6).map(sub => {
-              const isOp = sub.status === 'Operational';
+            {health.subsystems.map((sub) => {
+              const isSubDegraded = sub.status !== 'Operational';
               return (
                 <div
                   key={sub.key}
                   onClick={() => setSelectedSubsystem(sub)}
-                  className="p-3.5 rounded-xl border border-gray-200/80 hover:border-[#07563D] hover:shadow-xs transition-all cursor-pointer bg-gray-50/50 group space-y-2"
+                  className={cn(
+                    'p-3.5 rounded-2xl border transition-all cursor-pointer hover:shadow-xs',
+                    isSubDegraded
+                      ? 'bg-[#FFFBEB] border-[#FDE68A] hover:border-[#F59E0B]'
+                      : 'bg-[#F8FAFC] border-[#E2E8F0] hover:border-[#047857]'
+                  )}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-900 group-hover:text-[#07563D] transition-colors truncate">
-                      {sub.name}
+                    <strong className="text-xs font-bold text-[#0F172B]">{sub.name}</strong>
+                    <span
+                      className={cn(
+                        'text-[10px] px-2 py-0.2 rounded-full font-bold',
+                        isSubDegraded
+                          ? 'bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]'
+                          : 'bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0]'
+                      )}
+                    >
+                      ● {sub.status}
                     </span>
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${isOp ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
                   </div>
-                  <div className="text-[11px] font-mono text-gray-600">
-                    <div>Latency: <strong className="text-gray-900">{sub.latencyMs}ms</strong></div>
-                    <div>Error Rate: <strong className="text-gray-900">{sub.errorRatePct}%</strong></div>
-                    <div>Uptime: <strong className="text-emerald-700">{sub.uptimePct}%</strong></div>
-                  </div>
-                  <div className="text-[10px] text-gray-400 pt-1 border-t border-gray-100 flex items-center justify-between">
-                    <span>Checked {sub.lastCheckSecondsAgo}s ago</span>
-                    <span className="text-[#07563D] font-bold group-hover:underline">Details →</span>
+
+                  <div className="grid grid-cols-3 gap-1 mt-3 pt-2 border-t border-[#E2E8F0]/60 text-[10px] text-[#64748B]">
+                    <div>
+                      <span className="block text-[#94A3B8]">Latency</span>
+                      <strong className={cn('text-[11px] font-mono', isSubDegraded ? 'text-[#DC2626]' : 'text-[#0F172B]')}>
+                        {sub.latencyMs}ms
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="block text-[#94A3B8]">Errors</span>
+                      <strong className={cn('text-[11px] font-mono', sub.errorRatePct > 1 ? 'text-[#DC2626]' : 'text-[#0F172B]')}>
+                        {sub.errorRatePct}%
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="block text-[#94A3B8]">Uptime</span>
+                      <strong className="text-[11px] font-mono text-[#047857]">{sub.uptimePct}%</strong>
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
+
+          {/* Compact Health Strip */}
+          <div className="p-3 bg-[#F8FAFC] rounded-2xl border border-[#E2E8F0] flex items-center justify-between text-xs text-[#64748B] flex-wrap gap-2">
+            <span className="font-semibold text-[#0F172B]">Cluster Summary:</span>
+            <span>API Gateway: <strong className="font-mono text-[#047857]">99.99%</strong></span>
+            <span>Database: <strong className="font-mono text-[#047857]">99.98%</strong></span>
+            <span>Auth: <strong className="font-mono text-[#047857]">99.99%</strong></span>
+            <span>Realtime Mesh: <strong className="font-mono text-[#D97706]">99.95%</strong></span>
+            <span>Email Gateway: <strong className="font-mono text-[#047857]">99.91%</strong></span>
+            <span>Webhooks: <strong className="font-mono text-[#047857]">99.97%</strong></span>
+          </div>
         </div>
 
-        {/* Col 4: Attention Required Queue */}
-        <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+        {/* RIGHT (4 COLS): ATTENTION REQUIRED QUEUE */}
+        <div className="lg:col-span-4 bg-white p-5 rounded-3xl border border-[#E2E8F0] shadow-xs space-y-4 flex flex-col justify-between">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
               <div>
-                <span className="text-xs font-black uppercase text-gray-500 tracking-wider">Operational Queue</span>
-                <h2 className="text-base font-black text-gray-900 mt-0.5">Attention Required</h2>
+                <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#64748B]">
+                  OPERATIONAL QUEUE
+                </span>
+                <h2 className="text-lg font-bold text-[#0F172B] mt-0.5 tracking-tight">
+                  Attention Required
+                </h2>
               </div>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-900">
-                {sampleActionAlerts.length} Action Items
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FEF2F2] text-[#DC2626] border border-[#FCA5A5]">
+                {attentionItems.length} Action Items
               </span>
             </div>
 
-            <div className="mt-3 space-y-2.5">
-              {sampleActionAlerts.map(alert => (
-                <div
-                  key={alert.id}
-                  onClick={() => onNavigateTab(alert.action_tab)}
-                  className="p-3 rounded-xl border border-gray-200/80 bg-gray-50/70 hover:bg-gray-100/90 transition-all cursor-pointer space-y-1"
-                >
+            {/* Prioritized Alert Cards */}
+            <div className="space-y-2.5">
+              {attentionItems.slice(0, 4).map((alt) => (
+                <div key={alt.id} className="p-3.5 bg-[#F8FAFC] rounded-2xl border border-[#E2E8F0] space-y-2 hover:bg-white transition-colors">
                   <div className="flex items-center justify-between">
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                      alert.severity === 'High' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
-                    }`}>
-                      {alert.category} • {alert.severity}
+                    <span className={cn('text-[10px] font-bold px-2 py-0.2 rounded border', alt.badgeClass)}>
+                      {alt.priority} · {alt.category}
                     </span>
-                    <span className="text-[10px] text-gray-400 font-mono">{alert.created_at}</span>
+                    <span className="text-[10px] font-semibold text-[#64748B]">{alt.impact}</span>
                   </div>
-                  <div className="text-xs font-bold text-gray-900">{alert.tenant_name}</div>
-                  <div className="text-[11px] text-gray-600 leading-snug">{alert.title}</div>
+
+                  <div>
+                    <strong className="text-xs font-bold text-[#0F172B] block">{alt.title}</strong>
+                    <p className="text-[11px] text-[#64748B] mt-0.5 line-clamp-2">{alt.description}</p>
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onNavigateTab(alt.actionTab, alt.payload)}
+                      className="text-xs font-semibold text-[#047857] border-[#CBD5E1] hover:bg-[#ECFDF5]"
+                    >
+                      {alt.actionLabel} →
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
 
-          <button
-            onClick={() => onNavigateTab('platform-support')}
-            className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
-          >
-            Review All Operational Alerts
-          </button>
+          <div className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onNavigateTab('platform-incidents')}
+              className="w-full text-xs font-semibold text-[#334155] border-[#CBD5E1] hover:bg-[#F8FAFC]"
+            >
+              Review All Operational Alerts ({attentionItems.length})
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* 12-Column Grid (Row 2: Live Platform Activity Feed) */}
-      <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <h2 className="text-base font-black text-gray-900">Live Platform Activity Timeline</h2>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-[#07563D] uppercase tracking-wider">
-              ● LIVE STREAM
-            </span>
+      {/* ============================================================
+          5. TENANT SIGNALS & RISK + SAAS BUSINESS REVENUE SECTION
+         ============================================================ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* TENANT OPERATIONS & CHURN RISK */}
+        <div className="bg-white p-5 rounded-3xl border border-[#E2E8F0] shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#64748B]">
+                TENANT HEALTH & RETENTION
+              </span>
+              <h3 className="text-base font-bold text-[#0F172B] mt-0.5">
+                Customer Health & At-Risk Accounts
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('platform-tenant-health')}
+              className="text-xs font-semibold text-[#047857] hover:underline flex items-center gap-1"
+            >
+              <span>View Retention Cockpit</span>
+              <ArrowRight className="h-3 w-3" />
+            </button>
           </div>
-          <button
-            onClick={() => onNavigateTab('platform-audit')}
-            className="text-xs font-bold text-[#07563D] hover:underline cursor-pointer"
-          >
-            Full Audit Stream →
-          </button>
+
+          {/* Churn summary */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 bg-[#ECFDF5] rounded-xl border border-[#A7F3D0]">
+              <span className="text-[10px] text-[#065F46] font-semibold block">HEALTHY ACCOUNTS</span>
+              <strong className="text-lg font-bold text-[#047857]">{portfolioHealth.healthyTenants} Tenants</strong>
+              <span className="text-[10px] text-[#065F46] block">{portfolioHealth.healthyPct}% portfolio</span>
+            </div>
+
+            <div className="p-3 bg-[#FEF3C7] rounded-xl border border-[#FDE68A]">
+              <span className="text-[10px] text-[#92400E] font-semibold block">AT-RISK / WATCH</span>
+              <strong className="text-lg font-bold text-[#D97706]">{portfolioHealth.atRiskTenants} Accounts</strong>
+              <span className="text-[10px] text-[#92400E] block">{portfolioHealth.atRiskTenants > 0 ? 'Requires action' : 'Nominal'}</span>
+            </div>
+
+            <div className="p-3 bg-[#FEF2F2] rounded-xl border border-[#FCA5A5]">
+              <span className="text-[10px] text-[#991B1B] font-semibold block">CHURN EXPOSURE</span>
+              <strong className="text-lg font-bold text-[#DC2626]">
+                ₹{portfolioHealth.mrrAtRisk > 0 ? (portfolioHealth.mrrAtRisk / 100000).toFixed(1) + 'L' : '0'} MRR
+              </strong>
+              <span className="text-[10px] text-[#991B1B] block">At risk revenue</span>
+            </div>
+          </div>
+
+          {/* Priority At-Risk Accounts list */}
+          <div className="space-y-2">
+            <span className="text-[11px] font-bold text-[#64748B] block uppercase">Priority Accounts Requiring Intervention</span>
+            {priorityAccounts.length > 0 ? (
+              priorityAccounts.map((acc) => (
+                <div
+                  key={acc.tenant_id}
+                  onClick={() => onNavigateTab('platform-tenant-health', { tenantId: acc.tenant_id })}
+                  className="p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] flex items-center justify-between hover:bg-white transition-colors cursor-pointer"
+                >
+                  <div>
+                    <strong className="text-xs font-bold text-[#0F172B]">{acc.tenant_name}</strong>
+                    <div className="text-[10px] text-[#64748B] mt-0.5">
+                      Plan: <strong>{acc.plan}</strong> • MRR: <strong>{acc.mrr_formatted}</strong> • Risk: {acc.primary_risk}
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#FEF2F2] text-[#DC2626] border border-[#FCA5A5]">
+                      ● {acc.health_score}/100
+                    </span>
+                    <span className="text-[10px] text-[#047857] font-semibold block mt-1">Intervene →</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] text-center text-xs text-[#64748B]">
+                ✓ All registered organizations are currently operating with nominal health scores.
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="divide-y divide-gray-100">
-          {liveActivityEvents.map(evt => (
-            <div key={evt.id} className="py-3 flex items-start justify-between gap-4 hover:bg-gray-50/50 px-2 rounded-xl transition-colors">
-              <div className="flex items-start gap-3">
-                <div className="w-2 h-2 rounded-full bg-[#07563D] mt-1.5 shrink-0" />
-                <div>
-                  <div className="text-xs font-bold text-gray-900">{evt.text}</div>
-                  <div className="text-[11px] text-gray-500 font-mono mt-0.5">{evt.meta}</div>
+        {/* REVENUE & BILLING SIGNALS */}
+        <div className="bg-white p-5 rounded-3xl border border-[#E2E8F0] shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#64748B]">
+                COMMERCIAL HEALTH
+              </span>
+              <h3 className="text-base font-bold text-[#0F172B] mt-0.5">
+                Revenue & Subscription Signals
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('saas-revenue')}
+              className="text-xs font-semibold text-[#047857] hover:underline flex items-center gap-1"
+            >
+              <span>Revenue Analytics</span>
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 bg-[#F8FAFC] rounded-xl border">
+              <span className="text-[10px] text-[#64748B] font-semibold block">TOTAL MRR</span>
+              <strong className="text-base font-bold text-[#047857]">
+                ₹{metrics.mrr > 0 ? (metrics.mrr / 100000).toFixed(1) + 'L' : '0'}
+              </strong>
+              <span className="text-[10px] text-[#64748B] block">{metrics.activeOrganizations} active orgs</span>
+            </div>
+
+            <div className="p-3 bg-[#F8FAFC] rounded-xl border">
+              <span className="text-[10px] text-[#64748B] font-semibold block">ACTIVE SEATS</span>
+              <strong className="text-base font-bold text-[#2563EB]">{metrics.activeUsers}</strong>
+              <span className="text-[10px] text-[#64748B] block">Licensed users</span>
+            </div>
+
+            <div className="p-3 bg-[#F8FAFC] rounded-xl border">
+              <span className="text-[10px] text-[#64748B] font-semibold block">OVERDUE INVOICES</span>
+              <strong className="text-base font-bold text-[#DC2626]">
+                ₹{metrics.outstandingPayments > 0 ? (metrics.outstandingPayments / 100000).toFixed(1) + 'L' : '0'}
+              </strong>
+              <span className="text-[10px] text-[#DC2626] font-semibold block">
+                {platformBillingService.getInvoices().filter(i => i.status === 'Overdue').length} overdue
+              </span>
+            </div>
+          </div>
+
+          {/* Commercial Action Shortcuts */}
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <div
+              onClick={() => onNavigateTab('platform-subscriptions')}
+              className="p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] hover:border-[#047857] cursor-pointer transition-all space-y-1"
+            >
+              <div className="flex items-center justify-between">
+                <strong className="text-xs text-[#0F172B]">Subscriptions Lifecycle</strong>
+                <ChevronRight className="h-3.5 w-3.5 text-[#94A3B8]" />
+              </div>
+              <p className="text-[10px] text-[#64748B]">
+                {subMetrics.active} active contracts · {subMetrics.renewing_soon} renewals soon
+              </p>
+            </div>
+
+            <div
+              onClick={() => onNavigateTab('platform-billing', { presetFilter: 'overdue' })}
+              className="p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] hover:border-[#DC2626] cursor-pointer transition-all space-y-1"
+            >
+              <div className="flex items-center justify-between">
+                <strong className="text-xs text-[#0F172B]">Billing Exceptions</strong>
+                <ChevronRight className="h-3.5 w-3.5 text-[#94A3B8]" />
+              </div>
+              <p className="text-[10px] text-[#DC2626] font-semibold">
+                {platformBillingService.getInvoices().filter(i => i.status === 'Overdue').length} overdue · {platformBillingService.getDunning().length} in dunning
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ============================================================
+          6. MULTI-REGION & INTEGRATION CONNECTORS HEALTH
+         ============================================================ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="p-4 bg-white rounded-2xl border border-[#E2E8F0] shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-[#64748B] block uppercase">India Primary Region</span>
+            <strong className="text-xs font-bold text-[#047857] block mt-0.5">● Mumbai (ap-south-1)</strong>
+            <span className="text-[10px] text-[#64748B]">
+              {health.subsystems.filter(s => s.status !== 'Operational').length > 0
+                ? `${health.subsystems.filter(s => s.status !== 'Operational').length} services degraded`
+                : 'All services operational'}
+            </span>
+          </div>
+          <Globe className="h-5 w-5 text-[#047857]" />
+        </div>
+
+        <div className="p-4 bg-white rounded-2xl border border-[#E2E8F0] shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-[#64748B] block uppercase">Singapore Region</span>
+            <strong className="text-xs font-bold text-[#047857] block mt-0.5">● ap-southeast-1</strong>
+            <span className="text-[10px] text-[#047857]">All services operational</span>
+          </div>
+          <Globe className="h-5 w-5 text-[#047857]" />
+        </div>
+
+        <div className="p-4 bg-white rounded-2xl border border-[#E2E8F0] shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-[#64748B] block uppercase">Middle East Hub</span>
+            <strong className="text-xs font-bold text-[#047857] block mt-0.5">● UAE (me-central-1)</strong>
+            <span className="text-[10px] text-[#047857]">100% SLA target</span>
+          </div>
+          <Globe className="h-5 w-5 text-[#047857]" />
+        </div>
+
+        <div className="p-4 bg-white rounded-2xl border border-[#E2E8F0] shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-[#64748B] block uppercase">External Connectors</span>
+            <strong className="text-xs font-bold text-[#0F172B] block mt-0.5">WhatsApp, Email, Razorpay</strong>
+            <span className="text-[10px] text-[#047857]">
+              {health.subsystems.filter(s => s.category === 'Integration' && s.status === 'Operational').length}/{health.subsystems.filter(s => s.category === 'Integration').length || 2} Gateways Live
+            </span>
+          </div>
+          <Zap className="h-5 w-5 text-[#047857]" />
+        </div>
+      </div>
+
+      {/* ============================================================
+          7. LIVE PLATFORM ACTIVITY STREAM
+         ============================================================ */}
+      <div className="bg-white p-5 rounded-3xl border border-[#E2E8F0] shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E2E8F0] pb-3">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#047857] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#047857]"></span>
+            </span>
+            <h2 className="text-lg font-bold text-[#0F172B] tracking-tight">
+              Live Platform Activity Stream
+            </h2>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0]">
+              ● LIVE
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Filter pills */}
+            {['all', 'revenue', 'operations', 'organizations', 'product'].map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setActivityFilter(f)}
+                className={cn(
+                  'px-2.5 py-0.5 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer border',
+                  activityFilter === f
+                    ? 'bg-[#047857] text-white border-[#047857]'
+                    : 'bg-white text-[#64748B] border-[#CBD5E1] hover:bg-[#F8FAFC]'
+                )}
+              >
+                {f}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              onClick={() => onNavigateTab('platform-audit')}
+              className="text-xs font-semibold text-[#047857] hover:underline cursor-pointer ml-2"
+            >
+              Full Audit Stream →
+            </button>
+          </div>
+        </div>
+
+        {/* Activity feed */}
+        <div className="space-y-2">
+          {filteredEvents.length > 0 ? (
+            filteredEvents.map((ev) => (
+              <div
+                key={ev.id}
+                onClick={() => onNavigateTab(ev.tab)}
+                className="p-3 bg-[#F8FAFC] rounded-2xl border border-[#E2E8F0] flex items-center justify-between hover:bg-white transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white border border-[#CBD5E1] text-[#475569]">
+                    {ev.category}
+                  </span>
+                  <div>
+                    <strong className="text-xs font-bold text-[#0F172B]">{ev.text}</strong>
+                    <div className="text-[10px] text-[#64748B] mt-0.5">{ev.detail}</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[10px] text-[#94A3B8]">{ev.time}</span>
+                  <ChevronRight className="h-3.5 w-3.5 text-[#94A3B8]" />
                 </div>
               </div>
-              <span className="text-[11px] font-mono text-gray-400 shrink-0">{evt.time}</span>
+            ))
+          ) : (
+            <div className="p-8 bg-[#F8FAFC] rounded-2xl border border-dashed border-[#CBD5E1] text-center space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#ECFDF5] text-[#047857] text-xs font-semibold border border-[#A7F3D0]">
+                <span className="h-2 w-2 rounded-full bg-[#047857] animate-pulse"></span>
+                <span>Realtime Control Plane Listener Active</span>
+              </div>
+              <p className="text-xs text-[#64748B] max-w-md mx-auto">
+                No activity records yet. Platform operations, tenant provisionings, feature flag updates, and security events will stream here live as they occur.
+              </p>
             </div>
-          ))}
+          )}
+        </div>
+      </div>
+
+      {/* ============================================================
+          8. EXECUTIVE 30-DAY PERFORMANCE SUMMARY STRIP (BOTTOM)
+         ============================================================ */}
+      <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-[#E2E8F0] flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs text-[#64748B]">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-[#047857]" />
+          <strong className="text-[#0F172B]">30-Day Platform Performance:</strong>
+        </div>
+
+        <div className="flex items-center gap-6 flex-wrap font-sans">
+          <span>Uptime: <strong className="text-[#047857]">99.98%</strong></span>
+          <span>MTTR: <strong className="text-[#0F172B]">32m</strong></span>
+          <span>Total Incidents: <strong className="text-[#0F172B]">8</strong></span>
+          <span>Portfolio Health: <strong className="text-[#047857]">94.2 / 100</strong></span>
+          <span>MRR Expansion: <strong className="text-[#047857]">+8.7% MoM</strong></span>
         </div>
       </div>
     </div>

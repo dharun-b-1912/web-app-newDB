@@ -5,24 +5,36 @@
 
 export * from './platformAuditService';
 export * from './platformHealthService';
+export * from './platformCustomerHealthService';
 export * from './platformTenantService';
 export * from './platformProvisioningService';
 export * from './platformSubscriptionService';
+export * from './platformTierPlansService';
 export * from './platformBillingService';
 export * from './platformUsageService';
 export * from './platformFeatureFlagService';
+export * from './platformCapabilitiesService';
 export * from './platformSecurityService';
+export * from './platformSecurityControlService';
 export * from './platformImpersonationService';
 export * from './platformIncidentService';
 export * from './platformJobService';
+export * from './platformSupportCenterService';
+export * from './platformBackgroundJobsService';
 export * from './platformWebhookService';
+export * from './platformWebhooksMeshService';
+export * from './platformIntegrationsService';
 export * from './platformApiKeyService';
 export * from './platformAnalyticsService';
+export * from './platformCache';
+export * from './platformRealtimeService';
+export * from './supabasePlatformClient';
 
 import { platformHealthService } from './platformHealthService';
 import { platformTenantService } from './platformTenantService';
 import { platformProvisioningService } from './platformProvisioningService';
 import { platformSubscriptionService } from './platformSubscriptionService';
+import { platformTierPlansService } from './platformTierPlansService';
 import { platformBillingService } from './platformBillingService';
 import { platformUsageService } from './platformUsageService';
 import { platformFeatureFlagService } from './platformFeatureFlagService';
@@ -52,7 +64,7 @@ export const platformAdminApi = {
   updateTenantStatus: (id: string, s: any) => platformTenantService.updateTenantStatus(id, s),
   getProvisioningRuns: () => platformProvisioningService.getProvisioningRuns(),
   getSubscriptions: () => platformSubscriptionService.getSubscriptions(),
-  getPlans: () => platformSubscriptionService.getPlans(),
+  getPlans: () => platformTierPlansService.getPlans(),
   getFeatureFlags: () => platformFeatureFlagService.getFeatureFlags(),
   toggleFeatureFlag: (key: string) => platformFeatureFlagService.toggleFeatureFlag(key),
   getInvoices: () => platformBillingService.getInvoices(),

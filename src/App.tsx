@@ -43,21 +43,43 @@ import { AdminMasterModule } from './features/admin/AdminMasterModule';
 import { EssMasterModule } from './features/ess/EssMasterModule';
 import { TlMasterModule } from './features/tl/TlMasterModule';
 import { PlatformAdminMasterModule } from './features/platform/PlatformAdminMasterModule';
+import { parseRouteFromUrl, syncUrlWithRoute } from './lib/router/urlRouter';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
 
-  // Compute the correct starting route synchronously from the persisted user,
-  // so each role lands on its canonical home screen with no flicker.
+  // Compute the correct starting route URL-FIRST from the browser location
   const [currentRoute, setCurrentRoute] = useState<string>(() => {
+    const urlState = parseRouteFromUrl();
+    if (urlState.route && urlState.route !== 'platform-dashboard') {
+      return urlState.route;
+    }
     const stored = api.getCurrentUser();
     const roleName = stored?.roles?.[0]?.name ?? '';
-    if (roleName === 'Super Admin') return 'platform-dashboard';
+    if (roleName === 'Super Admin') return urlState.route || 'platform-dashboard';
     if (roleName === 'Team Lead')   return 'tl-dashboard';
     if (roleName === 'Employee')    return 'ess-dashboard';
     return 'dashboard'; // Company Admin, HR Head, Manager
   });
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+
+  // Sync with browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      const urlState = parseRouteFromUrl();
+      if (urlState.route) {
+        setCurrentRoute(urlState.route);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleNavigate = (route: string) => {
+    setCurrentRoute(route);
+    syncUrlWithRoute(route);
+  };
 
   // Auto-redirect on role/persona switch (UserMenu persona switcher).
   const prevUserIdRef = useRef<string | undefined>(undefined);
@@ -353,18 +375,18 @@ const AppContent: React.FC = () => {
       case 'saas-renewals':
       case 'saas-coupons':
       case 'saas-partners':
-        return <PlatformAdminMasterModule initialTab={currentRoute} onNavigateTab={setCurrentRoute} />;
+        return <PlatformAdminMasterModule initialTab={currentRoute} onNavigateTab={handleNavigate} />;
       case 'settings':
         return <AdminMasterModule initialTab="settings" />;
       default:
-        return <DashboardView onNavigate={setCurrentRoute} />;
+        return <DashboardView onNavigate={handleNavigate} />;
     }
   };
 
   return (
     <AppShell
       activeRoute={currentRoute}
-      onNavigate={setCurrentRoute}
+      onNavigate={handleNavigate}
       onOpenCopilot={() => setIsCopilotOpen(true)}
     >
       <RouteGuard module={currentRoute} onNavigate={setCurrentRoute}>

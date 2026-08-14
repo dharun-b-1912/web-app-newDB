@@ -1,25 +1,99 @@
 // src/services/platform/platformBillingService.ts
 // ============================================================
-// WorkForceOS — SaaS Financial Billing & Reconciliation Service
+// WorkForceOS — SaaS Financial Billing, GST Invoicing & Reconciliation Service
 // ============================================================
 
 import { PlatformBillingInvoice } from '../../types/platformAdmin';
 import { platformAuditService } from './platformAuditService';
 
-const initialInvoices: PlatformBillingInvoice[] = [
-  { id: 'inv-8819', invoice_number: 'INV-2026-0801', tenant_id: 'org-acme-01', tenant_name: 'Acme Technologies Pvt Ltd', subtotal: 145000, gst_amount: 26100, total: 171100, amount: 171100, currency: 'INR', billing_date: '2026-08-01', due_date: '2026-08-15', paid_at: '2026-08-03 11:20 AM', status: 'Paid', payment_method: 'Razorpay Corporate NetBanking', payment_gateway_ref: 'pay_rzp_99812401', reconciliation_status: 'Matched' },
-  { id: 'inv-8820', invoice_number: 'INV-2026-0802', tenant_id: 'org-zenith-04', tenant_name: 'Zenith Logistics & Supply Chain', subtotal: 210000, gst_amount: 37800, total: 247800, amount: 247800, currency: 'INR', billing_date: '2026-08-01', due_date: '2026-08-10', status: 'Overdue', payment_method: 'Bank Wire Transfer (NEFT/RTGS)', reconciliation_status: 'Needs Review' },
-  { id: 'inv-8821', invoice_number: 'INV-2026-0803', tenant_id: 'org-tech-02', tenant_name: 'TechCorp Solutions Pvt Ltd', subtotal: 85000, gst_amount: 15300, total: 100300, amount: 100300, currency: 'INR', billing_date: '2026-08-01', due_date: '2026-08-15', paid_at: '2026-08-01 02:45 PM', status: 'Paid', payment_method: 'Corporate Credit Card (Visa 4012)', payment_gateway_ref: 'ch_stripe_8812901', reconciliation_status: 'Matched' },
-  { id: 'inv-8822', invoice_number: 'INV-2026-0804', tenant_id: 'org-apex-06', tenant_name: 'Apex Financial Services Ltd', subtotal: 320000, gst_amount: 57600, total: 377600, amount: 377600, currency: 'INR', billing_date: '2026-08-01', due_date: '2026-08-20', paid_at: '2026-08-04 04:10 PM', status: 'Paid', payment_method: 'Direct Bank Settlement (ICICI Bank)', payment_gateway_ref: 'utr_icici_2026080410', reconciliation_status: 'Matched' },
-  { id: 'inv-8823', invoice_number: 'INV-2026-0805', tenant_id: 'org-innovate-05', tenant_name: 'Innovate Labs Pvt Ltd', subtotal: 18000, gst_amount: 3240, total: 21240, amount: 21240, currency: 'INR', billing_date: '2026-08-01', due_date: '2026-08-15', paid_at: '2026-08-02 09:15 AM', status: 'Paid', payment_method: 'Corporate UPI AutoPay', payment_gateway_ref: 'upi_rzp_774120', reconciliation_status: 'Matched' },
-];
+export interface InvoiceLineItem {
+  id: string;
+  description: string;
+  hsn_sac: string;
+  qty: number;
+  unit_price: number;
+  amount: number;
+}
+
+export interface DetailedInvoice extends PlatformBillingInvoice {
+  plan_tier?: string;
+  tenant_gstin?: string;
+  platform_gstin?: string;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
+  line_items?: InvoiceLineItem[];
+  billing_address?: string;
+}
+
+export interface PaymentTransactionItem {
+  id: string;
+  transaction_ref: string;
+  invoice_id: string;
+  invoice_number: string;
+  tenant_id: string;
+  tenant_name: string;
+  amount: number;
+  gateway: 'Razorpay' | 'Stripe' | 'ICICI NetBanking' | 'Bank Wire (RTGS)' | 'Corporate UPI';
+  gateway_fee: number;
+  net_payout: number;
+  settlement_status: 'Settled' | 'Processing' | 'Failed' | 'Refunded';
+  settlement_batch_id: string;
+  created_at: string;
+}
+
+export interface DunningAccountItem {
+  id: string;
+  tenant_id: string;
+  tenant_name: string;
+  invoice_number: string;
+  overdue_amount: number;
+  days_overdue: number;
+  aging_bucket: 'Current (0-15d)' | '16-30 Days' | '31-60 Days' | '60+ Days';
+  retry_count: number;
+  max_retries: number;
+  next_retry_date: string;
+  dunning_status: 'Grace Period' | 'Active Dunning' | 'Escalated' | 'Access Suspended';
+  contact_email: string;
+  last_attempt_message: string;
+}
+
+export interface CreditNoteItem {
+  id: string;
+  credit_note_number: string;
+  original_invoice_number: string;
+  tenant_name: string;
+  amount: number;
+  issued_date: string;
+  reason: string;
+  status: 'Applied to Next Bill' | 'Refunded to Bank' | 'Draft';
+  authorized_by: string;
+}
+
+// Authoritative Billing Data (Populated live from Web / Supabase)
+const initialInvoices: DetailedInvoice[] = [];
+const initialTransactions: PaymentTransactionItem[] = [];
+const initialDunning: DunningAccountItem[] = [];
+const initialCreditNotes: CreditNoteItem[] = [];
 
 export const platformBillingService = {
-  getInvoices(): PlatformBillingInvoice[] {
+  getInvoices(): DetailedInvoice[] {
     return initialInvoices;
   },
 
-  async markAsPaid(id: string, paymentMethod?: string, reference?: string): Promise<PlatformBillingInvoice> {
+  getTransactions(): PaymentTransactionItem[] {
+    return initialTransactions;
+  },
+
+  getDunning(): DunningAccountItem[] {
+    return initialDunning;
+  },
+
+  getCreditNotes(): CreditNoteItem[] {
+    return initialCreditNotes;
+  },
+
+  async markAsPaid(id: string, paymentMethod?: string, reference?: string): Promise<DetailedInvoice> {
     const target = initialInvoices.find(inv => inv.id === id);
     if (!target) throw new Error('Invoice not found');
 
@@ -28,6 +102,23 @@ export const platformBillingService = {
     if (paymentMethod) target.payment_method = paymentMethod;
     if (reference) target.payment_gateway_ref = reference;
     target.reconciliation_status = 'Matched';
+
+    // Add to transaction ledger
+    initialTransactions.unshift({
+      id: `tx-${Date.now()}`,
+      transaction_ref: reference || `utr_${Date.now()}`,
+      invoice_id: target.id,
+      invoice_number: target.invoice_number,
+      tenant_id: target.tenant_id,
+      tenant_name: target.tenant_name,
+      amount: target.total || target.amount,
+      gateway: 'Bank Wire (RTGS)',
+      gateway_fee: 0,
+      net_payout: target.total || target.amount,
+      settlement_status: 'Settled',
+      settlement_batch_id: `manual_settle_${Date.now()}`,
+      created_at: new Date().toLocaleString(),
+    });
 
     await platformAuditService.logEvent({
       actor_id: 'user-superadmin',
@@ -45,11 +136,23 @@ export const platformBillingService = {
     return target;
   },
 
-  async issueRefund(id: string, reason: string): Promise<PlatformBillingInvoice> {
+  async issueRefund(id: string, reason: string): Promise<DetailedInvoice> {
     const target = initialInvoices.find(inv => inv.id === id);
     if (!target) throw new Error('Invoice not found');
 
     target.status = 'Refunded';
+
+    initialCreditNotes.unshift({
+      id: `cn-${Date.now()}`,
+      credit_note_number: `CN-2026-00${initialCreditNotes.length + 1}`,
+      original_invoice_number: target.invoice_number,
+      tenant_name: target.tenant_name,
+      amount: target.total || target.amount,
+      issued_date: new Date().toISOString().split('T')[0],
+      reason: reason || 'SaaS subscription credit refund issued',
+      status: 'Refunded to Bank',
+      authorized_by: 'WorkForce Super Admin',
+    });
 
     await platformAuditService.logEvent({
       actor_id: 'user-superadmin',
@@ -65,5 +168,13 @@ export const platformBillingService = {
     });
 
     return target;
+  },
+
+  async triggerDunningRetry(dunningId: string): Promise<void> {
+    const item = initialDunning.find(d => d.id === dunningId);
+    if (item) {
+      item.retry_count += 1;
+      item.last_attempt_message = `Manual payment retry initiated on ${new Date().toLocaleDateString()}: Payment gateway webhook sent.`;
+    }
   },
 };

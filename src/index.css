@@ -2,72 +2,96 @@
 
 @layer base {
   :root {
-    /* WorkForceOS Brand Design Tokens */
-    --primary-950: #042B1E;
-    --primary-900: #07563D;
-    --primary-800: #0B6B4D;
-    --primary-700: #12805C;
-    --primary-600: #198F67;
-    --primary-500: #239E70;
-    --primary-400: #48B98A;
-    --primary-300: #86D0AE;
-    --primary-200: #BDE8D1;
-    --primary-100: #E3F6EB;
-    --primary-50:  #F0FBF5;
+    /* WorkForceOS Pixel-Sampled Brand & Semantic Tokens */
+    --brand-900: #07563D; /* Primary Dark Green */
+    --brand-700: #047857; /* Link / Active Green */
+    --brand-50:  #ECFDF5; /* Mint Tint */
 
-    --neutral-950: #0F172A;
-    --neutral-900: #1E293B;
-    --neutral-800: #334155;
-    --neutral-700: #475569;
-    --neutral-600: #64748B;
-    --neutral-500: #94A3B8;
-    --neutral-400: #CBD5E1;
-    --neutral-300: #E2E8F0;
-    --neutral-200: #F1F5F9;
-    --neutral-100: #F8FAFC;
-    --neutral-50:  #FAFAFC;
-    --white:        #FFFFFF;
+    --success-500: #15845B;
+    --warning-600: #CE9100;
+    --warning-500: #D89A16;
+    --warning-50:  #FEF3C7;
+    --danger-500:  #D94B4B;
+    --danger-50:   #FDF2F2;
+    --danger-600:  #DC2626;
 
-    --color-success: #16845B;
-    --color-warning: #D89A16;
-    --color-danger:  #D94B4B;
-    --color-info:    #3478D4;
+    /* Neutrals (Slate scale) */
+    --ink-900: #0F172B; /* Headings, big numbers, near-black slate */
+    --ink-500: #62748E; /* Body copy, card descriptions, stat labels */
+    --ink-400: #90A1B9; /* Muted/meta, metric field labels, timestamps */
+    --ink-300: #B8BDC3; /* Inactive icons */
+    --surface-0: #FFFFFF; /* Cards, tables, sidebar */
+    --surface-50: #F9FAFB; /* Canvas, input fills, secondary button fills */
+    --border-subtle: #E7EAF0; /* Card borders, dividers */
+
+    /* Typography */
+    --font-sans: "Inter", "Plus Jakarta Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", "IBM Plex Mono", "Roboto Mono", ui-monospace, SFMono-Regular, monospace;
 
     /* Spacing & Radii */
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-card: 16px;
-    --radius-lg: 20px;
-    --radius-pill: 999px;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-full: 9999px;
 
-    /* Shadows */
-    --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.02);
-    --shadow-card: 0 4px 16px -2px rgba(0, 0, 0, 0.03), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
-    --shadow-popover: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+    --shadow-card: 0 1px 2px rgba(15,23,43,0.04), 0 1px 0 rgba(15,23,43,0.03);
+
+    /* Legacy CSS Variable Compatibility */
+    --wf-primary: #07563D;
+    --wf-primary-dark: #064E3B;
+    --wf-primary-soft: #ECFDF5;
+    --wf-success: #15845B;
+    --wf-warning: #D89A16;
+    --wf-critical: #D94B4B;
+    --wf-surface: #FFFFFF;
+    --wf-background: #F9FAFB;
+    --wf-border: #E7EAF0;
+
+    /* shadcn compatibility */
+    --background: 210 40% 98%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --primary: 161 94% 24%;
+    --primary-foreground: 0 0% 100%;
+    --border: 214.3 31.8% 91.4%;
+    --radius: 0.625rem;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--surface-50);
+    color: var(--ink-900);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  code, kbd, samp, pre, .font-mono {
+    font-family: var(--font-mono);
+    font-feature-settings: "tnum";
+    font-variant-numeric: tabular-nums;
   }
 }
 
-body {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  background-color: var(--neutral-100);
-  color: var(--neutral-900);
-  margin: 0;
-  padding: 0;
-  -webkit-font-smoothing: antialiased;
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
-/* Custom scrollbar styling for dense enterprise views */
+/* Custom Sleek Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
-  background: var(--neutral-200);
+  background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: var(--neutral-400);
-  border-radius: 4px;
+  background: var(--border-subtle);
+  border-radius: 9999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--neutral-500);
+  background: var(--ink-400);
 }

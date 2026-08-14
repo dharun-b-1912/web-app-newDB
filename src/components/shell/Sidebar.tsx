@@ -33,6 +33,7 @@ import {
   TrendingUp,
   Coins,
   HeartHandshake,
+  HeartPulse,
   MessageSquare,
   Scale,
   Megaphone,
@@ -69,6 +70,13 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { usePermission } from '../../hooks/usePermission';
+import {
+  platformTenantService,
+  platformIncidentService,
+  platformBillingService,
+  platformCustomerHealthService,
+  platformJobService,
+} from '../../services/platform';
 
 export interface SidebarProps {
   activeNav: string;
@@ -80,6 +88,7 @@ interface NavItem {
   label: string;
   icon: React.ElementType;
   badge?: string | number;
+  badgeVariant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
 }
 
 interface NavGroup {
@@ -129,14 +138,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
   // Company Admin is a TENANT admin and must see the HRMS sidebar.
   const isPlatformAdmin = primaryRole === 'Super Admin';
 
+  const orgCount = isPlatformAdmin ? platformTenantService.getOrganizations().items.length : 0;
+  const activeIncidentsCount = isPlatformAdmin ? platformIncidentService.getActiveIncidents().length : 0;
+  const overdueInvoicesCount = isPlatformAdmin ? platformBillingService.getInvoices().filter(i => i.status === 'Overdue').length : 0;
+  const atRiskHealthCount = isPlatformAdmin ? (platformCustomerHealthService.getPortfolioMetrics().atRiskTenants + platformCustomerHealthService.getPortfolioMetrics().criticalTenants) : 0;
+  const failedJobsCount = isPlatformAdmin ? platformJobService.getJobs().filter(j => j.status === 'Failed').length : 0;
+
   const platformGroups: NavGroup[] = [
     {
       groupName: 'PLATFORM',
       items: [
         { id: 'platform-dashboard', label: 'Command Center', icon: LayoutDashboard },
-        { id: 'platform-tenants', label: 'Organizations', icon: Building2, badge: 428 },
-        { id: 'platform-tenant-health', label: 'Platform Health', icon: Activity },
-        { id: 'platform-incidents', label: 'Incidents', icon: ShieldAlert, badge: 1 },
+        { id: 'platform-tenants', label: 'Organizations', icon: Building2, badge: orgCount > 0 ? orgCount : undefined },
+        { id: 'platform-incidents', label: 'Incidents', icon: ShieldAlert, badge: activeIncidentsCount > 0 ? activeIncidentsCount : undefined, badgeVariant: 'danger' },
       ],
     },
     {
@@ -144,15 +158,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'saas-revenue', label: 'Revenue & Growth', icon: LineChart },
         { id: 'platform-subscriptions', label: 'Subscriptions', icon: Package },
-        { id: 'platform-billing', label: 'Billing & Invoices', icon: CreditCard, badge: 1 },
+        { id: 'platform-billing', label: 'Billing & Invoices', icon: CreditCard, badge: overdueInvoicesCount > 0 ? overdueInvoicesCount : undefined, badgeVariant: 'danger' },
         { id: 'platform-usage', label: 'Usage & Metering', icon: BarChart3 },
+        { id: 'platform-tenant-health', label: 'Tenant Health', icon: HeartPulse, badge: atRiskHealthCount > 0 ? atRiskHealthCount : undefined, badgeVariant: 'warning' },
       ],
     },
     {
       groupName: 'PRODUCT',
       items: [
         { id: 'platform-features', label: 'Feature Flags', icon: SlidersHorizontal },
-        { id: 'platform-plans', label: 'Tier Entitlements', icon: Layers },
+        { id: 'platform-plans', label: 'Plans & Entitlements', icon: Layers },
       ],
     },
     {
@@ -166,8 +181,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'OPERATIONS',
       items: [
-        { id: 'platform-support', label: 'Support Center', icon: HelpCircle, badge: 12 },
-        { id: 'platform-jobs', label: 'Background Jobs', icon: Workflow },
+        { id: 'platform-support', label: 'Support Center', icon: HelpCircle },
+        { id: 'platform-jobs', label: 'Background Jobs', icon: Workflow, badge: failedJobsCount > 0 ? failedJobsCount : undefined, badgeVariant: 'danger' },
         { id: 'platform-webhooks', label: 'Webhooks & Mesh', icon: Send },
       ],
     },

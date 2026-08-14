@@ -1,127 +1,253 @@
 // src/services/platform/platformSubscriptionService.ts
 // ============================================================
-// WorkForceOS — Subscription & Plan Catalog Service
+// WorkForceOS — Tenant Subscription & Customer Contracts Lifecycle Service
 // ============================================================
 
-import { SubscriptionPlan, SubscriptionItem } from '../../types/platformAdmin';
 import { platformAuditService } from './platformAuditService';
 
-const initialPlans: SubscriptionPlan[] = [
-  {
-    id: 'plan-starter',
-    name: 'Starter',
-    tier_code: 'STARTER',
-    max_employees: 50,
-    max_admins: 3,
-    storage_gb: 20,
-    api_requests_per_month: 100000,
-    whatsapp_limit: 1000,
-    price_monthly: 18000,
-    price_annual: 180000,
-    features: [
-      'Core Employee Directory',
-      'Employee Self-Service (ESS)',
-      'Basic Check-in / Check-out',
-      'Leave Types & Applications',
-      'Standard Payroll Run',
-      'Email Support (48h SLA)',
-    ],
-    is_active: true,
-  },
-  {
-    id: 'plan-pro',
-    name: 'Professional',
-    tier_code: 'PRO',
-    max_employees: 200,
-    max_admins: 8,
-    storage_gb: 50,
-    api_requests_per_month: 500000,
-    whatsapp_limit: 5000,
-    price_monthly: 45000,
-    price_annual: 450000,
-    features: [
-      'Everything in Starter',
-      'TL & Supervisor Portal',
-      'GPS Geofence Clock-in',
-      'Leave Policies & Auto-Accruals',
-      'Statutory Compliance (PF/ESI/PT)',
-      'Performance Goals & OKRs',
-      'Internal HR Helpdesk',
-      'Priority Email + Chat Support (12h SLA)',
-    ],
-    is_active: true,
-  },
-  {
-    id: 'plan-biz',
-    name: 'Business',
-    tier_code: 'BUSINESS',
-    max_employees: 500,
-    max_admins: 15,
-    storage_gb: 100,
-    api_requests_per_month: 1500000,
-    whatsapp_limit: 10000,
-    price_monthly: 85000,
-    price_annual: 850000,
-    features: [
-      'Full Suite HRMS',
-      'Recruitment / ATS Pipeline',
-      'LMS Video & SCORM Player',
-      'Travel & Expense Desk',
-      'POSH & Disciplinary Inquiries',
-      'WhatsApp Payslips & Approvals',
-      'Advanced BI Analytics & Export',
-      'Dedicated Account Manager (4h SLA)',
-    ],
-    is_active: true,
-  },
-  {
-    id: 'plan-ent',
-    name: 'Enterprise',
-    tier_code: 'ENTERPRISE',
-    max_employees: 5000,
-    max_admins: 50,
-    storage_gb: 500,
-    api_requests_per_month: 10000000,
-    whatsapp_limit: 50000,
-    price_monthly: 180000,
-    price_annual: 1800000,
-    features: [
-      'Unlimited HR Capabilities',
-      'AI Copilot Policy Search',
-      'Visual Workflow Engine',
-      'Biometric Push Hardware Adapters',
-      'Dedicated VPC Database Isolation',
-      'Custom Webhooks & HMAC API Keys',
-      '7-Year Immutable Audit Logs',
-      '99.9% Uptime SLA + 24/7 Phone Support',
-    ],
-    is_active: true,
-  },
-];
+export type SubscriptionStatus = 'Active' | 'Trial' | 'Past Due' | 'Suspended' | 'Cancelled' | 'Renewing Soon';
 
-const initialSubscriptions: SubscriptionItem[] = [
-  { id: 'sub-01', tenant_id: 'org-acme-01', tenant_name: 'Acme Technologies Pvt Ltd', plan: 'Enterprise', billing_cycle: 'Annual', seats: 500, used_seats: 428, price_per_seat: 290, total_amount: 145000, currency: 'INR', status: 'Active', start_date: '2026-01-15', renewal_date: '2027-01-15', auto_renew: true },
-  { id: 'sub-02', tenant_id: 'org-tech-02', tenant_name: 'TechCorp Solutions Pvt Ltd', plan: 'Business', billing_cycle: 'Monthly', seats: 300, used_seats: 285, price_per_seat: 283, total_amount: 85000, currency: 'INR', status: 'Active', start_date: '2026-07-01', renewal_date: '2026-08-01', auto_renew: true },
-  { id: 'sub-03', tenant_id: 'org-cyber-03', tenant_name: 'CyberSoft Global Tech Ltd', plan: 'Professional', billing_cycle: 'Monthly', seats: 120, used_seats: 85, price_per_seat: 375, total_amount: 45000, currency: 'INR', status: 'Trial', start_date: '2026-08-01', renewal_date: '2026-08-25', auto_renew: false, trial_ends_at: '2026-08-25' },
-  { id: 'sub-04', tenant_id: 'org-zenith-04', tenant_name: 'Zenith Logistics & Supply Chain', plan: 'Enterprise', billing_cycle: 'Monthly', seats: 800, used_seats: 650, price_per_seat: 262, total_amount: 210000, currency: 'INR', status: 'Past Due', start_date: '2024-06-10', renewal_date: '2026-08-10', auto_renew: true },
-  { id: 'sub-05', tenant_id: 'org-innovate-05', tenant_name: 'Innovate Labs Pvt Ltd', plan: 'Starter', billing_cycle: 'Annual', seats: 50, used_seats: 45, price_per_seat: 360, total_amount: 18000, currency: 'INR', status: 'Active', start_date: '2025-02-15', renewal_date: '2027-02-15', auto_renew: true },
-  { id: 'sub-06', tenant_id: 'org-apex-06', tenant_name: 'Apex Financial Services Ltd', plan: 'Enterprise', billing_cycle: 'Annual', seats: 1000, used_seats: 920, price_per_seat: 320, total_amount: 320000, currency: 'INR', status: 'Active', start_date: '2023-11-01', renewal_date: '2026-11-01', auto_renew: true },
-];
+export interface SubscriptionHistoryEntry {
+  id: string;
+  timestamp: string;
+  actor: string;
+  action: string;
+  details: string;
+}
+
+export interface SubscriptionContractItem {
+  id: string; // e.g. 'SUB-001'
+  tenant_id: string; // e.g. 'org-acme-01'
+  tenant_name: string;
+  plan: 'Starter' | 'Professional' | 'Business' | 'Enterprise';
+  plan_id: string;
+  billing_cycle: 'Monthly' | 'Annual';
+  seats: number;
+  used_seats: number;
+  price_per_seat: number;
+  total_amount: number; // in INR
+  currency: string;
+  status: SubscriptionStatus;
+  start_date: string;
+  renewal_date: string;
+  auto_renew: boolean;
+  trial_ends_at?: string;
+  linked_invoices_count: number;
+  last_invoice_id: string;
+  last_invoice_status: 'Paid' | 'Issued' | 'Overdue';
+  storage_used_gb: number;
+  storage_limit_gb: number;
+  api_used_calls: number;
+  api_limit_calls: number;
+  biometric_devices_used: number;
+  biometric_devices_limit: number;
+  history: SubscriptionHistoryEntry[];
+}
+
+// Authoritative Subscriptions Data (Populated live from Web / Supabase)
+let initialSubscriptions: SubscriptionContractItem[] = [];
 
 export const platformSubscriptionService = {
-  getPlans(): SubscriptionPlan[] {
-    return initialPlans;
+  getSubscriptions(filters?: {
+    plan?: string;
+    status?: string;
+    search?: string;
+  }): SubscriptionContractItem[] {
+    let result = [...initialSubscriptions];
+
+    if (filters?.plan && filters.plan !== 'All') {
+      result = result.filter(
+        (s) => s.plan.toLowerCase() === filters.plan?.toLowerCase() || s.plan_id === filters.plan
+      );
+    }
+    if (filters?.status && filters.status !== 'All') {
+      result = result.filter((s) => s.status.toLowerCase() === filters.status?.toLowerCase());
+    }
+    if (filters?.search) {
+      const q = filters.search.toLowerCase().trim();
+      result = result.filter(
+        (s) =>
+          s.tenant_name.toLowerCase().includes(q) ||
+          s.id.toLowerCase().includes(q) ||
+          s.tenant_id.toLowerCase().includes(q) ||
+          s.plan.toLowerCase().includes(q)
+      );
+    }
+
+    return result;
   },
 
-  getSubscriptions(): SubscriptionItem[] {
-    return initialSubscriptions;
+  getSubscriptionById(id: string): SubscriptionContractItem | undefined {
+    return initialSubscriptions.find((s) => s.id === id || s.tenant_id === id);
   },
 
-  async toggleAutoRenew(id: string): Promise<SubscriptionItem> {
-    const target = initialSubscriptions.find(s => s.id === id);
+  getMetrics() {
+    const subs = this.getSubscriptions();
+    return {
+      active: subs.filter((s) => s.status === 'Active').length,
+      trial: subs.filter((s) => s.status === 'Trial').length,
+      past_due: subs.filter((s) => s.status === 'Past Due').length,
+      renewing_soon: subs.filter((s) => s.status === 'Renewing Soon').length,
+      cancelled: subs.filter((s) => s.status === 'Cancelled').length,
+    };
+  },
+
+  async createSubscription(data: {
+    tenant_id: string;
+    tenant_name: string;
+    plan: 'Starter' | 'Professional' | 'Business' | 'Enterprise';
+    plan_id: string;
+    seats: number;
+    billing_cycle: 'Monthly' | 'Annual';
+    auto_renew: boolean;
+  }): Promise<SubscriptionContractItem> {
+    const priceMap = {
+      Starter: 18000,
+      Professional: 45000,
+      Business: 85000,
+      Enterprise: 180000,
+    };
+
+    const monthlyPrice = priceMap[data.plan];
+    const newSub: SubscriptionContractItem = {
+      id: `SUB-${String(initialSubscriptions.length + 1).padStart(3, '0')}`,
+      tenant_id: data.tenant_id,
+      tenant_name: data.tenant_name,
+      plan: data.plan,
+      plan_id: data.plan_id,
+      billing_cycle: data.billing_cycle,
+      seats: data.seats,
+      used_seats: 1,
+      price_per_seat: Math.round(monthlyPrice / data.seats),
+      total_amount: monthlyPrice,
+      currency: 'INR',
+      status: 'Active',
+      start_date: new Date().toISOString().slice(0, 10),
+      renewal_date: new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
+      auto_renew: data.auto_renew,
+      linked_invoices_count: 1,
+      last_invoice_id: `INV-${Date.now().toString().slice(-4)}`,
+      last_invoice_status: 'Paid',
+      storage_used_gb: 0.5,
+      storage_limit_gb: 50,
+      api_used_calls: 0,
+      api_limit_calls: 100000,
+      biometric_devices_used: 0,
+      biometric_devices_limit: 5,
+      history: [
+        {
+          id: `h-${Date.now()}`,
+          timestamp: new Date().toISOString().slice(0, 10),
+          actor: 'Super Admin',
+          action: 'SUBSCRIPTION_CREATED',
+          details: `Provisioned ${data.plan} contract with ${data.seats} seats`,
+        },
+      ],
+    };
+
+    initialSubscriptions.unshift(newSub);
+
+    await platformAuditService.logEvent({
+      actor_id: 'user-superadmin',
+      actor_name: 'WorkForce Super Admin',
+      actor_role: 'Super Admin',
+      organization_id: newSub.tenant_id,
+      organization_name: newSub.tenant_name,
+      action: 'SUBSCRIPTION_CREATED',
+      resource_type: 'Subscription',
+      resource_id: newSub.id,
+      severity: 'Normal',
+      reason: `Created subscription for ${newSub.tenant_name} (${newSub.plan})`,
+    });
+
+    return newSub;
+  },
+
+  async changePlan(
+    id: string,
+    newPlan: 'Starter' | 'Professional' | 'Business' | 'Enterprise',
+    newPlanId: string,
+    reason?: string
+  ): Promise<SubscriptionContractItem> {
+    const sub = initialSubscriptions.find((s) => s.id === id);
+    if (!sub) throw new Error('Subscription not found');
+
+    const previousPlan = sub.plan;
+    sub.plan = newPlan;
+    sub.plan_id = newPlanId;
+
+    const priceMap = { Starter: 18000, Professional: 45000, Business: 85000, Enterprise: 180000 };
+    sub.total_amount = priceMap[newPlan];
+    sub.price_per_seat = Math.round(sub.total_amount / sub.seats);
+
+    sub.history.unshift({
+      id: `h-${Date.now()}`,
+      timestamp: new Date().toISOString().slice(0, 10),
+      actor: 'Super Admin',
+      action: 'SUBSCRIPTION_PLAN_CHANGED',
+      details: `Plan changed from ${previousPlan} to ${newPlan}. ${reason || ''}`,
+    });
+
+    await platformAuditService.logEvent({
+      actor_id: 'user-superadmin',
+      actor_name: 'WorkForce Super Admin',
+      actor_role: 'Super Admin',
+      organization_id: sub.tenant_id,
+      organization_name: sub.tenant_name,
+      action: 'SUBSCRIPTION_PLAN_CHANGED',
+      resource_type: 'Subscription',
+      resource_id: sub.id,
+      severity: 'High',
+      reason: `Changed plan from ${previousPlan} to ${newPlan}: ${reason || 'Customer request'}`,
+    });
+
+    return sub;
+  },
+
+  async updateSeats(id: string, newSeats: number): Promise<SubscriptionContractItem> {
+    const target = initialSubscriptions.find((s) => s.id === id);
+    if (!target) throw new Error('Subscription not found');
+
+    const previousSeats = target.seats;
+    target.seats = newSeats;
+
+    target.history.unshift({
+      id: `h-${Date.now()}`,
+      timestamp: new Date().toISOString().slice(0, 10),
+      actor: 'Super Admin',
+      action: 'SUBSCRIPTION_SEATS_CHANGED',
+      details: `Seat capacity modified from ${previousSeats} to ${newSeats}`,
+    });
+
+    await platformAuditService.logEvent({
+      actor_id: 'user-superadmin',
+      actor_name: 'WorkForce Super Admin',
+      actor_role: 'Super Admin',
+      organization_id: target.tenant_id,
+      organization_name: target.tenant_name,
+      action: 'SUBSCRIPTION_SEATS_MODIFIED',
+      resource_type: 'Subscription',
+      resource_id: id,
+      severity: 'Normal',
+      reason: `Seats changed from ${previousSeats} to ${newSeats}`,
+    });
+
+    return target;
+  },
+
+  async toggleAutoRenew(id: string): Promise<SubscriptionContractItem> {
+    const target = initialSubscriptions.find((s) => s.id === id);
     if (!target) throw new Error('Subscription not found');
 
     target.auto_renew = !target.auto_renew;
+
+    target.history.unshift({
+      id: `h-${Date.now()}`,
+      timestamp: new Date().toISOString().slice(0, 10),
+      actor: 'Super Admin',
+      action: 'SUBSCRIPTION_AUTORENEW_TOGGLED',
+      details: `Auto-renewal set to ${target.auto_renew ? 'ENABLED' : 'DISABLED'}`,
+    });
 
     await platformAuditService.logEvent({
       actor_id: 'user-superadmin',
@@ -139,13 +265,18 @@ export const platformSubscriptionService = {
     return target;
   },
 
-  async updateSeats(id: string, newSeats: number): Promise<SubscriptionItem> {
-    const target = initialSubscriptions.find(s => s.id === id);
+  async pauseSubscription(id: string, reason: string): Promise<SubscriptionContractItem> {
+    const target = initialSubscriptions.find((s) => s.id === id);
     if (!target) throw new Error('Subscription not found');
 
-    const previousSeats = target.seats;
-    target.seats = newSeats;
-    target.total_amount = newSeats * target.price_per_seat;
+    target.status = 'Suspended';
+    target.history.unshift({
+      id: `h-${Date.now()}`,
+      timestamp: new Date().toISOString().slice(0, 10),
+      actor: 'Super Admin',
+      action: 'SUBSCRIPTION_PAUSED',
+      details: `Subscription suspended. Reason: ${reason}`,
+    });
 
     await platformAuditService.logEvent({
       actor_id: 'user-superadmin',
@@ -153,11 +284,70 @@ export const platformSubscriptionService = {
       actor_role: 'Super Admin',
       organization_id: target.tenant_id,
       organization_name: target.tenant_name,
-      action: 'SUBSCRIPTION_SEATS_MODIFIED',
+      action: 'SUBSCRIPTION_PAUSED',
+      resource_type: 'Subscription',
+      resource_id: id,
+      severity: 'High',
+      reason: `Suspended subscription: ${reason}`,
+    });
+
+    return target;
+  },
+
+  async resumeSubscription(id: string): Promise<SubscriptionContractItem> {
+    const target = initialSubscriptions.find((s) => s.id === id);
+    if (!target) throw new Error('Subscription not found');
+
+    target.status = 'Active';
+    target.history.unshift({
+      id: `h-${Date.now()}`,
+      timestamp: new Date().toISOString().slice(0, 10),
+      actor: 'Super Admin',
+      action: 'SUBSCRIPTION_RESUMED',
+      details: 'Subscription resumed to Active status',
+    });
+
+    await platformAuditService.logEvent({
+      actor_id: 'user-superadmin',
+      actor_name: 'WorkForce Super Admin',
+      actor_role: 'Super Admin',
+      organization_id: target.tenant_id,
+      organization_name: target.tenant_name,
+      action: 'SUBSCRIPTION_RESUMED',
       resource_type: 'Subscription',
       resource_id: id,
       severity: 'Normal',
-      reason: `Seats changed from ${previousSeats} to ${newSeats}`,
+      reason: `Resumed active contract for ${target.tenant_name}`,
+    });
+
+    return target;
+  },
+
+  async cancelSubscription(id: string, reason: string): Promise<SubscriptionContractItem> {
+    const target = initialSubscriptions.find((s) => s.id === id);
+    if (!target) throw new Error('Subscription not found');
+
+    target.status = 'Cancelled';
+    target.auto_renew = false;
+    target.history.unshift({
+      id: `h-${Date.now()}`,
+      timestamp: new Date().toISOString().slice(0, 10),
+      actor: 'Super Admin',
+      action: 'SUBSCRIPTION_CANCELLED',
+      details: `Contract cancelled. Reason: ${reason}`,
+    });
+
+    await platformAuditService.logEvent({
+      actor_id: 'user-superadmin',
+      actor_name: 'WorkForce Super Admin',
+      actor_role: 'Super Admin',
+      organization_id: target.tenant_id,
+      organization_name: target.tenant_name,
+      action: 'SUBSCRIPTION_CANCELLED',
+      resource_type: 'Subscription',
+      resource_id: id,
+      severity: 'Critical',
+      reason: `Cancelled subscription: ${reason}`,
     });
 
     return target;

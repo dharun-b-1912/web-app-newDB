@@ -1,9 +1,13 @@
 // src/services/platform/platformHealthService.ts
 // ============================================================
-// WorkForceOS — Platform Health & Observability Service
+// WorkForceOS — Platform Health & Observability Service (Dynamic Realtime)
 // ============================================================
 
 import { SystemHealthStatus, SubsystemTelemetry, PlatformDashboardMetrics } from '../../types/platformAdmin';
+import { platformTenantService } from './platformTenantService';
+import { platformIncidentService } from './platformIncidentService';
+import { platformJobService } from './platformJobService';
+import { platformSubscriptionService } from './platformSubscriptionService';
 
 const initialSubsystems: SubsystemTelemetry[] = [
   { key: 'api_gateway', name: 'API Gateway', category: 'Infrastructure', status: 'Operational', uptimePct: 99.99, latencyMs: 24, errorRatePct: 0.01, lastChecked: '1 min ago', description: 'Kong API ingress & rate limiting proxy' },
@@ -43,26 +47,42 @@ export const platformHealthService = {
     };
   },
 
-  getDashboardMetrics(tenantsCount: number = 428): PlatformDashboardMetrics {
+  getDashboardMetrics(): PlatformDashboardMetrics {
+    const orgs = platformTenantService.getOrganizations().items;
+    const activeIncidents = platformIncidentService.getActiveIncidents();
+    const jobs = platformJobService.getJobs();
+    const failedJobs = jobs.filter(j => j.status === 'Failed');
+
+    const totalOrganizations = orgs.length;
+    const activeOrganizations = orgs.filter(o => o.status === 'Active').length;
+    const trialOrganizations = orgs.filter(o => o.status === 'Trial').length;
+    const suspendedOrganizations = orgs.filter(o => o.status === 'Suspended').length;
+    const atRiskOrganizations = orgs.filter(o => o.health_grade === 'At Risk' || o.health_grade === 'Critical').length;
+    const totalUsers = orgs.reduce((sum, o) => sum + (o.total_employees || 0), 0);
+    const activeUsers = orgs.reduce((sum, o) => sum + (o.active_employees || 0), 0);
+    const mrr = orgs.reduce((sum, o) => sum + (o.mrr || 0), 0);
+    const arr = mrr * 12;
+    const avgHealth = orgs.length > 0 ? Number((orgs.reduce((sum, o) => sum + o.health_score, 0) / orgs.length).toFixed(1)) : 100;
+
     return {
-      totalOrganizations: tenantsCount,
-      activeOrganizations: 385,
-      trialOrganizations: 37,
-      suspendedOrganizations: 6,
-      atRiskOrganizations: 14,
-      totalUsers: 42840,
-      activeUsers: 38620,
-      mrr: 1840000, // ₹18.4L
-      arr: 22080000, // ₹2.21Cr
-      mrrGrowthPct: 8.7,
-      netRevenue: 1840000 * 0.98,
-      outstandingPayments: 145000,
-      churnRate: 2.4,
-      netRetentionRate: 114.5,
-      customerHealthScore: 94.2,
-      platformUptimePct: 99.98,
-      activeIncidentsCount: 0,
-      failedJobsCount: 1,
+      totalOrganizations,
+      activeOrganizations,
+      trialOrganizations,
+      suspendedOrganizations,
+      atRiskOrganizations,
+      totalUsers,
+      activeUsers,
+      mrr,
+      arr,
+      mrrGrowthPct: 0,
+      netRevenue: mrr,
+      outstandingPayments: orgs.filter(o => o.billing_status === 'Past Due').reduce((sum, o) => sum + o.mrr, 0),
+      churnRate: 0,
+      netRetentionRate: 100,
+      customerHealthScore: avgHealth,
+      platformUptimePct: 99.99,
+      activeIncidentsCount: activeIncidents.length,
+      failedJobsCount: failedJobs.length,
     };
   },
 
