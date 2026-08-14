@@ -1,14 +1,25 @@
+// src/features/platform/subviews/FeatureFlagsView.tsx
+// ============================================================
+// WorkForceOS — Enterprise Feature Flag Management Console
+// ============================================================
+
 import React, { useState } from 'react';
-import { SlidersHorizontal, GitFork, Check, ToggleLeft, ToggleRight, Plus } from 'lucide-react';
-import { platformAdminApi } from '../../../services/platformAdminApi';
+import { ToggleLeft, ToggleRight, Sparkles, Sliders, Shield, Globe, Layers, AlertTriangle, Plus, Users } from 'lucide-react';
+import { platformFeatureFlagService } from '../../../services/platform';
 import { FeatureFlagItem } from '../../../types/platformAdmin';
 
 export const FeatureFlagsView: React.FC = () => {
-  const [flags, setFlags] = useState<FeatureFlagItem[]>(() => platformAdminApi.getFeatureFlags());
+  const [flags, setFlags] = useState<FeatureFlagItem[]>(() => platformFeatureFlagService.getFeatureFlags());
+  const [selectedFlag, setSelectedFlag] = useState<FeatureFlagItem | null>(null);
 
-  const handleToggle = (key: string) => {
-    platformAdminApi.toggleFeatureFlag(key);
-    setFlags(flags.map(f => (f.key === key ? { ...f, status: f.status === 'Active' ? 'Disabled' : 'Active' } : f)));
+  const handleToggle = async (key: string) => {
+    const updated = await platformFeatureFlagService.toggleFeatureFlag(key);
+    setFlags(flags.map(f => (f.key === key ? updated : f)));
+  };
+
+  const handleRolloutChange = async (key: string, pct: number) => {
+    const updated = await platformFeatureFlagService.updateRolloutPercentage(key, pct);
+    setFlags(flags.map(f => (f.key === key ? updated : f)));
   };
 
   return (
@@ -16,79 +27,101 @@ export const FeatureFlagsView: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs">
         <div>
-          <h1 className="text-2xl font-black text-gray-900">Feature Flags & Module Registry</h1>
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-[#07563D] border border-emerald-200 uppercase tracking-wider">
+              Control Plane Flags
+            </span>
+            <span className="text-xs font-semibold text-gray-500 font-mono">Dynamic Entitlement Injection</span>
+          </div>
+          <h1 className="text-2xl font-black text-gray-900 mt-1">Global Feature Flags & Kill Switches</h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Central feature flag evaluation engine, beta rollouts, and tenant-specific feature overrides.
+            Safely rollout experimental capabilities, gate features by subscription plan, and grant tenant beta overrides.
           </p>
         </div>
-
-        <button
-          onClick={() => alert('Feature Flag Creation Modal')}
-          className="flex items-center gap-2 px-4 py-2 bg-[#07563D] hover:bg-[#064733] text-white rounded-xl font-bold text-xs shadow-sm transition-all cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Create Feature Flag
-        </button>
       </div>
 
-      {/* Feature Flags Grid */}
-      <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-6 space-y-4">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200/80 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                <th className="py-3 px-4">Feature Key & Name</th>
-                <th className="py-3 px-4">Description</th>
-                <th className="py-3 px-4">Allowed Tiers</th>
-                <th className="py-3 px-4">Overrides</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4 text-right">Toggle State</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 text-xs">
-              {flags.map(f => (
-                <tr key={f.key} className="hover:bg-gray-50/60">
-                  <td className="py-3 px-4">
-                    <div className="font-bold text-gray-900">{f.name}</div>
-                    <div className="text-[10px] text-gray-400 font-mono">{f.key}</div>
-                  </td>
-                  <td className="py-3 px-4 text-gray-600 max-w-xs">{f.description}</td>
-                  <td className="py-3 px-4">
-                    <div className="flex flex-wrap gap-1">
-                      {f.allowed_plans.map(plan => (
-                        <span key={plan} className="px-2 py-0.5 bg-gray-100 text-gray-800 text-[10px] font-bold rounded-md">
-                          {plan}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 font-bold text-gray-700">{f.tenant_overrides_count} Tenants</td>
-                  <td className="py-3 px-4">
+      {/* Feature Flags List */}
+      <div className="space-y-4">
+        {flags.map(flag => {
+          const isActive = flag.status === 'Active';
+          const isBeta = flag.status === 'Beta';
+
+          return (
+            <div
+              key={flag.key}
+              className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4 hover:border-emerald-300 transition-all"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="text-base font-black text-gray-900">{flag.name}</span>
                     <span
-                      className={`px-2 py-0.5 font-bold text-[10px] rounded-md ${
-                        f.status === 'Active'
-                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                          : f.status === 'Beta'
-                          ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        isActive
+                          ? 'bg-emerald-100 text-[#07563D]'
+                          : isBeta
+                          ? 'bg-purple-100 text-purple-800'
                           : 'bg-gray-100 text-gray-600'
                       }`}
                     >
-                      {f.status}
+                      {flag.status}
                     </span>
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <button
-                      onClick={() => handleToggle(f.key)}
-                      className="p-1 text-emerald-700 hover:text-emerald-900 transition-colors cursor-pointer"
-                    >
-                      {f.status === 'Active' ? <ToggleRight className="w-7 h-7 text-[#07563D]" /> : <ToggleLeft className="w-7 h-7 text-gray-400" />}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-100 text-gray-700">
+                      Env: {flag.environment}
+                    </span>
+                    <span className="font-mono text-[11px] text-gray-400 font-bold">{flag.key}</span>
+                  </div>
+                  <p className="text-xs text-gray-600 leading-relaxed">{flag.description}</p>
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    onClick={() => handleToggle(flag.key)}
+                    className="cursor-pointer transition-transform hover:scale-105"
+                  >
+                    {isActive || isBeta ? (
+                      <ToggleRight className="w-9 h-9 text-[#07563D]" />
+                    ) : (
+                      <ToggleLeft className="w-9 h-9 text-gray-300" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Bottom Config Row */}
+              <div className="pt-3 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-gray-500 font-bold">Allowed Plans:</span>
+                  {flag.allowed_plans.map(p => (
+                    <span key={p} className="px-2 py-0.5 bg-emerald-50 text-[#07563D] font-black text-[10px] rounded-md border border-emerald-200">
+                      {p}
+                    </span>
+                  ))}
+                  {flag.tenant_overrides_count > 0 && (
+                    <span className="px-2 py-0.5 bg-purple-50 text-purple-700 font-bold text-[10px] rounded-md border border-purple-200">
+                      {flag.tenant_overrides_count} Tenant Overrides Active
+                    </span>
+                  )}
+                </div>
+
+                {/* Rollout % Slider */}
+                <div className="flex items-center gap-3">
+                  <span className="text-gray-500 font-bold text-[11px]">Rollout:</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={flag.rollout_percentage}
+                    onChange={e => handleRolloutChange(flag.key, Number(e.target.value))}
+                    className="w-24 accent-[#07563D] cursor-pointer"
+                  />
+                  <span className="font-mono font-bold text-gray-900 w-10 text-right">{flag.rollout_percentage}%</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

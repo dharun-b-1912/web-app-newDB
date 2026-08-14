@@ -9,6 +9,7 @@ import { SecurityDashboardView } from './subviews/SecurityDashboardView';
 import { SupportCenterView } from './subviews/SupportCenterView';
 import { SaasBusinessView } from './subviews/SaasBusinessView';
 import { PlatformSettingsView } from './subviews/PlatformSettingsView';
+import { ImpersonationBanner } from './components/ImpersonationBanner';
 
 export interface PlatformAdminMasterModuleProps {
   initialTab?: string;
@@ -82,5 +83,11 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
     }
   };
 
-  return <div className="space-y-6">{renderContent()}</div>;
+  return (
+    <div className="space-y-6">
+      <ImpersonationBanner />
+      {renderContent()}
+    </div>
+  );
 };
+

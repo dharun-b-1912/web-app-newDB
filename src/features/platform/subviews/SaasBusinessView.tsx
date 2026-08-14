@@ -369,9 +369,9 @@ export const SaasBusinessView: React.FC = () => {
                         <span className="font-bold text-[11px] text-gray-700">{c.used}/{c.limit}</span>
                       </div>
                     </td>
-                    <td className="py-3 px-4 font-mono text-gray-600">{c.expires}</td>
-                    <td className="py-3 px-4">
-                      <span className={`px-2 py-0.5 font-bold text-[10px] rounded-md border ${
+                    <td className="py-3.5 px-4 font-mono text-gray-600">{c.expires}</td>
+                    <td className="py-3.5 px-4">
+                      <span className={`px-2.5 py-0.5 font-black text-[10px] rounded-full uppercase border ${
                         c.status === 'Active'
                           ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                           : 'bg-amber-50 text-amber-800 border-amber-200'
@@ -386,6 +386,58 @@ export const SaasBusinessView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* COHORTS TAB */}
+      {activeTab === 'cohorts' && (
+        <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+            <div>
+              <h3 className="text-base font-black text-gray-900">Customer Retention Cohort Analysis</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Month-by-month customer net retention percentage tracking</p>
+            </div>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-[#07563D] border border-emerald-200">
+              91.4% Avg 6M Retention
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-gray-50/80 border-b border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                  <th className="py-3 px-4">Cohort Month</th>
+                  <th className="py-3 px-4">Size</th>
+                  <th className="py-3 px-4">M1</th>
+                  <th className="py-3 px-4">M2</th>
+                  <th className="py-3 px-4">M3</th>
+                  <th className="py-3 px-4">M6</th>
+                  <th className="py-3 px-4">M12</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 font-medium">
+                {[
+                  { cohort: 'Jan 2026', size: 34, m1: 100, m2: 97, m3: 94, m6: 91, m12: 88 },
+                  { cohort: 'Feb 2026', size: 28, m1: 100, m2: 96, m3: 93, m6: 89, m12: 87 },
+                  { cohort: 'Mar 2026', size: 42, m1: 100, m2: 98, m3: 95, m6: 92, m12: 90 },
+                  { cohort: 'Apr 2026', size: 38, m1: 100, m2: 97, m3: 94, m6: 91, m12: 89 },
+                  { cohort: 'May 2026', size: 45, m1: 100, m2: 98, m3: 96, m6: 93, m12: 91 },
+                  { cohort: 'Jun 2026', size: 52, m1: 100, m2: 98, m3: 95, m6: 94, m12: 92 },
+                ].map(r => (
+                  <tr key={r.cohort} className="hover:bg-gray-50/60">
+                    <td className="py-3.5 px-4 font-bold text-gray-900">{r.cohort}</td>
+                    <td className="py-3.5 px-4 font-mono">{r.size} orgs</td>
+                    <td className="py-3.5 px-4 bg-emerald-100 text-emerald-900 font-bold font-mono text-center">{r.m1}%</td>
+                    <td className="py-3.5 px-4 bg-emerald-100/80 text-emerald-900 font-bold font-mono text-center">{r.m2}%</td>
+                    <td className="py-3.5 px-4 bg-emerald-50 text-emerald-800 font-bold font-mono text-center">{r.m3}%</td>
+                    <td className="py-3.5 px-4 bg-emerald-50/60 text-emerald-800 font-bold font-mono text-center">{r.m6}%</td>
+                    <td className="py-3.5 px-4 bg-gray-50 text-gray-700 font-mono text-center">{r.m12}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
