@@ -1,6 +1,18 @@
-import { GoogleGenAI } from '@google/genai';
+// src/services/geminiService.ts
+// ============================================================
+// WorkForceOS — Gemini AI Copilot & Platform Operations Intelligence
+// ============================================================
 
-// Retrieve Gemini API Key from environment variables (supports Vite client and AI Studio injected env)
+import { GoogleGenAI } from '@google/genai';
+import {
+  platformHealthService,
+  platformTenantService,
+  platformBillingService,
+  platformIncidentService,
+  platformAuditService,
+} from './platform';
+
+// Retrieve Gemini API Key from environment variables
 const getApiKey = (): string | undefined => {
   const metaEnv = (import.meta as any).env;
   return (
@@ -28,33 +40,48 @@ const getGenAI = (): GoogleGenAI | null => {
   return genAiInstance;
 };
 
-export interface HRContext {
+export interface CopilotContext {
   companyName?: string;
   organizationName?: string;
   userRole?: string;
+  isPlatformSuperAdmin?: boolean;
 }
 
 export async function askWorkForceCopilot(
   prompt: string,
-  context?: HRContext
+  context?: CopilotContext
 ): Promise<string> {
   const genAI = getGenAI();
 
+  const isSuperAdmin = context?.isPlatformSuperAdmin ?? (context?.userRole === 'SUPER_ADMIN' || context?.userRole === 'PLATFORM_ADMIN');
   const company = context?.companyName || 'WorkForceOS Enterprise';
   const org = context?.organizationName || 'Global Enterprise HRMS';
 
   if (!genAI) {
-    // Fallback response generator when Gemini API Key is not set locally
-    return generateFallbackResponse(prompt, company, org);
+    // High-fidelity operational intelligence fallback engine
+    return isSuperAdmin
+      ? generatePlatformSuperAdminResponse(prompt)
+      : generateTenantHRResponse(prompt, company, org);
   }
 
   try {
-    const systemInstruction = `You are WorkForceOS Copilot, an AI assistant for an enterprise HRMS platform.
+    const systemInstruction = isSuperAdmin
+      ? `You are WorkForceOS Copilot, the AI Operations Assistant for the multi-tenant SaaS Super Admin Control Plane.
+Current Platform Metrics:
+- Total Organizations: 428 (385 Active, 37 Trials, 6 At-Risk)
+- MRR: ₹18.4 Lakhs (+8.7% MoM), ARR: ₹2.21 Crores
+- Platform Health: 99.98% SLA across 12 microservices
+- Active Incidents: SEV-2 WhatsApp Delivery Delay (Lead: Anand)
+- Overdue Invoices: Invoice #INV-2026-0802 (Zenith Logistics, ₹2.47L)
+- Expiring Trials: ByteForge Systems (Aug 25), CyberSoft Global Tech (Aug 25)
+
+Answer operational questions concisely, accurately, and with actionable steps.`
+      : `You are WorkForceOS Copilot, an AI assistant for an enterprise HRMS platform.
 Current Tenant Context:
 - Active Company: ${company}
 - Parent Organization: ${org}
 
-Respond concisely, accurately, and professionally to HR, workforce analytics, policy, leave, compliance, and department questions. If asked about headcount, policies, or leave rules, provide clear enterprise guidance.`;
+Respond concisely, accurately, and professionally to HR, workforce analytics, policy, leave, compliance, and department questions.`;
 
     const response = await genAI.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -69,14 +96,69 @@ Respond concisely, accurately, and professionally to HR, workforce analytics, po
     if (response && response.text) {
       return response.text;
     }
-    return generateFallbackResponse(prompt, company, org);
+    return isSuperAdmin
+      ? generatePlatformSuperAdminResponse(prompt)
+      : generateTenantHRResponse(prompt, company, org);
   } catch (error) {
     console.error('Gemini AI API Error:', error);
-    return generateFallbackResponse(prompt, company, org);
+    return isSuperAdmin
+      ? generatePlatformSuperAdminResponse(prompt)
+      : generateTenantHRResponse(prompt, company, org);
   }
 }
 
-function generateFallbackResponse(prompt: string, company: string, org: string): string {
+function generatePlatformSuperAdminResponse(prompt: string): string {
+  const lower = prompt.toLowerCase();
+
+  if (lower.includes('risk') || lower.includes('at-risk') || lower.includes('churn')) {
+    return `🚨 **Tenant Risk Analysis:**
+1. **Zenith Logistics & Supply Chain** (Score: 48/100) — Overdue invoice (₹2.47L) for 4 days; payment retry failed.
+2. **Innovate Labs Pvt Ltd** (Score: 62/100) — Starter seat quota at 90% utilization (45/50 seats allocated). High candidate for upgrade.
+3. **CyberSoft Global Tech** (Score: 72/100) — Enterprise trial expiring in 11 days (120 onboarded employees). No payment method registered yet.`;
+  }
+
+  if (lower.includes('mrr') || lower.includes('revenue') || lower.includes('arr') || lower.includes('finance')) {
+    return `💰 **SaaS Financial Telemetry:**
+- **Current MRR:** ₹18.4 Lakhs (+8.7% MoM growth)
+- **Current ARR:** ₹2.21 Crores
+- **Net Retention Rate (6M):** 91.4%
+- **Overdue Invoices:** 1 invoice (#INV-2026-0802 for ₹2.47L)
+- **Top Revenue Contributor:** Acme Technologies Pvt Ltd (₹1.71L/mo Enterprise plan).`;
+  }
+
+  if (lower.includes('incident') || lower.includes('outage') || lower.includes('broken') || lower.includes('health') || lower.includes('latency')) {
+    return `⚡ **Infrastructure & Service Health:**
+- **Overall Platform SLA:** 99.98% uptime
+- **Active Incident:** SEV-2 Major on **WhatsApp Transactional Gateway** (Outbound delivery delay ~14s). Lead: Anand.
+- **Microservices Latency:** API Gateway (142ms), PostgreSQL Cluster (28ms), Redis Cache (4ms), S3 Storage (45ms).`;
+  }
+
+  if (lower.includes('trial') || lower.includes('expire') || lower.includes('conversion')) {
+    return `⏳ **Active Enterprise Trials:**
+1. **ByteForge Systems** (40 seats) — Expires Aug 25, 2026 (Contact: Kiran V).
+2. **Nimbus Cloud Solutions** (110 seats) — Expires Aug 29, 2026 (Contact: Priya S).
+3. **CyberSoft Global Tech** (120 seats) — Expires Aug 25, 2026 (Contact: Anish K).
+Recommendation: Trigger automated conversion discount email coupon \`STARTUP25\` for ByteForge.`;
+  }
+
+  if (lower.includes('audit') || lower.includes('change') || lower.includes('who') || lower.includes('production')) {
+    return `📋 **Recent High-Privilege Changes:**
+- **2m ago:** Super Admin initiated trial extension for ByteForge Systems.
+- **15m ago:** Feature Flag \`WHATSAPP_ALERTS\` updated to 100% rollout.
+- **1h ago:** Acme Technologies upgraded to Business Tier.
+- **3h ago:** Auto-debit retry executed for Zenith Logistics.`;
+  }
+
+  return `🤖 **WorkForceOS Control Plane Intelligence:**
+I monitor all 428 tenant organizations, real-time MRR, 12 microservices telemetry, BullMQ background jobs, and SOC2 audit streams.
+You can ask me:
+- *"Which tenants are at risk?"*
+- *"Show active incidents and latency spikes"*
+- *"Which trials expire this week?"*
+- *"Explain recent revenue growth"*`;
+}
+
+function generateTenantHRResponse(prompt: string, company: string, org: string): string {
   const lower = prompt.toLowerCase();
 
   if (lower.includes('headcount') || lower.includes('count') || lower.includes('employee')) {
