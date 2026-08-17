@@ -8,14 +8,16 @@ export interface SelectOption {
 
 export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
-  options: SelectOption[];
+  options?: SelectOption[];
   error?: string;
   helperText?: string;
+  children?: React.ReactNode;
 }
 
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, label, options, error, helperText, id, ...props }, ref) => {
+  ({ className, label, options, error, helperText, id, children, ...props }, ref) => {
     const selectId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
+    const hasOptions = Array.isArray(options) && options.length > 0;
 
     return (
       <div className="w-full space-y-1.5">
@@ -35,11 +37,13 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           )}
           {...props}
         >
-          {options.map(opt => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
+          {hasOptions
+            ? options.map(opt => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))
+            : children}
         </select>
         {error ? (
           <p className="text-xs text-red-600 font-medium">{error}</p>
