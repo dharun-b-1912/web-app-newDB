@@ -201,3 +201,23 @@ CREATE POLICY "Allow public read on platform_role_permissions" ON platform_role_
 
 DROP POLICY IF EXISTS "Allow public read on platform_staff_roles" ON platform_staff_roles;
 CREATE POLICY "Allow public read on platform_staff_roles" ON platform_staff_roles FOR SELECT USING (true);
+
+-- 10. Security Invoker View for Plan Subscription Metrics (Linter Compliance)
+CREATE OR REPLACE VIEW public.vw_plan_subscription_metrics 
+WITH (security_invoker = true) AS
+SELECT 
+    p.id AS plan_id,
+    p.code AS plan_code,
+    p.name AS plan_name,
+    p.status AS plan_status,
+    p.monthly_price,
+    p.annual_price,
+    p.included_seats,
+    p.sort_order,
+    COUNT(s.id) FILTER (WHERE s.status IN ('Active', 'Trial')) AS active_subscriptions_count,
+    COALESCE(SUM(s.total_amount) FILTER (WHERE s.status IN ('Active', 'Trial')), 0) AS live_mrr_inr,
+    COALESCE(SUM(s.seats) FILTER (WHERE s.status IN ('Active', 'Trial')), 0) AS total_provisioned_seats
+FROM public.plans p
+LEFT JOIN public.subscriptions s ON s.plan_id = p.id
+GROUP BY p.id, p.code, p.name, p.status, p.monthly_price, p.annual_price, p.included_seats, p.sort_order;
+

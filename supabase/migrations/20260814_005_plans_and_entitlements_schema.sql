@@ -218,7 +218,8 @@ ON CONFLICT (code) DO UPDATE SET
 -- ============================================================
 -- 11. REALTIME VIEW FOR PLAN METRICS & AGGREGATIONS
 -- ============================================================
-CREATE OR REPLACE VIEW public.vw_plan_subscription_metrics AS
+CREATE OR REPLACE VIEW public.vw_plan_subscription_metrics 
+WITH (security_invoker = true) AS
 SELECT 
     p.id AS plan_id,
     p.code AS plan_code,
