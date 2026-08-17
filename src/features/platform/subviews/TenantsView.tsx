@@ -62,6 +62,7 @@ import {
   SupportAccessSession,
   SupportAccessMode,
 } from '../../../services/platform/platformSupportAccessService';
+import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
 import { ProvisionCustomerModal } from '../components/ProvisionCustomerModal';
 import { CustomerWorkspaceHeader } from '../components/tenants/CustomerWorkspaceHeader';
 import { EditOrganizationModal } from '../components/tenants/EditOrganizationModal';
@@ -137,6 +138,35 @@ export const TenantsView: React.FC = () => {
     if (!selectedOrgId) return null;
     return platformTenantService.getOrganizationById(selectedOrgId);
   }, [selectedOrgId, dataVersion]);
+
+  // Initial Live Supabase Fetch and Realtime Listener
+  useEffect(() => {
+    platformTenantService.fetchLiveFromSupabase().then(() => fetchData());
+
+    if (!isSupabaseEnabled) return;
+
+    const channel = supabase
+      .channel('platform:organizations-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'organizations' },
+        () => {
+          platformTenantService.fetchLiveFromSupabase().then(() => fetchData());
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'organization_invitations' },
+        () => {
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // Sync active support session on organization change
   useEffect(() => {
