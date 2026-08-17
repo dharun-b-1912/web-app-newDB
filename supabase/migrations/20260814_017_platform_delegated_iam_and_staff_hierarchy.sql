@@ -4,7 +4,7 @@
 --              Permission Matrices, Scopes, Invitations, and Immutable Audit Logging.
 -- ============================================================================
 
--- 1. Create/Ensure platform_staff Table
+-- 1. Create/Ensure platform_staff Table and add all columns idempotently
 CREATE TABLE IF NOT EXISTS platform_staff (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS platform_staff (
     phone TEXT DEFAULT '',
     avatar_url TEXT DEFAULT '',
     role TEXT NOT NULL DEFAULT 'SUPER_ADMIN',
-    status TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Invitation Pending', 'Suspended', 'Disabled', 'Locked')),
+    status TEXT NOT NULL DEFAULT 'Active',
     mfa_enforced BOOLEAN DEFAULT true,
     mfa_enabled BOOLEAN DEFAULT false,
     is_root_superadmin BOOLEAN DEFAULT false,
@@ -30,37 +30,62 @@ CREATE TABLE IF NOT EXISTS platform_staff (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Ensure all columns exist on pre-existing platform_staff table
+ALTER TABLE platform_staff ADD COLUMN IF NOT EXISTS first_name TEXT DEFAULT '';
+ALTER TABLE platform_staff ADD COLUMN IF NOT EXISTS last_name TEXT DEFAULT '';
+ALTER TABLE platform_staff ADD COLUMN IF NOT EXISTS staff_code TEXT DEFAULT 'STF-' || UPPER(SUBSTRING(gen_random_uuid()::text, 1, 6));
+ALTER TABLE platform_staff ADD COLUMN IF NOT EXISTS job_title TEXT DEFAULT 'Platform Administrator';
+ALTER TABLE platform_staff ADD COLUMN IF NOT EXISTS department TEXT DEFAULT 'Platform Operations';
+ALTER TABLE platform_staff ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT '';
+ALTER TABLE platform_staff ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT '';
+ALTER TABLE platform_staff ADD COLUMN IF NOT EXISTS is_root_superadmin BOOLEAN DEFAULT false;
+ALTER TABLE platform_staff ADD COLUMN IF NOT EXISTS account_start_date TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE platform_staff ADD COLUMN IF NOT EXISTS account_expiry_date TIMESTAMPTZ;
+ALTER TABLE platform_staff ADD COLUMN IF NOT EXISTS created_by UUID;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_platform_staff_email_uniq ON platform_staff(email);
 CREATE INDEX IF NOT EXISTS idx_platform_staff_status ON platform_staff(status);
 CREATE INDEX IF NOT EXISTS idx_platform_staff_role ON platform_staff(role);
 
--- 2. Create/Ensure platform_roles Table
+-- 2. Create/Ensure platform_roles Table and add all columns idempotently
 CREATE TABLE IF NOT EXISTS platform_roles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     role_key TEXT NOT NULL,
     display_name TEXT NOT NULL,
     description TEXT,
     is_system_role BOOLEAN DEFAULT true,
-    hierarchy_level INT DEFAULT 1 CHECK (hierarchy_level BETWEEN 1 AND 5),
-    risk_level TEXT DEFAULT 'MEDIUM' CHECK (risk_level IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
+    hierarchy_level INT DEFAULT 1,
+    risk_level TEXT DEFAULT 'MEDIUM',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Ensure risk_level and other columns exist on pre-existing platform_roles table
+ALTER TABLE platform_roles ADD COLUMN IF NOT EXISTS is_system_role BOOLEAN DEFAULT true;
+ALTER TABLE platform_roles ADD COLUMN IF NOT EXISTS hierarchy_level INT DEFAULT 1;
+ALTER TABLE platform_roles ADD COLUMN IF NOT EXISTS risk_level TEXT DEFAULT 'MEDIUM';
+ALTER TABLE platform_roles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_platform_roles_key_uniq ON platform_roles(role_key);
 
--- 3. Create/Ensure platform_permissions Table
+-- 3. Create/Ensure platform_permissions Table and add all columns idempotently
 CREATE TABLE IF NOT EXISTS platform_permissions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     permission_key TEXT NOT NULL,
     module_name TEXT NOT NULL,
-    action TEXT NOT NULL DEFAULT 'View' CHECK (action IN ('View', 'Create', 'Update', 'Delete', 'Export', 'Manage', 'Approve', 'Execute')),
-    risk_level TEXT DEFAULT 'LOW' CHECK (risk_level IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
+    action TEXT NOT NULL DEFAULT 'View',
+    risk_level TEXT DEFAULT 'LOW',
     is_protected BOOLEAN DEFAULT false,
     scope TEXT NOT NULL DEFAULT 'Global',
     description TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Ensure columns exist on pre-existing platform_permissions table
+ALTER TABLE platform_permissions ADD COLUMN IF NOT EXISTS action TEXT DEFAULT 'View';
+ALTER TABLE platform_permissions ADD COLUMN IF NOT EXISTS risk_level TEXT DEFAULT 'LOW';
+ALTER TABLE platform_permissions ADD COLUMN IF NOT EXISTS is_protected BOOLEAN DEFAULT false;
+ALTER TABLE platform_permissions ADD COLUMN IF NOT EXISTS scope TEXT DEFAULT 'Global';
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_platform_permissions_key_uniq ON platform_permissions(permission_key);
 
@@ -89,7 +114,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_platform_staff_roles_uniq ON platform_staf
 CREATE TABLE IF NOT EXISTS platform_staff_scopes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     staff_id UUID REFERENCES platform_staff(id) ON DELETE CASCADE,
-    scope_type TEXT NOT NULL CHECK (scope_type IN ('ORGANIZATION', 'REGION', 'MODULE_RESTRICTION')),
+    scope_type TEXT NOT NULL,
     scope_value TEXT NOT NULL,
     granted_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -103,7 +128,7 @@ CREATE TABLE IF NOT EXISTS platform_staff_invitations (
     role_key TEXT NOT NULL,
     invited_by UUID,
     invitation_token_hash TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'expired', 'revoked')),
+    status TEXT NOT NULL DEFAULT 'pending',
     expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '48 hours'),
     accepted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
