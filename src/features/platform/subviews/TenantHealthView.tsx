@@ -66,6 +66,7 @@ import {
   PLAYBOOK_TEMPLATES,
   HealthScoreWeights,
 } from '../../../services/platform/platformCustomerHealthService';
+import { usePlatformRealtime } from '../../../services/platform';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../lib/utils';
 
@@ -74,6 +75,8 @@ export interface TenantHealthViewProps {
 }
 
 export const TenantHealthView: React.FC<TenantHealthViewProps> = ({ onNavigateTab }) => {
+  usePlatformRealtime();
+
   // State
   const [tenants, setTenants] = useState<CustomerHealthRecord[]>(() =>
     platformCustomerHealthService.getTenantsHealth()
@@ -514,85 +517,102 @@ export const TenantHealthView: React.FC<TenantHealthViewProps> = ({ onNavigateTa
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-          {topPriorityAccounts.map((t) => (
-            <div
-              key={t.tenant_id}
-              className="p-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] hover:border-[#DC2626] transition-all space-y-3"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-bold text-sm text-[#0F172B]">{t.tenant_name}</h4>
-                    <span className="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-white border text-[#64748B]">
-                      {t.plan}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-[#64748B] mt-0.5">{t.industry}</div>
-                </div>
-
-                <div className="text-right">
-                  <div className="font-mono font-bold text-sm text-[#0F172B]">{t.mrr_formatted} MRR</div>
-                  <span
-                    className={cn(
-                      'text-[10px] px-2 py-0.5 rounded-full font-bold inline-block mt-0.5',
-                      t.health_grade === 'Critical'
-                        ? 'bg-[#FEF2F2] text-[#DC2626] border border-[#FCA5A5]'
-                        : t.health_grade === 'At Risk'
-                        ? 'bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]'
-                        : 'bg-[#EFF6FF] text-[#1D4ED8]'
-                    )}
-                  >
-                    ● {t.health_score}/100 ({t.score_change_30d < 0 ? `↓ ${Math.abs(t.score_change_30d)}` : `↑ ${t.score_change_30d}`} pts)
-                  </span>
-                </div>
-              </div>
-
-              {/* Primary Risk & Recommended Action */}
-              <div className="bg-white p-3 rounded-lg border border-[#E2E8F0] space-y-1 text-xs">
-                <div className="text-[#64748B] flex items-center gap-1.5">
-                  <AlertTriangle className="h-3.5 w-3.5 text-[#DC2626]" />
-                  <span>Primary Risk: <strong className="text-[#0F172B]">{t.primary_risk}</strong></span>
-                </div>
-                <div className="text-[#047857] flex items-center gap-1.5 font-semibold">
-                  <Zap className="h-3.5 w-3.5 text-[#047857]" />
-                  <span>Action: {t.recommended_action.title}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] text-[#64748B]">Last Activity: {t.last_activity}</span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedTenant(t);
-                      setDrawerTab('overview');
-                    }}
-                    className="text-xs text-[#334155] border-[#CBD5E1] hover:bg-white"
-                  >
-                    View Health
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => {
-                      setPlaybookModal({
-                        isOpen: true,
-                        tenant: t,
-                        playbookId: t.recommended_action.playbook_id || 'pb-payment-recovery',
-                      });
-                    }}
-                    className="text-xs font-semibold bg-[#DC2626] hover:bg-[#B91C1C] text-white"
-                  >
-                    <Play className="h-3 w-3 mr-1" /> Launch Playbook
-                  </Button>
-                </div>
+        {topPriorityAccounts.length === 0 ? (
+          <div className="p-4 bg-emerald-50/70 rounded-2xl border border-emerald-200 text-xs text-emerald-950 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-[#047857]" />
+              <div>
+                <strong className="block font-bold">Zero Urgent At-Risk Accounts</strong>
+                <span className="text-gray-600">
+                  All {tenants.length} customer organizations are in Healthy standing with nominal commercial health scores (80-100).
+                </span>
               </div>
             </div>
-          ))}
-        </div>
+            <span className="px-3 py-1 bg-white text-[#047857] border border-emerald-200 rounded-full font-bold text-[11px] shadow-xs">
+              ● 100% Portfolio Healthy
+            </span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            {topPriorityAccounts.map((t) => (
+              <div
+                key={t.tenant_id}
+                className="p-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] hover:border-[#DC2626] transition-all space-y-3"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-sm text-[#0F172B]">{t.tenant_name}</h4>
+                      <span className="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-white border text-[#64748B]">
+                        {t.plan}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-[#64748B] mt-0.5">{t.industry}</div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="font-mono font-bold text-sm text-[#0F172B]">{t.mrr_formatted} MRR</div>
+                    <span
+                      className={cn(
+                        'text-[10px] px-2 py-0.5 rounded-full font-bold inline-block mt-0.5',
+                        t.health_grade === 'Critical'
+                          ? 'bg-[#FEF2F2] text-[#DC2626] border border-[#FCA5A5]'
+                          : t.health_grade === 'At Risk'
+                          ? 'bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]'
+                          : 'bg-[#EFF6FF] text-[#1D4ED8]'
+                      )}
+                    >
+                      ● {t.health_score}/100 ({t.score_change_30d < 0 ? `↓ ${Math.abs(t.score_change_30d)}` : `↑ ${t.score_change_30d}`} pts)
+                    </span>
+                  </div>
+                </div>
+
+                {/* Primary Risk & Recommended Action */}
+                <div className="bg-white p-3 rounded-lg border border-[#E2E8F0] space-y-1 text-xs">
+                  <div className="text-[#64748B] flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 text-[#DC2626]" />
+                    <span>Primary Risk: <strong className="text-[#0F172B]">{t.primary_risk}</strong></span>
+                  </div>
+                  <div className="text-[#047857] flex items-center gap-1.5 font-semibold">
+                    <Zap className="h-3.5 w-3.5 text-[#047857]" />
+                    <span>Action: {t.recommended_action.title}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[11px] text-[#64748B]">Last Activity: {t.last_activity}</span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedTenant(t);
+                        setDrawerTab('overview');
+                      }}
+                      className="text-xs text-[#334155] border-[#CBD5E1] hover:bg-white"
+                    >
+                      View Health
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => {
+                        setPlaybookModal({
+                          isOpen: true,
+                          tenant: t,
+                          playbookId: t.recommended_action.playbook_id || 'pb-payment-recovery',
+                        });
+                      }}
+                      className="text-xs font-semibold bg-[#DC2626] hover:bg-[#B91C1C] text-white"
+                    >
+                      <Play className="h-3 w-3 mr-1" /> Launch Playbook
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 5. Filter Pills & Tenant Health Table */}
@@ -610,15 +630,15 @@ export const TenantHealthView: React.FC<TenantHealthViewProps> = ({ onNavigateTa
               />
             </div>
 
-            {/* Filter Pills */}
+            {/* Dynamic Filter Pills */}
             <div className="flex items-center gap-1.5 flex-wrap">
               {[
-                { id: 'all', label: 'All Organizations', count: 428 },
+                { id: 'all', label: 'All Organizations', count: tenants.length },
                 { id: 'healthy', label: 'Healthy', count: portfolioMetrics.healthyTenants },
                 { id: 'watch', label: 'Watch', count: portfolioMetrics.watchTenants },
                 { id: 'at-risk', label: 'At Risk', count: portfolioMetrics.atRiskTenants },
                 { id: 'critical', label: 'Critical', count: portfolioMetrics.criticalTenants },
-                { id: 'enterprise', label: 'Enterprise', count: 96 },
+                { id: 'enterprise', label: 'Enterprise', count: tenants.filter((t) => t.plan === 'Enterprise').length },
               ].map((p) => (
                 <button
                   key={p.id}
