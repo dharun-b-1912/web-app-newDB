@@ -25,6 +25,7 @@ export * from './platformWebhookService';
 export * from './platformWebhooksMeshService';
 export * from './platformIntegrationsService';
 export * from './platformApiKeyService';
+export * from './platformSettingsService';
 export * from './platformAnalyticsService';
 export * from './platformCache';
 export * from './platformRealtimeService';
