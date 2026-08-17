@@ -27,6 +27,7 @@ import { SaasBusinessView } from './subviews/SaasBusinessView';
 import { PlatformSettingsView } from './subviews/PlatformSettingsView';
 import { WebhooksAndMeshView } from './subviews/WebhooksAndMeshView';
 import { IntegrationsControlCenterView } from './subviews/IntegrationsControlCenterView';
+import { PlatformAccountMasterView } from './subviews/PlatformAccountMasterView';
 import { ImpersonationBanner } from './components/ImpersonationBanner';
 import { usePlatformRealtime } from '../../services/platform';
 
@@ -35,6 +36,9 @@ import { TenantHealthView } from './subviews/TenantHealthView';
 export interface NavigationPayload {
   tenantId?: string;
   presetFilter?: string;
+  subTab?: 'profile' | 'security' | 'sessions' | 'access' | 'preferences';
+  search?: string;
+  [key: string]: any;
 }
 
 export interface PlatformAdminMasterModuleProps {
@@ -61,6 +65,7 @@ const TAB_TITLES: Record<string, string> = {
   'platform-api': 'API & Integrations',
   'platform-keys': 'API Keys & Secrets',
   'platform-settings': 'Platform System Settings',
+  'platform-account': 'Identity & Account Center',
   'saas-revenue': 'Revenue & Growth',
 };
 
@@ -77,6 +82,7 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
     return {
       tenantId: urlState.params.tenantId || urlState.params.id,
       presetFilter: urlState.params.presetFilter || urlState.params.status || urlState.params.plan,
+      subTab: urlState.params.subTab as any,
       search: urlState.params.search,
     };
   });
@@ -89,6 +95,17 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
     syncUrlWithRoute(tab, payload as any);
     if (onNavigateTab) onNavigateTab(tab, payload);
   };
+
+  // Listen to platform:navigate custom event from UserMenu
+  React.useEffect(() => {
+    const handleCustomNav = (e: any) => {
+      if (e.detail?.tab) {
+        handleSelectTab(e.detail.tab, e.detail);
+      }
+    };
+    window.addEventListener('platform:navigate', handleCustomNav);
+    return () => window.removeEventListener('platform:navigate', handleCustomNav);
+  }, []);
 
   // Real-time connection badge status
   const { isConnected } = usePlatformRealtime();
@@ -172,6 +189,30 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
       case 'platform-roles':
       case 'platform-marketplace':
         return <PlatformSettingsView />;
+      case 'platform-account':
+      case 'platform-profile':
+      case 'platform-account-profile':
+      case 'platform-account-security':
+      case 'platform-account-sessions':
+      case 'platform-account-access':
+      case 'platform-account-preferences':
+        return (
+          <PlatformAccountMasterView
+            initialSubTab={
+              navPayload?.subTab ||
+              (currentTab === 'platform-account-security'
+                ? 'security'
+                : currentTab === 'platform-account-sessions'
+                ? 'sessions'
+                : currentTab === 'platform-account-access'
+                ? 'access'
+                : currentTab === 'platform-account-preferences'
+                ? 'preferences'
+                : 'profile')
+            }
+            onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)}
+          />
+        );
       case 'saas-customers':
       case 'saas-trials':
       case 'saas-renewals':

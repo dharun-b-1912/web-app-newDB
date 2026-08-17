@@ -266,8 +266,8 @@ export const initialUsers: User[] = [
     id: 'user-super-01',
     organization_id: 'org-acme-01',
     email: 'superadmin@workforceos.com',
-    name: 'Platform Admin (Super Admin)',
-    avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+    name: 'Arun Kumar',
+    avatar_url: '',
     employee_id: 'emp-000',
     status: 'Active',
     roles: [initialRoles[0]], // Super Admin

@@ -39,6 +39,13 @@ const ROUTE_ALIASES: Record<string, string> = {
   '/platform/webhooks': 'platform-webhooks',
   '/platform/api': 'platform-api',
   '/platform/settings': 'platform-settings',
+  '/platform/account': 'platform-account',
+  '/platform/account/profile': 'platform-account',
+  '/platform/account/security': 'platform-account',
+  '/platform/account/sessions': 'platform-account',
+  '/platform/account/access': 'platform-account',
+  '/platform/account/preferences': 'platform-account',
+  '/platform/profile': 'platform-account',
 };
 
 export function parseRouteFromUrl(): RouteState {
