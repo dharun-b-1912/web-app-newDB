@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS organizations (
 );
 
 -- Ensure all columns exist on pre-existing organizations table
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS name TEXT DEFAULT 'Joy Corporate Solutions Pvt Ltd';
+ALTER TABLE organizations ALTER COLUMN name DROP NOT NULL;
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS tenant_id TEXT;
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS legal_name TEXT DEFAULT 'Joy Corporate Solutions Pvt Ltd';
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS display_name TEXT DEFAULT 'Joy Corporate Solutions';
@@ -282,7 +284,7 @@ CREATE TABLE IF NOT EXISTS organization_entitlements (
 
 -- A. Insert/Update Organization
 INSERT INTO organizations (
-    id, tenant_id, legal_name, display_name, organization_type, domain, industry,
+    id, tenant_id, name, legal_name, display_name, organization_type, domain, industry,
     country, state, city, timezone, currency, environment,
     primary_admin_name, primary_admin_email, primary_admin_phone,
     account_owner_name, account_owner_team,
@@ -293,6 +295,7 @@ INSERT INTO organizations (
 ) VALUES (
     'org-joy-corp',
     'org-joy-corp',
+    'Joy Corporate Solutions Pvt Ltd',
     'Joy Corporate Solutions Pvt Ltd',
     'Joy Corporate Solutions',
     'Private Limited Company',
@@ -329,6 +332,7 @@ INSERT INTO organizations (
     NOW()
 )
 ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.legal_name,
     legal_name = EXCLUDED.legal_name,
     display_name = EXCLUDED.display_name,
     plan = EXCLUDED.plan,
