@@ -13,6 +13,7 @@ import {
   Lock,
   ExternalLink,
   HelpCircle,
+  Clock,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { Avatar } from '../ui/Avatar';
@@ -147,7 +148,7 @@ export const UserMenu: React.FC = () => {
                   <UserIcon className="w-4 h-4 text-gray-400" />
                   My Profile
                 </span>
-                <span className="text-[10px] font-mono text-gray-400">ID & Bio</span>
+                <span className="text-gray-400">→</span>
               </button>
 
               <button
@@ -158,9 +159,7 @@ export const UserMenu: React.FC = () => {
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
                   Account & Security
                 </span>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-[#047857]">
-                  {mfaStatus?.mfa_enabled ? 'AAL2' : 'Setup MFA'}
-                </span>
+                <span className="text-gray-400">→</span>
               </button>
 
               <button
@@ -171,7 +170,10 @@ export const UserMenu: React.FC = () => {
                   <Laptop className="w-4 h-4 text-gray-400" />
                   Sessions & Devices
                 </span>
-                <span className="text-[10px] font-mono text-gray-400">3 Active</span>
+                <span className="flex items-center gap-1">
+                  <span className="text-[10px] font-mono text-gray-500">3 Active</span>
+                  <span className="text-gray-400">→</span>
+                </span>
               </button>
 
               <button
@@ -182,7 +184,7 @@ export const UserMenu: React.FC = () => {
                   <Key className="w-4 h-4 text-indigo-500" />
                   Platform Access & IAM
                 </span>
-                <span className="text-[10px] font-mono text-gray-400">Full</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-[#047857]">Full</span>
               </button>
 
               <button
@@ -193,7 +195,18 @@ export const UserMenu: React.FC = () => {
                   <Sliders className="w-4 h-4 text-gray-400" />
                   Preferences
                 </span>
-                <span className="text-[10px] font-mono text-gray-400">Theme/Time</span>
+                <span className="text-gray-400">→</span>
+              </button>
+
+              <button
+                onClick={() => handleNavigateToAccount('activity')}
+                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#047857] flex items-center justify-between transition cursor-pointer"
+              >
+                <span className="flex items-center gap-2.5">
+                  <Clock className="w-4 h-4 text-gray-400" />
+                  Security Activity
+                </span>
+                <span className="text-gray-400">→</span>
               </button>
             </div>
           ) : (

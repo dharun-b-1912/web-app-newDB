@@ -36,7 +36,7 @@ import { TenantHealthView } from './subviews/TenantHealthView';
 export interface NavigationPayload {
   tenantId?: string;
   presetFilter?: string;
-  subTab?: 'profile' | 'security' | 'sessions' | 'access' | 'preferences';
+  subTab?: 'overview' | 'profile' | 'security' | 'sessions' | 'access' | 'preferences' | 'activity';
   search?: string;
   [key: string]: any;
 }
@@ -191,11 +191,13 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
         return <PlatformSettingsView />;
       case 'platform-account':
       case 'platform-profile':
+      case 'platform-account-overview':
       case 'platform-account-profile':
       case 'platform-account-security':
       case 'platform-account-sessions':
       case 'platform-account-access':
       case 'platform-account-preferences':
+      case 'platform-account-activity':
         return (
           <PlatformAccountMasterView
             initialSubTab={
@@ -208,7 +210,11 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
                 ? 'access'
                 : currentTab === 'platform-account-preferences'
                 ? 'preferences'
-                : 'profile')
+                : currentTab === 'platform-account-activity'
+                ? 'activity'
+                : currentTab === 'platform-account-profile' || currentTab === 'platform-profile'
+                ? 'profile'
+                : 'overview')
             }
             onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)}
           />

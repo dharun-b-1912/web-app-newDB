@@ -6,7 +6,7 @@
 export interface PlatformPermissionModule {
   module_name: string;
   scope: string;
-  access_level: 'Full Control' | 'Read + Export' | 'Read Only' | 'Custom';
+  access_level: 'Full' | 'Manage' | 'Read' | 'None';
   permissions: string[];
   description: string;
 }
@@ -19,6 +19,10 @@ export interface PlatformAdminAccessInfo {
   assigned_by: string;
   assigned_at: string;
   mfa_enforced: boolean;
+  direct_role: string;
+  inherited_permissions: string[];
+  temporary_access: string;
+  environment_scope: string;
   modules: PlatformPermissionModule[];
 }
 
@@ -27,69 +31,34 @@ export const platformIamService = {
   async getCurrentAdminAccess(): Promise<PlatformAdminAccessInfo> {
     return {
       role_key: 'SUPER_ADMIN',
-      role_display_name: 'Platform Super Administrator',
+      role_display_name: 'Super Admin',
       account_status: 'Active',
       access_scope: 'Platform-wide',
-      assigned_by: 'Platform Governance & IAM',
-      assigned_at: '2026-05-18T10:00:00Z',
+      assigned_by: 'Platform IAM Governance',
+      assigned_at: '2026-08-12T00:00:00Z',
       mfa_enforced: true,
+      direct_role: 'Super Admin (Level 5 Root Authority)',
+      inherited_permissions: ['Security Officer', 'Global Infrastructure SRE', 'Platform Architect'],
+      temporary_access: 'None (Permanent Role)',
+      environment_scope: 'Production / Staging / Development',
       modules: [
-        {
-          module_name: 'Tenants & Organizations',
-          scope: 'All Global Organizations',
-          access_level: 'Full Control',
-          permissions: ['platform.organizations.read', 'platform.organizations.manage', 'platform.organizations.provision', 'platform.organizations.suspend'],
-          description: 'Create, modify, suspend, and configure all enterprise client organizations.',
-        },
-        {
-          module_name: 'Subscriptions & Billing',
-          scope: 'Global Invoicing & Gateways',
-          access_level: 'Full Control',
-          permissions: ['platform.billing.read', 'platform.billing.manage', 'platform.subscriptions.override', 'platform.invoices.export'],
-          description: 'Manage SaaS recurring revenue, custom enterprise contracts, and payment gateways.',
-        },
-        {
-          module_name: 'Security & Active Sessions',
-          scope: 'Platform Control Plane',
-          access_level: 'Full Control',
-          permissions: ['platform.security.read', 'platform.security.manage', 'platform.sessions.revoke_all', 'platform.mfa.enforce'],
-          description: 'Monitor threat alerts, manage security assurance levels (AAL2), and revoke active sessions.',
-        },
-        {
-          module_name: 'API & Integrations Platform',
-          scope: 'Adapters & Webhook Mesh',
-          access_level: 'Full Control',
-          permissions: ['platform.integrations.read', 'platform.integrations.manage', 'platform.keys.rotate', 'platform.webhooks.dispatch'],
-          description: 'Deploy integration connectors, issue developer API keys, and monitor IoT device bridges.',
-        },
-        {
-          module_name: 'Forensic Audit Log',
-          scope: 'Immutable Event Ledger',
-          access_level: 'Read + Export',
-          permissions: ['platform.audit.read', 'platform.audit.export', 'platform.audit.verify_hash'],
-          description: 'Search SHA-256 chained audit logs and export forensic compliance reports.',
-        },
-        {
-          module_name: 'Support & Case Management',
-          scope: 'Global Help Desk',
-          access_level: 'Full Control',
-          permissions: ['platform.support.read', 'platform.support.manage', 'platform.access_requests.approve'],
-          description: 'Respond to enterprise escalation tickets and review elevated support requests.',
-        },
-        {
-          module_name: 'Feature Flags & Entitlements',
-          scope: 'System Toggles',
-          access_level: 'Full Control',
-          permissions: ['platform.features.read', 'platform.features.manage', 'platform.plans.override'],
-          description: 'Release beta features, set tenant quota overrides, and define tier feature packages.',
-        },
-        {
-          module_name: 'Platform Staff & IAM',
-          scope: 'Administrator Fleet',
-          access_level: 'Full Control',
-          permissions: ['platform.staff.read', 'platform.staff.manage', 'platform.roles.assign'],
-          description: 'Invite new platform admins, assign granular staff roles, and enforce MFA policies.',
-        },
+        { module_name: 'Command Center', scope: 'Global Control Plane', access_level: 'Full', permissions: ['platform.dashboard.read', 'platform.dashboard.manage'], description: 'Platform health monitoring, real-time KPI metrics, and fleet pulse.' },
+        { module_name: 'Organizations', scope: 'All Multi-Tenant Orgs', access_level: 'Full', permissions: ['platform.organizations.read', 'platform.organizations.manage', 'platform.organizations.provision'], description: 'Provision, suspend, and configure client enterprise organizations.' },
+        { module_name: 'Incidents', scope: 'Service Disruptions', access_level: 'Full', permissions: ['platform.incidents.read', 'platform.incidents.manage'], description: 'Trigger operational runbooks, broadcast status advisories, and log RCAs.' },
+        { module_name: 'Revenue & Growth', scope: 'SaaS Analytics', access_level: 'Full', permissions: ['platform.revenue.read', 'platform.revenue.export'], description: 'MRR, ARR, expansion velocity, and net revenue retention tracking.' },
+        { module_name: 'Subscriptions', scope: 'Customer Lifecycle', access_level: 'Full', permissions: ['platform.subscriptions.read', 'platform.subscriptions.manage'], description: 'Contract management, trial extensions, and partner attribution.' },
+        { module_name: 'Billing', scope: 'Invoices & Gateways', access_level: 'Full', permissions: ['platform.billing.read', 'platform.billing.manage'], description: 'Stripe/Razorpay billing reconciliation and automated tax invoicing.' },
+        { module_name: 'Usage & Metering', scope: 'Quota Engine', access_level: 'Full', permissions: ['platform.metering.read', 'platform.metering.override'], description: 'Real-time compute, storage, and API metering tracking.' },
+        { module_name: 'Tenant Health', scope: 'Telemetry & Risk', access_level: 'Full', permissions: ['platform.health.read', 'platform.health.manage'], description: 'Early-warning churn heuristics and adoption scoring.' },
+        { module_name: 'Feature Flags', scope: 'Rollout Engine', access_level: 'Full', permissions: ['platform.features.read', 'platform.features.manage'], description: 'Granular canary deployments and tenant feature overrides.' },
+        { module_name: 'Plans & Entitlements', scope: 'Packaging', access_level: 'Full', permissions: ['platform.plans.read', 'platform.plans.manage'], description: 'Configure tier packages, feature gates, and module entitlements.' },
+        { module_name: 'Security', scope: 'Platform Defense', access_level: 'Full', permissions: ['platform.security.read', 'platform.security.manage'], description: 'Threat detection, AAL2 assurance policies, and security posture.' },
+        { module_name: 'Audit', scope: 'Forensic Ledger', access_level: 'Full', permissions: ['platform.audit.read', 'platform.audit.export'], description: 'Cryptographically hashed immutable audit event inspection.' },
+        { module_name: 'Support', scope: 'Case Management', access_level: 'Full', permissions: ['platform.support.read', 'platform.support.manage'], description: 'Tier-3 technical cases and privileged access escalation requests.' },
+        { module_name: 'Background Jobs', scope: 'Worker Fleets', access_level: 'Full', permissions: ['platform.jobs.read', 'platform.jobs.manage'], description: 'Dead-letter queue handling, worker concurrency, and scheduled crons.' },
+        { module_name: 'Webhooks', scope: 'Event Mesh Hub', access_level: 'Full', permissions: ['platform.webhooks.read', 'platform.webhooks.manage'], description: 'HMAC-SHA256 event dispatching, dead-letter retry queues, and mesh routes.' },
+        { module_name: 'API & Integrations', scope: 'Adapters & Bridges', access_level: 'Full', permissions: ['platform.integrations.read', 'platform.integrations.manage'], description: 'Developer API keys, biometric IoT daemons, and ERP connectors.' },
+        { module_name: 'Platform Settings', scope: 'Core Engine', access_level: 'Full', permissions: ['platform.settings.read', 'platform.settings.manage'], description: 'Sovereign data regions, platform staff IAM, and maintenance mode.' },
       ],
     };
   },
