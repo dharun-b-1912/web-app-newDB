@@ -1,35 +1,36 @@
 // src/features/platform/components/tenants/CustomerWorkspaceHeader.tsx
 // ============================================================
-// WorkForceOS — Customer Workspace Header & Business KPI Area
+// WorkForceOS — Customer Organization Executive Header & Actions
 // ============================================================
 
 import React, { useState } from 'react';
 import {
   Building2,
-  Shield,
-  ShieldAlert,
-  ArrowLeft,
-  Edit,
-  MoreVertical,
-  Activity,
-  HeartPulse,
   Users,
   CreditCard,
-  Calendar,
-  Clock,
+  Layers,
+  HeartPulse,
+  Activity,
+  ArrowLeft,
+  Edit,
+  Shield,
+  ShieldAlert,
   Sparkles,
-  Lock,
-  RotateCcw,
-  AlertTriangle,
-  ChevronDown,
   ExternalLink,
-  Mail,
-  Phone,
-  Globe,
+  ChevronDown,
+  UserCheck,
+  AlertTriangle,
+  RotateCcw,
+  LogOut,
+  Clock,
   MapPin,
   CheckCircle2,
+  MoreHorizontal,
+  FileText,
+  Lock,
 } from 'lucide-react';
 import { OrganizationRecord } from '../../../../services/platform/platformTenantService';
+import { SupportAccessSession } from '../../../../services/platform/platformSupportAccessService';
 import { Button } from '../../../../components/ui/Button';
 import { cn } from '../../../../lib/utils';
 
@@ -40,9 +41,9 @@ export interface CustomerWorkspaceHeaderProps {
   onChangePlan: () => void;
   onSuspendCustomer: (reason: string) => Promise<void>;
   onReactivateCustomer: (reason: string) => Promise<void>;
-  onAccessAccount: (mode: 'read-only' | 'full-support') => void;
-  activeImpersonation?: { mode: string; expiresIn: string } | null;
-  onExitImpersonation?: () => void;
+  onAccessAccount: () => void;
+  activeSupportSession?: SupportAccessSession | null;
+  onExitSupportSession?: () => void;
 }
 
 export const CustomerWorkspaceHeader: React.FC<CustomerWorkspaceHeaderProps> = ({
@@ -53,189 +54,151 @@ export const CustomerWorkspaceHeader: React.FC<CustomerWorkspaceHeaderProps> = (
   onSuspendCustomer,
   onReactivateCustomer,
   onAccessAccount,
-  activeImpersonation,
-  onExitImpersonation,
+  activeSupportSession,
+  onExitSupportSession,
 }) => {
-  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [showSuspendModal, setShowSuspendModal] = useState(false);
   const [showReactivateModal, setShowReactivateModal] = useState(false);
-  const [showAccessModal, setShowAccessModal] = useState(false);
-  const [suspendReason, setSuspendReason] = useState('Payment delinquency / Commercial review required');
-  const [reactivateReason, setReactivateReason] = useState('Account verified & commercial balance settled');
-  const [accessMode, setAccessMode] = useState<'read-only' | 'full-support'>('read-only');
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [suspensionReason, setSuspensionReason] = useState('Payment issue');
+  const [suspensionCustomNote, setSuspensionCustomNote] = useState('');
+  const [reactivationNote, setReactivationNote] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const isSuspended = org.status === 'Suspended';
-  const isHealthy = org.health_grade === 'Healthy';
 
-  // Format Renewal Date cleanly
-  const formattedRenewal = org.renewal_date
-    ? new Date(org.renewal_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-    : 'Not Scheduled';
+  const handleConfirmSuspend = async () => {
+    setIsProcessing(true);
+    try {
+      const finalReason = suspensionReason === 'Other' ? (suspensionCustomNote || 'Administrative suspension') : suspensionReason;
+      await onSuspendCustomer(finalReason);
+      setShowSuspendModal(false);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleConfirmReactivate = async () => {
+    setIsProcessing(true);
+    try {
+      await onReactivateCustomer(reactivationNote || 'Account reactivated by Platform Admin');
+      setShowReactivateModal(false);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
       {/* ----------------------------------------------------
-          1. IMPERSONATION / DIAGNOSTIC BANNER (IF ACTIVE)
+          TOP BREADCRUMB & PRIMARY ACTION TOOLBAR
          ---------------------------------------------------- */}
-      {activeImpersonation && (
-        <div className="bg-amber-50 border-2 border-amber-400 text-amber-900 px-4 py-3 rounded-2xl flex items-center justify-between shadow-xs animate-in fade-in">
-          <div className="flex items-center gap-3">
-            <ShieldAlert className="h-5 w-5 text-amber-600 animate-pulse" />
-            <div>
-              <span className="font-bold text-xs uppercase tracking-wider">Active Customer Access:</span>{' '}
-              <strong className="text-sm text-amber-950">{org.legal_name}</strong>{' '}
-              <span className="text-xs">({activeImpersonation.mode === 'read-only' ? 'Read-Only Diagnostic' : 'Support Admin Mode'})</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-mono font-semibold bg-white/90 px-2.5 py-1 rounded-lg border border-amber-200">
-              Expires in: {activeImpersonation.expiresIn}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onExitImpersonation}
-              className="bg-amber-900 text-white border-transparent hover:bg-amber-950 text-xs font-bold"
-            >
-              Exit Access
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ----------------------------------------------------
-          2. TOP BREADCRUMB & PRIMARY ACTION TOOLBAR
-         ---------------------------------------------------- */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <button
           onClick={onBackToList}
-          className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-gray-900 transition cursor-pointer w-fit"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-gray-900 transition cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Customers</span>
+          <span>Back to Organizations & Customers</span>
         </button>
 
+        {/* Action Toolbar */}
         <div className="flex items-center gap-2 relative">
+          {/* 1. Access Customer Account */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onAccessAccount}
+            className="border-amber-300 bg-amber-50/60 hover:bg-amber-100/80 text-amber-900 font-bold text-xs shadow-xs"
+          >
+            <Shield className="w-3.5 h-3.5 mr-1.5 text-amber-700" />
+            Access Customer Account
+          </Button>
+
+          {/* 2. Edit Organization */}
           <Button
             variant="outline"
             size="sm"
             onClick={onEditCustomer}
-            className="text-xs font-bold border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center gap-1.5"
+            className="border-gray-200 text-gray-700 hover:bg-gray-50 font-bold text-xs"
           >
-            <Edit className="w-3.5 h-3.5 text-gray-500" />
-            Edit Customer
+            <Edit className="w-3.5 h-3.5 mr-1.5 text-gray-400" />
+            Edit Organization
           </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowAccessModal(true)}
-            className="text-xs font-bold border-emerald-200 text-[#047857] bg-emerald-50/50 hover:bg-emerald-50 flex items-center gap-1.5"
-          >
-            <Shield className="w-3.5 h-3.5" />
-            Access Account
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onChangePlan}
-            className="text-xs font-bold border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-50 flex items-center gap-1.5"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Change Plan
-          </Button>
-
-          {/* More Actions Dropdown */}
+          {/* 3. More Dropdown / Suspend / Reactivate */}
           <div className="relative">
-            <button
-              onClick={() => setIsActionsMenuOpen(!isActionsMenuOpen)}
-              className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition cursor-pointer"
-            >
-              <MoreVertical className="w-4 h-4" />
-            </button>
-
-            {isActionsMenuOpen && (
-              <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-gray-100 py-1.5 z-40 text-xs animate-in fade-in">
-                {isSuspended ? (
-                  <button
-                    onClick={() => {
-                      setIsActionsMenuOpen(false);
-                      setShowReactivateModal(true);
-                    }}
-                    className="w-full px-4 py-2.5 text-left font-bold text-[#047857] hover:bg-emerald-50 flex items-center gap-2 cursor-pointer"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    Reactivate Customer
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setIsActionsMenuOpen(false);
-                      setShowSuspendModal(true);
-                    }}
-                    className="w-full px-4 py-2.5 text-left font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer"
-                  >
-                    <Lock className="w-4 h-4" />
-                    Suspend Customer
-                  </button>
-                )}
-                <div className="border-t border-gray-100 my-1" />
-                <button
-                  onClick={() => {
-                    setIsActionsMenuOpen(false);
-                    onEditCustomer();
-                  }}
-                  className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-50 flex items-center gap-2 cursor-pointer"
+            {isSuspended ? (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setShowReactivateModal(true)}
+                className="bg-[#047857] hover:bg-[#036246] text-white font-bold text-xs"
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                Reactivate Customer
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowMoreMenu(!showMoreMenu)}
+                  className="border-gray-200 text-gray-700 hover:bg-gray-50 font-bold text-xs"
                 >
-                  <Building2 className="w-4 h-4 text-gray-400" />
-                  Edit Profile & Tax IDs
-                </button>
-              </div>
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+
+                {showMoreMenu && (
+                  <div className="absolute right-0 top-full mt-1.5 w-48 bg-white rounded-2xl shadow-xl border border-gray-100 p-1.5 z-40 text-xs animate-in fade-in">
+                    <button
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        setShowSuspendModal(true);
+                      }}
+                      className="w-full text-left px-3 py-2 text-rose-600 hover:bg-rose-50 rounded-xl font-bold flex items-center gap-2 cursor-pointer"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>Suspend Customer</span>
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
       </div>
 
       {/* ----------------------------------------------------
-          3. COMPANY IDENTITY HERO BANNER
+          COMPANY IDENTITY HERO CARD
          ---------------------------------------------------- */}
-      <div className="bg-white rounded-3xl p-6 border border-gray-200 shadow-xs space-y-4">
+      <div className="p-6 bg-white rounded-3xl border border-gray-200 shadow-xs space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-[#047857] flex items-center justify-center font-bold text-xl shadow-xs">
-              <Building2 className="w-7 h-7" />
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#047857] to-[#036246] text-white flex items-center justify-center font-bold text-xl shadow-md shrink-0">
+              {org.legal_name.slice(0, 2).toUpperCase()}
             </div>
 
-            <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-xl font-bold text-gray-900">{org.legal_name}</h1>
                 <span
                   className={cn(
-                    'text-[11px] font-bold px-2.5 py-0.5 rounded-full border',
-                    org.status === 'Active'
-                      ? 'bg-emerald-50 text-[#047857] border-emerald-200'
-                      : org.status === 'Trial'
-                      ? 'bg-blue-50 text-blue-700 border-blue-200'
-                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                    'text-[10px] font-bold px-2.5 py-0.5 rounded-full border',
+                    isSuspended
+                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                      : 'bg-emerald-50 text-[#047857] border-emerald-200'
                   )}
                 >
-                  {org.status}
+                  ● {isSuspended ? 'SUSPENDED' : 'Active'}
                 </span>
-                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
                   {org.plan} Plan
-                </span>
-                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                  {org.billing_status}
                 </span>
               </div>
 
-              {/* Subtitle Metas */}
-              <div className="flex items-center gap-4 text-xs text-gray-500 font-medium mt-1.5 flex-wrap">
-                <span className="flex items-center gap-1 font-mono text-gray-700">
-                  <Globe className="w-3.5 h-3.5 text-gray-400" />
-                  {org.domain}
-                </span>
+              <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 font-medium">
+                <span className="font-mono text-gray-700">{org.domain}</span>
                 <span>•</span>
                 <span>{org.industry}</span>
                 <span>•</span>
@@ -244,221 +207,183 @@ export const CustomerWorkspaceHeader: React.FC<CustomerWorkspaceHeaderProps> = (
                   {org.city}, {org.country}
                 </span>
                 <span>•</span>
-                <span>Owner: <strong className="text-gray-800">{org.account_owner_name}</strong></span>
+                <span>Owner: <strong className="text-gray-700">{org.account_owner_name}</strong></span>
               </div>
             </div>
-          </div>
-
-          <div className="flex md:flex-col items-end justify-between md:justify-center border-t md:border-t-0 pt-3 md:pt-0">
-            <div className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Contract Value</div>
-            <div className="text-2xl font-bold font-mono text-gray-900">{org.mrr_formatted} <span className="text-xs text-gray-400 font-sans font-medium">/{org.billing_cycle.toLowerCase()}</span></div>
           </div>
         </div>
 
         {/* ----------------------------------------------------
-            4. SIX BUSINESS KPI CARDS
+            6 BUSINESS KPI TILES
            ---------------------------------------------------- */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-3 border-t border-gray-100">
-          {/* 1. Health */}
-          <div className="p-3.5 rounded-2xl bg-gray-50/80 border border-gray-100 space-y-1">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-              <HeartPulse className="w-3 h-3 text-emerald-600" /> Health
-            </span>
-            <div className="text-base font-bold text-gray-900 flex items-center gap-1.5">
-              <span>{org.health_score}</span>
-              <span className="text-xs font-normal text-gray-400">/ 100</span>
-              <span className={cn('text-[10px] font-bold px-1.5 py-0.2 rounded-full ml-auto', isHealthy ? 'bg-emerald-100 text-[#047857]' : 'bg-amber-100 text-amber-800')}>
+          {/* KPI 1: Health */}
+          <div className="p-3 bg-gray-50/70 rounded-2xl border border-gray-100 space-y-1">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Customer Health</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-lg font-bold text-[#047857] font-mono">{org.health_score}/100</span>
+              <span className="text-[10px] font-bold text-[#047857] bg-emerald-100 px-1.5 py-0.2 rounded">
                 {org.health_grade}
               </span>
             </div>
           </div>
 
-          {/* 2. Active Users */}
-          <div className="p-3.5 rounded-2xl bg-gray-50/80 border border-gray-100 space-y-1">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-              <Users className="w-3 h-3 text-blue-600" /> Active Users
-            </span>
-            <div className="text-base font-bold text-gray-900">
-              {org.active_employees} <span className="text-xs font-normal text-gray-400">/ {org.seat_limit}</span>
+          {/* KPI 2: Active Users */}
+          <div className="p-3 bg-gray-50/70 rounded-2xl border border-gray-100 space-y-1">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Active Users</span>
+            <div className="text-lg font-bold text-gray-900 font-mono">
+              {org.active_employees} <span className="text-xs text-gray-400 font-normal">/ {org.seat_limit}</span>
             </div>
           </div>
 
-          {/* 3. Seat Usage */}
-          <div className="p-3.5 rounded-2xl bg-gray-50/80 border border-gray-100 space-y-1">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-              <Activity className="w-3 h-3 text-purple-600" /> Seat Usage
-            </span>
-            <div className="text-base font-bold text-gray-900 font-mono">
-              {org.seat_utilization_pct}% <span className="text-[10px] font-sans text-emerald-600 font-bold ml-1">Normal</span>
+          {/* KPI 3: Seat Usage */}
+          <div className="p-3 bg-gray-50/70 rounded-2xl border border-gray-100 space-y-1">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Seat Usage</span>
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-bold text-gray-900 font-mono">{org.seat_utilization_pct}%</span>
+              <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className={cn('h-full rounded-full', org.seat_utilization_pct > 85 ? 'bg-amber-500' : 'bg-[#047857]')}
+                  style={{ width: `${Math.min(100, org.seat_utilization_pct)}%` }}
+                />
+              </div>
             </div>
           </div>
 
-          {/* 4. Monthly Revenue */}
-          <div className="p-3.5 rounded-2xl bg-gray-50/80 border border-gray-100 space-y-1">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-              <CreditCard className="w-3 h-3 text-emerald-600" /> Revenue (MRR)
-            </span>
-            <div className="text-base font-bold text-gray-900 font-mono">
-              ₹{org.mrr.toLocaleString('en-IN')}
-            </div>
+          {/* KPI 4: Monthly Revenue */}
+          <div className="p-3 bg-gray-50/70 rounded-2xl border border-gray-100 space-y-1">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Monthly Revenue (MRR)</span>
+            <div className="text-lg font-bold font-mono text-gray-900">{org.mrr_formatted}</div>
           </div>
 
-          {/* 5. Last Activity */}
-          <div className="p-3.5 rounded-2xl bg-gray-50/80 border border-gray-100 space-y-1">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-              <Clock className="w-3 h-3 text-gray-500" /> Last Activity
-            </span>
-            <div className="text-xs font-bold text-gray-900 truncate">
+          {/* KPI 5: Last Activity */}
+          <div className="p-3 bg-gray-50/70 rounded-2xl border border-gray-100 space-y-1">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Last Activity</span>
+            <div className="text-xs font-bold text-gray-800 truncate" title={org.last_activity_event}>
               {org.last_activity_time}
             </div>
           </div>
 
-          {/* 6. Next Renewal */}
-          <div className="p-3.5 rounded-2xl bg-gray-50/80 border border-gray-100 space-y-1">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-              <Calendar className="w-3 h-3 text-amber-600" /> Next Renewal
-            </span>
-            <div className="text-xs font-bold text-gray-900">
-              {formattedRenewal}
-            </div>
+          {/* KPI 6: Next Renewal */}
+          <div className="p-3 bg-gray-50/70 rounded-2xl border border-gray-100 space-y-1">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Next Renewal</span>
+            <div className="text-xs font-bold text-gray-800">{org.renewal_date || 'In 30 days'}</div>
           </div>
         </div>
       </div>
 
       {/* ----------------------------------------------------
-          SUSPEND CUSTOMER MODAL
+          SUSPEND CUSTOMER CONFIRMATION MODAL
          ---------------------------------------------------- */}
       {showSuspendModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in">
-            <div className="flex items-center gap-3 text-rose-600">
-              <AlertTriangle className="w-6 h-6" />
-              <h3 className="text-base font-bold text-gray-900">Suspend Customer Access?</h3>
-            </div>
-            <p className="text-xs text-gray-600">
-              Suspending <strong>{org.legal_name}</strong> will immediately disable user access to the employee portal and HRMS apps. Existing database records and subscriptions remain preserved.
-            </p>
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Reason for Suspension *</label>
-              <textarea
-                value={suspendReason}
-                onChange={(e) => setSuspendReason(e.target.value)}
-                rows={2}
-                className="w-full px-3 py-2 border rounded-xl text-xs bg-gray-50"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setShowSuspendModal(false)}>Cancel</Button>
-              <Button
-                variant="primary"
-                size="sm"
-                className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
-                onClick={async () => {
-                  setShowSuspendModal(false);
-                  await onSuspendCustomer(suspendReason);
-                }}
-              >
-                Suspend Customer
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ----------------------------------------------------
-          REACTIVATE CUSTOMER MODAL
-         ---------------------------------------------------- */}
-      {showReactivateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in">
-            <div className="flex items-center gap-3 text-[#047857]">
-              <CheckCircle2 className="w-6 h-6" />
-              <h3 className="text-base font-bold text-gray-900">Reactivate Customer Account</h3>
-            </div>
-            <p className="text-xs text-gray-600">
-              Reactivating <strong>{org.legal_name}</strong> will restore immediate login access for all {org.active_employees} staff members.
-            </p>
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Reactivation Notes</label>
-              <input
-                type="text"
-                value={reactivateReason}
-                onChange={(e) => setReactivateReason(e.target.value)}
-                className="w-full px-3 py-2 border rounded-xl text-xs bg-gray-50"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setShowReactivateModal(false)}>Cancel</Button>
-              <Button
-                variant="primary"
-                size="sm"
-                className="bg-[#047857] hover:bg-[#036246] text-white font-bold"
-                onClick={async () => {
-                  setShowReactivateModal(false);
-                  await onReactivateCustomer(reactivateReason);
-                }}
-              >
-                Reactivate Customer
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ----------------------------------------------------
-          ACCESS CUSTOMER ACCOUNT MODAL
-         ---------------------------------------------------- */}
-      {showAccessModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in">
-            <div className="flex items-center gap-3 text-[#047857]">
-              <Shield className="w-6 h-6" />
-              <h3 className="text-base font-bold text-gray-900">Access Customer Account</h3>
-            </div>
-            <p className="text-xs text-gray-600">
-              Initiate temporary administrative access to <strong>{org.legal_name}</strong> for customer support and troubleshooting. All actions are logged to the forensic audit trail.
-            </p>
-
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-gray-700">Access Mode</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setAccessMode('read-only')}
-                  className={cn(
-                    'p-3 rounded-xl border text-left font-bold text-xs cursor-pointer transition',
-                    accessMode === 'read-only' ? 'border-[#047857] bg-emerald-50 text-[#047857]' : 'border-gray-200 text-gray-600'
-                  )}
-                >
-                  <div>Read-Only</div>
-                  <span className="text-[10px] font-normal text-gray-500">Diagnostic inspection</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAccessMode('full-support')}
-                  className={cn(
-                    'p-3 rounded-xl border text-left font-bold text-xs cursor-pointer transition',
-                    accessMode === 'full-support' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600'
-                  )}
-                >
-                  <div>Full Support</div>
-                  <span className="text-[10px] font-normal text-gray-500">Operational mutations</span>
-                </button>
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in fade-in text-xs">
+            <div className="flex items-center gap-3 border-b pb-3">
+              <div className="p-2.5 bg-rose-50 rounded-2xl text-rose-600">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900">Suspend Customer?</h3>
+                <p className="text-xs text-gray-500 font-semibold">{org.legal_name}</p>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setShowAccessModal(false)}>Cancel</Button>
+            <p className="text-gray-600 leading-relaxed">
+              Suspending this customer will temporarily disable login access and external API integrations. <strong>Customer records, subscriptions, payroll data and invoices will remain strictly preserved.</strong>
+            </p>
+
+            {/* Impact Checklist */}
+            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-2">
+              <span className="font-bold text-gray-900 block">Affected Areas:</span>
+              <div className="grid grid-cols-2 gap-2 text-gray-600">
+                <div className="flex items-center gap-1.5"><span className="text-rose-500">✕</span> Customer Login</div>
+                <div className="flex items-center gap-1.5"><span className="text-rose-500">✕</span> Web & Mobile Apps</div>
+                <div className="flex items-center gap-1.5"><span className="text-rose-500">✕</span> API Keys Access</div>
+                <div className="flex items-center gap-1.5"><span className="text-rose-500">✕</span> External Webhooks</div>
+              </div>
+            </div>
+
+            {/* Reason Selector */}
+            <div className="space-y-2">
+              <label className="block font-bold text-gray-700">Suspension Reason *</label>
+              <select
+                value={suspensionReason}
+                onChange={(e) => setSuspensionReason(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl bg-gray-50 font-semibold text-gray-800"
+              >
+                <option value="Payment issue">Payment issue / Overdue invoice</option>
+                <option value="Customer request">Customer request (Temporary hiatus)</option>
+                <option value="Security concern">Security concern / Anomalous traffic</option>
+                <option value="Contract ended">Contract ended / Non-renewal</option>
+                <option value="Policy violation">Policy violation</option>
+                <option value="Operational issue">Operational issue</option>
+                <option value="Other">Other (Specify below)</option>
+              </select>
+
+              {suspensionReason === 'Other' && (
+                <input
+                  type="text"
+                  required
+                  placeholder="Detailed administrative explanation..."
+                  value={suspensionCustomNote}
+                  onChange={(e) => setSuspensionCustomNote(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl bg-gray-50 text-xs"
+                />
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="outline" size="sm" onClick={() => setShowSuspendModal(false)} disabled={isProcessing}>
+                Cancel
+              </Button>
               <Button
                 variant="primary"
                 size="sm"
-                className="bg-[#047857] hover:bg-[#036246] text-white font-bold"
-                onClick={() => {
-                  setShowAccessModal(false);
-                  onAccessAccount(accessMode);
-                }}
+                disabled={isProcessing}
+                onClick={handleConfirmSuspend}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
               >
-                Start Session
+                {isProcessing ? 'Suspending...' : 'Suspend Customer'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ----------------------------------------------------
+          REACTIVATE CUSTOMER CONFIRMATION MODAL
+         ---------------------------------------------------- */}
+      {showReactivateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in text-xs">
+            <h3 className="text-base font-bold text-gray-900">Reactivate {org.legal_name}?</h3>
+            <p className="text-gray-600 leading-relaxed">
+              Customer users will immediately regain ability to sign in and all eligible customer services will be restored.
+            </p>
+
+            <div>
+              <label className="block font-bold text-gray-700 mb-1">Activation Note (Optional)</label>
+              <input
+                type="text"
+                placeholder="e.g. Payment verified; resuming full service"
+                value={reactivationNote}
+                onChange={(e) => setReactivationNote(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl bg-gray-50 text-xs"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="outline" size="sm" onClick={() => setShowReactivateModal(false)} disabled={isProcessing}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={isProcessing}
+                onClick={handleConfirmReactivate}
+                className="bg-[#047857] hover:bg-[#036246] text-white font-bold"
+              >
+                {isProcessing ? 'Reactivating...' : 'Reactivate Customer'}
               </Button>
             </div>
           </div>

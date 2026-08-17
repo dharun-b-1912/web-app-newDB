@@ -57,8 +57,16 @@ import {
   PlanTier,
   OrgStatus,
 } from '../../../services/platform/platformTenantService';
+import {
+  platformSupportAccessService,
+  SupportAccessSession,
+  SupportAccessMode,
+} from '../../../services/platform/platformSupportAccessService';
 import { ProvisionCustomerModal } from '../components/ProvisionCustomerModal';
 import { CustomerWorkspaceHeader } from '../components/tenants/CustomerWorkspaceHeader';
+import { EditOrganizationModal } from '../components/tenants/EditOrganizationModal';
+import { AccessCustomerModal } from '../components/tenants/AccessCustomerModal';
+import { SupportAccessBanner } from '../components/tenants/SupportAccessBanner';
 import { CustomerOverviewTab } from '../components/tenants/CustomerOverviewTab';
 import { CustomerPeopleTab } from '../components/tenants/CustomerPeopleTab';
 import { CustomerSubscriptionTab } from '../components/tenants/CustomerSubscriptionTab';
@@ -102,28 +110,15 @@ export const TenantsView: React.FC = () => {
     sort_dir: 'desc',
   });
 
-  // Provisioning Modal State
+  // Modal States
   const [isProvisionWizardOpen, setIsProvisionWizardOpen] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showAccessModal, setShowAccessModal] = useState(false);
 
-  // Edit Customer Modal State
-  const [showEditCustomerModal, setShowEditCustomerModal] = useState(false);
-  const [editForm, setEditForm] = useState({
-    legal_name: '',
-    display_name: '',
-    domain: '',
-    industry: '',
-    gstin: '',
-    pan: '',
-  });
+  // Active Support Access Session State
+  const [activeSupportSession, setActiveSupportSession] = useState<SupportAccessSession | null>(null);
 
-  // Active Impersonation State
-  const [activeImpersonation, setActiveImpersonation] = useState<{
-    org: OrganizationRecord;
-    mode: string;
-    expiresIn: string;
-  } | null>(null);
-
-  // Data fetching versioning
+  // Data versioning for immediate reactivity
   const [dataVersion, setDataVersion] = useState(0);
   const data = useMemo(() => {
     return platformTenantService.getOrganizations(queryParams);
@@ -143,64 +138,92 @@ export const TenantsView: React.FC = () => {
     return platformTenantService.getOrganizationById(selectedOrgId);
   }, [selectedOrgId, dataVersion]);
 
-  // Open Edit Customer Modal with populated values
-  const handleOpenEditCustomer = () => {
+  // Sync active support session on organization change
+  useEffect(() => {
+    if (selectedOrgId) {
+      const active = platformSupportAccessService.getActiveSession(selectedOrgId);
+      setActiveSupportSession(active);
+    } else {
+      setActiveSupportSession(null);
+    }
+  }, [selectedOrgId, dataVersion]);
+
+  // 1. SAVE EDIT ORGANIZATION ACTION
+  const handleSaveEditOrganization = async (updates: Partial<OrganizationRecord>, diffSummary: string) => {
     if (!selectedOrg) return;
-    setEditForm({
-      legal_name: selectedOrg.legal_name,
-      display_name: selectedOrg.display_name,
-      domain: selectedOrg.domain,
-      industry: selectedOrg.industry,
-      gstin: selectedOrg.gstin || '',
-      pan: selectedOrg.pan || '',
-    });
-    setShowEditCustomerModal(true);
+    try {
+      await platformTenantService.updateOrganization(selectedOrg.id, updates, diffSummary);
+      fetchData();
+      showToast('Organization updated successfully.', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Unable to update organization.', 'error');
+    }
   };
 
-  // Save Edit Customer Profile
-  const handleSaveEditCustomer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedOrg) return;
-
-    await platformTenantService.updateOrganization(selectedOrg.id, {
-      legal_name: editForm.legal_name,
-      display_name: editForm.display_name,
-      domain: editForm.domain,
-      industry: editForm.industry,
-      gstin: editForm.gstin || undefined,
-      pan: editForm.pan || undefined,
-    });
-
-    setShowEditCustomerModal(false);
-    fetchData();
-    showToast(`Updated customer profile for ${editForm.legal_name}`, 'success');
-  };
-
-  // Suspend Customer Action
+  // 2. SUSPEND CUSTOMER ACTION
   const handleSuspendCustomer = async (reason: string) => {
     if (!selectedOrg) return;
-    await platformTenantService.suspendOrganization(selectedOrg.id, reason, true);
-    fetchData();
-    showToast(`Customer ${selectedOrg.legal_name} has been suspended.`, 'info');
+    try {
+      await platformTenantService.suspendOrganization(selectedOrg.id, reason, true);
+      fetchData();
+      showToast(`Customer ${selectedOrg.legal_name} has been suspended.`, 'info');
+    } catch (err: any) {
+      showToast(err.message || 'Unable to suspend customer.', 'error');
+    }
   };
 
-  // Reactivate Customer Action
+  // 3. REACTIVATE CUSTOMER ACTION
   const handleReactivateCustomer = async (reason: string) => {
     if (!selectedOrg) return;
-    await platformTenantService.reactivateOrganization(selectedOrg.id, reason);
-    fetchData();
-    showToast(`Customer ${selectedOrg.legal_name} has been reactivated.`, 'success');
+    try {
+      await platformTenantService.reactivateOrganization(selectedOrg.id, reason);
+      fetchData();
+      showToast(`Customer ${selectedOrg.legal_name} has been reactivated.`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Unable to reactivate customer.', 'error');
+    }
   };
 
-  // Access Customer Account Action
-  const handleAccessCustomerAccount = (mode: 'read-only' | 'full-support') => {
+  // 4. START SUPPORT ACCESS ACTION
+  const handleStartSupportAccess = async (params: {
+    accessMode: SupportAccessMode;
+    durationMinutes: number;
+    reason: string;
+    supportCaseId?: string;
+  }) => {
     if (!selectedOrg) return;
-    setActiveImpersonation({
-      org: selectedOrg,
-      mode,
-      expiresIn: '15:00',
-    });
-    showToast(`Started diagnostic session for ${selectedOrg.legal_name} (${mode})`, 'info');
+    try {
+      const session = await platformSupportAccessService.startSupportSession({
+        organizationId: selectedOrg.id,
+        organizationName: selectedOrg.legal_name,
+        actorId: 'user-thirumalai',
+        actorName: 'Thirumalai R K',
+        actorRole: 'Platform Admin',
+        accessMode: params.accessMode,
+        durationMinutes: params.durationMinutes,
+        reason: params.reason,
+        supportCaseId: params.supportCaseId,
+      });
+
+      setActiveSupportSession(session);
+      fetchData();
+      showToast(`Secure support access started (${params.durationMinutes}m) for ${selectedOrg.legal_name}`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Customer access could not be started.', 'error');
+    }
+  };
+
+  // 5. EXIT SUPPORT ACCESS ACTION
+  const handleExitSupportAccess = async () => {
+    if (!selectedOrg) return;
+    try {
+      await platformSupportAccessService.endSupportSession(selectedOrg.id);
+      setActiveSupportSession(null);
+      fetchData();
+      showToast('Customer access ended.', 'info');
+    } catch (err: any) {
+      showToast(err.message || 'Error ending support session.', 'error');
+    }
   };
 
   // Export CSV
@@ -239,18 +262,26 @@ export const TenantsView: React.FC = () => {
   // ============================================================
   if (selectedOrg) {
     return (
-      <div className="space-y-6 pb-16 font-sans animate-in fade-in">
+      <div className="space-y-6 pb-16 font-sans animate-in fade-in relative">
+        {/* Persistent Support Access Diagnostic Banner (if session active) */}
+        {activeSupportSession && (
+          <SupportAccessBanner
+            session={activeSupportSession}
+            onExitSession={handleExitSupportAccess}
+          />
+        )}
+
         {/* Customer Workspace Header with 6 KPIs & Safety Actions */}
         <CustomerWorkspaceHeader
           organization={selectedOrg}
           onBackToList={() => setSelectedOrgId(null)}
-          onEditCustomer={handleOpenEditCustomer}
+          onEditCustomer={() => setShowEditModal(true)}
           onChangePlan={() => setActiveTab('subscription')}
           onSuspendCustomer={handleSuspendCustomer}
           onReactivateCustomer={handleReactivateCustomer}
-          onAccessAccount={handleAccessCustomerAccount}
-          activeImpersonation={activeImpersonation}
-          onExitImpersonation={() => setActiveImpersonation(null)}
+          onAccessAccount={() => setShowAccessModal(true)}
+          activeSupportSession={activeSupportSession}
+          onExitSupportSession={handleExitSupportAccess}
         />
 
         {/* 10 Workspace Tabs Bar */}
@@ -290,7 +321,7 @@ export const TenantsView: React.FC = () => {
             <CustomerOverviewTab
               organization={selectedOrg}
               onNavigateTab={(t) => setActiveTab(t as any)}
-              onEditCustomer={handleOpenEditCustomer}
+              onEditCustomer={() => setShowEditModal(true)}
               onChangePlan={() => setActiveTab('subscription')}
             />
           )}
@@ -321,87 +352,21 @@ export const TenantsView: React.FC = () => {
           {activeTab === 'integrations' && <CustomerIntegrationsTab organization={selectedOrg} />}
         </div>
 
-        {/* Edit Customer Modal */}
-        {showEditCustomerModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-            <form onSubmit={handleSaveEditCustomer} className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in fade-in text-xs">
-              <h3 className="text-base font-bold text-gray-900">Edit Customer Information</h3>
+        {/* Edit Organization Side Panel Modal */}
+        <EditOrganizationModal
+          isOpen={showEditModal}
+          organization={selectedOrg}
+          onClose={() => setShowEditModal(false)}
+          onSave={handleSaveEditOrganization}
+        />
 
-              <div>
-                <label className="block font-bold text-gray-700 mb-1">Company Legal Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={editForm.legal_name}
-                  onChange={(e) => setEditForm({ ...editForm, legal_name: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-xl bg-gray-50 font-medium text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-gray-700 mb-1">Display Name (Short Brand)</label>
-                <input
-                  type="text"
-                  value={editForm.display_name}
-                  onChange={(e) => setEditForm({ ...editForm, display_name: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-xl bg-gray-50 text-xs"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">Primary Domain *</label>
-                  <input
-                    type="text"
-                    required
-                    value={editForm.domain}
-                    onChange={(e) => setEditForm({ ...editForm, domain: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl bg-gray-50 font-mono text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">Industry Vertical</label>
-                  <input
-                    type="text"
-                    value={editForm.industry}
-                    onChange={(e) => setEditForm({ ...editForm, industry: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl bg-gray-50 text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">GSTIN (Optional)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 33AAACA0000F1Z0"
-                    value={editForm.gstin}
-                    onChange={(e) => setEditForm({ ...editForm, gstin: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl bg-gray-50 font-mono text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">PAN (Optional)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. AAACA0000F"
-                    value={editForm.pan}
-                    onChange={(e) => setEditForm({ ...editForm, pan: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl bg-gray-50 font-mono text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" size="sm" type="button" onClick={() => setShowEditCustomerModal(false)}>Cancel</Button>
-                <Button variant="primary" size="sm" type="submit" className="bg-[#047857] hover:bg-[#036246] text-white font-bold">
-                  Save Changes
-                </Button>
-              </div>
-            </form>
-          </div>
-        )}
+        {/* Access Customer Support Session Modal */}
+        <AccessCustomerModal
+          isOpen={showAccessModal}
+          organization={selectedOrg}
+          onClose={() => setShowAccessModal(false)}
+          onStartSession={handleStartSupportAccess}
+        />
       </div>
     );
   }
@@ -580,8 +545,13 @@ export const TenantsView: React.FC = () => {
                     </td>
 
                     <td className="py-4 px-4">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-[#047857]">
-                        {org.billing_status}
+                      <span
+                        className={cn(
+                          'text-[10px] font-bold px-2 py-0.5 rounded-full',
+                          org.status === 'Suspended' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-[#047857]'
+                        )}
+                      >
+                        {org.status === 'Suspended' ? 'Suspended' : org.billing_status}
                       </span>
                     </td>
 

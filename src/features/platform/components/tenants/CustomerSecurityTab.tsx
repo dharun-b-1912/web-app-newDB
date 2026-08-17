@@ -89,6 +89,54 @@ export const CustomerSecurityTab: React.FC<CustomerSecurityTabProps> = ({ organi
         </div>
       </div>
 
+      {/* Platform Support Access History */}
+      <div className="bg-white rounded-3xl border border-gray-200 shadow-xs overflow-hidden">
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900">Platform Support Access Ledger</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Audited history of temporary support sessions launched by Platform Admins.</p>
+          </div>
+          <span className="text-[10px] font-bold bg-purple-50 text-purple-700 px-2.5 py-0.5 rounded-full border border-purple-200">
+            Immutable Audit Trail
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-gray-50/70 border-b border-gray-100 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
+              <tr>
+                <th className="py-3 px-5">Administrator</th>
+                <th className="py-3 px-4">Access Mode</th>
+                <th className="py-3 px-4">Reason / Ticket</th>
+                <th className="py-3 px-4">Duration</th>
+                <th className="py-3 px-4">Timestamp</th>
+                <th className="py-3 px-5 text-right">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
+              <tr>
+                <td className="py-3.5 px-5">
+                  <div className="font-bold text-gray-900">Thirumalai R K</div>
+                  <span className="text-[10px] text-gray-400">Platform Admin</span>
+                </td>
+                <td className="py-3.5 px-4">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-[#047857] border border-emerald-200">
+                    SUPPORT ACCESS
+                  </span>
+                </td>
+                <td className="py-3.5 px-4">
+                  <div className="text-gray-900 font-semibold">Investigating biometric hardware push daemon credentials</div>
+                  <span className="text-[10px] text-purple-700 font-mono">SUP-10482</span>
+                </td>
+                <td className="py-3.5 px-4 font-mono text-gray-600">14 minutes</td>
+                <td className="py-3.5 px-4 text-gray-500">17 Aug 2026 11:42 IST</td>
+                <td className="py-3.5 px-5 text-right font-bold text-emerald-700">Completed</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* Revoke Sessions Confirmation Modal */}
       {showRevokeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

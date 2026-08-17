@@ -86,6 +86,7 @@ export interface OrganizationRecord {
   mrr_formatted: string;
   billing_cycle: 'Monthly' | 'Quarterly' | 'Annual';
   created_at: string;
+  updated_at?: string;
   renewal_date: string;
   auto_renew: boolean;
 
@@ -370,51 +371,150 @@ export const platformTenantService = {
     return this.getOrganizations();
   },
 
-  async updateOrganization(id: string, updates: Partial<OrganizationRecord>): Promise<OrganizationRecord> {
+  async updateOrganization(
+    id: string,
+    updates: Partial<OrganizationRecord>,
+    customReason?: string
+  ): Promise<OrganizationRecord> {
     const idx = organizationDb.findIndex((o) => o.id === id);
     if (idx === -1) throw new Error('Organization not found');
 
+    const previous = { ...organizationDb[idx] };
     organizationDb[idx] = {
       ...organizationDb[idx],
       ...updates,
+      updated_at: new Date().toISOString(),
     };
 
+    // Update in Supabase tables
     if (isSupabaseEnabled) {
       try {
         await supabase.from('organizations').update(updates).eq('id', id);
+        await supabase
+          .from('customer_profiles')
+          .update({
+            legal_name: updates.legal_name || previous.legal_name,
+            display_name: updates.display_name || previous.display_name,
+            industry: updates.industry || previous.industry,
+          })
+          .eq('organization_id', id);
       } catch (err) {
         console.warn('[PlatformTenantService] Supabase update fallback:', err);
       }
     }
 
+    // Append to organization activity log
+    organizationDb[idx].activity_log.unshift({
+      id: `act-${Date.now()}`,
+      event: customReason || `Platform Admin updated company profile details`,
+      actor: 'Thirumalai R K (Platform Admin)',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      category: 'Administration',
+      source: 'Platform Operations',
+    });
+
     await platformAuditService.logEvent({
-      actor_id: 'user-superadmin',
-      actor_name: 'WorkForce Super Admin',
-      actor_role: 'Super Admin',
+      actor_id: 'user-thirumalai',
+      actor_name: 'Thirumalai R K',
+      actor_role: 'Platform Admin',
       organization_id: id,
       organization_name: organizationDb[idx].legal_name,
       action: 'ORGANIZATION_UPDATED',
       resource_type: 'Organization',
       resource_id: id,
       severity: 'Normal',
-      reason: `Updated company metadata for ${organizationDb[idx].legal_name}`,
+      reason: customReason || `Updated company metadata for ${organizationDb[idx].legal_name}`,
     });
 
     return organizationDb[idx];
   },
 
   async suspendOrganization(id: string, reason?: string, notifyAdmin?: boolean): Promise<OrganizationRecord> {
-    return this.updateOrganization(id, {
-      status: 'Suspended',
-      lifecycle_state: 'Suspended',
+    const org = this.getOrganizationById(id);
+    if (!org) throw new Error('Organization not found');
+
+    const suspensionReason = reason || 'Administrative suspension';
+    org.status = 'Suspended';
+    org.lifecycle_state = 'Suspended';
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase
+          .from('organizations')
+          .update({ status: 'Suspended', lifecycle_state: 'Suspended' })
+          .eq('id', id);
+      } catch (err) {
+        console.warn('[PlatformTenantService] Supabase suspend fallback:', err);
+      }
+    }
+
+    org.activity_log.unshift({
+      id: `act-${Date.now()}`,
+      event: `Platform Admin suspended customer access: ${suspensionReason}`,
+      actor: 'Thirumalai R K (Platform Admin)',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      category: 'Security',
+      source: 'Lifecycle Controller',
     });
+
+    await platformAuditService.logEvent({
+      actor_id: 'user-thirumalai',
+      actor_name: 'Thirumalai R K',
+      actor_role: 'Platform Admin',
+      organization_id: id,
+      organization_name: org.legal_name,
+      action: 'ORGANIZATION_SUSPENDED',
+      resource_type: 'Organization',
+      resource_id: id,
+      severity: 'High',
+      reason: suspensionReason,
+    });
+
+    return org;
   },
 
   async reactivateOrganization(id: string, reason?: string): Promise<OrganizationRecord> {
-    return this.updateOrganization(id, {
-      status: 'Active',
-      lifecycle_state: 'Active',
+    const org = this.getOrganizationById(id);
+    if (!org) throw new Error('Organization not found');
+
+    const reactivateNote = reason || 'Account reactivated by Platform Admin';
+    org.status = 'Active';
+    org.lifecycle_state = 'Active';
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase
+          .from('organizations')
+          .update({ status: 'Active', lifecycle_state: 'Active' })
+          .eq('id', id);
+      } catch (err) {
+        console.warn('[PlatformTenantService] Supabase reactivate fallback:', err);
+      }
+    }
+
+    org.activity_log.unshift({
+      id: `act-${Date.now()}`,
+      event: `Platform Admin reactivated customer account: ${reactivateNote}`,
+      actor: 'Thirumalai R K (Platform Admin)',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      category: 'Administration',
+      source: 'Lifecycle Controller',
     });
+
+    await platformAuditService.logEvent({
+      actor_id: 'user-thirumalai',
+      actor_name: 'Thirumalai R K',
+      actor_role: 'Platform Admin',
+      organization_id: id,
+      organization_name: org.legal_name,
+      action: 'ORGANIZATION_REACTIVATED',
+      resource_type: 'Organization',
+      resource_id: id,
+      severity: 'High',
+      reason: reactivateNote,
+    });
+
+    return org;
   },
 
   async addInternalNote(id: string, text: string, author?: string): Promise<OrgInternalNote> {
