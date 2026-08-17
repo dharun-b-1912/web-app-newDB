@@ -27,7 +27,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  ReferenceLine,
 } from 'recharts';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../lib/utils';
@@ -45,7 +44,6 @@ export interface SaasBusinessViewProps {
 export const SaasBusinessView: React.FC<SaasBusinessViewProps> = ({ onNavigateTab }) => {
   usePlatformRealtime();
   const [metricView, setMetricView] = useState<'mrr' | 'arr' | 'tenants'>('mrr');
-  const [timeframe, setTimeframe] = useState<'6m' | '12m'>('6m');
 
   // Dynamic Domain Data from Real Database
   const orgs = platformTenantService.getOrganizations().items;
@@ -55,10 +53,9 @@ export const SaasBusinessView: React.FC<SaasBusinessViewProps> = ({ onNavigateTa
   const totalMrr = orgs.reduce((sum, o) => sum + (o.mrr || 0), 0);
   const totalArr = totalMrr * 12;
   const activeOrgsCount = orgs.filter((o) => o.status === 'Active').length;
-  const newSubsCount = subscriptions.filter((s) => s.status === 'Active' || s.status === 'Trial').length;
   const arpu = orgs.length > 0 ? Math.round(totalMrr / orgs.length) : 0;
 
-  // Plan Performance Calculation
+  // Plan Performance Calculation (Derived directly from live Organizations)
   const planPerformance = useMemo(() => {
     const plans = [
       { name: 'Starter', color: '#64748B' },
@@ -73,76 +70,89 @@ export const SaasBusinessView: React.FC<SaasBusinessViewProps> = ({ onNavigateTa
       return {
         name: p.name,
         tenants: planOrgs.length,
-        mrr: planMrr > 0 ? `₹${(planMrr / 100000).toFixed(1)}L` : '₹0',
-        growth: '+100%',
+        mrr: planMrr > 0 ? `₹${(planMrr / 100000).toFixed(2)}L` : '₹0',
+        growth: planOrgs.length > 0 ? 'Active' : 'No Subscriptions',
         churn: '0.0%',
         color: p.color,
       };
     });
   }, [orgs]);
 
-  // Animated Multi-Point Revenue Curve (Anchored on Real Live Current Baseline)
+  // 100% Real Database Grouped Time-Series (Zero Mock / Zero Fake multipliers)
   const chartData = useMemo(() => {
-    const currentMrr = totalMrr > 0 ? totalMrr : 45000;
-    const currentArr = totalArr > 0 ? totalArr : currentMrr * 12;
+    // Group all real invoices by month
+    const monthMap = new Map<
+      string,
+      {
+        monthLabel: string;
+        invoicedAmount: number;
+        paidAmount: number;
+        invoiceCount: number;
+        activeTenants: Set<string>;
+      }
+    >();
 
-    if (timeframe === '6m') {
+    invoices.forEach((inv) => {
+      const rawDate = inv.issue_date || inv.billing_date || new Date().toISOString().split('T')[0];
+      const dateObj = new Date(rawDate);
+      const monthKey = !isNaN(dateObj.getTime())
+        ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`
+        : '2026-08';
+      const monthLabel = !isNaN(dateObj.getTime())
+        ? dateObj.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+        : 'Aug 26';
+
+      if (!monthMap.has(monthKey)) {
+        monthMap.set(monthKey, {
+          monthLabel,
+          invoicedAmount: 0,
+          paidAmount: 0,
+          invoiceCount: 0,
+          activeTenants: new Set(),
+        });
+      }
+
+      const entry = monthMap.get(monthKey)!;
+      entry.invoicedAmount += inv.subtotal || 0;
+      entry.paidAmount += inv.amount_paid || 0;
+      entry.invoiceCount += 1;
+      if (inv.tenant_id) entry.activeTenants.add(inv.tenant_id);
+    });
+
+    // If no invoices exist yet, fallback to live active organizations MRR
+    if (monthMap.size === 0) {
+      const currentMonthLabel = new Date().toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
       return [
         {
-          month: 'Mar 26',
-          mrr: Math.round(currentMrr * 0.4),
-          arr: Math.round(currentArr * 0.4),
-          tenants: Math.max(1, Math.round(activeOrgsCount * 0.4)),
-          growth: '+0%',
-        },
-        {
-          month: 'Apr 26',
-          mrr: Math.round(currentMrr * 0.55),
-          arr: Math.round(currentArr * 0.55),
-          tenants: Math.max(1, Math.round(activeOrgsCount * 0.6)),
-          growth: '+37.5%',
-        },
-        {
-          month: 'May 26',
-          mrr: Math.round(currentMrr * 0.7),
-          arr: Math.round(currentArr * 0.7),
-          tenants: Math.max(1, Math.round(activeOrgsCount * 0.7)),
-          growth: '+27.3%',
-        },
-        {
-          month: 'Jun 26',
-          mrr: Math.round(currentMrr * 0.82),
-          arr: Math.round(currentArr * 0.82),
-          tenants: Math.max(1, Math.round(activeOrgsCount * 0.8)),
-          growth: '+17.1%',
-        },
-        {
-          month: 'Jul 26',
-          mrr: Math.round(currentMrr * 0.92),
-          arr: Math.round(currentArr * 0.92),
-          tenants: Math.max(1, Math.round(activeOrgsCount * 0.9)),
-          growth: '+12.2%',
-        },
-        {
-          month: 'Aug 26 (Current)',
-          mrr: currentMrr,
-          arr: currentArr,
+          month: currentMonthLabel,
+          mrr: totalMrr,
+          arr: totalArr,
           tenants: activeOrgsCount,
-          growth: '+8.7% (Live)',
           isLive: true,
         },
       ];
-    } else {
-      return [
-        { month: 'Q3 25', mrr: Math.round(currentMrr * 0.2), arr: Math.round(currentArr * 0.2), tenants: 1, growth: 'Seed' },
-        { month: 'Q4 25', mrr: Math.round(currentMrr * 0.4), arr: Math.round(currentArr * 0.4), tenants: 1, growth: '+100%' },
-        { month: 'Q1 26', mrr: Math.round(currentMrr * 0.65), arr: Math.round(currentArr * 0.65), tenants: 1, growth: '+62.5%' },
-        { month: 'Q2 26', mrr: Math.round(currentMrr * 0.85), arr: Math.round(currentArr * 0.85), tenants: activeOrgsCount, growth: '+30.7%' },
-        { month: 'Q3 26 (Current)', mrr: currentMrr, arr: currentArr, tenants: activeOrgsCount, growth: '+17.6%', isLive: true },
-        { month: 'Q4 26 (Projected)', mrr: Math.round(currentMrr * 1.35), arr: Math.round(currentArr * 1.35), tenants: activeOrgsCount + 2, growth: '+35.0% (Target)' },
-      ];
     }
-  }, [totalMrr, totalArr, activeOrgsCount, timeframe]);
+
+    // Convert map to sorted time series
+    const sortedKeys = Array.from(monthMap.keys()).sort();
+    return sortedKeys.map((key) => {
+      const item = monthMap.get(key)!;
+      // Monthly recurring value for that month based on real invoices
+      const mrr = item.invoicedAmount > 0 ? item.invoicedAmount : totalMrr;
+      const arr = mrr * 12;
+      const tenants = item.activeTenants.size > 0 ? item.activeTenants.size : activeOrgsCount;
+
+      return {
+        month: item.monthLabel,
+        mrr,
+        arr,
+        tenants,
+        invoices: item.invoiceCount,
+        paid: item.paidAmount,
+        isLive: true,
+      };
+    });
+  }, [invoices, orgs, totalMrr, totalArr, activeOrgsCount]);
 
   // Custom Glassmorphic Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -152,27 +162,21 @@ export const SaasBusinessView: React.FC<SaasBusinessViewProps> = ({ onNavigateTa
         <div className="bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-gray-200 shadow-xl space-y-1.5 text-xs z-50">
           <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-1.5">
             <span className="font-bold text-gray-900">{label}</span>
-            {data.isLive && (
-              <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[#047857] border border-emerald-200 font-bold text-[10px]">
-                ● Live Realtime
-              </span>
-            )}
+            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[#047857] border border-emerald-200 font-bold text-[10px]">
+              ● Database Record
+            </span>
           </div>
           <div className="flex items-center justify-between gap-4">
-            <span className="text-gray-500">Monthly Recurring (MRR):</span>
+            <span className="text-gray-500">Invoiced MRR:</span>
             <strong className="font-mono text-gray-900">₹{data.mrr.toLocaleString('en-IN')}</strong>
           </div>
           <div className="flex items-center justify-between gap-4">
-            <span className="text-gray-500">Annual Run-Rate (ARR):</span>
+            <span className="text-gray-500">Annualized Run-Rate:</span>
             <strong className="font-mono text-[#047857]">₹{data.arr.toLocaleString('en-IN')}</strong>
           </div>
           <div className="flex items-center justify-between gap-4">
-            <span className="text-gray-500">Active Organizations:</span>
-            <strong className="text-purple-700">{data.tenants} Tenants</strong>
-          </div>
-          <div className="flex items-center justify-between gap-4 border-t border-gray-100 pt-1 text-[11px]">
-            <span className="text-gray-400">MoM Growth:</span>
-            <span className="font-bold text-emerald-700">{data.growth}</span>
+            <span className="text-gray-500">Active Database Tenants:</span>
+            <strong className="text-purple-700">{data.tenants} Organizations</strong>
           </div>
         </div>
       );
@@ -202,12 +206,12 @@ export const SaasBusinessView: React.FC<SaasBusinessViewProps> = ({ onNavigateTa
             variant="outline"
             size="sm"
             onClick={() => {
-              const dataStr = JSON.stringify({ totalMrr, totalArr, activeOrgsCount, subscriptionsCount: subscriptions.length }, null, 2);
+              const dataStr = JSON.stringify({ totalMrr, totalArr, activeOrgsCount, subscriptionsCount: subscriptions.length, invoicesCount: invoices.length }, null, 2);
               const blob = new Blob([dataStr], { type: 'application/json' });
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = `workforceos-revenue-report-${new Date().toISOString().split('T')[0]}.json`;
+              a.download = `workforceos-revenue-telemetry-${new Date().toISOString().split('T')[0]}.json`;
               a.click();
             }}
             className="flex items-center gap-1.5 border-[#CBD5E1] text-[#334155] hover:bg-[#F8FAFC] text-xs font-bold"
@@ -307,7 +311,7 @@ export const SaasBusinessView: React.FC<SaasBusinessViewProps> = ({ onNavigateTa
 
       {/* 4. Recurring Revenue Trends Chart & Plan Performance Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Left 2 Cols: Animated Area Chart */}
+        {/* Left 2 Cols: Real Database Driven Area Chart */}
         <div className="lg:col-span-2 bg-white rounded-3xl border border-[#E2E8F0] p-6 shadow-xs space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
@@ -317,70 +321,45 @@ export const SaasBusinessView: React.FC<SaasBusinessViewProps> = ({ onNavigateTa
                   <Activity className="w-3 h-3 animate-pulse" /> Live Telemetry
                 </span>
               </div>
-              <p className="text-xs text-[#64748B] mt-0.5">Real-time revenue expansion, trajectory & contracted run-rate</p>
+              <p className="text-xs text-[#64748B] mt-0.5">Real-time revenue expansion aggregated directly from database records</p>
             </div>
 
-            {/* Controls Toolbar */}
-            <div className="flex items-center gap-2">
-              <div className="flex items-center bg-[#F1F5F9] p-1 rounded-xl text-xs">
-                <button
-                  type="button"
-                  onClick={() => setTimeframe('6m')}
-                  className={cn(
-                    'px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-[11px]',
-                    timeframe === '6m' ? 'bg-white text-[#0F172B] shadow-xs' : 'text-[#64748B]'
-                  )}
-                >
-                  6 Months
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTimeframe('12m')}
-                  className={cn(
-                    'px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-[11px]',
-                    timeframe === '12m' ? 'bg-white text-[#0F172B] shadow-xs' : 'text-[#64748B]'
-                  )}
-                >
-                  1 Year / Proj
-                </button>
-              </div>
-
-              <div className="flex items-center bg-[#F1F5F9] p-1 rounded-xl text-xs">
-                <button
-                  type="button"
-                  onClick={() => setMetricView('mrr')}
-                  className={cn(
-                    'px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-[11px]',
-                    metricView === 'mrr' ? 'bg-white text-[#047857] shadow-xs' : 'text-[#64748B]'
-                  )}
-                >
-                  MRR (₹)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMetricView('arr')}
-                  className={cn(
-                    'px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-[11px]',
-                    metricView === 'arr' ? 'bg-white text-[#047857] shadow-xs' : 'text-[#64748B]'
-                  )}
-                >
-                  ARR (₹)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMetricView('tenants')}
-                  className={cn(
-                    'px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-[11px]',
-                    metricView === 'tenants' ? 'bg-white text-purple-700 shadow-xs' : 'text-[#64748B]'
-                  )}
-                >
-                  Tenants
-                </button>
-              </div>
+            {/* Metric Switcher */}
+            <div className="flex items-center bg-[#F1F5F9] p-1 rounded-xl text-xs">
+              <button
+                type="button"
+                onClick={() => setMetricView('mrr')}
+                className={cn(
+                  'px-3 py-1 rounded-lg font-bold transition cursor-pointer text-[11px]',
+                  metricView === 'mrr' ? 'bg-white text-[#047857] shadow-xs' : 'text-[#64748B]'
+                )}
+              >
+                MRR (₹)
+              </button>
+              <button
+                type="button"
+                onClick={() => setMetricView('arr')}
+                className={cn(
+                  'px-3 py-1 rounded-lg font-bold transition cursor-pointer text-[11px]',
+                  metricView === 'arr' ? 'bg-white text-[#047857] shadow-xs' : 'text-[#64748B]'
+                )}
+              >
+                ARR (₹)
+              </button>
+              <button
+                type="button"
+                onClick={() => setMetricView('tenants')}
+                className={cn(
+                  'px-3 py-1 rounded-lg font-bold transition cursor-pointer text-[11px]',
+                  metricView === 'tenants' ? 'bg-white text-purple-700 shadow-xs' : 'text-[#64748B]'
+                )}
+              >
+                Tenants
+              </button>
             </div>
           </div>
 
-          {/* Quick Metrics Bar inside chart card */}
+          {/* Quick Metrics Bar */}
           <div className="grid grid-cols-3 gap-3 p-3 bg-gray-50/80 rounded-2xl border border-gray-100 text-xs">
             <div>
               <span className="text-[10px] text-gray-500 font-bold uppercase block">Current Monthly Run-Rate</span>
@@ -391,20 +370,20 @@ export const SaasBusinessView: React.FC<SaasBusinessViewProps> = ({ onNavigateTa
               <strong className="font-mono text-base font-bold text-[#047857]">₹{totalArr.toLocaleString('en-IN')}</strong>
             </div>
             <div>
-              <span className="text-[10px] text-gray-500 font-bold uppercase block">Net Growth Trajectory</span>
-              <span className="font-bold text-emerald-700 flex items-center gap-1 text-sm mt-0.5">
-                <ArrowUpRight className="w-4 h-4" /> +100% (Healthy)
+              <span className="text-[10px] text-gray-500 font-bold uppercase block">Active Database Tenants</span>
+              <span className="font-bold text-purple-700 flex items-center gap-1 text-sm mt-0.5">
+                <Building2 className="w-4 h-4" /> {activeOrgsCount} Organization(s)
               </span>
             </div>
           </div>
 
-          {/* High-Fidelity Animated Chart */}
+          {/* Clean Real Database Driven Animated Chart */}
           <div className="h-72 w-full pt-2">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={metricView === 'tenants' ? '#7C3AED' : '#047857'} stopOpacity={0.4} />
+                    <stop offset="5%" stopColor={metricView === 'tenants' ? '#7C3AED' : '#047857'} stopOpacity={0.35} />
                     <stop offset="95%" stopColor={metricView === 'tenants' ? '#7C3AED' : '#047857'} stopOpacity={0.0} />
                   </linearGradient>
                 </defs>
@@ -429,13 +408,12 @@ export const SaasBusinessView: React.FC<SaasBusinessViewProps> = ({ onNavigateTa
                   dataKey={metricView === 'mrr' ? 'mrr' : metricView === 'arr' ? 'arr' : 'tenants'}
                   stroke={metricView === 'tenants' ? '#7C3AED' : '#047857'}
                   strokeWidth={3}
-                  dot={{ r: 4, fill: '#ffffff', stroke: metricView === 'tenants' ? '#7C3AED' : '#047857', strokeWidth: 2 }}
-                  activeDot={{ r: 7, fill: metricView === 'tenants' ? '#7C3AED' : '#047857', stroke: '#ECFDF5', strokeWidth: 3 }}
+                  dot={{ r: 5, fill: '#ffffff', stroke: metricView === 'tenants' ? '#7C3AED' : '#047857', strokeWidth: 2.5 }}
+                  activeDot={{ r: 8, fill: metricView === 'tenants' ? '#7C3AED' : '#047857', stroke: '#ECFDF5', strokeWidth: 3 }}
                   fillOpacity={1}
                   fill="url(#colorRev)"
                   isAnimationActive={true}
-                  animationDuration={1200}
-                  animationEasing="ease-in-out"
+                  animationDuration={1000}
                 />
               </AreaChart>
             </ResponsiveContainer>
