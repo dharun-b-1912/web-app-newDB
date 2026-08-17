@@ -34,7 +34,7 @@ export const EmployeeCreateModal: React.FC<EmployeeCreateModalProps> = ({
   } = useForm<EmployeeCreateInput>({
     resolver: zodResolver(EmployeeCreateSchema),
     defaultValues: {
-      company_id: activeCompany?.id || 'comp-01',
+      company_id: activeCompany?.id || 'comp-joy-01',
       employment_type: 'Full Time',
       status: 'Active',
       employee_code: `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -48,7 +48,7 @@ export const EmployeeCreateModal: React.FC<EmployeeCreateModalProps> = ({
     try {
       const newEmp = await api.createEmployee({
         organization_id: 'org-joy-01',
-        company_id: data.company_id || activeCompany?.id || 'comp-01',
+        company_id: data.company_id || activeCompany?.id || 'comp-joy-01',
         department_id: data.department_id,
         designation_id: data.designation_id,
         employee_code: data.employee_code,

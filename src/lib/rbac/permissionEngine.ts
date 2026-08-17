@@ -6,6 +6,9 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   'workforce-overview',
   'executive-overview',
   'my-workspace',
+  'workspace',
+  'my-profile',
+  'profile',
   'people',
   'active-employees',
   'probation-employees',
@@ -14,6 +17,8 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   'departments',
   'designations',
   'locations',
+  'vendors',
+  'organization-vendors',
   'documents',
   'assets',
   'onboarding',
@@ -109,11 +114,12 @@ const HRMS_MODULE_IDS: ModuleId[] = ALL_MODULE_IDS.filter(
   id => !id.startsWith('platform') && !id.startsWith('saas-')
 );
 
-// HR Head module IDs — HRMS without system-level admin configuration.
-// HR Head manages people operations but NOT user accounts, RBAC, integrations, or system settings.
+// HR Head module IDs — HRMS without system-level admin configuration or company vendor management.
+// HR Head manages people operations but NOT user accounts, RBAC, vendor commercial master, or system settings.
 const HR_HEAD_MODULE_IDS: ModuleId[] = HRMS_MODULE_IDS.filter(
   id => !['users', 'rbac', 'permissions', 'policies', 'templates',
-           'integrations', 'security', 'audit-logs', 'settings', 'scheduled-jobs'].includes(id)
+           'integrations', 'security', 'audit-logs', 'settings', 'scheduled-jobs',
+           'vendors', 'organization-vendors'].includes(id)
 );
 
 // Manager module IDs — department-scoped operational modules only.
@@ -180,16 +186,9 @@ export const ROLE_PROFILES: Record<string, RoleAccessProfile> = {
     defaultScope: 'COMPANY',
     moduleScopes: {},
   },
-  'HR Head / Super Admin': {
-    roleName: 'HR Head / Super Admin',
-    hierarchyLevel: 2, // HR operations — full HRMS, NO system admin config
-    allowedModules: HR_HEAD_MODULE_IDS,
-    defaultScope: 'COMPANY',
-    moduleScopes: {},
-  },
   'HR Head': {
-    roleName: 'HR Head / Super Admin',
-    hierarchyLevel: 2,
+    roleName: 'HR Head',
+    hierarchyLevel: 2, // HR operations — full HRMS within authorized legal entity
     allowedModules: HR_HEAD_MODULE_IDS,
     defaultScope: 'COMPANY',
     moduleScopes: {},
@@ -266,8 +265,8 @@ export function getPrimaryRole(user: User | null): PrimaryRole {
   const roleNames = user.roles.map(r => r.name);
   if (roleNames.some(n => n === 'Super Admin')) return 'Super Admin';
   if (roleNames.some(n => n === 'Company Admin')) return 'Company Admin';
-  if (roleNames.some(n => n === 'HR Head / Super Admin' || n === 'HR Head' || n === 'HR_HEAD_SUPER_ADMIN'))
-    return 'HR Head / Super Admin';
+  if (roleNames.some(n => n === 'HR Head' || n === 'HR_HEAD_SUPER_ADMIN' || n.includes('HR Head')))
+    return 'HR Head';
   if (roleNames.some(n => n === 'HR Admin')) return 'HR Admin';
   if (roleNames.some(n => n === 'Manager')) return 'Manager';
   if (roleNames.some(n => n === 'Team Lead')) return 'Team Lead';
@@ -318,8 +317,9 @@ export function canViewModule(user: User | null, module: ModuleId | string): boo
     return false; // Manager, Team Lead, Employee: no admin routes
   }
 
-  // ── ess-* routes: all authenticated users (everyone has personal ESS) ────────
-  if (module.startsWith('ess-')) return true;
+  // ── Universal self-service routes: all authenticated users (personal profile & workspace) ─
+  const UNIVERSAL_SELF_SERVICE = ['my-profile', 'profile', 'workspace', 'my-workspace', 'helpdesk', 'notifications'];
+  if (module.startsWith('ess-') || UNIVERSAL_SELF_SERVICE.includes(module)) return true;
 
   // ── tl-* routes: Team Lead (own section) + HR Head & Company Admin (oversight) ─
   if (module.startsWith('tl-')) {
@@ -352,6 +352,11 @@ export function hasPermission(
   if (!user) return false;
   const roleName = getPrimaryRole(user);
 
+  // ── Universal self-service routes (Profile, Workspace) ──────────────────────
+  if (module === 'my-profile' || module === 'profile' || module === 'workspace' || module === 'my-workspace') {
+    return true;
+  }
+
   // ── Super Admin: unrestricted ─────────────────────────────────────────────
   if (roleName === 'Super Admin') return true;
 
@@ -359,7 +364,7 @@ export function hasPermission(
   if (roleName === 'Company Admin') return canViewModule(user, module);
 
   // ── HR Head: HRMS operations, no delete/configure on system admin modules ──
-  if (roleName === 'HR Head / Super Admin' || roleName === 'HR Head') {
+  if (roleName === 'HR Head') {
     if (!canViewModule(user, module)) return false;
     if (action === 'configure' && module.startsWith('admin-')) return false;
     return true;
@@ -421,7 +426,6 @@ export function canAccessEmployee(user: User | null, targetEmployee: Employee): 
   if (
     roleName === 'Super Admin' ||
     roleName === 'Company Admin' ||
-    roleName === 'HR Head / Super Admin' ||
     roleName === 'HR Head'
   ) {
     return true;

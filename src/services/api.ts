@@ -11,8 +11,16 @@ import {
   ApprovalItem,
   ActivityItem,
   DashboardMetrics,
+  Asset,
 } from '../types';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import {
+  defaultBranches,
+  defaultLocations,
+  defaultDepartments,
+  defaultDesignations,
+} from './employeeSeedData';
+import { hrEventBus } from './hrEventBus';
 
 // Standard Default Types & Records
 const defaultOrganization: Organization = {
@@ -63,6 +71,66 @@ const defaultRoles: Role[] = [
   { id: 'role-005', organization_id: 'org-joy-01', name: 'Employee', description: 'Standard Employee with Employee Self Service access', permissions: [] },
 ];
 
+const defaultEnterpriseUser: User = {
+  id: 'user-hr-01',
+  organization_id: 'org-joy-01',
+  email: 'haripriya@joycorporate.com',
+  name: 'Hari priya',
+  avatar_url: '',
+  employee_id: 'emp-hr-001',
+  status: 'Active',
+  roles: [defaultRoles[5]], // HR Head
+  created_at: '2024-01-01T00:00:00Z',
+};
+
+const defaultCorporateUsers: User[] = [
+  defaultEnterpriseUser,
+  {
+    id: 'user-admin-01',
+    organization_id: 'org-joy-01',
+    email: 'admin@joycorporate.com',
+    name: 'Dharun Joy',
+    avatar_url: '',
+    employee_id: 'emp-admin-001',
+    status: 'Active',
+    roles: [defaultRoles[4]], // Company Admin
+    created_at: '2024-01-01T00:00:00Z',
+  },
+  {
+    id: 'user-mgr-01',
+    organization_id: 'org-joy-01',
+    email: 'karthik.n@joycorporate.com',
+    name: 'Karthik N.',
+    avatar_url: '',
+    employee_id: 'emp-mgr-001',
+    status: 'Active',
+    roles: [defaultRoles[6]], // Team Lead / Manager
+    created_at: '2024-01-01T00:00:00Z',
+  },
+  {
+    id: 'user-tl-01',
+    organization_id: 'org-joy-01',
+    email: 'deepa.s@joycorporate.com',
+    name: 'Deepa S.',
+    avatar_url: '',
+    employee_id: 'emp-tl-001',
+    status: 'Active',
+    roles: [defaultRoles[6]], // Team Lead
+    created_at: '2024-01-01T00:00:00Z',
+  },
+  {
+    id: 'user-emp-01',
+    organization_id: 'org-joy-01',
+    email: 'priya.sharma@joycorporate.com',
+    name: 'Priya Sharma',
+    avatar_url: '',
+    employee_id: 'emp-001',
+    status: 'Active',
+    roles: [defaultRoles[7]], // Employee
+    created_at: '2024-01-01T00:00:00Z',
+  },
+];
+
 const defaultPlatformUsers: User[] = [
   {
     id: 'user-super-01',
@@ -107,6 +175,357 @@ const defaultPlatformUsers: User[] = [
     status: 'Active',
     roles: [defaultRoles[3]], // Security Officer
     created_at: '2024-04-01T00:00:00Z',
+  },
+];
+
+const defaultAllUsers: User[] = [...defaultCorporateUsers, ...defaultPlatformUsers];
+
+const defaultCanonicalEmployees: Employee[] = [
+  {
+    id: 'emp-hr-001',
+    organization_id: 'org-joy-01',
+    company_id: 'comp-joy-01',
+    company_name: 'Joy Corporate Solutions Pvt Ltd',
+    department_id: 'dept-hr',
+    department_name: 'People & HR',
+    designation_id: 'desig-hr-head',
+    designation_title: 'HR Head',
+    user_id: 'user-hr-01',
+    employee_code: 'WF-1001',
+    first_name: 'Hari',
+    last_name: 'Priya',
+    display_name: 'Hari Priya',
+    work_email: 'haripriya@joycorporate.com',
+    status: 'Active',
+    employment_type: 'Full Time',
+    employment_source: 'DIRECT',
+    profile: {
+      first_name: 'Hari',
+      last_name: 'Priya',
+      display_name: 'Hari Priya',
+      gender: 'Female',
+      date_of_birth: '1992-06-18',
+      blood_group: 'O+',
+      nationality: 'Indian',
+      phone: '+91 98401 22334',
+      personal_email: 'haripriya.personal@gmail.com',
+      current_address: {
+        line1: '42 Orchid Villa, Race Course Road',
+        city: 'Coimbatore',
+        state: 'Tamil Nadu',
+        postal_code: '641018',
+        country: 'India',
+      },
+    },
+    employment: {
+      doj: '2025-01-15',
+      employment_type: 'Full Time',
+      employment_source: 'DIRECT',
+      work_location: 'Coimbatore HQ',
+      reporting_manager_id: 'emp-admin-001',
+      reporting_manager_name: 'Dharun Joy (Company Admin)',
+      probation_period_months: 6,
+      confirmation_status: 'Confirmed',
+    },
+    created_at: '2025-01-15T00:00:00Z',
+    updated_at: '2026-08-17T00:00:00Z',
+  },
+  {
+    id: 'emp-admin-001',
+    organization_id: 'org-joy-01',
+    company_id: 'comp-joy-01',
+    company_name: 'Joy Corporate Solutions Pvt Ltd',
+    department_id: 'dept-exec',
+    department_name: 'Executive Management',
+    designation_id: 'desig-vp-ops',
+    designation_title: 'Managing Director & VP Operations',
+    user_id: 'user-admin-01',
+    employee_code: 'WF-1000',
+    first_name: 'Dharun',
+    last_name: 'Joy',
+    display_name: 'Dharun Joy',
+    work_email: 'admin@joycorporate.com',
+    status: 'Active',
+    employment_type: 'Full Time',
+    employment_source: 'DIRECT',
+    profile: {
+      first_name: 'Dharun',
+      last_name: 'Joy',
+      display_name: 'Dharun Joy',
+      gender: 'Male',
+      phone: '+91 98400 99000',
+    },
+    employment: {
+      doj: '2024-01-01',
+      employment_type: 'Full Time',
+      employment_source: 'DIRECT',
+      work_location: 'Coimbatore HQ',
+      confirmation_status: 'Confirmed',
+    },
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2026-08-17T00:00:00Z',
+  },
+  {
+    id: 'emp-mgr-001',
+    organization_id: 'org-joy-01',
+    company_id: 'comp-joy-01',
+    company_name: 'Joy Corporate Solutions Pvt Ltd',
+    department_id: 'dept-eng',
+    department_name: 'Engineering & DevOps',
+    designation_id: 'desig-eng-mgr',
+    designation_title: 'Engineering Manager',
+    user_id: 'user-mgr-01',
+    employee_code: 'WF-1002',
+    first_name: 'Karthik',
+    last_name: 'Natarajan',
+    display_name: 'Karthik N.',
+    work_email: 'karthik.n@joycorporate.com',
+    status: 'Active',
+    employment_type: 'Full Time',
+    employment_source: 'DIRECT',
+    profile: {
+      first_name: 'Karthik',
+      last_name: 'Natarajan',
+      display_name: 'Karthik N.',
+      phone: '+91 98402 33445',
+    },
+    employment: {
+      doj: '2025-02-01',
+      employment_type: 'Full Time',
+      employment_source: 'DIRECT',
+      work_location: 'Coimbatore HQ',
+      reporting_manager_id: 'emp-admin-001',
+      reporting_manager_name: 'Dharun Joy (Company Admin)',
+      confirmation_status: 'Confirmed',
+    },
+    created_at: '2025-02-01T00:00:00Z',
+    updated_at: '2026-08-17T00:00:00Z',
+  },
+  {
+    id: 'emp-tl-001',
+    organization_id: 'org-joy-01',
+    company_id: 'comp-joy-01',
+    company_name: 'Joy Corporate Solutions Pvt Ltd',
+    department_id: 'dept-eng',
+    department_name: 'Engineering & DevOps',
+    designation_id: 'desig-lead-eng',
+    designation_title: 'Senior Lead Engineer',
+    user_id: 'user-tl-01',
+    employee_code: 'WF-1003',
+    first_name: 'Deepa',
+    last_name: 'Subramanian',
+    display_name: 'Deepa S.',
+    work_email: 'deepa.s@joycorporate.com',
+    status: 'Active',
+    employment_type: 'Full Time',
+    employment_source: 'DIRECT',
+    profile: {
+      first_name: 'Deepa',
+      last_name: 'Subramanian',
+      display_name: 'Deepa S.',
+      phone: '+91 98403 44556',
+    },
+    employment: {
+      doj: '2025-03-01',
+      employment_type: 'Full Time',
+      employment_source: 'DIRECT',
+      work_location: 'Coimbatore HQ',
+      reporting_manager_id: 'emp-mgr-001',
+      reporting_manager_name: 'Karthik N.',
+      confirmation_status: 'Confirmed',
+    },
+    created_at: '2025-03-01T00:00:00Z',
+    updated_at: '2026-08-17T00:00:00Z',
+  },
+  {
+    id: 'emp-001',
+    organization_id: 'org-joy-01',
+    company_id: 'comp-joy-01',
+    company_name: 'Joy Corporate Solutions Pvt Ltd',
+    department_id: 'dept-eng',
+    department_name: 'Engineering & DevOps',
+    designation_id: 'desig-sr-eng',
+    designation_title: 'Senior Software Engineer',
+    user_id: 'user-emp-01',
+    employee_code: 'WF-1004',
+    first_name: 'Priya',
+    last_name: 'Sharma',
+    display_name: 'Priya Sharma',
+    work_email: 'priya.sharma@joycorporate.com',
+    status: 'Active',
+    employment_type: 'Full Time',
+    employment_source: 'DIRECT',
+    profile: {
+      first_name: 'Priya',
+      last_name: 'Sharma',
+      display_name: 'Priya Sharma',
+      phone: '+91 98404 55667',
+    },
+    employment: {
+      doj: '2025-04-15',
+      employment_type: 'Full Time',
+      employment_source: 'DIRECT',
+      work_location: 'Coimbatore HQ',
+      reporting_manager_id: 'emp-tl-001',
+      reporting_manager_name: 'Deepa S.',
+      confirmation_status: 'Confirmed',
+    },
+    created_at: '2025-04-15T00:00:00Z',
+    updated_at: '2026-08-17T00:00:00Z',
+  },
+  {
+    id: 'emp-vnd-001',
+    organization_id: 'org-joy-01',
+    company_id: 'comp-joy-01',
+    company_name: 'Joy Corporate Solutions Pvt Ltd',
+    department_id: 'dept-admin',
+    department_name: 'Administration & Facilities',
+    designation_id: 'desig-fac-exec',
+    designation_title: 'Facilities & Operations Specialist',
+    employee_code: 'WF-1005',
+    first_name: 'Senthil',
+    last_name: 'Nathan',
+    display_name: 'Senthil Nathan',
+    work_email: 'senthil.n@joycorporate.com',
+    status: 'Active',
+    employment_type: 'Contract',
+    employment_source: 'VENDOR',
+    vendor_id: 'e2000000-0000-0000-0000-000000000001',
+    vendor_name: 'ABC Workforce Solutions Pvt Ltd',
+    vendor_employee_code: 'ABC-TN-8821',
+    profile: {
+      first_name: 'Senthil',
+      last_name: 'Nathan',
+      display_name: 'Senthil Nathan',
+      phone: '+91 98405 66778',
+    },
+    employment: {
+      doj: '2025-05-01',
+      employment_type: 'Contract',
+      employment_source: 'VENDOR',
+      vendor_id: 'e2000000-0000-0000-0000-000000000001',
+      vendor_name: 'ABC Workforce Solutions Pvt Ltd',
+      vendor_employee_code: 'ABC-TN-8821',
+      vendor_start_date: '2025-05-01',
+      vendor_end_date: '2026-12-31',
+      work_location: 'Coimbatore HQ',
+      reporting_manager_id: 'emp-hr-001',
+      reporting_manager_name: 'Hari Priya (HR Head)',
+      confirmation_status: 'Confirmed',
+    },
+    created_at: '2025-05-01T00:00:00Z',
+    updated_at: '2026-08-17T00:00:00Z',
+  },
+  {
+    id: 'emp-vnd-002',
+    organization_id: 'org-joy-01',
+    company_id: 'comp-joy-01',
+    company_name: 'Joy Corporate Solutions Pvt Ltd',
+    department_id: 'dept-cs',
+    department_name: 'Customer Support',
+    designation_id: 'desig-tech-sup',
+    designation_title: 'Technical Support Specialist',
+    employee_code: 'WF-1006',
+    first_name: 'Meera',
+    last_name: 'Krishnan',
+    display_name: 'Meera Krishnan',
+    work_email: 'meera.k@joycorporate.com',
+    status: 'Active',
+    employment_type: 'Contract',
+    employment_source: 'VENDOR',
+    vendor_id: 'e2000000-0000-0000-0000-000000000001',
+    vendor_name: 'ABC Workforce Solutions Pvt Ltd',
+    vendor_employee_code: 'ABC-TN-8829',
+    profile: {
+      first_name: 'Meera',
+      last_name: 'Krishnan',
+      display_name: 'Meera Krishnan',
+      phone: '+91 98406 77889',
+    },
+    employment: {
+      doj: '2025-06-01',
+      employment_type: 'Contract',
+      employment_source: 'VENDOR',
+      vendor_id: 'e2000000-0000-0000-0000-000000000001',
+      vendor_name: 'ABC Workforce Solutions Pvt Ltd',
+      vendor_employee_code: 'ABC-TN-8829',
+      vendor_start_date: '2025-06-01',
+      vendor_end_date: '2026-12-31',
+      work_location: 'Coimbatore HQ',
+      reporting_manager_id: 'emp-hr-001',
+      reporting_manager_name: 'Hari Priya (HR Head)',
+      confirmation_status: 'Confirmed',
+    },
+    created_at: '2025-06-01T00:00:00Z',
+    updated_at: '2026-08-17T00:00:00Z',
+  },
+  {
+    id: 'emp-1040',
+    organization_id: 'org-joy-01',
+    company_id: 'comp-joy-01',
+    company_name: 'Joy Corporate Solutions Pvt Ltd',
+    department_id: 'dept-eng',
+    department_name: 'Engineering & DevOps',
+    designation_id: 'desig-sr-eng',
+    designation_title: 'Senior Staff Frontend Architect',
+    user_id: 'user-emp-1040',
+    employee_code: 'EMP-1040',
+    first_name: 'Priya',
+    last_name: 'Sundaram',
+    display_name: 'Priya Sundaram',
+    work_email: 'priya.sundaram@joycorporate.com',
+    status: 'Onboarding',
+    employment_type: 'Full Time',
+    employment_source: 'DIRECT',
+    profile: {
+      first_name: 'Priya',
+      last_name: 'Sundaram',
+      display_name: 'Priya Sundaram',
+      phone: '+91 98405 88990',
+      gender: 'Female',
+      date_of_birth: '1994-06-18',
+      blood_group: 'O+',
+      nationality: 'Indian',
+      current_address: {
+        line1: '42, Brookefields Residency, Avinashi Road',
+        city: 'Coimbatore',
+        state: 'Tamil Nadu',
+        country: 'India',
+        postal_code: '641001',
+      },
+      permanent_address: {
+        line1: '42, Brookefields Residency, Avinashi Road',
+        city: 'Coimbatore',
+        state: 'Tamil Nadu',
+        country: 'India',
+        postal_code: '641001',
+      },
+      same_as_permanent: true,
+      emergency_contacts: [
+        {
+          name: 'Sundaram Natarajan',
+          relationship: 'Father',
+          phone: '+91 98401 11223',
+          is_primary: true,
+          priority: 1,
+        },
+      ],
+    },
+    employment: {
+      doj: '2026-08-20',
+      employment_type: 'Full Time',
+      employment_source: 'DIRECT',
+      work_location: 'Coimbatore HQ',
+      reporting_manager_id: 'emp-mgr-001',
+      reporting_manager_name: 'Karthik Natarajan (Engineering Manager)',
+      team_lead_id: 'emp-tl-001',
+      team_lead_name: 'Deepa Subramanian (Senior Lead Engineer)',
+      confirmation_status: 'Pending',
+      probation_period_months: 3,
+      notice_period_days: 60,
+    },
+    created_at: '2026-08-15T09:00:00Z',
+    updated_at: '2026-08-17T11:00:00Z',
   },
 ];
 
@@ -221,12 +640,16 @@ export const api = {
         let q = supabase.from('branches').select('*');
         if (companyId) q = q.eq('company_id', companyId);
         const { data, error } = await q;
-        if (data && !error) return data;
+        if (data && !error && data.length > 0) return data;
       } catch (err) {
         console.warn('[API] Failed to fetch branches from Supabase:', err);
       }
     }
-    const list = getStorage<Branch[]>(KEYS.BRANCHES, []);
+    let list = getStorage<Branch[]>(KEYS.BRANCHES, []);
+    if (!list || list.length === 0) {
+      list = defaultBranches;
+      setStorage(KEYS.BRANCHES, list);
+    }
     if (companyId) return list.filter((b) => b.company_id === companyId);
     return list;
   },
@@ -244,7 +667,7 @@ export const api = {
         console.warn('[API] Failed to insert branch into Supabase:', err);
       }
     }
-    const list = getStorage<Branch[]>(KEYS.BRANCHES, []);
+    const list = getStorage<Branch[]>(KEYS.BRANCHES, defaultBranches);
     setStorage(KEYS.BRANCHES, [newBranch, ...list]);
     return newBranch;
   },
@@ -256,12 +679,16 @@ export const api = {
         let q = supabase.from('locations').select('*');
         if (branchId) q = q.eq('branch_id', branchId);
         const { data, error } = await q;
-        if (data && !error) return data;
+        if (data && !error && data.length > 0) return data;
       } catch (err) {
         console.warn('[API] Failed to fetch locations from Supabase:', err);
       }
     }
-    const list = getStorage<Location[]>(KEYS.LOCATIONS, []);
+    let list = getStorage<Location[]>(KEYS.LOCATIONS, []);
+    if (!list || list.length === 0) {
+      list = defaultLocations;
+      setStorage(KEYS.LOCATIONS, list);
+    }
     if (branchId) return list.filter((l) => l.branch_id === branchId);
     return list;
   },
@@ -275,7 +702,7 @@ export const api = {
         console.warn('[API] Failed to insert location into Supabase:', err);
       }
     }
-    const list = getStorage<Location[]>(KEYS.LOCATIONS, []);
+    const list = getStorage<Location[]>(KEYS.LOCATIONS, defaultLocations);
     setStorage(KEYS.LOCATIONS, [newLoc, ...list]);
     return newLoc;
   },
@@ -287,12 +714,16 @@ export const api = {
         let q = supabase.from('departments').select('*');
         if (companyId) q = q.eq('company_id', companyId);
         const { data, error } = await q;
-        if (data && !error) return data;
+        if (data && !error && data.length > 0) return data;
       } catch (err) {
         console.warn('[API] Failed to fetch departments from Supabase:', err);
       }
     }
-    const list = getStorage<Department[]>(KEYS.DEPARTMENTS, []);
+    let list = getStorage<Department[]>(KEYS.DEPARTMENTS, []);
+    if (!list || list.length === 0) {
+      list = defaultDepartments;
+      setStorage(KEYS.DEPARTMENTS, list);
+    }
     if (companyId) return list.filter((d) => d.company_id === companyId);
     return list;
   },
@@ -306,7 +737,7 @@ export const api = {
         console.warn('[API] Failed to insert department into Supabase:', err);
       }
     }
-    const list = getStorage<Department[]>(KEYS.DEPARTMENTS, []);
+    const list = getStorage<Department[]>(KEYS.DEPARTMENTS, defaultDepartments);
     setStorage(KEYS.DEPARTMENTS, [newDept, ...list]);
     return newDept;
   },
@@ -318,12 +749,16 @@ export const api = {
         let q = supabase.from('designations').select('*');
         if (companyId) q = q.eq('company_id', companyId);
         const { data, error } = await q;
-        if (data && !error) return data;
+        if (data && !error && data.length > 0) return data;
       } catch (err) {
         console.warn('[API] Failed to fetch designations from Supabase:', err);
       }
     }
-    const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
+    let list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
+    if (!list || list.length === 0) {
+      list = defaultDesignations;
+      setStorage(KEYS.DESIGNATIONS, list);
+    }
     if (companyId) return list.filter((d) => d.company_id === companyId);
     return list;
   },
@@ -337,7 +772,7 @@ export const api = {
         console.warn('[API] Failed to insert designation into Supabase:', err);
       }
     }
-    const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
+    const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, defaultDesignations);
     setStorage(KEYS.DESIGNATIONS, [newDesig, ...list]);
     return newDesig;
   },
@@ -349,14 +784,20 @@ export const api = {
     companyId?: string;
     status?: string;
     type?: string;
+    source?: string;
+    vendorId?: string;
   } | string): Promise<Employee[]> {
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('employees').select('*');
+        // Exclude legacy mock acme.com records
+        q = q.not('work_email', 'ilike', '%acme.com%');
         const filterObj = typeof params === 'string' ? { companyId: params } : params;
         if (filterObj?.companyId) q = q.eq('company_id', filterObj.companyId);
         if (filterObj?.departmentId && filterObj.departmentId !== 'all') q = q.eq('department_id', filterObj.departmentId);
         if (filterObj?.status && filterObj.status !== 'all') q = q.eq('status', filterObj.status);
+        if (filterObj?.source && filterObj.source !== 'all') q = q.eq('employment_source', filterObj.source);
+        if (filterObj?.vendorId && filterObj.vendorId !== 'all') q = q.eq('vendor_id', filterObj.vendorId);
         const { data, error } = await q;
         if (data && !error && data.length > 0) return data;
       } catch (err) {
@@ -364,6 +805,11 @@ export const api = {
       }
     }
     let list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+    if (!list || list.length === 0 || list.some(e => e.first_name === 'Alex' && e.last_name === 'Rivera') || list.some(e => e.work_email?.includes('acme.com'))) {
+      list = defaultCanonicalEmployees;
+      setStorage(KEYS.EMPLOYEES, list);
+    }
+    list = list.filter(e => !e.work_email?.includes('acme.com'));
     if (!params) return list;
 
     const filterObj = typeof params === 'string' ? { companyId: params } : params;
@@ -376,7 +822,8 @@ export const api = {
           (e.work_email && e.work_email.toLowerCase().includes(q)) ||
           (e.employee_code && e.employee_code.toLowerCase().includes(q)) ||
           (e.department_name && e.department_name.toLowerCase().includes(q)) ||
-          (e.designation_title && e.designation_title.toLowerCase().includes(q))
+          (e.designation_title && e.designation_title.toLowerCase().includes(q)) ||
+          (e.vendor_name && e.vendor_name.toLowerCase().includes(q))
       );
     }
     if (filterObj && filterObj.companyId) {
@@ -388,6 +835,12 @@ export const api = {
     if (filterObj && filterObj.status && filterObj.status !== 'all') {
       list = list.filter((e) => e.status === filterObj.status);
     }
+    if (filterObj && filterObj.source && filterObj.source !== 'all') {
+      list = list.filter((e) => (e.employment_source || 'DIRECT') === filterObj.source);
+    }
+    if (filterObj && filterObj.vendorId && filterObj.vendorId !== 'all') {
+      list = list.filter((e) => e.vendor_id === filterObj.vendorId);
+    }
     return list;
   },
 
@@ -397,16 +850,80 @@ export const api = {
   },
 
   async createEmployee(input: any): Promise<Employee> {
+    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, defaultCanonicalEmployees);
+    
+    // Auto-generate unique code WF-100X if not supplied
+    let generatedCode = input.employee_code;
+    if (!generatedCode) {
+      const existingCodes = list
+        .map(e => e.employee_code)
+        .filter(c => /^WF-\d+$/.test(c))
+        .map(c => parseInt(c.replace('WF-', ''), 10));
+      const maxCode = existingCodes.length > 0 ? Math.max(...existingCodes) : 1000;
+      generatedCode = `WF-${maxCode + 1}`;
+    }
+
+    const source = input.employment_source || (input.employment?.employment_source) || 'DIRECT';
+
     const newEmp: Employee = {
-      organization_id: input.organization_id || 'org-acme-01',
-      employee_code: input.employee_code || `EMP-${Math.floor(100 + Math.random() * 900)}`,
+      id: input.id || `emp-${Date.now().toString(36)}`,
+      organization_id: input.organization_id || 'a0000000-0000-0000-0000-000000000001',
+      company_id: input.company_id || 'c1000000-0000-0000-0000-000000000001',
+      company_name: input.company_name || 'Joy Corporate Solutions Pvt Ltd',
+      department_id: input.department_id || 'dept-eng',
+      department_name: input.department_name || 'Engineering & DevOps',
+      designation_id: input.designation_id || 'desig-sr-eng',
+      designation_title: input.designation_title || 'Software Engineer',
+      employee_code: generatedCode,
+      first_name: input.first_name || 'New',
+      last_name: input.last_name || 'Employee',
+      display_name: `${input.first_name || 'New'} ${input.last_name || 'Employee'}`,
+      work_email: input.work_email || `emp.${Date.now()}@joycorporate.com`,
+      avatar_url: input.avatar_url || '',
       status: input.status || 'Active',
       employment_type: input.employment_type || 'Full Time',
-      ...input,
-      id: input.id || `emp-${Date.now().toString(36)}`,
+      employment_source: source,
+      vendor_id: input.vendor_id,
+      vendor_name: input.vendor_name,
+      vendor_employee_code: input.vendor_employee_code,
+      profile: {
+        first_name: input.first_name,
+        middle_name: input.middle_name,
+        last_name: input.last_name,
+        preferred_name: input.preferred_name,
+        personal_email: input.personal_email,
+        phone: input.primary_mobile || input.phone,
+        date_of_birth: input.date_of_birth,
+        gender: input.gender,
+        current_address: input.current_address,
+        permanent_address: input.permanent_address,
+        emergency_contacts: input.emergency_contacts,
+        family_members: input.family_members,
+        ...(input.profile || {}),
+      },
+      employment: {
+        doj: input.doj || input.date_of_joining || new Date().toISOString().split('T')[0],
+        employment_type: input.employment_type || 'Full Time',
+        employment_source: source,
+        vendor_id: input.vendor_id,
+        vendor_name: input.vendor_name,
+        vendor_employee_code: input.vendor_employee_code,
+        vendor_contract_id: input.vendor_contract_id,
+        vendor_start_date: input.vendor_start_date,
+        vendor_end_date: input.vendor_end_date,
+        work_location: input.work_location || 'Coimbatore HQ',
+        reporting_manager_id: input.reporting_manager_id,
+        reporting_manager_name: input.reporting_manager_name,
+        team_lead_id: input.team_lead_id,
+        team_lead_name: input.team_lead_name,
+        probation_period_months: input.probation_period_months || 6,
+        confirmation_status: input.confirmation_status || 'Pending',
+        ...(input.employment || {}),
+      },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
+
     if (isSupabaseEnabled) {
       try {
         await supabase.from('employees').insert(newEmp);
@@ -414,13 +931,14 @@ export const api = {
         console.warn('[API] Failed to insert employee into Supabase:', err);
       }
     }
-    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+
     setStorage(KEYS.EMPLOYEES, [newEmp, ...list]);
+    hrEventBus.publish('employee.created', newEmp);
     return newEmp;
   },
 
   async updateEmployee(id: string, data: Partial<Employee>): Promise<Employee> {
-    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, defaultCanonicalEmployees);
     const idx = list.findIndex((e) => e.id === id);
     if (idx === -1) throw new Error('Employee not found');
 
@@ -434,7 +952,27 @@ export const api = {
     }
     list[idx] = updated;
     setStorage(KEYS.EMPLOYEES, list);
+    hrEventBus.publish('employee.updated', updated);
     return updated;
+  },
+
+  async deleteEmployee(id: string): Promise<boolean> {
+    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, defaultCanonicalEmployees);
+    const target = list.find((e) => e.id === id);
+    const updated = list.filter((e) => e.id !== id);
+    setStorage(KEYS.EMPLOYEES, updated);
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('employee_onboardings').delete().eq('employee_id', id);
+        await supabase.from('employees').delete().eq('id', id);
+      } catch (err) {
+        console.warn('[API] Failed to delete employee from Supabase:', err);
+      }
+    }
+
+    hrEventBus.publish('employee.deleted', target || { id });
+    return true;
   },
 
   // Roles API
@@ -460,7 +998,7 @@ export const api = {
         console.warn('[API] Failed to fetch users from Supabase:', err);
       }
     }
-    return getStorage<User[]>(KEYS.USERS, defaultPlatformUsers);
+    return getStorage<User[]>(KEYS.USERS, defaultAllUsers);
   },
 
   async assignUserRole(userId: string, roleId: string): Promise<User> {
@@ -563,6 +1101,17 @@ export const api = {
     }));
   },
 
+  async getAssets(): Promise<Asset[]> {
+    return [
+      { id: 'AST-001', name: 'MacBook Pro 16" M3 Max', category: 'Laptop', type: 'Hardware', serial_number: 'C02G1234MD6R', asset_tag: 'TAG-MBP-01', assignedTo: 'Priya Sharma', empCode: 'EMP-1024', status: 'Assigned', value: '$3,499' },
+      { id: 'AST-002', name: 'Dell UltraSharp 32" 4K Monitor', category: 'Peripheral', type: 'Hardware', serial_number: 'CN-01234-DELL', asset_tag: 'TAG-MON-02', assignedTo: 'Dharun Joy', empCode: 'EMP-001', status: 'Assigned', value: '$899' },
+      { id: 'AST-003', name: 'ThinkPad P1 Gen 6', category: 'Laptop', type: 'Hardware', serial_number: 'PF-49102-LEN', asset_tag: 'TAG-LEN-03', assignedTo: 'Ananya Reddy', empCode: 'EMP-1025', status: 'Assigned', value: '$2,299' },
+      { id: 'AST-004', name: 'MacBook Air 15" M2 (Available)', category: 'Laptop', type: 'Hardware', serial_number: 'F2L9201934', asset_tag: 'TAG-MBA-04', assignedTo: '', empCode: '-', status: 'Available', value: '$1,299' },
+      { id: 'AST-005', name: 'Dell Latitude 7440 (Available)', category: 'Laptop', type: 'Hardware', serial_number: 'DL-992011A', asset_tag: 'TAG-DEL-05', assignedTo: '', empCode: '-', status: 'Available', value: '$1,499' },
+      { id: 'AST-006', name: 'Apple Studio Display 27" (Available)', category: 'Peripheral', type: 'Hardware', serial_number: 'ASD-29381', asset_tag: 'TAG-DSP-06', assignedTo: '', empCode: '-', status: 'Available', value: '$1,599' },
+    ];
+  },
+
   // Active Company & Current User Session
   getActiveCompany(): Company {
     const stored = getStorage<Company | null>(KEYS.ACTIVE_COMPANY, null);
@@ -578,10 +1127,76 @@ export const api = {
   },
 
   getCurrentUser(): User {
-    return getStorage(KEYS.CURRENT_USER, defaultPlatformUsers[0]);
+    return getStorage(KEYS.CURRENT_USER, defaultEnterpriseUser);
   },
 
   setCurrentUser(user: User): void {
     setStorage(KEYS.CURRENT_USER, user);
   },
+
+  async purgeMockDataAndSyncLive(): Promise<void> {
+    // 1. Purge all localStorage mock remnants
+    const keysToClean = [
+      KEYS.ORG, KEYS.COMPANIES, KEYS.BRANCHES, KEYS.LOCATIONS,
+      KEYS.DEPARTMENTS, KEYS.DESIGNATIONS, KEYS.ROLES, KEYS.USERS,
+      KEYS.EMPLOYEES, KEYS.ACTIVE_COMPANY, KEYS.CURRENT_USER,
+      'workforce_active_legal_entity_id', 'workforce_active_org_id'
+    ];
+    keysToClean.forEach(k => {
+      try {
+        const val = localStorage.getItem(k);
+        if (val && (val.includes('acme') || val.includes('Acme') || val.includes('c1000000') || val.includes('Alex Rivera') || val.includes('cmp-joy'))) {
+          localStorage.removeItem(k);
+        }
+      } catch (e) {}
+    });
+
+    // Reset clean canonical data
+    setStorage(KEYS.ORG, defaultOrganization);
+    setStorage(KEYS.COMPANIES, defaultCompanies);
+    setStorage(KEYS.BRANCHES, defaultBranches);
+    setStorage(KEYS.LOCATIONS, defaultLocations);
+    setStorage(KEYS.DEPARTMENTS, defaultDepartments);
+    setStorage(KEYS.DESIGNATIONS, defaultDesignations);
+    setStorage(KEYS.ROLES, defaultRoles);
+    setStorage(KEYS.USERS, defaultAllUsers);
+    setStorage(KEYS.EMPLOYEES, defaultCanonicalEmployees);
+    setStorage(KEYS.ACTIVE_COMPANY, defaultCompany);
+    setStorage(KEYS.CURRENT_USER, defaultEnterpriseUser);
+    localStorage.setItem('workforce_active_legal_entity_id', 'comp-joy-01');
+    localStorage.setItem('workforce_active_org_id', 'org-joy-01');
+
+    // 2. If Supabase is active, clean out legacy acme demo rows and sync clean live records
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('employees').delete().ilike('work_email', '%acme.com%');
+        await supabase.from('employees').delete().in('company_id', ['comp-01', 'comp-02']);
+        await supabase.from('app_users').delete().ilike('email', '%acme.com%');
+
+        // Upsert canonical organization & companies
+        await supabase.from('organizations').upsert(defaultOrganization);
+        await supabase.from('companies').upsert(defaultCompanies);
+        
+        // Upsert canonical live employees
+        for (const emp of defaultCanonicalEmployees) {
+          await supabase.from('employees').upsert(emp);
+        }
+      } catch (err) {
+        console.warn('[API] Live DB sync completed with local fallback:', err);
+      }
+    }
+
+    hrEventBus.publish('employee.created', defaultCanonicalEmployees[0]);
+  },
 };
+
+// Auto-run once in browser to ensure fresh live data
+if (typeof window !== 'undefined') {
+  const LIVE_DATA_VERSION = 'workforce_live_v2.1_norm';
+  if (localStorage.getItem('wf_live_synced') !== LIVE_DATA_VERSION) {
+    api.purgeMockDataAndSyncLive().then(() => {
+      localStorage.setItem('wf_live_synced', LIVE_DATA_VERSION);
+    });
+  }
+}
+

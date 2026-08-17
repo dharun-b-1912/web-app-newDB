@@ -11,7 +11,7 @@ export const SettingsView: React.FC = () => {
   const { organization, activeCompany, updateOrganization } = useTenant();
   const { showToast } = useToast();
 
-  const [orgName, setOrgName] = useState(organization?.name || 'Acme Global Enterprise');
+  const [orgName, setOrgName] = useState(organization?.name || 'Joy Corporate Solutions');
   const [industry, setIndustry] = useState(organization?.industry || 'Software & Technology');
   const [currency, setCurrency] = useState(organization?.default_currency || 'INR');
 

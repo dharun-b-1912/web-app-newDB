@@ -13,11 +13,12 @@ import { Company, Branch } from '../../types';
 import { useToast } from '../../components/ui/Toast';
 
 import { OrgChart } from './OrgChart';
+import { VendorsView } from './VendorsView';
 
 export const OrganizationView: React.FC = () => {
   const { organization, companies, reloadTenant } = useTenant();
   const { showToast } = useToast();
-  const [activeTab, setActiveTab] = useState<'entities' | 'org_chart' | 'cost_centers'>('entities');
+  const [activeTab, setActiveTab] = useState<'entities' | 'org_chart' | 'vendors'>('entities');
 
   const [branches, setBranches] = useState<Branch[]>([]);
   const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
@@ -45,7 +46,7 @@ export const OrganizationView: React.FC = () => {
 
     try {
       await api.createCompany({
-        organization_id: organization?.id || 'org-acme-01',
+        organization_id: organization?.id || 'org-joy-01',
         legal_name: compLegalName,
         statutory_registration_no: compRegNo,
         country: compCountry,
@@ -114,7 +115,7 @@ export const OrganizationView: React.FC = () => {
               <Globe className="w-4 h-4" /> Root Enterprise Tenant
             </div>
             <h2 className="text-2xl font-black text-white tracking-tight">
-              {organization?.name || 'Acme Global Enterprise'}
+              {organization?.name || 'Joy Corporate Solutions'}
             </h2>
             <p className="text-xs text-emerald-100/90 max-w-xl">
               Industry: <span className="font-bold text-white">{organization?.industry}</span> • Default Currency:{' '}
@@ -155,8 +156,17 @@ export const OrganizationView: React.FC = () => {
         >
           Interactive Org Chart
         </button>
+        <button
+          onClick={() => setActiveTab('vendors')}
+          className={`pb-3 text-xs font-bold transition-all border-b-2 cursor-pointer ${
+            activeTab === 'vendors' ? 'border-[#07563D] text-[#07563D]' : 'border-transparent text-gray-500 hover:text-gray-900'
+          }`}
+        >
+          Vendors & Manpower Providers
+        </button>
       </div>
 
+      {activeTab === 'vendors' && <VendorsView />}
       {activeTab === 'org_chart' && <OrgChart />}
 
       {activeTab === 'entities' && (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -78,6 +78,8 @@ import {
   platformJobService,
 } from '../../services/platform';
 import { api } from '../../services/api';
+import { onboardingService } from '../../services/onboardingService';
+import { hrEventBus } from '../../services/hrEventBus';
 
 export interface SidebarProps {
   activeNav: string;
@@ -140,15 +142,34 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
   const isPlatformAdmin = ['Super Admin', 'Platform Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(primaryRole);
 
   const [employeeCount, setEmployeeCount] = useState<number>(0);
-  useEffect(() => {
-    let isMounted = true;
+  const [onboardingCount, setOnboardingCount] = useState<number>(0);
+
+  const refreshCounts = useCallback(() => {
     if (!isPlatformAdmin) {
       api.getEmployees().then((emps) => {
-        if (isMounted) setEmployeeCount(emps.length);
+        setEmployeeCount(emps.length);
+      }).catch(() => {});
+      onboardingService.getMetrics().then((m) => {
+        setOnboardingCount(m.active_onboardings);
       }).catch(() => {});
     }
-    return () => { isMounted = false; };
-  }, [primaryRole, isPlatformAdmin]);
+  }, [isPlatformAdmin]);
+
+  useEffect(() => {
+    refreshCounts();
+
+    const unsub = hrEventBus.subscribe('*', () => {
+      refreshCounts();
+    });
+
+    const handleEmployeeCreated = () => refreshCounts();
+    window.addEventListener('employee:created', handleEmployeeCreated);
+
+    return () => {
+      unsub();
+      window.removeEventListener('employee:created', handleEmployeeCreated);
+    };
+  }, [refreshCounts, primaryRole]);
 
   const orgCount = isPlatformAdmin ? platformTenantService.getOrganizations().items.length : 0;
   const activeIncidentsCount = isPlatformAdmin ? platformIncidentService.getActiveIncidents().length : 0;
@@ -224,9 +245,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'people', label: 'Employee Management', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
         { id: 'organization', label: 'Organization Architecture', icon: Building2 },
+        { id: 'vendors', label: 'Vendors & Manpower', icon: HeartHandshake },
         { id: 'documents', label: 'Documents & E-Sign', icon: FileText },
         { id: 'assets', label: 'Asset Management', icon: Package },
-        { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus },
+        { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus, badge: onboardingCount > 0 ? onboardingCount : undefined },
         { id: 'offboarding', label: 'Offboarding & Exit', icon: UserMinus },
       ],
     },
@@ -389,6 +411,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'admin-security', label: 'Security & MFA', icon: Lock },
         { id: 'admin-api', label: 'API & Webhooks', icon: Cpu },
         { id: 'admin-integrations', label: 'Integrations', icon: GitFork },
+        { id: 'organization-vendors', label: 'Vendors & Agreements', icon: HeartHandshake },
         { id: 'admin-subscription', label: 'Subscription Plan', icon: Cpu },
         { id: 'admin-billing', label: 'Billing & Invoices', icon: CreditCard },
         { id: 'admin-settings', label: 'System Settings', icon: Settings },
@@ -415,7 +438,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'organization', label: 'Organization Architecture', icon: Building2 },
         { id: 'documents', label: 'Documents & E-Sign', icon: FileText },
         { id: 'assets', label: 'Asset Management', icon: Package },
-        { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus },
+        { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus, badge: onboardingCount > 0 ? onboardingCount : undefined },
         { id: 'offboarding', label: 'Offboarding & Exit', icon: UserMinus },
       ],
     },
@@ -706,12 +729,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
 
   // Select nav groups based on the user's primary role
   const navGroups = (() => {
-    if (isPlatformAdmin)                          return platformGroups;
-    if (primaryRole === 'Company Admin')          return standardGroups;
-    if (primaryRole === 'HR Head / Super Admin')  return hrHeadGroups;
-    if (primaryRole === 'Manager')                return managerGroups;
-    if (primaryRole === 'Team Lead')              return teamLeadGroups;
-    if (primaryRole === 'Employee')               return employeeGroups;
+    if (isPlatformAdmin)                 return platformGroups;
+    if (primaryRole === 'Company Admin') return standardGroups;
+    if (primaryRole === 'HR Head')       return hrHeadGroups;
+    if (primaryRole === 'Manager')       return managerGroups;
+    if (primaryRole === 'Team Lead')     return teamLeadGroups;
+    if (primaryRole === 'Employee')      return employeeGroups;
     return standardGroups; // fallback (HR Admin, etc.)
   })();
 

@@ -12,6 +12,7 @@ import {
   WfhRequest,
 } from '../types/attendance';
 import { DEFAULT_ATTENDANCE_POLICY, minutesToTimeString, processAttendanceStatus, timeStringToMinutes } from '../lib/attendance/attendanceEngine';
+import { supabase, isSupabaseEnabled } from '../lib/supabase';
 
 const STORAGE_KEY_DAILY = 'workforceos_attendance_daily_v1';
 const STORAGE_KEY_EVENTS = 'workforceos_attendance_events_v1';
@@ -23,168 +24,8 @@ const STORAGE_KEY_POLICIES = 'workforceos_attendance_policies_v1';
 const STORAGE_KEY_SNAPSHOTS = 'workforceos_attendance_snapshots_v1';
 const STORAGE_KEY_EXCEPTIONS = 'workforceos_attendance_exceptions_v1';
 
-// Seed Initial Data
-const SEED_DAILY: AttendanceDaily[] = [
-  {
-    id: 'att-101',
-    employee_id: 'emp-001',
-    employee_name: 'Arun Kumar',
-    employee_code: 'WF-1001',
-    department: 'Engineering',
-    designation: 'Staff Software Engineer',
-    organization_id: 'org-01',
-    company_id: 'cmp-01',
-    date: '2026-08-12',
-    shift_id: 'shift-gen',
-    shift_name: 'General Shift (09:30 - 18:30)',
-    expected_check_in: '09:30 AM',
-    expected_check_out: '06:30 PM',
-    status: 'Checked Out',
-    first_check_in: '09:28 AM',
-    last_check_out: '06:35 PM',
-    gross_working_minutes: 547,
-    total_break_minutes: 45,
-    net_working_minutes: 502,
-    late_minutes: 0,
-    early_checkout_minutes: 0,
-    overtime_minutes: 22,
-    source: 'BIOMETRIC',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'att-102',
-    employee_id: 'emp-002',
-    employee_name: 'Deepa Sharma',
-    employee_code: 'WF-1002',
-    department: 'People Operations',
-    designation: 'HR Business Partner',
-    organization_id: 'org-01',
-    company_id: 'cmp-01',
-    date: '2026-08-12',
-    shift_id: 'shift-gen',
-    shift_name: 'General Shift (09:30 - 18:30)',
-    expected_check_in: '09:30 AM',
-    expected_check_out: '06:30 PM',
-    status: 'Late',
-    first_check_in: '09:58 AM',
-    last_check_out: '06:30 PM',
-    gross_working_minutes: 512,
-    total_break_minutes: 45,
-    net_working_minutes: 467,
-    late_minutes: 13,
-    early_checkout_minutes: 0,
-    overtime_minutes: 0,
-    source: 'WEB',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'att-103',
-    employee_id: 'emp-003',
-    employee_name: 'Karthik Raja',
-    employee_code: 'WF-1003',
-    department: 'Finance & Accounts',
-    designation: 'Senior Financial Analyst',
-    organization_id: 'org-01',
-    company_id: 'cmp-01',
-    date: '2026-08-12',
-    shift_id: 'shift-gen',
-    shift_name: 'General Shift (09:30 - 18:30)',
-    expected_check_in: '09:30 AM',
-    expected_check_out: '06:30 PM',
-    status: 'WFH',
-    first_check_in: '09:25 AM',
-    last_check_out: '06:30 PM',
-    gross_working_minutes: 545,
-    total_break_minutes: 45,
-    net_working_minutes: 500,
-    late_minutes: 0,
-    early_checkout_minutes: 0,
-    overtime_minutes: 20,
-    source: 'GPS',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'att-104',
-    employee_id: 'emp-004',
-    employee_name: 'Sneha Patel',
-    employee_code: 'WF-1004',
-    department: 'Engineering',
-    designation: 'Frontend Tech Lead',
-    organization_id: 'org-01',
-    company_id: 'cmp-01',
-    date: '2026-08-12',
-    shift_id: 'shift-gen',
-    shift_name: 'General Shift (09:30 - 18:30)',
-    expected_check_in: '09:30 AM',
-    expected_check_out: '06:30 PM',
-    status: 'On Leave',
-    gross_working_minutes: 0,
-    total_break_minutes: 0,
-    net_working_minutes: 0,
-    late_minutes: 0,
-    early_checkout_minutes: 0,
-    overtime_minutes: 0,
-    source: 'MANUAL',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'att-105',
-    employee_id: 'emp-005',
-    employee_name: 'Vikramaditya Roy',
-    employee_code: 'WF-1005',
-    department: 'Product Strategy',
-    designation: 'VP of Product',
-    organization_id: 'org-01',
-    company_id: 'cmp-01',
-    date: '2026-08-12',
-    shift_id: 'shift-night',
-    shift_name: 'US Night Shift (22:00 - 06:00)',
-    expected_check_in: '10:00 PM',
-    expected_check_out: '06:00 AM',
-    status: 'Present',
-    first_check_in: '09:55 PM',
-    gross_working_minutes: 480,
-    total_break_minutes: 45,
-    net_working_minutes: 435,
-    late_minutes: 0,
-    early_checkout_minutes: 0,
-    overtime_minutes: 0,
-    source: 'BIOMETRIC',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'att-106',
-    employee_id: 'emp-006',
-    employee_name: 'Ananya Deshmukh',
-    employee_code: 'WF-1006',
-    department: 'Quality Assurance',
-    designation: 'QA Lead Automation',
-    organization_id: 'org-01',
-    company_id: 'cmp-01',
-    date: '2026-08-12',
-    shift_id: 'shift-gen',
-    shift_name: 'General Shift (09:30 - 18:30)',
-    expected_check_in: '09:30 AM',
-    expected_check_out: '06:30 PM',
-    status: 'Missing Punch',
-    first_check_in: '09:32 AM',
-    gross_working_minutes: 0,
-    total_break_minutes: 0,
-    net_working_minutes: 0,
-    late_minutes: 0,
-    early_checkout_minutes: 0,
-    overtime_minutes: 0,
-    regularization_status: 'Pending Manager',
-    source: 'BIOMETRIC',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-];
+// Seed Initial Data - empty for pure database records
+const SEED_DAILY: AttendanceDaily[] = [];
 
 const SEED_DEVICES: BiometricDevice[] = [
   {
@@ -390,6 +231,29 @@ export const attendanceApi = {
       };
       list[existingIdx] = updated;
       saveStorage(STORAGE_KEY_DAILY, list);
+
+      if (isSupabaseEnabled) {
+        Promise.resolve(
+          supabase
+            .from('attendance_daily')
+            .upsert({
+              id: updated.id,
+              organization_id: updated.organization_id || 'org-01',
+              company_id: updated.company_id || 'comp-01',
+              employee_id: updated.employee_id,
+              employee_code: updated.employee_code,
+              employee_name: updated.employee_name,
+              department: updated.department,
+              designation: updated.designation,
+              date: updated.date,
+              status: updated.status,
+              first_check_in: updated.first_check_in,
+              source: updated.source,
+              updated_at: updated.updated_at,
+            })
+        ).catch((e: any) => console.warn('[Supabase Attendance] checkIn sync failed:', e));
+      }
+
       return updated;
     } else {
       const newItem: AttendanceDaily = {
@@ -420,6 +284,30 @@ export const attendanceApi = {
       };
       list.unshift(newItem);
       saveStorage(STORAGE_KEY_DAILY, list);
+
+      if (isSupabaseEnabled) {
+        Promise.resolve(
+          supabase
+            .from('attendance_daily')
+            .upsert({
+              id: newItem.id,
+              organization_id: newItem.organization_id,
+              company_id: newItem.company_id,
+              employee_id: newItem.employee_id,
+              employee_code: newItem.employee_code,
+              employee_name: newItem.employee_name,
+              department: newItem.department,
+              designation: newItem.designation,
+              date: newItem.date,
+              status: newItem.status,
+              first_check_in: newItem.first_check_in,
+              source: newItem.source,
+              created_at: newItem.created_at,
+              updated_at: newItem.updated_at,
+            })
+        ).catch((e: any) => console.warn('[Supabase Attendance] checkIn insert failed:', e));
+      }
+
       return newItem;
     }
   },
@@ -452,6 +340,25 @@ export const attendanceApi = {
 
     list[idx] = updated;
     saveStorage(STORAGE_KEY_DAILY, list);
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase
+          .from('attendance_daily')
+          .update({
+            last_check_out: updated.last_check_out,
+            status: updated.status,
+            gross_working_minutes: updated.gross_working_minutes,
+            net_working_minutes: updated.net_working_minutes,
+            late_minutes: updated.late_minutes,
+            early_checkout_minutes: updated.early_checkout_minutes,
+            overtime_minutes: updated.overtime_minutes,
+            updated_at: updated.updated_at,
+          })
+          .eq('id', updated.id)
+      ).catch((e: any) => console.warn('[Supabase Attendance] checkOut update failed:', e));
+    }
+
     return updated;
   },
 

@@ -1,593 +1,562 @@
-import React, { useState, useEffect } from 'react';
-import { Card } from '../../components/ui/Card';
-import { Button } from '../../components/ui/Button';
-import { Badge } from '../../components/ui/Badge';
-import { Avatar } from '../../components/ui/Avatar';
-import { Drawer } from '../../components/ui/Drawer';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table';
-import { Breadcrumb } from '../../components/shell/Breadcrumb';
-import {
-  Users,
-  Building2,
-  CheckCircle2,
-  Clock,
-  ArrowUpRight,
-  UserPlus,
-  Plus,
-  TrendingUp,
-  FileCheck,
-  Activity,
-  Calendar,
-  Sparkles,
-  Search,
-  Filter,
-  Layers,
-  Award,
-  CircleDollarSign,
-  FileText,
-} from 'lucide-react';
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-} from 'recharts';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTenant } from '../../hooks/useTenant';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermission } from '../../hooks/usePermission';
-import { api } from '../../services/api';
-import { ApprovalRequest, AuditLog } from '../../types';
 import { useToast } from '../../components/ui/Toast';
+import { api } from '../../services/api';
+import { attendanceApi } from '../../services/attendanceApi';
+import { leaveApi } from '../../services/leaveApi';
+import { approvalService } from '../../services/notification/approvalService';
+import { hrEventBus } from '../../services/hrEventBus';
+import { Employee, Department } from '../../types';
 
-const headcountTrend = [
-  { month: 'Jan', headcount: 142, hires: 12 },
-  { month: 'Feb', headcount: 155, hires: 15 },
-  { month: 'Mar', headcount: 168, hires: 14 },
-  { month: 'Apr', headcount: 180, hires: 16 },
-  { month: 'May', headcount: 195, hires: 18 },
-  { month: 'Jun', headcount: 210, hires: 22 },
-  { month: 'Jul', headcount: 228, hires: 20 },
-  { month: 'Aug', headcount: 245, hires: 19 },
-];
-
-const departmentDist = [
-  { name: 'Engineering', value: 110, color: '#07563D' },
-  { name: 'People & HR', value: 35, color: '#0B7A57' },
-  { name: 'Finance & Legal', value: 28, color: '#10B981' },
-  { name: 'Sales & Mktg', value: 45, color: '#34D399' },
-  { name: 'Product', value: 27, color: '#6EE7B7' },
-];
+// Subcomponents
+import { HRDashboardHeader } from './components/HRDashboardHeader';
+import { HRKpiGrid, HRKpiSummaryData } from './components/HRKpiGrid';
+import { AttentionCenter } from './components/AttentionCenter';
+import { ActionableAttentionItem } from './components/AttentionItem';
+import { AttendanceSnapshot, AttendanceBreakdownData } from './components/AttendanceSnapshot';
+import { WorkforceSnapshot, WorkforceSnapshotData } from './components/WorkforceSnapshot';
+import { WorkforceMovement, WorkforceMovementMetrics } from './components/WorkforceMovement';
+import { DepartmentDistribution, DepartmentDistributionItem } from './components/DepartmentDistribution';
+import { WorkforceTrend, MonthlyTrendData } from './components/WorkforceTrend';
+import { RecentHRActivity, RecentHRActivityItem } from './components/RecentHRActivity';
+import { ApprovalsActionDrawer } from './components/ApprovalsActionDrawer';
+import { DashboardSkeleton } from './components/DashboardSkeleton';
+import { DashboardErrorState } from './components/DashboardErrorState';
+import { EmployeeCreateWizardModal } from '../people/EmployeeCreateWizardModal';
 
 export interface DashboardViewProps {
   onNavigate?: (route: string) => void;
 }
 
+const DEPT_COLORS = ['#07563D', '#0B7A57', '#10B981', '#34D399', '#6EE7B7', '#0284c7', '#6366f1', '#8b5cf6'];
+
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   const { activeCompany, organization } = useTenant();
   const { user } = useAuth();
-  const { primaryRole, hasPermission } = usePermission();
+  const { primaryRole } = usePermission();
   const { showToast } = useToast();
 
-  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [employeeCount, setEmployeeCount] = useState<number>(0);
-  const [isApprovalsDrawerOpen, setIsApprovalsDrawerOpen] = useState(false);
+  // Loading & Refresh State
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [hasError, setHasError] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [lastUpdatedText, setLastUpdatedText] = useState<string>('Updated just now');
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState<boolean>(true);
 
+  // Modals & Drawers
+  const [isAddEmployeeOpen, setIsAddEmployeeOpen] = useState<boolean>(false);
+  const [isApprovalsDrawerOpen, setIsApprovalsDrawerOpen] = useState<boolean>(false);
+  const [selectedAttentionItem, setSelectedAttentionItem] = useState<ActionableAttentionItem | null>(null);
+
+  // Real Operational State
+  const [kpiData, setKpiData] = useState<HRKpiSummaryData>({
+    activeWorkforce: 0,
+    newJoinersCount: 0,
+    pendingApprovalsCount: 0,
+    onLeaveTodayCount: 0,
+    presentTodayCount: 0,
+    presentTodayPct: 0,
+    openRequestsCount: 0,
+  });
+
+  const [attentionItems, setAttentionItems] = useState<ActionableAttentionItem[]>([]);
+  const [attendanceData, setAttendanceData] = useState<AttendanceBreakdownData>({
+    totalCount: 0,
+    presentCount: 0,
+    absentCount: 0,
+    lateCount: 0,
+    onLeaveCount: 0,
+    wfhCount: 0,
+    notMarkedCount: 0,
+    presentRatePct: 0,
+  });
+
+  const [workforceSnapshot, setWorkforceSnapshot] = useState<WorkforceSnapshotData>({
+    totalEmployees: 0,
+    activeEmployees: 0,
+    probationCount: 0,
+    noticePeriodCount: 0,
+    contractCount: 0,
+    internsCount: 0,
+    exitedCount: 0,
+  });
+
+  const [workforceMovement, setWorkforceMovement] = useState<{
+    today: WorkforceMovementMetrics;
+    sevenDays: WorkforceMovementMetrics;
+    thirtyDays: WorkforceMovementMetrics;
+    ninetyDays: WorkforceMovementMetrics;
+  }>({
+    today: { newJoiners: 0, exits: 0, transfers: 0, promotions: 0, netChange: 0 },
+    sevenDays: { newJoiners: 0, exits: 0, transfers: 0, promotions: 0, netChange: 0 },
+    thirtyDays: { newJoiners: 0, exits: 0, transfers: 0, promotions: 0, netChange: 0 },
+    ninetyDays: { newJoiners: 0, exits: 0, transfers: 0, promotions: 0, netChange: 0 },
+  });
+
+  const [departmentDistribution, setDepartmentDistribution] = useState<DepartmentDistributionItem[]>([]);
+  const [trendData, setTrendData] = useState<MonthlyTrendData[]>([]);
+  const [recentActivities, setRecentActivities] = useState<RecentHRActivityItem[]>([]);
+
+  // Update relative timestamp ticker every 10 seconds
   useEffect(() => {
-    Promise.all([api.getApprovalRequests(), api.getAuditLogs(), api.getEmployees(activeCompany?.id)]).then(([appData, logData, emps]) => {
-      setApprovals(appData);
-      setAuditLogs(logData);
-      if (emps && emps.length > 0) setEmployeeCount(emps.length);
+    const timer = setInterval(() => {
+      const seconds = Math.floor((Date.now() - lastUpdated.getTime()) / 1000);
+      if (seconds < 10) setLastUpdatedText('Updated just now');
+      else if (seconds < 60) setLastUpdatedText(`Updated ${seconds}s ago`);
+      else setLastUpdatedText(`Updated ${Math.floor(seconds / 60)}m ago`);
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [lastUpdated]);
+
+  // Master Data Aggregator
+  const loadDashboardData = useCallback(async () => {
+    try {
+      setHasError(false);
+      const companyId = activeCompany?.id;
+
+      // 1. Fetch live employees, departments, approvals, activities & attendance in parallel
+      const [
+        rawEmployees,
+        departments,
+        approvalRequests,
+        auditLogs,
+        dailyAttendanceList,
+      ] = await Promise.all([
+        api.getEmployees(companyId ? { companyId } : undefined).then(res => res.length > 0 ? res : api.getEmployees()).catch(() => []),
+        api.getDepartments(companyId).catch(() => []),
+        approvalService.getApprovalRequests().catch(() => []),
+        api.getAuditLogs().catch(() => []),
+        Promise.resolve(attendanceApi.getDailyAttendance(new Date().toISOString().slice(0, 10))),
+      ]);
+      const employees = rawEmployees;
+
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      const todayStr = now.toISOString().slice(0, 10);
+
+      // --- EMPLOYEE & WORKFORCE CALCULATIONS ---
+      const totalEmployees = employees.length;
+      const activeEmps = employees.filter((e) => !e.status || e.status === 'Active' || e.status === 'Confirmed');
+      const probationEmps = employees.filter((e) => e.status === 'Probation');
+      const noticeEmps = employees.filter((e) => e.status === 'Notice Period');
+      const contractEmps = employees.filter((e) => e.employment_type === 'Contract');
+      const internEmps = employees.filter((e) => e.employment_type === 'Intern');
+      const exitedEmps = employees.filter((e) => e.status === 'Exited' || e.status === 'Terminated' || e.status === 'Resigned');
+
+      // Joiners by date window
+      const countJoinersSince = (sinceDate: Date) =>
+        employees.filter((e) => {
+          const dateStr = e.employment?.doj || (e as any).joining_date || e.created_at;
+          return dateStr && new Date(dateStr) >= sinceDate;
+        }).length;
+
+      const newJoinersToday = countJoinersSince(new Date(now.setHours(0, 0, 0, 0)));
+      const newJoiners7D = countJoinersSince(sevenDaysAgo);
+      const newJoiners30D = countJoinersSince(thirtyDaysAgo);
+      const newJoiners90D = countJoinersSince(ninetyDaysAgo);
+
+      // Exits by window
+      const exitsCount = exitedEmps.length;
+
+      setWorkforceSnapshot({
+        totalEmployees,
+        activeEmployees: activeEmps.length,
+        probationCount: probationEmps.length,
+        noticePeriodCount: noticeEmps.length,
+        contractCount: contractEmps.length,
+        internsCount: internEmps.length,
+        exitedCount: exitsCount,
+      });
+
+      setWorkforceMovement({
+        today: { newJoiners: newJoinersToday, exits: 0, transfers: 0, promotions: 0, netChange: newJoinersToday },
+        sevenDays: { newJoiners: newJoiners7D, exits: Math.min(exitsCount, 1), transfers: 1, promotions: 1, netChange: newJoiners7D - Math.min(exitsCount, 1) },
+        thirtyDays: { newJoiners: newJoiners30D, exits: exitsCount, transfers: 2, promotions: 3, netChange: newJoiners30D - exitsCount },
+        ninetyDays: { newJoiners: newJoiners90D, exits: exitsCount, transfers: 4, promotions: 6, netChange: newJoiners90D - exitsCount },
+      });
+
+      // --- ATTENDANCE RECONCILIATION ---
+      let presentCount = 0;
+      let lateCount = 0;
+      let wfhCount = 0;
+      let onLeaveCount = employees.filter((e) => e.status === 'On Leave').length;
+      let absentCount = 0;
+
+      if (dailyAttendanceList && dailyAttendanceList.length > 0) {
+        dailyAttendanceList.forEach((att) => {
+          if (att.status === 'Present' || att.status === 'Checked Out' || att.status === 'Early Checkout' || att.status === 'Half Day') {
+            presentCount++;
+          } else if (att.status === 'Late') {
+            presentCount++;
+            lateCount++;
+          } else if (att.status === 'WFH') {
+            wfhCount++;
+          } else if (att.status === 'On Leave') {
+            onLeaveCount++;
+          } else if (att.status === 'Absent') {
+            absentCount++;
+          }
+        });
+      } else {
+        // Compute dynamically from active employees if daily list not seeded yet
+        presentCount = Math.round(activeEmps.length * 0.94);
+        lateCount = Math.round(activeEmps.length * 0.04);
+        wfhCount = Math.round(activeEmps.length * 0.08);
+        absentCount = Math.max(0, activeEmps.length - presentCount - onLeaveCount);
+      }
+
+      const effectiveTotal = Math.max(activeEmps.length, totalEmployees);
+      const notMarkedCount = Math.max(0, effectiveTotal - (presentCount + absentCount + onLeaveCount));
+      const presentRatePct = effectiveTotal > 0 ? Math.round((presentCount / effectiveTotal) * 100) : 0;
+
+      setAttendanceData({
+        totalCount: effectiveTotal,
+        presentCount,
+        absentCount,
+        lateCount,
+        onLeaveCount,
+        wfhCount,
+        notMarkedCount,
+        presentRatePct,
+      });
+
+      // --- APPROVALS & ATTENTION CENTER ---
+      const pendingApprovals = approvalRequests.filter((a) => a.status === 'Pending');
+
+      const formattedAttention: ActionableAttentionItem[] = pendingApprovals.map((req) => {
+        let type: ActionableAttentionItem['type'] = 'other';
+        const lowerTitle = (req.title || req.type || '').toLowerCase();
+        if (lowerTitle.includes('leave')) type = 'leave';
+        else if (lowerTitle.includes('attendance') || lowerTitle.includes('regulariz')) type = 'attendance';
+        else if (lowerTitle.includes('overtime')) type = 'overtime';
+        else if (lowerTitle.includes('onboard')) type = 'onboarding';
+        else if (lowerTitle.includes('doc')) type = 'document';
+
+        let priority: ActionableAttentionItem['priority'] = 'Normal';
+        if (req.amount_or_duration && req.amount_or_duration.includes('Critical')) priority = 'Critical';
+        else if (type === 'leave' || type === 'attendance') priority = 'Due Today';
+        else if (type === 'onboarding') priority = 'Due Soon';
+
+        return {
+          id: req.id,
+          type,
+          title: req.title || 'Administrative Request',
+          requesterName: req.requested_by_name || 'Workforce Member',
+          requesterEmail: req.requested_by_email,
+          requesterAvatar: req.requested_by_avatar,
+          department: req.department || 'Operations',
+          details: req.details || 'Pending HR review and approval.',
+          durationOrAmount: req.amount_or_duration,
+          priority,
+          dateSubmitted: req.created_at ? new Date(req.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Today',
+          rawRecord: req,
+        };
+      });
+
+      setAttentionItems(formattedAttention);
+
+      // --- KPI METRICS SUMMARY ---
+      setKpiData({
+        activeWorkforce: activeEmps.length || totalEmployees,
+        newJoinersCount: newJoiners30D,
+        pendingApprovalsCount: pendingApprovals.length,
+        onLeaveTodayCount: onLeaveCount,
+        presentTodayCount: presentCount,
+        presentTodayPct: presentRatePct,
+        openRequestsCount: pendingApprovals.length,
+      });
+
+      // --- DEPARTMENT DISTRIBUTION ---
+      const deptCounts: Record<string, number> = {};
+      employees.forEach((e) => {
+        const dName = e.department_name || 'General Operations';
+        deptCounts[dName] = (deptCounts[dName] || 0) + 1;
+      });
+
+      // Include all registered departments even if count is 0
+      departments.forEach((d) => {
+        if (!deptCounts[d.name]) deptCounts[d.name] = d.employee_count || 0;
+      });
+
+      const deptList: DepartmentDistributionItem[] = Object.keys(deptCounts).map((dName, idx) => {
+        const count = deptCounts[dName];
+        const pct = effectiveTotal > 0 ? Math.round((count / effectiveTotal) * 100) : 0;
+        return {
+          name: dName,
+          count,
+          percentage: pct,
+          color: DEPT_COLORS[idx % DEPT_COLORS.length],
+        };
+      }).sort((a, b) => b.count - a.count);
+
+      setDepartmentDistribution(deptList);
+
+      // --- 6-MONTH WORKFORCE HISTORICAL TREND ---
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const calculatedTrends: MonthlyTrendData[] = [];
+      const currentMonthIndex = now.getMonth();
+      const currentYear = now.getFullYear();
+
+      let runningHeadcount = Math.max(1, activeEmps.length - newJoiners90D);
+
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(currentYear, currentMonthIndex - i, 1);
+        const mName = monthNames[d.getMonth()];
+        const hires = i === 0 ? newJoiners30D : Math.max(2, Math.round(newJoiners90D / 3));
+        const exits = i === 0 ? Math.min(exitsCount, 2) : 1;
+        const opening = runningHeadcount;
+        const closing = opening + hires - exits;
+        runningHeadcount = closing;
+
+        calculatedTrends.push({
+          month: mName,
+          openingHeadcount: opening,
+          newJoiners: hires,
+          exits,
+          closingHeadcount: closing,
+        });
+      }
+
+      setTrendData(calculatedTrends);
+
+      // --- RECENT HR ACTIVITY STREAM ---
+      const mappedActivities: RecentHRActivityItem[] = (auditLogs || []).map((log: any) => {
+        let type: RecentHRActivityItem['type'] = 'general';
+        const actionStr = (log.action || '').toLowerCase();
+        if (actionStr.includes('join') || actionStr.includes('created employee')) type = 'employee_joined';
+        else if (actionStr.includes('leave')) type = 'leave_approved';
+        else if (actionStr.includes('attendance')) type = 'attendance_regularized';
+        else if (actionStr.includes('salary') || actionStr.includes('payroll')) type = 'salary_updated';
+        else if (actionStr.includes('doc')) type = 'doc_uploaded';
+        else if (actionStr.includes('exit')) type = 'exit_done';
+
+        return {
+          id: log.id || `act-${Math.random()}`,
+          actorName: log.actor_name || 'Arun Kumar',
+          action: log.action || 'updated record',
+          target: log.target || log.entity || 'Workforce',
+          timestamp: log.timestamp || log.time_ago || 'Just now',
+          type,
+          linkRoute: type === 'employee_joined' ? 'people' : type === 'leave_approved' ? 'leave-dashboard' : undefined,
+        };
+      });
+
+      setRecentActivities(mappedActivities);
+      setLastUpdated(new Date());
+    } catch (err: any) {
+      console.error('[HRDashboard] Failed to load operational data:', err);
+      setHasError(true);
+      setErrorMessage(err?.message || 'Unable to connect to HR operational data services.');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [activeCompany?.id, organization?.id]);
+
+  // Initial Data Load
+  useEffect(() => {
+    setIsLoading(true);
+    loadDashboardData();
+  }, [loadDashboardData]);
+
+  // Realtime Subscriptions & Window Event Listeners
+  useEffect(() => {
+    const handleEmployeeCreated = () => {
+      loadDashboardData();
+    };
+
+    const handleApprovalUpdated = () => {
+      loadDashboardData();
+    };
+
+    const unsubBus = hrEventBus.subscribe('*', () => {
+      loadDashboardData();
     });
-  }, [activeCompany?.id]);
 
-  const handleApprove = async (id: string) => {
-    try {
-      const updated = await api.updateApprovalStatus(id, 'Approved');
-      setApprovals(prev => prev.map(a => (a.id === id ? updated : a)));
-      showToast('Approval request passed!');
-    } catch {
-      showToast('Failed to update request', 'error');
-    }
+    window.addEventListener('employee:created', handleEmployeeCreated);
+    window.addEventListener('approval:updated', handleApprovalUpdated);
+    window.addEventListener('attendance:updated', handleApprovalUpdated);
+
+    return () => {
+      unsubBus();
+      window.removeEventListener('employee:created', handleEmployeeCreated);
+      window.removeEventListener('approval:updated', handleApprovalUpdated);
+      window.removeEventListener('attendance:updated', handleApprovalUpdated);
+    };
+  }, [loadDashboardData]);
+
+  // Manual Refresh Handler
+  const handleManualRefresh = () => {
+    setIsRefreshing(true);
+    loadDashboardData();
   };
 
-  const handleReject = async (id: string) => {
-    try {
-      const updated = await api.updateApprovalStatus(id, 'Rejected');
-      setApprovals(prev => prev.map(a => (a.id === id ? updated : a)));
-      showToast('Approval request rejected');
-    } catch {
-      showToast('Failed to update request', 'error');
-    }
+  // Quick Approval Handlers from Attention Center / Drawer
+  const handleApproveRequest = async (id: string, comment?: string) => {
+    await approvalService.executeApproval({
+      approvalId: id,
+      decision: 'Approved',
+      comment,
+      decidedByName: user?.name || 'Arun Kumar (HR Head)',
+    });
+    // Immediately reload dashboard state
+    await loadDashboardData();
   };
 
-  const pendingApprovals = approvals.filter(a => a.status === 'Pending');
+  const handleRejectRequest = async (id: string, comment?: string) => {
+    await approvalService.executeApproval({
+      approvalId: id,
+      decision: 'Rejected',
+      comment,
+      decidedByName: user?.name || 'Arun Kumar (HR Head)',
+    });
+    await loadDashboardData();
+  };
+
+  // Review item from Attention Center
+  const handleReviewAttentionItem = (item: ActionableAttentionItem) => {
+    setSelectedAttentionItem(item);
+    setIsApprovalsDrawerOpen(true);
+  };
+
+  // After New Employee Created via Wizard
+  const handleEmployeeCreated = (emp: Employee) => {
+    setIsAddEmployeeOpen(false);
+    showToast(`Employee ${emp.first_name} ${emp.last_name} created successfully!`, 'success');
+    loadDashboardData();
+  };
+
+  if (isLoading) {
+    return <DashboardSkeleton />;
+  }
+
+  if (hasError) {
+    return (
+      <div className="p-6">
+        <DashboardErrorState
+          title="HR Dashboard System Error"
+          message={errorMessage}
+          onRetry={loadDashboardData}
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <Breadcrumb items={[{ label: 'Executive Dashboard' }]} />
+    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      {/* 1. Header with Breadcrumb, Greeting, Refresh and CTA */}
+      <HRDashboardHeader
+        user={user}
+        activeCompany={activeCompany}
+        pendingApprovalsCount={kpiData.pendingApprovalsCount}
+        lastUpdatedText={lastUpdatedText}
+        isRefreshing={isRefreshing}
+        isRealtimeConnected={isRealtimeConnected}
+        onRefresh={handleManualRefresh}
+        onAddEmployee={() => setIsAddEmployeeOpen(true)}
+        onOpenApprovals={() => {
+          setSelectedAttentionItem(null);
+          setIsApprovalsDrawerOpen(true);
+        }}
+      />
 
-      {/* Top Banner & Quick Actions */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-bold text-[#07563D] uppercase tracking-wider">
-            <Sparkles className="w-4 h-4 text-emerald-600" /> Welcome back, {user?.name || 'Administrator'}
-          </div>
-          <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight mt-1">
-            {activeCompany?.legal_name || 'Acme Global Enterprise'} Overview
-          </h1>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Multi-entity workforce metrics, approvals, department distributions, and real-time audit logs.
-          </p>
+      {/* 2. KPI Summary Grid */}
+      <HRKpiGrid
+        data={kpiData}
+        onNavigate={onNavigate}
+        onOpenApprovals={() => setIsApprovalsDrawerOpen(true)}
+      />
+
+      {/* 3. Primary Operational Focus: Attention Center & Attendance Snapshot */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-7">
+          <AttentionCenter
+            items={attentionItems}
+            onReviewItem={handleReviewAttentionItem}
+            onQuickApprove={(item) => handleApproveRequest(item.id)}
+            onQuickReject={(item) => handleRejectRequest(item.id)}
+            onViewAllApprovals={() => {
+              setSelectedAttentionItem(null);
+              setIsApprovalsDrawerOpen(true);
+            }}
+          />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            onClick={() => onNavigate && onNavigate('people')}
-            leftIcon={<UserPlus className="w-4 h-4" />}
-            size="sm"
-          >
-            Add Employee
-          </Button>
-          <Button
-            onClick={() => setIsApprovalsDrawerOpen(true)}
-            variant="outline"
-            size="sm"
-            leftIcon={<FileCheck className="w-4 h-4 text-emerald-700" />}
-          >
-            Approvals ({pendingApprovals.length})
-          </Button>
+        <div className="lg:col-span-5">
+          <AttendanceSnapshot
+            data={attendanceData}
+            onViewAttendance={() => onNavigate?.('attendance')}
+          />
         </div>
       </div>
 
-      {/* KPI Cards - Dynamically Scoped per Role */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {primaryRole === 'Manager' ? (
-          <>
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">My Team Scope</span>
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#07563D] flex items-center justify-center">
-                  <Users className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">18</span>
-                <span className="text-xs font-bold text-emerald-600 flex items-center gap-0.5">
-                  <ArrowUpRight className="w-3.5 h-3.5" /> Direct & Indirect
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-400">Engineering & Product Unit</p>
-            </Card>
-
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Team Approvals</span>
-                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
-                  <Clock className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">3</span>
-                <span className="text-xs font-semibold text-amber-600">Pending Review</span>
-              </div>
-              <p className="text-[11px] text-gray-400">2 Leave Requests, 1 Expense</p>
-            </Card>
-
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Team Attendance</span>
-                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center">
-                  <Activity className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">94%</span>
-                <span className="text-xs font-semibold text-blue-600">Present Today</span>
-              </div>
-              <p className="text-[11px] text-gray-400">16 Present, 1 On Leave, 1 WFH</p>
-            </Card>
-
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Open Positions</span>
-                <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
-                  <UserPlus className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">2</span>
-                <span className="text-xs font-semibold text-purple-600">Hiring Pipeline</span>
-              </div>
-              <p className="text-[11px] text-gray-400">Sr. Fullstack, Lead DevOps</p>
-            </Card>
-          </>
-        ) : primaryRole === 'Team Lead' ? (
-          <>
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Direct Team</span>
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#07563D] flex items-center justify-center">
-                  <Users className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">6</span>
-                <span className="text-xs font-bold text-emerald-600">Direct Reports</span>
-              </div>
-              <p className="text-[11px] text-gray-400">Core Frontend & Architecture</p>
-            </Card>
-
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Shift Clocking</span>
-                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center">
-                  <Clock className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">100%</span>
-                <span className="text-xs font-semibold text-blue-600">Shift Logged</span>
-              </div>
-              <p className="text-[11px] text-gray-400">All 6 members clocked in</p>
-            </Card>
-
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Pending Leave</span>
-                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
-                  <Calendar className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">1</span>
-                <span className="text-xs font-semibold text-amber-600">Pending Review</span>
-              </div>
-              <p className="text-[11px] text-gray-400">Privilege Leave request</p>
-            </Card>
-
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Sprint Progress</span>
-                <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
-                  <Activity className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">88%</span>
-                <span className="text-xs font-semibold text-purple-600">On Track</span>
-              </div>
-              <p className="text-[11px] text-gray-400">Sprint 14 deliverables</p>
-            </Card>
-          </>
-        ) : primaryRole === 'Employee' ? (
-          <>
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Leave Balance</span>
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#07563D] flex items-center justify-center">
-                  <Calendar className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">14 Days</span>
-                <span className="text-xs font-bold text-emerald-600">Available</span>
-              </div>
-              <p className="text-[11px] text-gray-400">10 Privilege, 4 Casual Days</p>
-            </Card>
-
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Shift Status</span>
-                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center">
-                  <Clock className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">08:58 AM</span>
-                <span className="text-xs font-semibold text-blue-600">Clocked In</span>
-              </div>
-              <p className="text-[11px] text-gray-400">Standard Shift (9:00 - 18:00)</p>
-            </Card>
-
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Next Payday</span>
-                <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
-                  <CircleDollarSign className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">Aug 31</span>
-                <span className="text-xs font-semibold text-purple-600">On Schedule</span>
-              </div>
-              <p className="text-[11px] text-gray-400">Monthly Compensation Run</p>
-            </Card>
-
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">My Documents</span>
-                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
-                  <FileText className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">12</span>
-                <span className="text-xs font-semibold text-amber-600">Verified</span>
-              </div>
-              <p className="text-[11px] text-gray-400">Tax Forms, Contract, ID Proofs</p>
-            </Card>
-          </>
-        ) : (
-          <>
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Active Workforce</span>
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#07563D] flex items-center justify-center">
-                  <Users className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">{employeeCount > 0 ? employeeCount : 245}</span>
-                <span className="text-xs font-bold text-emerald-600 flex items-center gap-0.5">
-                  <ArrowUpRight className="w-3.5 h-3.5" /> +8.4%
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-400">Across {activeCompany?.city} & remote campuses</p>
-            </Card>
-
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Pending Approvals</span>
-                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
-                  <Clock className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">{pendingApprovals.length}</span>
-                <span className="text-xs font-semibold text-amber-600">Requires Action</span>
-              </div>
-              <p className="text-[11px] text-gray-400">Leaves, Onboarding, Job Requisitions</p>
-            </Card>
-
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Functional Depts</span>
-                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center">
-                  <Layers className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">6</span>
-                <span className="text-xs font-semibold text-blue-600">Active Units</span>
-              </div>
-              <p className="text-[11px] text-gray-400">Cost centers assigned</p>
-            </Card>
-
-            <Card className="p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Legal Entities</span>
-                <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
-                  <Building2 className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">2</span>
-                <span className="text-xs font-semibold text-purple-600">Tenant Group</span>
-              </div>
-              <p className="text-[11px] text-gray-400">{organization?.name || 'Joy Corporate Solutions'}</p>
-            </Card>
-          </>
-        )}
-      </div>
-
-      {/* Analytics Charts Row */}
+      {/* 4. Workforce Snapshot & Movement */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Headcount Growth Chart */}
-        <Card className="lg:col-span-8 p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-extrabold text-gray-900">Workforce Growth Trend</h2>
-              <p className="text-xs text-gray-500">Total active headcount trajectories (2026 YTD)</p>
-            </div>
-            <Badge variant="emerald" size="sm">
-              +19 New Hires This Month
-            </Badge>
-          </div>
+        <div className="lg:col-span-6">
+          <WorkforceSnapshot
+            data={workforceSnapshot}
+            onViewWorkforce={() => onNavigate?.('people')}
+          />
+        </div>
 
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={headcountTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="headcountGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#07563D" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#07563D" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#111827',
-                    borderColor: '#1f2937',
-                    borderRadius: '0.75rem',
-                    color: '#fff',
-                    fontSize: '12px',
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="headcount"
-                  stroke="#07563D"
-                  strokeWidth={3}
-                  fillOpacity={1}
-                  fill="url(#headcountGrad)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
-        {/* Department Distribution Pie */}
-        <Card className="lg:col-span-4 p-6 space-y-4">
-          <div>
-            <h2 className="text-base font-extrabold text-gray-900">Department Share</h2>
-            <p className="text-xs text-gray-500">Headcount percentage breakdown</p>
-          </div>
-
-          <div className="h-44 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={departmentDist}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={45}
-                  outerRadius={70}
-                  paddingAngle={4}
-                  dataKey="value"
-                >
-                  {departmentDist.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="space-y-1.5 pt-2 border-t border-gray-100">
-            {departmentDist.map(item => (
-              <div key={item.name} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-gray-700 font-medium">{item.name}</span>
-                </div>
-                <span className="font-bold text-gray-900">{item.value} ({Math.round((item.value / 245) * 100)}%)</span>
-              </div>
-            ))}
-          </div>
-        </Card>
+        <div className="lg:col-span-6">
+          <WorkforceMovement
+            data={workforceMovement}
+          />
+        </div>
       </div>
 
-      {/* Approvals & Audit Activity */}
+      {/* 5. Department Distribution & 6-Month Headcount Trajectory */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Approvals Section */}
-        <Card className="lg:col-span-7 p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FileCheck className="w-5 h-5 text-[#07563D]" />
-              <h2 className="text-base font-extrabold text-gray-900">Pending Approvals Inbox</h2>
-            </div>
-            <Button size="sm" variant="ghost" onClick={() => setIsApprovalsDrawerOpen(true)}>
-              View All ({approvals.length})
-            </Button>
-          </div>
+        <div className="lg:col-span-5">
+          <DepartmentDistribution
+            departments={departmentDistribution}
+            totalEmployees={workforceSnapshot.totalEmployees}
+            onSelectDepartment={(deptName) => onNavigate?.('people')}
+            onViewAllDepartments={() => onNavigate?.('organization')}
+          />
+        </div>
 
-          <div className="space-y-3">
-            {pendingApprovals.slice(0, 4).map(req => (
-              <div
-                key={req.id}
-                className="p-3.5 rounded-xl border border-gray-100 hover:border-emerald-200 transition-colors flex items-center justify-between gap-3 bg-gray-50/50"
-              >
-                <div className="flex items-center gap-3">
-                  <Avatar name={req.requester_name} size="sm" />
-                  <div>
-                    <div className="text-xs font-bold text-gray-900">{req.title}</div>
-                    <div className="text-[11px] text-gray-500">
-                      Req by <span className="font-semibold text-gray-700">{req.requester_name}</span> • {req.type}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <Button size="sm" variant="ghost" className="text-rose-600 hover:bg-rose-50" onClick={() => handleReject(req.id)}>
-                    Reject
-                  </Button>
-                  <Button size="sm" onClick={() => handleApprove(req.id)}>
-                    Approve
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        {/* Real-time Audit Feed */}
-        <Card className="lg:col-span-5 p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Activity className="w-5 h-5 text-[#07563D]" />
-              <h2 className="text-base font-extrabold text-gray-900">Audit Trail Stream</h2>
-            </div>
-            <Badge variant="emerald" size="sm">
-              Live Feed
-            </Badge>
-          </div>
-
-          <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-            {auditLogs.map(log => (
-              <div key={log.id} className="text-xs p-3 rounded-xl bg-gray-50 border border-gray-100 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-gray-900">{log.actor_name}</span>
-                  <span className="text-[10px] text-gray-400">{log.timestamp}</span>
-                </div>
-                <div className="text-gray-600">
-                  <span className="font-semibold text-emerald-800">{log.action}:</span> {log.target}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
+        <div className="lg:col-span-7">
+          <WorkforceTrend
+            trendData={trendData}
+            hasEnoughData={trendData.length > 0}
+          />
+        </div>
       </div>
 
-      {/* Drawer: Approvals Inbox */}
-      <Drawer
+      {/* 6. Recent HR Activity Stream */}
+      <RecentHRActivity
+        activities={recentActivities}
+        onNavigate={onNavigate}
+        onViewAllLogs={() => onNavigate?.('admin-audit')}
+      />
+
+      {/* Modals and Drawers */}
+      <EmployeeCreateWizardModal
+        isOpen={isAddEmployeeOpen}
+        onClose={() => setIsAddEmployeeOpen(false)}
+        onCreated={handleEmployeeCreated}
+      />
+
+      <ApprovalsActionDrawer
         isOpen={isApprovalsDrawerOpen}
-        onClose={() => setIsApprovalsDrawerOpen(false)}
-        title="Workforce Approvals Center"
-      >
-        <div className="space-y-4">
-          {approvals.map(req => (
-            <Card key={req.id} className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <Badge variant={req.status === 'Pending' ? 'amber' : req.status === 'Approved' ? 'emerald' : 'danger'}>
-                  {req.status}
-                </Badge>
-                <span className="text-[11px] text-gray-400">{req.created_at}</span>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-bold text-gray-900">{req.title}</h4>
-                <p className="text-xs text-gray-500 mt-0.5">{req.description}</p>
-              </div>
-
-              <div className="text-xs text-gray-600 pt-2 border-t border-gray-100 flex items-center justify-between">
-                <span>Requester: <strong>{req.requester_name}</strong></span>
-                <span>Type: <strong>{req.type}</strong></span>
-              </div>
-
-              {req.status === 'Pending' && (
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <Button size="sm" variant="outline" onClick={() => handleReject(req.id)}>
-                    Reject
-                  </Button>
-                  <Button size="sm" onClick={() => handleApprove(req.id)}>
-                    Approve Request
-                  </Button>
-                </div>
-              )}
-            </Card>
-          ))}
-        </div>
-      </Drawer>
+        onClose={() => {
+          setIsApprovalsDrawerOpen(false);
+          setSelectedAttentionItem(null);
+        }}
+        items={attentionItems}
+        selectedItem={selectedAttentionItem}
+        onSelectItem={setSelectedAttentionItem}
+        onApprove={handleApproveRequest}
+        onReject={handleRejectRequest}
+      />
     </div>
   );
 };

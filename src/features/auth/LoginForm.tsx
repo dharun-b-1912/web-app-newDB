@@ -27,7 +27,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleSignup, onForgotPa
   } = useForm<LoginInput>({
     resolver: zodResolver(LoginSchema),
     defaultValues: {
-      email: 'arun.kumar@joycorporate.com',
+      email: 'haripriya@joycorporate.com',
       password: 'password123',
     },
   });
@@ -43,11 +43,31 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleSignup, onForgotPa
       }
 
       const inputEmail = data.email.toLowerCase().trim();
-      const users = await api.getUsers();
-      let user = users.find(u => u.email.toLowerCase() === inputEmail);
+      const [users, employees] = await Promise.all([api.getUsers(), api.getEmployees()]);
       
-      // Match by username if domain differs (joycorporate vs acme)
-      if (!user) {
+      let user = users.find(u => u.email.toLowerCase() === inputEmail);
+      const matchedEmp = employees.find(
+        e => (e.work_email && e.work_email.toLowerCase() === inputEmail) || 
+             (e.profile?.personal_email && e.profile.personal_email.toLowerCase() === inputEmail)
+      );
+
+      if (matchedEmp) {
+        const empRole = matchedEmp.designation_title?.toLowerCase().includes('manager') ? 'Manager' :
+                        matchedEmp.designation_title?.toLowerCase().includes('lead') ? 'Team Lead' :
+                        matchedEmp.designation_title?.toLowerCase().includes('hr') ? 'HR Head' : 'Employee';
+        
+        user = {
+          id: matchedEmp.user_id || `usr-${matchedEmp.id}`,
+          organization_id: matchedEmp.organization_id || 'org-joy-01',
+          email: matchedEmp.work_email || data.email,
+          name: matchedEmp.display_name || `${matchedEmp.first_name} ${matchedEmp.last_name}`,
+          avatar_url: matchedEmp.avatar_url || '',
+          employee_id: matchedEmp.id,
+          status: 'Active',
+          roles: user?.roles || [{ id: `role-${empRole.toLowerCase().replace(/\s+/g, '-')}`, organization_id: matchedEmp.organization_id || 'org-joy-01', name: empRole, description: `${empRole} Portal Access`, permissions: [] }],
+          created_at: matchedEmp.created_at || new Date().toISOString(),
+        };
+      } else if (!user) {
         const username = inputEmail.split('@')[0];
         user = users.find(u => u.email.toLowerCase().startsWith(username));
       }
@@ -90,10 +110,12 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleSignup, onForgotPa
           <span className="text-[10px] text-emerald-800 font-normal">Click to fill form</span>
         </div>
 
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
           {[
-            { label: 'HR Head', email: 'arun.kumar@joycorporate.com' },
+            { label: 'Super Admin', email: 'superadmin@workforceos.com' },
+            { label: 'Assistant Admin', email: 'assistant.admin@workforceos.com' },
             { label: 'Company Admin', email: 'admin@joycorporate.com' },
+            { label: 'HR Head', email: 'haripriya@joycorporate.com' },
             { label: 'Manager', email: 'karthik.n@joycorporate.com' },
             { label: 'Team Lead', email: 'deepa.s@joycorporate.com' },
             { label: 'Employee', email: 'priya.sharma@joycorporate.com' },

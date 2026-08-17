@@ -12,6 +12,7 @@ import {
   LeaveRequest,
   LeaveType,
 } from '../types/leave';
+import { supabase, isSupabaseEnabled } from '../lib/supabase';
 
 const STORAGE_KEYS = {
   LEAVE_TYPES: 'workforce_leave_types_v1',
@@ -252,117 +253,7 @@ const initialHolidayCalendars: HolidayCalendar[] = [
   },
 ];
 
-const initialLeaveRequests: LeaveRequest[] = [
-  {
-    id: 'lr-101',
-    request_code: 'LR-2026-089',
-    employee_id: 'emp-101',
-    employee_name: 'Rajesh Kumar',
-    department_name: 'Engineering',
-    company_id: 'comp-01',
-    avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-    leave_type_id: 'lt-pl',
-    leave_type_name: 'Privilege / Earned Leave',
-    leave_type_code: 'PL',
-    leave_category: 'Paid',
-    from_date: '2026-08-18',
-    to_date: '2026-08-21',
-    total_calendar_days: 4,
-    working_days: 4,
-    holiday_days: 0,
-    weekly_off_days: 0,
-    leave_days_deducted: 4,
-    is_half_day: false,
-    is_hourly: false,
-    reason: 'Family annual pilgrimage and personal travel.',
-    contact_number: '+91 98765 43210',
-    manager_id: 'emp-100',
-    manager_name: 'Anand Viswanathan',
-    status: 'Pending',
-    submitted_at: '2026-08-10T11:30:00Z',
-    daily_breakdown: [
-      { date: '2026-08-18', is_working_day: true, is_holiday: false, is_weekly_off: false, is_half_day: false, leave_count: 1 },
-      { date: '2026-08-19', is_working_day: true, is_holiday: false, is_weekly_off: false, is_half_day: false, leave_count: 1 },
-      { date: '2026-08-20', is_working_day: true, is_holiday: false, is_weekly_off: false, is_half_day: false, leave_count: 1 },
-      { date: '2026-08-21', is_working_day: true, is_holiday: false, is_weekly_off: false, is_half_day: false, leave_count: 1 },
-    ],
-    current_approver_name: 'Anand Viswanathan',
-    is_lop: false,
-    created_at: '2026-08-10T11:30:00Z',
-  },
-  {
-    id: 'lr-102',
-    request_code: 'LR-2026-088',
-    employee_id: 'emp-102',
-    employee_name: 'Sarah Jenkins',
-    department_name: 'Product Management',
-    company_id: 'comp-01',
-    avatar_url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-    leave_type_id: 'lt-cl',
-    leave_type_name: 'Casual Leave',
-    leave_type_code: 'CL',
-    leave_category: 'Paid',
-    from_date: '2026-08-12',
-    to_date: '2026-08-12',
-    total_calendar_days: 1,
-    working_days: 1,
-    holiday_days: 0,
-    weekly_off_days: 0,
-    leave_days_deducted: 1,
-    is_half_day: false,
-    is_hourly: false,
-    reason: 'Urgent home renovation work supervision.',
-    contact_number: '+91 91234 56789',
-    manager_id: 'emp-100',
-    manager_name: 'Anand Viswanathan',
-    status: 'Approved',
-    submitted_at: '2026-08-09T09:15:00Z',
-    approved_at: '2026-08-09T14:20:00Z',
-    approved_by_name: 'Anand Viswanathan',
-    daily_breakdown: [
-      { date: '2026-08-12', is_working_day: true, is_holiday: false, is_weekly_off: false, is_half_day: false, leave_count: 1 },
-    ],
-    current_approver_name: 'Completed',
-    is_lop: false,
-    created_at: '2026-08-09T09:15:00Z',
-  },
-  {
-    id: 'lr-103',
-    request_code: 'LR-2026-085',
-    employee_id: 'emp-103',
-    employee_name: 'Vikramaditya Rao',
-    department_name: 'DevOps & Cloud',
-    company_id: 'comp-01',
-    avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-    leave_type_id: 'lt-sl',
-    leave_type_name: 'Sick Leave / Medical',
-    leave_type_code: 'SL',
-    leave_category: 'Paid',
-    from_date: '2026-08-11',
-    to_date: '2026-08-13',
-    total_calendar_days: 3,
-    working_days: 3,
-    holiday_days: 0,
-    weekly_off_days: 0,
-    leave_days_deducted: 3,
-    is_half_day: false,
-    is_hourly: false,
-    reason: 'Severe viral fever and physician recommended bed rest.',
-    attachment_url: 'medical_certificate_vikram.pdf',
-    manager_id: 'emp-100',
-    manager_name: 'Anand Viswanathan',
-    status: 'Pending',
-    submitted_at: '2026-08-11T08:00:00Z',
-    daily_breakdown: [
-      { date: '2026-08-11', is_working_day: true, is_holiday: false, is_weekly_off: false, is_half_day: false, leave_count: 1 },
-      { date: '2026-08-12', is_working_day: true, is_holiday: false, is_weekly_off: false, is_half_day: false, leave_count: 1 },
-      { date: '2026-08-13', is_working_day: true, is_holiday: false, is_weekly_off: false, is_half_day: false, leave_count: 1 },
-    ],
-    current_approver_name: 'Anand Viswanathan',
-    is_lop: false,
-    created_at: '2026-08-11T08:00:00Z',
-  },
-];
+const initialLeaveRequests: LeaveRequest[] = [];
 
 const initialEntitlements: LeaveEntitlement[] = [
   {
@@ -583,6 +474,36 @@ export const leaveApi = {
     requests.unshift(newReq);
     setStored(STORAGE_KEYS.REQUESTS, requests);
 
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase
+          .from('leave_requests')
+          .insert({
+            id: newReq.id,
+            organization_id: 'org-01',
+            company_id: newReq.company_id || 'comp-01',
+            employee_id: newReq.employee_id,
+            request_code: newReq.request_code,
+            employee_name: newReq.employee_name,
+            department_name: newReq.department_name,
+            leave_type_id: newReq.leave_type_id,
+            leave_type_name: newReq.leave_type_name,
+            leave_type_code: newReq.leave_type_code,
+            from_date: newReq.from_date,
+            to_date: newReq.to_date,
+            total_calendar_days: newReq.total_calendar_days,
+            working_days: newReq.working_days,
+            leave_days_deducted: newReq.leave_days_deducted,
+            reason: newReq.reason,
+            manager_id: newReq.manager_id,
+            manager_name: newReq.manager_name,
+            status: newReq.status,
+            submitted_at: newReq.submitted_at,
+            created_at: newReq.created_at,
+          })
+      ).catch((e: any) => console.warn('[Supabase Leave] insert failed:', e));
+    }
+
     // Audit log entry
     leaveApi.addAuditLog({
       actor_id: newReq.employee_id,
@@ -609,6 +530,18 @@ export const leaveApi = {
     req.comments = comments;
 
     setStored(STORAGE_KEYS.REQUESTS, requests);
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase
+          .from('leave_requests')
+          .update({
+            status: 'Approved',
+            approved_at: req.approved_at,
+          })
+          .eq('id', req.id)
+      ).catch((e: any) => console.warn('[Supabase Leave] approve failed:', e));
+    }
 
     // 1. Post consumption transaction to Ledger
     const ledger = leaveApi.getLedger();

@@ -23,6 +23,8 @@ import {
   UserCheck,
 } from 'lucide-react';
 
+import { MyWorkspaceView } from '../workspace/MyWorkspaceView';
+
 interface EssMasterModuleProps {
   initialTab?: string;
 }
@@ -60,7 +62,7 @@ export const EssMasterModule: React.FC<EssMasterModuleProps> = ({ initialTab }) 
     { id: 'performance', label: 'My Performance', icon: Award },
     { id: 'learning', label: 'My Learning', icon: GraduationCap },
     { id: 'documents', label: 'My Documents', icon: FileText },
-    { id: 'communication', label: 'Communication', icon: Megaphone },
+    { id: 'communication', label: 'Company Feed', icon: Megaphone },
     { id: 'profile', label: 'My Profile', icon: UserCheck },
   ];
 
@@ -70,7 +72,7 @@ export const EssMasterModule: React.FC<EssMasterModuleProps> = ({ initialTab }) 
 
       {/* Subview Container */}
       <div className="transition-all duration-200">
-        {activeTab === 'dashboard' && <EssDashboardView onNavigateTab={tabKey => setActiveTab(tabKey)} />}
+        {activeTab === 'dashboard' && <MyWorkspaceView onNavigate={tabKey => setActiveTab(tabKey)} />}
         {activeTab === 'attendance' && <EssAttendanceView />}
         {activeTab === 'leave' && <EssLeaveView />}
         {activeTab === 'payroll' && <EssPayrollView />}

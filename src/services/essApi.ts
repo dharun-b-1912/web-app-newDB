@@ -49,6 +49,8 @@ const initialDocuments: EssDocumentItem[] = [
   { id: 'doc-2', title: 'WorkForceOS Information Security Policy 2026', category: 'Policy', date_uploaded: '2026-01-01', requires_acknowledgement: true, acknowledged: true, download_url: '#' },
 ];
 
+import { api } from './api';
+
 export const essApi = {
   getAttendanceState(): EssAttendanceState {
     return initialAttendance;
@@ -72,18 +74,22 @@ export const essApi = {
     return initialDocuments;
   },
   getProfile(): EssProfileData {
+    const user = api.getCurrentUser();
+    const fullName = user?.name || 'Hari Priya';
+    const email = user?.email || 'haripriya@joycorporate.com';
+    const designation = (user?.roles || [])[0]?.name || 'HR Head';
     return {
-      employee_id: 'EMP-101',
-      full_name: 'Rajesh Kumar',
-      email: 'rajesh@workforceos.com',
-      designation: 'Senior Principal Engineer',
-      department: 'Engineering & DevOps',
+      employee_id: user?.employee_id || 'WF-1001',
+      full_name: fullName,
+      email: email,
+      designation: designation === 'Super Admin' ? 'Platform Super Admin' : designation,
+      department: 'People & HR',
       joining_date: '2025-01-15',
-      manager_name: 'Anand Viswanathan (VP HR & Operations)',
-      phone: '+91 98765 43210',
-      emergency_contact: 'Sunita Kumar (Spouse) - +91 98765 00000',
+      manager_name: 'Dharun Joy (Company Admin)',
+      phone: '+91 98401 22334',
+      emergency_contact: 'Sundararajan P (Spouse) - +91 98401 99887',
       bank_name: 'HDFC Bank Ltd (Tidel Park Branch)',
-      account_number_masked: 'XXXX XXXX 8819',
+      account_number_masked: 'XXXX XXXX 4521',
     };
   },
 };

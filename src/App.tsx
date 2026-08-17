@@ -6,11 +6,14 @@ import { ToastProvider } from './components/ui/Toast';
 import { AuthPage } from './features/auth/AuthPage';
 import { AppShell } from './components/shell/AppShell';
 import { DashboardView } from './features/dashboard/DashboardView';
+import { WorkforceOverviewView } from './features/dashboard/WorkforceOverviewView';
+import { ExecutiveOverviewView } from './features/dashboard/ExecutiveOverviewView';
 import { PeopleView } from './features/people/PeopleView';
 import { OrganizationView } from './features/organization/OrganizationView';
 import { DepartmentView } from './features/organization/DepartmentView';
 import { DesignationView } from './features/organization/DesignationView';
 import { LocationView } from './features/organization/LocationView';
+import { VendorsView } from './features/organization/VendorsView';
 import { RbacView } from './features/rbac/RbacView';
 import { MyWorkspaceView } from './features/workspace/MyWorkspaceView';
 import { SettingsView } from './features/settings/SettingsView';
@@ -43,11 +46,19 @@ import { AdminMasterModule } from './features/admin/AdminMasterModule';
 import { EssMasterModule } from './features/ess/EssMasterModule';
 import { TlMasterModule } from './features/tl/TlMasterModule';
 import { PlatformAdminMasterModule } from './features/platform/PlatformAdminMasterModule';
+import { MyProfileView } from './features/profile/MyProfileView';
 import { parseRouteFromUrl, syncUrlWithRoute } from './lib/router/urlRouter';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
+import { realtimeSyncEngine } from './services/realtimeSyncEngine';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
+
+  // Initialize Realtime Sync Engine for live automatic data replication
+  useEffect(() => {
+    realtimeSyncEngine.initialize();
+    return () => realtimeSyncEngine.destroy();
+  }, []);
 
   // Compute the correct starting route URL-FIRST from the browser location
   const [currentRoute, setCurrentRoute] = useState<string>(() => {
@@ -143,9 +154,11 @@ const AppContent: React.FC = () => {
   const renderViewContent = () => {
     switch (currentRoute) {
       case 'dashboard':
-      case 'workforce-overview':
-      case 'executive-overview':
         return <DashboardView onNavigate={setCurrentRoute} />;
+      case 'executive-overview':
+        return <ExecutiveOverviewView onNavigate={setCurrentRoute} />;
+      case 'workforce-overview':
+        return <WorkforceOverviewView onNavigate={setCurrentRoute} />;
       case 'people':
         return <PeopleView />;
       case 'organization':
@@ -156,6 +169,9 @@ const AppContent: React.FC = () => {
         return <DesignationView />;
       case 'locations':
         return <LocationView />;
+      case 'vendors':
+      case 'organization-vendors':
+        return <VendorsView />;
       case 'assets':
         return <AssetsView />;
       case 'admin':
@@ -321,6 +337,9 @@ const AppContent: React.FC = () => {
         return <AutomationView initialTab={currentRoute} />;
       case 'compliance-docs':
         return <ComplianceView />;
+      case 'workspace':
+      case 'my-workspace':
+        return <MyWorkspaceView onNavigate={handleNavigate} />;
       case 'ess':
       case 'ess-dashboard':
       case 'ess-attendance':
@@ -332,8 +351,6 @@ const AppContent: React.FC = () => {
       case 'ess-documents':
       case 'ess-communication':
       case 'ess-profile':
-      case 'workspace':
-      case 'my-workspace':
         return <EssMasterModule initialTab={currentRoute} />;
       case 'tl':
       case 'supervisor':
@@ -397,6 +414,9 @@ const AppContent: React.FC = () => {
       case 'saas-coupons':
       case 'saas-partners':
         return <PlatformAdminMasterModule initialTab={currentRoute} onNavigateTab={handleNavigate} />;
+      case 'my-profile':
+      case 'profile':
+        return <MyProfileView />;
       case 'settings':
         return <AdminMasterModule initialTab="settings" />;
       default:

@@ -1,30 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
-import { Select } from '../../components/ui/Select';
 import { useToast } from '../../components/ui/Toast';
-import { Employee, EmploymentType, WorkMode, EmployeeStatus } from '../../types';
-import { api } from '../../services/api';
+import { useTenant } from '../../hooks/useTenant';
+import { useAuth } from '../../hooks/useAuth';
 import {
-  User,
-  MapPin,
-  Briefcase,
-  Building2,
-  CreditCard,
-  FileText,
-  Package,
-  ShieldCheck,
-  GraduationCap,
-  Heart,
-  Users,
-  CheckCircle2,
-  ArrowRight,
-  ArrowLeft,
-  Save,
-  Plus,
-  Trash2,
-} from 'lucide-react';
+  Employee,
+  Department,
+  Designation,
+  Branch,
+  Location,
+  EmploymentType,
+  EmploymentSource,
+  WorkMode,
+  EmployeeStatus,
+} from '../../types';
+import { api } from '../../services/api';
+import { onboardingService } from '../../services/onboardingService';
+
+// Wizard Subcomponents
+import { WizardProgressHeader, WIZARD_STEPS } from './wizard/WizardProgressHeader';
+import { Step1Identity, Step1FormData } from './wizard/Step1Identity';
+import { Step2Contact, Step2FormData } from './wizard/Step2Contact';
+import { Step3Employment, Step3FormData } from './wizard/Step3Employment';
+import { Step4Organization, Step4FormData } from './wizard/Step4Organization';
+import { Step5Emergency, Step5FormData, FamilyMemberItem } from './wizard/Step5Emergency';
+import { Step6Documents, Step6FormData, UploadedDocumentItem } from './wizard/Step6Documents';
+import { Step7Review } from './wizard/Step7Review';
+import { WizardSuccessScreen } from './wizard/WizardSuccessScreen';
+import { ArrowLeft, ArrowRight, CheckCircle2, Save, X } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
@@ -32,155 +36,267 @@ interface Props {
   onCreated: (emp: Employee) => void;
 }
 
-export const EmployeeCreateWizardModal: React.FC<Props> = ({ isOpen, onClose, onCreated }) => {
-  const { showToast } = useToast();
-  const [currentStep, setCurrentStep] = useState(1);
+const STORAGE_KEY_DRAFT = 'workforce_employee_wizard_draft_v1';
 
-  // Form State
-  const [formData, setFormData] = useState({
-    // Basic
+export const EmployeeCreateWizardModal: React.FC<Props> = ({
+  isOpen,
+  onClose,
+  onCreated,
+}) => {
+  const { showToast } = useToast();
+  const { activeCompany, organization } = useTenant();
+  const { user } = useAuth();
+
+  const [currentStep, setCurrentStep] = useState<number>(1);
+  const [createdEmployee, setCreatedEmployee] = useState<Employee | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Master Data States
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [designations, setDesignations] = useState<Designation[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [existingEmployees, setExistingEmployees] = useState<Employee[]>([]);
+
+  // Draft Save State
+  const [draftLastSavedText, setDraftLastSavedText] = useState<string>('');
+  const [isSavingDraft, setIsSavingDraft] = useState<boolean>(false);
+
+  // Initial Form Data Generator
+  const getInitialFormData = () => ({
+    // Step 1: Identity
+    photo_url: '',
     employee_code: `EMP-${Math.floor(100000 + Math.random() * 900000)}`,
     first_name: '',
     middle_name: '',
     last_name: '',
-    display_name: '',
     preferred_name: '',
     work_email: '',
     personal_email: '',
     phone: '',
-    alternate_phone: '',
     dob: '',
     gender: 'Male',
+
+    // Step 2: Contact
+    alternate_phone: '',
     marital_status: 'Single',
     nationality: 'Indian',
     blood_group: 'O+',
     preferred_language: 'English',
-
-    // Addresses
     current_line1: '',
     current_line2: '',
-    current_city: 'Coimbatore',
+    current_city: activeCompany?.city || 'Coimbatore',
     current_state: 'Tamil Nadu',
-    current_country: 'India',
+    current_country: activeCompany?.country || 'India',
     current_postal: '641001',
     same_as_permanent: true,
     perm_line1: '',
     perm_line2: '',
-    perm_city: 'Coimbatore',
+    perm_city: activeCompany?.city || 'Coimbatore',
     perm_state: 'Tamil Nadu',
-    perm_country: 'India',
+    perm_country: activeCompany?.country || 'India',
     perm_postal: '641001',
 
-    // Emergency Contacts
-    emergency_name: '',
-    emergency_relation: 'Spouse / Parent',
-    emergency_phone: '',
-    emergency_alt_phone: '',
-
-    // Family
-    family_name: '',
-    family_relation: 'Spouse',
-    family_dob: '',
-    family_dependent: true,
-
-    // Education
-    degree: 'B.Tech Computer Science',
-    institution: 'PSG College of Technology',
-    edu_start: '2018-08-01',
-    edu_end: '2022-05-30',
-    edu_grade: '8.8 CGPA',
-
-    // Experience
-    prev_company: 'Infosys Limited',
-    prev_title: 'Software Engineer',
-    prev_start: '2022-06-15',
-    prev_end: '2024-07-31',
-    prev_reason: 'Career Growth & Scale',
-
-    // Skills
-    skills: 'React, TypeScript, Node.js, PostgreSQL, Tailwind CSS',
-
-    // Employment
+    // Step 3: Employment
     doj: new Date().toISOString().split('T')[0],
     employment_type: 'Full Time' as EmploymentType,
+    employment_source: 'DIRECT' as EmploymentSource,
+    vendor_id: '',
+    vendor_name: '',
+    vendor_employee_code: '',
+    vendor_contract_id: '',
+    vendor_start_date: '',
+    vendor_end_date: '',
+    status: 'Active' as EmployeeStatus,
+    department_id: '',
+    department_name: '',
+    designation_id: '',
+    designation_title: '',
+    branch_id: '',
+    location_id: '',
     work_mode: 'Hybrid' as WorkMode,
-    status: 'Probation' as EmployeeStatus,
     job_level: 'Mid Level',
-    grade: 'G4',
-    company_id: 'comp-01',
-    branch_id: 'br-cbe',
-    department_id: 'dept-eng',
-    designation_id: 'desig-fe',
-    business_unit: 'BU-Software',
-    cost_center: 'CC-ENG-101',
-    reporting_manager_id: 'emp-001',
-    reporting_manager_name: 'Dharun Joy',
+    grade: 'G3',
     probation_months: 6,
+    notice_period_days: 60,
 
-    // Statutory & Bank
-    pan: 'ABCDE1234F',
-    aadhaar: '1234-5678-9012',
-    pf_uan: '100982341234',
-    esi_no: '3100234123',
-    tax_regime: 'New Regime',
-    bank_name: 'HDFC Bank',
-    bank_account: '50100293847123',
-    ifsc: 'HDFC0001234',
+    // Step 4: Organization
+    reporting_manager_id: '',
+    reporting_manager_name: '',
+    team_lead_id: '',
+    team_lead_name: '',
+    hr_owner_id: '',
+    business_unit: 'Enterprise Software',
+    cost_center: 'CC-ENG-101',
 
-    // Asset
-    assigned_asset_serial: 'MAC-M3-90812',
-    assigned_asset_name: 'MacBook Pro 16" M3 Max',
+    // Step 5: Emergency
+    emergency_name: '',
+    emergency_relation: 'Spouse',
+    emergency_phone: '',
+    emergency_alt_phone: '',
+    emergency_email: '',
+    emergency_address: '',
+    family_members: [] as FamilyMemberItem[],
+
+    // Step 6: Documents
+    documents: [] as UploadedDocumentItem[],
   });
 
-  const updateForm = (field: string, val: any) => {
-    setFormData(prev => ({ ...prev, [field]: val }));
+  const [formData, setFormData] = useState(getInitialFormData);
+
+  // Load Master Data & Restore Draft
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const companyId = activeCompany?.id;
+    Promise.all([
+      api.getDepartments(companyId).catch(() => []),
+      api.getDesignations(companyId).catch(() => []),
+      api.getBranches(companyId).catch(() => []),
+      api.getLocations().catch(() => []),
+      api.getEmployees(companyId ? { companyId } : undefined).catch(() => []),
+    ]).then(([depts, desigs, brs, locs, emps]) => {
+      setDepartments(depts);
+      setDesignations(desigs);
+      setBranches(brs);
+      setLocations(locs);
+      setExistingEmployees(emps);
+
+      // Restore saved draft if available
+      try {
+        const savedRaw = localStorage.getItem(STORAGE_KEY_DRAFT);
+        if (savedRaw) {
+          const parsed = JSON.parse(savedRaw);
+          if (parsed && parsed.first_name) {
+            setFormData((prev) => ({ ...prev, ...parsed }));
+            setDraftLastSavedText('Draft restored');
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load employee draft:', err);
+      }
+    });
+  }, [isOpen, activeCompany?.id]);
+
+  const updateFormData = (fields: Partial<typeof formData>) => {
+    setFormData((prev) => ({ ...prev, ...fields }));
   };
 
-  const steps = [
-    { num: 1, label: 'Basic Info', icon: User },
-    { num: 2, label: 'Personal & Contact', icon: MapPin },
-    { num: 3, label: 'Emergency & Family', icon: Heart },
-    { num: 4, label: 'Edu & Experience', icon: GraduationCap },
-    { num: 5, label: 'Skills & Tech', icon: Users },
-    { num: 6, label: 'Employment & Org', icon: Briefcase },
-    { num: 7, label: 'Statutory & Bank', icon: CreditCard },
-    { num: 8, label: 'Documents & Assets', icon: Package },
-    { num: 9, label: 'Review & Onboard', icon: CheckCircle2 },
-  ];
+  // Save Draft Action
+  const handleSaveDraft = useCallback(() => {
+    setIsSavingDraft(true);
+    try {
+      localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify(formData));
+      setDraftLastSavedText(`Draft saved just now`);
+      showToast('Employee draft saved safely.', 'info');
+    } catch (err) {
+      showToast('Failed to save draft locally.', 'error');
+    } finally {
+      setIsSavingDraft(false);
+    }
+  }, [formData, showToast]);
+
+  // Step Validation Logic
+  const validateCurrentStep = (): boolean => {
+    if (currentStep === 1) {
+      if (!formData.first_name.trim()) {
+        showToast('Please enter the employee First Name.', 'error');
+        return false;
+      }
+      if (!formData.last_name.trim()) {
+        showToast('Please enter the employee Last Name.', 'error');
+        return false;
+      }
+      if (!formData.work_email.trim()) {
+        showToast('Please enter a valid Work Email.', 'error');
+        return false;
+      }
+      if (!formData.phone.trim()) {
+        showToast('Please enter the primary Mobile Number.', 'error');
+        return false;
+      }
+      if (!formData.employee_code.trim()) {
+        showToast('Please specify an Employee ID code.', 'error');
+        return false;
+      }
+    } else if (currentStep === 3) {
+      if (!formData.doj) {
+        showToast('Please select the Date of Joining.', 'error');
+        return false;
+      }
+      if (!formData.department_id) {
+        showToast('Please assign an organizational Department.', 'error');
+        return false;
+      }
+      if (!formData.designation_id) {
+        showToast('Please assign an official Designation.', 'error');
+        return false;
+      }
+    } else if (currentStep === 4) {
+      if (!formData.reporting_manager_id) {
+        showToast('Please assign a Primary Reporting Manager.', 'error');
+        return false;
+      }
+    } else if (currentStep === 5) {
+      if (!formData.emergency_name.trim() || !formData.emergency_phone.trim()) {
+        showToast('Please provide a Primary Emergency Contact Name and Phone.', 'error');
+        return false;
+      }
+    }
+    return true;
+  };
 
   const handleNext = () => {
-    if (currentStep < steps.length) {
-      setCurrentStep(prev => prev + 1);
+    if (!validateCurrentStep()) return;
+    if (currentStep < 7) {
+      setCurrentStep((prev) => prev + 1);
     }
   };
 
-  const handlePrev = () => {
+  const handleBack = () => {
     if (currentStep > 1) {
-      setCurrentStep(prev => prev - 1);
+      setCurrentStep((prev) => prev - 1);
     }
   };
 
-  const handleSaveDraft = () => {
-    showToast('Employee application draft saved securely.');
-  };
+  // Final Employee Creation
+  const handleCreateEmployee = async () => {
+    if (!validateCurrentStep()) return;
+    setIsSubmitting(true);
 
-  const handleSubmit = async () => {
     try {
-      const created = await api.createEmployee({
+      const selectedDept = departments.find((d) => d.id === formData.department_id);
+      const selectedDesig = designations.find((d) => d.id === formData.designation_id);
+      const selectedBranch = branches.find((b) => b.id === formData.branch_id);
+
+      const payload: Partial<Employee> = {
+        organization_id: organization?.id || 'org-joy-01',
+        company_id: activeCompany?.id || 'comp-joy-01',
+        company_name: activeCompany?.legal_name || 'Joy Corporate Solutions Pvt Ltd',
+        branch_id: formData.branch_id || branches[0]?.id,
+        branch_name: selectedBranch?.name || 'Headquarters',
+        department_id: formData.department_id,
+        department_name: selectedDept?.name || 'Engineering',
+        designation_id: formData.designation_id,
+        designation_title: selectedDesig?.title || 'Software Engineer',
         employee_code: formData.employee_code,
-        first_name: formData.first_name || 'New',
-        last_name: formData.last_name || 'Employee',
-        work_email: formData.work_email || `${formData.first_name.toLowerCase() || 'emp'}@joycorporate.com`,
+        first_name: formData.first_name.trim(),
+        middle_name: formData.middle_name.trim(),
+        last_name: formData.last_name.trim(),
+        display_name: formData.preferred_name || `${formData.first_name} ${formData.last_name}`.trim(),
+        work_email: formData.work_email.trim(),
+        avatar_url: formData.photo_url || '',
         status: formData.status,
         employment_type: formData.employment_type,
-        company_id: formData.company_id,
-        department_id: formData.department_id,
-        designation_id: formData.designation_id,
-        branch_id: formData.branch_id,
+        employment_source: formData.employment_source || 'DIRECT',
+        vendor_id: formData.vendor_id || undefined,
+        vendor_name: formData.vendor_name || undefined,
+        vendor_employee_code: formData.vendor_employee_code || undefined,
         profile: {
           first_name: formData.first_name,
           middle_name: formData.middle_name,
           last_name: formData.last_name,
+          display_name: formData.preferred_name,
           personal_email: formData.personal_email,
           phone: formData.phone,
           alternate_phone: formData.alternate_phone,
@@ -189,8 +305,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({ isOpen, onClose, on
           marital_status: formData.marital_status,
           nationality: formData.nationality,
           blood_group: formData.blood_group,
-          emergency_contact_name: formData.emergency_name,
-          emergency_contact_phone: formData.emergency_phone,
+          preferred_language: formData.preferred_language,
           current_address: {
             line1: formData.current_line1,
             line2: formData.current_line2,
@@ -207,413 +322,240 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({ isOpen, onClose, on
             country: formData.same_as_permanent ? formData.current_country : formData.perm_country,
             postal_code: formData.same_as_permanent ? formData.current_postal : formData.perm_postal,
           },
-          statutory_and_bank: {
-            pan_number_masked: formData.pan,
-            aadhaar_masked: formData.aadhaar,
-            pf_uan: formData.pf_uan,
-            esi_number: formData.esi_no,
-            tax_regime: formData.tax_regime as any,
-            bank_name: formData.bank_name,
-            bank_account_masked: formData.bank_account,
-            ifsc_code: formData.ifsc,
-          },
+          same_as_permanent: formData.same_as_permanent,
+          emergency_contacts: [
+            {
+              name: formData.emergency_name,
+              relationship: formData.emergency_relation,
+              phone: formData.emergency_phone,
+              alt_phone: formData.emergency_alt_phone,
+              email: formData.emergency_email,
+              is_primary: true,
+              priority: 1,
+            },
+          ],
+          family_members: formData.family_members.map((f) => ({
+            name: f.name,
+            relationship: f.relationship,
+            phone: f.phone,
+            is_dependent: f.is_dependent,
+            is_nominee: false,
+          })),
         },
         employment: {
           doj: formData.doj,
           employment_type: formData.employment_type,
+          employment_source: formData.employment_source || 'DIRECT',
+          vendor_id: formData.vendor_id || undefined,
+          vendor_name: formData.vendor_name || undefined,
+          vendor_employee_code: formData.vendor_employee_code || undefined,
+          vendor_contract_id: formData.vendor_contract_id || undefined,
+          vendor_start_date: formData.vendor_start_date || undefined,
+          vendor_end_date: formData.vendor_end_date || undefined,
           work_mode: formData.work_mode,
           job_level: formData.job_level,
           grade: formData.grade,
+          cost_center_code: formData.cost_center,
           reporting_manager_id: formData.reporting_manager_id,
           reporting_manager_name: formData.reporting_manager_name,
-          probation_period_months: Number(formData.probation_months),
-          probation_end_date: new Date(Date.now() + Number(formData.probation_months) * 30 * 24 * 60 * 60 * 1000)
-            .toISOString()
-            .split('T')[0],
-          history: [
-            {
-              id: `hist-${Date.now()}`,
-              event_type: 'Created',
-              changed_by: 'HR Head (Admin)',
-              changed_at: new Date().toISOString(),
-              reason: 'Onboarded via Core HR Employee Master Wizard',
-            },
-          ],
+          team_lead_id: formData.team_lead_id,
+          team_lead_name: formData.team_lead_name,
+          probation_period_months: formData.probation_months,
+          notice_period_days: formData.notice_period_days,
         },
-      });
+      };
 
-      showToast(`Employee ${created.first_name} ${created.last_name} onboarded successfully! (${created.employee_code})`);
-      onCreated(created);
-      onClose();
+      const newEmployee = await api.createEmployee(payload);
+
+      // Auto-create Onboarding Workflow Transactionally
+      try {
+        await onboardingService.createOnboarding({
+          employee_id: newEmployee.id,
+          organization_id: newEmployee.organization_id,
+          legal_entity_id: newEmployee.company_id,
+          vendor_id: newEmployee.vendor_id,
+          employment_source: (newEmployee.employment_source === 'VENDOR' ? 'VENDOR' : 'DIRECT'),
+          joining_date: formData.doj || new Date().toISOString().split('T')[0],
+        });
+      } catch (onbErr) {
+        console.warn('[EmployeeCreateWizardModal] Auto-spawn onboarding failed:', onbErr);
+      }
+
+      // Clean up saved draft
+      localStorage.removeItem(STORAGE_KEY_DRAFT);
+
+      // Emit global realtime event for dashboard & people directory
+      window.dispatchEvent(new CustomEvent('employee:created', { detail: newEmployee }));
+
+      setCreatedEmployee(newEmployee);
+      onCreated(newEmployee);
+      showToast(`Employee ${newEmployee.first_name} ${newEmployee.last_name} created & onboarding initiated!`, 'success');
     } catch (err: any) {
-      showToast('Failed to onboard employee: ' + (err.message || err));
+      console.error('Failed to create employee:', err);
+      showToast(err.message || 'We could not create this employee. Please verify required fields and try again.', 'error');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
+  const handleResetAndAddAnother = () => {
+    setCreatedEmployee(null);
+    setCurrentStep(1);
+    setFormData(getInitialFormData());
+  };
+
+  if (!isOpen) return null;
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Core HR — Employee Master Creation Wizard" size="2xl">
-      <div className="space-y-6">
-        {/* Step Progress Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 pb-4 overflow-x-auto no-scrollbar gap-2">
-          {steps.map(s => {
-            const Icon = s.icon;
-            const isDone = s.num < currentStep;
-            const isCurrent = s.num === currentStep;
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title=""
+      maxWidth="4xl"
+    >
+      <div className="p-6 space-y-6">
+        {createdEmployee ? (
+          <WizardSuccessScreen
+            employee={createdEmployee}
+            onOpenProfile={() => {
+              onClose();
+            }}
+            onStartOnboarding={() => {
+              onClose();
+            }}
+            onAddAnother={handleResetAndAddAnother}
+          />
+        ) : (
+          <>
+            {/* Header & Step Stepper */}
+            <WizardProgressHeader
+              currentStep={currentStep}
+              onStepClick={(s) => {
+                if (s < currentStep) setCurrentStep(s);
+              }}
+              draftLastSavedText={draftLastSavedText}
+              isSavingDraft={isSavingDraft}
+              onSaveDraft={handleSaveDraft}
+            />
 
-            return (
-              <div
-                key={s.num}
-                onClick={() => setCurrentStep(s.num)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl cursor-pointer text-xs font-bold transition-all shrink-0 ${
-                  isCurrent
-                    ? 'bg-[#07563D] text-white shadow-xs'
-                    : isDone
-                    ? 'bg-emerald-50 text-emerald-800'
-                    : 'bg-gray-50 text-gray-400'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span>
-                  {s.num}. {s.label}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* STEP CONTENT SWITCH */}
-        <div className="min-h-[360px]">
-          {/* STEP 1: BASIC INFO */}
-          {currentStep === 1 && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-extrabold text-gray-900 border-b border-gray-100 pb-2">Step 1: Basic Identity & Contact Emails</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Employee ID / Code</label>
-                  <Input value={formData.employee_code} onChange={e => updateForm('employee_code', e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">First Name *</label>
-                  <Input value={formData.first_name} onChange={e => updateForm('first_name', e.target.value)} placeholder="e.g. Anand" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Middle Name</label>
-                  <Input value={formData.middle_name} onChange={e => updateForm('middle_name', e.target.value)} placeholder="e.g. Kumar" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Last Name *</label>
-                  <Input value={formData.last_name} onChange={e => updateForm('last_name', e.target.value)} placeholder="e.g. Viswanathan" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Work Email *</label>
-                  <Input value={formData.work_email} onChange={e => updateForm('work_email', e.target.value)} placeholder="anand.v@joycorporate.com" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Personal Email</label>
-                  <Input value={formData.personal_email} onChange={e => updateForm('personal_email', e.target.value)} placeholder="anand.personal@gmail.com" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Mobile Phone *</label>
-                  <Input value={formData.phone} onChange={e => updateForm('phone', e.target.value)} placeholder="+91 98765 43210" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Date of Birth</label>
-                  <Input type="date" value={formData.dob} onChange={e => updateForm('dob', e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Gender</label>
-                  <Select value={formData.gender} onChange={e => updateForm('gender', e.target.value)}>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Non-Binary">Non-Binary</option>
-                    <option value="Prefer Not To Say">Prefer Not To Say</option>
-                  </Select>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 2: PERSONAL & CONTACT */}
-          {currentStep === 2 && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-extrabold text-gray-900 border-b border-gray-100 pb-2">Step 2: Personal Traits & Residential Addresses</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Marital Status</label>
-                  <Select value={formData.marital_status} onChange={e => updateForm('marital_status', e.target.value)}>
-                    <option value="Single">Single</option>
-                    <option value="Married">Married</option>
-                    <option value="Divorced">Divorced</option>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Nationality</label>
-                  <Input value={formData.nationality} onChange={e => updateForm('nationality', e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Blood Group</label>
-                  <Select value={formData.blood_group} onChange={e => updateForm('blood_group', e.target.value)}>
-                    <option value="A+">A+</option>
-                    <option value="A-">A-</option>
-                    <option value="B+">B+</option>
-                    <option value="B-">B-</option>
-                    <option value="O+">O+</option>
-                    <option value="O-">O-</option>
-                    <option value="AB+">AB+</option>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="p-3 bg-gray-50 rounded-xl space-y-2 border border-gray-100">
-                <span className="text-xs font-bold text-gray-900">Current Address</span>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <Input placeholder="Line 1" value={formData.current_line1} onChange={e => updateForm('current_line1', e.target.value)} />
-                  <Input placeholder="Line 2" value={formData.current_line2} onChange={e => updateForm('current_line2', e.target.value)} />
-                  <Input placeholder="City" value={formData.current_city} onChange={e => updateForm('current_city', e.target.value)} />
-                  <Input placeholder="Postal Code" value={formData.current_postal} onChange={e => updateForm('current_postal', e.target.value)} />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="same_addr"
-                  checked={formData.same_as_permanent}
-                  onChange={e => updateForm('same_as_permanent', e.target.checked)}
-                  className="rounded border-gray-300 text-[#07563D] focus:ring-[#07563D]"
+            {/* Current Step Body */}
+            <div className="min-h-[380px] py-2">
+              {currentStep === 1 && (
+                <Step1Identity
+                  formData={formData}
+                  onChange={updateFormData}
+                  existingEmployees={existingEmployees}
                 />
-                <label htmlFor="same_addr" className="text-xs font-semibold text-gray-700">
-                  Permanent address is same as current address
-                </label>
-              </div>
+              )}
+
+              {currentStep === 2 && (
+                <Step2Contact
+                  formData={formData}
+                  onChange={updateFormData}
+                />
+              )}
+
+              {currentStep === 3 && (
+                <Step3Employment
+                  formData={formData}
+                  onChange={updateFormData}
+                  departments={departments}
+                  designations={designations}
+                  branches={branches}
+                  locations={locations}
+                />
+              )}
+
+              {currentStep === 4 && (
+                <Step4Organization
+                  formData={formData}
+                  onChange={updateFormData}
+                  employees={existingEmployees}
+                  activeCompany={activeCompany}
+                  currentEmployeeCode={formData.employee_code}
+                />
+              )}
+
+              {currentStep === 5 && (
+                <Step5Emergency
+                  formData={formData}
+                  onChange={updateFormData}
+                />
+              )}
+
+              {currentStep === 6 && (
+                <Step6Documents
+                  formData={formData}
+                  onChange={updateFormData}
+                />
+              )}
+
+              {currentStep === 7 && (
+                <Step7Review
+                  formData={formData}
+                  departments={departments}
+                  designations={designations}
+                  onJumpToStep={(s) => setCurrentStep(s)}
+                />
+              )}
             </div>
-          )}
 
-          {/* STEP 3: EMERGENCY & FAMILY */}
-          {currentStep === 3 && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-extrabold text-gray-900 border-b border-gray-100 pb-2">Step 3: Primary Emergency Contacts & Family Members</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="p-4 bg-red-50/50 rounded-xl border border-red-100 space-y-2">
-                  <span className="text-xs font-bold text-red-900">Primary Emergency Contact</span>
-                  <Input placeholder="Contact Person Name" value={formData.emergency_name} onChange={e => updateForm('emergency_name', e.target.value)} />
-                  <Input placeholder="Relationship (e.g. Spouse, Father)" value={formData.emergency_relation} onChange={e => updateForm('emergency_relation', e.target.value)} />
-                  <Input placeholder="Emergency Phone Number" value={formData.emergency_phone} onChange={e => updateForm('emergency_phone', e.target.value)} />
-                </div>
-
-                <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-100 space-y-2">
-                  <span className="text-xs font-bold text-[#07563D]">Family Dependent Information</span>
-                  <Input placeholder="Dependent Family Member Name" value={formData.family_name} onChange={e => updateForm('family_name', e.target.value)} />
-                  <Input placeholder="Relationship (e.g. Spouse / Child)" value={formData.family_relation} onChange={e => updateForm('family_relation', e.target.value)} />
-                  <Input type="date" value={formData.family_dob} onChange={e => updateForm('family_dob', e.target.value)} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 4: EDUCATION & EXPERIENCE */}
-          {currentStep === 4 && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-extrabold text-gray-900 border-b border-gray-100 pb-2">Step 4: Educational Qualifications & Previous Work Experience</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-3 bg-gray-50 rounded-xl space-y-2">
-                  <span className="text-xs font-bold text-gray-900">Highest Education Qualification</span>
-                  <Input placeholder="Degree / Qualification" value={formData.degree} onChange={e => updateForm('degree', e.target.value)} />
-                  <Input placeholder="University / Institution" value={formData.institution} onChange={e => updateForm('institution', e.target.value)} />
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input type="date" value={formData.edu_start} onChange={e => updateForm('edu_start', e.target.value)} />
-                    <Input type="date" value={formData.edu_end} onChange={e => updateForm('edu_end', e.target.value)} />
-                  </div>
-                </div>
-
-                <div className="p-3 bg-gray-50 rounded-xl space-y-2">
-                  <span className="text-xs font-bold text-gray-900">Last Employer Details</span>
-                  <Input placeholder="Previous Company Name" value={formData.prev_company} onChange={e => updateForm('prev_company', e.target.value)} />
-                  <Input placeholder="Job Title / Role" value={formData.prev_title} onChange={e => updateForm('prev_title', e.target.value)} />
-                  <Input placeholder="Reason for Leaving" value={formData.prev_reason} onChange={e => updateForm('prev_reason', e.target.value)} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 5: SKILLS */}
-          {currentStep === 5 && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-extrabold text-gray-900 border-b border-gray-100 pb-2">Step 5: Skill Matrix & Core Competencies</h3>
+            {/* Sticky Bottom Action Navigation Bar */}
+            <div className="flex items-center justify-between pt-4 border-t border-gray-100">
               <div>
-                <label className="text-[11px] font-bold text-gray-600">Key Technical & Soft Skills (comma separated)</label>
-                <textarea
-                  rows={4}
-                  value={formData.skills}
-                  onChange={e => updateForm('skills', e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 text-xs rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-[#07563D]"
-                  placeholder="e.g. React, TypeScript, Node.js, Project Management, Agile SCRUM"
-                />
+                {currentStep > 1 ? (
+                  <Button
+                    type="button"
+                    size="md"
+                    variant="secondary"
+                    onClick={handleBack}
+                    className="text-xs font-bold text-gray-700 bg-white hover:bg-gray-50 border-gray-200"
+                  >
+                    <ArrowLeft className="w-4 h-4 mr-1.5" />
+                    Back
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="md"
+                    variant="ghost"
+                    onClick={onClose}
+                    className="text-xs font-bold text-gray-400 hover:text-gray-700"
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                {currentStep < 7 ? (
+                  <Button
+                    type="button"
+                    size="md"
+                    variant="primary"
+                    onClick={handleNext}
+                    className="text-xs font-bold bg-[#07563D] hover:bg-[#064e37] text-white shadow-sm px-5"
+                  >
+                    Continue
+                    <ArrowRight className="w-4 h-4 ml-1.5" />
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="md"
+                    variant="primary"
+                    disabled={isSubmitting}
+                    onClick={handleCreateEmployee}
+                    className="text-xs font-black bg-[#07563D] hover:bg-[#064e37] text-white shadow-md px-6 py-2.5"
+                  >
+                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                    {isSubmitting ? 'Creating Employee...' : 'Create Employee'}
+                  </Button>
+                )}
               </div>
             </div>
-          )}
-
-          {/* STEP 6: EMPLOYMENT & ORG */}
-          {currentStep === 6 && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-extrabold text-gray-900 border-b border-gray-100 pb-2">Step 6: Employment Structure & Organizational Hierarchy</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Date of Joining (DOJ) *</label>
-                  <Input type="date" value={formData.doj} onChange={e => updateForm('doj', e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Employment Type</label>
-                  <Select value={formData.employment_type} onChange={e => updateForm('employment_type', e.target.value)}>
-                    <option value="Full Time">Full Time</option>
-                    <option value="Part Time">Part Time</option>
-                    <option value="Contract">Contract</option>
-                    <option value="Intern">Intern</option>
-                    <option value="Consultant">Consultant</option>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Work Mode</label>
-                  <Select value={formData.work_mode} onChange={e => updateForm('work_mode', e.target.value)}>
-                    <option value="Office">Office</option>
-                    <option value="Hybrid">Hybrid</option>
-                    <option value="Remote">Remote</option>
-                    <option value="Field">Field</option>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Department</label>
-                  <Select value={formData.department_id} onChange={e => updateForm('department_id', e.target.value)}>
-                    <option value="dept-eng">Engineering & Product</option>
-                    <option value="dept-hr">People Operations & HR</option>
-                    <option value="dept-fin">Finance & Legal</option>
-                    <option value="dept-ops">Operations & Supply Chain</option>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Designation</label>
-                  <Select value={formData.designation_id} onChange={e => updateForm('designation_id', e.target.value)}>
-                    <option value="desig-fe">Senior Frontend Architect</option>
-                    <option value="desig-be">Principal Backend Lead</option>
-                    <option value="desig-hrbp">HR Business Partner</option>
-                    <option value="desig-fin">Financial Controller</option>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Reporting Manager</label>
-                  <Input value={formData.reporting_manager_name} onChange={e => updateForm('reporting_manager_name', e.target.value)} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 7: STATUTORY & BANK */}
-          {currentStep === 7 && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-extrabold text-gray-900 border-b border-gray-100 pb-2">Step 7: Tax Identifiers, Statutory Registrations & Bank Disclosures</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">PAN Number</label>
-                  <Input value={formData.pan} onChange={e => updateForm('pan', e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Aadhaar / National ID</label>
-                  <Input value={formData.aadhaar} onChange={e => updateForm('aadhaar', e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">PF UAN Number</label>
-                  <Input value={formData.pf_uan} onChange={e => updateForm('pf_uan', e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Bank Name</label>
-                  <Input value={formData.bank_name} onChange={e => updateForm('bank_name', e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">Bank Account No.</label>
-                  <Input value={formData.bank_account} onChange={e => updateForm('bank_account', e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600">IFSC / SWIFT Code</label>
-                  <Input value={formData.ifsc} onChange={e => updateForm('ifsc', e.target.value)} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 8: DOCUMENTS & ASSETS */}
-          {currentStep === 8 && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-extrabold text-gray-900 border-b border-gray-100 pb-2">Step 8: Document Verification & Asset Allocation Pool</h3>
-              <div className="p-4 bg-emerald-50/60 rounded-xl border border-emerald-100 space-y-3">
-                <span className="text-xs font-bold text-[#07563D]">Hardware Asset Provisioning</span>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[11px] font-bold text-gray-600">Asset Title</label>
-                    <Input value={formData.assigned_asset_name} onChange={e => updateForm('assigned_asset_name', e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-gray-600">Serial Tag</label>
-                    <Input value={formData.assigned_asset_serial} onChange={e => updateForm('assigned_asset_serial', e.target.value)} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 9: REVIEW */}
-          {currentStep === 9 && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-extrabold text-gray-900 border-b border-gray-100 pb-2">Step 9: Final Master Verification & Onboarding Authorization</h3>
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 text-xs space-y-2">
-                <div className="flex justify-between">
-                  <span className="font-semibold text-gray-500">Employee Code:</span>
-                  <span className="font-bold text-gray-900">{formData.employee_code}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-semibold text-gray-500">Full Name:</span>
-                  <span className="font-bold text-gray-900">{formData.first_name} {formData.last_name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-semibold text-gray-500">Work Email:</span>
-                  <span className="font-bold text-emerald-800">{formData.work_email}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-semibold text-gray-500">Joining Date:</span>
-                  <span className="font-bold text-gray-900">{formData.doj}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-semibold text-gray-500">Department & Manager:</span>
-                  <span className="font-bold text-gray-900">{formData.department_id} (Reporting to: {formData.reporting_manager_name})</span>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Wizard Footer Controls */}
-        <div className="flex items-center justify-between border-t border-gray-100 pt-4">
-          <Button variant="ghost" size="sm" onClick={handleSaveDraft} leftIcon={<Save className="w-4 h-4" />}>
-            Save Draft
-          </Button>
-
-          <div className="flex items-center gap-2">
-            {currentStep > 1 && (
-              <Button variant="outline" size="sm" onClick={handlePrev} leftIcon={<ArrowLeft className="w-4 h-4" />}>
-                Previous
-              </Button>
-            )}
-
-            {currentStep < steps.length ? (
-              <Button size="sm" onClick={handleNext} rightIcon={<ArrowRight className="w-4 h-4" />}>
-                Continue Next
-              </Button>
-            ) : (
-              <Button size="sm" onClick={handleSubmit} leftIcon={<CheckCircle2 className="w-4 h-4" />}>
-                Confirm & Onboard Employee
-              </Button>
-            )}
-          </div>
-        </div>
+          </>
+        )}
       </div>
     </Modal>
   );

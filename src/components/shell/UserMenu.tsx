@@ -14,8 +14,13 @@ import {
   ExternalLink,
   HelpCircle,
   Clock,
+  Building2,
+  Globe,
+  Bell,
+  Terminal,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useTenant } from '../../hooks/useTenant';
 import { Avatar } from '../ui/Avatar';
 import { Badge } from '../ui/Badge';
 import { api } from '../../services/api';
@@ -25,8 +30,9 @@ import { cn } from '../../lib/utils';
 
 export const UserMenu: React.FC = () => {
   const { user, login, logout } = useAuth();
+  const { organization, activeLegalEntity, roleTitle } = useTenant();
   const [isOpen, setIsOpen] = useState(false);
-  const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
+  const [showDevMode, setShowDevMode] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [platformProfile, setPlatformProfile] = useState<PlatformAdminProfile | null>(null);
   const [mfaStatus, setMfaStatus] = useState<MfaStatusResponse | null>(null);
@@ -90,20 +96,163 @@ export const UserMenu: React.FC = () => {
   if (!user) return null;
 
   const currentRole = user.roles?.[0]?.name || 'Employee';
-  const isPlatformAdmin = currentRole === 'Super Admin' || currentRole === 'Platform Admin';
+  const isPlatformAdmin = currentRole === 'Super Admin' || currentRole === 'Assistant Admin' || currentRole === 'Billing Admin' || currentRole === 'Security Officer' || currentRole === 'Platform Admin';
+
+  const TEST_PERSONAS = [
+    {
+      name: 'THIRUMALAI R K',
+      email: 'superadmin@workforceos.com',
+      role: 'Platform Super Admin',
+      userObj: {
+        id: 'user-super-01',
+        organization_id: 'org-platform',
+        email: 'superadmin@workforceos.com',
+        name: 'THIRUMALAI R K',
+        avatar_url: '',
+        employee_id: 'emp-root-001',
+        status: 'Active',
+        roles: [{ id: 'role-platform-super-admin', organization_id: 'org-platform', name: 'Super Admin', description: 'Platform Super Admin', permissions: [] }],
+        created_at: '2024-01-01T00:00:00Z',
+      },
+      targetRoute: 'platform-dashboard',
+    },
+    {
+      name: 'Karthik Natarajan',
+      email: 'assistant.admin@workforceos.com',
+      role: 'Assistant Admin (Platform)',
+      userObj: {
+        id: 'user-asst-02',
+        organization_id: 'org-platform',
+        email: 'assistant.admin@workforceos.com',
+        name: 'Karthik Natarajan',
+        avatar_url: '',
+        employee_id: 'emp-asst-002',
+        status: 'Active',
+        roles: [{ id: 'role-platform-assistant-admin', organization_id: 'org-platform', name: 'Assistant Admin', description: 'Assistant Admin', permissions: [] }],
+        created_at: '2024-02-01T00:00:00Z',
+      },
+      targetRoute: 'platform-tenants',
+    },
+    {
+      name: 'Dharun Joy',
+      email: 'admin@joycorporate.com',
+      role: 'Company Admin (Company)',
+      userObj: {
+        id: 'user-admin-01',
+        organization_id: 'org-joy-01',
+        email: 'admin@joycorporate.com',
+        name: 'Dharun Joy',
+        avatar_url: '',
+        employee_id: 'emp-admin-001',
+        status: 'Active',
+        roles: [{ id: 'role-002', organization_id: 'org-joy-01', name: 'Company Admin', description: 'Company Admin', permissions: [] }],
+        created_at: '2024-01-01T00:00:00Z',
+      },
+      targetRoute: 'dashboard',
+    },
+    {
+      name: 'Hari priya',
+      email: 'haripriya@joycorporate.com',
+      role: 'HR Head (Company)',
+      userObj: {
+        id: 'user-hr-01',
+        organization_id: 'org-joy-01',
+        email: 'haripriya@joycorporate.com',
+        name: 'Hari priya',
+        avatar_url: '',
+        employee_id: 'emp-hr-001',
+        status: 'Active',
+        roles: [{ id: 'role-003', organization_id: 'org-joy-01', name: 'HR Head', description: 'HR Head', permissions: [] }],
+        created_at: '2024-01-01T00:00:00Z',
+      },
+      targetRoute: 'dashboard',
+    },
+    {
+      name: 'Karthik Natarajan',
+      email: 'karthik.n@joycorporate.com',
+      role: 'Manager (Engineering)',
+      userObj: {
+        id: 'user-mgr-01',
+        organization_id: 'org-joy-01',
+        email: 'karthik.n@joycorporate.com',
+        name: 'Karthik Natarajan',
+        avatar_url: '',
+        employee_id: 'emp-mgr-001',
+        status: 'Active',
+        roles: [{ id: 'role-004', organization_id: 'org-joy-01', name: 'Team Lead', description: 'Engineering Manager', permissions: [] }],
+        created_at: '2024-01-01T00:00:00Z',
+      },
+      targetRoute: 'tl-dashboard',
+    },
+    {
+      name: 'Deepa Subramanian',
+      email: 'deepa.s@joycorporate.com',
+      role: 'Team Lead (Engineering)',
+      userObj: {
+        id: 'user-tl-01',
+        organization_id: 'org-joy-01',
+        email: 'deepa.s@joycorporate.com',
+        name: 'Deepa Subramanian',
+        avatar_url: '',
+        employee_id: 'emp-tl-001',
+        status: 'Active',
+        roles: [{ id: 'role-004', organization_id: 'org-joy-01', name: 'Team Lead', description: 'Team Lead', permissions: [] }],
+        created_at: '2024-01-01T00:00:00Z',
+      },
+      targetRoute: 'tl-dashboard',
+    },
+    {
+      name: 'Priya Sharma',
+      email: 'priya.sharma@joycorporate.com',
+      role: 'Employee (Self)',
+      userObj: {
+        id: 'user-emp-01',
+        organization_id: 'org-joy-01',
+        email: 'priya.sharma@joycorporate.com',
+        name: 'Priya Sharma',
+        avatar_url: '',
+        employee_id: 'emp-001',
+        status: 'Active',
+        roles: [{ id: 'role-005', organization_id: 'org-joy-01', name: 'Employee', description: 'Employee', permissions: [] }],
+        created_at: '2024-01-01T00:00:00Z',
+      },
+      targetRoute: 'ess-dashboard',
+    },
+    {
+      name: 'Priya Sundaram',
+      email: 'priya.sundaram@joycorporate.com',
+      role: 'Employee (Staff Architect & Onboarding)',
+      userObj: {
+        id: 'user-emp-1040',
+        organization_id: 'org-joy-01',
+        email: 'priya.sundaram@joycorporate.com',
+        name: 'Priya Sundaram',
+        avatar_url: '',
+        employee_id: 'emp-1040',
+        status: 'Onboarding',
+        roles: [{ id: 'role-005', organization_id: 'org-joy-01', name: 'Employee', description: 'Employee', permissions: [] }],
+        created_at: '2026-08-15T09:00:00Z',
+      },
+      targetRoute: 'ess-dashboard',
+    },
+  ];
 
   const switchPersona = async (email: string) => {
-    const users = await api.getUsers();
-    const inputEmail = email.toLowerCase().trim();
-    let target = users.find(u => u.email.toLowerCase() === inputEmail);
-    if (!target) {
-      const username = inputEmail.split('@')[0];
-      target = users.find(u => u.email.toLowerCase().startsWith(username));
-    }
-    if (target) {
-      login({ ...target, email });
+    const persona = TEST_PERSONAS.find((p) => p.email.toLowerCase() === email.toLowerCase());
+    if (persona) {
+      api.setCurrentUser(persona.userObj as any);
+      login(persona.userObj as any);
       setIsOpen(false);
+      setShowDevMode(false);
+      syncUrlWithRoute(persona.targetRoute);
+      window.dispatchEvent(new CustomEvent('platform:navigate', { detail: { tab: persona.targetRoute } }));
     }
+  };
+
+  const handleNavigateToProfile = () => {
+    setIsOpen(false);
+    syncUrlWithRoute('my-profile');
+    window.dispatchEvent(new CustomEvent('platform:navigate', { detail: { tab: 'my-profile' } }));
   };
 
   const handleNavigateToAccount = (subTab: string) => {
@@ -112,8 +261,8 @@ export const UserMenu: React.FC = () => {
     window.dispatchEvent(new CustomEvent('platform:navigate', { detail: { tab: 'platform-account', subTab } }));
   };
 
-  const displayName = isPlatformAdmin && platformProfile ? platformProfile.display_name : user.name;
-  const avatarSrc = isPlatformAdmin && platformProfile?.avatar_url ? platformProfile.avatar_url : user.avatar_url;
+  const displayName = user.name || (isPlatformAdmin && platformProfile ? platformProfile.display_name : 'Hari Priya');
+  const avatarSrc = user.avatar_url || (isPlatformAdmin && platformProfile?.avatar_url ? platformProfile.avatar_url : '');
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -127,49 +276,74 @@ export const UserMenu: React.FC = () => {
         <div className="hidden lg:block text-left shrink-0">
           <div className="text-xs font-bold text-gray-900 leading-tight whitespace-nowrap">{displayName}</div>
           <div className="text-[10px] text-gray-500 font-medium whitespace-nowrap">
-            {isPlatformAdmin ? 'Super Admin' : currentRole}
+            {roleTitle}
           </div>
         </div>
         <ChevronDown className={cn('w-3.5 h-3.5 text-gray-400 hidden sm:block shrink-0 transition-transform duration-200', isOpen && 'rotate-180')} />
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-gray-200/80 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-          {/* Header Card */}
-          <div className="px-4 py-3.5 border-b border-gray-100 flex items-center gap-3 bg-gradient-to-br from-emerald-50/40 to-transparent">
-            <Avatar src={avatarSrc} name={displayName} size="lg" />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-bold text-gray-900 truncate">{displayName}</div>
-              <div className="text-[11px] text-gray-500 truncate">{user.email}</div>
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className="flex h-2 w-2 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600" />
-                </span>
-                <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wide">
-                  {isPlatformAdmin ? 'Secure Session' : 'Active Session'}
-                </span>
+        <div className="absolute right-0 mt-2 w-84 bg-white rounded-2xl shadow-2xl border border-gray-200/80 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+          {/* Canonical Profile Header Card */}
+          <div className="px-4 py-3.5 border-b border-gray-100 bg-gradient-to-br from-emerald-50/50 to-transparent">
+            <div className="flex items-center gap-3">
+              <Avatar src={avatarSrc} name={displayName} size="lg" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-black text-gray-900 truncate">{displayName}</div>
+                <div className="text-[11px] text-gray-500 truncate">{user.email}</div>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="flex h-2 w-2 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600" />
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wide">
+                    Active Session
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Organization & Legal Entity Badge Details */}
+            <div className="mt-3 pt-2.5 border-t border-gray-100/80 grid grid-cols-2 gap-2 text-[10px]">
+              <div>
+                <span className="text-gray-400 uppercase font-bold text-[9px] block">Role</span>
+                <span className="font-extrabold text-[#07563D] truncate block">{roleTitle}</span>
+              </div>
+              <div>
+                <span className="text-gray-400 uppercase font-bold text-[9px] block">Legal Entity</span>
+                <span className="font-bold text-gray-800 truncate block">{activeLegalEntity?.legal_name || 'Joy Corporate Solutions Pvt Ltd'}</span>
               </div>
             </div>
           </div>
 
-          {/* Platform Account Navigation Menu */}
-          {isPlatformAdmin ? (
-            <div className="py-1 border-b border-gray-100">
+          {/* Primary Profile & Workspace Actions */}
+          <div className="py-1 border-b border-gray-100">
+            <button
+              onClick={handleNavigateToProfile}
+              className="w-full text-left px-4 py-2.5 text-xs font-bold text-gray-800 hover:bg-emerald-50/70 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
+            >
+              <span className="flex items-center gap-2.5">
+                <UserIcon className="w-4 h-4 text-[#07563D]" />
+                My Profile Workspace
+              </span>
+              <span className="text-gray-400 font-bold">→</span>
+            </button>
+
+            {isPlatformAdmin ? (
               <button
-                onClick={() => handleNavigateToAccount('profile')}
-                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#047857] flex items-center justify-between transition cursor-pointer"
+                onClick={() => handleNavigateToAccount('security')}
+                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
               >
                 <span className="flex items-center gap-2.5">
-                  <UserIcon className="w-4 h-4 text-gray-400" />
-                  My Profile
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  Platform Security & IAM
                 </span>
                 <span className="text-gray-400">→</span>
               </button>
-
+            ) : (
               <button
-                onClick={() => handleNavigateToAccount('security')}
-                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#047857] flex items-center justify-between transition cursor-pointer"
+                onClick={handleNavigateToProfile}
+                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
               >
                 <span className="flex items-center gap-2.5">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
@@ -177,122 +351,37 @@ export const UserMenu: React.FC = () => {
                 </span>
                 <span className="text-gray-400">→</span>
               </button>
+            )}
 
-              <button
-                onClick={() => handleNavigateToAccount('sessions')}
-                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#047857] flex items-center justify-between transition cursor-pointer"
-              >
-                <span className="flex items-center gap-2.5">
-                  <Laptop className="w-4 h-4 text-gray-400" />
-                  Sessions & Devices
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="text-[10px] font-mono text-gray-500">3 Active</span>
-                  <span className="text-gray-400">→</span>
-                </span>
-              </button>
-
-              <button
-                onClick={() => handleNavigateToAccount('access')}
-                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#047857] flex items-center justify-between transition cursor-pointer"
-              >
-                <span className="flex items-center gap-2.5">
-                  <Key className="w-4 h-4 text-indigo-500" />
-                  {currentRole === 'Super Admin' ? 'Platform Access & IAM' : 'Platform Access'}
-                </span>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-[#047857]">
-                  {currentRole === 'Super Admin' ? 'Root' : 'Scoped'}
-                </span>
-              </button>
-
-              <button
-                onClick={() => handleNavigateToAccount('preferences')}
-                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#047857] flex items-center justify-between transition cursor-pointer"
-              >
-                <span className="flex items-center gap-2.5">
-                  <Sliders className="w-4 h-4 text-gray-400" />
-                  Preferences
-                </span>
-                <span className="text-gray-400">→</span>
-              </button>
-
-              <button
-                onClick={() => handleNavigateToAccount('activity')}
-                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#047857] flex items-center justify-between transition cursor-pointer"
-              >
-                <span className="flex items-center gap-2.5">
-                  <Clock className="w-4 h-4 text-gray-400" />
-                  Security Activity
-                </span>
-                <span className="text-gray-400">→</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setIsOpen(false);
-                  window.dispatchEvent(new CustomEvent('platform:navigate', { detail: { tab: 'platform-support' } }));
-                }}
-                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#047857] flex items-center justify-between transition cursor-pointer"
-              >
-                <span className="flex items-center gap-2.5">
-                  <HelpCircle className="w-4 h-4 text-gray-400" />
-                  Help & Documentation
-                </span>
-                <span className="text-gray-400">→</span>
-              </button>
-            </div>
-          ) : (
-            <div className="py-1 border-b border-gray-100">
-              <button
-                onClick={() => setIsOpen(false)}
-                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 cursor-pointer"
-              >
-                <UserIcon className="w-4 h-4 text-gray-400" />
-                My Profile Settings
-              </button>
-            </div>
-          )}
-
-          {/* Real Security Status Summary Badge */}
-          {isPlatformAdmin && (
-            <div className="px-4 py-2.5 bg-gray-50/80 border-b border-gray-100 text-[11px] space-y-1">
-              <div className="flex items-center justify-between font-bold text-gray-800">
-                <span className="flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-[#047857]" />
-                  Security Status
-                </span>
-                <span className="text-[#047857] font-bold">
-                  {mfaStatus?.mfa_enabled ? 'Protected' : 'Action Required'}
-                </span>
-              </div>
-              <div className="text-[10px] text-gray-500 flex items-center justify-between">
-                <span>{mfaStatus?.mfa_enabled ? '● MFA Factor Active (TOTP)' : '⚠ MFA Setup Required'}</span>
-                <span>● TLS 1.3 Active</span>
-              </div>
-            </div>
-          )}
-
-          {/* Persona Switcher (Collapsible for dev testing) */}
-          <div className="px-3 py-1.5 border-b border-gray-100">
             <button
-              onClick={() => setShowRoleSwitcher(!showRoleSwitcher)}
+              onClick={handleNavigateToProfile}
+              className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
+            >
+              <span className="flex items-center gap-2.5">
+                <Bell className="w-4 h-4 text-gray-400" />
+                Notification Preferences
+              </span>
+              <span className="text-gray-400">→</span>
+            </button>
+          </div>
+
+          {/* Collapsible Developer / QA Mode Switcher */}
+          <div className="px-3 py-1.5 border-b border-gray-100 bg-gray-50/40">
+            <button
+              onClick={() => setShowDevMode(!showDevMode)}
               className="w-full flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-gray-400 py-1 hover:text-gray-700 cursor-pointer"
             >
-              <span>Switch Test Role Context</span>
-              <ChevronDown className={cn('w-3 h-3 transition-transform', showRoleSwitcher && 'rotate-180')} />
+              <span className="flex items-center gap-1.5">
+                <Terminal className="w-3 h-3 text-gray-400" />
+                Developer / QA Mode
+              </span>
+              <ChevronDown className={cn('w-3 h-3 transition-transform', showDevMode && 'rotate-180')} />
             </button>
-            {showRoleSwitcher && (
-              <div className="space-y-1 mt-1">
-                {[
-                  { name: 'THIRUMALAI R K', email: 'superadmin@workforceos.com', role: 'Super Admin (Platform)' },
-                  { name: 'Karthik Natarajan', email: 'assistant.admin@workforceos.com', role: 'Assistant Admin (Delegated Ops)' },
-                  { name: 'Dharun Joy', email: 'admin@joycorporate.com', role: 'Company Admin (Company)' },
-                  { name: 'Arun Kumar', email: 'arun.kumar@joycorporate.com', role: 'HR Head (Company HR)' },
-                  { name: 'Karthik N.', email: 'karthik.n@joycorporate.com', role: 'Manager (Department)' },
-                  { name: 'Deepa S.', email: 'deepa.s@joycorporate.com', role: 'Team Lead (Team)' },
-                  { name: 'Priya Sharma', email: 'priya.sharma@joycorporate.com', role: 'Employee (Self)' },
-                ].map((persona) => {
-                  const isCurrent = user.email === persona.email;
+            {showDevMode && (
+              <div className="space-y-1 mt-1 pb-1">
+                <p className="text-[9px] text-gray-400 italic px-1">Simulate persona contexts for testing:</p>
+                {TEST_PERSONAS.map((persona) => {
+                  const isCurrent = user.email.toLowerCase() === persona.email.toLowerCase();
                   return (
                     <button
                       key={persona.email}
@@ -302,8 +391,8 @@ export const UserMenu: React.FC = () => {
                       }`}
                     >
                       <div>
-                        <div>{persona.name}</div>
-                        <div className="text-[10px] text-gray-400">{persona.role}</div>
+                        <div className="font-semibold text-gray-800">{persona.name}</div>
+                        <div className="text-[10px] text-gray-500">{persona.role}</div>
                       </div>
                       {isCurrent && <Check className="w-3.5 h-3.5 text-[#07563D]" />}
                     </button>
@@ -320,10 +409,6 @@ export const UserMenu: React.FC = () => {
               onClick={(e) => {
                 e.preventDefault();
                 setIsOpen(false);
-                if (isPlatformAdmin) {
-                  syncUrlWithRoute('platform-support');
-                  window.dispatchEvent(new CustomEvent('platform:navigate', { detail: { tab: 'platform-support' } }));
-                }
               }}
               className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 cursor-pointer"
             >
@@ -343,4 +428,3 @@ export const UserMenu: React.FC = () => {
     </div>
   );
 };
-

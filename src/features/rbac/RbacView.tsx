@@ -26,7 +26,7 @@ export const RbacView: React.FC = () => {
   // RLS Tester State
   const [testUserId, setTestUserId] = useState('');
   const [testResource, setTestResource] = useState('employee_records');
-  const [testCompanyId, setTestCompanyId] = useState('comp-01');
+  const [testCompanyId, setTestCompanyId] = useState('comp-joy-01');
   const [testDeptId, setTestDeptId] = useState('dept-eng');
   const [rlsResult, setRlsResult] = useState<any | null>(null);
 
@@ -59,19 +59,19 @@ export const RbacView: React.FC = () => {
     let effectiveScope: ScopeLevel = 'Self';
     let reason = '';
 
-    const isAdmin = (user.roles || []).some(r => r.name === 'Super Admin' || r.name === 'HR Director');
-    const isDeptHead = (user.roles || []).some(r => r.name === 'Department Head');
-    const isHRMgr = (user.roles || []).some(r => r.name === 'HR Manager');
+    const isAdmin = (user.roles || []).some(r => r.name === 'Super Admin' || r.name === 'HR Director' || r.name === 'Company Admin');
+    const isDeptHead = (user.roles || []).some(r => r.name === 'Department Head' || r.name === 'Team Lead');
+    const isHRMgr = (user.roles || []).some(r => r.name === 'HR Manager' || r.name === 'HR Head');
 
     if (isAdmin) {
       hasAccess = true;
       effectiveScope = 'Organization';
-      reason = 'Super Admin / HR Director has unrestricted tenant-wide organization access.';
+      reason = 'Super Admin / Company Admin has unrestricted tenant-wide organization access.';
     } else if (isHRMgr) {
-      if (testCompanyId === 'comp-01') {
+      if (testCompanyId === 'comp-joy-01') {
         hasAccess = true;
         effectiveScope = 'Company';
-        reason = 'HR Manager scoped to Legal Entity (Acme Tech India). Access granted.';
+        reason = 'HR Head scoped to Legal Entity (Joy Corporate Solutions Pvt Ltd). Access granted.';
       } else {
         hasAccess = false;
         effectiveScope = 'Company';

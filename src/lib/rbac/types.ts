@@ -3,7 +3,6 @@ export type DataScope = 'COMPANY' | 'HR' | 'MANAGER' | 'TEAM' | 'SELF';
 export type PrimaryRole =
   | 'Super Admin'
   | 'Company Admin'
-  | 'HR Head / Super Admin'
   | 'HR Head'
   | 'Manager'
   | 'Team Lead'
@@ -29,6 +28,9 @@ export type ModuleId =
   | 'workforce-overview'
   | 'executive-overview'
   | 'my-workspace'
+  | 'workspace'
+  | 'my-profile'
+  | 'profile'
   // People & Core HR
   | 'people'
   | 'active-employees'
@@ -38,6 +40,8 @@ export type ModuleId =
   | 'departments'
   | 'designations'
   | 'locations'
+  | 'vendors'
+  | 'organization-vendors'
   | 'documents'
   | 'assets'
   | 'onboarding'

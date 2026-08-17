@@ -33,7 +33,6 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
     (primaryRole === 'Super Admin'
       ? 'platform-dashboard'
       : primaryRole === 'Company Admin' ||
-        primaryRole === 'HR Head / Super Admin' ||
         primaryRole === 'HR Head'
       ? 'dashboard'
       : 'my-workspace');
@@ -89,7 +88,6 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
           {primaryRole === 'Super Admin'
             ? 'Return to Platform Command Center'
             : primaryRole === 'Company Admin' ||
-              primaryRole === 'HR Head / Super Admin' ||
               primaryRole === 'HR Head'
             ? 'Go to HR Dashboard'
             : 'Return to My Workspace'}
