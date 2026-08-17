@@ -57,6 +57,7 @@ import {
   PlanTier,
   OrgStatus,
 } from '../../../services/platform/platformTenantService';
+import { ProvisionCustomerModal } from '../components/ProvisionCustomerModal';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../lib/utils';
 
@@ -140,42 +141,19 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
     notifyAdmin: true,
   });
 
-  // Provisioning Wizard Steps (5 Steps)
-  const [provisionStep, setProvisionStep] = useState(1);
-  const [provisionProgress, setProvisionProgress] = useState<{
-    isRunning: boolean;
-    stepsDone: number;
-    completed: boolean;
-  }>({ isRunning: false, stepsDone: 0, completed: false });
-  const [provisionForm, setProvisionForm] = useState({
-    legal_name: '',
-    display_name: '',
-    domain: '',
-    industry: 'Software & IT Services',
-    country: 'India',
-    state: 'Tamil Nadu',
-    city: 'Chennai',
-    timezone: 'Asia/Kolkata (IST)',
-    currency: 'INR (₹)',
-    gstin: '33AAACA1234F1Z8',
-    admin_name: '',
-    admin_email: '',
-    admin_phone: '',
-    plan: 'Enterprise',
-    billing_cycle: 'Annual',
-    seat_limit: 100,
-    is_trial: false,
-    enabled_features: ['Core HR', 'Attendance', 'Leave', 'Payroll', 'WhatsApp', 'Biometric'],
-  });
-
   // Fetch paginated organizations
+  const [dataVersion, setDataVersion] = useState(0);
   const data = useMemo(() => {
     return platformTenantService.getOrganizations(queryParams);
-  }, [queryParams]);
+  }, [queryParams, dataVersion]);
 
   const portfolioCounts = useMemo(() => {
     return platformTenantService.getPortfolioCounts();
   }, [data]);
+
+  const fetchData = () => {
+    setDataVersion((v) => v + 1);
+  };
 
   // Selected Organization
   const selectedOrg = useMemo(() => {
@@ -265,26 +243,8 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
     const reason = prompt('Please enter reason for account reactivation:', 'Customer invoice settled & security review complete');
     if (!reason) return;
     await platformTenantService.reactivateOrganization(org.id, reason);
-    setQueryParams({ ...queryParams });
+    fetchData();
     alert(`Organization ${org.legal_name} has been reactivated.`);
-  };
-
-  // Provisioning Wizard Submit & Progress
-  const handleExecuteProvision = async () => {
-    setProvisionProgress({ isRunning: true, stepsDone: 0, completed: false });
-    for (let i = 1; i <= 6; i++) {
-      await new Promise((r) => setTimeout(r, 200));
-      setProvisionProgress((prev) => ({ ...prev, stepsDone: i }));
-    }
-    const created = await platformTenantService.provisionOrganization(provisionForm);
-    setProvisionProgress({ isRunning: false, stepsDone: 6, completed: true });
-    setTimeout(() => {
-      setIsProvisionWizardOpen(false);
-      setProvisionStep(1);
-      setProvisionProgress({ isRunning: false, stepsDone: 0, completed: false });
-      setSelectedOrgId(created.id);
-      setQueryParams({ ...queryParams });
-    }, 600);
   };
 
   // ----------------------------------------------------------------
@@ -993,11 +953,8 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
           <Button
             variant="primary"
             size="sm"
-            onClick={() => {
-              setProvisionStep(1);
-              setIsProvisionWizardOpen(true);
-            }}
-            className="flex items-center gap-1.5 bg-[#047857] hover:bg-[#036246] text-white shadow-xs font-semibold"
+            onClick={() => setIsProvisionWizardOpen(true)}
+            className="flex items-center gap-1.5 bg-[#047857] hover:bg-[#036246] text-white shadow-xs font-semibold cursor-pointer"
           >
             <Plus className="h-4 w-4" />
             + Provision Organization
@@ -1232,215 +1189,17 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
       </div>
 
       {/* ----------------------------------------------------------------
-          5. PROVISION ORGANIZATION WIZARD MODAL (5 STEPS)
+          5. ENTERPRISE PROVISION CUSTOMER ORGANIZATION WORKSPACE
          ---------------------------------------------------------------- */}
-      {isProvisionWizardOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-[#E2E8F0] space-y-5 text-xs max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <span className="text-[10px] font-bold text-[#047857] uppercase">Provisioning Wizard</span>
-                <h3 className="text-base font-bold text-[#0F172B]">Provision Customer Organization (Step {provisionStep} of 5)</h3>
-              </div>
-              <button onClick={() => setIsProvisionWizardOpen(false)} className="text-[#94A3B8] hover:text-[#0F172B]">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Step Progress Pills */}
-            <div className="flex items-center gap-2 border-b pb-3">
-              {['Organization', 'Primary Admin', 'Subscription', 'Features', 'Review'].map((label, idx) => (
-                <div
-                  key={idx}
-                  className={cn(
-                    'flex-1 text-center py-1.5 rounded-lg font-bold text-[11px]',
-                    provisionStep === idx + 1
-                      ? 'bg-[#047857] text-white'
-                      : provisionStep > idx + 1
-                      ? 'bg-[#ECFDF5] text-[#047857]'
-                      : 'bg-[#F1F5F9] text-[#94A3B8]'
-                  )}
-                >
-                  {idx + 1}. {label}
-                </div>
-              ))}
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-4">
-              {/* STEP 1: ORGANIZATION */}
-              {provisionStep === 1 && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="font-semibold block mb-1">Company Legal Name *</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Apex Global Technologies Pvt Ltd"
-                      value={provisionForm.legal_name}
-                      onChange={(e) => setProvisionForm({ ...provisionForm, legal_name: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-xl text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-semibold block mb-1">Primary Domain *</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. apextech.io"
-                      value={provisionForm.domain}
-                      onChange={(e) => setProvisionForm({ ...provisionForm, domain: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-xl text-xs"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="font-semibold block mb-1">Industry</label>
-                      <input
-                        type="text"
-                        value={provisionForm.industry}
-                        onChange={(e) => setProvisionForm({ ...provisionForm, industry: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-xl text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-semibold block mb-1">City</label>
-                      <input
-                        type="text"
-                        value={provisionForm.city}
-                        onChange={(e) => setProvisionForm({ ...provisionForm, city: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-xl text-xs"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 2: PRIMARY ADMIN */}
-              {provisionStep === 2 && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="font-semibold block mb-1">Primary Admin Full Name *</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Rahul Sharma"
-                      value={provisionForm.admin_name}
-                      onChange={(e) => setProvisionForm({ ...provisionForm, admin_name: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-xl text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-semibold block mb-1">Admin Email Address *</label>
-                    <input
-                      type="email"
-                      placeholder="admin@apextech.io"
-                      value={provisionForm.admin_email}
-                      onChange={(e) => setProvisionForm({ ...provisionForm, admin_email: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-xl text-xs"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 3: SUBSCRIPTION */}
-              {provisionStep === 3 && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="font-semibold block mb-1">Plan Tier</label>
-                    <select
-                      value={provisionForm.plan}
-                      onChange={(e) => setProvisionForm({ ...provisionForm, plan: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-xl text-xs font-semibold"
-                    >
-                      <option value="Starter">Starter Tier (50 seats)</option>
-                      <option value="Professional">Professional Tier (100 seats)</option>
-                      <option value="Business">Business Tier (300 seats)</option>
-                      <option value="Enterprise">Enterprise Tier (Dedicated Cluster)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="font-semibold block mb-1">Seat Limit</label>
-                    <input
-                      type="number"
-                      value={provisionForm.seat_limit}
-                      onChange={(e) => setProvisionForm({ ...provisionForm, seat_limit: Number(e.target.value) })}
-                      className="w-full px-3 py-2 border rounded-xl text-xs"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 4: FEATURES */}
-              {provisionStep === 4 && (
-                <div className="space-y-2">
-                  <span className="font-semibold block">Select Enabled Module Entitlements</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {['Core HR', 'Attendance', 'Leave', 'Payroll', 'Recruitment', 'LMS', 'Expenses', 'WhatsApp', 'Biometric Push'].map((f) => (
-                      <label key={f} className="flex items-center gap-2 p-2.5 border rounded-xl bg-[#F8FAFC]">
-                        <input type="checkbox" defaultChecked className="accent-[#047857]" />
-                        <span className="font-semibold text-xs">{f}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 5: REVIEW & EXECUTE */}
-              {provisionStep === 5 && (
-                <div className="space-y-4">
-                  <div className="p-4 bg-[#F8FAFC] rounded-2xl border space-y-2 text-xs">
-                    <div>Organization: <strong className="text-[#0F172B]">{provisionForm.legal_name || 'Apex Technologies'}</strong></div>
-                    <div>Domain: <strong className="text-[#0F172B]">{provisionForm.domain || 'apextech.io'}</strong></div>
-                    <div>Admin: <strong className="text-[#0F172B]">{provisionForm.admin_name} ({provisionForm.admin_email})</strong></div>
-                    <div>Plan: <strong className="text-[#047857]">{provisionForm.plan} ({provisionForm.seat_limit} Seats)</strong></div>
-                  </div>
-
-                  {provisionProgress.isRunning && (
-                    <div className="p-4 bg-[#ECFDF5] rounded-2xl border border-[#A7F3D0] space-y-2">
-                      <div className="flex justify-between font-bold text-[#047857]">
-                        <span>Provisioning Tenant...</span>
-                        <span>{Math.round((provisionProgress.stepsDone / 6) * 100)}%</span>
-                      </div>
-                      <div className="w-full h-2 bg-[#A7F3D0] rounded-full overflow-hidden">
-                        <div className="h-full bg-[#047857] rounded-full transition-all" style={{ width: `${(provisionProgress.stepsDone / 6) * 100}%` }} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-between pt-3 border-t">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={provisionStep === 1 || provisionProgress.isRunning}
-                onClick={() => setProvisionStep(provisionStep - 1)}
-              >
-                Previous
-              </Button>
-
-              {provisionStep < 5 ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => setProvisionStep(provisionStep + 1)}
-                  className="bg-[#047857] hover:bg-[#036246] text-white"
-                >
-                  Next Step
-                </Button>
-              ) : (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={provisionProgress.isRunning}
-                  onClick={handleExecuteProvision}
-                  className="bg-[#047857] hover:bg-[#036246] text-white font-bold"
-                >
-                  {provisionProgress.isRunning ? 'Provisioning...' : 'Provision Organization'}
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <ProvisionCustomerModal
+        isOpen={isProvisionWizardOpen}
+        onClose={() => setIsProvisionWizardOpen(false)}
+        onProvisionSuccess={(newOrgId) => {
+          setIsProvisionWizardOpen(false);
+          setSelectedOrgId(newOrgId);
+          fetchData();
+        }}
+      />
 
       {/* ----------------------------------------------------------------
           6. SYNC MODAL
