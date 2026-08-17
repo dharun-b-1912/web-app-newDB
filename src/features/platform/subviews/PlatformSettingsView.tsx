@@ -647,78 +647,112 @@ export const PlatformSettingsView: React.FC = () => {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[#64748B] font-bold">
-                  <tr>
-                    <th className="px-5 py-3">Key Name & Prefix</th>
-                    <th className="px-5 py-3">Owner & Tenant</th>
-                    <th className="px-5 py-3">Assigned Scopes</th>
-                    <th className="px-5 py-3">Rate Limit</th>
-                    <th className="px-5 py-3">Last Used</th>
-                    <th className="px-5 py-3">Status</th>
-                    <th className="px-5 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E2E8F0]">
-                  {apiKeys.map((k) => (
-                    <tr key={k.id} className="hover:bg-[#F8FAFC]/50 transition-colors">
-                      <td className="px-5 py-3.5">
-                        <div className="font-bold text-[#0F172A]">{k.name}</div>
-                        <div className="font-mono text-[11px] text-[#64748B] flex items-center gap-1.5 mt-0.5">
-                          <span>{k.key_prefix}••••••••••••••••</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="text-[#0F172A] font-medium">{k.owner}</div>
-                        <div className="text-[11px] text-[#64748B]">{k.tenant_name || 'Enterprise'}</div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex flex-wrap gap-1 max-w-xs">
-                          {k.scopes.slice(0, 3).map((s) => (
-                            <span key={s} className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px] border border-slate-200">
-                              {s}
-                            </span>
-                          ))}
-                          {k.scopes.length > 3 && (
-                            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-mono text-[10px]">
-                              +{k.scopes.length - 3} more
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-5 py-3.5 font-mono text-[#0F172A]">
-                        {k.rate_limit_per_min} rpm
-                      </td>
-                      <td className="px-5 py-3.5 text-[#64748B]">
-                        {k.last_used_at || 'Never'}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <StatusBadge status={k.status === 'Active' ? 'Active' : k.status === 'Revoked' ? 'Failed' : 'Suspended'} />
-                      </td>
-                      <td className="px-5 py-3.5 text-right space-x-1">
-                        {k.status === 'Active' && (
-                          <>
-                            <button
-                              onClick={() => setSelectedKeyForRotate(k)}
-                              className="px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            >
-                              Rotate
-                            </button>
-                            <button
-                              onClick={() => setSelectedKeyForRevoke(k)}
-                              className="px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                            >
-                              Revoke
-                            </button>
-                          </>
-                        )}
-                      </td>
+            {apiKeys.length === 0 ? (
+              <div className="p-12 text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                  <Key className="w-6 h-6" />
+                </div>
+                <h4 className="text-sm font-bold text-[#0F172A]">No Developer API Keys Provisioned</h4>
+                <p className="text-xs text-[#64748B] max-w-sm mx-auto">
+                  There are no active API keys in {environment}. Create a scoped API key to connect external ERPs, Slack bots, or hardware devices.
+                </p>
+                <Button
+                  onClick={() => {
+                    setCreateKeyStep(1);
+                    setNewKeyForm({
+                      name: '',
+                      description: '',
+                      owner: '',
+                      environment,
+                      scopes: ['organizations.read', 'employees.read'],
+                      rate_limit_per_min: 600,
+                      burst_limit: 100,
+                      concurrency_limit: 20,
+                      expires_in_days: 90,
+                    });
+                    setGeneratedSecret(null);
+                    setIsCreateKeyDrawerOpen(true);
+                  }}
+                  className="bg-[#059669] hover:bg-[#047857] text-white text-xs font-semibold py-2 px-4 inline-flex items-center gap-1.5 mt-2"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Create API Key
+                </Button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[#64748B] font-bold">
+                    <tr>
+                      <th className="px-5 py-3">Key Name & Prefix</th>
+                      <th className="px-5 py-3">Owner & Tenant</th>
+                      <th className="px-5 py-3">Assigned Scopes</th>
+                      <th className="px-5 py-3">Rate Limit</th>
+                      <th className="px-5 py-3">Last Used</th>
+                      <th className="px-5 py-3">Status</th>
+                      <th className="px-5 py-3 text-right">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-[#E2E8F0]">
+                    {apiKeys.map((k) => (
+                      <tr key={k.id} className="hover:bg-[#F8FAFC]/50 transition-colors">
+                        <td className="px-5 py-3.5">
+                          <div className="font-bold text-[#0F172A]">{k.name}</div>
+                          <div className="font-mono text-[11px] text-[#64748B] flex items-center gap-1.5 mt-0.5">
+                            <span>{k.key_prefix}••••••••••••••••</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="text-[#0F172A] font-medium">{k.owner}</div>
+                          <div className="text-[11px] text-[#64748B]">{k.tenant_name || 'Enterprise'}</div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex flex-wrap gap-1 max-w-xs">
+                            {k.scopes.slice(0, 3).map((s) => (
+                              <span key={s} className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px] border border-slate-200">
+                                {s}
+                              </span>
+                            ))}
+                            {k.scopes.length > 3 && (
+                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-mono text-[10px]">
+                                +{k.scopes.length - 3} more
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5 font-mono text-[#0F172A]">
+                          {k.rate_limit_per_min} rpm
+                        </td>
+                        <td className="px-5 py-3.5 text-[#64748B]">
+                          {k.last_used_at || 'Never'}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <StatusBadge status={k.status === 'Active' ? 'Active' : k.status === 'Revoked' ? 'Failed' : 'Suspended'} />
+                        </td>
+                        <td className="px-5 py-3.5 text-right space-x-1">
+                          {k.status === 'Active' && (
+                            <>
+                              <button
+                                onClick={() => setSelectedKeyForRotate(k)}
+                                className="px-2.5 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              >
+                                Rotate
+                              </button>
+                              <button
+                                onClick={() => setSelectedKeyForRevoke(k)}
+                                className="px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              >
+                                Revoke
+                              </button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Security & Authentication Policies */}
@@ -984,53 +1018,65 @@ export const PlatformSettingsView: React.FC = () => {
               </p>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[#64748B] font-bold">
-                  <tr>
-                    <th className="px-5 py-3">Setting Key</th>
-                    <th className="px-5 py-3">Version</th>
-                    <th className="px-5 py-3">Previous ➔ New Value</th>
-                    <th className="px-5 py-3">Administrator & Reason</th>
-                    <th className="px-5 py-3">Timestamp</th>
-                    <th className="px-5 py-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E2E8F0]">
-                  {configHistory.map((ver) => (
-                    <tr key={ver.id} className="hover:bg-[#F8FAFC]/50 transition-colors">
-                      <td className="px-5 py-3.5 font-mono text-[#0F172A] font-bold">
-                        {ver.setting_key}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-800 font-mono text-[11px] font-bold">
-                          v{ver.version}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 font-mono text-[11px]">
-                        <span className="text-rose-600 line-through mr-1">{JSON.stringify(ver.old_value)}</span>
-                        <span className="text-emerald-600 font-bold">{JSON.stringify(ver.new_value)}</span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="text-[#0F172A] font-medium">{ver.changed_by}</div>
-                        <div className="text-[11px] text-[#64748B]">{ver.reason}</div>
-                      </td>
-                      <td className="px-5 py-3.5 text-[#64748B] whitespace-nowrap">
-                        {new Date(ver.created_at).toLocaleString()}
-                      </td>
-                      <td className="px-5 py-3.5 text-right">
-                        <button
-                          onClick={() => handleRollbackSetting(ver)}
-                          className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold transition-colors"
-                        >
-                          Rollback
-                        </button>
-                      </td>
+            {configHistory.length === 0 ? (
+              <div className="p-12 text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                  <History className="w-6 h-6" />
+                </div>
+                <h4 className="text-sm font-bold text-[#0F172A]">No Configuration Changes Recorded</h4>
+                <p className="text-xs text-[#64748B] max-w-sm mx-auto">
+                  All settings in {environment} are currently operating on their baseline definitions. Mutations and rollbacks will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[#64748B] font-bold">
+                    <tr>
+                      <th className="px-5 py-3">Setting Key</th>
+                      <th className="px-5 py-3">Version</th>
+                      <th className="px-5 py-3">Previous ➔ New Value</th>
+                      <th className="px-5 py-3">Administrator & Reason</th>
+                      <th className="px-5 py-3">Timestamp</th>
+                      <th className="px-5 py-3 text-right">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-[#E2E8F0]">
+                    {configHistory.map((ver) => (
+                      <tr key={ver.id} className="hover:bg-[#F8FAFC]/50 transition-colors">
+                        <td className="px-5 py-3.5 font-mono text-[#0F172A] font-bold">
+                          {ver.setting_key}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-800 font-mono text-[11px] font-bold">
+                            v{ver.version}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5 font-mono text-[11px]">
+                          <span className="text-rose-600 line-through mr-1">{JSON.stringify(ver.old_value)}</span>
+                          <span className="text-emerald-600 font-bold">{JSON.stringify(ver.new_value)}</span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="text-[#0F172A] font-medium">{ver.changed_by}</div>
+                          <div className="text-[11px] text-[#64748B]">{ver.reason}</div>
+                        </td>
+                        <td className="px-5 py-3.5 text-[#64748B] whitespace-nowrap">
+                          {new Date(ver.created_at).toLocaleString()}
+                        </td>
+                        <td className="px-5 py-3.5 text-right">
+                          <button
+                            onClick={() => handleRollbackSetting(ver)}
+                            className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold transition-colors"
+                          >
+                            Rollback
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* High-Risk Emergency Danger Zone */}

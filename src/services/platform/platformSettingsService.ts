@@ -362,7 +362,7 @@ export const API_KEY_SCOPE_GROUPS: ApiKeyScopeGroup[] = [
   },
 ];
 
-// In-Memory Storage Cache
+// In-Memory Storage Cache (Clean Realtime State - Zero Mock Data)
 let cachedSettings: Record<string, any> = {};
 let cachedVersions: PlatformConfigVersion[] = [];
 let cachedApiKeys: PlatformApiKeyItem[] = [];
@@ -382,152 +382,12 @@ let cachedMaintenance: PlatformMaintenanceSchedule = {
   created_at: new Date().toISOString(),
 };
 
-// Seed baseline defaults
+// Initialize baseline definitions
 function initializeDefaultsIfEmpty() {
   if (Object.keys(cachedSettings).length === 0) {
     PLATFORM_SETTING_DEFINITIONS.forEach((def) => {
       cachedSettings[def.key] = def.default_value;
     });
-  }
-
-  if (cachedApiKeys.length === 0) {
-    cachedApiKeys = [
-      {
-        id: 'key-prod-01',
-        name: 'SAP S/4HANA Enterprise Connector',
-        description: 'Automated employee synchronization and salary band ledger pipeline',
-        key_prefix: 'wk_live_9a2f',
-        environment: 'PRODUCTION',
-        owner: 'Enterprise Architecture Lead',
-        tenant_name: 'Acme Technologies',
-        scopes: ['organizations.read', 'employees.read', 'employees.write', 'payroll.read', 'webhooks.read'],
-        rate_limit_per_min: 1200,
-        burst_limit: 100,
-        concurrency_limit: 25,
-        status: 'Active',
-        expires_at: new Date(Date.now() + 180 * 86400000).toISOString(),
-        created_by: 'Platform Super Admin',
-        last_used_at: '14 sec ago',
-        last_used_ip: '54.210.12.88',
-        total_requests_count: 842091,
-        requests_today_count: 14209,
-        success_rate_pct: 99.98,
-        rate_limit_hits_count: 0,
-        created_at: new Date(Date.now() - 60 * 86400000).toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'key-prod-02',
-        name: 'Biometric Kiosk Ingestion Agent',
-        description: 'High-frequency punch sync from Bangalore & Hyderabad hardware turnstiles',
-        key_prefix: 'wk_live_77e1',
-        environment: 'PRODUCTION',
-        owner: 'Facilities & IT Lead',
-        tenant_name: 'Zenith Global Dynamics',
-        scopes: ['attendance.write', 'events.publish'],
-        rate_limit_per_min: 3000,
-        burst_limit: 250,
-        concurrency_limit: 50,
-        status: 'Active',
-        expires_at: new Date(Date.now() + 90 * 86400000).toISOString(),
-        created_by: 'Infrastructure Lead',
-        last_used_at: '2 sec ago',
-        last_used_ip: '103.12.89.41',
-        total_requests_count: 1428904,
-        requests_today_count: 42918,
-        success_rate_pct: 99.85,
-        rate_limit_hits_count: 2,
-        created_at: new Date(Date.now() - 45 * 86400000).toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ];
-  }
-
-  if (cachedIntegrations.length === 0) {
-    cachedIntegrations = [
-      {
-        id: 'int-email-01',
-        provider_type: 'email',
-        provider_name: 'Resend Enterprise Email',
-        environment: 'PRODUCTION',
-        status: 'Configured',
-        health_status: 'Healthy',
-        is_default: true,
-        masked_credentials: { api_key: 're_••••••••••••••••3821', from_email: 'notifications@workforceos.com' },
-        config: { region: 'global', dedicated_ip: true },
-        last_health_check_at: '2 min ago',
-        last_test_request_id: 'req_test_email_9921',
-        last_latency_ms: 182,
-        failure_rate_pct: 0.01,
-        created_by: 'Platform Lead',
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'int-sms-01',
-        provider_type: 'sms',
-        provider_name: 'Twilio SMS & OTP Gateway',
-        environment: 'PRODUCTION',
-        status: 'Configured',
-        health_status: 'Healthy',
-        is_default: true,
-        masked_credentials: { account_sid: 'AC••••••••••••••••9941', auth_token: '••••••••••••••••' },
-        config: { sender_id: 'WRKFRC' },
-        last_health_check_at: '5 min ago',
-        last_test_request_id: 'req_test_sms_4412',
-        last_latency_ms: 240,
-        failure_rate_pct: 0.05,
-        created_by: 'Platform Lead',
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'int-storage-01',
-        provider_type: 'storage',
-        provider_name: 'AWS S3 Sovereign Documents Bucket',
-        environment: 'PRODUCTION',
-        status: 'Configured',
-        health_status: 'Healthy',
-        is_default: true,
-        masked_credentials: { bucket_name: 'workforceos-prod-documents-ap-south-1', access_key: 'AKIA••••••••••••331A' },
-        config: { encryption: 'AES256', versioning: true },
-        last_health_check_at: '1 min ago',
-        last_test_request_id: 'req_test_s3_8891',
-        last_latency_ms: 94,
-        failure_rate_pct: 0.00,
-        created_by: 'Infrastructure Lead',
-        updated_at: new Date().toISOString(),
-      },
-    ];
-  }
-
-  if (cachedVersions.length === 0) {
-    cachedVersions = [
-      {
-        id: 'ver-101',
-        setting_key: 'integrations.webhook_default_timeout_ms',
-        environment: 'PRODUCTION',
-        version: 2,
-        old_value: 5000,
-        new_value: 10000,
-        changed_by: 'Platform Super Admin',
-        reason: 'Increased SLA tolerance for high-volume enterprise SAP S/4HANA webhooks',
-        request_id: 'req_cfg_9981',
-        is_rollback: false,
-        created_at: new Date(Date.now() - 3600000).toISOString(),
-      },
-      {
-        id: 'ver-102',
-        setting_key: 'security.session_idle_timeout_min',
-        environment: 'PRODUCTION',
-        version: 1,
-        old_value: 60,
-        new_value: 30,
-        changed_by: 'Security Officer',
-        reason: 'SOC 2 Type II compliance policy reinforcement for privileged consoles',
-        request_id: 'req_cfg_9942',
-        is_rollback: false,
-        created_at: new Date(Date.now() - 7200000).toISOString(),
-      },
-    ];
   }
 }
 
