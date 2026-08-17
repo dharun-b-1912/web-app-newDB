@@ -51,12 +51,163 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Dedicated 100% Isolated A4 Print Function
   const handlePrint = () => {
-    window.print();
+    const printContent = document.getElementById('invoice-print-document');
+    if (!printContent) {
+      window.print();
+      return;
+    }
+
+    const printWindow = window.open('', '_blank', 'width=850,height=1000');
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Tax Invoice - ${inv.invoice_number}</title>
+          <style>
+            @page { size: A4 portrait; margin: 15mm; }
+            * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            body { background: #ffffff; color: #111827; padding: 20px; font-size: 12px; line-height: 1.5; }
+            .header-flex { display: flex; justify-content: space-between; border-bottom: 2px solid #047857; padding-bottom: 20px; margin-bottom: 20px; }
+            .company-title { font-size: 18px; font-weight: bold; color: #047857; }
+            .inv-title { font-size: 22px; font-weight: 900; color: #047857; letter-spacing: 1px; text-align: right; }
+            .meta-text { color: #4b5563; font-size: 11px; }
+            .bill-to { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px; }
+            th { background: #f3f4f6; border-bottom: 2px solid #d1d5db; padding: 8px 10px; text-align: left; text-transform: uppercase; font-size: 10px; font-weight: bold; color: #374151; }
+            td { padding: 10px; border-bottom: 1px solid #e5e7eb; }
+            .totals-table { width: 300px; margin-left: auto; font-size: 12px; }
+            .totals-table td { padding: 6px 0; }
+            .grand-total { font-size: 16px; font-weight: bold; color: #047857; border-top: 2px solid #047857; padding-top: 8px !important; }
+            .paid-badge { display: inline-block; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; padding: 4px 10px; border-radius: 9999px; font-weight: bold; font-size: 11px; }
+            .footer-notes { border-top: 1px solid #e5e7eb; padding-top: 15px; margin-top: 20px; color: #6b7280; font-size: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="header-flex">
+            <div>
+              <div class="company-title">WorkForceOS Technologies Pvt Ltd</div>
+              <p class="meta-text">WorkForce Tech Park, OMR IT Corridor, Chennai, TN 600096</p>
+              <p class="meta-text">GSTIN: ${inv.platform_gstin || '33AAACW0000A1Z5'} • PAN: AAACW0000A</p>
+              <p class="meta-text">Email: billing@workforceos.in • Phone: +91 44 4800 9000</p>
+            </div>
+            <div>
+              <div class="inv-title">TAX INVOICE</div>
+              <p style="font-weight: bold; font-size: 14px; text-align: right;">${inv.invoice_number}</p>
+              <p class="meta-text" style="text-align: right;">Issue Date: <strong>${inv.issue_date || inv.billing_date}</strong></p>
+              <p class="meta-text" style="text-align: right;">Due Date: <strong>${inv.due_date}</strong></p>
+              <p class="meta-text" style="text-align: right;">Place of Supply: <strong>${inv.place_of_supply || 'Tamil Nadu (33)'}</strong></p>
+            </div>
+          </div>
+
+          <div class="bill-to">
+            <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #6b7280;">Billed To (Customer)</div>
+            <strong style="font-size: 14px; color: #111827;">${inv.tenant_name}</strong>
+            <p class="meta-text">${inv.billing_address || 'Chennai, Tamil Nadu, India'}</p>
+            ${inv.tenant_gstin ? `<p class="meta-text"><strong>GSTIN:</strong> ${inv.tenant_gstin}</p>` : ''}
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 30px;">#</th>
+                <th>Description</th>
+                <th style="width: 80px;">HSN/SAC</th>
+                <th style="text-align: center; width: 50px;">Qty</th>
+                <th style="text-align: right; width: 90px;">Rate (₹)</th>
+                <th style="text-align: right; width: 100px;">Taxable (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(inv.line_items || [])
+                .map(
+                  (li, idx) => `
+                <tr>
+                  <td>${idx + 1}</td>
+                  <td><strong>${li.description}</strong></td>
+                  <td>${li.hsn_sac}</td>
+                  <td style="text-align: center;">${li.qty}</td>
+                  <td style="text-align: right;">₹${li.unit_price.toLocaleString('en-IN')}</td>
+                  <td style="text-align: right; font-weight: bold;">₹${li.taxable_amount.toLocaleString('en-IN')}</td>
+                </tr>
+              `
+                )
+                .join('')}
+            </tbody>
+          </table>
+
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-top: 10px;">
+            <div style="max-width: 350px;">
+              <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Bank & Settlement Details</div>
+              <p class="meta-text">HDFC Bank Ltd • A/C: 50200012345678 • IFSC: HDFC0000240</p>
+              ${inv.transaction_ref ? `<p class="meta-text" style="color: #047857; margin-top: 4px;"><strong>Payment Ref:</strong> ${inv.transaction_ref}</p>` : ''}
+              <div style="margin-top: 8px;">
+                <span class="paid-badge">● ${inv.status.toUpperCase()}</span>
+              </div>
+            </div>
+
+            <table class="totals-table">
+              <tr>
+                <td>Subtotal (Taxable):</td>
+                <td style="text-align: right; font-weight: bold;">₹${inv.subtotal.toLocaleString('en-IN')}</td>
+              </tr>
+              ${
+                inv.cgst_amount && inv.cgst_amount > 0
+                  ? `
+                <tr>
+                  <td>CGST (9%):</td>
+                  <td style="text-align: right;">₹${inv.cgst_amount.toLocaleString('en-IN')}</td>
+                </tr>
+                <tr>
+                  <td>SGST (9%):</td>
+                  <td style="text-align: right;">₹${inv.sgst_amount?.toLocaleString('en-IN')}</td>
+                </tr>
+              `
+                  : `
+                <tr>
+                  <td>IGST (18%):</td>
+                  <td style="text-align: right;">₹${(inv.igst_amount || inv.gst_amount || 0).toLocaleString('en-IN')}</td>
+                </tr>
+              `
+              }
+              <tr class="grand-total">
+                <td>Grand Total:</td>
+                <td style="text-align: right;">₹${inv.total.toLocaleString('en-IN')}</td>
+              </tr>
+              <tr>
+                <td>Amount Paid:</td>
+                <td style="text-align: right; color: #047857; font-weight: bold;">₹${inv.amount_paid.toLocaleString('en-IN')}</td>
+              </tr>
+              <tr>
+                <td style="font-weight: bold;">Balance Due:</td>
+                <td style="text-align: right; font-weight: bold; color: ${inv.balance_due === 0 ? '#047857' : '#dc2626'};">₹${inv.balance_due.toLocaleString('en-IN')}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="footer-notes">
+            <p>Thank you for choosing WorkForceOS. Computer-generated tax invoice. No signature required.</p>
+          </div>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 400);
   };
 
   const handleDownloadPdf = () => {
-    showToast(`Downloading official PDF for ${inv.invoice_number}...`, 'success');
+    handlePrint();
   };
 
   const handleSendEmail = async () => {
@@ -82,10 +233,10 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in overflow-y-auto print:p-0 print:bg-white print:static">
-      <div className="bg-white rounded-3xl max-w-4xl w-full p-6 shadow-2xl space-y-6 max-h-[95vh] flex flex-col print:max-w-none print:max-h-none print:shadow-none print:rounded-none print:p-0">
-        {/* Top Control Bar (Hidden on Print) */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4 print:hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in overflow-y-auto">
+      <div className="bg-white rounded-3xl max-w-4xl w-full p-6 shadow-2xl space-y-6 max-h-[95vh] flex flex-col">
+        {/* Top Control Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
           <div className="flex items-center gap-2">
             <h3 className="text-base font-bold text-gray-900">{inv.invoice_number}</h3>
             <span
@@ -135,8 +286,8 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
         </div>
 
         {/* Scrollable Printable Invoice Content */}
-        <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50 rounded-2xl border border-gray-200 print:border-0 print:bg-white print:p-0">
-          <div className="bg-white p-8 rounded-xl shadow-xs border border-gray-100 space-y-6 text-xs text-gray-800 print:shadow-none print:border-0">
+        <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50 rounded-2xl border border-gray-200">
+          <div id="invoice-print-document" className="bg-white p-8 rounded-xl shadow-xs border border-gray-100 space-y-6 text-xs text-gray-800">
             {/* INVOICE HEADER */}
             <div className="flex flex-col sm:flex-row justify-between gap-6 border-b pb-6">
               <div className="space-y-1.5">
