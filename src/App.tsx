@@ -72,8 +72,18 @@ const AppContent: React.FC = () => {
         setCurrentRoute(urlState.route);
       }
     };
+    const handlePlatformNav = (e: any) => {
+      if (e.detail?.tab) {
+        handleNavigate(e.detail.tab);
+      }
+    };
+
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener('platform:navigate', handlePlatformNav);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('platform:navigate', handlePlatformNav);
+    };
   }, []);
 
   const handleNavigate = (route: string) => {
@@ -367,6 +377,13 @@ const AppContent: React.FC = () => {
       case 'platform-exports':
       case 'platform-announcements':
       case 'platform-settings':
+      case 'platform-account':
+      case 'platform-profile':
+      case 'platform-account-profile':
+      case 'platform-account-security':
+      case 'platform-account-sessions':
+      case 'platform-account-access':
+      case 'platform-account-preferences':
       case 'saas-revenue':
       case 'saas-customers':
       case 'saas-subscriptions':
