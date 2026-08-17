@@ -131,7 +131,38 @@ CREATE TABLE IF NOT EXISTS customer_profiles (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_profiles_org ON customer_profiles(organization_id);
 
--- 3. Ensure Plans Table with Authoritative Configured Pricing
+-- 3. Ensure Plans Tables with Authoritative Configured Pricing
+CREATE TABLE IF NOT EXISTS platform_plans (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    tier_code TEXT NOT NULL UNIQUE,
+    max_employees INT NOT NULL DEFAULT 50,
+    max_admins INT NOT NULL DEFAULT 3,
+    storage_gb INT NOT NULL DEFAULT 20,
+    api_requests_per_month INT NOT NULL DEFAULT 100000,
+    whatsapp_limit INT NOT NULL DEFAULT 1000,
+    price_monthly NUMERIC(12,2) NOT NULL DEFAULT 0,
+    price_annual NUMERIC(12,2) NOT NULL DEFAULT 0,
+    features JSONB NOT NULL DEFAULT '[]'::jsonb,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO platform_plans (id, name, tier_code, max_employees, price_monthly, price_annual, is_active)
+VALUES
+    ('plan-starter', 'Starter', 'starter', 50, 18000.00, 180000.00, true),
+    ('plan-professional', 'Professional', 'professional', 200, 45000.00, 450000.00, true),
+    ('plan-business', 'Business', 'business', 500, 85000.00, 850000.00, true),
+    ('plan-enterprise', 'Enterprise', 'enterprise', 5000, 180000.00, 1800000.00, true)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    tier_code = EXCLUDED.tier_code,
+    price_monthly = EXCLUDED.price_monthly,
+    price_annual = EXCLUDED.price_annual,
+    max_employees = EXCLUDED.max_employees,
+    is_active = true;
+
 CREATE TABLE IF NOT EXISTS public.plans (
     id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(128) NOT NULL,
@@ -149,7 +180,7 @@ CREATE TABLE IF NOT EXISTS public.plans (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Seed/Ensure Authoritative Plan Tiers
+-- Seed/Ensure Authoritative Plan Tiers in public.plans
 INSERT INTO public.plans (id, name, code, description, status, currency, billing_interval, monthly_price, annual_price, minimum_seats, included_seats, maximum_seats)
 VALUES
     ('plan-starter', 'Starter', 'starter', 'Essential HR, Self-Service & Attendance for small businesses.', 'Active', 'INR', 'Both', 18000.00, 180000.00, 5, 25, 50),
