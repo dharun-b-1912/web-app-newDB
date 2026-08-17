@@ -149,6 +149,8 @@ export const IntegrationsControlCenterView: React.FC = () => {
 
   // Copied indicator helper
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [realtimeState, setRealtimeState] = useState<'connected' | 'reconnecting' | 'disconnected'>('connected');
+
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
@@ -156,7 +158,7 @@ export const IntegrationsControlCenterView: React.FC = () => {
   };
 
   const refreshData = () => {
-    setMetrics(platformIntegrationsService.getMetrics());
+    setMetrics(platformIntegrationsService.getMetrics(environment));
     setIntegrations([...platformIntegrationsService.getIntegrations()]);
     setApiKeys([...platformIntegrationsService.getApiKeys()]);
     setOAuthApps([...platformIntegrationsService.getOAuthApps()]);
@@ -169,6 +171,17 @@ export const IntegrationsControlCenterView: React.FC = () => {
     setLogs([...platformIntegrationsService.getLogs()]);
     setSecurityAlerts([...platformIntegrationsService.getSecurityAlerts()]);
   };
+
+  React.useEffect(() => {
+    refreshData();
+    const unsub = platformIntegrationsService.subscribeToRealtimeChanges((state) => {
+      setRealtimeState(state);
+      refreshData();
+    });
+    return () => {
+      if (unsub) unsub();
+    };
+  }, [environment]);
 
   // Filtered Integrations
   const filteredIntegrations = useMemo(() => {
@@ -330,6 +343,34 @@ export const IntegrationsControlCenterView: React.FC = () => {
                   {env.toUpperCase()}
                 </button>
               ))}
+            </div>
+
+            {/* Live Realtime Status Badge */}
+            <div
+              className={cn(
+                'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors',
+                realtimeState === 'connected'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : realtimeState === 'reconnecting'
+                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                  : 'bg-rose-50 text-rose-700 border-rose-200'
+              )}
+            >
+              <span
+                className={cn(
+                  'w-1.5 h-1.5 rounded-full',
+                  realtimeState === 'connected'
+                    ? 'bg-emerald-500 animate-pulse'
+                    : realtimeState === 'reconnecting'
+                    ? 'bg-amber-500 animate-ping'
+                    : 'bg-rose-500'
+                )}
+              />
+              {realtimeState === 'connected'
+                ? 'Realtime Engine Active'
+                : realtimeState === 'reconnecting'
+                ? 'Reconnecting...'
+                : 'Offline'}
             </div>
           </div>
           <p className="text-[13.5px] text-[#64748B] mt-1 max-w-3xl">
