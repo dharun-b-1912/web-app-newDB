@@ -135,12 +135,21 @@ async function compressProfileImage(file: File, maxDimension: number = 512, qual
 export const platformProfileService = {
   // --- Profile Retrieval ---
   async getProfile(): Promise<PlatformAdminProfile> {
+    try {
+      const stored = localStorage.getItem('workforce_platform_profile');
+      if (stored) {
+        cachedProfile = { ...cachedProfile, ...JSON.parse(stored) };
+      }
+    } catch {
+      // Ignore localStorage read errors
+    }
+
     if (isSupabaseEnabled) {
       try {
         const { data, error } = await supabase
           .from('platform_profiles')
           .select('*')
-          .limit(1)
+          .eq('email', cachedProfile.email)
           .maybeSingle();
 
         if (data && !error) {
@@ -161,6 +170,7 @@ export const platformProfileService = {
             last_profile_update_at: data.last_profile_update_at || new Date().toISOString(),
             created_at: data.created_at || new Date().toISOString(),
           };
+          localStorage.setItem('workforce_platform_profile', JSON.stringify(cachedProfile));
         }
       } catch (err) {
         console.warn('[PlatformProfileService] Supabase profile fetch warning:', err);
@@ -173,33 +183,63 @@ export const platformProfileService = {
   // --- Profile Update ---
   async updateProfile(updates: Partial<PlatformAdminProfile>): Promise<PlatformAdminProfile> {
     const prev = { ...cachedProfile };
+    const computedDisplayName = updates.display_name
+      ? updates.display_name
+      : updates.first_name || updates.last_name
+      ? `${updates.first_name || cachedProfile.first_name} ${updates.last_name || cachedProfile.last_name}`.trim()
+      : cachedProfile.display_name;
+
     const updated: PlatformAdminProfile = {
       ...cachedProfile,
       ...updates,
+      display_name: computedDisplayName,
       last_profile_update_at: new Date().toISOString(),
     };
 
     cachedProfile = updated;
+    try {
+      localStorage.setItem('workforce_platform_profile', JSON.stringify(updated));
+    } catch {
+      // Ignore localStorage error
+    }
 
     if (isSupabaseEnabled) {
       try {
-        await supabase
+        const payload: Record<string, any> = {
+          email: updated.email,
+          first_name: updated.first_name,
+          last_name: updated.last_name,
+          display_name: updated.display_name,
+          job_title: updated.job_title,
+          department: updated.department,
+          phone: updated.phone,
+          avatar_url: updated.avatar_url,
+          timezone: updated.timezone,
+          locale: updated.locale,
+          last_profile_update_at: updated.last_profile_update_at,
+          updated_at: new Date().toISOString(),
+        };
+
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(updated.id);
+        if (isUuid) {
+          payload.id = updated.id;
+        }
+
+        const { data: updateRes, error: updateErr } = await supabase
           .from('platform_profiles')
-          .upsert({
-            id: updated.id,
-            email: updated.email,
-            first_name: updated.first_name,
-            last_name: updated.last_name,
-            display_name: updated.display_name,
-            job_title: updated.job_title,
-            department: updated.department,
-            phone: updated.phone,
-            avatar_url: updated.avatar_url,
-            timezone: updated.timezone,
-            locale: updated.locale,
-            last_profile_update_at: updated.last_profile_update_at,
-            updated_at: new Date().toISOString(),
-          });
+          .update(payload)
+          .eq('email', updated.email)
+          .select();
+
+        if (updateErr || !updateRes || updateRes.length === 0) {
+          await supabase.from('platform_profiles').upsert(payload, { onConflict: 'email' });
+        }
+
+        // Sync staff name
+        await supabase
+          .from('platform_staff')
+          .update({ name: updated.display_name, updated_at: new Date().toISOString() })
+          .eq('email', updated.email);
       } catch (err) {
         console.warn('[PlatformProfileService] Error persisting profile update:', err);
       }
@@ -216,6 +256,11 @@ export const platformProfileService = {
       after_value: JSON.stringify({ display_name: updated.display_name, job_title: updated.job_title }),
       reason: `Platform Admin profile details updated by ${updated.display_name}`,
     });
+
+    // Notify all UI shells (Topbar, UserMenu, etc.)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('platform:profile_updated', { detail: { profile: updated } }));
+    }
 
     return updated;
   },

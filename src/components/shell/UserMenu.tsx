@@ -50,8 +50,19 @@ export const UserMenu: React.FC = () => {
     };
 
     fetchState();
+
+    const handleProfileUpdated = (e: any) => {
+      if (e.detail?.profile) {
+        setPlatformProfile(e.detail.profile);
+      } else {
+        fetchState();
+      }
+    };
+    window.addEventListener('platform:profile_updated', handleProfileUpdated);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('platform:profile_updated', handleProfileUpdated);
     };
   }, [user]);
 
