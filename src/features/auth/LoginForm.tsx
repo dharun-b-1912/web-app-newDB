@@ -36,6 +36,12 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleSignup, onForgotPa
   const onSubmit = async (data: LoginInput) => {
     setIsLoading(true);
     try {
+      if (data.password !== 'password123') {
+        showToast('Invalid password. Please check your credentials.', 'error');
+        setIsLoading(false);
+        return;
+      }
+
       const users = await api.getUsers();
       const user = users.find(u => u.email.toLowerCase() === data.email.toLowerCase());
       if (user) {
@@ -53,126 +59,46 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleSignup, onForgotPa
     }
   };
 
-  // One-click direct login — bypasses form, finds user by email and logs in immediately
-  const quickLogin = async (email: string) => {
-    setIsLoading(true);
-    try {
-      const users = await api.getUsers();
-      const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-      if (user) {
-        login(user);
-        showToast(`Welcome back, ${user.name}!`);
-      } else {
-        showToast(`No demo account found for ${email}`, 'error');
-      }
-    } catch {
-      showToast('Quick login failed.', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fillDemoAccount = (email: string) => {
-    setValue('email', email);
-    setValue('password', 'password123');
+  // Populate credentials into form fields for validation & typing
+  const fillCredentials = (email: string, pass: string = 'password123') => {
+    setValue('email', email, { shouldValidate: true });
+    setValue('password', pass, { shouldValidate: true });
+    showToast(`Filled credentials for ${email}`, 'info');
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="text-center sm:text-left">
         <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Sign in to WorkForceOS</h2>
         <p className="text-xs text-gray-500 mt-1">Access your enterprise workforce management platform</p>
       </div>
 
-      {/* Quick Demo Credentials Selector */}
+      {/* Quick Demo Credentials Selector (Fills Input Fields) */}
       <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-100 text-xs space-y-2">
-        <div className="font-bold text-[#07563D] mb-1 flex items-center gap-1">
-          <KeyRound className="w-3.5 h-3.5" /> Demo Login Accounts:
+        <div className="font-bold text-[#07563D] mb-1 flex items-center justify-between">
+          <span className="flex items-center gap-1">
+            <KeyRound className="w-3.5 h-3.5" /> Demo Company Accounts:
+          </span>
+          <span className="text-[10px] text-emerald-800 font-normal">Click to fill form</span>
         </div>
 
-        {/* Platform / SaaS Control Plane Staff */}
-        <div className="space-y-1">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 mb-1 flex items-center justify-between">
-            <span>Platform Control Plane Staff</span>
-            <span className="text-[9px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-bold">Internal</span>
-          </div>
-          <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-3 gap-1.5">
+          {[
+            { label: 'Company Admin', email: 'admin@acme.com' },
+            { label: 'HR Head', email: 'arun.kumar@acme.com' },
+            { label: 'Manager', email: 'karthik.n@acme.com' },
+            { label: 'Team Lead', email: 'deepa.s@acme.com' },
+            { label: 'Employee', email: 'priya.sharma@acme.com' },
+          ].map(({ label, email }) => (
             <button
+              key={email}
               type="button"
-              onClick={() => quickLogin('superadmin@workforceos.com')}
-              disabled={isLoading}
-              className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 rounded border border-indigo-200 text-[11px] font-bold text-indigo-800 text-left cursor-pointer transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              onClick={() => fillCredentials(email)}
+              className="px-2 py-1 bg-white hover:bg-emerald-100/80 active:bg-emerald-200 rounded border border-emerald-200 text-[11px] font-semibold text-gray-800 text-center cursor-pointer transition-colors"
             >
-              <span>🛡️</span>
-              <div className="truncate">
-                <div className="font-bold">Super Admin</div>
-                <div className="text-[9px] text-indigo-600 font-normal">Root SaaS Access</div>
-              </div>
+              {label}
             </button>
-
-            <button
-              type="button"
-              onClick={() => quickLogin('assistant.admin@workforceos.com')}
-              disabled={isLoading}
-              className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 rounded border border-indigo-200 text-[11px] font-bold text-indigo-800 text-left cursor-pointer transition-colors disabled:opacity-50 flex items-center gap-1.5"
-            >
-              <span>👥</span>
-              <div className="truncate">
-                <div className="font-bold">Assistant Admin</div>
-                <div className="text-[9px] text-indigo-600 font-normal">Delegated Ops</div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => quickLogin('finance@workforceos.com')}
-              disabled={isLoading}
-              className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 rounded border border-indigo-200 text-[11px] font-bold text-indigo-800 text-left cursor-pointer transition-colors disabled:opacity-50 flex items-center gap-1.5"
-            >
-              <span>💳</span>
-              <div className="truncate">
-                <div className="font-bold">Billing Admin</div>
-                <div className="text-[9px] text-indigo-600 font-normal">FinOps & Invoices</div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => quickLogin('security@workforceos.com')}
-              disabled={isLoading}
-              className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 rounded border border-indigo-200 text-[11px] font-bold text-indigo-800 text-left cursor-pointer transition-colors disabled:opacity-50 flex items-center gap-1.5"
-            >
-              <span>🔒</span>
-              <div className="truncate">
-                <div className="font-bold">Security Officer</div>
-                <div className="text-[9px] text-indigo-600 font-normal">Audit & IAM</div>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* HRMS company roles — one-click login */}
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 mb-1">Company HRMS</div>
-          <div className="grid grid-cols-3 gap-1.5">
-            {[
-              { label: 'Company Admin', email: 'admin@acme.com' },
-              { label: 'HR Head', email: 'arun.kumar@acme.com' },
-              { label: 'Manager', email: 'karthik.n@acme.com' },
-              { label: 'Team Lead', email: 'deepa.s@acme.com' },
-              { label: 'Employee', email: 'priya.sharma@acme.com' },
-            ].map(({ label, email }) => (
-              <button
-                key={email}
-                type="button"
-                onClick={() => quickLogin(email)}
-                disabled={isLoading}
-                className="px-2 py-1 bg-white hover:bg-emerald-100/80 active:bg-emerald-200 rounded border border-emerald-200 text-[11px] font-semibold text-gray-800 text-center cursor-pointer transition-colors disabled:opacity-50"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          ))}
         </div>
       </div>
 
