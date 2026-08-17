@@ -237,7 +237,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_event_metrics_min_env_type
     ON public.event_metrics_minute(minute, environment, event_type);
 
 -- -------------------------------------------------------------
--- Enable RLS & Security Policies
+-- Enable RLS & Security Policies (Idempotent)
 -- -------------------------------------------------------------
 ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.event_catalog ENABLE ROW LEVEL SECURITY;
@@ -248,27 +248,50 @@ ALTER TABLE public.webhook_deliveries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.webhook_delivery_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.event_metrics_minute ENABLE ROW LEVEL SECURITY;
 
--- Allow authenticated users to view
+-- Allow authenticated users to view (Idempotent)
+DROP POLICY IF EXISTS "Allow platform admins full access on events" ON public.events;
 CREATE POLICY "Allow platform admins full access on events" 
     ON public.events FOR ALL TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow platform admins full access on event_catalog" ON public.event_catalog;
 CREATE POLICY "Allow platform admins full access on event_catalog" 
     ON public.event_catalog FOR ALL TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow platform admins full access on webhook_endpoints" ON public.webhook_endpoints;
 CREATE POLICY "Allow platform admins full access on webhook_endpoints" 
     ON public.webhook_endpoints FOR ALL TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow platform admins full access on event_routes" ON public.event_routes;
 CREATE POLICY "Allow platform admins full access on event_routes" 
     ON public.event_routes FOR ALL TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow platform admins full access on webhook_deliveries" ON public.webhook_deliveries;
 CREATE POLICY "Allow platform admins full access on webhook_deliveries" 
     ON public.webhook_deliveries FOR ALL TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow platform admins full access on webhook_delivery_attempts" ON public.webhook_delivery_attempts;
 CREATE POLICY "Allow platform admins full access on webhook_delivery_attempts" 
     ON public.webhook_delivery_attempts FOR ALL TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow platform admins full access on event_metrics_minute" ON public.event_metrics_minute;
 CREATE POLICY "Allow platform admins full access on event_metrics_minute" 
     ON public.event_metrics_minute FOR ALL TO authenticated USING (true);
+
+-- Safe Realtime Publication Registration
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        BEGIN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.webhook_endpoints;
+        EXCEPTION WHEN duplicate_object THEN END;
+        BEGIN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.webhook_deliveries;
+        EXCEPTION WHEN duplicate_object THEN END;
+        BEGIN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.event_routes;
+        EXCEPTION WHEN duplicate_object THEN END;
+    END IF;
+END $$;
 
 -- -------------------------------------------------------------
 -- Stored Procedures for Atomic Operations
