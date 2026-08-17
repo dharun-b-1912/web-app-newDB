@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS public.webhook_endpoints (
     organization_id TEXT NULL,
     tenant_name TEXT NULL,
     url TEXT NOT NULL,
-    environment TEXT NOT NULL CHECK (environment IN ('Production', 'Staging', 'Development')),
+    environment TEXT NOT NULL DEFAULT 'Production' CHECK (environment IN ('Production', 'Staging', 'Development')),
     status TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Paused', 'Disabled', 'Failing', 'Rate Limited', 'Pending Verification')),
     health_status TEXT NOT NULL DEFAULT 'Healthy' CHECK (health_status IN ('Healthy', 'At Risk', 'Degraded', 'Critical')),
     auth_type TEXT NOT NULL DEFAULT 'HMAC-SHA256',
@@ -127,6 +127,13 @@ CREATE TABLE IF NOT EXISTS public.webhook_endpoints (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Ensure environment column exists if table pre-existed
+ALTER TABLE public.webhook_endpoints ADD COLUMN IF NOT EXISTS environment TEXT NOT NULL DEFAULT 'Production';
+ALTER TABLE public.webhook_endpoints ADD COLUMN IF NOT EXISTS health_status TEXT NOT NULL DEFAULT 'Healthy';
+ALTER TABLE public.webhook_endpoints ADD COLUMN IF NOT EXISTS secret_masked TEXT NOT NULL DEFAULT 'whsec_••••••••••••';
+ALTER TABLE public.webhook_endpoints ADD COLUMN IF NOT EXISTS success_rate NUMERIC(5,2) NOT NULL DEFAULT 100.00;
+ALTER TABLE public.webhook_endpoints ADD COLUMN IF NOT EXISTS failure_rate NUMERIC(5,2) NOT NULL DEFAULT 0.00;
 
 CREATE INDEX IF NOT EXISTS idx_webhook_endpoints_env_status 
     ON public.webhook_endpoints(environment, status);

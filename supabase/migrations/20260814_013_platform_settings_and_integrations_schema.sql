@@ -1,6 +1,7 @@
 -- ============================================================
 -- WorkForceOS — Platform Settings, API Keys & Integrations Schema
 -- Migration: 20260814_013_platform_settings_and_integrations_schema.sql
+-- Resilient & Self-Healing Migration (Handles existing legacy schemas)
 -- ============================================================
 
 -- 1. Setting Definitions Registry
@@ -23,26 +24,34 @@ CREATE TABLE IF NOT EXISTS public.platform_setting_definitions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 2. Active Platform Settings
+-- 2. Active Platform Settings (Ensure table & all columns exist)
 CREATE TABLE IF NOT EXISTS public.platform_settings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    key VARCHAR(120) NOT NULL REFERENCES public.platform_setting_definitions(key) ON DELETE CASCADE,
-    environment VARCHAR(40) NOT NULL DEFAULT 'PRODUCTION', -- 'GLOBAL', 'PRODUCTION', 'STAGING', 'DEVELOPMENT'
+    key VARCHAR(120) NOT NULL,
+    environment VARCHAR(40) NOT NULL DEFAULT 'PRODUCTION',
     value JSONB NOT NULL,
     is_overridden BOOLEAN NOT NULL DEFAULT false,
     version INTEGER NOT NULL DEFAULT 1,
     last_modified_by VARCHAR(120) NOT NULL DEFAULT 'Super Admin',
     last_modified_reason TEXT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (key, environment)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Ensure columns exist if table was created in an older migration without them
+ALTER TABLE public.platform_settings ADD COLUMN IF NOT EXISTS environment VARCHAR(40) NOT NULL DEFAULT 'PRODUCTION';
+ALTER TABLE public.platform_settings ADD COLUMN IF NOT EXISTS is_overridden BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.platform_settings ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE public.platform_settings ADD COLUMN IF NOT EXISTS last_modified_by VARCHAR(120) NOT NULL DEFAULT 'Super Admin';
+ALTER TABLE public.platform_settings ADD COLUMN IF NOT EXISTS last_modified_reason TEXT;
+ALTER TABLE public.platform_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE public.platform_settings ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- 3. Configuration History & Audit Rollback Ledger
 CREATE TABLE IF NOT EXISTS public.platform_config_versions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     setting_key VARCHAR(120) NOT NULL,
-    environment VARCHAR(40) NOT NULL,
+    environment VARCHAR(40) NOT NULL DEFAULT 'PRODUCTION',
     version INTEGER NOT NULL,
     old_value JSONB,
     new_value JSONB NOT NULL,
@@ -54,38 +63,41 @@ CREATE TABLE IF NOT EXISTS public.platform_config_versions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE public.platform_config_versions ADD COLUMN IF NOT EXISTS environment VARCHAR(40) NOT NULL DEFAULT 'PRODUCTION';
+ALTER TABLE public.platform_config_versions ADD COLUMN IF NOT EXISTS is_rollback BOOLEAN NOT NULL DEFAULT false;
+
 -- 4. Granular API Key Scopes Registry
 CREATE TABLE IF NOT EXISTS public.platform_api_key_scopes (
     scope VARCHAR(80) PRIMARY KEY,
     category VARCHAR(60) NOT NULL,
     label VARCHAR(120) NOT NULL,
     description TEXT,
-    risk_level VARCHAR(20) NOT NULL DEFAULT 'LOW', -- 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'
+    risk_level VARCHAR(20) NOT NULL DEFAULT 'LOW',
     is_admin_only BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 5. Developer API Keys Vault (Stores SHA-256 Hashes Only)
+-- 5. Developer API Keys Vault
 CREATE TABLE IF NOT EXISTS public.platform_api_keys (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY DEFAULT ('key-' || gen_random_uuid()::text),
     name VARCHAR(120) NOT NULL,
     description TEXT,
-    key_prefix VARCHAR(30) NOT NULL, -- e.g. 'wk_live_9a2f' or 'wk_test_881b'
-    key_hash VARCHAR(128) NOT NULL UNIQUE, -- SHA-256 hex string
+    key_prefix VARCHAR(30) NOT NULL,
+    key_hash VARCHAR(128),
     environment VARCHAR(40) NOT NULL DEFAULT 'PRODUCTION',
-    owner VARCHAR(120) NOT NULL,
+    owner VARCHAR(120) NOT NULL DEFAULT 'Platform Admin',
     organization_id VARCHAR(80),
     tenant_name VARCHAR(120),
     scopes JSONB NOT NULL DEFAULT '[]'::jsonb,
     rate_limit_per_min INTEGER NOT NULL DEFAULT 500,
     burst_limit INTEGER NOT NULL DEFAULT 50,
     concurrency_limit INTEGER NOT NULL DEFAULT 10,
-    status VARCHAR(30) NOT NULL DEFAULT 'Active', -- 'Active', 'Revoked', 'Expired'
+    status VARCHAR(30) NOT NULL DEFAULT 'Active',
     expires_at TIMESTAMPTZ,
     revoked_at TIMESTAMPTZ,
     revoked_by VARCHAR(120),
     revocation_reason TEXT,
-    created_by VARCHAR(120) NOT NULL,
+    created_by VARCHAR(120) NOT NULL DEFAULT 'Super Admin',
     last_used_at TIMESTAMPTZ,
     last_used_ip VARCHAR(60),
     total_requests_count BIGINT NOT NULL DEFAULT 0,
@@ -93,16 +105,31 @@ CREATE TABLE IF NOT EXISTS public.platform_api_keys (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Ensure all columns exist on platform_api_keys
+ALTER TABLE public.platform_api_keys ADD COLUMN IF NOT EXISTS environment VARCHAR(40) NOT NULL DEFAULT 'PRODUCTION';
+ALTER TABLE public.platform_api_keys ADD COLUMN IF NOT EXISTS key_hash VARCHAR(128);
+ALTER TABLE public.platform_api_keys ADD COLUMN IF NOT EXISTS owner VARCHAR(120) NOT NULL DEFAULT 'Platform Admin';
+ALTER TABLE public.platform_api_keys ADD COLUMN IF NOT EXISTS organization_id VARCHAR(80);
+ALTER TABLE public.platform_api_keys ADD COLUMN IF NOT EXISTS tenant_name VARCHAR(120);
+ALTER TABLE public.platform_api_keys ADD COLUMN IF NOT EXISTS burst_limit INTEGER NOT NULL DEFAULT 50;
+ALTER TABLE public.platform_api_keys ADD COLUMN IF NOT EXISTS concurrency_limit INTEGER NOT NULL DEFAULT 10;
+ALTER TABLE public.platform_api_keys ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
+ALTER TABLE public.platform_api_keys ADD COLUMN IF NOT EXISTS revoked_by VARCHAR(120);
+ALTER TABLE public.platform_api_keys ADD COLUMN IF NOT EXISTS revocation_reason TEXT;
+ALTER TABLE public.platform_api_keys ADD COLUMN IF NOT EXISTS last_used_ip VARCHAR(60);
+ALTER TABLE public.platform_api_keys ADD COLUMN IF NOT EXISTS total_requests_count BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE public.platform_api_keys ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 -- 6. Platform Integrations & External Providers
 CREATE TABLE IF NOT EXISTS public.platform_integrations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    provider_type VARCHAR(60) NOT NULL, -- 'email', 'sms', 'whatsapp', 'push', 'storage', 'erp', 'siem'
-    provider_name VARCHAR(80) NOT NULL, -- e.g. 'SMTP', 'Resend', 'Twilio', 'WhatsApp Cloud API', 'AWS S3'
+    provider_type VARCHAR(60) NOT NULL,
+    provider_name VARCHAR(80) NOT NULL,
     environment VARCHAR(40) NOT NULL DEFAULT 'PRODUCTION',
-    status VARCHAR(30) NOT NULL DEFAULT 'Configured', -- 'Configured', 'Not Configured', 'Degraded', 'Disabled'
-    health_status VARCHAR(30) NOT NULL DEFAULT 'Healthy', -- 'Healthy', 'At Risk', 'Failing', 'Unknown'
+    status VARCHAR(30) NOT NULL DEFAULT 'Configured',
+    health_status VARCHAR(30) NOT NULL DEFAULT 'Healthy',
     is_default BOOLEAN NOT NULL DEFAULT true,
-    masked_credentials JSONB NOT NULL DEFAULT '{}'::jsonb, -- Safe references only
+    masked_credentials JSONB NOT NULL DEFAULT '{}'::jsonb,
     config JSONB NOT NULL DEFAULT '{}'::jsonb,
     last_health_check_at TIMESTAMPTZ,
     last_test_request_id VARCHAR(100),
@@ -110,11 +137,18 @@ CREATE TABLE IF NOT EXISTS public.platform_integrations (
     failure_rate_pct NUMERIC(5,2) NOT NULL DEFAULT 0.00,
     created_by VARCHAR(120) NOT NULL DEFAULT 'Super Admin',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (provider_name, environment)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 7. Platform Maintenance Windows & Emergency Controls
+ALTER TABLE public.platform_integrations ADD COLUMN IF NOT EXISTS environment VARCHAR(40) NOT NULL DEFAULT 'PRODUCTION';
+ALTER TABLE public.platform_integrations ADD COLUMN IF NOT EXISTS health_status VARCHAR(30) NOT NULL DEFAULT 'Healthy';
+ALTER TABLE public.platform_integrations ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.platform_integrations ADD COLUMN IF NOT EXISTS masked_credentials JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.platform_integrations ADD COLUMN IF NOT EXISTS last_test_request_id VARCHAR(100);
+ALTER TABLE public.platform_integrations ADD COLUMN IF NOT EXISTS last_latency_ms INTEGER;
+ALTER TABLE public.platform_integrations ADD COLUMN IF NOT EXISTS failure_rate_pct NUMERIC(5,2) NOT NULL DEFAULT 0.00;
+
+-- 7. Platform Maintenance Windows
 CREATE TABLE IF NOT EXISTS public.platform_maintenance_windows (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title VARCHAR(180) NOT NULL,
@@ -128,16 +162,24 @@ CREATE TABLE IF NOT EXISTS public.platform_maintenance_windows (
     timezone VARCHAR(60) NOT NULL DEFAULT 'Asia/Kolkata (IST)',
     affected_services JSONB NOT NULL DEFAULT '["All Services"]'::jsonb,
     bypass_roles JSONB NOT NULL DEFAULT '["Super Admin"]'::jsonb,
-    created_by VARCHAR(120) NOT NULL,
+    created_by VARCHAR(120) NOT NULL DEFAULT 'Super Admin',
     activated_at TIMESTAMPTZ,
     resolved_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE public.platform_maintenance_windows ADD COLUMN IF NOT EXISTS environment VARCHAR(40) NOT NULL DEFAULT 'PRODUCTION';
+ALTER TABLE public.platform_maintenance_windows ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.platform_maintenance_windows ADD COLUMN IF NOT EXISTS read_only_mode BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.platform_maintenance_windows ADD COLUMN IF NOT EXISTS api_read_only BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.platform_maintenance_windows ADD COLUMN IF NOT EXISTS timezone VARCHAR(60) NOT NULL DEFAULT 'Asia/Kolkata (IST)';
+ALTER TABLE public.platform_maintenance_windows ADD COLUMN IF NOT EXISTS affected_services JSONB NOT NULL DEFAULT '["All Services"]'::jsonb;
+ALTER TABLE public.platform_maintenance_windows ADD COLUMN IF NOT EXISTS bypass_roles JSONB NOT NULL DEFAULT '["Super Admin"]'::jsonb;
+
 -- 8. Platform Rate Limits & Quotas
 CREATE TABLE IF NOT EXISTS public.platform_rate_limits (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    scope_type VARCHAR(40) NOT NULL, -- 'GLOBAL', 'ENVIRONMENT', 'TENANT', 'API_KEY'
+    scope_type VARCHAR(40) NOT NULL,
     scope_id VARCHAR(120) NOT NULL,
     requests_per_minute INTEGER NOT NULL DEFAULT 600,
     burst_capacity INTEGER NOT NULL DEFAULT 100,
@@ -146,25 +188,36 @@ CREATE TABLE IF NOT EXISTS public.platform_rate_limits (
     monthly_quota BIGINT,
     is_custom_override BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (scope_type, scope_id)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Indexes for high throughput performance
+-- Indexes (Safe creation)
 CREATE INDEX IF NOT EXISTS idx_platform_settings_key ON public.platform_settings(key);
 CREATE INDEX IF NOT EXISTS idx_platform_settings_env ON public.platform_settings(environment);
 CREATE INDEX IF NOT EXISTS idx_platform_config_versions_key ON public.platform_config_versions(setting_key, environment);
-CREATE INDEX IF NOT EXISTS idx_platform_api_keys_hash ON public.platform_api_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_platform_api_keys_status ON public.platform_api_keys(status, environment);
 CREATE INDEX IF NOT EXISTS idx_platform_integrations_env ON public.platform_integrations(environment, provider_type);
 
--- Realtime Setup
-ALTER PUBLICATION supabase_realtime ADD TABLE public.platform_settings;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.platform_api_keys;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.platform_maintenance_windows;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.platform_integrations;
+-- Safe Realtime Registration
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        BEGIN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.platform_settings;
+        EXCEPTION WHEN duplicate_object THEN END;
+        BEGIN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.platform_api_keys;
+        EXCEPTION WHEN duplicate_object THEN END;
+        BEGIN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.platform_maintenance_windows;
+        EXCEPTION WHEN duplicate_object THEN END;
+        BEGIN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.platform_integrations;
+        EXCEPTION WHEN duplicate_object THEN END;
+    END IF;
+END $$;
 
--- Row Level Security (RLS)
+-- Enable RLS
 ALTER TABLE public.platform_setting_definitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.platform_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.platform_config_versions ENABLE ROW LEVEL SECURITY;
@@ -174,47 +227,31 @@ ALTER TABLE public.platform_integrations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.platform_maintenance_windows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.platform_rate_limits ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Platform Super Admins full access on setting definitions"
-    ON public.platform_setting_definitions FOR ALL
-    TO authenticated
-    USING (true)
-    WITH CHECK (true);
-
-CREATE POLICY "Platform Super Admins full access on settings"
-    ON public.platform_settings FOR ALL
-    TO authenticated
-    USING (true)
-    WITH CHECK (true);
-
-CREATE POLICY "Platform Super Admins full access on config versions"
-    ON public.platform_config_versions FOR ALL
-    TO authenticated
-    USING (true)
-    WITH CHECK (true);
-
-CREATE POLICY "Platform Super Admins full access on api keys"
-    ON public.platform_api_keys FOR ALL
-    TO authenticated
-    USING (true)
-    WITH CHECK (true);
-
-CREATE POLICY "Platform Super Admins full access on integrations"
-    ON public.platform_integrations FOR ALL
-    TO authenticated
-    USING (true)
-    WITH CHECK (true);
-
-CREATE POLICY "Platform Super Admins full access on maintenance"
-    ON public.platform_maintenance_windows FOR ALL
-    TO authenticated
-    USING (true)
-    WITH CHECK (true);
-
-CREATE POLICY "Platform Super Admins full access on rate limits"
-    ON public.platform_rate_limits FOR ALL
-    TO authenticated
-    USING (true)
-    WITH CHECK (true);
+-- Safe RLS Policies
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Platform Super Admins full access on setting definitions') THEN
+        CREATE POLICY "Platform Super Admins full access on setting definitions" ON public.platform_setting_definitions FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Platform Super Admins full access on settings') THEN
+        CREATE POLICY "Platform Super Admins full access on settings" ON public.platform_settings FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Platform Super Admins full access on config versions') THEN
+        CREATE POLICY "Platform Super Admins full access on config versions" ON public.platform_config_versions FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Platform Super Admins full access on api keys') THEN
+        CREATE POLICY "Platform Super Admins full access on api keys" ON public.platform_api_keys FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Platform Super Admins full access on integrations') THEN
+        CREATE POLICY "Platform Super Admins full access on integrations" ON public.platform_integrations FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Platform Super Admins full access on maintenance') THEN
+        CREATE POLICY "Platform Super Admins full access on maintenance" ON public.platform_maintenance_windows FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Platform Super Admins full access on rate limits') THEN
+        CREATE POLICY "Platform Super Admins full access on rate limits" ON public.platform_rate_limits FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    END IF;
+END $$;
 
 -- Stored Procedure: Update Setting with Versioning
 CREATE OR REPLACE FUNCTION public.fn_update_platform_setting(
@@ -245,7 +282,7 @@ BEGIN
         INSERT INTO platform_settings (key, environment, value, version, last_modified_by, last_modified_reason, updated_at)
         VALUES (p_key, p_environment, p_value, 1, p_actor, p_reason, NOW());
     ELSE
-        v_new_version := v_current_version + 1;
+        v_new_version := COALESCE(v_current_version, 1) + 1;
         UPDATE platform_settings
         SET value = p_value,
             version = v_new_version,
