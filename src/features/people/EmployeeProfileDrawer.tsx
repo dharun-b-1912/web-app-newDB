@@ -129,7 +129,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between py-1 border-b border-gray-100">
                   <span className="text-gray-500">Legal Company Entity:</span>
-                  <span className="font-bold text-gray-900">Acme Technologies Pvt Ltd</span>
+                  <span className="font-bold text-gray-900">{employee.company_name || 'Joy Corporate Solutions Pvt Ltd'}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-gray-100">
                   <span className="text-gray-500">Department Unit:</span>

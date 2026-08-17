@@ -170,7 +170,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({ isOpen, onClose, on
         employee_code: formData.employee_code,
         first_name: formData.first_name || 'New',
         last_name: formData.last_name || 'Employee',
-        work_email: formData.work_email || `${formData.first_name.toLowerCase() || 'emp'}@acme.com`,
+        work_email: formData.work_email || `${formData.first_name.toLowerCase() || 'emp'}@joycorporate.com`,
         status: formData.status,
         employment_type: formData.employment_type,
         company_id: formData.company_id,
@@ -306,7 +306,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({ isOpen, onClose, on
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-gray-600">Work Email *</label>
-                  <Input value={formData.work_email} onChange={e => updateForm('work_email', e.target.value)} placeholder="anand.v@acme.com" />
+                  <Input value={formData.work_email} onChange={e => updateForm('work_email', e.target.value)} placeholder="anand.v@joycorporate.com" />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-gray-600">Personal Email</label>

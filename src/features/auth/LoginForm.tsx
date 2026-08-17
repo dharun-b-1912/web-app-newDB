@@ -27,7 +27,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleSignup, onForgotPa
   } = useForm<LoginInput>({
     resolver: zodResolver(LoginSchema),
     defaultValues: {
-      email: 'admin@acme.com',
+      email: 'arun.kumar@joycorporate.com',
       password: 'password123',
     },
   });
@@ -42,10 +42,18 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleSignup, onForgotPa
         return;
       }
 
+      const inputEmail = data.email.toLowerCase().trim();
       const users = await api.getUsers();
-      const user = users.find(u => u.email.toLowerCase() === data.email.toLowerCase());
+      let user = users.find(u => u.email.toLowerCase() === inputEmail);
+      
+      // Match by username if domain differs (joycorporate vs acme)
+      if (!user) {
+        const username = inputEmail.split('@')[0];
+        user = users.find(u => u.email.toLowerCase().startsWith(username));
+      }
+
       if (user) {
-        login(user);
+        login({ ...user, email: data.email });
         showToast(`Welcome back, ${user.name}!`);
       } else {
         const defaultAdmin = users[0];
@@ -70,25 +78,25 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleSignup, onForgotPa
     <div className="space-y-5">
       <div className="text-center sm:text-left">
         <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Sign in to WorkForceOS</h2>
-        <p className="text-xs text-gray-500 mt-1">Access your enterprise workforce management platform</p>
+        <p className="text-xs text-gray-500 mt-1">Access Joy Corporate Solutions Enterprise HRMS</p>
       </div>
 
       {/* Quick Demo Credentials Selector (Fills Input Fields) */}
       <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-100 text-xs space-y-2">
         <div className="font-bold text-[#07563D] mb-1 flex items-center justify-between">
           <span className="flex items-center gap-1">
-            <KeyRound className="w-3.5 h-3.5" /> Demo Company Accounts:
+            <KeyRound className="w-3.5 h-3.5" /> Joy Corporate Demo Accounts:
           </span>
           <span className="text-[10px] text-emerald-800 font-normal">Click to fill form</span>
         </div>
 
         <div className="grid grid-cols-3 gap-1.5">
           {[
-            { label: 'Company Admin', email: 'admin@acme.com' },
-            { label: 'HR Head', email: 'arun.kumar@acme.com' },
-            { label: 'Manager', email: 'karthik.n@acme.com' },
-            { label: 'Team Lead', email: 'deepa.s@acme.com' },
-            { label: 'Employee', email: 'priya.sharma@acme.com' },
+            { label: 'HR Head', email: 'arun.kumar@joycorporate.com' },
+            { label: 'Company Admin', email: 'admin@joycorporate.com' },
+            { label: 'Manager', email: 'karthik.n@joycorporate.com' },
+            { label: 'Team Lead', email: 'deepa.s@joycorporate.com' },
+            { label: 'Employee', email: 'priya.sharma@joycorporate.com' },
           ].map(({ label, email }) => (
             <button
               key={email}

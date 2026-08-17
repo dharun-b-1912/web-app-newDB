@@ -16,36 +16,51 @@ import { supabase, isSupabaseEnabled } from '../lib/supabase';
 
 // Standard Default Types & Records
 const defaultOrganization: Organization = {
-  id: 'org-acme-01',
-  name: 'Acme Global Enterprise',
+  id: 'org-joy-01',
+  name: 'Joy Corporate Solutions',
   industry: 'Software & Technology Services',
-  default_currency: 'USD',
+  default_currency: 'INR',
   timezone: 'Asia/Kolkata',
   created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2026-08-11T00:00:00Z',
+  updated_at: '2026-08-17T00:00:00Z',
 };
 
 const defaultCompany: Company = {
-  id: 'comp-01',
-  organization_id: 'org-acme-01',
-  legal_name: 'Acme Technologies Pvt Ltd',
-  trade_name: 'AcmeTech India',
+  id: 'comp-joy-01',
+  organization_id: 'org-joy-01',
+  legal_name: 'Joy Corporate Solutions Pvt Ltd',
+  trade_name: 'JoyHRMS India',
   statutory_registration_no: 'CIN-U72200TZ2020PTC034120',
-  tax_id: 'PAN-AAACA1234F',
+  tax_id: 'PAN-AAACJ9988F',
   country: 'India',
   city: 'Coimbatore',
   created_at: '2024-01-15T00:00:00Z',
 };
 
+const defaultCompanies: Company[] = [
+  defaultCompany,
+  {
+    id: 'comp-joy-02',
+    organization_id: 'org-joy-01',
+    legal_name: 'Joy Global Technologies Inc',
+    trade_name: 'Joy Tech International',
+    statutory_registration_no: 'DE-EIN-987654321',
+    tax_id: 'TAX-US9876543',
+    country: 'United States',
+    city: 'San Francisco',
+    created_at: '2024-06-01T00:00:00Z',
+  },
+];
+
 const defaultRoles: Role[] = [
-  { id: 'role-001', organization_id: 'org-acme-01', name: 'Super Admin', description: 'Root Platform Administrator with global access', permissions: [] },
-  { id: 'role-001b', organization_id: 'org-acme-01', name: 'Assistant Admin', description: 'Assistant Platform Administrator with delegated operations & customer support access', permissions: [] },
-  { id: 'role-001c', organization_id: 'org-acme-01', name: 'Billing Admin', description: 'FinOps & SaaS Invoicing Administrator', permissions: [] },
-  { id: 'role-001d', organization_id: 'org-acme-01', name: 'Security Officer', description: 'Compliance, Session Security & Audit Officer', permissions: [] },
-  { id: 'role-002', organization_id: 'org-acme-01', name: 'Company Admin', description: 'Enterprise Organization Admin', permissions: [] },
-  { id: 'role-003', organization_id: 'org-acme-01', name: 'HR Head', description: 'Head of Human Resources & People Operations', permissions: [] },
-  { id: 'role-004', organization_id: 'org-acme-01', name: 'Team Lead', description: 'Department Supervisor / Team Lead', permissions: [] },
-  { id: 'role-005', organization_id: 'org-acme-01', name: 'Employee', description: 'Standard Employee with Employee Self Service access', permissions: [] },
+  { id: 'role-001', organization_id: 'org-joy-01', name: 'Super Admin', description: 'Root Platform Administrator with global access', permissions: [] },
+  { id: 'role-001b', organization_id: 'org-joy-01', name: 'Assistant Admin', description: 'Assistant Platform Administrator with delegated operations & customer support access', permissions: [] },
+  { id: 'role-001c', organization_id: 'org-joy-01', name: 'Billing Admin', description: 'FinOps & SaaS Invoicing Administrator', permissions: [] },
+  { id: 'role-001d', organization_id: 'org-joy-01', name: 'Security Officer', description: 'Compliance, Session Security & Audit Officer', permissions: [] },
+  { id: 'role-002', organization_id: 'org-joy-01', name: 'Company Admin', description: 'Enterprise Organization Admin', permissions: [] },
+  { id: 'role-003', organization_id: 'org-joy-01', name: 'HR Head', description: 'Head of Human Resources & People Operations', permissions: [] },
+  { id: 'role-004', organization_id: 'org-joy-01', name: 'Team Lead', description: 'Department Supervisor / Team Lead', permissions: [] },
+  { id: 'role-005', organization_id: 'org-joy-01', name: 'Employee', description: 'Standard Employee with Employee Self Service access', permissions: [] },
 ];
 
 const defaultPlatformUsers: User[] = [
@@ -141,7 +156,12 @@ export const api = {
         console.warn('[API] Failed to fetch organization from Supabase:', err);
       }
     }
-    return getStorage(KEYS.ORG, defaultOrganization);
+    const stored = getStorage<Organization | null>(KEYS.ORG, null);
+    if (!stored || stored.name?.includes('Acme') || stored.id === 'org-acme-01') {
+      setStorage(KEYS.ORG, defaultOrganization);
+      return defaultOrganization;
+    }
+    return stored;
   },
 
   async updateOrganization(data: Partial<Organization>): Promise<Organization> {
@@ -168,7 +188,12 @@ export const api = {
         console.warn('[API] Failed to fetch companies from Supabase:', err);
       }
     }
-    return getStorage(KEYS.COMPANIES, [defaultCompany]);
+    const stored = getStorage<Company[] | null>(KEYS.COMPANIES, null);
+    if (!stored || stored.length === 0 || stored.some(c => c.legal_name?.includes('Acme') || c.id === 'comp-01')) {
+      setStorage(KEYS.COMPANIES, defaultCompanies);
+      return defaultCompanies;
+    }
+    return stored;
   },
 
   async createCompany(input: Omit<Company, 'id' | 'created_at'>): Promise<Company> {
@@ -540,7 +565,12 @@ export const api = {
 
   // Active Company & Current User Session
   getActiveCompany(): Company {
-    return getStorage(KEYS.ACTIVE_COMPANY, defaultCompany);
+    const stored = getStorage<Company | null>(KEYS.ACTIVE_COMPANY, null);
+    if (!stored || stored.legal_name?.includes('Acme') || stored.id === 'comp-01') {
+      setStorage(KEYS.ACTIVE_COMPANY, defaultCompany);
+      return defaultCompany;
+    }
+    return stored;
   },
 
   setActiveCompany(company: Company): void {

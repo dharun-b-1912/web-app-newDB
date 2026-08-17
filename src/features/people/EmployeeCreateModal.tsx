@@ -47,7 +47,7 @@ export const EmployeeCreateModal: React.FC<EmployeeCreateModalProps> = ({
   const onSubmit = async (data: EmployeeCreateInput) => {
     try {
       const newEmp = await api.createEmployee({
-        organization_id: 'org-acme-01',
+        organization_id: 'org-joy-01',
         company_id: data.company_id || activeCompany?.id || 'comp-01',
         department_id: data.department_id,
         designation_id: data.designation_id,

@@ -77,14 +77,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
 
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [employeeCount, setEmployeeCount] = useState<number>(0);
   const [isApprovalsDrawerOpen, setIsApprovalsDrawerOpen] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.getApprovalRequests(), api.getAuditLogs()]).then(([appData, logData]) => {
+    Promise.all([api.getApprovalRequests(), api.getAuditLogs(), api.getEmployees(activeCompany?.id)]).then(([appData, logData, emps]) => {
       setApprovals(appData);
       setAuditLogs(logData);
+      if (emps && emps.length > 0) setEmployeeCount(emps.length);
     });
-  }, []);
+  }, [activeCompany?.id]);
 
   const handleApprove = async (id: string) => {
     try {
@@ -333,7 +335,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                 </div>
               </div>
               <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-black text-gray-900">245</span>
+                <span className="text-2xl font-black text-gray-900">{employeeCount > 0 ? employeeCount : 245}</span>
                 <span className="text-xs font-bold text-emerald-600 flex items-center gap-0.5">
                   <ArrowUpRight className="w-3.5 h-3.5" /> +8.4%
                 </span>
@@ -380,7 +382,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                 <span className="text-2xl font-black text-gray-900">2</span>
                 <span className="text-xs font-semibold text-purple-600">Tenant Group</span>
               </div>
-              <p className="text-[11px] text-gray-400">{organization?.name}</p>
+              <p className="text-[11px] text-gray-400">{organization?.name || 'Joy Corporate Solutions'}</p>
             </Card>
           </>
         )}

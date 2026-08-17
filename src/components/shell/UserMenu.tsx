@@ -94,9 +94,14 @@ export const UserMenu: React.FC = () => {
 
   const switchPersona = async (email: string) => {
     const users = await api.getUsers();
-    const target = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    const inputEmail = email.toLowerCase().trim();
+    let target = users.find(u => u.email.toLowerCase() === inputEmail);
+    if (!target) {
+      const username = inputEmail.split('@')[0];
+      target = users.find(u => u.email.toLowerCase().startsWith(username));
+    }
     if (target) {
-      login(target);
+      login({ ...target, email });
       setIsOpen(false);
     }
   };
@@ -281,11 +286,11 @@ export const UserMenu: React.FC = () => {
                 {[
                   { name: 'THIRUMALAI R K', email: 'superadmin@workforceos.com', role: 'Super Admin (Platform)' },
                   { name: 'Karthik Natarajan', email: 'assistant.admin@workforceos.com', role: 'Assistant Admin (Delegated Ops)' },
-                  { name: 'Dharun Joy', email: 'admin@acme.com', role: 'Company Admin (Company)' },
-                  { name: 'Arun Kumar', email: 'arun.kumar@acme.com', role: 'HR Head (Company HR)' },
-                  { name: 'Karthik N.', email: 'karthik.n@acme.com', role: 'Manager (Department)' },
-                  { name: 'Deepa S.', email: 'deepa.s@acme.com', role: 'Team Lead (Team)' },
-                  { name: 'Priya Sharma', email: 'priya.sharma@acme.com', role: 'Employee (Self)' },
+                  { name: 'Dharun Joy', email: 'admin@joycorporate.com', role: 'Company Admin (Company)' },
+                  { name: 'Arun Kumar', email: 'arun.kumar@joycorporate.com', role: 'HR Head (Company HR)' },
+                  { name: 'Karthik N.', email: 'karthik.n@joycorporate.com', role: 'Manager (Department)' },
+                  { name: 'Deepa S.', email: 'deepa.s@joycorporate.com', role: 'Team Lead (Team)' },
+                  { name: 'Priya Sharma', email: 'priya.sharma@joycorporate.com', role: 'Employee (Self)' },
                 ].map((persona) => {
                   const isCurrent = user.email === persona.email;
                   return (

@@ -47,7 +47,7 @@ export const CompanySelector: React.FC = () => {
             </div>
             <div className="text-xs font-semibold text-gray-800 flex items-center gap-1.5 mt-0.5">
               <Globe className="w-3.5 h-3.5 text-[#07563D]" />
-              {organization?.name || 'Acme Global Enterprise'}
+              {organization?.name || 'Joy Corporate Solutions'}
             </div>
           </div>
 

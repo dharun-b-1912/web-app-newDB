@@ -346,7 +346,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'COMMUNICATION & HELP',
       items: [
-        { id: 'helpdesk', label: 'HR Helpdesk Tickets', icon: HelpCircle, badge: 5 },
+        { id: 'helpdesk', label: 'HR Helpdesk Tickets', icon: HelpCircle },
         { id: 'other-communication', label: 'Communication Hub', icon: Megaphone },
         { id: 'requests', label: 'Employee Service Requests', icon: Send },
       ],
@@ -411,18 +411,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'PEOPLE & CORE HR',
       items: [
-        { id: 'people', label: 'Employee Management', icon: Users, badge: 428 },
+        { id: 'people', label: 'Employee Management', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
         { id: 'organization', label: 'Organization Architecture', icon: Building2 },
         { id: 'documents', label: 'Documents & E-Sign', icon: FileText },
         { id: 'assets', label: 'Asset Management', icon: Package },
-        { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus, badge: 14 },
-        { id: 'offboarding', label: 'Offboarding & Exit', icon: UserMinus, badge: 3 },
+        { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus },
+        { id: 'offboarding', label: 'Offboarding & Exit', icon: UserMinus },
       ],
     },
     {
       groupName: 'RECRUITMENT & ATS',
       items: [
-        { id: 'recruitment', label: 'Recruitment / ATS', icon: Briefcase, badge: 14 },
+        { id: 'recruitment', label: 'Recruitment / ATS', icon: Briefcase },
         { id: 'career-dev', label: 'Career Development', icon: TrendingUp },
       ],
     },
@@ -430,7 +430,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'ATTENDANCE & TIME',
       items: [
         { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
-        { id: 'attendance-employees', label: 'Employee Attendance', icon: Users, badge: 428 },
+        { id: 'attendance-employees', label: 'Employee Attendance', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
         { id: 'regularization', label: 'Regularization Desk', icon: FileText },
         { id: 'overtime', label: 'Overtime Engine', icon: TrendingUp },
         { id: 'shifts', label: 'Shift Roster & Swaps', icon: CalendarRange },
@@ -535,7 +535,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'COMMUNICATION & HELP',
       items: [
-        { id: 'helpdesk', label: 'HR Helpdesk Tickets', icon: HelpCircle, badge: 5 },
+        { id: 'helpdesk', label: 'HR Helpdesk Tickets', icon: HelpCircle },
         { id: 'other-communication', label: 'Communication Hub', icon: Megaphone },
         { id: 'requests', label: 'Employee Service Requests', icon: Send },
       ],
