@@ -400,4 +400,51 @@ export const platformAuditService = {
 
     return { filename, blob };
   },
+
+  // -------------------------------------------------------------
+  // Synchronous / Quick Access Helper Methods
+  // -------------------------------------------------------------
+  getRecentLogs(limit: number = 20): Array<{
+    id: string;
+    actor: string;
+    action: string;
+    target: string;
+    details: string;
+    category: string;
+    timestamp: string;
+    severity: string;
+    status: string;
+  }> {
+    return cachedEvents.slice(0, limit).map((e) => ({
+      id: e.id || e.event_id,
+      actor: e.actor_name,
+      action: e.action,
+      target: e.resource_name || e.resource_id || e.resource_type || 'System',
+      details: e.metadata ? JSON.stringify(e.metadata) : e.action,
+      category: e.category,
+      timestamp: e.created_at,
+      severity: e.risk_level === 'High' || e.risk_level === 'Critical' ? 'High' : 'Low',
+      status: e.result,
+    }));
+  },
+
+  logAudit(params: {
+    actor?: string;
+    action: string;
+    target?: string;
+    details?: string;
+    category?: string;
+    status?: string;
+    severity?: string;
+  }): void {
+    this.logEvent({
+      actor_name: params.actor || 'Platform Admin',
+      action: params.action,
+      resource_name: params.target,
+      reason: params.details,
+      category: params.category || 'System',
+      result: params.status || 'Success',
+      severity: params.severity || 'Low',
+    }).catch((err) => console.warn('logAudit error:', err));
+  },
 };

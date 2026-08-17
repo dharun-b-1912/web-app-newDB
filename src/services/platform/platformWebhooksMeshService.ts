@@ -1299,6 +1299,21 @@ export const platformWebhooksMeshService = {
   },
 
   getAuditLogs(): WebhookAuditLog[] {
+    const raw = platformAuditService.getRecentLogs ? platformAuditService.getRecentLogs(50) : [];
+    if (raw && raw.length > 0) {
+      return raw.map((l) => ({
+        id: l.id,
+        actor_name: l.actor,
+        actor_role: 'Platform Admin',
+        action: l.action,
+        resource_type: 'Webhook',
+        resource_id: l.target,
+        resource_name: l.target,
+        timestamp: l.timestamp,
+        ip_address: '10.0.4.12',
+        reason: l.details,
+      }));
+    }
     return [
       {
         id: 'aud-whk-01',
