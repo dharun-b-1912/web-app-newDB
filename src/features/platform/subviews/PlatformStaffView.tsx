@@ -43,6 +43,7 @@ import {
   Calendar,
   Activity,
   User,
+  Key,
 } from 'lucide-react';
 import {
   platformStaffService,
@@ -54,7 +55,9 @@ import {
   AdminActivityRecord,
 } from '../../../services/platform/platformStaffService';
 import { platformIamService, PlatformAdminAccessInfo } from '../../../services/platform/platformIamService';
+import { platformProfileService } from '../../../services/platform/platformProfileService';
 import { useToast } from '../../../components/ui/Toast';
+import { cn } from '../../../lib/utils';
 
 export const PlatformStaffView: React.FC = () => {
   const { showToast } = useToast();
@@ -129,7 +132,7 @@ export const PlatformStaffView: React.FC = () => {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const [staffRes, rolesRes, kpiRes, actRes, iamRes] = await Promise.all([
+      const [staffRes, rolesRes, kpiRes, actRes, iamRes, prof] = await Promise.all([
         platformStaffService.getStaffDirectory({
           search: searchQuery,
           role: selectedRoleFilter,
@@ -144,11 +147,49 @@ export const PlatformStaffView: React.FC = () => {
           time_range: activityFilterWhen,
         }),
         platformIamService.getCurrentAdminAccess(),
+        platformProfileService.getProfile(),
       ]);
 
-      setStaffList(staffRes.staff);
+      let finalStaff = staffRes.staff;
+      // If staff list is empty, ensure the root Super Admin from profile exists
+      if (finalStaff.length === 0 && prof) {
+        const rootAdmin: PlatformStaffRecord = {
+          id: prof.id || 'stf-root-01',
+          email: prof.email || 'superadmin@workforceos.com',
+          first_name: prof.first_name || 'Arun',
+          last_name: prof.last_name || 'Kumar',
+          name: prof.display_name || 'Platform Super Admin',
+          staff_code: 'STF-ROOT01',
+          job_title: prof.job_title || 'Chief Platform Architect & Super Admin',
+          department: prof.department || 'Executive & Infrastructure',
+          phone: prof.phone || '',
+          avatar_url: prof.avatar_url || '',
+          role_key: 'SUPER_ADMIN',
+          role_display_name: 'Super Admin',
+          status: 'Active',
+          mfa_enforced: true,
+          mfa_enabled: true,
+          is_root_superadmin: true,
+          account_start_date: prof.created_at || new Date().toISOString(),
+          active_sessions_count: 1,
+          risk_level: 'CRITICAL',
+          permissions_count: 34,
+          last_login_at: 'Just now',
+          created_at: prof.created_at || new Date().toISOString(),
+        };
+        finalStaff = [rootAdmin];
+      }
+
+      setStaffList(finalStaff);
       setRolesList(rolesRes);
-      setKpis(kpiRes);
+      setKpis({
+        total_staff: finalStaff.length,
+        active_staff: finalStaff.filter((s) => s.status === 'Active').length,
+        pending_invitations: finalStaff.filter((s) => s.status === 'Invitation Pending').length,
+        suspended_staff: finalStaff.filter((s) => s.status === 'Suspended' || s.status === 'Disabled').length,
+        mfa_protected: finalStaff.filter((s) => s.mfa_enabled).length,
+        high_risk_staff: finalStaff.filter((s) => s.role_key === 'SUPER_ADMIN' || s.role_key === 'PLATFORM_ADMIN').length,
+      });
       setActivities(actRes);
       setIamAccess(iamRes);
     } catch (err: any) {
@@ -329,81 +370,81 @@ export const PlatformStaffView: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
-      {/* 1. Header Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 md:p-8 text-white border border-indigo-900/50 shadow-xl">
-        <div className="absolute top-0 right-0 -mt-8 -mr-8 w-72 h-72 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-indigo-600/30 border border-indigo-400/30 flex items-center justify-center backdrop-blur-md">
-                <Users className="w-6 h-6 text-indigo-400" />
-              </div>
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white flex items-center gap-3">
-                  Platform Staff & Delegated IAM
-                  <span className="text-xs px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
-                    RBAC Control Plane
-                  </span>
-                </h1>
-                <p className="text-sm text-slate-300">
-                  Manage administrative personnel, assign constrained roles, enforce MFA policies, and monitor immutable security activity.
-                </p>
-              </div>
-            </div>
+      {/* 1. Standard Platform Breadcrumb & Header Bar */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-gray-200/90 shadow-xs">
+        <div>
+          <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium mb-1">
+            <span className="hover:text-[#047857] transition cursor-pointer">Platform Admin</span>
+            <span>/</span>
+            <span className="font-bold text-gray-800">Platform Staff & Delegated IAM</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => loadData()}
-              className="px-3.5 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-medium flex items-center gap-2 transition cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
-            <button
-              onClick={() => setIsCreateWizardOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-600 text-white font-medium text-xs shadow-lg shadow-indigo-500/25 flex items-center gap-2 transition border border-indigo-400/30 cursor-pointer"
-            >
-              <UserPlus className="w-4 h-4" />
-              Invite Platform Staff
-            </button>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-bold text-gray-900 tracking-tight flex items-center gap-2.5">
+              <Users className="w-5 h-5 text-[#047857]" />
+              Platform Staff & Delegated IAM
+            </h1>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-[#047857] border border-emerald-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              RBAC Control Plane Active
+            </span>
           </div>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Manage administrative personnel, assign constrained roles, enforce MFA policies, and monitor immutable security activity.
+          </p>
         </div>
 
-        {/* Top KPIs Metric Row */}
-        {kpis && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-6 mt-6 border-t border-slate-800/80">
-            <div className="bg-slate-950/40 backdrop-blur rounded-xl p-3 border border-slate-800/60">
-              <span className="text-xs text-slate-400">Total Staff</span>
-              <p className="text-xl font-bold text-white mt-0.5">{kpis.total_staff}</p>
-            </div>
-            <div className="bg-slate-950/40 backdrop-blur rounded-xl p-3 border border-slate-800/60">
-              <span className="text-xs text-emerald-400 font-medium">Active Administrators</span>
-              <p className="text-xl font-bold text-emerald-400 mt-0.5">{kpis.active_staff}</p>
-            </div>
-            <div className="bg-slate-950/40 backdrop-blur rounded-xl p-3 border border-slate-800/60">
-              <span className="text-xs text-amber-400 font-medium">Pending Invites</span>
-              <p className="text-xl font-bold text-amber-400 mt-0.5">{kpis.pending_invitations}</p>
-            </div>
-            <div className="bg-slate-950/40 backdrop-blur rounded-xl p-3 border border-slate-800/60">
-              <span className="text-xs text-rose-400 font-medium">Suspended Accounts</span>
-              <p className="text-xl font-bold text-rose-400 mt-0.5">{kpis.suspended_staff}</p>
-            </div>
-            <div className="bg-slate-950/40 backdrop-blur rounded-xl p-3 border border-slate-800/60">
-              <span className="text-xs text-indigo-400 font-medium">MFA Protected</span>
-              <p className="text-xl font-bold text-indigo-300 mt-0.5">{kpis.mfa_protected}</p>
-            </div>
-            <div className="bg-slate-950/40 backdrop-blur rounded-xl p-3 border border-slate-800/60">
-              <span className="text-xs text-purple-400 font-medium">Root Authority</span>
-              <p className="text-xl font-bold text-purple-300 mt-0.5">1</p>
-            </div>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => loadData()}
+            className="px-3 py-2 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 text-xs font-semibold flex items-center gap-2 transition cursor-pointer"
+          >
+            <RefreshCw className={cn('w-3.5 h-3.5', isLoading && 'animate-spin')} />
+            Refresh
+          </button>
+          <button
+            onClick={() => setIsCreateWizardOpen(true)}
+            className="px-4 py-2 rounded-xl bg-[#047857] hover:bg-[#065f46] text-white font-semibold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer"
+          >
+            <UserPlus className="w-4 h-4" />
+            Invite Platform Staff
+          </button>
+        </div>
       </div>
+
+      {/* 2. Top KPIs Metric Cards Grid */}
+      {kpis && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="bg-white rounded-xl p-4 border border-gray-200/90 shadow-xs">
+            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Total Staff</span>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{kpis.total_staff}</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200/90 shadow-xs">
+            <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wide">Active Admins</span>
+            <p className="text-2xl font-bold text-[#047857] mt-1">{kpis.active_staff}</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200/90 shadow-xs">
+            <span className="text-[11px] font-semibold text-amber-700 uppercase tracking-wide">Pending Invites</span>
+            <p className="text-2xl font-bold text-amber-600 mt-1">{kpis.pending_invitations}</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200/90 shadow-xs">
+            <span className="text-[11px] font-semibold text-rose-700 uppercase tracking-wide">Suspended</span>
+            <p className="text-2xl font-bold text-rose-600 mt-1">{kpis.suspended_staff}</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200/90 shadow-xs">
+            <span className="text-[11px] font-semibold text-indigo-700 uppercase tracking-wide">MFA Protected</span>
+            <p className="text-2xl font-bold text-indigo-600 mt-1">{kpis.mfa_protected}</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200/90 shadow-xs">
+            <span className="text-[11px] font-semibold text-purple-700 uppercase tracking-wide">Root Authority</span>
+            <p className="text-2xl font-bold text-purple-700 mt-1">1</p>
+          </div>
+        </div>
+      )}
 
       {/* Error Boundary Banner (Requirement 53) */}
       {loadError && (
-        <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 flex items-center justify-between gap-3 text-xs text-rose-800 dark:text-rose-200">
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-between gap-3 text-xs text-rose-800">
           <div className="flex items-center gap-2">
             <AlertOctagon className="w-4 h-4 text-rose-600 shrink-0" />
             <span>
@@ -412,22 +453,23 @@ export const PlatformStaffView: React.FC = () => {
           </div>
           <button
             onClick={() => loadData()}
-            className="px-3 py-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700 font-semibold transition"
+            className="px-3 py-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700 font-semibold transition cursor-pointer"
           >
             Retry
           </button>
         </div>
       )}
 
-      {/* 2. Navigation Sub-Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1">
+      {/* 3. Navigation Sub-Tabs Bar */}
+      <div className="flex items-center gap-2 border-b border-gray-200 pb-1">
         <button
           onClick={() => setActiveSubTab('directory')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-lg flex items-center gap-2 transition cursor-pointer ${
+          className={cn(
+            'px-4 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 transition cursor-pointer',
             activeSubTab === 'directory'
-              ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
+              ? 'bg-emerald-50 text-[#047857] border border-emerald-200 font-bold'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          )}
         >
           <Users className="w-3.5 h-3.5" />
           Staff Directory & Delegated Accounts
@@ -435,11 +477,12 @@ export const PlatformStaffView: React.FC = () => {
 
         <button
           onClick={() => setActiveSubTab('roles')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-lg flex items-center gap-2 transition cursor-pointer ${
+          className={cn(
+            'px-4 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 transition cursor-pointer',
             activeSubTab === 'roles'
-              ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
+              ? 'bg-emerald-50 text-[#047857] border border-emerald-200 font-bold'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          )}
         >
           <Shield className="w-3.5 h-3.5" />
           Platform Roles & Hierarchy
@@ -447,11 +490,12 @@ export const PlatformStaffView: React.FC = () => {
 
         <button
           onClick={() => setActiveSubTab('matrix')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-lg flex items-center gap-2 transition cursor-pointer ${
+          className={cn(
+            'px-4 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 transition cursor-pointer',
             activeSubTab === 'matrix'
-              ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
+              ? 'bg-emerald-50 text-[#047857] border border-emerald-200 font-bold'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          )}
         >
           <Layers className="w-3.5 h-3.5" />
           17-Domain Permission Matrix
@@ -459,41 +503,42 @@ export const PlatformStaffView: React.FC = () => {
 
         <button
           onClick={() => setActiveSubTab('activity')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-lg flex items-center gap-2 transition cursor-pointer ${
+          className={cn(
+            'px-4 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 transition cursor-pointer',
             activeSubTab === 'activity'
-              ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
+              ? 'bg-emerald-50 text-[#047857] border border-emerald-200 font-bold'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          )}
         >
           <History className="w-3.5 h-3.5" />
           Forensic Activity Ledger
         </button>
       </div>
 
-      {/* 3. Sub-Tab Content: STAFF DIRECTORY */}
+      {/* 4. Sub-Tab Content: STAFF DIRECTORY */}
       {activeSubTab === 'directory' && (
         <div className="space-y-4">
           {/* Filter Bar */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
             <form onSubmit={handleSearchSubmit} className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search staff by name, email, staff code, or job title..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full pl-9 pr-4 py-2 text-xs rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#047857]"
               />
             </form>
 
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
-                <Filter className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-slate-500 font-medium">Role:</span>
+              <div className="flex items-center gap-1.5 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200 text-xs">
+                <Filter className="w-3.5 h-3.5 text-gray-400" />
+                <span className="text-gray-500 font-medium">Role:</span>
                 <select
                   value={selectedRoleFilter}
                   onChange={(e) => setSelectedRoleFilter(e.target.value)}
-                  className="bg-transparent text-slate-900 dark:text-white font-medium focus:outline-none cursor-pointer"
+                  className="bg-transparent text-gray-900 font-medium focus:outline-none cursor-pointer"
                 >
                   <option value="ALL">All Roles</option>
                   <option value="SUPER_ADMIN">Super Admin</option>
@@ -505,12 +550,12 @@ export const PlatformStaffView: React.FC = () => {
                 </select>
               </div>
 
-              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
-                <span className="text-slate-500 font-medium">Status:</span>
+              <div className="flex items-center gap-1.5 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200 text-xs">
+                <span className="text-gray-500 font-medium">Status:</span>
                 <select
                   value={selectedStatusFilter}
                   onChange={(e) => setSelectedStatusFilter(e.target.value)}
-                  className="bg-transparent text-slate-900 dark:text-white font-medium focus:outline-none cursor-pointer"
+                  className="bg-transparent text-gray-900 font-medium focus:outline-none cursor-pointer"
                 >
                   <option value="ALL">All Statuses</option>
                   <option value="Active">Active</option>
@@ -524,39 +569,18 @@ export const PlatformStaffView: React.FC = () => {
 
           {/* Loading Skeleton */}
           {isLoading && (
-            <div className="bg-white dark:bg-slate-900 rounded-xl p-8 border border-slate-200 dark:border-slate-800 text-center space-y-3">
-              <RefreshCw className="w-8 h-8 text-indigo-600 animate-spin mx-auto" />
-              <p className="text-xs text-slate-500 font-medium">Loading platform staff directory...</p>
-            </div>
-          )}
-
-          {/* Empty State (Requirement 52 & 53) */}
-          {!isLoading && staffList.length === 0 && (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl p-12 border border-slate-200 dark:border-slate-800 text-center space-y-4 shadow-sm max-w-md mx-auto my-8">
-              <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto border border-indigo-200 dark:border-indigo-800">
-                <Users className="w-8 h-8" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">No Platform Staff Found</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  No administrative personnel match your search filters, or no delegated staff have been created yet.
-                </p>
-              </div>
-              <button
-                onClick={() => setIsCreateWizardOpen(true)}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700 transition shadow cursor-pointer"
-              >
-                Create Delegated Administrator
-              </button>
+            <div className="bg-white rounded-xl p-8 border border-gray-200 text-center space-y-3 shadow-xs">
+              <RefreshCw className="w-7 h-7 text-[#047857] animate-spin mx-auto" />
+              <p className="text-xs text-gray-500 font-medium">Loading platform staff directory...</p>
             </div>
           )}
 
           {/* Staff Table */}
           {!isLoading && staffList.length > 0 && (
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase font-semibold">
+                  <thead className="bg-gray-50/80 border-b border-gray-200 text-gray-600 uppercase font-bold text-[10px] tracking-wider">
                     <tr>
                       <th className="py-3 px-4">Staff Administrator</th>
                       <th className="py-3 px-4">Staff ID</th>
@@ -568,11 +592,11 @@ export const PlatformStaffView: React.FC = () => {
                       <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
+                  <tbody className="divide-y divide-gray-100 font-medium">
                     {staffList.map((staff) => (
                       <tr
                         key={staff.id}
-                        className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition group cursor-pointer"
+                        className="hover:bg-emerald-50/30 transition group cursor-pointer"
                         onClick={() => {
                           setSelectedStaff(staff);
                           setIsDetailDrawerOpen(true);
@@ -581,40 +605,41 @@ export const PlatformStaffView: React.FC = () => {
                         {/* Name & Avatar */}
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white font-bold flex items-center justify-center text-xs shadow-sm">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#047857] to-emerald-500 text-white font-bold flex items-center justify-center text-xs shadow-xs">
                               {staff.name.charAt(0)}
                             </div>
                             <div>
-                              <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                              <div className="font-bold text-gray-900 flex items-center gap-1.5">
                                 {staff.name}
                                 {staff.is_root_superadmin && (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-bold border border-purple-300 dark:border-purple-800">
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] bg-purple-50 text-purple-700 font-bold border border-purple-200">
                                     ROOT
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[11px] text-slate-500 dark:text-slate-400">{staff.email}</span>
+                              <span className="text-[11px] text-gray-500">{staff.email}</span>
                             </div>
                           </div>
                         </td>
 
                         {/* Staff Code */}
-                        <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-300">
+                        <td className="py-3 px-4 font-mono text-gray-700 font-medium">
                           {staff.staff_code}
                         </td>
 
                         {/* Role & Risk */}
                         <td className="py-3 px-4">
                           <span
-                            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${
+                            className={cn(
+                              'px-2.5 py-1 rounded-md text-[11px] font-bold border',
                               staff.role_key === 'SUPER_ADMIN'
-                                ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                                ? 'bg-purple-50 text-purple-700 border-purple-200'
                                 : staff.role_key === 'PLATFORM_ADMIN'
-                                ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
                                 : staff.role_key === 'SECURITY_ADMIN'
-                                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                            }`}
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-gray-100 text-gray-700 border-gray-200'
+                            )}
                           >
                             {staff.role_display_name}
                           </span>
@@ -623,22 +648,24 @@ export const PlatformStaffView: React.FC = () => {
                         {/* Status */}
                         <td className="py-3 px-4">
                           <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            className={cn(
+                              'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold',
                               staff.status === 'Active'
-                                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                                ? 'bg-emerald-50 text-[#047857] border border-emerald-200'
                                 : staff.status === 'Invitation Pending'
-                                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
-                                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
-                            }`}
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : 'bg-rose-50 text-rose-700 border border-rose-200'
+                            )}
                           >
                             <span
-                              className={`w-1.5 h-1.5 rounded-full ${
+                              className={cn(
+                                'w-1.5 h-1.5 rounded-full',
                                 staff.status === 'Active'
                                   ? 'bg-emerald-500'
                                   : staff.status === 'Invitation Pending'
                                   ? 'bg-amber-500'
                                   : 'bg-rose-500'
-                              }`}
+                              )}
                             />
                             {staff.status}
                           </span>
@@ -648,9 +675,9 @@ export const PlatformStaffView: React.FC = () => {
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-1.5">
                             <ShieldCheck
-                              className={`w-3.5 h-3.5 ${staff.mfa_enabled ? 'text-emerald-500' : 'text-amber-500'}`}
+                              className={cn('w-3.5 h-3.5', staff.mfa_enabled ? 'text-[#047857]' : 'text-amber-500')}
                             />
-                            <span className="text-[11px] text-slate-600 dark:text-slate-300">
+                            <span className="text-[11px] text-gray-700">
                               {staff.mfa_enabled ? 'Enforced & Active' : 'Enforced (Pending)'}
                             </span>
                           </div>
@@ -658,13 +685,13 @@ export const PlatformStaffView: React.FC = () => {
 
                         {/* Active Sessions */}
                         <td className="py-3 px-4">
-                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          <span className="font-semibold text-gray-800">
                             {staff.active_sessions_count} session{staff.active_sessions_count !== 1 ? 's' : ''}
                           </span>
                         </td>
 
                         {/* Last Login */}
-                        <td className="py-3 px-4 text-slate-500 dark:text-slate-400">{staff.last_login_at}</td>
+                        <td className="py-3 px-4 text-gray-500">{staff.last_login_at}</td>
 
                         {/* Actions */}
                         <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
@@ -672,7 +699,7 @@ export const PlatformStaffView: React.FC = () => {
                             <button
                               onClick={() => handleOpenChangeRole(staff)}
                               title="Modify Role & Permissions"
-                              className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition cursor-pointer"
+                              className="p-1.5 rounded-lg hover:bg-emerald-50 text-gray-600 hover:text-[#047857] transition cursor-pointer"
                             >
                               <KeyRound className="w-3.5 h-3.5" />
                             </button>
@@ -681,7 +708,7 @@ export const PlatformStaffView: React.FC = () => {
                                 onClick={() => handleOpenStatusChange(staff, 'Suspended')}
                                 title="Suspend Administrator"
                                 disabled={staff.is_root_superadmin}
-                                className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/50 text-slate-600 dark:text-slate-300 hover:text-rose-600 transition disabled:opacity-30 cursor-pointer"
+                                className="p-1.5 rounded-lg hover:bg-rose-50 text-gray-600 hover:text-rose-600 transition disabled:opacity-30 cursor-pointer"
                               >
                                 <UserX className="w-3.5 h-3.5" />
                               </button>
@@ -689,7 +716,7 @@ export const PlatformStaffView: React.FC = () => {
                               <button
                                 onClick={() => handleOpenStatusChange(staff, 'Active')}
                                 title="Reinstate Administrator"
-                                className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-slate-600 dark:text-slate-300 hover:text-emerald-600 transition cursor-pointer"
+                                className="p-1.5 rounded-lg hover:bg-emerald-50 text-gray-600 hover:text-[#047857] transition cursor-pointer"
                               >
                                 <UserCheck className="w-3.5 h-3.5" />
                               </button>
@@ -700,7 +727,7 @@ export const PlatformStaffView: React.FC = () => {
                                 setIsDetailDrawerOpen(true);
                               }}
                               title="View Full Identity & Access Details"
-                              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer"
+                              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 transition cursor-pointer"
                             >
                               <ChevronRight className="w-4 h-4" />
                             </button>
@@ -716,43 +743,44 @@ export const PlatformStaffView: React.FC = () => {
         </div>
       )}
 
-      {/* 4. Sub-Tab Content: ROLES & HIERARCHY */}
+      {/* 5. Sub-Tab Content: ROLES & HIERARCHY */}
       {activeSubTab === 'roles' && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {rolesList.map((role) => (
               <div
                 key={role.id}
-                className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between space-y-4"
+                className="bg-white rounded-xl p-5 border border-gray-200 shadow-xs flex flex-col justify-between space-y-4"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                      className={cn(
+                        'px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider',
                         role.risk_level === 'CRITICAL'
-                          ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
                           : role.risk_level === 'HIGH'
-                          ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-                          : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                      }`}
+                          ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                          : 'bg-emerald-50 text-[#047857] border border-emerald-200'
+                      )}
                     >
                       Risk: {role.risk_level}
                     </span>
-                    <span className="text-xs font-semibold text-slate-500">Level {role.hierarchy_level}/5</span>
+                    <span className="text-xs font-bold text-gray-500">Level {role.hierarchy_level}/5</span>
                   </div>
 
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
                     {role.display_name}
-                    {role.is_system_role && <span className="text-[10px] font-normal text-slate-400">(System Role)</span>}
+                    {role.is_system_role && <span className="text-[10px] font-normal text-gray-400">(System Role)</span>}
                   </h3>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2">{role.description}</p>
+                  <p className="text-xs text-gray-600 line-clamp-2">{role.description}</p>
                 </div>
 
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                  <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                  <span className="font-bold text-[#047857]">
                     {role.permissions_count} Permissions Granted
                   </span>
-                  <span className="text-slate-400">
+                  <span className="text-gray-400 font-medium">
                     {role.role_key === 'SUPER_ADMIN' ? 'Full Authority' : 'Restricted Scope'}
                   </span>
                 </div>
@@ -762,21 +790,21 @@ export const PlatformStaffView: React.FC = () => {
         </div>
       )}
 
-      {/* 5. Sub-Tab Content: 17-DOMAIN PERMISSION MATRIX */}
+      {/* 6. Sub-Tab Content: 17-DOMAIN PERMISSION MATRIX */}
       {activeSubTab === 'matrix' && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-xs space-y-4">
           <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+            <h3 className="text-base font-bold text-gray-900">
               Platform Control Plane 17-Domain Permission Matrix
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-gray-500 mt-0.5">
               Granular access breakdown mapping actions (View, Create, Update, Delete, Export, Manage) across all platform subsystems.
             </p>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase font-semibold">
+              <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 uppercase font-bold text-[10px] tracking-wider">
                 <tr>
                   <th className="py-2.5 px-3">Module / Domain</th>
                   <th className="py-2.5 px-3 text-center">View</th>
@@ -787,7 +815,7 @@ export const PlatformStaffView: React.FC = () => {
                   <th className="py-2.5 px-3 text-center">Root Manage</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
+              <tbody className="divide-y divide-gray-100 font-medium">
                 {[
                   { name: 'Organizations & Tenants', view: true, create: true, update: true, del: true, export: true, manage: true },
                   { name: 'Subscriptions & Billing', view: true, create: false, update: true, del: false, export: true, manage: true },
@@ -800,25 +828,25 @@ export const PlatformStaffView: React.FC = () => {
                   { name: 'API Connectors & Integrations', view: true, create: true, update: true, del: true, export: true, manage: true },
                   { name: 'Platform IAM & Staff Hierarchy', view: true, create: true, update: true, del: true, export: true, manage: true },
                 ].map((row, i) => (
-                  <tr key={i} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                    <td className="py-2.5 px-3 font-semibold text-slate-800 dark:text-slate-200">{row.name}</td>
+                  <tr key={i} className="hover:bg-gray-50/50">
+                    <td className="py-2.5 px-3 font-bold text-gray-800">{row.name}</td>
                     <td className="py-2.5 px-3 text-center">
-                      {row.view ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}
+                      {row.view ? <Check className="w-4 h-4 text-[#047857] mx-auto" /> : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="py-2.5 px-3 text-center">
-                      {row.create ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}
+                      {row.create ? <Check className="w-4 h-4 text-[#047857] mx-auto" /> : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="py-2.5 px-3 text-center">
-                      {row.update ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}
+                      {row.update ? <Check className="w-4 h-4 text-[#047857] mx-auto" /> : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="py-2.5 px-3 text-center">
-                      {row.del ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}
+                      {row.del ? <Check className="w-4 h-4 text-[#047857] mx-auto" /> : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="py-2.5 px-3 text-center">
-                      {row.export ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}
+                      {row.export ? <Check className="w-4 h-4 text-[#047857] mx-auto" /> : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="py-2.5 px-3 text-center">
-                      {row.manage ? <Check className="w-4 h-4 text-indigo-500 mx-auto" /> : <span className="text-slate-300">—</span>}
+                      {row.manage ? <Check className="w-4 h-4 text-indigo-600 mx-auto" /> : <span className="text-gray-300">—</span>}
                     </td>
                   </tr>
                 ))}
@@ -828,35 +856,35 @@ export const PlatformStaffView: React.FC = () => {
         </div>
       )}
 
-      {/* 6. Sub-Tab Content: FORENSIC ADMINISTRATIVE ACTIVITY (Requirement 50 & 57) */}
+      {/* 7. Sub-Tab Content: FORENSIC ADMINISTRATIVE ACTIVITY (Requirement 50 & 57) */}
       {activeSubTab === 'activity' && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-xs space-y-4">
           <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">Forensic Administrative Activity Ledger</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <h3 className="text-base font-bold text-gray-900">Forensic Administrative Activity Ledger</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
               Audits who performed what action, on whom, when, from which IP, and with what specific before/after state diff.
             </p>
           </div>
 
           {/* Forensic Search Filters (Who, What, To Whom, When) */}
-          <form onSubmit={handleForensicSearchSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+          <form onSubmit={handleForensicSearchSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-gray-50/70 p-4 rounded-xl border border-gray-200">
             <div>
-              <label className="block text-[11px] font-semibold text-slate-500 mb-1">Who (Actor Name / Admin)</label>
+              <label className="block text-[11px] font-semibold text-gray-600 mb-1">Who (Actor Name / Admin)</label>
               <input
                 type="text"
                 placeholder="e.g. Arun Kumar"
                 value={activityFilterWho}
                 onChange={(e) => setActivityFilterWho(e.target.value)}
-                className="w-full px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                className="w-full px-3 py-1.5 text-xs rounded-lg bg-white border border-gray-200 text-gray-900 focus:outline-none focus:ring-1 focus:ring-[#047857]"
               />
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-500 mb-1">What (Action Code)</label>
+              <label className="block text-[11px] font-semibold text-gray-600 mb-1">What (Action Code)</label>
               <select
                 value={activityFilterWhat}
                 onChange={(e) => setActivityFilterWhat(e.target.value)}
-                className="w-full px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-medium"
+                className="w-full px-3 py-1.5 text-xs rounded-lg bg-white border border-gray-200 text-gray-900 font-medium"
               >
                 <option value="ALL">All Actions</option>
                 <option value="STAFF_CREATED">STAFF_CREATED</option>
@@ -868,22 +896,22 @@ export const PlatformStaffView: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-500 mb-1">To Whom (Target User / Email)</label>
+              <label className="block text-[11px] font-semibold text-gray-600 mb-1">To Whom (Target User / Email)</label>
               <input
                 type="text"
                 placeholder="e.g. priya.sharma@workforceos.com"
                 value={activityFilterToWhom}
                 onChange={(e) => setActivityFilterToWhom(e.target.value)}
-                className="w-full px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                className="w-full px-3 py-1.5 text-xs rounded-lg bg-white border border-gray-200 text-gray-900 focus:outline-none focus:ring-1 focus:ring-[#047857]"
               />
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-500 mb-1">When (Time Window)</label>
+              <label className="block text-[11px] font-semibold text-gray-600 mb-1">When (Time Window)</label>
               <select
                 value={activityFilterWhen}
                 onChange={(e) => setActivityFilterWhen(e.target.value as any)}
-                className="w-full px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-medium"
+                className="w-full px-3 py-1.5 text-xs rounded-lg bg-white border border-gray-200 text-gray-900 font-medium"
               >
                 <option value="all">All Time</option>
                 <option value="24h">Last 24 Hours</option>
@@ -895,7 +923,7 @@ export const PlatformStaffView: React.FC = () => {
 
           {/* Activity List */}
           {activities.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-500">
+            <div className="p-8 text-center text-xs text-gray-500">
               No audit activity matches your search criteria.
             </div>
           ) : (
@@ -904,33 +932,33 @@ export const PlatformStaffView: React.FC = () => {
                 <div
                   key={act.id}
                   onClick={() => setSelectedActivity(act)}
-                  className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-indigo-300 dark:hover:border-indigo-800 transition cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3"
+                  className="p-4 rounded-xl border border-gray-200 bg-gray-50/40 hover:border-[#047857]/40 hover:bg-emerald-50/20 transition cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3"
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-slate-900 dark:text-white text-xs">{act.actor_name}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-semibold border border-indigo-200 dark:border-indigo-800">
+                      <span className="font-bold text-gray-900 text-xs">{act.actor_name}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-[#047857] font-bold border border-emerald-200">
                         {act.actor_role}
                       </span>
-                      <ArrowRight className="w-3 h-3 text-slate-400" />
-                      <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-xs">{act.action}</span>
+                      <ArrowRight className="w-3 h-3 text-gray-400" />
+                      <span className="font-mono font-bold text-gray-800 text-xs">{act.action}</span>
                       {act.target_name && (
-                        <span className="text-xs text-slate-500">
-                          on <strong className="text-slate-700 dark:text-slate-300">{act.target_name}</strong>
+                        <span className="text-xs text-gray-500">
+                          on <strong className="text-gray-800">{act.target_name}</strong>
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                    <p className="text-xs text-gray-600">
                       Reason: {act.reason || 'Standard operational task'}
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-4 text-xs text-slate-500 shrink-0">
-                    <span className="font-mono text-[11px] bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded">
+                  <div className="flex items-center gap-4 text-xs text-gray-500 shrink-0">
+                    <span className="font-mono text-[11px] bg-gray-200 text-gray-700 px-2 py-0.5 rounded font-medium">
                       {act.ip_address}
                     </span>
                     <span>{new Date(act.timestamp).toLocaleTimeString()}</span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-[#047857] border border-emerald-200">
                       {act.result}
                     </span>
                   </div>
@@ -941,17 +969,17 @@ export const PlatformStaffView: React.FC = () => {
         </div>
       )}
 
-      {/* 7. MODAL: CREATE PLATFORM STAFF WIZARD (4 Steps) */}
+      {/* 8. MODAL: CREATE PLATFORM STAFF WIZARD (4 Steps) */}
       {isCreateWizardOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/40">
+        <div className="fixed inset-0 z-50 bg-gray-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
               <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <UserPlus className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                  <UserPlus className="w-4 h-4 text-[#047857]" />
                   Create Platform Staff & Delegated Administrator
                 </h3>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-gray-500">
                   Step {wizardStep} of 4:{' '}
                   {wizardStep === 1
                     ? 'Administrator Identity'
@@ -964,15 +992,15 @@ export const PlatformStaffView: React.FC = () => {
               </div>
               <button
                 onClick={handleCloseWizard}
-                className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5">
+            <div className="w-full bg-gray-100 h-1.5">
               <div
-                className="bg-indigo-600 h-1.5 transition-all duration-300"
+                className="bg-[#047857] h-1.5 transition-all duration-300"
                 style={{ width: `${(wizardStep / 4) * 100}%` }}
               />
             </div>
@@ -982,57 +1010,57 @@ export const PlatformStaffView: React.FC = () => {
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">First Name *</label>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">First Name *</label>
                       <input
                         type="text"
                         placeholder="e.g. Vikram"
                         value={createFormData.first_name}
                         onChange={(e) => setCreateFormData({ ...createFormData, first_name: e.target.value })}
-                        className="w-full px-3.5 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full px-3.5 py-2 text-xs rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#047857]"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Last Name *</label>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Last Name *</label>
                       <input
                         type="text"
                         placeholder="e.g. Sethi"
                         value={createFormData.last_name}
                         onChange={(e) => setCreateFormData({ ...createFormData, last_name: e.target.value })}
-                        className="w-full px-3.5 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full px-3.5 py-2 text-xs rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#047857]"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Work Email *</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Work Email *</label>
                     <input
                       type="email"
                       placeholder="vikram.sethi@workforceos.com"
                       value={createFormData.email}
                       onChange={(e) => setCreateFormData({ ...createFormData, email: e.target.value })}
-                      className="w-full px-3.5 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3.5 py-2 text-xs rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#047857]"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Job Title</label>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Job Title</label>
                       <input
                         type="text"
                         placeholder="e.g. Customer Support Specialist"
                         value={createFormData.job_title}
                         onChange={(e) => setCreateFormData({ ...createFormData, job_title: e.target.value })}
-                        className="w-full px-3.5 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full px-3.5 py-2 text-xs rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#047857]"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Department</label>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Department</label>
                       <input
                         type="text"
                         placeholder="e.g. Tier-2 Operations"
                         value={createFormData.department}
                         onChange={(e) => setCreateFormData({ ...createFormData, department: e.target.value })}
-                        className="w-full px-3.5 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full px-3.5 py-2 text-xs rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#047857]"
                       />
                     </div>
                   </div>
@@ -1041,25 +1069,25 @@ export const PlatformStaffView: React.FC = () => {
 
               {wizardStep === 2 && (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/50 space-y-2">
-                    <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 font-semibold text-xs">
+                  <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-200 space-y-2">
+                    <div className="flex items-center gap-2 text-[#047857] font-bold text-xs">
                       <ShieldCheck className="w-4 h-4" />
                       Mandatory Multi-Factor Authentication (MFA)
                     </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                    <p className="text-xs text-gray-600">
                       All platform staff accounts are required by security governance policy to enroll a TOTP authenticator app upon first sign-in.
                     </p>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
                       Account Expiration Date (Optional for Contractors / Vendors)
                     </label>
                     <input
                       type="date"
                       value={createFormData.account_expiry_date}
                       onChange={(e) => setCreateFormData({ ...createFormData, account_expiry_date: e.target.value })}
-                      className="w-full px-3.5 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3.5 py-2 text-xs rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#047857]"
                     />
                   </div>
                 </div>
@@ -1067,7 +1095,7 @@ export const PlatformStaffView: React.FC = () => {
 
               {wizardStep === 3 && (
                 <div className="space-y-3">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <label className="block text-xs font-bold text-gray-700">
                     Select Constrained Platform Role
                   </label>
 
@@ -1082,11 +1110,12 @@ export const PlatformStaffView: React.FC = () => {
                       <label
                         key={r.key}
                         onClick={() => setCreateFormData({ ...createFormData, role_key: r.key })}
-                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                        className={cn(
+                          'p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition',
                           createFormData.role_key === r.key
-                            ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/40 shadow-sm'
-                            : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-                        }`}
+                            ? 'border-[#047857] bg-emerald-50/40 shadow-xs'
+                            : 'border-gray-200 hover:bg-gray-50'
+                        )}
                       >
                         <div className="flex items-center gap-3">
                           <input
@@ -1094,21 +1123,24 @@ export const PlatformStaffView: React.FC = () => {
                             name="role"
                             checked={createFormData.role_key === r.key}
                             onChange={() => setCreateFormData({ ...createFormData, role_key: r.key })}
-                            className="text-indigo-600 focus:ring-indigo-500"
+                            className="text-[#047857] focus:ring-[#047857]"
                           />
                           <div>
-                            <span className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-2">
+                            <span className="font-bold text-xs text-gray-900 flex items-center gap-2">
                               {r.name}
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                                r.risk === 'HIGH' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
-                              }`}>
+                              <span
+                                className={cn(
+                                  'px-1.5 py-0.5 rounded text-[10px] font-bold',
+                                  r.risk === 'HIGH' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-emerald-50 text-[#047857] border border-emerald-200'
+                                )}
+                              >
                                 {r.risk} RISK
                               </span>
                             </span>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{r.desc}</p>
+                            <p className="text-[11px] text-gray-500 mt-0.5">{r.desc}</p>
                           </div>
                         </div>
-                        <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">{r.perms} perms</span>
+                        <span className="text-xs font-bold text-[#047857]">{r.perms} perms</span>
                       </label>
                     ))}
                   </div>
@@ -1117,28 +1149,28 @@ export const PlatformStaffView: React.FC = () => {
 
               {wizardStep === 4 && (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-3">
+                  <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-500">Administrator Name:</span>
-                      <span className="text-xs font-bold text-slate-900 dark:text-white">
+                      <span className="text-xs text-gray-500 font-medium">Administrator Name:</span>
+                      <span className="text-xs font-bold text-gray-900">
                         {createFormData.first_name} {createFormData.last_name}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-500">Work Email:</span>
-                      <span className="text-xs font-mono font-semibold text-slate-900 dark:text-white">{createFormData.email}</span>
+                      <span className="text-xs text-gray-500 font-medium">Work Email:</span>
+                      <span className="text-xs font-mono font-bold text-gray-900">{createFormData.email}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-500">Assigned Role:</span>
-                      <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{createFormData.role_key}</span>
+                      <span className="text-xs text-gray-500 font-medium">Assigned Role:</span>
+                      <span className="text-xs font-bold text-[#047857]">{createFormData.role_key}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-500">MFA Policy:</span>
-                      <span className="text-xs font-semibold text-emerald-600">Enforced & Required</span>
+                      <span className="text-xs text-gray-500 font-medium">MFA Policy:</span>
+                      <span className="text-xs font-bold text-[#047857]">Enforced & Required</span>
                     </div>
                   </div>
 
-                  <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2.5 text-xs text-amber-800">
                     <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                     <span>
                       The user will be created in <strong>Invitation Pending</strong> state. They will receive a cryptographic invitation token and must enroll in TOTP MFA before platform privileges are activated.
@@ -1148,11 +1180,11 @@ export const PlatformStaffView: React.FC = () => {
               )}
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/40">
+            <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
               {wizardStep > 1 ? (
                 <button
                   onClick={handlePrevStep}
-                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 transition cursor-pointer"
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition cursor-pointer"
                 >
                   Back
                 </button>
@@ -1163,7 +1195,7 @@ export const PlatformStaffView: React.FC = () => {
               {wizardStep < 4 ? (
                 <button
                   onClick={handleNextStep}
-                  className="px-5 py-2 text-xs font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition flex items-center gap-1.5 shadow cursor-pointer"
+                  className="px-5 py-2 text-xs font-bold rounded-xl bg-[#047857] text-white hover:bg-[#065f46] transition flex items-center gap-1.5 shadow-xs cursor-pointer"
                 >
                   Continue
                   <ChevronRight className="w-4 h-4" />
@@ -1172,7 +1204,7 @@ export const PlatformStaffView: React.FC = () => {
                 <button
                   onClick={handleFinishCreateStaff}
                   disabled={isCreatingStaff}
-                  className="px-5 py-2 text-xs font-semibold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition flex items-center gap-1.5 shadow disabled:opacity-50 cursor-pointer"
+                  className="px-5 py-2 text-xs font-bold rounded-xl bg-[#047857] text-white hover:bg-[#065f46] transition flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
                 >
                   {isCreatingStaff ? 'Provisioning Staff...' : 'Create & Send Invitation'}
                 </button>
@@ -1182,33 +1214,33 @@ export const PlatformStaffView: React.FC = () => {
         </div>
       )}
 
-      {/* 8. MODAL: CHANGE ROLE */}
+      {/* 9. MODAL: CHANGE ROLE */}
       {isChangeRoleModalOpen && roleChangeTarget && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-md p-6 space-y-4">
+        <div className="fixed inset-0 z-50 bg-gray-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <KeyRound className="w-4 h-4 text-indigo-600" />
+              <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-[#047857]" />
                 Modify Role for {roleChangeTarget.name}
               </h3>
-              <button onClick={() => setIsChangeRoleModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <button onClick={() => setIsChangeRoleModalOpen(false)} className="text-gray-400 hover:text-gray-600 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg text-xs space-y-1.5">
+            <div className="p-3 bg-gray-50 rounded-lg text-xs space-y-1.5 border border-gray-100">
               <div className="flex justify-between">
-                <span className="text-slate-500">Current Role:</span>
-                <span className="font-bold text-slate-900 dark:text-white">{roleChangeTarget.role_key}</span>
+                <span className="text-gray-500 font-medium">Current Role:</span>
+                <span className="font-bold text-gray-900">{roleChangeTarget.role_key}</span>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">New Role</label>
+              <label className="block text-xs font-bold text-gray-700 mb-1">New Role</label>
               <select
                 value={targetNewRoleKey}
                 onChange={(e) => setTargetNewRoleKey(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium"
+                className="w-full px-3 py-2 text-xs rounded-lg bg-gray-50 border border-gray-200 text-gray-900 font-medium"
               >
                 <option value="SUPER_ADMIN">Super Admin (Root Authority)</option>
                 <option value="PLATFORM_ADMIN">Platform Admin</option>
@@ -1220,7 +1252,7 @@ export const PlatformStaffView: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-bold text-gray-700 mb-1">
                 Business Justification Reason *
               </label>
               <textarea
@@ -1228,21 +1260,21 @@ export const PlatformStaffView: React.FC = () => {
                 placeholder="Reason required for compliance audit..."
                 value={roleChangeReason}
                 onChange={(e) => setRoleChangeReason(e.target.value)}
-                className="w-full p-2.5 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                className="w-full p-2.5 text-xs rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:ring-2 focus:ring-[#047857]"
               />
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 onClick={() => setIsChangeRoleModalOpen(false)}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer"
+                className="px-4 py-2 text-xs font-bold rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmitRoleChange}
                 disabled={isSubmittingRoleChange}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
+                className="px-4 py-2 text-xs font-bold rounded-lg bg-[#047857] text-white hover:bg-[#065f46] disabled:opacity-50 cursor-pointer"
               >
                 {isSubmittingRoleChange ? 'Updating...' : 'Confirm Role Update'}
               </button>
@@ -1251,22 +1283,22 @@ export const PlatformStaffView: React.FC = () => {
         </div>
       )}
 
-      {/* 9. MODAL: STATUS CHANGE (SUSPEND / DISABLE) */}
+      {/* 10. MODAL: STATUS CHANGE (SUSPEND / DISABLE) */}
       {isStatusModalOpen && statusTarget && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-md p-6 space-y-4">
+        <div className="fixed inset-0 z-50 bg-gray-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
                 <AlertOctagon className="w-4 h-4 text-rose-600" />
                 Change Status to {targetNewStatus}
               </h3>
-              <button onClick={() => setIsStatusModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <button onClick={() => setIsStatusModalOpen(false)} className="text-gray-400 hover:text-gray-600 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/40 rounded-lg text-xs text-rose-800 dark:text-rose-300 space-y-1">
-              <p className="font-semibold">Action consequences:</p>
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800 space-y-1">
+              <p className="font-bold">Action consequences:</p>
               <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
                 <li>Blocks all future login and authentication attempts.</li>
                 <li>Immediately invalidates and terminates all active device sessions.</li>
@@ -1275,7 +1307,7 @@ export const PlatformStaffView: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-bold text-gray-700 mb-1">
                 Justification Reason *
               </label>
               <textarea
@@ -1283,21 +1315,21 @@ export const PlatformStaffView: React.FC = () => {
                 placeholder="State the security or organizational reason..."
                 value={statusChangeReason}
                 onChange={(e) => setStatusChangeReason(e.target.value)}
-                className="w-full p-2.5 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                className="w-full p-2.5 text-xs rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:ring-2 focus:ring-[#047857]"
               />
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 onClick={() => setIsStatusModalOpen(false)}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer"
+                className="px-4 py-2 text-xs font-bold rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmitStatusChange}
                 disabled={isSubmittingStatusChange}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
+                className="px-4 py-2 text-xs font-bold rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
               >
                 {isSubmittingStatusChange ? 'Applying...' : `Confirm ${targetNewStatus}`}
               </button>
@@ -1306,66 +1338,70 @@ export const PlatformStaffView: React.FC = () => {
         </div>
       )}
 
-      {/* 10. DETAIL DRAWER FOR SELECTED STAFF (with Requirement 49 Timeline) */}
+      {/* 11. DETAIL DRAWER FOR SELECTED STAFF (with Requirement 49 Timeline) */}
       {isDetailDrawerOpen && selectedStaff && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex justify-end">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-lg h-full border-l border-slate-200 dark:border-slate-800 shadow-2xl p-6 flex flex-col justify-between overflow-y-auto space-y-6 animate-slideLeft">
+        <div className="fixed inset-0 z-50 bg-gray-900/60 backdrop-blur-xs flex justify-end">
+          <div className="bg-white w-full max-w-lg h-full border-l border-gray-200 shadow-2xl p-6 flex flex-col justify-between overflow-y-auto space-y-6 animate-slideLeft">
             <div className="space-y-6">
               {/* Drawer Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center justify-between pb-4 border-b border-gray-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-indigo-600 text-white font-bold flex items-center justify-center text-base shadow">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-[#047857] to-emerald-500 text-white font-bold flex items-center justify-center text-base shadow-xs">
                     {selectedStaff.name.charAt(0)}
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
                       {selectedStaff.name}
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-semibold border border-emerald-200">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-[#047857] font-bold border border-emerald-200">
                         {selectedStaff.status}
                       </span>
                     </h3>
-                    <p className="text-xs text-slate-500">{selectedStaff.email}</p>
+                    <p className="text-xs text-gray-500">{selectedStaff.email}</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setIsDetailDrawerOpen(false)}
-                  className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 cursor-pointer"
+                  className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               {/* Sub-Tabs in Drawer */}
-              <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800 pb-1 flex-wrap">
+              <div className="flex gap-2 border-b border-gray-100 pb-1 flex-wrap">
                 <button
                   onClick={() => setDetailTab('overview')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer ${
-                    detailTab === 'overview' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500'
-                  }`}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-bold rounded-lg cursor-pointer',
+                    detailTab === 'overview' ? 'bg-emerald-50 text-[#047857]' : 'text-gray-500 hover:text-gray-800'
+                  )}
                 >
                   Identity & Details
                 </button>
                 <button
                   onClick={() => setDetailTab('permissions')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer ${
-                    detailTab === 'permissions' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500'
-                  }`}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-bold rounded-lg cursor-pointer',
+                    detailTab === 'permissions' ? 'bg-emerald-50 text-[#047857]' : 'text-gray-500 hover:text-gray-800'
+                  )}
                 >
                   Why Access Granted?
                 </button>
                 <button
                   onClick={() => setDetailTab('sessions')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer ${
-                    detailTab === 'sessions' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500'
-                  }`}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-bold rounded-lg cursor-pointer',
+                    detailTab === 'sessions' ? 'bg-emerald-50 text-[#047857]' : 'text-gray-500 hover:text-gray-800'
+                  )}
                 >
                   Active Sessions ({selectedStaff.active_sessions_count})
                 </button>
                 <button
                   onClick={() => setDetailTab('activity')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer ${
-                    detailTab === 'activity' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500'
-                  }`}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-bold rounded-lg cursor-pointer',
+                    detailTab === 'activity' ? 'bg-emerald-50 text-[#047857]' : 'text-gray-500 hover:text-gray-800'
+                  )}
                 >
                   Activity Timeline
                 </button>
@@ -1374,30 +1410,30 @@ export const PlatformStaffView: React.FC = () => {
               {/* Drawer Content */}
               {detailTab === 'overview' && (
                 <div className="space-y-3 text-xs">
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg space-y-2">
+                  <div className="p-4 bg-gray-50 rounded-xl space-y-2 border border-gray-100">
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Staff Code:</span>
-                      <span className="font-mono font-bold text-slate-900 dark:text-white">{selectedStaff.staff_code}</span>
+                      <span className="text-gray-500 font-medium">Staff Code:</span>
+                      <span className="font-mono font-bold text-gray-900">{selectedStaff.staff_code}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Job Title:</span>
-                      <span className="font-medium text-slate-900 dark:text-white">{selectedStaff.job_title}</span>
+                      <span className="text-gray-500 font-medium">Job Title:</span>
+                      <span className="font-bold text-gray-900">{selectedStaff.job_title}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Department:</span>
-                      <span className="font-medium text-slate-900 dark:text-white">{selectedStaff.department}</span>
+                      <span className="text-gray-500 font-medium">Department:</span>
+                      <span className="font-bold text-gray-900">{selectedStaff.department}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Assigned Role:</span>
-                      <span className="font-bold text-indigo-600 dark:text-indigo-400">{selectedStaff.role_display_name}</span>
+                      <span className="text-gray-500 font-medium">Assigned Role:</span>
+                      <span className="font-bold text-[#047857]">{selectedStaff.role_display_name}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">MFA Policy:</span>
-                      <span className="font-semibold text-emerald-600">Enforced (TOTP)</span>
+                      <span className="text-gray-500 font-medium">MFA Policy:</span>
+                      <span className="font-bold text-[#047857]">Enforced (TOTP)</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Account Validity:</span>
-                      <span className="text-slate-700 dark:text-slate-300">
+                      <span className="text-gray-500 font-medium">Account Validity:</span>
+                      <span className="text-gray-800 font-medium">
                         {selectedStaff.account_expiry_date
                           ? `Expires on ${new Date(selectedStaff.account_expiry_date).toLocaleDateString()}`
                           : 'Permanent Staff Account'}
@@ -1409,16 +1445,16 @@ export const PlatformStaffView: React.FC = () => {
 
               {detailTab === 'permissions' && (
                 <div className="space-y-3">
-                  <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-lg border border-indigo-200 dark:border-indigo-800/40 text-xs space-y-1">
-                    <span className="font-bold text-indigo-700 dark:text-indigo-300">Access Attribution Hierarchy:</span>
-                    <p className="text-slate-600 dark:text-slate-400">
+                  <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 text-xs space-y-1">
+                    <span className="font-bold text-[#047857]">Access Attribution Hierarchy:</span>
+                    <p className="text-gray-700">
                       User: <strong>{selectedStaff.name}</strong> → Role: <strong>{selectedStaff.role_display_name}</strong> →{' '}
                       {selectedStaff.permissions_count} Allowed Operations.
                     </p>
                   </div>
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg text-xs space-y-2">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Granted Capabilities:</span>
-                    <ul className="space-y-1 text-slate-600 dark:text-slate-400 list-disc pl-4 text-[11px]">
+                  <div className="p-3 bg-gray-50 rounded-lg text-xs space-y-2 border border-gray-100">
+                    <span className="font-bold text-gray-800">Granted Capabilities:</span>
+                    <ul className="space-y-1 text-gray-600 list-disc pl-4 text-[11px]">
                       {selectedStaff.role_key === 'SUPER_ADMIN' ? (
                         <>
                           <li>Full Root Platform Super Admin Authority</li>
@@ -1441,15 +1477,17 @@ export const PlatformStaffView: React.FC = () => {
 
               {detailTab === 'sessions' && (
                 <div className="space-y-3">
-                  <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+                  <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-900 dark:text-white">Active Device Session</span>
-                      <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-600 font-bold">LIVE</span>
+                      <span className="text-xs font-bold text-gray-900">Active Device Session</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-[#047857] font-bold border border-emerald-200">
+                        LIVE
+                      </span>
                     </div>
-                    <p className="text-xs text-slate-500">Chrome on Windows (103.21.144.92) - Active now</p>
+                    <p className="text-xs text-gray-500">Chrome on Windows (103.21.144.92) - Active now</p>
                     <button
                       onClick={() => handleRevokeStaffSessions(selectedStaff)}
-                      className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold transition shadow cursor-pointer"
+                      className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
                     >
                       Terminate Active Session
                     </button>
@@ -1461,17 +1499,17 @@ export const PlatformStaffView: React.FC = () => {
               {detailTab === 'activity' && (
                 <div className="space-y-3">
                   {staffActivities.length === 0 ? (
-                    <p className="text-xs text-slate-500 text-center py-4">No recent security activity logged for this account.</p>
+                    <p className="text-xs text-gray-500 text-center py-4">No recent security activity logged for this account.</p>
                   ) : (
                     <div className="space-y-3">
                       {staffActivities.map((act) => (
-                        <div key={act.id} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg text-xs space-y-1">
+                        <div key={act.id} className="p-3 bg-gray-50 rounded-lg text-xs space-y-1 border border-gray-100">
                           <div className="flex justify-between items-center">
-                            <span className="font-bold text-slate-900 dark:text-white font-mono">{act.action}</span>
-                            <span className="text-[10px] text-slate-500">{new Date(act.timestamp).toLocaleTimeString()}</span>
+                            <span className="font-bold text-gray-900 font-mono">{act.action}</span>
+                            <span className="text-[10px] text-gray-500">{new Date(act.timestamp).toLocaleTimeString()}</span>
                           </div>
-                          <p className="text-[11px] text-slate-600 dark:text-slate-400">{act.reason || 'Normal operation'}</p>
-                          <div className="text-[10px] font-mono text-slate-400 flex justify-between pt-1 border-t border-slate-200 dark:border-slate-700">
+                          <p className="text-[11px] text-gray-600">{act.reason || 'Normal operation'}</p>
+                          <div className="text-[10px] font-mono text-gray-400 flex justify-between pt-1 border-t border-gray-200">
                             <span>IP: {act.ip_address}</span>
                             <span>Req: {act.request_id}</span>
                           </div>
@@ -1484,13 +1522,13 @@ export const PlatformStaffView: React.FC = () => {
             </div>
 
             {/* Drawer Footer Actions */}
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+            <div className="pt-4 border-t border-gray-200 flex items-center justify-between gap-2">
               <button
                 onClick={() => {
                   setIsDetailDrawerOpen(false);
                   handleOpenChangeRole(selectedStaff);
                 }}
-                className="flex-1 py-2 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition cursor-pointer"
+                className="flex-1 py-2 text-xs font-bold rounded-lg bg-emerald-50 text-[#047857] hover:bg-emerald-100 transition cursor-pointer"
               >
                 Change Role
               </button>
@@ -1501,7 +1539,7 @@ export const PlatformStaffView: React.FC = () => {
                     handleOpenStatusChange(selectedStaff, 'Suspended');
                   }}
                   disabled={selectedStaff.is_root_superadmin}
-                  className="flex-1 py-2 text-xs font-semibold rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition disabled:opacity-30 cursor-pointer"
+                  className="flex-1 py-2 text-xs font-bold rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition disabled:opacity-30 cursor-pointer"
                 >
                   Suspend
                 </button>
@@ -1511,7 +1549,7 @@ export const PlatformStaffView: React.FC = () => {
                     setIsDetailDrawerOpen(false);
                     handleOpenStatusChange(selectedStaff, 'Active');
                   }}
-                  className="flex-1 py-2 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition cursor-pointer"
+                  className="flex-1 py-2 text-xs font-bold rounded-lg bg-emerald-50 text-[#047857] hover:bg-emerald-100 transition cursor-pointer"
                 >
                   Activate
                 </button>
