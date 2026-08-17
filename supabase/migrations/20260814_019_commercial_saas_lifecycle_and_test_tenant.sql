@@ -60,22 +60,46 @@ CREATE TABLE IF NOT EXISTS organizations (
 );
 
 -- Ensure all columns exist on pre-existing organizations table
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS legal_name TEXT DEFAULT 'Joy Corporate Solutions Pvt Ltd';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS display_name TEXT DEFAULT 'Joy Corporate Solutions';
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS organization_type TEXT DEFAULT 'Private Limited Company';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS domain TEXT;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS industry TEXT DEFAULT 'Information Technology';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS country TEXT DEFAULT 'India';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS state TEXT DEFAULT 'Tamil Nadu';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS city TEXT DEFAULT 'Chennai';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Asia/Kolkata';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'INR';
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS environment TEXT DEFAULT 'Production Test Tenant';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gstin TEXT;
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS pan TEXT;
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS cin TEXT;
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS registered_address TEXT;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS primary_admin_id UUID;
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS primary_admin_name TEXT DEFAULT 'Dharun B';
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS primary_admin_email TEXT DEFAULT 'dharun@joycorporate.com';
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS primary_admin_phone TEXT DEFAULT '+91 98765 43210';
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS account_owner_name TEXT DEFAULT 'Arun Kumar (Super Admin)';
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS account_owner_team TEXT DEFAULT 'Customer Success';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS lifecycle_state TEXT DEFAULT 'Active';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS billing_status TEXT DEFAULT 'Paid';
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS is_watchlisted BOOLEAN DEFAULT false;
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT ARRAY['Customer', 'Priority', 'India'];
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'Professional';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS mrr NUMERIC(12,2) DEFAULT 45000.00;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS billing_cycle TEXT DEFAULT 'Monthly';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS renewal_date TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '30 days');
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS auto_renew BOOLEAN DEFAULT true;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS active_employees INT DEFAULT 42;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS total_employees INT DEFAULT 45;
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS seat_limit INT DEFAULT 100;
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS storage_used_gb NUMERIC(8,2) DEFAULT 4.2;
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS storage_quota_gb INT DEFAULT 50;
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS api_calls_this_month INT DEFAULT 18450;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
 -- 2. Create customer_profiles Table (Dedicated Customer Relationship & Verification Profile)
 CREATE TABLE IF NOT EXISTS customer_profiles (
