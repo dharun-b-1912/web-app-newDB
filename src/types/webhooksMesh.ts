@@ -3,7 +3,7 @@
 // WorkForceOS — Webhooks & Event Mesh Type Definitions
 // ============================================================
 
-export type WebhookEnvironment = 'Production' | 'Staging';
+export type WebhookEnvironment = 'Production' | 'Staging' | 'Development';
 
 export type WebhookEndpointStatus =
   | 'Active'
@@ -12,6 +12,8 @@ export type WebhookEndpointStatus =
   | 'Failing'
   | 'Rate Limited'
   | 'Pending Verification';
+
+export type EndpointHealthStatus = 'Healthy' | 'At Risk' | 'Degraded' | 'Critical';
 
 export type DeliveryStatus =
   | 'Queued'
@@ -33,6 +35,37 @@ export type AuthType =
   | 'None';
 
 export type BackoffStrategy = 'exponential' | 'linear' | 'fixed';
+
+export type RealtimeEngineStatus =
+  | 'Realtime Connected'
+  | 'Realtime Reconnecting'
+  | 'Realtime Disconnected'
+  | 'Backend Degraded';
+
+export type EventMeshHealthStatus =
+  | 'Event Mesh Healthy'
+  | 'Event Mesh Degraded'
+  | 'Event Mesh Critical';
+
+export interface EventEntity {
+  id: string;
+  event_id: string;
+  event_type: string;
+  event_version: string;
+  source: string;
+  environment: WebhookEnvironment;
+  tenant_id?: string;
+  organization_id?: string;
+  aggregate_type: string;
+  aggregate_id: string;
+  correlation_id: string;
+  causation_id?: string;
+  idempotency_key: string;
+  payload: Record<string, any>;
+  metadata: Record<string, any>;
+  occurred_at: string;
+  created_at: string;
+}
 
 export interface EventTypeSchema {
   id: string;
@@ -67,6 +100,7 @@ export interface EventTypeSchema {
 
 export interface WebhookEndpoint {
   id: string;
+  endpoint_key?: string;
   organization_id?: string;
   tenant_name?: string;
   name: string;
@@ -75,6 +109,7 @@ export interface WebhookEndpoint {
   url: string;
   http_method: 'POST' | 'PUT' | 'PATCH';
   status: WebhookEndpointStatus;
+  health_status?: EndpointHealthStatus;
   auth_type: AuthType;
   secret_id?: string;
   secret_masked?: string;
@@ -85,6 +120,8 @@ export interface WebhookEndpoint {
   initial_retry_delay_seconds: number;
   max_retry_delay_seconds: number;
   retry_status_codes: number[];
+  rate_limit_rps?: number;
+  concurrency_limit?: number;
   health_score: number;
   success_rate: number;
   failure_rate: number;
@@ -92,6 +129,7 @@ export interface WebhookEndpoint {
   p95_latency_ms: number;
   last_success_at?: string;
   last_failure_at?: string;
+  last_delivery_at?: string;
   consecutive_failures: number;
   events: string[];
   ip_allowlist?: string[];
@@ -99,27 +137,34 @@ export interface WebhookEndpoint {
   created_at: string;
   updated_at: string;
   paused_at?: string;
-  tls_verified: boolean;
+  tls_verified?: boolean;
 }
 
 export interface WebhookDeliveryAttempt {
   id: string;
   delivery_id: string;
   attempt_number: number;
-  request_timestamp: string;
+  started_at?: string;
+  completed_at?: string;
+  request_timestamp?: string;
+  status?: string;
   http_status: number;
   response_time_ms: number;
-  request_headers: Record<string, string>;
-  response_headers: Record<string, string>;
+  duration_ms?: number;
+  request_headers?: Record<string, string>;
+  response_headers?: Record<string, string>;
   response_body?: string;
+  response_excerpt?: string;
   error_code?: string;
   error_message?: string;
+  worker_id?: string;
+  created_at?: string;
 }
 
 export interface WebhookDelivery {
   id: string;
   event_id: string;
-  event_uuid: string;
+  event_uuid?: string;
   event_type: string;
   endpoint_id: string;
   endpoint_name: string;
@@ -131,16 +176,27 @@ export interface WebhookDelivery {
   max_attempts: number;
   http_status: number;
   response_time_ms: number;
+  duration_ms?: number;
   last_error_code?: string;
   last_error_message?: string;
   next_retry_at?: string;
   queued_at: string;
+  scheduled_at?: string;
+  started_at?: string;
   delivered_at?: string;
+  completed_at?: string;
   failed_at?: string;
-  request_headers: Record<string, string>;
-  response_headers: Record<string, string>;
-  payload: Record<string, any>;
+  request_headers?: Record<string, string>;
+  response_headers?: Record<string, string>;
+  response_headers_safe?: Record<string, string>;
+  response_body_excerpt?: string;
+  payload?: Record<string, any>;
   response_body?: string;
+  worker_id?: string;
+  idempotency_key?: string;
+  replayed_from_delivery_id?: string;
+  replayed_by?: string;
+  replayed_at?: string;
   attempts: WebhookDeliveryAttempt[];
 }
 
@@ -166,12 +222,16 @@ export interface DeadLetterEvent {
 
 export interface EventRoute {
   id: string;
+  name?: string;
   event_type: string;
+  event_version?: string;
   source_service: string;
   destination_type: 'internal_consumer' | 'webhook_endpoint' | 'queue' | 'service';
   destination_name: string;
+  endpoint_id?: string;
   route_key: string;
   status: 'Active' | 'Degraded' | 'Paused';
+  enabled?: boolean;
   priority: number;
   queue_name: string;
   queue_depth: number;
@@ -212,6 +272,9 @@ export interface EventMeshMetrics {
   last_checked_sec: number;
   mesh_status: 'Operational' | 'Degraded' | 'Critical';
   mesh_status_message: string;
+  producers_count?: number;
+  active_routes_count?: number;
+  engine_name?: string;
 }
 
 export interface FailureGroup {
@@ -251,4 +314,49 @@ export interface LiveActivityItem {
   endpoint_name?: string;
   time_ago: string;
   message: string;
+  status_code?: number;
+  duration_ms?: number;
+}
+
+export interface CreateWebhookEndpointDTO {
+  name: string;
+  description: string;
+  environment: WebhookEnvironment;
+  url: string;
+  http_method: 'POST' | 'PUT' | 'PATCH';
+  auth_type: AuthType;
+  timeout_ms: number;
+  max_attempts: number;
+  backoff_strategy: BackoffStrategy;
+  initial_retry_delay_seconds: number;
+  max_retry_delay_seconds: number;
+  retry_status_codes: number[];
+  rate_limit_rps?: number;
+  concurrency_limit?: number;
+  events: string[];
+  ip_allowlist?: string[];
+  organization_id?: string;
+  tenant_name?: string;
+}
+
+export interface TestEventDTO {
+  endpoint_id: string;
+  event_type: string;
+  version: string;
+  environment: WebhookEnvironment;
+  payload: Record<string, any>;
+}
+
+export interface ReplayEventsDTO {
+  event_ids?: string[];
+  delivery_ids?: string[];
+  endpoint_id?: string;
+  reason: string;
+  environment: WebhookEnvironment;
+}
+
+export interface ErrorContract {
+  code: string;
+  message: string;
+  requestId: string;
 }

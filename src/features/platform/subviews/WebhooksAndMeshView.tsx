@@ -77,6 +77,9 @@ export const WebhooksAndMeshView: React.FC = () => {
   const [httpCodeFilter, setHttpCodeFilter] = useState<string>('All');
   const [selectedEndpointFilter, setSelectedEndpointFilter] = useState<string>('All');
 
+  // Realtime Connection Status State
+  const [realtimeEngineStatus, setRealtimeEngineStatus] = useState<RealtimeEngineStatus>('Realtime Connected');
+
   // Real-time ticking relative counter
   const [lastCheckedCounter, setLastCheckedCounter] = useState<number>(8);
 
@@ -91,6 +94,21 @@ export const WebhooksAndMeshView: React.FC = () => {
   const [eventConsumers] = useState<EventConsumer[]>(() => platformWebhooksMeshService.getEventConsumers());
   const [auditLogs, setAuditLogs] = useState<WebhookAuditLog[]>(() => platformWebhooksMeshService.getAuditLogs());
   const [liveActivity, setLiveActivity] = useState<LiveActivityItem[]>(() => platformWebhooksMeshService.getLiveActivity());
+
+  // Realtime synchronization on mount
+  useEffect(() => {
+    const unsub = platformWebhooksMeshService.subscribeToRealtime(
+      () => {
+        refreshData();
+      },
+      (status) => {
+        setRealtimeEngineStatus(status);
+      }
+    );
+    return () => {
+      unsub();
+    };
+  }, []);
 
   // Modals & Drawers State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -288,6 +306,30 @@ export const WebhooksAndMeshView: React.FC = () => {
                 <span className={cn('h-2 w-2 rounded-full', environment === 'Staging' ? 'bg-white' : 'bg-[#F59E0B]')} />
                 STAGING
               </button>
+            </div>
+
+            {/* Realtime Engine Status Indicator */}
+            <div
+              className={cn(
+                'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border',
+                realtimeEngineStatus === 'Realtime Connected'
+                  ? 'bg-[#ECFDF5] border-[#A7F3D0] text-[#047857]'
+                  : realtimeEngineStatus === 'Realtime Reconnecting'
+                  ? 'bg-[#FFFBEB] border-[#FDE68A] text-[#D97706]'
+                  : 'bg-[#FEF2F2] border-[#FECACA] text-[#DC2626]'
+              )}
+            >
+              <span
+                className={cn(
+                  'h-2 w-2 rounded-full',
+                  realtimeEngineStatus === 'Realtime Connected'
+                    ? 'bg-[#10B981] animate-pulse'
+                    : realtimeEngineStatus === 'Realtime Reconnecting'
+                    ? 'bg-[#F59E0B] animate-pulse'
+                    : 'bg-[#EF4444]'
+                )}
+              />
+              <span>{realtimeEngineStatus}</span>
             </div>
           </div>
           <p className="text-[13.5px] text-[#64748B] mt-1 max-w-3xl">
@@ -601,7 +643,7 @@ export const WebhooksAndMeshView: React.FC = () => {
                 </p>
               </div>
               <span className="text-xs px-2.5 py-1 rounded-md font-mono font-medium bg-[#F1F5F9] text-[#334155] border border-[#CBD5E1]">
-                Mesh Engine: Apache Kafka + Redis Stream 7.2
+                Event Mesh Engine: {metrics.engine_name || 'PostgreSQL + Supabase Realtime + Queues'}
               </span>
             </div>
 
@@ -615,13 +657,13 @@ export const WebhooksAndMeshView: React.FC = () => {
                     title: 'WorkForceOS Event Sources (Producers)',
                     type: 'Producer Tier',
                     status: 'Operational',
-                    throughput: '2,482 events/min',
+                    throughput: `${metrics.events_per_min.toLocaleString()} events/min`,
                     latency: '4ms ingest',
                     details: [
                       'Core HR & Employee Lifecycle',
                       'Time & Attendance Geofence Engine',
                       'Payroll Calculation Engine',
-                      'Platform Billing & Razorpay Webhooks',
+                      'Platform Billing & Invoicing Engine',
                       'Zero-Trust Security Monitor',
                       'WorkForce Copilot AI Engine',
                     ],
@@ -635,11 +677,11 @@ export const WebhooksAndMeshView: React.FC = () => {
                     <span className="h-2 w-2 rounded-full bg-[#10B981] animate-pulse" />
                   </div>
                   <h4 className="text-sm font-bold text-[#0F172B] group-hover:text-[#047857]">WorkForceOS Events</h4>
-                  <p className="text-xs text-[#64748B] mt-1">12 System & Domain Services</p>
+                  <p className="text-xs text-[#64748B] mt-1">{metrics.producers_count || 14} Domain Services</p>
                 </div>
                 <div className="mt-4 pt-3 border-t border-[#E2E8F0] flex items-center justify-between text-xs text-[#334155]">
                   <span>Rate</span>
-                  <span className="font-bold text-[#047857]">2,482/min</span>
+                  <span className="font-bold text-[#047857]">{metrics.events_per_min.toLocaleString()}/min</span>
                 </div>
               </div>
 
@@ -648,17 +690,17 @@ export const WebhooksAndMeshView: React.FC = () => {
                 onClick={() =>
                   setSelectedMeshNode({
                     id: 'node-bus',
-                    title: 'Event Mesh / Distributed Event Bus',
-                    type: 'Broker Cluster',
+                    title: 'Event Mesh / Supabase Durable Queues',
+                    type: 'PostgreSQL Ingestion Broker',
                     status: 'Operational',
-                    throughput: '3.8 MB/s ingress',
-                    latency: '12ms replication',
+                    throughput: `${(metrics.events_per_min * 1.5 / 1000).toFixed(1)} KB/s ingress`,
+                    latency: '8ms replication',
                     details: [
-                      '3-Node Kafka Raft Cluster',
-                      'Partition Replication Factor: 3',
-                      'Retention Buffer: 7 Days (Hot SSD)',
-                      'Current Buffered Events: 1,842 in flight',
-                      'Partitions: 24 active topic partitions',
+                      'PostgreSQL 15+ Immutable Store',
+                      'Transactional Outbox Architecture',
+                      'Supabase Realtime Broadcast Pub/Sub',
+                      `Current Buffered Queue: ${metrics.pending_queue_depth.toLocaleString()} in flight`,
+                      'Durable PGMQ Message Leases',
                     ],
                   })
                 }
@@ -670,11 +712,11 @@ export const WebhooksAndMeshView: React.FC = () => {
                     <span className="h-2 w-2 rounded-full bg-[#10B981] animate-pulse" />
                   </div>
                   <h4 className="text-sm font-bold text-[#0F172B] group-hover:text-[#2563EB]">Event Mesh Core</h4>
-                  <p className="text-xs text-[#64748B] mt-1">Kafka Cluster (24 Partitions)</p>
+                  <p className="text-xs text-[#64748B] mt-1">PostgreSQL & Supabase Realtime</p>
                 </div>
                 <div className="mt-4 pt-3 border-t border-[#E2E8F0] flex items-center justify-between text-xs text-[#334155]">
                   <span>Queue Buffer</span>
-                  <span className="font-bold text-[#2563EB]">1,842 queued</span>
+                  <span className="font-bold text-[#2563EB]">{metrics.pending_queue_depth.toLocaleString()} queued</span>
                 </div>
               </div>
 
@@ -686,12 +728,12 @@ export const WebhooksAndMeshView: React.FC = () => {
                     title: 'Event Router & Subscription Matcher',
                     type: 'Routing Engine',
                     status: 'Operational',
-                    throughput: '2,480 events routed/min',
-                    latency: '8ms evaluation',
+                    throughput: `${metrics.events_per_min.toLocaleString()} events routed/min`,
+                    latency: '6ms evaluation',
                     details: [
-                      'JSON Schema Validator (Strict Draft-07)',
+                      'JSON Schema Validator (Draft-07)',
                       'Tenant Isolation Barrier',
-                      'Custom JSONPath Filter Evaluator',
+                      'Environment Safety Gate',
                       'Route Priority QoS Engine',
                     ],
                   })
@@ -708,7 +750,7 @@ export const WebhooksAndMeshView: React.FC = () => {
                 </div>
                 <div className="mt-4 pt-3 border-t border-[#E2E8F0] flex items-center justify-between text-xs text-[#334155]">
                   <span>Active Routes</span>
-                  <span className="font-bold text-[#7C3AED]">6 Routes Active</span>
+                  <span className="font-bold text-[#7C3AED]">{metrics.active_routes_count || 6} Routes Active</span>
                 </div>
               </div>
 
@@ -719,15 +761,15 @@ export const WebhooksAndMeshView: React.FC = () => {
                     id: 'node-dispatcher',
                     title: 'Outbound Webhook Dispatcher & Workers',
                     type: 'Delivery Fleet',
-                    status: 'Operational (1 Degraded Route)',
-                    throughput: '1,240 deliveries/min',
-                    latency: '284ms avg HTTP',
+                    status: metrics.at_risk_endpoints_count > 0 ? 'Operational (1 At Risk)' : 'Operational',
+                    throughput: `${Math.round(metrics.events_per_min / 2)} deliveries/min`,
+                    latency: `${metrics.avg_latency_ms}ms avg HTTP`,
                     details: [
-                      '8 Concurrent Worker Threads',
+                      'Central Background Jobs Workers',
                       'HMAC-SHA256 Payload Signer',
                       'Exponential Backoff Retry Engine',
                       'Dead Letter Queue Handler',
-                      'TLS 1.3 Certificate Validator',
+                      'SSRF IP Range Protection Guard',
                     ],
                   })
                 }
@@ -736,14 +778,14 @@ export const WebhooksAndMeshView: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">4. Webhooks</span>
-                    <span className="h-2 w-2 rounded-full bg-[#F59E0B] animate-pulse" />
+                    <span className={cn('h-2 w-2 rounded-full animate-pulse', metrics.at_risk_endpoints_count > 0 ? 'bg-[#F59E0B]' : 'bg-[#10B981]')} />
                   </div>
                   <h4 className="text-sm font-bold text-[#0F172B] group-hover:text-[#D97706]">Webhook Dispatcher</h4>
                   <p className="text-xs text-[#64748B] mt-1">HMAC SHA-256 Outbound</p>
                 </div>
                 <div className="mt-4 pt-3 border-t border-[#E2E8F0] flex items-center justify-between text-xs text-[#334155]">
                   <span>Success Rate</span>
-                  <span className="font-bold text-[#059669]">99.72%</span>
+                  <span className="font-bold text-[#059669]">{metrics.delivery_success_pct}%</span>
                 </div>
               </div>
 
@@ -758,10 +800,9 @@ export const WebhooksAndMeshView: React.FC = () => {
                     details: [
                       'SAP S/4HANA (Acme ERP)',
                       'Slack Enterprise Webhook Bot',
-                      'Zenith Logistics Transport Dispatch',
-                      'Workday Core HR Bridge',
-                      'Apex FinTech SIEM Splunk Cluster',
-                      'Internal Payroll & Statutory Workers',
+                      'Zenith Biometric Kiosk Gateway',
+                      'Internal Payroll Worker Fleet',
+                      'Audit Log Archival Mesh Consumer',
                     ],
                   })
                 }
@@ -773,11 +814,11 @@ export const WebhooksAndMeshView: React.FC = () => {
                     <span className="h-2 w-2 rounded-full bg-[#10B981] animate-pulse" />
                   </div>
                   <h4 className="text-sm font-bold text-[#0F172B]">External & Internal</h4>
-                  <p className="text-xs text-[#64748B] mt-1">6 Endpoints + 5 Consumers</p>
+                  <p className="text-xs text-[#64748B] mt-1">{filteredEndpoints.length} Endpoints + {eventConsumers.length} Consumers</p>
                 </div>
                 <div className="mt-4 pt-3 border-t border-[#E2E8F0] flex items-center justify-between text-xs text-[#334155]">
                   <span>Active Targets</span>
-                  <span className="font-bold text-[#0F172B]">11 Active</span>
+                  <span className="font-bold text-[#0F172B]">{filteredEndpoints.length + eventConsumers.length} Active</span>
                 </div>
               </div>
             </div>
