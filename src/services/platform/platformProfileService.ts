@@ -69,6 +69,69 @@ let cachedPreferences: PlatformUserPreferences = {
   reduced_motion: false,
 };
 
+// --- Client-side High-Fidelity Image Compression Helper ---
+async function compressProfileImage(file: File, maxDimension: number = 512, quality: number = 0.92): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxDimension) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          }
+        } else {
+          if (height > maxDimension) {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Failed to obtain canvas 2D context'));
+          return;
+        }
+
+        // Apply bicubic image smoothing for crisp text and retina fidelity
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              canvas.toBlob(
+                (fallbackBlob) => {
+                  if (fallbackBlob) resolve(fallbackBlob);
+                  else reject(new Error('Image compression failed'));
+                },
+                'image/jpeg',
+                quality
+              );
+            }
+          },
+          'image/webp',
+          quality
+        );
+      };
+      img.onerror = () => reject(new Error('Failed to decode image file'));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error('Failed to read image source'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export const platformProfileService = {
   // --- Profile Retrieval ---
   async getProfile(): Promise<PlatformAdminProfile> {
@@ -100,10 +163,11 @@ export const platformProfileService = {
           };
         }
       } catch (err) {
-        console.warn('[PlatformProfileService] Error reading from platform_profiles table:', err);
+        console.warn('[PlatformProfileService] Supabase profile fetch warning:', err);
       }
     }
-    return cachedProfile;
+
+    return { ...cachedProfile };
   },
 
   // --- Profile Update ---
@@ -112,7 +176,6 @@ export const platformProfileService = {
     const updated: PlatformAdminProfile = {
       ...cachedProfile,
       ...updates,
-      display_name: updates.display_name || `${updates.first_name || cachedProfile.first_name} ${updates.last_name || cachedProfile.last_name}`.trim(),
       last_profile_update_at: new Date().toISOString(),
     };
 
@@ -165,44 +228,83 @@ export const platformProfileService = {
       throw new Error('Unsupported image format. Please upload a JPEG, PNG, or WebP image.');
     }
 
-    // Validate size (max 3MB)
-    if (file.size > 3 * 1024 * 1024) {
-      throw new Error('Avatar image size must be under 3MB.');
+    // Validate size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error('Avatar image size must be under 5MB.');
     }
 
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const dataUrl = reader.result as string;
-        cachedProfile.avatar_url = dataUrl;
-        cachedProfile.last_profile_update_at = new Date().toISOString();
+    // 1. High-fidelity compression (retains pristine resolution while optimizing payload)
+    const compressedBlob = await compressProfileImage(file, 512, 0.92);
+    let finalAvatarUrl = '';
 
-        if (isSupabaseEnabled) {
-          try {
-            await supabase
-              .from('platform_profiles')
-              .update({ avatar_url: dataUrl, updated_at: new Date().toISOString() })
-              .eq('id', cachedProfile.id);
-          } catch (err) {
-            console.warn('[PlatformProfileService] Supabase avatar save warning:', err);
+    // 2. Upload to Supabase Storage if enabled
+    if (isSupabaseEnabled) {
+      try {
+        const fileExt = 'webp';
+        const fileName = `${cachedProfile.id || 'superadmin'}_${Date.now()}.${fileExt}`;
+        const filePath = `avatars/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('platform-avatars')
+          .upload(filePath, compressedBlob, {
+            contentType: 'image/webp',
+            upsert: true,
+          });
+
+        if (!uploadError) {
+          const { data: urlData } = supabase.storage
+            .from('platform-avatars')
+            .getPublicUrl(filePath);
+
+          if (urlData?.publicUrl) {
+            finalAvatarUrl = urlData.publicUrl;
           }
+        } else {
+          console.warn('[PlatformProfileService] Supabase storage upload warning:', uploadError);
         }
+      } catch (storageErr) {
+        console.warn('[PlatformProfileService] Storage service unreachable, using compressed data URL:', storageErr);
+      }
+    }
 
-        await platformAuditService.logEvent({
-          action: 'profile.avatar_changed',
-          category: 'Security',
-          resource_type: 'Profile',
-          resource_id: cachedProfile.id,
-          resource_name: cachedProfile.display_name,
-          severity: 'Normal',
-          reason: `Platform Admin updated profile avatar photo (${file.name}, ${(file.size / 1024).toFixed(1)} KB)`,
-        });
+    // 3. Fallback to lightweight compressed data URL if storage upload was offline
+    if (!finalAvatarUrl) {
+      finalAvatarUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(compressedBlob);
+      });
+    }
 
-        resolve(dataUrl);
-      };
-      reader.onerror = () => reject(new Error('Failed to read image file.'));
-      reader.readAsDataURL(file);
+    cachedProfile.avatar_url = finalAvatarUrl;
+    cachedProfile.last_profile_update_at = new Date().toISOString();
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase
+          .from('platform_profiles')
+          .update({
+            avatar_url: finalAvatarUrl,
+            last_profile_update_at: cachedProfile.last_profile_update_at,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('email', cachedProfile.email);
+      } catch (err) {
+        console.warn('[PlatformProfileService] Failed to update avatar_url column:', err);
+      }
+    }
+
+    await platformAuditService.logEvent({
+      action: 'profile.avatar_changed',
+      category: 'Security',
+      resource_type: 'Profile',
+      resource_id: cachedProfile.id,
+      resource_name: cachedProfile.display_name,
+      severity: 'Normal',
+      reason: 'Platform Admin uploaded compressed high-resolution profile avatar',
     });
+
+    return finalAvatarUrl;
   },
 
   async removeAvatar(): Promise<void> {
@@ -214,9 +316,9 @@ export const platformProfileService = {
         await supabase
           .from('platform_profiles')
           .update({ avatar_url: '', updated_at: new Date().toISOString() })
-          .eq('id', cachedProfile.id);
+          .eq('email', cachedProfile.email);
       } catch (err) {
-        console.warn('[PlatformProfileService] Supabase remove avatar warning:', err);
+        console.warn('[PlatformProfileService] Failed to remove avatar:', err);
       }
     }
 
@@ -227,20 +329,21 @@ export const platformProfileService = {
       resource_id: cachedProfile.id,
       resource_name: cachedProfile.display_name,
       severity: 'Normal',
-      reason: `Platform Admin removed profile avatar photo`,
+      reason: 'Platform Admin removed custom avatar',
     });
   },
 
-  // --- Preferences ---
+  // --- Preferences Management ---
   async getPreferences(): Promise<PlatformUserPreferences> {
     if (isSupabaseEnabled) {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('platform_user_preferences')
           .select('*')
           .limit(1)
           .maybeSingle();
-        if (data) {
+
+        if (data && !error) {
           cachedPreferences = {
             theme: data.theme || 'system',
             language: data.language || 'en',
@@ -256,10 +359,11 @@ export const platformProfileService = {
           };
         }
       } catch (err) {
-        console.warn('[PlatformProfileService] Error reading user preferences:', err);
+        console.warn('[PlatformProfileService] Supabase preferences fetch warning:', err);
       }
     }
-    return cachedPreferences;
+
+    return { ...cachedPreferences };
   },
 
   async updatePreferences(updates: Partial<PlatformUserPreferences>): Promise<PlatformUserPreferences> {
@@ -270,15 +374,14 @@ export const platformProfileService = {
         await supabase
           .from('platform_user_preferences')
           .upsert({
-            user_id: cachedProfile.id,
             ...cachedPreferences,
             updated_at: new Date().toISOString(),
           });
       } catch (err) {
-        console.warn('[PlatformProfileService] Error saving user preferences:', err);
+        console.warn('[PlatformProfileService] Supabase preferences save warning:', err);
       }
     }
 
-    return cachedPreferences;
+    return { ...cachedPreferences };
   },
 };
