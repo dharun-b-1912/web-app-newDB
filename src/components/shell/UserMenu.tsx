@@ -279,7 +279,8 @@ export const UserMenu: React.FC = () => {
             {showRoleSwitcher && (
               <div className="space-y-1 mt-1">
                 {[
-                  { name: 'Platform Admin', email: 'superadmin@workforceos.com', role: 'Super Admin (Platform)' },
+                  { name: 'THIRUMALAI R K', email: 'superadmin@workforceos.com', role: 'Super Admin (Platform)' },
+                  { name: 'Karthik Natarajan', email: 'assistant.admin@workforceos.com', role: 'Assistant Admin (Delegated Ops)' },
                   { name: 'Dharun Joy', email: 'admin@acme.com', role: 'Company Admin (Company)' },
                   { name: 'Arun Kumar', email: 'arun.kumar@acme.com', role: 'HR Head (Company HR)' },
                   { name: 'Karthik N.', email: 'karthik.n@acme.com', role: 'Manager (Department)' },
