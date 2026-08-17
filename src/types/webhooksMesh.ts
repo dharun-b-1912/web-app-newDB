@@ -320,20 +320,20 @@ export interface LiveActivityItem {
 
 export interface CreateWebhookEndpointDTO {
   name: string;
-  description: string;
+  description?: string;
   environment: WebhookEnvironment;
   url: string;
-  http_method: 'POST' | 'PUT' | 'PATCH';
-  auth_type: AuthType;
-  timeout_ms: number;
-  max_attempts: number;
-  backoff_strategy: BackoffStrategy;
-  initial_retry_delay_seconds: number;
-  max_retry_delay_seconds: number;
-  retry_status_codes: number[];
+  http_method?: 'POST' | 'PUT' | 'PATCH';
+  auth_type?: AuthType;
+  timeout_ms?: number;
+  max_attempts?: number;
+  backoff_strategy?: BackoffStrategy;
+  initial_retry_delay_seconds?: number;
+  max_retry_delay_seconds?: number;
+  retry_status_codes?: number[];
   rate_limit_rps?: number;
   concurrency_limit?: number;
-  events: string[];
+  events?: string[];
   ip_allowlist?: string[];
   organization_id?: string;
   tenant_name?: string;
