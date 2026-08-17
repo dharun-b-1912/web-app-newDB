@@ -130,8 +130,9 @@ VALUES
     ('plan-professional', 'Professional', 'professional', 'Advanced GPS attendance, shift scheduling, and leave approvals.', 'Active', 'INR', 'Both', 45000.00, 450000.00, 10, 100, 200),
     ('plan-business', 'Business', 'business', 'Comprehensive payroll, expense management, recruitment & WhatsApp.', 'Active', 'INR', 'Both', 85000.00, 850000.00, 25, 250, 500),
     ('plan-enterprise', 'Enterprise', 'enterprise', 'Unlimited capacity, AI Copilot, biometric adapters & master APIs.', 'Active', 'INR', 'Both', 180000.00, 1800000.00, 50, 500, 5000)
-ON CONFLICT (code) DO UPDATE SET
+ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
+    code = EXCLUDED.code,
     description = EXCLUDED.description,
     monthly_price = EXCLUDED.monthly_price,
     annual_price = EXCLUDED.annual_price,
