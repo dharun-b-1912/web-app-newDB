@@ -342,17 +342,18 @@ export interface CreateWebhookEndpointDTO {
 export interface TestEventDTO {
   endpoint_id: string;
   event_type: string;
-  version: string;
-  environment: WebhookEnvironment;
-  payload: Record<string, any>;
+  version?: string;
+  environment?: WebhookEnvironment;
+  payload?: Record<string, any>;
 }
 
 export interface ReplayEventsDTO {
   event_ids?: string[];
   delivery_ids?: string[];
   endpoint_id?: string;
-  reason: string;
-  environment: WebhookEnvironment;
+  hours_back?: number;
+  reason?: string;
+  environment?: WebhookEnvironment;
 }
 
 export interface ErrorContract {
