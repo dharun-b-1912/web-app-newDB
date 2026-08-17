@@ -374,6 +374,10 @@ const AppContent: React.FC = () => {
       case 'platform-incidents':
       case 'platform-support':
       case 'platform-audit':
+      case 'platform-notifications':
+      case 'platform-dlq':
+      case 'platform-events':
+      case 'platform-outbox':
       case 'platform-exports':
       case 'platform-announcements':
       case 'platform-settings':

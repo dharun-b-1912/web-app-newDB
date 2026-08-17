@@ -217,16 +217,16 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
               (currentTab === 'platform-account-security'
                 ? 'security'
                 : currentTab === 'platform-account-sessions'
-                ? 'sessions'
-                : currentTab === 'platform-account-access'
-                ? 'access'
-                : currentTab === 'platform-account-preferences'
-                ? 'preferences'
-                : currentTab === 'platform-account-activity'
-                ? 'activity'
-                : currentTab === 'platform-account-profile' || currentTab === 'platform-profile'
-                ? 'profile'
-                : 'overview')
+                  ? 'sessions'
+                  : currentTab === 'platform-account-access'
+                    ? 'access'
+                    : currentTab === 'platform-account-preferences'
+                      ? 'preferences'
+                      : currentTab === 'platform-account-activity'
+                        ? 'activity'
+                        : currentTab === 'platform-account-profile' || currentTab === 'platform-profile'
+                          ? 'profile'
+                          : 'overview')
             }
             onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)}
           />
@@ -267,9 +267,8 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
         <div className="flex items-center gap-2">
           <span className="flex items-center gap-1.5 text-[12px] font-mono text-[#62748E] bg-white border border-[#E7EAF0] px-3 py-1 rounded-full shadow-[0_1px_2px_rgba(15,23,43,0.04)] tracking-[0.02em]">
             <span
-              className={`h-2 w-2 rounded-full ${
-                isConnected ? 'bg-[#15845B] animate-pulse' : 'bg-[#D89A16]'
-              }`}
+              className={`h-2 w-2 rounded-full ${isConnected ? 'bg-[#15845B] animate-pulse' : 'bg-[#D89A16]'
+                }`}
             />
             {isConnected ? 'Realtime Engine Active' : 'Connecting Engine...'}
           </span>
