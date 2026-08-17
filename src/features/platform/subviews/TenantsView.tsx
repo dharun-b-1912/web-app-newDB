@@ -577,7 +577,7 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
                       <div>Legal Name: <strong className="text-[#0F172B] block mt-0.5">{selectedOrg.legal_name}</strong></div>
                       <div>Domain: <strong className="text-[#0F172B] block mt-0.5">{selectedOrg.domain}</strong></div>
                       <div>Industry: <strong className="text-[#0F172B] block mt-0.5">{selectedOrg.industry}</strong></div>
-                      <div>GSTIN / Tax ID: <strong className="text-[#0F172B] font-mono block mt-0.5">{selectedOrg.gstin}</strong></div>
+                      <div>GSTIN / Tax ID: <strong className="text-[#0F172B] font-mono block mt-0.5">{selectedOrg.gstin || 'Not provided'}</strong></div>
                       <div>Address: <strong className="text-[#0F172B] block mt-0.5">{selectedOrg.city}, {selectedOrg.state}, {selectedOrg.country}</strong></div>
                       <div>Timezone: <strong className="text-[#0F172B] block mt-0.5">{selectedOrg.timezone}</strong></div>
                     </div>

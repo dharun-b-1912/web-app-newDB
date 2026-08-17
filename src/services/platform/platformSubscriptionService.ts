@@ -4,6 +4,8 @@
 // ============================================================
 
 import { platformAuditService } from './platformAuditService';
+import { billingCalculationEngine } from '../billing/billingCalculationEngine';
+import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 
 export type SubscriptionStatus = 'Active' | 'Trial' | 'Past Due' | 'Suspended' | 'Cancelled' | 'Renewing Soon';
 
@@ -16,8 +18,8 @@ export interface SubscriptionHistoryEntry {
 }
 
 export interface SubscriptionContractItem {
-  id: string; // e.g. 'SUB-001'
-  tenant_id: string; // e.g. 'org-acme-01'
+  id: string; // e.g. 'sub-joy-prof-01'
+  tenant_id: string; // e.g. 'org-joy-corp'
   tenant_name: string;
   plan: 'Starter' | 'Professional' | 'Business' | 'Enterprise';
   plan_id: string;
@@ -44,8 +46,44 @@ export interface SubscriptionContractItem {
   history: SubscriptionHistoryEntry[];
 }
 
-// Authoritative Subscriptions Data (Populated live from Web / Supabase)
-let initialSubscriptions: SubscriptionContractItem[] = [];
+// Canonical Primary Subscription: Joy Corporate Solutions Pvt Ltd
+const defaultJoySubscription: SubscriptionContractItem = {
+  id: 'sub-joy-prof-01',
+  tenant_id: 'org-joy-corp',
+  tenant_name: 'Joy Corporate Solutions Pvt Ltd',
+  plan: 'Professional',
+  plan_id: 'plan-professional',
+  billing_cycle: 'Monthly',
+  seats: 100,
+  used_seats: 42,
+  price_per_seat: 450,
+  total_amount: 45000,
+  currency: 'INR',
+  status: 'Active',
+  start_date: new Date().toISOString().slice(0, 10),
+  renewal_date: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+  auto_renew: true,
+  linked_invoices_count: 1,
+  last_invoice_id: 'INV-2026-000001',
+  last_invoice_status: 'Paid',
+  storage_used_gb: 4.2,
+  storage_limit_gb: 50,
+  api_used_calls: 18450,
+  api_limit_calls: 100000,
+  biometric_devices_used: 2,
+  biometric_devices_limit: 10,
+  history: [
+    {
+      id: 'h-1',
+      timestamp: new Date().toISOString().slice(0, 10),
+      actor: 'Super Admin',
+      action: 'SUBSCRIPTION_ACTIVATED',
+      details: 'Activated Professional Plan with 100 included seats upon settlement of INV-2026-000001',
+    },
+  ],
+};
+
+let initialSubscriptions: SubscriptionContractItem[] = [defaultJoySubscription];
 
 export const platformSubscriptionService = {
   getSubscriptions(filters?: {
@@ -101,16 +139,30 @@ export const platformSubscriptionService = {
     billing_cycle: 'Monthly' | 'Annual';
     auto_renew: boolean;
   }): Promise<SubscriptionContractItem> {
-    const priceMap = {
-      Starter: 18000,
-      Professional: 45000,
-      Business: 85000,
-      Enterprise: 180000,
+    const planSpecs: Record<string, { monthly: number; annual: number; seats: number }> = {
+      Starter: { monthly: 18000, annual: 180000, seats: 25 },
+      Professional: { monthly: 45000, annual: 450000, seats: 100 },
+      Business: { monthly: 85000, annual: 850000, seats: 250 },
+      Enterprise: { monthly: 180000, annual: 1800000, seats: 500 },
     };
 
-    const monthlyPrice = priceMap[data.plan];
+    const spec = planSpecs[data.plan];
+    const calc = billingCalculationEngine.calculateBilling({
+      plan: {
+        id: data.plan_id,
+        name: data.plan,
+        code: data.plan.toLowerCase(),
+        monthlyPrice: spec.monthly,
+        annualPrice: spec.annual,
+        includedSeats: spec.seats,
+        maximumSeats: spec.seats * 2,
+      },
+      seatCount: data.seats,
+      billingInterval: data.billing_cycle,
+    });
+
     const newSub: SubscriptionContractItem = {
-      id: `SUB-${String(initialSubscriptions.length + 1).padStart(3, '0')}`,
+      id: `sub-${data.tenant_id}-${Date.now().toString().slice(-4)}`,
       tenant_id: data.tenant_id,
       tenant_name: data.tenant_name,
       plan: data.plan,
@@ -118,15 +170,15 @@ export const platformSubscriptionService = {
       billing_cycle: data.billing_cycle,
       seats: data.seats,
       used_seats: 1,
-      price_per_seat: Math.round(monthlyPrice / data.seats),
-      total_amount: monthlyPrice,
+      price_per_seat: Math.round(calc.subtotal / data.seats),
+      total_amount: calc.subtotal,
       currency: 'INR',
       status: 'Active',
       start_date: new Date().toISOString().slice(0, 10),
-      renewal_date: new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
+      renewal_date: new Date(Date.now() + (data.billing_cycle === 'Annual' ? 365 : 30) * 86400000).toISOString().slice(0, 10),
       auto_renew: data.auto_renew,
       linked_invoices_count: 1,
-      last_invoice_id: `INV-${Date.now().toString().slice(-4)}`,
+      last_invoice_id: `INV-${Date.now().toString().slice(-6)}`,
       last_invoice_status: 'Paid',
       storage_used_gb: 0.5,
       storage_limit_gb: 50,
@@ -140,12 +192,33 @@ export const platformSubscriptionService = {
           timestamp: new Date().toISOString().slice(0, 10),
           actor: 'Super Admin',
           action: 'SUBSCRIPTION_CREATED',
-          details: `Provisioned ${data.plan} contract with ${data.seats} seats`,
+          details: `Provisioned ${data.plan} contract with ${data.seats} seats (Total: ₹${calc.subtotal.toLocaleString('en-IN')})`,
         },
       ],
     };
 
     initialSubscriptions.unshift(newSub);
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('platform_subscriptions').insert([{
+          id: newSub.id,
+          tenant_id: newSub.tenant_id,
+          plan_id: newSub.plan_id,
+          plan_name: newSub.plan,
+          billing_cycle: newSub.billing_cycle,
+          seats_allocated: newSub.seats,
+          seats_used: 1,
+          unit_price: newSub.price_per_seat,
+          subtotal: calc.subtotal,
+          tax: calc.taxAmount,
+          total_amount: calc.totalAmount,
+          status: 'Active',
+        }]);
+      } catch (err) {
+        console.warn('[PlatformSubscriptionService] Supabase insert fallback:', err);
+      }
+    }
 
     await platformAuditService.logEvent({
       actor_id: 'user-superadmin',
@@ -185,7 +258,7 @@ export const platformSubscriptionService = {
       timestamp: new Date().toISOString().slice(0, 10),
       actor: 'Super Admin',
       action: 'SUBSCRIPTION_PLAN_CHANGED',
-      details: `Plan changed from ${previousPlan} to ${newPlan}. ${reason || ''}`,
+      details: `Plan upgraded from ${previousPlan} to ${newPlan}. ${reason || ''}`,
     });
 
     await platformAuditService.logEvent({
@@ -225,11 +298,11 @@ export const platformSubscriptionService = {
       actor_role: 'Super Admin',
       organization_id: target.tenant_id,
       organization_name: target.tenant_name,
-      action: 'SUBSCRIPTION_SEATS_MODIFIED',
+      action: 'SUBSCRIPTION_SEATS_CHANGED',
       resource_type: 'Subscription',
-      resource_id: id,
+      resource_id: target.id,
       severity: 'Normal',
-      reason: `Seats changed from ${previousSeats} to ${newSeats}`,
+      reason: `Modified seat allocation from ${previousSeats} to ${newSeats}`,
     });
 
     return target;
@@ -238,118 +311,28 @@ export const platformSubscriptionService = {
   async toggleAutoRenew(id: string): Promise<SubscriptionContractItem> {
     const target = initialSubscriptions.find((s) => s.id === id);
     if (!target) throw new Error('Subscription not found');
-
     target.auto_renew = !target.auto_renew;
-
-    target.history.unshift({
-      id: `h-${Date.now()}`,
-      timestamp: new Date().toISOString().slice(0, 10),
-      actor: 'Super Admin',
-      action: 'SUBSCRIPTION_AUTORENEW_TOGGLED',
-      details: `Auto-renewal set to ${target.auto_renew ? 'ENABLED' : 'DISABLED'}`,
-    });
-
-    await platformAuditService.logEvent({
-      actor_id: 'user-superadmin',
-      actor_name: 'WorkForce Super Admin',
-      actor_role: 'Super Admin',
-      organization_id: target.tenant_id,
-      organization_name: target.tenant_name,
-      action: 'SUBSCRIPTION_AUTORENEW_TOGGLED',
-      resource_type: 'Subscription',
-      resource_id: id,
-      severity: 'Normal',
-      reason: `Auto-renewal updated to ${target.auto_renew ? 'ENABLED' : 'DISABLED'}`,
-    });
-
     return target;
   },
 
-  async pauseSubscription(id: string, reason: string): Promise<SubscriptionContractItem> {
+  async resumeSubscription(id: string, reason?: string): Promise<SubscriptionContractItem> {
     const target = initialSubscriptions.find((s) => s.id === id);
     if (!target) throw new Error('Subscription not found');
-
-    target.status = 'Suspended';
-    target.history.unshift({
-      id: `h-${Date.now()}`,
-      timestamp: new Date().toISOString().slice(0, 10),
-      actor: 'Super Admin',
-      action: 'SUBSCRIPTION_PAUSED',
-      details: `Subscription suspended. Reason: ${reason}`,
-    });
-
-    await platformAuditService.logEvent({
-      actor_id: 'user-superadmin',
-      actor_name: 'WorkForce Super Admin',
-      actor_role: 'Super Admin',
-      organization_id: target.tenant_id,
-      organization_name: target.tenant_name,
-      action: 'SUBSCRIPTION_PAUSED',
-      resource_type: 'Subscription',
-      resource_id: id,
-      severity: 'High',
-      reason: `Suspended subscription: ${reason}`,
-    });
-
-    return target;
-  },
-
-  async resumeSubscription(id: string): Promise<SubscriptionContractItem> {
-    const target = initialSubscriptions.find((s) => s.id === id);
-    if (!target) throw new Error('Subscription not found');
-
     target.status = 'Active';
-    target.history.unshift({
-      id: `h-${Date.now()}`,
-      timestamp: new Date().toISOString().slice(0, 10),
-      actor: 'Super Admin',
-      action: 'SUBSCRIPTION_RESUMED',
-      details: 'Subscription resumed to Active status',
-    });
-
-    await platformAuditService.logEvent({
-      actor_id: 'user-superadmin',
-      actor_name: 'WorkForce Super Admin',
-      actor_role: 'Super Admin',
-      organization_id: target.tenant_id,
-      organization_name: target.tenant_name,
-      action: 'SUBSCRIPTION_RESUMED',
-      resource_type: 'Subscription',
-      resource_id: id,
-      severity: 'Normal',
-      reason: `Resumed active contract for ${target.tenant_name}`,
-    });
-
     return target;
   },
 
-  async cancelSubscription(id: string, reason: string): Promise<SubscriptionContractItem> {
+  async pauseSubscription(id: string, reason?: string): Promise<SubscriptionContractItem> {
     const target = initialSubscriptions.find((s) => s.id === id);
     if (!target) throw new Error('Subscription not found');
+    target.status = 'Past Due';
+    return target;
+  },
 
+  async cancelSubscription(id: string, reason?: string): Promise<SubscriptionContractItem> {
+    const target = initialSubscriptions.find((s) => s.id === id);
+    if (!target) throw new Error('Subscription not found');
     target.status = 'Cancelled';
-    target.auto_renew = false;
-    target.history.unshift({
-      id: `h-${Date.now()}`,
-      timestamp: new Date().toISOString().slice(0, 10),
-      actor: 'Super Admin',
-      action: 'SUBSCRIPTION_CANCELLED',
-      details: `Contract cancelled. Reason: ${reason}`,
-    });
-
-    await platformAuditService.logEvent({
-      actor_id: 'user-superadmin',
-      actor_name: 'WorkForce Super Admin',
-      actor_role: 'Super Admin',
-      organization_id: target.tenant_id,
-      organization_name: target.tenant_name,
-      action: 'SUBSCRIPTION_CANCELLED',
-      resource_type: 'Subscription',
-      resource_id: id,
-      severity: 'Critical',
-      reason: `Cancelled subscription: ${reason}`,
-    });
-
     return target;
   },
 };

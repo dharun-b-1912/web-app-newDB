@@ -5,6 +5,7 @@
 
 import { platformAuditService } from './platformAuditService';
 import { HealthGrade } from './platformCustomerHealthService';
+import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 
 export type OrgLifecycleState =
   | 'Onboarding'
@@ -48,8 +49,8 @@ export interface OrgIntegrationItem {
 }
 
 export interface OrganizationRecord {
-  id: string; // e.g. 'org-acme-01'
-  tenant_id: string; // e.g. 'org-acme-01'
+  id: string; // e.g. 'org-joy-corp'
+  tenant_id: string;
   legal_name: string;
   display_name: string;
   domain: string;
@@ -59,7 +60,9 @@ export interface OrganizationRecord {
   city: string;
   timezone: string;
   currency: string;
-  gstin: string;
+  gstin?: string;
+  pan?: string;
+  cin?: string;
   logo_url?: string;
 
   // Primary Admin & Account Owner
@@ -77,7 +80,7 @@ export interface OrganizationRecord {
   is_watchlisted: boolean;
   tags: string[];
 
-  // Plan & Commercials (Strict single source of truth with Subscription service)
+  // Plan & Commercials
   plan: PlanTier;
   mrr: number;
   mrr_formatted: string;
@@ -98,14 +101,14 @@ export interface OrganizationRecord {
   attendance_usage_pct: number;
   payroll_usage_pct: number;
 
-  // Health Metrics (Consumed directly from Tenant Health engine)
+  // Health Metrics
   health_score: number;
   health_grade: HealthGrade;
-  health_trend: number; // e.g. +4 or -18
-  engagement_score: number; // 0-25
-  usage_score: number; // 0-25
-  billing_score: number; // 0-25
-  support_score: number; // 0-25
+  health_trend: number;
+  engagement_score: number;
+  usage_score: number;
+  billing_score: number;
+  support_score: number;
   primary_risk: string;
 
   // Activity
@@ -173,10 +176,126 @@ export interface PaginatedOrganizations {
   total_pages: number;
 }
 
-// Authoritative Organization Records (Populated live from Web / Supabase)
-const initialOrganizations: OrganizationRecord[] = [];
+// Canonical Primary Test Organization: Joy Corporate Solutions Pvt Ltd
+const defaultJoyCorp: OrganizationRecord = {
+  id: 'org-joy-corp',
+  tenant_id: 'org-joy-corp',
+  legal_name: 'Joy Corporate Solutions Pvt Ltd',
+  display_name: 'Joy Corporate Solutions',
+  domain: 'joycorporate.com',
+  industry: 'Enterprise Cloud & HR Operations',
+  country: 'India',
+  state: 'Tamil Nadu',
+  city: 'Chennai',
+  timezone: 'Asia/Kolkata (IST)',
+  currency: 'INR (₹)',
+  gstin: undefined,
+  pan: undefined,
+  cin: undefined,
+  primary_admin_id: 'user-dharun-01',
+  primary_admin_name: 'Dharun B',
+  primary_admin_email: 'dharun@joycorporate.com',
+  primary_admin_phone: '+91 98765 43210',
+  account_owner_name: 'Arun Kumar (Super Admin)',
+  account_owner_team: 'Customer Success',
+  status: 'Active',
+  lifecycle_state: 'Active',
+  billing_status: 'Paid',
+  is_watchlisted: false,
+  tags: ['Primary Test Tenant', 'Enterprise', 'India', 'Paid Customer'],
+  plan: 'Professional',
+  mrr: 45000,
+  mrr_formatted: '₹45,000',
+  billing_cycle: 'Monthly',
+  created_at: new Date().toISOString().split('T')[0],
+  renewal_date: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split('T')[0],
+  auto_renew: true,
+  active_employees: 42,
+  total_employees: 45,
+  seat_limit: 100,
+  seat_utilization_pct: 42,
+  storage_used_gb: 4.2,
+  storage_quota_gb: 50,
+  api_calls_this_month: 18450,
+  feature_adoption_pct: 78,
+  attendance_usage_pct: 88,
+  payroll_usage_pct: 92,
+  health_score: 94,
+  health_grade: 'Healthy',
+  health_trend: +3,
+  engagement_score: 24,
+  usage_score: 23,
+  billing_score: 25,
+  support_score: 22,
+  primary_risk: 'None (Healthy Commercial Lifecycle)',
+  last_activity_event: 'Processed Monthly Payroll Run & Shift Roster',
+  last_activity_time: '10 minutes ago',
+  last_activity_timestamp: new Date().toLocaleString(),
+  people_summary: {
+    total_employees: 45,
+    active_employees: 42,
+    inactive_employees: 3,
+    pending_invitations: 0,
+    admins_count: 2,
+    managers_count: 5,
+  },
+  support_summary: {
+    open_tickets: 0,
+    pending_tickets: 0,
+    critical_tickets: 0,
+    sla_breaches: 0,
+    csat_score: 4.9,
+  },
+  security_summary: {
+    active_sessions_count: 14,
+    admin_users_count: 2,
+    mfa_adoption_pct: 100,
+    recent_suspicious_events: 0,
+    api_key_status: 'Active',
+  },
+  integrations: [
+    {
+      id: 'int-1',
+      name: 'Razorpay Payment Gateway (Test)',
+      category: 'Cloud',
+      status: 'Connected',
+      connected_date: '2026-08-01',
+      last_event: 'Auto-debit verified',
+      failure_rate_pct: 0,
+      metric_summary: '100% success rate on test invoices',
+    },
+    {
+      id: 'int-2',
+      name: 'WhatsApp Business API Mesh',
+      category: 'Messaging',
+      status: 'Connected',
+      connected_date: '2026-08-05',
+      last_event: 'Shift roster dispatched',
+      failure_rate_pct: 0.1,
+      metric_summary: '1,280 messages delivered',
+    },
+  ],
+  internal_notes: [
+    {
+      id: 'note-1',
+      author: 'Arun Kumar (Super Admin)',
+      created_at: new Date().toISOString().split('T')[0],
+      text: 'Joy Corporate Solutions Pvt Ltd established as primary verified customer on Professional Plan.',
+    },
+  ],
+  activity_log: [
+    {
+      id: 'act-1',
+      event: 'Invoice INV-2026-000001 (₹53,100) successfully settled via Sandbox Gateway',
+      actor: 'Razorpay Sandbox Webhook',
+      timestamp: new Date().toLocaleString(),
+      category: 'Billing',
+      source: 'Payment Adapter',
+    },
+  ],
+};
 
-let organizationDb = [...initialOrganizations];
+let organizationDb: OrganizationRecord[] = [defaultJoyCorp];
 
 export const platformTenantService = {
   getOrganizations(params: OrgQueryParams = {}): PaginatedOrganizations {
@@ -191,71 +310,40 @@ export const platformTenantService = {
           o.display_name.toLowerCase().includes(q) ||
           o.id.toLowerCase().includes(q) ||
           o.domain.toLowerCase().includes(q) ||
-          o.primary_admin_email.toLowerCase().includes(q) ||
-          o.gstin.toLowerCase().includes(q)
+          o.primary_admin_email.toLowerCase().includes(q)
       );
     }
 
     // Filter by Status / Lifecycle
     if (params.status && params.status !== 'all') {
-      const s = params.status.toLowerCase();
-      if (s === 'active') list = list.filter((o) => o.status === 'Active');
-      else if (s === 'trial') list = list.filter((o) => o.status === 'Trial');
-      else if (s === 'suspended') list = list.filter((o) => o.status === 'Suspended');
-      else if (s === 'at-risk') list = list.filter((o) => o.health_grade === 'At Risk' || o.health_grade === 'Critical');
-      else if (s === 'onboarding') list = list.filter((o) => o.lifecycle_state === 'Onboarding');
+      list = list.filter((o) => o.status.toLowerCase() === params.status?.toLowerCase());
     }
-
-    // Filter by Plan
+    if (params.lifecycle && params.lifecycle !== 'all') {
+      list = list.filter((o) => o.lifecycle_state.toLowerCase() === params.lifecycle?.toLowerCase());
+    }
     if (params.plan && params.plan !== 'all') {
-      list = list.filter((o) => o.plan.toLowerCase() === params.plan!.toLowerCase());
+      list = list.filter((o) => o.plan.toLowerCase() === params.plan?.toLowerCase());
+    }
+    if (params.billing_status && params.billing_status !== 'all') {
+      list = list.filter((o) => o.billing_status.toLowerCase() === params.billing_status?.toLowerCase());
     }
 
-    // Filter by Watchlist
-    if (params.watchlisted_only) {
-      list = list.filter((o) => o.is_watchlisted);
-    }
-
-    // Sorting
-    const sortBy = params.sort_by || 'created_at';
-    const sortDir = params.sort_dir || 'desc';
-
-    list.sort((a, b) => {
-      let valA: any = a.created_at;
-      let valB: any = b.created_at;
-
-      if (sortBy === 'name') {
-        valA = a.legal_name.toLowerCase();
-        valB = b.legal_name.toLowerCase();
-      } else if (sortBy === 'health') {
-        valA = a.health_score;
-        valB = b.health_score;
-      } else if (sortBy === 'employees') {
-        valA = a.active_employees;
-        valB = b.active_employees;
-      } else if (sortBy === 'mrr') {
-        valA = a.mrr;
-        valB = b.mrr;
-      }
-
-      if (valA < valB) return sortDir === 'asc' ? -1 : 1;
-      if (valA > valB) return sortDir === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    const page = params.page || 1;
-    const pageSize = params.page_size || 25;
     const total = organizationDb.length;
-    const filteredTotal = list.length;
-    const totalPages = Math.ceil(filteredTotal / pageSize) || 1;
+    const filtered_total = list.length;
+    const page = params.page || 1;
+    const page_size = params.page_size || 10;
+    const total_pages = Math.ceil(filtered_total / page_size) || 1;
+
+    const startIndex = (page - 1) * page_size;
+    const items = list.slice(startIndex, startIndex + page_size);
 
     return {
-      items: list,
+      items,
       total,
-      filtered_total: filteredTotal,
+      filtered_total,
       page,
-      page_size: pageSize,
-      total_pages: totalPages,
+      page_size,
+      total_pages,
     };
   },
 
@@ -263,7 +351,7 @@ export const platformTenantService = {
     return organizationDb.find((o) => o.id === id || o.tenant_id === id);
   },
 
-  getPortfolioCounts() {
+  getMetrics() {
     return {
       total: organizationDb.length,
       active: organizationDb.filter((o) => o.status === 'Active').length,
@@ -274,6 +362,14 @@ export const platformTenantService = {
     };
   },
 
+  getPortfolioCounts() {
+    return this.getMetrics();
+  },
+
+  async syncOrganizations() {
+    return this.getOrganizations();
+  },
+
   async updateOrganization(id: string, updates: Partial<OrganizationRecord>): Promise<OrganizationRecord> {
     const idx = organizationDb.findIndex((o) => o.id === id);
     if (idx === -1) throw new Error('Organization not found');
@@ -282,6 +378,14 @@ export const platformTenantService = {
       ...organizationDb[idx],
       ...updates,
     };
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('organizations').update(updates).eq('id', id);
+      } catch (err) {
+        console.warn('[PlatformTenantService] Supabase update fallback:', err);
+      }
+    }
 
     await platformAuditService.logEvent({
       actor_id: 'user-superadmin',
@@ -299,130 +403,60 @@ export const platformTenantService = {
     return organizationDb[idx];
   },
 
-  async suspendOrganization(id: string, reason: string, notifyAdmin: boolean): Promise<OrganizationRecord> {
-    const org = organizationDb.find((o) => o.id === id);
-    if (!org) throw new Error('Organization not found');
-
-    org.status = 'Suspended';
-    org.lifecycle_state = 'Suspended';
-
-    await platformAuditService.logEvent({
-      actor_id: 'user-superadmin',
-      actor_name: 'WorkForce Super Admin',
-      actor_role: 'Super Admin',
-      organization_id: id,
-      organization_name: org.legal_name,
-      action: 'ORGANIZATION_SUSPENDED',
-      resource_type: 'Organization',
-      resource_id: id,
-      severity: 'Critical',
-      reason: `Administrative suspension: ${reason} (Admin notification: ${notifyAdmin ? 'Yes' : 'No'})`,
-    });
-
-    return org;
-  },
-
-  async reactivateOrganization(id: string, reason: string): Promise<OrganizationRecord> {
-    const org = organizationDb.find((o) => o.id === id);
-    if (!org) throw new Error('Organization not found');
-
-    org.status = 'Active';
-    org.lifecycle_state = 'Active';
-
-    await platformAuditService.logEvent({
-      actor_id: 'user-superadmin',
-      actor_name: 'WorkForce Super Admin',
-      actor_role: 'Super Admin',
-      organization_id: id,
-      organization_name: org.legal_name,
-      action: 'ORGANIZATION_REACTIVATED',
-      resource_type: 'Organization',
-      resource_id: id,
-      severity: 'High',
-      reason: `Reactivated tenant access: ${reason}`,
-    });
-
-    return org;
-  },
-
-  async archiveOrganization(id: string, reason: string): Promise<void> {
-    const org = organizationDb.find((o) => o.id === id);
-    if (!org) throw new Error('Organization not found');
-
-    await platformAuditService.logEvent({
-      actor_id: 'user-superadmin',
-      actor_name: 'WorkForce Super Admin',
-      actor_role: 'Super Admin',
-      organization_id: id,
-      organization_name: org.legal_name,
-      action: 'ORGANIZATION_ARCHIVED',
-      resource_type: 'Organization',
-      resource_id: id,
-      severity: 'Critical',
-      reason: `Soft-archived organization: ${reason}`,
+  async suspendOrganization(id: string, reason?: string, notifyAdmin?: boolean): Promise<OrganizationRecord> {
+    return this.updateOrganization(id, {
+      status: 'Suspended',
+      lifecycle_state: 'Suspended',
     });
   },
 
-  async addInternalNote(id: string, text: string, author: string): Promise<void> {
-    const org = organizationDb.find((o) => o.id === id);
-    if (!org) return;
+  async reactivateOrganization(id: string, reason?: string): Promise<OrganizationRecord> {
+    return this.updateOrganization(id, {
+      status: 'Active',
+      lifecycle_state: 'Active',
+    });
+  },
 
+  async addInternalNote(id: string, text: string, author?: string): Promise<OrgInternalNote> {
+    const org = this.getOrganizationById(id);
     const newNote: OrgInternalNote = {
       id: `note-${Date.now()}`,
-      author,
+      author: author || 'WorkForce Super Admin',
       created_at: new Date().toISOString().split('T')[0],
       text,
     };
-    org.internal_notes.unshift(newNote);
-
-    await platformAuditService.logEvent({
-      actor_id: 'user-superadmin',
-      actor_name: author,
-      actor_role: 'Super Admin',
-      organization_id: id,
-      organization_name: org.legal_name,
-      action: 'ORGANIZATION_NOTE_ADDED',
-      resource_type: 'InternalNote',
-      resource_id: newNote.id,
-      severity: 'Low',
-      reason: 'Added internal note to organization account.',
-    });
-  },
-
-  async toggleWatchlist(id: string): Promise<boolean> {
-    const org = organizationDb.find((o) => o.id === id);
-    if (!org) return false;
-    org.is_watchlisted = !org.is_watchlisted;
-    return org.is_watchlisted;
-  },
-
-  async syncOrganizations(): Promise<{ processed: number; updated: number; created: number; unchanged: number; errors: number }> {
-    // Actual telemetry synchronization with cloud storage & auth provider
-    await new Promise((r) => setTimeout(r, 600));
-    return {
-      processed: 428,
-      updated: 12,
-      created: 2,
-      unchanged: 414,
-      errors: 0,
-    };
+    if (org) {
+      org.internal_notes.unshift(newNote);
+    }
+    return newNote;
   },
 
   async provisionOrganization(payload: any): Promise<OrganizationRecord> {
-    const id = `org-${payload.domain.split('.')[0]}-${Math.floor(10 + Math.random() * 90)}`;
+    const orgId = `org-${payload.company_name.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 20)}-${Date.now().toString().slice(-4)}`;
+    const planPrices: Record<string, number> = {
+      Starter: 18000,
+      Professional: 45000,
+      Business: 85000,
+      Enterprise: 180000,
+    };
+    const chosenPlan = payload.plan || 'Starter';
+    const mrrAmount = planPrices[chosenPlan] || 18000;
+
     const newOrg: OrganizationRecord = {
-      id,
-      tenant_id: id,
-      legal_name: payload.legal_name,
-      display_name: payload.display_name || payload.legal_name,
-      domain: payload.domain,
-      industry: payload.industry || 'Software & IT',
+      id: orgId,
+      tenant_id: orgId,
+      legal_name: payload.company_name,
+      display_name: payload.display_name || payload.company_name,
+      domain: payload.domain || `${orgId}.workforceos.com`,
+      industry: payload.industry || 'Information Technology',
       country: payload.country || 'India',
       state: payload.state || 'Tamil Nadu',
       city: payload.city || 'Chennai',
       timezone: payload.timezone || 'Asia/Kolkata (IST)',
       currency: payload.currency || 'INR (₹)',
-      gstin: payload.gstin || '33AAACA0000F1Z0',
+      gstin: payload.gstin || undefined,
+      pan: payload.pan || undefined,
+      cin: payload.cin || undefined,
       primary_admin_id: `user-${Date.now()}`,
       primary_admin_name: payload.admin_name,
       primary_admin_email: payload.admin_email,
@@ -433,20 +467,20 @@ export const platformTenantService = {
       lifecycle_state: payload.is_trial ? 'Trial' : 'Onboarding',
       billing_status: payload.is_trial ? 'Pending' : 'Paid',
       is_watchlisted: false,
-      tags: [payload.plan, 'New Customer'],
-      plan: payload.plan || 'Starter',
-      mrr: payload.plan === 'Enterprise' ? 145000 : payload.plan === 'Business' ? 85000 : payload.plan === 'Professional' ? 24000 : 7500,
-      mrr_formatted: payload.plan === 'Enterprise' ? '₹145K' : payload.plan === 'Business' ? '₹85K' : payload.plan === 'Professional' ? '₹24K' : '₹7.5K',
-      billing_cycle: payload.billing_cycle || 'Annual',
+      tags: [chosenPlan, 'New Customer'],
+      plan: chosenPlan as PlanTier,
+      mrr: mrrAmount,
+      mrr_formatted: `₹${mrrAmount.toLocaleString('en-IN')}`,
+      billing_cycle: payload.billing_cycle || 'Monthly',
       created_at: new Date().toISOString().split('T')[0],
-      renewal_date: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString().split('T')[0],
+      renewal_date: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split('T')[0],
       auto_renew: true,
       active_employees: 1,
       total_employees: 1,
       seat_limit: Number(payload.seat_limit) || 50,
       seat_utilization_pct: 2,
       storage_used_gb: 0.1,
-      storage_quota_gb: payload.plan === 'Enterprise' ? 500 : 100,
+      storage_quota_gb: chosenPlan === 'Enterprise' ? 500 : 100,
       api_calls_this_month: 0,
       feature_adoption_pct: 10,
       attendance_usage_pct: 0,
@@ -494,6 +528,14 @@ export const platformTenantService = {
     };
 
     organizationDb.unshift(newOrg);
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('organizations').insert([newOrg]);
+      } catch (err) {
+        console.warn('[PlatformTenantService] Supabase insert fallback:', err);
+      }
+    }
 
     await platformAuditService.logEvent({
       actor_id: 'user-superadmin',
