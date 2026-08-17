@@ -1,165 +1,258 @@
 // src/services/billing/billingCalculationEngine.ts
 // ============================================================
-// WorkForceOS — Centralized Commercial Billing Calculation Engine
+// WorkForceOS — SaaS Financial & Dynamic Indian GST Calculation Engine
 // ============================================================
 
-export interface BillingPlanSpec {
+export type SupplyType = 'INTRASTATE' | 'INTERSTATE' | 'EXPORT' | 'SEZ';
+
+export interface TaxConfiguration {
+  supplierStateCode: string; // e.g. '33' (Tamil Nadu)
+  supplierStateName: string;
+  customerStateCode: string; // e.g. '33' (Intrastate) or '27' (Interstate)
+  customerStateName: string;
+  gstRatePct: number; // e.g. 18
+  cessRatePct?: number; // e.g. 0
+  isReverseCharge?: boolean;
+}
+
+export interface TaxCalculationResult {
+  taxableAmount: number;
+  supplyType: SupplyType;
+  gstRatePct: number;
+  cgstRatePct: number;
+  cgstAmount: number;
+  sgstRatePct: number;
+  sgstAmount: number;
+  igstRatePct: number;
+  igstAmount: number;
+  cessAmount: number;
+  totalTaxAmount: number;
+  grandTotal: number;
+}
+
+export interface InvoiceItemSpec {
+  description: string;
+  sacHsn: string;
+  quantity: number;
+  unitPrice: number;
+  discountPct?: number;
+  discountAmount?: number;
+}
+
+export interface ItemCalculationResult extends InvoiceItemSpec {
+  grossAmount: number;
+  appliedDiscount: number;
+  taxableAmount: number;
+}
+
+export interface BillingPlanInput {
   id: string;
   name: string;
   code: string;
-  monthlyPrice: number; // in INR
-  annualPrice: number; // in INR
+  monthlyPrice: number;
+  annualPrice: number;
   includedSeats: number;
   maximumSeats: number;
   additionalSeatPrice?: number;
 }
 
 export interface BillingCalculationInput {
-  plan: BillingPlanSpec;
+  plan: BillingPlanInput;
   seatCount: number;
-  billingInterval: 'Monthly' | 'Annual';
-  couponDiscountPercent?: number; // e.g. 10 for 10%
-  taxRatePercent?: number; // e.g. 18 for 18% GST (default 18.0)
-  prorationDaysRemaining?: number;
-  prorationTotalDays?: number;
-}
-
-export interface InvoiceLineItemCalculated {
-  description: string;
-  planOrFeatureCode: string;
-  quantity: number;
-  unitPrice: number;
-  discount: number;
-  taxableAmount: number;
-  tax: number;
-  lineTotal: number;
+  billingInterval: 'Monthly' | 'Quarterly' | 'Annual';
+  couponDiscountPercent?: number;
+  customDiscountAmount?: number;
 }
 
 export interface BillingCalculationOutput {
-  currency: 'INR' | 'USD';
-  billingInterval: 'Monthly' | 'Annual';
-  seatCount: number;
-  basePlanPrice: number;
-  additionalSeatsPrice: number;
+  basePrice: number;
+  extraSeatsPrice: number;
   subtotal: number;
-  annualDiscountAmount: number;
-  couponDiscountAmount: number;
+  discountAmount: number;
   totalDiscount: number;
-  taxableAmount: number;
-  taxRatePercent: number;
+  discountedSubtotal: number;
   taxAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  totalDue: number;
   totalAmount: number;
-  lineItems: InvoiceLineItemCalculated[];
-  annualDiscountPercentComputed: number; // dynamically calculated formula
+  effectiveMonthlyRate: number;
+  taxRatePercent: number;
 }
 
 export const billingCalculationEngine = {
   /**
-   * Dynamically calculate the annual discount percentage from configured plan prices.
-   * Formula: annual_discount = 1 - (annual_price / (monthly_price * 12))
+   * Safe decimal arithmetic rounding to 2 decimal places.
    */
-  calculateAnnualDiscountPercent(monthlyPrice: number, annualPrice: number): number {
-    if (!monthlyPrice || monthlyPrice <= 0 || !annualPrice || annualPrice <= 0) return 0;
-    const fullAnnualCost = monthlyPrice * 12;
-    if (annualPrice >= fullAnnualCost) return 0;
-    const discountDecimal = 1 - annualPrice / fullAnnualCost;
-    return Math.round(discountDecimal * 10000) / 100; // Returns rounded e.g. 16.67
+  round2(num: number): number {
+    return Math.round((num + Number.EPSILON) * 100) / 100;
   },
 
   /**
-   * Centralized calculation function for quotes, subscriptions, and invoices.
-   * Uses safe decimal math (rounding to 2 decimal places).
+   * Determine whether transaction is Intrastate or Interstate.
+   */
+  determineSupplyType(supplierStateCode: string, customerStateCode: string): SupplyType {
+    const sCode = (supplierStateCode || '33').trim();
+    const cCode = (customerStateCode || '33').trim();
+    return sCode === cCode ? 'INTRASTATE' : 'INTERSTATE';
+  },
+
+  /**
+   * High-level plan & seat billing calculation engine.
    */
   calculateBilling(input: BillingCalculationInput): BillingCalculationOutput {
-    const {
-      plan,
-      seatCount,
-      billingInterval,
-      couponDiscountPercent = 0,
-      taxRatePercent = 18.0,
-      prorationDaysRemaining,
-      prorationTotalDays,
-    } = input;
+    const isAnnual = input.billingInterval === 'Annual';
+    const isQuarterly = input.billingInterval === 'Quarterly';
 
-    const isAnnual = billingInterval === 'Annual';
-    const computedAnnualDiscountPercent = this.calculateAnnualDiscountPercent(plan.monthlyPrice, plan.annualPrice);
+    let baseRate = isAnnual
+      ? input.plan.annualPrice
+      : isQuarterly
+      ? input.plan.monthlyPrice * 3
+      : input.plan.monthlyPrice;
 
-    // 1. Base Plan Cost
-    let basePlanPrice = isAnnual ? plan.annualPrice : plan.monthlyPrice;
+    // Additional seats calculation
+    let extraSeats = Math.max(0, input.seatCount - input.plan.includedSeats);
+    let pricePerSeat = Math.round(input.plan.monthlyPrice / input.plan.includedSeats);
+    let extraSeatsCost = isAnnual ? extraSeats * pricePerSeat * 10 : extraSeats * pricePerSeat;
 
-    // 2. Extra seats calculation
-    let additionalSeatsPrice = 0;
-    if (seatCount > plan.includedSeats && plan.additionalSeatPrice) {
-      const extraSeats = seatCount - plan.includedSeats;
-      const ratePerSeat = isAnnual ? plan.additionalSeatPrice * 12 * (1 - computedAnnualDiscountPercent / 100) : plan.additionalSeatPrice;
-      additionalSeatsPrice = Math.round(extraSeats * ratePerSeat * 100) / 100;
+    const subtotal = this.round2(baseRate + extraSeatsCost);
+
+    // Discounts
+    let discountAmount = 0;
+    if (input.couponDiscountPercent && input.couponDiscountPercent > 0) {
+      discountAmount += this.round2((subtotal * input.couponDiscountPercent) / 100);
+    }
+    if (input.customDiscountAmount && input.customDiscountAmount > 0) {
+      discountAmount += this.round2(input.customDiscountAmount);
     }
 
-    let subtotal = Math.round((basePlanPrice + additionalSeatsPrice) * 100) / 100;
+    const discountedSubtotal = Math.max(0, this.round2(subtotal - discountAmount));
 
-    // 3. Proration adjustment (if upgrading mid-cycle)
-    if (prorationDaysRemaining !== undefined && prorationTotalDays !== undefined && prorationTotalDays > 0) {
-      const prorationFactor = prorationDaysRemaining / prorationTotalDays;
-      subtotal = Math.round(subtotal * prorationFactor * 100) / 100;
-    }
+    // Default 18% GST (Intrastate default TN)
+    const taxRatePercent = 18;
+    const cgstAmount = this.round2((discountedSubtotal * 9) / 100);
+    const sgstAmount = this.round2((discountedSubtotal * 9) / 100);
+    const taxAmount = this.round2(cgstAmount + sgstAmount);
+    const totalDue = this.round2(discountedSubtotal + taxAmount);
 
-    // 4. Discounts
-    const couponDiscountAmount = couponDiscountPercent > 0
-      ? Math.round(subtotal * (couponDiscountPercent / 100) * 100) / 100
-      : 0;
-
-    const totalDiscount = couponDiscountAmount;
-    const taxableAmount = Math.max(0, Math.round((subtotal - totalDiscount) * 100) / 100);
-
-    // 5. Tax (GST)
-    const taxAmount = Math.round(taxableAmount * (taxRatePercent / 100) * 100) / 100;
-    const totalAmount = Math.round((taxableAmount + taxAmount) * 100) / 100;
-
-    // 6. Generate canonical line items
-    const lineItems: InvoiceLineItemCalculated[] = [
-      {
-        description: `${plan.name} Plan ${isAnnual ? 'Annual' : 'Monthly'} Subscription (${plan.includedSeats} Included Seats)`,
-        planOrFeatureCode: plan.code,
-        quantity: 1,
-        unitPrice: basePlanPrice,
-        discount: couponDiscountAmount,
-        taxableAmount: taxableAmount - (additionalSeatsPrice ? Math.round(additionalSeatsPrice * (1 - couponDiscountPercent / 100) * 100) / 100 : 0),
-        tax: Math.round((taxableAmount - (additionalSeatsPrice ? Math.round(additionalSeatsPrice * (1 - couponDiscountPercent / 100) * 100) / 100 : 0)) * (taxRatePercent / 100) * 100) / 100,
-        lineTotal: Math.round((basePlanPrice - couponDiscountAmount + Math.round((basePlanPrice - couponDiscountAmount) * (taxRatePercent / 100) * 100) / 100) * 100) / 100,
-      },
-    ];
-
-    if (additionalSeatsPrice > 0) {
-      const extraSeats = seatCount - plan.includedSeats;
-      const extraTax = Math.round(additionalSeatsPrice * (taxRatePercent / 100) * 100) / 100;
-      lineItems.push({
-        description: `Additional Capacity: ${extraSeats} Seats (${isAnnual ? 'Annual' : 'Monthly'})`,
-        planOrFeatureCode: 'seat.expansion',
-        quantity: extraSeats,
-        unitPrice: Math.round((additionalSeatsPrice / extraSeats) * 100) / 100,
-        discount: 0,
-        taxableAmount: additionalSeatsPrice,
-        tax: extraTax,
-        lineTotal: Math.round((additionalSeatsPrice + extraTax) * 100) / 100,
-      });
-    }
+    const effectiveMonthlyRate = isAnnual ? Math.round(discountedSubtotal / 12) : discountedSubtotal;
 
     return {
-      currency: 'INR',
-      billingInterval,
-      seatCount,
-      basePlanPrice,
-      additionalSeatsPrice,
+      basePrice: baseRate,
+      extraSeatsPrice: extraSeatsCost,
       subtotal,
-      annualDiscountAmount: isAnnual ? (plan.monthlyPrice * 12 - plan.annualPrice) : 0,
-      couponDiscountAmount,
-      totalDiscount,
-      taxableAmount,
-      taxRatePercent,
+      discountAmount,
+      totalDiscount: discountAmount,
+      discountedSubtotal,
       taxAmount,
-      totalAmount,
-      lineItems,
-      annualDiscountPercentComputed: computedAnnualDiscountPercent,
+      cgstAmount,
+      sgstAmount,
+      igstAmount: 0,
+      totalDue,
+      totalAmount: totalDue,
+      effectiveMonthlyRate,
+      taxRatePercent,
     };
+  },
+
+  /**
+   * Calculate line item gross, discount, and taxable amount.
+   */
+  calculateLineItem(item: InvoiceItemSpec): ItemCalculationResult {
+    const gross = this.round2(item.quantity * item.unitPrice);
+    let discount = 0;
+
+    if (item.discountAmount !== undefined && item.discountAmount > 0) {
+      discount = Math.min(gross, this.round2(item.discountAmount));
+    } else if (item.discountPct !== undefined && item.discountPct > 0) {
+      discount = this.round2((gross * item.discountPct) / 100);
+    }
+
+    const taxable = Math.max(0, this.round2(gross - discount));
+
+    return {
+      ...item,
+      grossAmount: gross,
+      appliedDiscount: discount,
+      taxableAmount: taxable,
+    };
+  },
+
+  /**
+   * Calculate exact Indian GST breakdown for taxable amount.
+   */
+  calculateTaxes(taxableAmount: number, config: TaxConfiguration): TaxCalculationResult {
+    const taxable = this.round2(taxableAmount);
+    const supplyType = this.determineSupplyType(config.supplierStateCode, config.customerStateCode);
+    const totalGstRate = config.gstRatePct || 18;
+
+    let cgstRate = 0;
+    let cgstAmount = 0;
+    let sgstRate = 0;
+    let sgstAmount = 0;
+    let igstRate = 0;
+    let igstAmount = 0;
+    let cessAmount = 0;
+
+    if (config.isReverseCharge) {
+      return {
+        taxableAmount: taxable,
+        supplyType,
+        gstRatePct: totalGstRate,
+        cgstRatePct: 0,
+        cgstAmount: 0,
+        sgstRatePct: 0,
+        sgstAmount: 0,
+        igstRatePct: 0,
+        igstAmount: 0,
+        cessAmount: 0,
+        totalTaxAmount: 0,
+        grandTotal: taxable,
+      };
+    }
+
+    if (supplyType === 'INTRASTATE') {
+      cgstRate = totalGstRate / 2;
+      sgstRate = totalGstRate / 2;
+      cgstAmount = this.round2((taxable * cgstRate) / 100);
+      sgstAmount = this.round2((taxable * sgstRate) / 100);
+    } else {
+      igstRate = totalGstRate;
+      igstAmount = this.round2((taxable * igstRate) / 100);
+    }
+
+    if (config.cessRatePct && config.cessRatePct > 0) {
+      cessAmount = this.round2((taxable * config.cessRatePct) / 100);
+    }
+
+    const totalTax = this.round2(cgstAmount + sgstAmount + igstAmount + cessAmount);
+    const grandTotal = this.round2(taxable + totalTax);
+
+    return {
+      taxableAmount: taxable,
+      supplyType,
+      gstRatePct: totalGstRate,
+      cgstRatePct: cgstRate,
+      cgstAmount,
+      sgstRatePct: sgstRate,
+      sgstAmount,
+      igstRatePct: igstRate,
+      igstAmount,
+      cessAmount,
+      totalTaxAmount: totalTax,
+      grandTotal,
+    };
+  },
+
+  /**
+   * Currency formatter with standard Indian Numbering system (₹ Lakhs/Crores).
+   */
+  formatINR(amount: number): string {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0,
+    }).format(amount || 0);
   },
 };
