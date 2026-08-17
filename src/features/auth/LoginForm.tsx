@@ -90,17 +90,65 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleSignup, onForgotPa
           <KeyRound className="w-3.5 h-3.5" /> Demo Login Accounts:
         </div>
 
-        {/* Platform / SaaS Owner — one-click direct login, distinct indigo style */}
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 mb-1">Platform</div>
-          <button
-            type="button"
-            onClick={() => quickLogin('superadmin@workforceos.com')}
-            disabled={isLoading}
-            className="w-full px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 rounded border border-indigo-200 text-[11px] font-bold text-indigo-700 text-center cursor-pointer transition-colors disabled:opacity-50"
-          >
-            🛡 Platform Admin (SaaS Owner) — Click to Login
-          </button>
+        {/* Platform / SaaS Control Plane Staff */}
+        <div className="space-y-1">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 mb-1 flex items-center justify-between">
+            <span>Platform Control Plane Staff</span>
+            <span className="text-[9px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-bold">Internal</span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => quickLogin('superadmin@workforceos.com')}
+              disabled={isLoading}
+              className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 rounded border border-indigo-200 text-[11px] font-bold text-indigo-800 text-left cursor-pointer transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              <span>🛡️</span>
+              <div className="truncate">
+                <div className="font-bold">Super Admin</div>
+                <div className="text-[9px] text-indigo-600 font-normal">Root SaaS Access</div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => quickLogin('assistant.admin@workforceos.com')}
+              disabled={isLoading}
+              className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 rounded border border-indigo-200 text-[11px] font-bold text-indigo-800 text-left cursor-pointer transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              <span>👥</span>
+              <div className="truncate">
+                <div className="font-bold">Assistant Admin</div>
+                <div className="text-[9px] text-indigo-600 font-normal">Delegated Ops</div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => quickLogin('finance@workforceos.com')}
+              disabled={isLoading}
+              className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 rounded border border-indigo-200 text-[11px] font-bold text-indigo-800 text-left cursor-pointer transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              <span>💳</span>
+              <div className="truncate">
+                <div className="font-bold">Billing Admin</div>
+                <div className="text-[9px] text-indigo-600 font-normal">FinOps & Invoices</div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => quickLogin('security@workforceos.com')}
+              disabled={isLoading}
+              className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 rounded border border-indigo-200 text-[11px] font-bold text-indigo-800 text-left cursor-pointer transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              <span>🔒</span>
+              <div className="truncate">
+                <div className="font-bold">Security Officer</div>
+                <div className="text-[9px] text-indigo-600 font-normal">Audit & IAM</div>
+              </div>
+            </button>
+          </div>
         </div>
 
         {/* HRMS company roles — one-click login */}

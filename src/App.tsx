@@ -57,7 +57,7 @@ const AppContent: React.FC = () => {
     }
     const stored = api.getCurrentUser();
     const roleName = stored?.roles?.[0]?.name ?? '';
-    if (roleName === 'Super Admin') return urlState.route || 'platform-dashboard';
+    if (['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(roleName)) return urlState.route || 'platform-dashboard';
     if (roleName === 'Team Lead')   return 'tl-dashboard';
     if (roleName === 'Employee')    return 'ess-dashboard';
     return 'dashboard'; // Company Admin, HR Head, Manager
@@ -104,7 +104,7 @@ const AppContent: React.FC = () => {
     // Only act when the user actually switched persona.
     if (previousUserId !== user.id) {
       const roleName = user.roles?.[0]?.name ?? '';
-      if (roleName === 'Super Admin') {
+      if (['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(roleName)) {
         setCurrentRoute('platform-dashboard');
       } else if (roleName === 'Team Lead') {
         setCurrentRoute('tl-dashboard');

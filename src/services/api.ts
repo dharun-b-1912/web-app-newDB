@@ -39,23 +39,61 @@ const defaultCompany: Company = {
 
 const defaultRoles: Role[] = [
   { id: 'role-001', organization_id: 'org-acme-01', name: 'Super Admin', description: 'Root Platform Administrator with global access', permissions: [] },
+  { id: 'role-001b', organization_id: 'org-acme-01', name: 'Assistant Admin', description: 'Assistant Platform Administrator with delegated operations & customer support access', permissions: [] },
+  { id: 'role-001c', organization_id: 'org-acme-01', name: 'Billing Admin', description: 'FinOps & SaaS Invoicing Administrator', permissions: [] },
+  { id: 'role-001d', organization_id: 'org-acme-01', name: 'Security Officer', description: 'Compliance, Session Security & Audit Officer', permissions: [] },
   { id: 'role-002', organization_id: 'org-acme-01', name: 'Company Admin', description: 'Enterprise Organization Admin', permissions: [] },
   { id: 'role-003', organization_id: 'org-acme-01', name: 'HR Head', description: 'Head of Human Resources & People Operations', permissions: [] },
   { id: 'role-004', organization_id: 'org-acme-01', name: 'Team Lead', description: 'Department Supervisor / Team Lead', permissions: [] },
   { id: 'role-005', organization_id: 'org-acme-01', name: 'Employee', description: 'Standard Employee with Employee Self Service access', permissions: [] },
 ];
 
-const defaultSuperAdmin: User = {
-  id: 'user-super-01',
-  organization_id: 'org-acme-01',
-  email: 'superadmin@workforceos.com',
-  name: 'Arun Kumar',
-  avatar_url: '',
-  employee_id: 'emp-000',
-  status: 'Active',
-  roles: [defaultRoles[0]],
-  created_at: '2024-01-01T00:00:00Z',
-};
+const defaultPlatformUsers: User[] = [
+  {
+    id: 'user-super-01',
+    organization_id: 'org-platform',
+    email: 'superadmin@workforceos.com',
+    name: 'Arun Kumar',
+    avatar_url: '',
+    employee_id: 'emp-root-001',
+    status: 'Active',
+    roles: [defaultRoles[0]], // Super Admin
+    created_at: '2024-01-01T00:00:00Z',
+  },
+  {
+    id: 'user-asst-02',
+    organization_id: 'org-platform',
+    email: 'assistant.admin@workforceos.com',
+    name: 'Karthik Natarajan',
+    avatar_url: '',
+    employee_id: 'emp-asst-002',
+    status: 'Active',
+    roles: [defaultRoles[1]], // Assistant Admin
+    created_at: '2024-02-01T00:00:00Z',
+  },
+  {
+    id: 'user-fin-03',
+    organization_id: 'org-platform',
+    email: 'finance@workforceos.com',
+    name: 'Pooja Agarwal',
+    avatar_url: '',
+    employee_id: 'emp-fin-003',
+    status: 'Active',
+    roles: [defaultRoles[2]], // Billing Admin
+    created_at: '2024-03-01T00:00:00Z',
+  },
+  {
+    id: 'user-sec-04',
+    organization_id: 'org-platform',
+    email: 'security@workforceos.com',
+    name: 'Vikram Sethi',
+    avatar_url: '',
+    employee_id: 'emp-sec-004',
+    status: 'Active',
+    roles: [defaultRoles[3]], // Security Officer
+    created_at: '2024-04-01T00:00:00Z',
+  },
+];
 
 // Local Storage Keys
 const KEYS = {
@@ -397,7 +435,7 @@ export const api = {
         console.warn('[API] Failed to fetch users from Supabase:', err);
       }
     }
-    return getStorage<User[]>(KEYS.USERS, [defaultSuperAdmin]);
+    return getStorage<User[]>(KEYS.USERS, defaultPlatformUsers);
   },
 
   async assignUserRole(userId: string, roleId: string): Promise<User> {
@@ -510,7 +548,7 @@ export const api = {
   },
 
   getCurrentUser(): User {
-    return getStorage(KEYS.CURRENT_USER, defaultSuperAdmin);
+    return getStorage(KEYS.CURRENT_USER, defaultPlatformUsers[0]);
   },
 
   setCurrentUser(user: User): void {

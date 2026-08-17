@@ -32,6 +32,7 @@ import { PlatformStaffView } from './subviews/PlatformStaffView';
 import { NotificationDeliveryMonitorView } from './subviews/NotificationDeliveryMonitorView';
 import { ImpersonationBanner } from './components/ImpersonationBanner';
 import { usePlatformRealtime } from '../../services/platform';
+import { api } from '../../services/api';
 
 import { TenantHealthView } from './subviews/TenantHealthView';
 
@@ -265,6 +266,17 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
         </div>
 
         <div className="flex items-center gap-2">
+          {(() => {
+            const currentUser = api.getCurrentUser();
+            const currentRole = currentUser?.roles?.[0]?.name || 'Super Admin';
+            return (
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-full">
+                <span>🛡️</span>
+                <span>{currentUser?.name || 'Staff'}: <strong>{currentRole}</strong></span>
+              </span>
+            );
+          })()}
+
           <span className="flex items-center gap-1.5 text-[12px] font-mono text-[#62748E] bg-white border border-[#E7EAF0] px-3 py-1 rounded-full shadow-[0_1px_2px_rgba(15,23,43,0.04)] tracking-[0.02em]">
             <span
               className={`h-2 w-2 rounded-full ${isConnected ? 'bg-[#15845B] animate-pulse' : 'bg-[#D89A16]'
