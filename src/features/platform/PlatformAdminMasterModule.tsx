@@ -29,6 +29,7 @@ import { WebhooksAndMeshView } from './subviews/WebhooksAndMeshView';
 import { IntegrationsControlCenterView } from './subviews/IntegrationsControlCenterView';
 import { PlatformAccountMasterView } from './subviews/PlatformAccountMasterView';
 import { PlatformStaffView } from './subviews/PlatformStaffView';
+import { NotificationDeliveryMonitorView } from './subviews/NotificationDeliveryMonitorView';
 import { ImpersonationBanner } from './components/ImpersonationBanner';
 import { usePlatformRealtime } from '../../services/platform';
 
@@ -67,6 +68,7 @@ const TAB_TITLES: Record<string, string> = {
   'platform-keys': 'API Keys & Secrets',
   'platform-settings': 'Platform System Settings',
   'platform-staff': 'Platform Staff & Delegated IAM',
+  'platform-notifications': 'Notification Delivery & DLQ Monitor',
   'platform-account': 'Identity & Account Center',
   'saas-revenue': 'Revenue & Growth',
 };
@@ -195,6 +197,10 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
       case 'platform-staff-directory':
       case 'platform-staff-activity':
         return <PlatformStaffView />;
+      case 'platform-notifications':
+      case 'platform-dlq':
+      case 'platform-events':
+        return <NotificationDeliveryMonitorView />;
       case 'platform-account':
       case 'platform-profile':
       case 'platform-account-overview':

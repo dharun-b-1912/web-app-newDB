@@ -185,6 +185,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'platform-support', label: 'Support Center', icon: HelpCircle },
         { id: 'platform-jobs', label: 'Background Jobs', icon: Workflow, badge: failedJobsCount > 0 ? failedJobsCount : undefined, badgeVariant: 'danger' },
         { id: 'platform-webhooks', label: 'Webhooks & Mesh', icon: Send },
+        { id: 'platform-notifications', label: 'Event Bus & DLQ', icon: Bell },
       ],
     },
     {
