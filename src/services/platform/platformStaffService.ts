@@ -304,14 +304,14 @@ export const platformStaffService = {
       account_expiry_date?: string;
       scopes?: PlatformStaffScopeItem[];
     },
-    actorName: string = 'Arun Kumar'
+    actorName: string = 'THIRUMALAI R K'
   ): Promise<PlatformStaffRecord> {
     const existing = cachedStaffList.find((s) => s.email.toLowerCase() === payload.email.toLowerCase());
     if (existing) {
       throw new Error(`Platform staff account with email ${payload.email} already exists.`);
     }
 
-    if (payload.role_key === 'SUPER_ADMIN' && actorName !== 'Arun Kumar') {
+    if (payload.role_key === 'SUPER_ADMIN' && actorName !== 'THIRUMALAI R K') {
       throw new Error('403 Forbidden: Privilege escalation violation. Only existing Root Super Admins can grant the Super Admin role.');
     }
 

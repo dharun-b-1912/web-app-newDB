@@ -35,7 +35,7 @@ import { cn } from '../../lib/utils';
 export const PLATFORM_STAFF_ACCOUNTS = [
   {
     role: 'Super Admin',
-    name: 'Arun Kumar',
+    name: 'THIRUMALAI R K',
     email: 'superadmin@workforceos.com',
     password: 'password123',
     roleBadge: 'Root Platform Owner',

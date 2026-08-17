@@ -53,7 +53,7 @@ const defaultPlatformUsers: User[] = [
     id: 'user-super-01',
     organization_id: 'org-platform',
     email: 'superadmin@workforceos.com',
-    name: 'Arun Kumar',
+    name: 'THIRUMALAI R K',
     avatar_url: '',
     employee_id: 'emp-root-001',
     status: 'Active',
