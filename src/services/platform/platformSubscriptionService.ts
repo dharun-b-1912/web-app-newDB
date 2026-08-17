@@ -277,6 +277,22 @@ export const platformSubscriptionService = {
     return sub;
   },
 
+  async updateSubscription(
+    id: string,
+    newPlan: 'Starter' | 'Professional' | 'Business' | 'Enterprise',
+    newSeats?: number,
+    billingCycle?: 'Monthly' | 'Annual'
+  ): Promise<SubscriptionContractItem> {
+    const sub = await this.changePlan(id, newPlan, `plan-${newPlan.toLowerCase()}`);
+    if (newSeats) {
+      await this.updateSeats(id, newSeats);
+    }
+    if (billingCycle) {
+      sub.billing_cycle = billingCycle;
+    }
+    return sub;
+  },
+
   async updateSeats(id: string, newSeats: number): Promise<SubscriptionContractItem> {
     const target = initialSubscriptions.find((s) => s.id === id);
     if (!target) throw new Error('Subscription not found');
