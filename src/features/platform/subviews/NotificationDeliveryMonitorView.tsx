@@ -537,6 +537,23 @@ export const NotificationDeliveryMonitorView: React.FC = () => {
                 </tbody>
               </table>
             </div>
+            {filteredEvents.length === 0 && (
+              <div className="py-12 text-center text-xs text-gray-400 space-y-3">
+                <Radio className="w-8 h-8 text-[#047857] mx-auto opacity-70 animate-pulse" />
+                <div className="space-y-1">
+                  <p className="font-bold text-gray-800">Event Stream is Listening</p>
+                  <p className="text-[11px] text-gray-400">
+                    No platform events recorded yet, or no events match your current filter.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setActiveTab('sandbox')}
+                  className="px-3.5 py-1.5 bg-[#047857] text-white rounded-lg text-xs font-bold hover:bg-[#065f46] transition shadow-xs cursor-pointer"
+                >
+                  Dispatch Synthetic Test Event
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
