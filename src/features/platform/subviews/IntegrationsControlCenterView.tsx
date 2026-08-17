@@ -488,8 +488,8 @@ export const IntegrationsControlCenterView: React.FC = () => {
           </div>
           <div className="mt-1.5 flex items-baseline gap-2">
             <span className="text-xl font-bold text-[#0F172B]">{metrics.total_connected}</span>
-            <span className="text-[11px] font-semibold text-[#059669] flex items-center">
-              <ArrowUpRight className="h-3 w-3" /> +4 this mo
+            <span className="text-[11px] font-semibold text-[#059669]">
+              {environment}
             </span>
           </div>
           <p className="text-[11px] text-[#94A3B8] mt-1">Marketplace registry</p>
@@ -506,7 +506,7 @@ export const IntegrationsControlCenterView: React.FC = () => {
           </div>
           <div className="mt-1.5 flex items-baseline gap-2">
             <span className="text-xl font-bold text-[#0F172B]">{metrics.active_tenants}</span>
-            <span className="text-[11px] font-semibold text-[#059669]">91% active</span>
+            <span className="text-[11px] font-semibold text-[#059669]">Active bindings</span>
           </div>
           <p className="text-[11px] text-[#94A3B8] mt-1">Using integrations</p>
         </div>
@@ -522,7 +522,7 @@ export const IntegrationsControlCenterView: React.FC = () => {
           </div>
           <div className="mt-1.5 flex items-baseline gap-2">
             <span className="text-xl font-bold text-[#0F172B]">{metrics.webhook_success_pct}%</span>
-            <span className="text-[11px] text-[#64748B]">1.24M deliv.</span>
+            <span className="text-[11px] text-[#64748B]">{metrics.total_webhook_deliveries} events</span>
           </div>
           <p className="text-[11px] text-[#94A3B8] mt-1">Delivery success</p>
         </div>
@@ -538,11 +538,11 @@ export const IntegrationsControlCenterView: React.FC = () => {
           </div>
           <div className="mt-1.5 flex items-baseline gap-2">
             <span className="text-xl font-bold text-[#0F172B]">{metrics.monthly_api_requests}</span>
-            <span className="text-[11px] font-semibold text-[#059669] flex items-center">
-              <ArrowUpRight className="h-3 w-3" /> {metrics.monthly_api_requests_trend}%
+            <span className="text-[11px] font-semibold text-[#059669]">
+              Live throughput
             </span>
           </div>
-          <p className="text-[11px] text-[#94A3B8] mt-1">Monthly throughput</p>
+          <p className="text-[11px] text-[#94A3B8] mt-1">Request volume</p>
         </div>
 
         {/* Card 5 */}
@@ -679,59 +679,67 @@ export const IntegrationsControlCenterView: React.FC = () => {
                 </Button>
               </div>
 
-              <div className="divide-y divide-[#F1F5F9]">
-                {integrations.slice(0, 6).map((item) => (
-                  <div key={item.id} className="py-3 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
-                        {renderProviderIcon(
-                          INTEGRATION_PROVIDERS_META.find((p) => p.provider_key === item.provider_key)?.icon_name || 'Terminal'
-                        )}
-                      </div>
-                      <div>
-                        <div className="font-bold text-xs text-[#0F172B]">{item.name}</div>
-                        <div className="text-[11px] text-[#64748B]">
-                          {item.category} • {item.tenants_count} Tenants
+              {integrations.length === 0 ? (
+                <div className="py-12 text-center space-y-2">
+                  <Layers className="w-8 h-8 text-slate-300 mx-auto" />
+                  <div className="text-xs font-bold text-[#0F172B]">No active integrations in {environment}</div>
+                  <p className="text-[11px] text-[#64748B]">Click "+ Add Integration" to connect your first ERP, WhatsApp, or biometric bridge.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-[#F1F5F9]">
+                  {integrations.slice(0, 6).map((item) => (
+                    <div key={item.id} className="py-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
+                          {renderProviderIcon(
+                            INTEGRATION_PROVIDERS_META.find((p) => p.provider_key === item.provider_key)?.icon_name || 'Terminal'
+                          )}
+                        </div>
+                        <div>
+                          <div className="font-bold text-xs text-[#0F172B]">{item.name}</div>
+                          <div className="text-[11px] text-[#64748B]">
+                            {item.category} • {item.tenants_count} Tenants
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-4">
-                      <span
-                        className={cn(
-                          'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold',
-                          item.status === 'Connected' || item.status === 'Healthy'
-                            ? 'bg-[#ECFDF5] text-[#047857]'
-                            : item.status === 'Degraded'
-                            ? 'bg-[#FFFBEB] text-[#D97706]'
-                            : 'bg-[#FEF2F2] text-[#DC2626]'
-                        )}
-                      >
+                      <div className="flex items-center gap-4">
                         <span
                           className={cn(
-                            'h-1.5 w-1.5 rounded-full',
+                            'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold',
                             item.status === 'Connected' || item.status === 'Healthy'
-                              ? 'bg-[#10B981]'
+                              ? 'bg-[#ECFDF5] text-[#047857]'
                               : item.status === 'Degraded'
-                              ? 'bg-[#F59E0B]'
-                              : 'bg-[#EF4444]'
+                              ? 'bg-[#FFFBEB] text-[#D97706]'
+                              : 'bg-[#FEF2F2] text-[#DC2626]'
                           )}
-                        />
-                        {item.status}
-                      </span>
+                        >
+                          <span
+                            className={cn(
+                              'h-1.5 w-1.5 rounded-full',
+                              item.status === 'Connected' || item.status === 'Healthy'
+                                ? 'bg-[#10B981]'
+                                : item.status === 'Degraded'
+                                ? 'bg-[#F59E0B]'
+                                : 'bg-[#EF4444]'
+                            )}
+                          />
+                          {item.status}
+                        </span>
 
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setTestConnectionTarget(item)}
-                        className="text-xs text-[#047857] hover:bg-[#ECFDF5] p-1.5"
-                      >
-                        Test
-                      </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setTestConnectionTarget(item)}
+                          className="text-xs text-[#047857] hover:bg-[#ECFDF5] p-1.5"
+                        >
+                          Test
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Right Col: Recent Activity Timeline */}
@@ -747,22 +755,30 @@ export const IntegrationsControlCenterView: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="space-y-3">
-                  {logs.slice(0, 5).map((log) => (
-                    <div key={log.id} className="p-2.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] text-xs space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-[#0F172B]">{log.provider}</span>
-                        <span className="font-mono text-[10px] text-[#64748B]">{log.timestamp}</span>
+                {logs.length === 0 ? (
+                  <div className="py-12 text-center space-y-2">
+                    <Clock className="w-7 h-7 text-slate-300 mx-auto" />
+                    <div className="text-xs font-bold text-[#0F172B]">No recent events</div>
+                    <p className="text-[11px] text-[#64748B]">Inbound webhook deliveries and sync logs will appear here in real time.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {logs.slice(0, 5).map((log) => (
+                      <div key={log.id} className="p-2.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] text-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-[#0F172B]">{log.provider}</span>
+                          <span className="font-mono text-[10px] text-[#64748B]">{log.timestamp}</span>
+                        </div>
+                        <p className="text-[11px] text-[#334155] line-clamp-2">{log.message}</p>
+                        <div className="text-[10px] text-[#94A3B8] flex items-center gap-1">
+                          <span>{log.tenant_name || 'System'}</span>
+                          <span>•</span>
+                          <span className="font-mono">{log.request_id}</span>
+                        </div>
                       </div>
-                      <p className="text-[11px] text-[#334155] line-clamp-2">{log.message}</p>
-                      <div className="text-[10px] text-[#94A3B8] flex items-center gap-1">
-                        <span>{log.tenant_name}</span>
-                        <span>•</span>
-                        <span className="font-mono">{log.request_id}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="mt-4 pt-3 border-t border-[#E2E8F0]">
