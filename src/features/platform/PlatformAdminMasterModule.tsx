@@ -28,6 +28,7 @@ import { PlatformSettingsView } from './subviews/PlatformSettingsView';
 import { WebhooksAndMeshView } from './subviews/WebhooksAndMeshView';
 import { IntegrationsControlCenterView } from './subviews/IntegrationsControlCenterView';
 import { PlatformAccountMasterView } from './subviews/PlatformAccountMasterView';
+import { PlatformStaffView } from './subviews/PlatformStaffView';
 import { ImpersonationBanner } from './components/ImpersonationBanner';
 import { usePlatformRealtime } from '../../services/platform';
 
@@ -65,6 +66,7 @@ const TAB_TITLES: Record<string, string> = {
   'platform-api': 'API & Integrations',
   'platform-keys': 'API Keys & Secrets',
   'platform-settings': 'Platform System Settings',
+  'platform-staff': 'Platform Staff & Delegated IAM',
   'platform-account': 'Identity & Account Center',
   'saas-revenue': 'Revenue & Growth',
 };
@@ -185,10 +187,14 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
         return <IntegrationsControlCenterView />;
       case 'platform-settings':
       case 'platform-users':
-      case 'platform-staff':
-      case 'platform-roles':
       case 'platform-marketplace':
         return <PlatformSettingsView />;
+      case 'platform-staff':
+      case 'platform-roles':
+      case 'platform-permissions':
+      case 'platform-staff-directory':
+      case 'platform-staff-activity':
+        return <PlatformStaffView />;
       case 'platform-account':
       case 'platform-profile':
       case 'platform-account-overview':

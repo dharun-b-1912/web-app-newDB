@@ -151,6 +151,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'platform-dashboard', label: 'Command Center', icon: LayoutDashboard },
         { id: 'platform-tenants', label: 'Organizations', icon: Building2, badge: orgCount > 0 ? orgCount : undefined },
         { id: 'platform-incidents', label: 'Incidents', icon: ShieldAlert, badge: activeIncidentsCount > 0 ? activeIncidentsCount : undefined, badgeVariant: 'danger' },
+        { id: 'platform-staff', label: 'Platform Staff & IAM', icon: Users },
       ],
     },
     {

@@ -31,6 +31,7 @@ export * from './platformProfileService';
 export * from './platformMfaService';
 export * from './platformSessionService';
 export * from './platformIamService';
+export * from './platformStaffService';
 export * from './platformCache';
 export * from './platformRealtimeService';
 export * from './supabasePlatformClient';
