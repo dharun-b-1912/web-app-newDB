@@ -82,6 +82,7 @@ export interface AdminActivityRecord {
   actor_name: string;
   actor_role: string;
   action: string;
+  event_code: string;
   resource_type: string;
   target_user?: string;
   target_name?: string;
@@ -94,126 +95,8 @@ export interface AdminActivityRecord {
   risk_level: RiskLevel;
 }
 
-// Initial System Data
-let cachedStaffList: PlatformStaffRecord[] = [
-  {
-    id: 'stf-001',
-    email: 'superadmin@workforceos.com',
-    first_name: 'Arun',
-    last_name: 'Kumar',
-    name: 'Arun Kumar',
-    staff_code: 'STF-ROOT01',
-    job_title: 'Chief Platform Architect & Super Admin',
-    department: 'Platform Core & Infrastructure',
-    phone: '+91 98765 43210',
-    role_key: 'SUPER_ADMIN',
-    role_display_name: 'Super Admin',
-    status: 'Active',
-    mfa_enforced: true,
-    mfa_enabled: true,
-    is_root_superadmin: true,
-    account_start_date: '2026-01-01T00:00:00Z',
-    active_sessions_count: 3,
-    risk_level: 'LOW',
-    permissions_count: 34,
-    last_login_at: 'Just now',
-    created_at: '2026-01-01T00:00:00Z',
-  },
-  {
-    id: 'stf-002',
-    email: 'priya.sharma@workforceos.com',
-    first_name: 'Priya',
-    last_name: 'Sharma',
-    name: 'Priya Sharma',
-    staff_code: 'STF-OPS02',
-    job_title: 'Operations & Fleet Admin',
-    department: 'SRE & Platform Operations',
-    phone: '+91 98111 22334',
-    role_key: 'OPERATIONS_ADMIN',
-    role_display_name: 'Operations Admin',
-    status: 'Active',
-    mfa_enforced: true,
-    mfa_enabled: true,
-    is_root_superadmin: false,
-    account_start_date: '2026-04-10T00:00:00Z',
-    active_sessions_count: 1,
-    risk_level: 'LOW',
-    permissions_count: 18,
-    last_login_at: '2 hours ago',
-    created_at: '2026-04-10T00:00:00Z',
-  },
-  {
-    id: 'stf-003',
-    email: 'karthik.rajan@workforceos.com',
-    first_name: 'Karthik',
-    last_name: 'Rajan',
-    name: 'Karthik Rajan',
-    staff_code: 'STF-SUP03',
-    job_title: 'Tier-3 Support Lead',
-    department: 'Enterprise Customer Support',
-    phone: '+91 97222 33445',
-    role_key: 'SUPPORT_ADMIN',
-    role_display_name: 'Support Admin',
-    status: 'Active',
-    mfa_enforced: true,
-    mfa_enabled: true,
-    is_root_superadmin: false,
-    account_start_date: '2026-05-15T00:00:00Z',
-    active_sessions_count: 1,
-    risk_level: 'LOW',
-    permissions_count: 8,
-    last_login_at: 'Yesterday',
-    created_at: '2026-05-15T00:00:00Z',
-    scopes: [{ scope_type: 'MODULE_RESTRICTION', scope_value: 'Support, Organizations' }],
-  },
-  {
-    id: 'stf-004',
-    email: 'neha.deshmukh@workforceos.com',
-    first_name: 'Neha',
-    last_name: 'Deshmukh',
-    name: 'Neha Deshmukh',
-    staff_code: 'STF-SEC04',
-    job_title: 'Platform Security Officer',
-    department: 'Information Security & Compliance',
-    phone: '+91 99333 44556',
-    role_key: 'SECURITY_ADMIN',
-    role_display_name: 'Security Admin',
-    status: 'Active',
-    mfa_enforced: true,
-    mfa_enabled: true,
-    is_root_superadmin: false,
-    account_start_date: '2026-06-01T00:00:00Z',
-    active_sessions_count: 2,
-    risk_level: 'LOW',
-    permissions_count: 12,
-    last_login_at: '30 mins ago',
-    created_at: '2026-06-01T00:00:00Z',
-  },
-  {
-    id: 'stf-005',
-    email: 'rohit.mehta@workforceos.com',
-    first_name: 'Rohit',
-    last_name: 'Mehta',
-    name: 'Rohit Mehta',
-    staff_code: 'STF-INV05',
-    job_title: 'Contract Integration Specialist',
-    department: 'Partner Ecosystem',
-    phone: '+91 96444 55667',
-    role_key: 'OPERATIONS_ADMIN',
-    role_display_name: 'Operations Admin',
-    status: 'Invitation Pending',
-    mfa_enforced: true,
-    mfa_enabled: false,
-    is_root_superadmin: false,
-    account_start_date: '2026-08-16T00:00:00Z',
-    account_expiry_date: '2026-11-16T00:00:00Z',
-    active_sessions_count: 0,
-    risk_level: 'MEDIUM',
-    permissions_count: 14,
-    created_at: '2026-08-16T10:00:00Z',
-  },
-];
-
+// Fallback Cache for Zero-State & Offline Sync
+let cachedStaffList: PlatformStaffRecord[] = [];
 let cachedRolesList: PlatformRoleRecord[] = [
   {
     id: 'role-super',
@@ -283,41 +166,21 @@ let cachedRolesList: PlatformRoleRecord[] = [
   },
 ];
 
-let cachedActivityList: AdminActivityRecord[] = [
-  {
-    id: 'act-101',
-    timestamp: new Date(Date.now() - 15 * 60000).toISOString(),
-    actor_name: 'Arun Kumar',
-    actor_role: 'Super Admin',
-    action: 'staff.role_assigned',
-    resource_type: 'PlatformStaff',
-    target_user: 'priya.sharma@workforceos.com',
-    target_name: 'Priya Sharma',
-    before_state: { role: 'SUPPORT_ADMIN' },
-    after_state: { role: 'OPERATIONS_ADMIN' },
-    reason: 'Promoted to lead platform operations and queue retry duties',
-    result: 'Success',
-    ip_address: '103.21.144.92',
-    request_id: 'req_98bf12',
-    risk_level: 'HIGH',
-  },
-  {
-    id: 'act-102',
-    timestamp: new Date(Date.now() - 120 * 60000).toISOString(),
-    actor_name: 'Arun Kumar',
-    actor_role: 'Super Admin',
-    action: 'staff.invitation_created',
-    resource_type: 'PlatformStaffInvitation',
-    target_user: 'rohit.mehta@workforceos.com',
-    target_name: 'Rohit Mehta',
-    after_state: { role: 'OPERATIONS_ADMIN', expires_at: '48 hours' },
-    reason: 'Temporary contractor access for ERP adapter integration',
-    result: 'Success',
-    ip_address: '103.21.144.92',
-    request_id: 'req_87cd34',
-    risk_level: 'MEDIUM',
-  },
-];
+let cachedActivityList: AdminActivityRecord[] = [];
+
+// Helper to safely dispatch client-side events without secrets
+function dispatchSafeRealtimeEvent(eventName: string, payload: Record<string, any>) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(eventName, {
+        detail: {
+          ...payload,
+          timestamp: new Date().toISOString(),
+        },
+      })
+    );
+  }
+}
 
 export const platformStaffService = {
   // --- Fetch Staff Directory ---
@@ -329,11 +192,11 @@ export const platformStaffService = {
   }): Promise<{ staff: PlatformStaffRecord[]; totalCount: number }> {
     if (isSupabaseEnabled) {
       try {
-        let query = supabase.from('platform_staff').select('*');
+        let query = supabase.from('platform_staff').select('*').order('created_at', { ascending: false });
         if (filters?.role && filters.role !== 'ALL') query = query.eq('role', filters.role);
         if (filters?.status && filters.status !== 'ALL') query = query.eq('status', filters.status);
         const { data, error } = await query;
-        if (data && !error && data.length > 0) {
+        if (data && !error) {
           cachedStaffList = data.map((d: any) => ({
             id: d.id,
             user_id: d.user_id,
@@ -426,33 +289,35 @@ export const platformStaffService = {
   },
 
   // --- Create / Invite Platform Staff Wizard ---
-  async createStaff(payload: {
-    first_name: string;
-    last_name: string;
-    display_name?: string;
-    email: string;
-    phone?: string;
-    job_title: string;
-    department: string;
-    staff_code?: string;
-    role_key: string;
-    mfa_enforced?: boolean;
-    account_expiry_date?: string;
-    scopes?: PlatformStaffScopeItem[];
-  }, actorName: string = 'Arun Kumar'): Promise<PlatformStaffRecord> {
-    // 1. Validation: Prevent duplicate email
+  async createStaff(
+    payload: {
+      first_name: string;
+      last_name: string;
+      display_name?: string;
+      email: string;
+      phone?: string;
+      job_title: string;
+      department: string;
+      staff_code?: string;
+      role_key: string;
+      mfa_enforced?: boolean;
+      account_expiry_date?: string;
+      scopes?: PlatformStaffScopeItem[];
+    },
+    actorName: string = 'Arun Kumar'
+  ): Promise<PlatformStaffRecord> {
     const existing = cachedStaffList.find((s) => s.email.toLowerCase() === payload.email.toLowerCase());
     if (existing) {
       throw new Error(`Platform staff account with email ${payload.email} already exists.`);
     }
 
-    // 2. Privilege Escalation Guard: Only Super Admin can create/grant Super Admin
     if (payload.role_key === 'SUPER_ADMIN' && actorName !== 'Arun Kumar') {
       throw new Error('403 Forbidden: Privilege escalation violation. Only existing Root Super Admins can grant the Super Admin role.');
     }
 
     const fullName = payload.display_name || `${payload.first_name} ${payload.last_name}`.trim();
     const roleMeta = cachedRolesList.find((r) => r.role_key === payload.role_key);
+    const requestId = `req_${Math.random().toString(36).slice(2, 8)}`;
 
     const newRecord: PlatformStaffRecord = {
       id: `stf-${Date.now().toString(36)}`,
@@ -481,22 +346,30 @@ export const platformStaffService = {
 
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('platform_staff').insert({
-          email: newRecord.email,
-          first_name: newRecord.first_name,
-          last_name: newRecord.last_name,
-          name: newRecord.name,
-          staff_code: newRecord.staff_code,
-          job_title: newRecord.job_title,
-          department: newRecord.department,
-          phone: newRecord.phone,
-          role: newRecord.role_key,
-          status: newRecord.status,
-          mfa_enforced: newRecord.mfa_enforced,
-          account_expiry_date: newRecord.account_expiry_date,
-        });
+        const { data: inserted, error: insertError } = await supabase
+          .from('platform_staff')
+          .insert({
+            email: newRecord.email,
+            first_name: newRecord.first_name,
+            last_name: newRecord.last_name,
+            name: newRecord.name,
+            staff_code: newRecord.staff_code,
+            job_title: newRecord.job_title,
+            department: newRecord.department,
+            phone: newRecord.phone,
+            role: newRecord.role_key,
+            status: newRecord.status,
+            mfa_enforced: newRecord.mfa_enforced,
+            account_expiry_date: newRecord.account_expiry_date,
+          })
+          .select()
+          .single();
 
-        // Create Invitation Token
+        if (inserted) {
+          newRecord.id = inserted.id;
+        }
+
+        // Create Invitation Record
         await supabase.from('platform_staff_invitations').insert({
           email: newRecord.email,
           role_key: newRecord.role_key,
@@ -510,13 +383,14 @@ export const platformStaffService = {
 
     cachedStaffList = [newRecord, ...cachedStaffList];
 
-    // Forensic Audit Entry
+    // Standard Audit Event: STAFF_CREATED & STAFF_INVITATION_SENT
     const auditRecord: AdminActivityRecord = {
       id: `act-${Date.now()}`,
       timestamp: new Date().toISOString(),
       actor_name: actorName,
       actor_role: 'Super Admin',
-      action: 'staff.created_and_invited',
+      action: 'STAFF_CREATED',
+      event_code: 'STAFF_CREATED',
       resource_type: 'PlatformStaff',
       target_user: newRecord.email,
       target_name: newRecord.name,
@@ -524,7 +398,7 @@ export const platformStaffService = {
       reason: `Platform Staff invited with role ${newRecord.role_display_name}`,
       result: 'Success',
       ip_address: '103.21.144.92',
-      request_id: `req_${Math.random().toString(36).slice(2, 8)}`,
+      request_id: requestId,
       risk_level: newRecord.risk_level,
     };
     cachedActivityList = [auditRecord, ...cachedActivityList];
@@ -539,6 +413,8 @@ export const platformStaffService = {
       reason: `Invited new platform staff member ${newRecord.name} (${newRecord.email}) under role ${newRecord.role_display_name}`,
     });
 
+    dispatchSafeRealtimeEvent('platform.staff.created', { staffId: newRecord.id, email: newRecord.email, role: newRecord.role_key });
+
     return newRecord;
   },
 
@@ -552,7 +428,6 @@ export const platformStaffService = {
     const target = cachedStaffList.find((s) => s.id === staffId);
     if (!target) throw new Error('Staff member not found');
 
-    // Last Super Admin Protection
     if (target.role_key === 'SUPER_ADMIN' && newRoleKey !== 'SUPER_ADMIN') {
       const remainingSuperAdmins = cachedStaffList.filter((s) => s.role_key === 'SUPER_ADMIN' && s.status === 'Active' && s.id !== staffId);
       if (remainingSuperAdmins.length === 0) {
@@ -562,6 +437,8 @@ export const platformStaffService = {
 
     const prevRole = target.role_key;
     const newRoleMeta = cachedRolesList.find((r) => r.role_key === newRoleKey);
+    const requestId = `req_${Math.random().toString(36).slice(2, 8)}`;
+
     target.role_key = newRoleKey;
     target.role_display_name = newRoleMeta?.display_name || newRoleKey;
     target.risk_level = newRoleMeta?.risk_level || 'MEDIUM';
@@ -578,13 +455,13 @@ export const platformStaffService = {
       }
     }
 
-    // Log Activity
     const act: AdminActivityRecord = {
       id: `act-${Date.now()}`,
       timestamp: new Date().toISOString(),
       actor_name: actorName,
       actor_role: 'Super Admin',
-      action: 'staff.role_changed',
+      action: 'STAFF_ROLE_CHANGED',
+      event_code: 'STAFF_ROLE_CHANGED',
       resource_type: 'PlatformStaff',
       target_user: target.email,
       target_name: target.name,
@@ -593,7 +470,7 @@ export const platformStaffService = {
       reason,
       result: 'Success',
       ip_address: '103.21.144.92',
-      request_id: `req_${Math.random().toString(36).slice(2, 8)}`,
+      request_id: requestId,
       risk_level: 'HIGH',
     };
     cachedActivityList = [act, ...cachedActivityList];
@@ -608,6 +485,8 @@ export const platformStaffService = {
       reason: `Staff role changed from ${prevRole} to ${newRoleKey}: ${reason}`,
     });
 
+    dispatchSafeRealtimeEvent('platform.role.assigned', { staffId: target.id, role: newRoleKey });
+
     return target;
   },
 
@@ -621,7 +500,6 @@ export const platformStaffService = {
     const target = cachedStaffList.find((s) => s.id === staffId);
     if (!target) throw new Error('Staff member not found');
 
-    // Last Super Admin Protection
     if (target.role_key === 'SUPER_ADMIN' && newStatus !== 'Active') {
       const remainingSuperAdmins = cachedStaffList.filter((s) => s.role_key === 'SUPER_ADMIN' && s.status === 'Active' && s.id !== staffId);
       if (remainingSuperAdmins.length === 0) {
@@ -630,6 +508,9 @@ export const platformStaffService = {
     }
 
     const prevStatus = target.status;
+    const eventCode = newStatus === 'Suspended' ? 'STAFF_SUSPENDED' : newStatus === 'Active' ? 'STAFF_REACTIVATED' : 'STAFF_DISABLED';
+    const requestId = `req_${Math.random().toString(36).slice(2, 8)}`;
+
     target.status = newStatus;
     if (newStatus === 'Suspended' || newStatus === 'Disabled') {
       target.active_sessions_count = 0;
@@ -651,7 +532,8 @@ export const platformStaffService = {
       timestamp: new Date().toISOString(),
       actor_name: actorName,
       actor_role: 'Super Admin',
-      action: `staff.status_${newStatus.toLowerCase().replace(' ', '_')}`,
+      action: eventCode,
+      event_code: eventCode,
       resource_type: 'PlatformStaff',
       target_user: target.email,
       target_name: target.name,
@@ -660,7 +542,7 @@ export const platformStaffService = {
       reason,
       result: 'Success',
       ip_address: '103.21.144.92',
-      request_id: `req_${Math.random().toString(36).slice(2, 8)}`,
+      request_id: requestId,
       risk_level: 'HIGH',
     };
     cachedActivityList = [act, ...cachedActivityList];
@@ -675,6 +557,8 @@ export const platformStaffService = {
       reason: `Staff status changed from ${prevStatus} to ${newStatus}: ${reason}`,
     });
 
+    dispatchSafeRealtimeEvent('platform.staff.updated', { staffId: target.id, status: newStatus });
+
     return target;
   },
 
@@ -684,20 +568,22 @@ export const platformStaffService = {
     if (!target) throw new Error('Staff member not found');
 
     target.active_sessions_count = 0;
+    const requestId = `req_${Math.random().toString(36).slice(2, 8)}`;
 
     const act: AdminActivityRecord = {
       id: `act-${Date.now()}`,
       timestamp: new Date().toISOString(),
       actor_name: actorName,
       actor_role: 'Super Admin',
-      action: 'staff.sessions_revoked',
+      action: 'STAFF_ALL_SESSIONS_REVOKED',
+      event_code: 'STAFF_ALL_SESSIONS_REVOKED',
       resource_type: 'PlatformStaff',
       target_user: target.email,
       target_name: target.name,
       reason,
       result: 'Success',
       ip_address: '103.21.144.92',
-      request_id: `req_${Math.random().toString(36).slice(2, 8)}`,
+      request_id: requestId,
       risk_level: 'HIGH',
     };
     cachedActivityList = [act, ...cachedActivityList];
@@ -711,9 +597,59 @@ export const platformStaffService = {
       severity: 'High',
       reason: `Revoked all active sessions for ${target.name} (${target.email}): ${reason}`,
     });
+
+    dispatchSafeRealtimeEvent('platform.session.revoked', { staffId: target.id });
   },
 
-  // --- Administrative Activity Log ---
+  // --- Get Staff Specific Activity History (Requirement 49) ---
+  async getStaffActivity(email: string): Promise<AdminActivityRecord[]> {
+    return cachedActivityList.filter(
+      (a) =>
+        a.target_user?.toLowerCase() === email.toLowerCase() ||
+        a.actor_name.toLowerCase().includes(email.toLowerCase())
+    );
+  },
+
+  // --- Forensic Administrative Activity Search (Requirement 57: Who, What, To Whom, When) ---
+  async searchAdministrativeActivity(filters?: {
+    who?: string;
+    what?: string;
+    to_whom?: string;
+    time_range?: '24h' | '7d' | '30d' | 'all';
+  }): Promise<AdminActivityRecord[]> {
+    let list = [...cachedActivityList];
+
+    if (filters?.who) {
+      const q = filters.who.toLowerCase();
+      list = list.filter((a) => a.actor_name.toLowerCase().includes(q));
+    }
+
+    if (filters?.what && filters.what !== 'ALL') {
+      list = list.filter((a) => a.action === filters.what || a.event_code === filters.what);
+    }
+
+    if (filters?.to_whom) {
+      const q = filters.to_whom.toLowerCase();
+      list = list.filter(
+        (a) => (a.target_name && a.target_name.toLowerCase().includes(q)) || (a.target_user && a.target_user.toLowerCase().includes(q))
+      );
+    }
+
+    if (filters?.time_range && filters.time_range !== 'all') {
+      const now = Date.now();
+      const windowMs =
+        filters.time_range === '24h'
+          ? 24 * 3600 * 1000
+          : filters.time_range === '7d'
+          ? 7 * 24 * 3600 * 1000
+          : 30 * 24 * 3600 * 1000;
+
+      list = list.filter((a) => now - new Date(a.timestamp).getTime() <= windowMs);
+    }
+
+    return list;
+  },
+
   async getAdministrativeActivity(): Promise<AdminActivityRecord[]> {
     return cachedActivityList;
   },

@@ -40,6 +40,9 @@ import {
   Briefcase,
   Eye,
   Info,
+  Calendar,
+  Activity,
+  User,
 } from 'lucide-react';
 import {
   platformStaffService,
@@ -60,20 +63,30 @@ export const PlatformStaffView: React.FC = () => {
   const [rolesList, setRolesList] = useState<PlatformRoleRecord[]>([]);
   const [kpis, setKpis] = useState<StaffDirectoryKPIs | null>(null);
   const [activities, setActivities] = useState<AdminActivityRecord[]>([]);
+  const [staffActivities, setStaffActivities] = useState<AdminActivityRecord[]>([]);
   const [iamAccess, setIamAccess] = useState<PlatformAdminAccessInfo | null>(null);
+
+  // Loading & Error States (Requirement 53)
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState('ALL');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('ALL');
 
+  // Forensic Activity Search Filters (Requirement 57: Who, What, To Whom, When)
+  const [activityFilterWho, setActivityFilterWho] = useState('');
+  const [activityFilterWhat, setActivityFilterWhat] = useState('ALL');
+  const [activityFilterToWhom, setActivityFilterToWhom] = useState('');
+  const [activityFilterWhen, setActivityFilterWhen] = useState<'24h' | '7d' | '30d' | 'all'>('all');
+
   // Selected Staff for Detail Drawer
   const [selectedStaff, setSelectedStaff] = useState<PlatformStaffRecord | null>(null);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<'overview' | 'permissions' | 'sessions' | 'activity'>('overview');
 
-  // Create Staff Wizard State
+  // Create Staff Wizard State (4 Steps)
   const [isCreateWizardOpen, setIsCreateWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1);
   const [createFormData, setCreateFormData] = useState({
@@ -114,6 +127,7 @@ export const PlatformStaffView: React.FC = () => {
   // Load Data
   const loadData = async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       const [staffRes, rolesRes, kpiRes, actRes, iamRes] = await Promise.all([
         platformStaffService.getStaffDirectory({
@@ -123,7 +137,12 @@ export const PlatformStaffView: React.FC = () => {
         }),
         platformStaffService.getRoles(),
         platformStaffService.getStaffKpis(),
-        platformStaffService.getAdministrativeActivity(),
+        platformStaffService.searchAdministrativeActivity({
+          who: activityFilterWho,
+          what: activityFilterWhat,
+          to_whom: activityFilterToWhom,
+          time_range: activityFilterWhen,
+        }),
         platformIamService.getCurrentAdminAccess(),
       ]);
 
@@ -132,9 +151,9 @@ export const PlatformStaffView: React.FC = () => {
       setKpis(kpiRes);
       setActivities(actRes);
       setIamAccess(iamRes);
-    } catch (err) {
+    } catch (err: any) {
       console.error('[PlatformStaffView] Failed to load staff data:', err);
-      showToast('Error loading platform staff directory.', 'error');
+      setLoadError(err.message || 'Unable to load platform staff directory.');
     } finally {
       setIsLoading(false);
     }
@@ -142,10 +161,23 @@ export const PlatformStaffView: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [selectedRoleFilter, selectedStatusFilter]);
+  }, [selectedRoleFilter, selectedStatusFilter, activityFilterWhat, activityFilterWhen]);
 
-  // Handle Search Debounce / Trigger
+  // Load Individual Staff Activities on selection
+  useEffect(() => {
+    if (selectedStaff) {
+      platformStaffService.getStaffActivity(selectedStaff.email).then((acts) => {
+        setStaffActivities(acts);
+      });
+    }
+  }, [selectedStaff]);
+
   const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    loadData();
+  };
+
+  const handleForensicSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     loadData();
   };
@@ -184,9 +216,10 @@ export const PlatformStaffView: React.FC = () => {
         role_key: createFormData.role_key,
         mfa_enforced: createFormData.mfa_enforced,
         account_expiry_date: createFormData.account_expiry_date || undefined,
-        scopes: createFormData.module_restrictions.length > 0
-          ? [{ scope_type: 'MODULE_RESTRICTION', scope_value: createFormData.module_restrictions.join(', ') }]
-          : [],
+        scopes:
+          createFormData.module_restrictions.length > 0
+            ? [{ scope_type: 'MODULE_RESTRICTION', scope_value: createFormData.module_restrictions.join(', ') }]
+            : [],
       });
 
       setCreatedStaffResult(created);
@@ -322,14 +355,14 @@ export const PlatformStaffView: React.FC = () => {
           <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={() => loadData()}
-              className="px-3.5 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-medium flex items-center gap-2 transition"
+              className="px-3.5 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-medium flex items-center gap-2 transition cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
             <button
               onClick={() => setIsCreateWizardOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-600 text-white font-medium text-xs shadow-lg shadow-indigo-500/25 flex items-center gap-2 transition border border-indigo-400/30"
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-600 text-white font-medium text-xs shadow-lg shadow-indigo-500/25 flex items-center gap-2 transition border border-indigo-400/30 cursor-pointer"
             >
               <UserPlus className="w-4 h-4" />
               Invite Platform Staff
@@ -368,11 +401,29 @@ export const PlatformStaffView: React.FC = () => {
         )}
       </div>
 
+      {/* Error Boundary Banner (Requirement 53) */}
+      {loadError && (
+        <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 flex items-center justify-between gap-3 text-xs text-rose-800 dark:text-rose-200">
+          <div className="flex items-center gap-2">
+            <AlertOctagon className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>
+              <strong>Error:</strong> {loadError}
+            </span>
+          </div>
+          <button
+            onClick={() => loadData()}
+            className="px-3 py-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700 font-semibold transition"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* 2. Navigation Sub-Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1">
         <button
           onClick={() => setActiveSubTab('directory')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-lg flex items-center gap-2 transition ${
+          className={`px-4 py-2.5 text-xs font-semibold rounded-lg flex items-center gap-2 transition cursor-pointer ${
             activeSubTab === 'directory'
               ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -384,7 +435,7 @@ export const PlatformStaffView: React.FC = () => {
 
         <button
           onClick={() => setActiveSubTab('roles')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-lg flex items-center gap-2 transition ${
+          className={`px-4 py-2.5 text-xs font-semibold rounded-lg flex items-center gap-2 transition cursor-pointer ${
             activeSubTab === 'roles'
               ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -396,7 +447,7 @@ export const PlatformStaffView: React.FC = () => {
 
         <button
           onClick={() => setActiveSubTab('matrix')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-lg flex items-center gap-2 transition ${
+          className={`px-4 py-2.5 text-xs font-semibold rounded-lg flex items-center gap-2 transition cursor-pointer ${
             activeSubTab === 'matrix'
               ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -408,14 +459,14 @@ export const PlatformStaffView: React.FC = () => {
 
         <button
           onClick={() => setActiveSubTab('activity')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-lg flex items-center gap-2 transition ${
+          className={`px-4 py-2.5 text-xs font-semibold rounded-lg flex items-center gap-2 transition cursor-pointer ${
             activeSubTab === 'activity'
               ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
           <History className="w-3.5 h-3.5" />
-          Administrative Activity Ledger
+          Forensic Activity Ledger
         </button>
       </div>
 
@@ -471,158 +522,197 @@ export const PlatformStaffView: React.FC = () => {
             </div>
           </div>
 
+          {/* Loading Skeleton */}
+          {isLoading && (
+            <div className="bg-white dark:bg-slate-900 rounded-xl p-8 border border-slate-200 dark:border-slate-800 text-center space-y-3">
+              <RefreshCw className="w-8 h-8 text-indigo-600 animate-spin mx-auto" />
+              <p className="text-xs text-slate-500 font-medium">Loading platform staff directory...</p>
+            </div>
+          )}
+
+          {/* Empty State (Requirement 52 & 53) */}
+          {!isLoading && staffList.length === 0 && (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-12 border border-slate-200 dark:border-slate-800 text-center space-y-4 shadow-sm max-w-md mx-auto my-8">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto border border-indigo-200 dark:border-indigo-800">
+                <Users className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">No Platform Staff Found</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  No administrative personnel match your search filters, or no delegated staff have been created yet.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsCreateWizardOpen(true)}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700 transition shadow cursor-pointer"
+              >
+                Create Delegated Administrator
+              </button>
+            </div>
+          )}
+
           {/* Staff Table */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase font-semibold">
-                  <tr>
-                    <th className="py-3 px-4">Staff Administrator</th>
-                    <th className="py-3 px-4">Staff ID</th>
-                    <th className="py-3 px-4">Assigned Role</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4">MFA Policy</th>
-                    <th className="py-3 px-4">Active Sessions</th>
-                    <th className="py-3 px-4">Last Login</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-                  {staffList.map((staff) => (
-                    <tr
-                      key={staff.id}
-                      className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition group cursor-pointer"
-                      onClick={() => {
-                        setSelectedStaff(staff);
-                        setIsDetailDrawerOpen(true);
-                      }}
-                    >
-                      {/* Name & Avatar */}
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white font-bold flex items-center justify-center text-xs shadow-sm">
-                            {staff.name.charAt(0)}
-                          </div>
-                          <div>
-                            <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
-                              {staff.name}
-                              {staff.is_root_superadmin && (
-                                <span className="px-1.5 py-0.5 rounded text-[10px] bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-bold border border-purple-300 dark:border-purple-800">
-                                  ROOT
-                                </span>
-                              )}
+          {!isLoading && staffList.length > 0 && (
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase font-semibold">
+                    <tr>
+                      <th className="py-3 px-4">Staff Administrator</th>
+                      <th className="py-3 px-4">Staff ID</th>
+                      <th className="py-3 px-4">Assigned Role</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4">MFA Policy</th>
+                      <th className="py-3 px-4">Active Sessions</th>
+                      <th className="py-3 px-4">Last Login</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
+                    {staffList.map((staff) => (
+                      <tr
+                        key={staff.id}
+                        className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition group cursor-pointer"
+                        onClick={() => {
+                          setSelectedStaff(staff);
+                          setIsDetailDrawerOpen(true);
+                        }}
+                      >
+                        {/* Name & Avatar */}
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white font-bold flex items-center justify-center text-xs shadow-sm">
+                              {staff.name.charAt(0)}
                             </div>
-                            <span className="text-[11px] text-slate-500 dark:text-slate-400">{staff.email}</span>
+                            <div>
+                              <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                {staff.name}
+                                {staff.is_root_superadmin && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-bold border border-purple-300 dark:border-purple-800">
+                                    ROOT
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-slate-500 dark:text-slate-400">{staff.email}</span>
+                            </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Staff Code */}
-                      <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-300">
-                        {staff.staff_code}
-                      </td>
+                        {/* Staff Code */}
+                        <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-300">
+                          {staff.staff_code}
+                        </td>
 
-                      {/* Role & Risk */}
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${
-                            staff.role_key === 'SUPER_ADMIN'
-                              ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
-                              : staff.role_key === 'PLATFORM_ADMIN'
-                              ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
-                              : staff.role_key === 'SECURITY_ADMIN'
-                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                          }`}>
+                        {/* Role & Risk */}
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${
+                              staff.role_key === 'SUPER_ADMIN'
+                                ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                                : staff.role_key === 'PLATFORM_ADMIN'
+                                ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                                : staff.role_key === 'SECURITY_ADMIN'
+                                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                            }`}
+                          >
                             {staff.role_display_name}
                           </span>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Status */}
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          staff.status === 'Active'
-                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                            : staff.status === 'Invitation Pending'
-                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
-                            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            staff.status === 'Active' ? 'bg-emerald-500' : staff.status === 'Invitation Pending' ? 'bg-amber-500' : 'bg-rose-500'
-                          }`} />
-                          {staff.status}
-                        </span>
-                      </td>
-
-                      {/* MFA */}
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-1.5">
-                          <ShieldCheck className={`w-3.5 h-3.5 ${staff.mfa_enabled ? 'text-emerald-500' : 'text-amber-500'}`} />
-                          <span className="text-[11px] text-slate-600 dark:text-slate-300">
-                            {staff.mfa_enabled ? 'Enforced & Active' : 'Enforced (Pending)'}
+                        {/* Status */}
+                        <td className="py-3 px-4">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              staff.status === 'Active'
+                                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                                : staff.status === 'Invitation Pending'
+                                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
+                                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+                            }`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                staff.status === 'Active'
+                                  ? 'bg-emerald-500'
+                                  : staff.status === 'Invitation Pending'
+                                  ? 'bg-amber-500'
+                                  : 'bg-rose-500'
+                              }`}
+                            />
+                            {staff.status}
                           </span>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Active Sessions */}
-                      <td className="py-3 px-4">
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">
-                          {staff.active_sessions_count} session{staff.active_sessions_count !== 1 ? 's' : ''}
-                        </span>
-                      </td>
+                        {/* MFA */}
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-1.5">
+                            <ShieldCheck
+                              className={`w-3.5 h-3.5 ${staff.mfa_enabled ? 'text-emerald-500' : 'text-amber-500'}`}
+                            />
+                            <span className="text-[11px] text-slate-600 dark:text-slate-300">
+                              {staff.mfa_enabled ? 'Enforced & Active' : 'Enforced (Pending)'}
+                            </span>
+                          </div>
+                        </td>
 
-                      {/* Last Login */}
-                      <td className="py-3 px-4 text-slate-500 dark:text-slate-400">
-                        {staff.last_login_at}
-                      </td>
+                        {/* Active Sessions */}
+                        <td className="py-3 px-4">
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                            {staff.active_sessions_count} session{staff.active_sessions_count !== 1 ? 's' : ''}
+                          </span>
+                        </td>
 
-                      {/* Actions */}
-                      <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => handleOpenChangeRole(staff)}
-                            title="Modify Role & Permissions"
-                            className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition"
-                          >
-                            <KeyRound className="w-3.5 h-3.5" />
-                          </button>
-                          {staff.status === 'Active' ? (
+                        {/* Last Login */}
+                        <td className="py-3 px-4 text-slate-500 dark:text-slate-400">{staff.last_login_at}</td>
+
+                        {/* Actions */}
+                        <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1.5">
                             <button
-                              onClick={() => handleOpenStatusChange(staff, 'Suspended')}
-                              title="Suspend Administrator"
-                              disabled={staff.is_root_superadmin}
-                              className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/50 text-slate-600 dark:text-slate-300 hover:text-rose-600 transition disabled:opacity-30"
+                              onClick={() => handleOpenChangeRole(staff)}
+                              title="Modify Role & Permissions"
+                              className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition cursor-pointer"
                             >
-                              <UserX className="w-3.5 h-3.5" />
+                              <KeyRound className="w-3.5 h-3.5" />
                             </button>
-                          ) : (
+                            {staff.status === 'Active' ? (
+                              <button
+                                onClick={() => handleOpenStatusChange(staff, 'Suspended')}
+                                title="Suspend Administrator"
+                                disabled={staff.is_root_superadmin}
+                                className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/50 text-slate-600 dark:text-slate-300 hover:text-rose-600 transition disabled:opacity-30 cursor-pointer"
+                              >
+                                <UserX className="w-3.5 h-3.5" />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleOpenStatusChange(staff, 'Active')}
+                                title="Reinstate Administrator"
+                                className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-slate-600 dark:text-slate-300 hover:text-emerald-600 transition cursor-pointer"
+                              >
+                                <UserCheck className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button
-                              onClick={() => handleOpenStatusChange(staff, 'Active')}
-                              title="Reinstate Administrator"
-                              className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-slate-600 dark:text-slate-300 hover:text-emerald-600 transition"
+                              onClick={() => {
+                                setSelectedStaff(staff);
+                                setIsDetailDrawerOpen(true);
+                              }}
+                              title="View Full Identity & Access Details"
+                              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer"
                             >
-                              <UserCheck className="w-3.5 h-3.5" />
+                              <ChevronRight className="w-4 h-4" />
                             </button>
-                          )}
-                          <button
-                            onClick={() => {
-                              setSelectedStaff(staff);
-                              setIsDetailDrawerOpen(true);
-                            }}
-                            title="View Full Identity & Access Details"
-                            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition"
-                          >
-                            <ChevronRight className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -637,29 +727,25 @@ export const PlatformStaffView: React.FC = () => {
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                      role.risk_level === 'CRITICAL'
-                        ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
-                        : role.risk_level === 'HIGH'
-                        ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-                        : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                    }`}>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                        role.risk_level === 'CRITICAL'
+                          ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                          : role.risk_level === 'HIGH'
+                          ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                          : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                      }`}
+                    >
                       Risk: {role.risk_level}
                     </span>
-                    <span className="text-xs font-semibold text-slate-500">
-                      Level {role.hierarchy_level}/5
-                    </span>
+                    <span className="text-xs font-semibold text-slate-500">Level {role.hierarchy_level}/5</span>
                   </div>
 
                   <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                     {role.display_name}
-                    {role.is_system_role && (
-                      <span className="text-[10px] font-normal text-slate-400">(System Role)</span>
-                    )}
+                    {role.is_system_role && <span className="text-[10px] font-normal text-slate-400">(System Role)</span>}
                   </h3>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2">
-                    {role.description}
-                  </p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2">{role.description}</p>
                 </div>
 
                 <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
@@ -716,12 +802,24 @@ export const PlatformStaffView: React.FC = () => {
                 ].map((row, i) => (
                   <tr key={i} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                     <td className="py-2.5 px-3 font-semibold text-slate-800 dark:text-slate-200">{row.name}</td>
-                    <td className="py-2.5 px-3 text-center">{row.view ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}</td>
-                    <td className="py-2.5 px-3 text-center">{row.create ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}</td>
-                    <td className="py-2.5 px-3 text-center">{row.update ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}</td>
-                    <td className="py-2.5 px-3 text-center">{row.del ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}</td>
-                    <td className="py-2.5 px-3 text-center">{row.export ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}</td>
-                    <td className="py-2.5 px-3 text-center">{row.manage ? <Check className="w-4 h-4 text-indigo-500 mx-auto" /> : <span className="text-slate-300">—</span>}</td>
+                    <td className="py-2.5 px-3 text-center">
+                      {row.view ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      {row.create ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      {row.update ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      {row.del ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      {row.export ? <Check className="w-4 h-4 text-emerald-500 mx-auto" /> : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      {row.manage ? <Check className="w-4 h-4 text-indigo-500 mx-auto" /> : <span className="text-slate-300">—</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -730,52 +828,116 @@ export const PlatformStaffView: React.FC = () => {
         </div>
       )}
 
-      {/* 6. Sub-Tab Content: ADMINISTRATIVE ACTIVITY */}
+      {/* 6. Sub-Tab Content: FORENSIC ADMINISTRATIVE ACTIVITY (Requirement 50 & 57) */}
       {activeSubTab === 'activity' && (
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
           <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Immutable Administrative Activity Ledger
-            </h3>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Forensic Administrative Activity Ledger</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Audits who performed what action, on whom, when, from which IP, and with what specific before/after state diff.
             </p>
           </div>
 
-          <div className="space-y-3">
-            {activities.map((act) => (
-              <div
-                key={act.id}
-                onClick={() => setSelectedActivity(act)}
-                className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-indigo-300 dark:hover:border-indigo-800 transition cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-900 dark:text-white text-xs">{act.actor_name}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-semibold border border-indigo-200 dark:border-indigo-800">
-                      {act.actor_role}
-                    </span>
-                    <ArrowRight className="w-3 h-3 text-slate-400" />
-                    <span className="font-semibold text-slate-800 dark:text-slate-200 text-xs">{act.action}</span>
-                    {act.target_name && (
-                      <span className="text-xs text-slate-500">on <strong className="text-slate-700 dark:text-slate-300">{act.target_name}</strong></span>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-400">
-                    Reason: {act.reason || 'Standard operational task'}
-                  </p>
-                </div>
+          {/* Forensic Search Filters (Who, What, To Whom, When) */}
+          <form onSubmit={handleForensicSearchSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500 mb-1">Who (Actor Name / Admin)</label>
+              <input
+                type="text"
+                placeholder="e.g. Arun Kumar"
+                value={activityFilterWho}
+                onChange={(e) => setActivityFilterWho(e.target.value)}
+                className="w-full px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+              />
+            </div>
 
-                <div className="flex items-center gap-4 text-xs text-slate-500">
-                  <span className="font-mono text-[11px] bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded">{act.ip_address}</span>
-                  <span>{new Date(act.timestamp).toLocaleTimeString()}</span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
-                    {act.result}
-                  </span>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500 mb-1">What (Action Code)</label>
+              <select
+                value={activityFilterWhat}
+                onChange={(e) => setActivityFilterWhat(e.target.value)}
+                className="w-full px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-medium"
+              >
+                <option value="ALL">All Actions</option>
+                <option value="STAFF_CREATED">STAFF_CREATED</option>
+                <option value="STAFF_ROLE_CHANGED">STAFF_ROLE_CHANGED</option>
+                <option value="STAFF_SUSPENDED">STAFF_SUSPENDED</option>
+                <option value="STAFF_REACTIVATED">STAFF_REACTIVATED</option>
+                <option value="STAFF_ALL_SESSIONS_REVOKED">STAFF_ALL_SESSIONS_REVOKED</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500 mb-1">To Whom (Target User / Email)</label>
+              <input
+                type="text"
+                placeholder="e.g. priya.sharma@workforceos.com"
+                value={activityFilterToWhom}
+                onChange={(e) => setActivityFilterToWhom(e.target.value)}
+                className="w-full px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500 mb-1">When (Time Window)</label>
+              <select
+                value={activityFilterWhen}
+                onChange={(e) => setActivityFilterWhen(e.target.value as any)}
+                className="w-full px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-medium"
+              >
+                <option value="all">All Time</option>
+                <option value="24h">Last 24 Hours</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+              </select>
+            </div>
+          </form>
+
+          {/* Activity List */}
+          {activities.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-500">
+              No audit activity matches your search criteria.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {activities.map((act) => (
+                <div
+                  key={act.id}
+                  onClick={() => setSelectedActivity(act)}
+                  className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-indigo-300 dark:hover:border-indigo-800 transition cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-slate-900 dark:text-white text-xs">{act.actor_name}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-semibold border border-indigo-200 dark:border-indigo-800">
+                        {act.actor_role}
+                      </span>
+                      <ArrowRight className="w-3 h-3 text-slate-400" />
+                      <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-xs">{act.action}</span>
+                      {act.target_name && (
+                        <span className="text-xs text-slate-500">
+                          on <strong className="text-slate-700 dark:text-slate-300">{act.target_name}</strong>
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                      Reason: {act.reason || 'Standard operational task'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-xs text-slate-500 shrink-0">
+                    <span className="font-mono text-[11px] bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded">
+                      {act.ip_address}
+                    </span>
+                    <span>{new Date(act.timestamp).toLocaleTimeString()}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
+                      {act.result}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -783,7 +945,6 @@ export const PlatformStaffView: React.FC = () => {
       {isCreateWizardOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            {/* Header */}
             <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/40">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -791,18 +952,24 @@ export const PlatformStaffView: React.FC = () => {
                   Create Platform Staff & Delegated Administrator
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Step {wizardStep} of 4: {wizardStep === 1 ? 'Administrator Identity' : wizardStep === 2 ? 'Security & Expiration' : wizardStep === 3 ? 'Role & Scope Constraints' : 'Review & Confirm'}
+                  Step {wizardStep} of 4:{' '}
+                  {wizardStep === 1
+                    ? 'Administrator Identity'
+                    : wizardStep === 2
+                    ? 'Security & Expiration'
+                    : wizardStep === 3
+                    ? 'Role & Scope Constraints'
+                    : 'Review & Confirm'}
                 </p>
               </div>
               <button
                 onClick={handleCloseWizard}
-                className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400"
+                className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Progress Bar */}
             <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5">
               <div
                 className="bg-indigo-600 h-1.5 transition-all duration-300"
@@ -810,9 +977,7 @@ export const PlatformStaffView: React.FC = () => {
               />
             </div>
 
-            {/* Wizard Body */}
             <div className="p-6 overflow-y-auto space-y-4 flex-1">
-              {/* STEP 1: IDENTITY */}
               {wizardStep === 1 && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
@@ -874,7 +1039,6 @@ export const PlatformStaffView: React.FC = () => {
                 </div>
               )}
 
-              {/* STEP 2: SECURITY & EXPIRY */}
               {wizardStep === 2 && (
                 <div className="space-y-4">
                   <div className="p-4 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/50 space-y-2">
@@ -897,14 +1061,10 @@ export const PlatformStaffView: React.FC = () => {
                       onChange={(e) => setCreateFormData({ ...createFormData, account_expiry_date: e.target.value })}
                       className="w-full px-3.5 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
-                    <span className="text-[11px] text-slate-500 mt-1 block">
-                      Leave blank for permanent platform staff accounts.
-                    </span>
                   </div>
                 </div>
               )}
 
-              {/* STEP 3: ROLE & SCOPES */}
               {wizardStep === 3 && (
                 <div className="space-y-3">
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -913,10 +1073,10 @@ export const PlatformStaffView: React.FC = () => {
 
                   <div className="grid grid-cols-1 gap-2.5">
                     {[
-                      { key: 'SUPPORT_ADMIN', name: 'Support Admin', desc: 'Manage customer cases, customer activity telemetry, and tickets. Prohibited from Billing & IAM.', risk: 'LOW', perms: 8 },
-                      { key: 'OPERATIONS_ADMIN', name: 'Operations Admin', desc: 'Tenant health, background worker queues, webhook mesh, and incidents.', risk: 'MEDIUM', perms: 18 },
-                      { key: 'SECURITY_ADMIN', name: 'Security Admin', desc: 'Security Center posture, session invalidation, and forensic audit logging.', risk: 'HIGH', perms: 12 },
-                      { key: 'PLATFORM_ADMIN', name: 'Platform Admin', desc: 'Broad tenant and subscription operations (excludes root cryptographic keys).', risk: 'HIGH', perms: 28 },
+                      { key: 'SUPPORT_ADMIN', name: 'Support Admin', desc: 'Customer cases & telemetry. Restricted from Billing & Master IAM.', risk: 'LOW', perms: 8 },
+                      { key: 'OPERATIONS_ADMIN', name: 'Operations Admin', desc: 'Tenant health, worker queues, and webhook mesh.', risk: 'MEDIUM', perms: 18 },
+                      { key: 'SECURITY_ADMIN', name: 'Security Admin', desc: 'Security Center posture, session invalidation, and forensic audit.', risk: 'HIGH', perms: 12 },
+                      { key: 'PLATFORM_ADMIN', name: 'Platform Admin', desc: 'Broad tenant and subscription operations (excludes root keys).', risk: 'HIGH', perms: 28 },
                       { key: 'READ_ONLY_ADMIN', name: 'Read-Only Admin', desc: 'View permitted platform dashboards without mutation permissions.', risk: 'LOW', perms: 10 },
                     ].map((r) => (
                       <label
@@ -948,16 +1108,13 @@ export const PlatformStaffView: React.FC = () => {
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{r.desc}</p>
                           </div>
                         </div>
-                        <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                          {r.perms} perms
-                        </span>
+                        <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">{r.perms} perms</span>
                       </label>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* STEP 4: REVIEW & CONFIRM */}
               {wizardStep === 4 && (
                 <div className="space-y-4">
                   <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-3">
@@ -979,10 +1136,6 @@ export const PlatformStaffView: React.FC = () => {
                       <span className="text-xs text-slate-500">MFA Policy:</span>
                       <span className="text-xs font-semibold text-emerald-600">Enforced & Required</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-500">Invitation Expiry:</span>
-                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">48 Hours</span>
-                    </div>
                   </div>
 
                   <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
@@ -995,12 +1148,11 @@ export const PlatformStaffView: React.FC = () => {
               )}
             </div>
 
-            {/* Footer Buttons */}
             <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/40">
               {wizardStep > 1 ? (
                 <button
                   onClick={handlePrevStep}
-                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 transition"
+                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 transition cursor-pointer"
                 >
                   Back
                 </button>
@@ -1011,7 +1163,7 @@ export const PlatformStaffView: React.FC = () => {
               {wizardStep < 4 ? (
                 <button
                   onClick={handleNextStep}
-                  className="px-5 py-2 text-xs font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition flex items-center gap-1.5 shadow"
+                  className="px-5 py-2 text-xs font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition flex items-center gap-1.5 shadow cursor-pointer"
                 >
                   Continue
                   <ChevronRight className="w-4 h-4" />
@@ -1020,7 +1172,7 @@ export const PlatformStaffView: React.FC = () => {
                 <button
                   onClick={handleFinishCreateStaff}
                   disabled={isCreatingStaff}
-                  className="px-5 py-2 text-xs font-semibold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition flex items-center gap-1.5 shadow disabled:opacity-50"
+                  className="px-5 py-2 text-xs font-semibold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition flex items-center gap-1.5 shadow disabled:opacity-50 cursor-pointer"
                 >
                   {isCreatingStaff ? 'Provisioning Staff...' : 'Create & Send Invitation'}
                 </button>
@@ -1039,7 +1191,7 @@ export const PlatformStaffView: React.FC = () => {
                 <KeyRound className="w-4 h-4 text-indigo-600" />
                 Modify Role for {roleChangeTarget.name}
               </h3>
-              <button onClick={() => setIsChangeRoleModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setIsChangeRoleModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1083,14 +1235,14 @@ export const PlatformStaffView: React.FC = () => {
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 onClick={() => setIsChangeRoleModalOpen(false)}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmitRoleChange}
                 disabled={isSubmittingRoleChange}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
               >
                 {isSubmittingRoleChange ? 'Updating...' : 'Confirm Role Update'}
               </button>
@@ -1108,7 +1260,7 @@ export const PlatformStaffView: React.FC = () => {
                 <AlertOctagon className="w-4 h-4 text-rose-600" />
                 Change Status to {targetNewStatus}
               </h3>
-              <button onClick={() => setIsStatusModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setIsStatusModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1138,14 +1290,14 @@ export const PlatformStaffView: React.FC = () => {
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 onClick={() => setIsStatusModalOpen(false)}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmitStatusChange}
                 disabled={isSubmittingStatusChange}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50"
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
               >
                 {isSubmittingStatusChange ? 'Applying...' : `Confirm ${targetNewStatus}`}
               </button>
@@ -1154,7 +1306,7 @@ export const PlatformStaffView: React.FC = () => {
         </div>
       )}
 
-      {/* 10. DETAIL DRAWER FOR SELECTED STAFF */}
+      {/* 10. DETAIL DRAWER FOR SELECTED STAFF (with Requirement 49 Timeline) */}
       {isDetailDrawerOpen && selectedStaff && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex justify-end">
           <div className="bg-white dark:bg-slate-900 w-full max-w-lg h-full border-l border-slate-200 dark:border-slate-800 shadow-2xl p-6 flex flex-col justify-between overflow-y-auto space-y-6 animate-slideLeft">
@@ -1177,17 +1329,17 @@ export const PlatformStaffView: React.FC = () => {
                 </div>
                 <button
                   onClick={() => setIsDetailDrawerOpen(false)}
-                  className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"
+                  className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               {/* Sub-Tabs in Drawer */}
-              <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800 pb-1">
+              <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800 pb-1 flex-wrap">
                 <button
                   onClick={() => setDetailTab('overview')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer ${
                     detailTab === 'overview' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500'
                   }`}
                 >
@@ -1195,7 +1347,7 @@ export const PlatformStaffView: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setDetailTab('permissions')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer ${
                     detailTab === 'permissions' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500'
                   }`}
                 >
@@ -1203,11 +1355,19 @@ export const PlatformStaffView: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setDetailTab('sessions')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer ${
                     detailTab === 'sessions' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500'
                   }`}
                 >
                   Active Sessions ({selectedStaff.active_sessions_count})
+                </button>
+                <button
+                  onClick={() => setDetailTab('activity')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg cursor-pointer ${
+                    detailTab === 'activity' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500'
+                  }`}
+                >
+                  Activity Timeline
                 </button>
               </div>
 
@@ -1238,7 +1398,9 @@ export const PlatformStaffView: React.FC = () => {
                     <div className="flex justify-between">
                       <span className="text-slate-500">Account Validity:</span>
                       <span className="text-slate-700 dark:text-slate-300">
-                        {selectedStaff.account_expiry_date ? `Expires on ${new Date(selectedStaff.account_expiry_date).toLocaleDateString()}` : 'Permanent Staff Account'}
+                        {selectedStaff.account_expiry_date
+                          ? `Expires on ${new Date(selectedStaff.account_expiry_date).toLocaleDateString()}`
+                          : 'Permanent Staff Account'}
                       </span>
                     </div>
                   </div>
@@ -1250,7 +1412,8 @@ export const PlatformStaffView: React.FC = () => {
                   <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-lg border border-indigo-200 dark:border-indigo-800/40 text-xs space-y-1">
                     <span className="font-bold text-indigo-700 dark:text-indigo-300">Access Attribution Hierarchy:</span>
                     <p className="text-slate-600 dark:text-slate-400">
-                      User: <strong>{selectedStaff.name}</strong> → Role: <strong>{selectedStaff.role_display_name}</strong> → {selectedStaff.permissions_count} Allowed Operations.
+                      User: <strong>{selectedStaff.name}</strong> → Role: <strong>{selectedStaff.role_display_name}</strong> →{' '}
+                      {selectedStaff.permissions_count} Allowed Operations.
                     </p>
                   </div>
                   <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg text-xs space-y-2">
@@ -1286,11 +1449,36 @@ export const PlatformStaffView: React.FC = () => {
                     <p className="text-xs text-slate-500">Chrome on Windows (103.21.144.92) - Active now</p>
                     <button
                       onClick={() => handleRevokeStaffSessions(selectedStaff)}
-                      className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold transition shadow"
+                      className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold transition shadow cursor-pointer"
                     >
                       Terminate Active Session
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* Requirement 49: Activity Timeline */}
+              {detailTab === 'activity' && (
+                <div className="space-y-3">
+                  {staffActivities.length === 0 ? (
+                    <p className="text-xs text-slate-500 text-center py-4">No recent security activity logged for this account.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {staffActivities.map((act) => (
+                        <div key={act.id} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg text-xs space-y-1">
+                          <div className="flex justify-between items-center">
+                            <span className="font-bold text-slate-900 dark:text-white font-mono">{act.action}</span>
+                            <span className="text-[10px] text-slate-500">{new Date(act.timestamp).toLocaleTimeString()}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400">{act.reason || 'Normal operation'}</p>
+                          <div className="text-[10px] font-mono text-slate-400 flex justify-between pt-1 border-t border-slate-200 dark:border-slate-700">
+                            <span>IP: {act.ip_address}</span>
+                            <span>Req: {act.request_id}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1302,7 +1490,7 @@ export const PlatformStaffView: React.FC = () => {
                   setIsDetailDrawerOpen(false);
                   handleOpenChangeRole(selectedStaff);
                 }}
-                className="flex-1 py-2 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
+                className="flex-1 py-2 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition cursor-pointer"
               >
                 Change Role
               </button>
@@ -1313,7 +1501,7 @@ export const PlatformStaffView: React.FC = () => {
                     handleOpenStatusChange(selectedStaff, 'Suspended');
                   }}
                   disabled={selectedStaff.is_root_superadmin}
-                  className="flex-1 py-2 text-xs font-semibold rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition disabled:opacity-30"
+                  className="flex-1 py-2 text-xs font-semibold rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition disabled:opacity-30 cursor-pointer"
                 >
                   Suspend
                 </button>
@@ -1323,7 +1511,7 @@ export const PlatformStaffView: React.FC = () => {
                     setIsDetailDrawerOpen(false);
                     handleOpenStatusChange(selectedStaff, 'Active');
                   }}
-                  className="flex-1 py-2 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition"
+                  className="flex-1 py-2 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition cursor-pointer"
                 >
                   Activate
                 </button>

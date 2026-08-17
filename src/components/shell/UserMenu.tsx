@@ -193,9 +193,11 @@ export const UserMenu: React.FC = () => {
               >
                 <span className="flex items-center gap-2.5">
                   <Key className="w-4 h-4 text-indigo-500" />
-                  Platform Access & IAM
+                  {currentRole === 'Super Admin' ? 'Platform Access & IAM' : 'Platform Access'}
                 </span>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-[#047857]">Full</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-[#047857]">
+                  {currentRole === 'Super Admin' ? 'Root' : 'Scoped'}
+                </span>
               </button>
 
               <button
@@ -216,6 +218,20 @@ export const UserMenu: React.FC = () => {
                 <span className="flex items-center gap-2.5">
                   <Clock className="w-4 h-4 text-gray-400" />
                   Security Activity
+                </span>
+                <span className="text-gray-400">→</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setIsOpen(false);
+                  window.dispatchEvent(new CustomEvent('platform:navigate', { detail: { tab: 'platform-support' } }));
+                }}
+                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#047857] flex items-center justify-between transition cursor-pointer"
+              >
+                <span className="flex items-center gap-2.5">
+                  <HelpCircle className="w-4 h-4 text-gray-400" />
+                  Help & Documentation
                 </span>
                 <span className="text-gray-400">→</span>
               </button>
