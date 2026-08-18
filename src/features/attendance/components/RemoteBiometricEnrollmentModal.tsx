@@ -148,7 +148,7 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
   const handleAdvanceScanStep = async () => {
     if (!activeSession) return;
     try {
-      const updated = await biometricGatewayService.pollEnrollmentSession(activeSession.id);
+      const updated = await biometricGatewayService.advanceEnrollmentScanStep(activeSession.id);
       setActiveSession({ ...updated });
       setSensorMessage(updated.message);
       if (updated.progressStep !== undefined) {

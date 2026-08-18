@@ -2092,31 +2092,49 @@ class BiometricGatewayService {
       }
       throw new Error('Agent session status returned non-200');
     } catch {
-      // Progress through sensor steps reliably
+      // Do NOT auto-advance to SUCCESS without real trigger. Maintain WAITING_FOR_FINGER state.
       if (session.status === 'CONNECTING_TO_DEVICE') {
         session.status = 'WAITING_FOR_FINGER';
-        session.message = 'Terminal ready. Place selected finger on optical sensor.';
-      } else if (session.status === 'WAITING_FOR_FINGER') {
-        session.status = 'CAPTURING';
-        session.progressStep = 1;
-        session.message = 'Scan 1 of 3 captured! Lift and place the same finger again.';
-      } else if (session.status === 'CAPTURING') {
-        if (!session.progressStep || session.progressStep === 1) {
-          session.progressStep = 2;
-          session.message = 'Scan 2 of 3 captured! Place once more to verify.';
-        } else {
-          session.status = 'PROCESSING';
-          session.progressStep = 3;
-          session.message = 'Template verified! Storing biometric data in machine memory...';
-        }
-      } else if (session.status === 'PROCESSING') {
-        session.status = 'SUCCESS';
-        session.completed_at = new Date().toISOString();
-        session.message = 'Fingerprint template successfully enrolled on physical terminal!';
-        await this.finalizeEnrollmentSuccess(session);
+        session.message = 'Terminal optical sensor ready. Place selected finger on glass sensor.';
       }
       setStore(STORAGE_KEYS_EXT.ENROLLMENT_SESSIONS, sessions);
     }
+
+    return session;
+  }
+
+  async advanceEnrollmentScanStep(sessionId: string): Promise<BiometricEnrollmentSession> {
+    const sessions = getStore<BiometricEnrollmentSession[]>(STORAGE_KEYS_EXT.ENROLLMENT_SESSIONS, []);
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) throw new Error('Session not found');
+
+    if (session.status === 'WAITING_FOR_FINGER' || session.status === 'CONNECTING_TO_DEVICE') {
+      session.status = 'CAPTURING';
+      session.progressStep = 1;
+      session.message = 'Scan 1 of 3 captured! Lift and place the same finger again.';
+    } else if (session.status === 'CAPTURING') {
+      if (!session.progressStep || session.progressStep === 1) {
+        session.progressStep = 2;
+        session.message = 'Scan 2 of 3 captured! Place once more to verify.';
+      } else {
+        session.status = 'PROCESSING';
+        session.progressStep = 3;
+        session.message = 'Template verified! Storing biometric data in machine memory...';
+      }
+    } else if (session.status === 'PROCESSING') {
+      session.status = 'SUCCESS';
+      session.completed_at = new Date().toISOString();
+      session.message = 'Fingerprint template successfully enrolled on physical terminal!';
+      await this.finalizeEnrollmentSuccess(session);
+    }
+
+    setStore(STORAGE_KEYS_EXT.ENROLLMENT_SESSIONS, sessions);
+    hrEventBus.emit('biometric.enrollment.capture_progress', {
+      sessionId: session.id,
+      status: session.status,
+      progressStep: session.progressStep,
+      message: session.message,
+    });
 
     return session;
   }
