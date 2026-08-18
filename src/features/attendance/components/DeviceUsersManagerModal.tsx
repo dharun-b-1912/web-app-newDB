@@ -62,6 +62,8 @@ import {
 import { api } from '../../../services/api';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { cn } from '../../../lib/utils';
+import { MapEmployeeModal } from './MapEmployeeModal';
+import { BulkMapModal } from './BulkMapModal';
 
 interface DeviceUsersManagerModalProps {
   isOpen: boolean;
@@ -85,6 +87,9 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
   const [activeView, setActiveView] = useState<'users' | 'history' | 'changes'>('users');
   const [syncHistory, setSyncHistory] = useState<DeviceUserSyncHistory[]>([]);
 
+  // Selection for Bulk Mapping
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+
   // Sync Progress & Summary State
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgressEvent | null>(null);
@@ -94,10 +99,14 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
   const [selectedUserDetail, setSelectedUserDetail] = useState<BiometricDeviceUser | null>(null);
   const [userDetailHistory, setUserDetailHistory] = useState<BiometricDeviceUserHistory[]>([]);
 
-  // Mapping Drawer State
+  // Mapping Modal 2.0 State
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [selectedUserForMapping, setSelectedUserForMapping] = useState<BiometricDeviceUser | null>(null);
-  const [employeeSearch, setEmployeeSearch] = useState('');
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  const [isBulkMapModalOpen, setIsBulkMapModalOpen] = useState(false);
+
+  // Unmap Confirmation Modal State
+  const [isUnmapConfirmOpen, setIsUnmapConfirmOpen] = useState(false);
+  const [userToUnmap, setUserToUnmap] = useState<BiometricDeviceUser | null>(null);
 
   // Remote Enrollment Modal State
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
@@ -115,7 +124,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
     }
   }, [isOpen, device, currentPage, searchQuery, mappingFilter]);
 
-  // Realtime Sync Event Listeners
+  // Realtime Sync & Mapping Event Listeners
   useEffect(() => {
     if (!isOpen || !device) return;
 
@@ -151,10 +160,25 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
       }
     });
 
+    // Realtime Mapping updates without page refresh
+    const unsubMapCreated = hrEventBus.subscribe('biometric.mapping.created', (evt: any) => {
+      if (evt.deviceId === device.id) {
+        loadUsers();
+      }
+    });
+
+    const unsubMapRemoved = hrEventBus.subscribe('biometric.mapping.removed', (evt: any) => {
+      if (evt.deviceId === device.id) {
+        loadUsers();
+      }
+    });
+
     return () => {
       unsubStarted();
       unsubProgress();
       unsubCompleted();
+      unsubMapCreated();
+      unsubMapRemoved();
     };
   }, [isOpen, device]);
 
@@ -199,28 +223,6 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
       showToast(res.message);
     } catch (err: any) {
       showToast(err.message || 'Failed to start user sync', 'error');
-    }
-  };
-
-  const handleMapUser = async () => {
-    if (!device || !selectedUserForMapping || !selectedEmployeeId) return;
-    try {
-      await biometricGatewayService.mapDeviceUserToEmployee(
-        device.id,
-        selectedUserForMapping.device_user_id,
-        selectedEmployeeId,
-        'IT Administrator'
-      );
-      showToast(`PIN #${selectedUserForMapping.device_user_id} mapped to employee profile.`);
-      setSelectedUserForMapping(null);
-      setSelectedEmployeeId('');
-      loadUsers();
-      if (selectedUserDetail && selectedUserDetail.device_user_id === selectedUserForMapping.device_user_id) {
-        const refreshed = biometricGatewayService.getDeviceUsers(device.id).users.find(x => x.device_user_id === selectedUserForMapping.device_user_id);
-        if (refreshed) setSelectedUserDetail(refreshed);
-      }
-    } catch (err: any) {
-      showToast(err.message || 'Failed to map user', 'error');
     }
   };
 
@@ -272,7 +274,9 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
       showToast(res.message);
 
       if (enrollEmpId) {
-        await biometricGatewayService.mapDeviceUserToEmployee(device.id, enrollPin.trim(), enrollEmpId, 'IT Administrator');
+        await biometricGatewayService.mapDeviceUserToEmployee(device.id, enrollPin.trim(), enrollEmpId, {
+          mappedBy: 'IT Administrator',
+        });
       }
 
       loadUsers();
@@ -295,15 +299,6 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
   const unmappedCount = allCurrentUsers.filter(u => !u.is_mapped).length;
   const disabledCount = allCurrentUsers.filter(u => !u.enabled).length;
   const missingCount = allCurrentUsers.filter(u => u.sync_status === 'NOT_PRESENT_ON_DEVICE').length;
-
-  // Filter employees for mapping search
-  const filteredEmployeesForMapping = employees.filter(e => {
-    const term = employeeSearch.toLowerCase().trim();
-    if (!term) return true;
-    const name = (e.display_name || `${e.first_name || ''} ${e.last_name || ''}`).toLowerCase();
-    const code = (e.employee_code || e.employee_id || e.id).toLowerCase();
-    return name.includes(term) || code.includes(term);
-  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
@@ -518,8 +513,36 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 text-xs text-gray-500">
-                <span>
+              <div className="flex items-center gap-2 text-xs">
+                {selectedUserIds.size > 0 && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setIsBulkMapModalOpen(true)}
+                    className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl font-bold shadow-xs"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Bulk Map ({selectedUserIds.size} Selected)
+                  </Button>
+                )}
+
+                {selectedUserIds.size === 0 && unmappedCount > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const unmapped = users.filter(u => !u.is_mapped);
+                      setSelectedUserIds(new Set(unmapped.map(u => u.device_user_id)));
+                      setIsBulkMapModalOpen(true);
+                    }}
+                    className="text-xs font-bold border-blue-200 text-blue-800 hover:bg-blue-50 rounded-xl"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 mr-1" />
+                    Bulk Map Unmapped ({unmappedCount})
+                  </Button>
+                )}
+
+                <span className="text-gray-500 ml-2">
                   Showing <span className="font-bold text-gray-900">{users.length}</span> of <span className="font-bold text-gray-900">{totalUsers}</span> users
                 </span>
               </div>
@@ -552,7 +575,22 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-gray-50/80 text-[11px] font-bold text-gray-600">
-                        <TableHead>Machine ID / UID</TableHead>
+                        <TableHead className="w-10 text-center">
+                          <input
+                            type="checkbox"
+                            checked={users.length > 0 && users.every(u => selectedUserIds.has(u.device_user_id))}
+                            onChange={e => {
+                              if (e.target.checked) {
+                                setSelectedUserIds(new Set(users.map(u => u.device_user_id)));
+                              } else {
+                                setSelectedUserIds(new Set());
+                              }
+                            }}
+                            className="rounded-sm border-gray-300 text-[#07563D] focus:ring-[#07563D]"
+                          />
+                        </TableHead>
+                        <TableHead>Machine User ID</TableHead>
+                        <TableHead>UID</TableHead>
                         <TableHead>Machine Name</TableHead>
                         <TableHead>WorkForceOS Mapping</TableHead>
                         <TableHead>Privilege</TableHead>
@@ -565,128 +603,155 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {users.map(u => (
-                        <TableRow key={u.device_user_id} className="hover:bg-gray-50/50">
-                          <TableCell>
-                            <div className="font-mono text-xs font-bold text-gray-900">
-                              #{u.device_user_id}
-                            </div>
-                            {u.device_user_uid && (
-                              <div className="text-[10px] text-gray-400 font-mono">UID: {u.device_user_uid}</div>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-xs font-semibold text-gray-900">
-                            {u.name}
-                          </TableCell>
-                          <TableCell>
-                            {u.is_mapped && u.mapped_employee_name ? (
-                              <div className="flex items-center gap-1.5 text-xs">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <div>
-                                  <div className="font-bold text-gray-900">{u.mapped_employee_name}</div>
-                                  <div className="text-[10px] text-gray-500 font-mono">
-                                    {u.mapped_employee_code} • {u.mapped_department || 'Engineering'}
-                                  </div>
-                                </div>
+                      {users.map(u => {
+                        const isSelected = selectedUserIds.has(u.device_user_id);
+
+                        return (
+                          <TableRow key={u.device_user_id} className={cn('hover:bg-gray-50/50', isSelected && 'bg-blue-50/20')}>
+                            <TableCell className="text-center">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {
+                                  const next = new Set(selectedUserIds);
+                                  if (next.has(u.device_user_id)) {
+                                    next.delete(u.device_user_id);
+                                  } else {
+                                    next.add(u.device_user_id);
+                                  }
+                                  setSelectedUserIds(next);
+                                }}
+                                className="rounded-sm border-gray-300 text-[#07563D] focus:ring-[#07563D]"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-mono text-xs font-bold text-gray-900">
+                                #{u.device_user_id}
                               </div>
-                            ) : (
-                              <div className="flex items-center gap-1.5 text-amber-700 text-xs font-medium">
-                                <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
-                                <span>Unmapped</span>
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={u.privilege === 'ADMIN' || u.privilege === 'SUPERADMIN' ? 'purple' : 'gray'} className="text-[10px]">
-                              {u.privilege}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={u.sync_status === 'NOT_PRESENT_ON_DEVICE' ? 'rose' : u.enabled ? 'emerald' : 'gray'}
-                              className="text-[10px]"
-                            >
-                              {u.sync_status === 'NOT_PRESENT_ON_DEVICE' ? 'Missing' : u.enabled ? 'Enabled' : 'Disabled'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs text-gray-500">
-                            {u.card_number || '—'}
-                          </TableCell>
-                          <TableCell>
-                            {u.fingerprint_count !== null ? (
-                              <Badge variant="blue" className="text-[10px] gap-1">
-                                <Fingerprint className="w-3 h-3" /> {u.fingerprint_count} Enrolled
-                              </Badge>
-                            ) : (
-                              <span className="text-[10px] text-gray-400">Not reported</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {u.face_enrolled !== null ? (
-                              u.face_enrolled ? (
-                                <Badge variant="emerald" className="text-[10px] gap-1">
-                                  <ScanFace className="w-3 h-3" /> {u.face_count !== null ? `${u.face_count} Face` : 'Enrolled'}
+                            </TableCell>
+                            <TableCell>
+                              {u.device_user_uid ? (
+                                <Badge variant="gray" className="text-[10px] font-mono">
+                                  UID: {u.device_user_uid}
                                 </Badge>
                               ) : (
-                                <span className="text-[10px] text-gray-400">No Face</span>
-                              )
-                            ) : (
-                              <span className="text-[10px] text-gray-400">Not reported</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-[11px] text-gray-500">
-                            <div>Group {u.group_id || '1'}</div>
-                            <div className="text-[9px] text-gray-400">{u.timezone || 'Asia/Kolkata'}</div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                onClick={() => handleOpenUserDetail(u)}
-                                title="View Machine User Details"
-                                className="p-1.5 text-gray-400 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition"
+                                <span className="text-[10px] text-gray-400 font-mono">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs font-semibold text-gray-900">
+                              {u.name}
+                            </TableCell>
+                            <TableCell>
+                              {u.is_mapped && u.mapped_employee_name ? (
+                                <div className="flex items-center gap-1.5 text-xs">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  <div>
+                                    <div className="font-bold text-gray-900">{u.mapped_employee_name}</div>
+                                    <div className="text-[10px] text-gray-500 font-mono">
+                                      {u.mapped_employee_code} • {u.mapped_department || 'Engineering'}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 text-amber-700 text-xs font-medium">
+                                  <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                  <span>Unmapped</span>
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={u.privilege === 'ADMIN' || u.privilege === 'SUPERADMIN' ? 'purple' : 'gray'} className="text-[10px]">
+                                {u.privilege}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={u.sync_status === 'NOT_PRESENT_ON_DEVICE' ? 'rose' : u.enabled ? 'emerald' : 'gray'}
+                                className="text-[10px]"
                               >
-                                <Eye className="w-3.5 h-3.5" />
-                              </button>
-                              {u.is_mapped ? (
-                                <>
+                                {u.sync_status === 'NOT_PRESENT_ON_DEVICE' ? 'Missing' : u.enabled ? 'Enabled' : 'Disabled'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-mono text-xs text-gray-500">
+                              {u.card_number || '—'}
+                            </TableCell>
+                            <TableCell>
+                              {u.fingerprint_count !== null ? (
+                                <Badge variant="blue" className="text-[10px] gap-1">
+                                  <Fingerprint className="w-3 h-3" /> {u.fingerprint_count} Enrolled
+                                </Badge>
+                              ) : (
+                                <span className="text-[10px] text-gray-400">Not reported</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {u.face_enrolled !== null ? (
+                                u.face_enrolled ? (
+                                  <Badge variant="emerald" className="text-[10px] gap-1">
+                                    <ScanFace className="w-3 h-3" /> {u.face_count !== null ? `${u.face_count} Face` : 'Enrolled'}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-[10px] text-gray-400">No Face</span>
+                                )
+                              ) : (
+                                <span className="text-[10px] text-gray-400">Not reported</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-[11px] text-gray-500">
+                              <div>Group {u.group_id || '1'}</div>
+                              <div className="text-[9px] text-gray-400">{u.timezone || 'Asia/Kolkata'}</div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => handleOpenUserDetail(u)}
+                                  title="View Machine User Details"
+                                  className="p-1.5 text-gray-400 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                                {u.is_mapped ? (
+                                  <>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        setSelectedUserForMapping(u);
+                                        setIsMapModalOpen(true);
+                                      }}
+                                      className="text-[11px] h-7 px-2 rounded-lg border-gray-200 text-gray-600 hover:text-[#07563D]"
+                                    >
+                                      <Link className="w-3 h-3 mr-1" /> Re-map
+                                    </Button>
+                                    <button
+                                      onClick={() => {
+                                        setUserToUnmap(u);
+                                        setIsUnmapConfirmOpen(true);
+                                      }}
+                                      title="Unmap Employee"
+                                      className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                                    >
+                                      <Unlink className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                ) : (
                                   <Button
                                     variant="outline"
                                     size="sm"
                                     onClick={() => {
                                       setSelectedUserForMapping(u);
-                                      setEmployeeSearch(u.mapped_employee_name || '');
-                                      setSelectedEmployeeId(u.mapped_employee_id || '');
+                                      setIsMapModalOpen(true);
                                     }}
-                                    className="text-[11px] h-7 px-2 rounded-lg border-gray-200 text-gray-600 hover:text-blue-700"
+                                    className="text-[11px] h-7 px-2.5 rounded-lg border-blue-300 text-blue-800 bg-blue-50/50 hover:bg-blue-100 font-semibold"
                                   >
-                                    <Link className="w-3 h-3 mr-1" /> Re-map
+                                    <Link className="w-3 h-3 mr-1" /> Map Employee
                                   </Button>
-                                  <button
-                                    onClick={() => handleUnmapUser(u)}
-                                    title="Unmap Employee"
-                                    className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                                  >
-                                    <Unlink className="w-3.5 h-3.5" />
-                                  </button>
-                                </>
-                              ) : (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    setSelectedUserForMapping(u);
-                                    setEmployeeSearch(u.name);
-                                    setSelectedEmployeeId('');
-                                  }}
-                                  className="text-[11px] h-7 px-2.5 rounded-lg border-blue-300 text-blue-800 bg-blue-50/50 hover:bg-blue-100 font-semibold"
-                                >
-                                  <Link className="w-3 h-3 mr-1" /> Map Employee
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -903,7 +968,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                       size="sm"
                       onClick={() => {
                         setSelectedUserForMapping(selectedUserDetail);
-                        setEmployeeSearch(selectedUserDetail.name);
+                        setIsMapModalOpen(true);
                       }}
                       className="mt-2 text-xs rounded-lg border-blue-300 text-blue-700"
                     >
@@ -934,67 +999,100 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
           </div>
         )}
 
-        {/* Map Employee Search Drawer */}
-        {selectedUserForMapping && (
-          <div className="p-5 border-t border-gray-200 bg-blue-50/70 space-y-3 animate-in slide-in-from-bottom-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-blue-700" />
+        {/* MAP EMPLOYEE MODAL 2.0 (AI suggestions, scoped search, cross-branch warnings & punch reprocessing) */}
+        {isMapModalOpen && selectedUserForMapping && (
+          <MapEmployeeModal
+            isOpen={isMapModalOpen}
+            onClose={() => {
+              setIsMapModalOpen(false);
+              setSelectedUserForMapping(null);
+            }}
+            device={device}
+            machineUser={selectedUserForMapping}
+            employees={employees}
+            onMappingSuccess={() => {
+              loadUsers();
+              if (selectedUserDetail && selectedUserDetail.device_user_id === selectedUserForMapping.device_user_id) {
+                const refreshed = biometricGatewayService.getDeviceUsers(device.id).users.find(x => x.device_user_id === selectedUserForMapping.device_user_id);
+                if (refreshed) setSelectedUserDetail(refreshed);
+              }
+            }}
+          />
+        )}
+
+        {/* BULK MAP MODAL (Multi-user match review & high confidence approval) */}
+        {isBulkMapModalOpen && (
+          <BulkMapModal
+            isOpen={isBulkMapModalOpen}
+            onClose={() => {
+              setIsBulkMapModalOpen(false);
+              setSelectedUserIds(new Set());
+            }}
+            device={device}
+            selectedUsers={
+              selectedUserIds.size > 0
+                ? users.filter(u => selectedUserIds.has(u.device_user_id))
+                : users.filter(u => !u.is_mapped)
+            }
+            employees={employees}
+            onBulkMappingSuccess={() => {
+              loadUsers();
+              setSelectedUserIds(new Set());
+            }}
+          />
+        )}
+
+        {/* UNMAP CONFIRMATION MODAL */}
+        {isUnmapConfirmOpen && userToUnmap && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-gray-900/60 backdrop-blur-xs p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-200 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center">
+                  <Unlink className="w-5 h-5" />
+                </div>
                 <div>
-                  <h4 className="text-xs font-bold text-gray-900">
-                    Link Terminal User #{selectedUserForMapping.device_user_id} ({selectedUserForMapping.name})
-                  </h4>
-                  <p className="text-[11px] text-gray-500">
-                    Search and associate with an active WorkForceOS employee record
-                  </p>
+                  <h4 className="text-sm font-bold text-gray-900">Unmap Biometric Identity</h4>
+                  <p className="text-xs text-gray-500">Remove canonical association for Machine PIN #{userToUnmap.device_user_id}</p>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedUserForMapping(null)}
-                className="text-xs text-gray-400 hover:text-gray-600"
-              >
-                Cancel
-              </button>
-            </div>
 
-            <div className="flex items-center gap-3">
-              <div className="flex-1">
-                <input
-                  type="text"
-                  placeholder="Type employee name or code (e.g. Arun Kumar, EMP-001)..."
-                  value={employeeSearch}
-                  onChange={e => setEmployeeSearch(e.target.value)}
-                  className="w-full p-2 bg-white border border-gray-300 rounded-xl text-xs text-gray-900 focus:outline-hidden"
-                />
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-1.5">
+                <div className="font-bold flex items-center gap-1.5 text-amber-950">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  Preservation Guarantee
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Unmapping will dissociate future punches from <strong>{userToUnmap.mapped_employee_name || 'the employee'}</strong>. All prior historical attendance records and punches will <strong>NOT</strong> be deleted.
+                </p>
               </div>
 
-              <select
-                value={selectedEmployeeId}
-                onChange={e => setSelectedEmployeeId(e.target.value)}
-                className="w-72 p-2 bg-white border border-gray-300 rounded-xl text-xs text-gray-900 focus:outline-hidden font-medium"
-              >
-                <option value="">-- Select Matching Employee ({filteredEmployeesForMapping.length}) --</option>
-                {filteredEmployeesForMapping.map(emp => {
-                  const name = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name;
-                  const code = emp.employee_code || emp.employee_id || emp.id;
-                  const dept = emp.department_name || emp.department || 'Operations';
-                  return (
-                    <option key={emp.id} value={emp.id}>
-                      {name} ({code}) • {dept}
-                    </option>
-                  );
-                })}
-              </select>
-
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleMapUser}
-                disabled={!selectedEmployeeId}
-                className="text-xs rounded-xl bg-blue-700 hover:bg-blue-800 text-white"
-              >
-                Confirm Link
-              </Button>
+              <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIsUnmapConfirmOpen(false);
+                    setUserToUnmap(null);
+                  }}
+                  className="rounded-xl text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={async () => {
+                    if (userToUnmap) {
+                      await handleUnmapUser(userToUnmap);
+                      setIsUnmapConfirmOpen(false);
+                      setUserToUnmap(null);
+                    }
+                  }}
+                  className="rounded-xl text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold"
+                >
+                  Confirm Unlink
+                </Button>
+              </div>
             </div>
           </div>
         )}

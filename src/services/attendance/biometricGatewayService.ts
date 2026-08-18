@@ -212,6 +212,64 @@ export interface DeviceUserSyncHistory {
   error_details?: any;
 }
 
+export interface EmployeeBiometricMapping {
+  id: string;
+  organization_id: string;
+  branch_id: string;
+  employee_id: string;
+  employee_name?: string;
+  employee_code?: string;
+  department?: string;
+  designation?: string;
+  device_id: string;
+  device_name?: string;
+  device_user_id: string; // Hardware PIN
+  device_user_uid?: string | null;
+  mapping_status: 'UNMAPPED' | 'MAPPED' | 'CONFLICT' | 'DISABLED' | 'PENDING_REVIEW';
+  mapping_source: 'MANUAL' | 'AUTO_EXACT_ID' | 'AUTO_EXACT_NAME' | 'SUGGESTED' | 'IMPORTED';
+  confidence_score: number;
+  mapped_by: string;
+  mapped_at: string;
+  unmapped_by?: string;
+  unmapped_at?: string;
+  last_verified_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MatchSuggestion {
+  employee: any;
+  confidenceScore: number;
+  confidenceLevel: 'HIGH' | 'MEDIUM' | 'LOW';
+  matchReasons: string[];
+  isExactId: boolean;
+  isExactName: boolean;
+  isSameBranch: boolean;
+  isAmbiguous: boolean;
+  isConflict: boolean;
+  conflictDetails?: {
+    existingMappedDeviceId?: string;
+    existingMappedDeviceName?: string;
+    existingMachinePin?: string;
+  };
+}
+
+export interface BulkMappingResult {
+  totalRequested: number;
+  successfulCount: number;
+  reviewedCount: number;
+  conflictCount: number;
+  reprocessedPunchesCount: number;
+  details: Array<{
+    pin: string;
+    machineName: string;
+    employeeName: string;
+    employeeCode: string;
+    status: 'SUCCESS' | 'CONFLICT' | 'SKIPPED';
+    message: string;
+  }>;
+}
+
 export interface DeviceCapabilities {
   supportsUserFetch: boolean;
   supportsCard: boolean;
@@ -256,9 +314,11 @@ const STORAGE_KEYS = {
 
 const STORAGE_KEYS_EXT = {
   ...STORAGE_KEYS,
+  MAPPINGS: 'workforce_bio_employee_mappings_v2',
   SYNC_HISTORY: 'workforce_bio_sync_history_v1',
   USER_HISTORY: 'workforce_bio_user_history_v1',
   ACTIVE_SYNC_LOCKS: 'workforce_bio_sync_locks_v1',
+  UNRESOLVED_PUNCHES: 'workforce_bio_unresolved_punches_v1',
 };
 
 const DEFAULT_AGENTS: BiometricGatewayAgent[] = [
@@ -1278,53 +1338,329 @@ class BiometricGatewayService {
     }));
   }
 
+  // ==========================================================================
+  // EMPLOYEE BIOMETRIC MAPPINGS 2.0 (Identity Bridge: Machine User → WorkForceOS Employee)
+  // ==========================================================================
+
+  getEmployeeBiometricMappings(deviceId?: string, employeeId?: string): EmployeeBiometricMapping[] {
+    const mappings = getStore<EmployeeBiometricMapping[]>(STORAGE_KEYS_EXT.MAPPINGS, []);
+    let filtered = mappings;
+    if (deviceId) {
+      filtered = filtered.filter(m => m.device_id === deviceId);
+    }
+    if (employeeId) {
+      filtered = filtered.filter(m => m.employee_id === employeeId);
+    }
+    return filtered;
+  }
+
+  getEmployeeBiometricDevices(employeeId: string): Array<{
+    deviceId: string;
+    deviceName: string;
+    branch: string;
+    machinePin: string;
+    mappedAt: string;
+    status: string;
+  }> {
+    const mappings = this.getEmployeeBiometricMappings(undefined, employeeId).filter(
+      m => m.mapping_status === 'MAPPED'
+    );
+    const devices = this.getBiometricDevices();
+
+    return mappings.map(m => {
+      const dev = devices.find(d => d.id === m.device_id);
+      return {
+        deviceId: m.device_id,
+        deviceName: dev?.device_name || m.device_name || 'Biometric Terminal',
+        branch: dev?.branch || m.branch_id || 'Campus',
+        machinePin: m.device_user_id,
+        mappedAt: m.mapped_at,
+        status: dev?.status || 'Online',
+      };
+    });
+  }
+
+  calculateEmployeeMatchSuggestions(
+    deviceId: string,
+    machineUser: BiometricDeviceUser,
+    employees: any[]
+  ): MatchSuggestion[] {
+    const devices = this.getBiometricDevices();
+    const currentDevice = devices.find(d => d.id === deviceId);
+    const existingMappings = this.getEmployeeBiometricMappings();
+
+    const cleanMachineName = (machineUser.name || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
+    const machineTokens = cleanMachineName.split(/\s+/).filter(Boolean);
+    const pin = (machineUser.device_user_id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const results: MatchSuggestion[] = [];
+
+    for (const emp of employees) {
+      const empName = (emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || '').toLowerCase();
+      const cleanEmpName = empName.replace(/[^a-z0-9]/g, ' ').trim();
+      const empTokens = cleanEmpName.split(/\s+/).filter(Boolean);
+      const empCode = (emp.employee_code || emp.employee_id || emp.id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      let score = 0;
+      const reasons: string[] = [];
+      let isExactId = false;
+      let isExactName = false;
+
+      // 1. Exact ID check (e.g. EMP-01 / EMP-0001 / 1 / EMP-09 / EMP-10)
+      if (empCode === pin || `emp${pin}` === empCode || `emp0${pin}` === empCode || `emp00${pin}` === empCode || emp.id.toLowerCase() === pin) {
+        score = 100;
+        isExactId = true;
+        reasons.push('Exact Employee ID match');
+      }
+
+      // 2. Exact Normalized Name check (e.g. "Dharun B" <-> "Dharun B" or "Haripriya R")
+      if (cleanMachineName && cleanMachineName === cleanEmpName) {
+        score = Math.max(score, 98);
+        isExactName = true;
+        reasons.push('Exact normalized name match');
+      } else if (machineTokens.length > 0 && empTokens.length > 0) {
+        // 3. Name token overlap / similarity (e.g. "THIRUMALAI RK" <-> "Thirumalai R. K.")
+        const matchingTokens = machineTokens.filter(t => empTokens.some(et => et === t || et.startsWith(t) || t.startsWith(et)));
+        const tokenRatio = matchingTokens.length / Math.max(machineTokens.length, 1);
+        if (tokenRatio >= 0.8) {
+          const simScore = Math.round(80 + tokenRatio * 16);
+          if (simScore > score) {
+            score = simScore;
+            reasons.push('High name similarity');
+          }
+        } else if (tokenRatio >= 0.5) {
+          const simScore = Math.round(50 + tokenRatio * 25);
+          if (simScore > score) {
+            score = simScore;
+            reasons.push('Partial name match');
+          }
+        }
+      }
+
+      // 4. Same branch check
+      const empBranch = (emp.branch || emp.location || emp.branch_name || '').toLowerCase();
+      const devBranch = (currentDevice?.branch || '').toLowerCase();
+      const isSameBranch = empBranch && devBranch && (empBranch.includes(devBranch) || devBranch.includes(empBranch));
+      if (isSameBranch && score > 0) {
+        score = Math.min(100, score + 4);
+        reasons.push('Same office/campus branch');
+      }
+
+      // 5. Active employee check
+      const isActive = emp.status === 'Active' || emp.status === 'ACTIVE' || emp.is_active !== false;
+      if (!isActive && score > 0) {
+        score = Math.max(10, score - 30);
+        reasons.push('Warning: Employee is inactive/resigned');
+      }
+
+      // 6. Check existing conflicts
+      const existingMappingOnThisDevice = existingMappings.find(
+        m => m.device_id === deviceId && m.employee_id === emp.id && m.mapping_status === 'MAPPED'
+      );
+      const isConflict = !!existingMappingOnThisDevice && existingMappingOnThisDevice.device_user_id !== machineUser.device_user_id;
+
+      if (score >= 40 || isExactId || isExactName) {
+        const confidenceLevel: 'HIGH' | 'MEDIUM' | 'LOW' = score >= 90 ? 'HIGH' : score >= 70 ? 'MEDIUM' : 'LOW';
+        results.push({
+          employee: emp,
+          confidenceScore: score,
+          confidenceLevel,
+          matchReasons: reasons,
+          isExactId,
+          isExactName,
+          isSameBranch: !!isSameBranch,
+          isAmbiguous: false,
+          isConflict,
+          conflictDetails: isConflict
+            ? {
+                existingMappedDeviceId: existingMappingOnThisDevice?.device_id,
+                existingMappedDeviceName: existingMappingOnThisDevice?.device_name,
+                existingMachinePin: existingMappingOnThisDevice?.device_user_id,
+              }
+            : undefined,
+        });
+      }
+    }
+
+    // Sort descending by confidence
+    results.sort((a, b) => b.confidenceScore - a.confidenceScore);
+
+    // Detect ambiguous matches (multiple candidates with confidence >= 80% and score gap < 5)
+    if (results.length > 1 && results[0].confidenceScore >= 80 && (results[0].confidenceScore - results[1].confidenceScore) < 5) {
+      results[0].isAmbiguous = true;
+      results[1].isAmbiguous = true;
+      results[0].matchReasons.push('Ambiguous: Multiple close matches in directory');
+      results[1].matchReasons.push('Ambiguous: Multiple close matches in directory');
+    }
+
+    return results;
+  }
+
   async mapDeviceUserToEmployee(
     deviceId: string,
     pin: string,
     employeeId: string,
-    mappedBy = 'Administrator'
-  ): Promise<BiometricDeviceUser> {
-    const existingCache = getStore<Record<string, BiometricDeviceUser[]>>(STORAGE_KEYS.DEVICE_USERS, {});
-    const list = existingCache[deviceId] || [];
+    options?: {
+      mappedBy?: string;
+      source?: 'MANUAL' | 'AUTO_EXACT_ID' | 'AUTO_EXACT_NAME' | 'SUGGESTED' | 'IMPORTED';
+      confidenceScore?: number;
+      replaceConflict?: boolean;
+      allowBranchMismatch?: boolean;
+      reprocessHistorical?: boolean;
+    }
+  ): Promise<{ user: BiometricDeviceUser; mapping: EmployeeBiometricMapping; reprocessedCount: number }> {
+    const devices = this.getBiometricDevices();
+    const dev = devices.find(d => d.id === deviceId);
+    if (!dev) throw new Error(`Device ${deviceId} not found`);
+
+    const usersStore = getStore<Record<string, BiometricDeviceUser[]>>(STORAGE_KEYS.DEVICE_USERS, {});
+    const list = usersStore[deviceId] || [];
     const user = list.find(u => u.device_user_id === pin);
-    if (!user) throw new Error('User not found on device');
+    if (!user) throw new Error(`Machine user PIN #${pin} not found on device`);
 
     const employees = await api.getEmployees();
     const emp: any = employees.find(e => e.id === employeeId);
-    if (!emp) throw new Error('Employee not found in directory');
+    if (!emp) throw new Error(`Employee ${employeeId} not found in directory`);
 
+    // Validation: Check Branch Mismatch
+    const devBranch = (dev.branch || '').toLowerCase();
+    const empBranch = (emp.branch || emp.location || emp.branch_name || '').toLowerCase();
+    if (devBranch && empBranch && !devBranch.includes(empBranch) && !empBranch.includes(devBranch)) {
+      if (!options?.allowBranchMismatch) {
+        throw new Error(`BRANCH_MISMATCH: Machine belongs to "${dev.branch}", but employee is registered in "${emp.branch || 'Another Campus'}". Requires elevated authorization.`);
+      }
+    }
+
+    // Validation: Check Conflict
+    const mappingsStore = getStore<EmployeeBiometricMapping[]>(STORAGE_KEYS_EXT.MAPPINGS, []);
+    const existingMapping = mappingsStore.find(
+      m => m.device_id === deviceId && m.device_user_id === pin && m.mapping_status === 'MAPPED'
+    );
+
+    if (existingMapping && existingMapping.employee_id !== employeeId && !options?.replaceConflict) {
+      throw new Error(`MAPPING_CONFLICT: Machine PIN #${pin} is already assigned to "${existingMapping.employee_name}" (${existingMapping.employee_code}). Must confirm replace mapping.`);
+    }
+
+    // Update Mapping Store
     const empName = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || 'Employee';
     const empCode = emp.employee_code || emp.employee_id || emp.id;
     const dept = emp.department_name || emp.department || 'General';
     const desig = emp.designation_title || emp.designation || 'Team Member';
+    const mappedBy = options?.mappedBy || 'Administrator';
+    const source = options?.source || 'MANUAL';
+    const confidence = options?.confidenceScore !== undefined ? options.confidenceScore : 100;
 
+    // Archive or update existing mapping
+    const nowIso = new Date().toISOString();
+    const updatedMappingsStore = mappingsStore.filter(
+      m => !(m.device_id === deviceId && m.device_user_id === pin)
+    );
+
+    const newMapping: EmployeeBiometricMapping = {
+      id: `map-${Date.now()}-${pin}`,
+      organization_id: 'org-joy-01',
+      branch_id: dev.branch,
+      employee_id: emp.id,
+      employee_name: empName,
+      employee_code: empCode,
+      department: dept,
+      designation: desig,
+      device_id: dev.id,
+      device_name: dev.device_name,
+      device_user_id: pin,
+      device_user_uid: user.device_user_uid || null,
+      mapping_status: 'MAPPED',
+      mapping_source: source,
+      confidence_score: confidence,
+      mapped_by: mappedBy,
+      mapped_at: nowIso,
+      last_verified_at: nowIso,
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    updatedMappingsStore.unshift(newMapping);
+    setStore(STORAGE_KEYS_EXT.MAPPINGS, updatedMappingsStore);
+
+    // Update Machine User
     user.is_mapped = true;
     user.mapped_employee_id = emp.id;
     user.mapped_employee_name = empName;
     user.mapped_employee_code = empCode;
     user.mapped_department = dept;
     user.mapped_designation = desig;
-    user.mapped_at = new Date().toISOString();
+    user.mapped_at = nowIso;
     user.mapped_by = mappedBy;
+    setStore(STORAGE_KEYS.DEVICE_USERS, usersStore);
 
-    setStore(STORAGE_KEYS.DEVICE_USERS, existingCache);
+    // Reprocess Historical Punches for this PIN
+    let reprocessedCount = 0;
+    if (options?.reprocessHistorical !== false) {
+      reprocessedCount = this.reprocessHistoricalPunchesForUser(deviceId, pin, emp.id);
+    }
+
+    // Audit Log
+    const userHistoryStore = getStore<BiometricDeviceUserHistory[]>(STORAGE_KEYS_EXT.USER_HISTORY, []);
+    const auditRecord: BiometricDeviceUserHistory = {
+      id: `hist-map-${Date.now()}-${pin}`,
+      organization_id: 'org-joy-01',
+      branch_id: dev.branch,
+      device_id: dev.id,
+      device_user_id: pin,
+      change_type: existingMapping ? 'MAPPING_UPDATED' : 'MAPPING_CREATED',
+      field_name: 'mapped_employee_id',
+      old_value: existingMapping ? `${existingMapping.employee_name} (${existingMapping.employee_code})` : 'Unmapped',
+      new_value: `${empName} (${empCode}) [${source}, ${confidence}% confidence]`,
+      recorded_at: nowIso,
+    };
+    setStore(STORAGE_KEYS_EXT.USER_HISTORY, [auditRecord, ...userHistoryStore]);
 
     this.logDiagnosticEvent({
       category: 'DEVICE_COMMAND',
       severity: 'INFO',
       device_id: deviceId,
-      message: `Mapped Biometric PIN #${pin} to employee ${empName} (${empCode}).`,
+      message: `Mapped Machine PIN #${pin} (${user.name}) → Employee ${empName} (${empCode}). Reprocessed ${reprocessedCount} punches.`,
     });
 
-    return user;
+    // Realtime Event
+    hrEventBus.emit('biometric.mapping.created', {
+      organizationId: 'org-joy-01',
+      branchId: dev.branch,
+      deviceId: dev.id,
+      deviceUserId: pin,
+      employeeId: emp.id,
+      mappingStatus: 'MAPPED',
+    });
+
+    return { user, mapping: newMapping, reprocessedCount };
   }
 
-  async unmapDeviceUser(deviceId: string, pin: string): Promise<BiometricDeviceUser> {
-    const existingCache = getStore<Record<string, BiometricDeviceUser[]>>(STORAGE_KEYS.DEVICE_USERS, {});
-    const list = existingCache[deviceId] || [];
+  async unmapDeviceUser(
+    deviceId: string,
+    pin: string,
+    unmappedBy = 'Administrator',
+    reason = 'Manual unmap'
+  ): Promise<BiometricDeviceUser> {
+    const usersStore = getStore<Record<string, BiometricDeviceUser[]>>(STORAGE_KEYS.DEVICE_USERS, {});
+    const list = usersStore[deviceId] || [];
     const user = list.find(u => u.device_user_id === pin);
     if (!user) throw new Error('User not found on device');
 
+    const prevEmpName = user.mapped_employee_name || 'Employee';
+    const prevEmpCode = user.mapped_employee_code || '';
+
+    // Update Mapping Store to UNMAPPED
+    const mappingsStore = getStore<EmployeeBiometricMapping[]>(STORAGE_KEYS_EXT.MAPPINGS, []);
+    const mapping = mappingsStore.find(m => m.device_id === deviceId && m.device_user_id === pin);
+    if (mapping) {
+      mapping.mapping_status = 'UNMAPPED';
+      mapping.unmapped_by = unmappedBy;
+      mapping.unmapped_at = new Date().toISOString();
+      mapping.updated_at = new Date().toISOString();
+      setStore(STORAGE_KEYS_EXT.MAPPINGS, mappingsStore);
+    }
+
+    // Clean user mapping fields (Historical attendance remains intact!)
     user.is_mapped = false;
     delete user.mapped_employee_id;
     delete user.mapped_employee_name;
@@ -1333,17 +1669,130 @@ class BiometricGatewayService {
     delete user.mapped_designation;
     delete user.mapped_at;
     delete user.mapped_by;
+    setStore(STORAGE_KEYS.DEVICE_USERS, usersStore);
 
-    setStore(STORAGE_KEYS.DEVICE_USERS, existingCache);
+    // Audit log
+    const userHistoryStore = getStore<BiometricDeviceUserHistory[]>(STORAGE_KEYS_EXT.USER_HISTORY, []);
+    const auditRecord: BiometricDeviceUserHistory = {
+      id: `hist-unmap-${Date.now()}-${pin}`,
+      organization_id: 'org-joy-01',
+      branch_id: user.branch_id,
+      device_id: deviceId,
+      device_user_id: pin,
+      change_type: 'MAPPING_REMOVED',
+      field_name: 'mapped_employee_id',
+      old_value: `${prevEmpName} (${prevEmpCode})`,
+      new_value: 'Unmapped',
+      recorded_at: new Date().toISOString(),
+    };
+    setStore(STORAGE_KEYS_EXT.USER_HISTORY, [auditRecord, ...userHistoryStore]);
 
     this.logDiagnosticEvent({
       category: 'DEVICE_COMMAND',
       severity: 'INFO',
       device_id: deviceId,
-      message: `Unmapped Biometric PIN #${pin}.`,
+      message: `Unmapped Machine PIN #${pin} from employee ${prevEmpName} (${prevEmpCode}). Reason: ${reason}. Historical attendance preserved.`,
+    });
+
+    // Realtime Event
+    hrEventBus.emit('biometric.mapping.removed', {
+      organizationId: 'org-joy-01',
+      deviceId,
+      deviceUserId: pin,
+      mappingStatus: 'UNMAPPED',
     });
 
     return user;
+  }
+
+  reprocessHistoricalPunchesForUser(deviceId: string, pin: string, employeeId: string): number {
+    const rawPunches = this.getRawPunches(500);
+    const employees = getStore<any[]>('workforce_employees_v1', []);
+    const emp = employees.find(e => e.id === employeeId);
+    const empName = emp ? (emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name) : 'Employee';
+
+    let count = 0;
+    const updatedPunches = rawPunches.map(p => {
+      if (p.biometric_pin === pin || p.biometric_pin === `EMP-${pin}` || p.biometric_pin.endsWith(pin)) {
+        count++;
+        return {
+          ...p,
+          employee_id: employeeId,
+          employee_name: empName,
+          processed_status: 'PROCESSED' as const,
+        };
+      }
+      return p;
+    });
+
+    if (count > 0) {
+      setStore(STORAGE_KEYS.PUNCHES, updatedPunches);
+      hrEventBus.emit('attendance.punch.resolved', {
+        deviceId,
+        biometricPin: pin,
+        employeeId,
+        reprocessedCount: count,
+      });
+    }
+
+    return count;
+  }
+
+  async bulkMapDeviceUsers(
+    deviceId: string,
+    mappings: Array<{
+      pin: string;
+      employeeId: string;
+      source?: 'MANUAL' | 'AUTO_EXACT_ID' | 'AUTO_EXACT_NAME' | 'SUGGESTED';
+      confidenceScore?: number;
+    }>,
+    mappedBy = 'Administrator'
+  ): Promise<BulkMappingResult> {
+    let success = 0;
+    let conflicts = 0;
+    let reprocessedTotal = 0;
+    const details: BulkMappingResult['details'] = [];
+
+    for (const item of mappings) {
+      try {
+        const res = await this.mapDeviceUserToEmployee(deviceId, item.pin, item.employeeId, {
+          mappedBy,
+          source: item.source || 'AUTO_EXACT_ID',
+          confidenceScore: item.confidenceScore,
+          allowBranchMismatch: true,
+          reprocessHistorical: true,
+        });
+        success++;
+        reprocessedTotal += res.reprocessedCount;
+        details.push({
+          pin: item.pin,
+          machineName: res.user.name,
+          employeeName: res.user.mapped_employee_name || 'Employee',
+          employeeCode: res.user.mapped_employee_code || '',
+          status: 'SUCCESS',
+          message: `Mapped with ${item.confidenceScore || 100}% confidence.`,
+        });
+      } catch (err: any) {
+        conflicts++;
+        details.push({
+          pin: item.pin,
+          machineName: `PIN #${item.pin}`,
+          employeeName: item.employeeId,
+          employeeCode: item.employeeId,
+          status: 'CONFLICT',
+          message: err.message || 'Mapping error',
+        });
+      }
+    }
+
+    return {
+      totalRequested: mappings.length,
+      successfulCount: success,
+      reviewedCount: mappings.length - success - conflicts,
+      conflictCount: conflicts,
+      reprocessedPunchesCount: reprocessedTotal,
+      details,
+    };
   }
 
   async triggerRemoteEnrollment(
