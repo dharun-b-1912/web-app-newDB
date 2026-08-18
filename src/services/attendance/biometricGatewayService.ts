@@ -122,15 +122,22 @@ export interface RawBiometricPunch {
   created_at: string;
 }
 
-export interface DeviceUserDTO {
-  deviceUserId: string;
-  name: string;
-  privilege: 'USER' | 'ADMIN' | 'SUPERADMIN';
-  enabled: boolean;
-  cardNumber?: string | null;
-  passwordPresent?: boolean;
-  fingerprintCount: number;
-  faceEnrolled: boolean;
+export interface MachineUserDTO {
+  uid: string | null;
+  userId: string;
+  name: string | null;
+  privilege: 'USER' | 'ADMIN' | 'SUPERADMIN' | 'ENROLLER' | null;
+  passwordConfigured: boolean | null;
+  cardNumber: string | null;
+  groupId: string | null;
+  timezone: string | null;
+  enabled: boolean | null;
+  fingerprintCount: number | null;
+  faceCount: number | null;
+  faceEnrolled: boolean | null;
+  palmEnrolled: boolean | null;
+  irisEnrolled: boolean | null;
+  rawCapabilities?: Record<string, unknown> | null;
 }
 
 export interface BiometricDeviceUser {
@@ -138,24 +145,49 @@ export interface BiometricDeviceUser {
   organization_id: string;
   branch_id: string;
   device_id: string;
+  device_user_uid: string | null;
   device_user_id: string;
-  display_name: string;
-  privilege: 'USER' | 'ADMIN' | 'SUPERADMIN';
+  name: string;
+  privilege: 'USER' | 'ADMIN' | 'SUPERADMIN' | 'ENROLLER';
+  password_configured: boolean;
+  card_number: string | null;
+  group_id: string | null;
+  timezone: string | null;
+  user_group: string | null;
   enabled: boolean;
-  card_number?: string | null;
-  password_present: boolean;
-  fingerprint_count: number;
-  face_enrolled: boolean;
-  sync_status: 'SYNCED' | 'PENDING_PUSH' | 'NOT_PRESENT_ON_DEVICE' | 'ERROR';
+  fingerprint_count: number | null;
+  face_count: number | null;
+  face_enrolled: boolean | null;
+  palm_enrolled: boolean | null;
+  iris_enrolled: boolean | null;
+  raw_capabilities?: Record<string, unknown> | null;
+  device_created_at?: string | null;
+  first_seen_at: string;
   last_seen_at: string;
   last_synced_at: string;
+  sync_status: 'SYNCED' | 'PENDING_PUSH' | 'NOT_PRESENT_ON_DEVICE' | 'ERROR' | 'ARCHIVED';
+  // Explicit mapping to WorkForceOS canonical employee
   is_mapped: boolean;
   mapped_employee_id?: string;
   mapped_employee_name?: string;
   mapped_employee_code?: string;
   mapped_department?: string;
+  mapped_designation?: string;
   mapped_at?: string;
   mapped_by?: string;
+}
+
+export interface BiometricDeviceUserHistory {
+  id: string;
+  organization_id: string;
+  branch_id: string;
+  device_id: string;
+  device_user_id: string;
+  change_type: string;
+  field_name?: string;
+  old_value?: string | null;
+  new_value?: string | null;
+  recorded_at: string;
 }
 
 export interface DeviceUserSyncHistory {
@@ -173,10 +205,25 @@ export interface DeviceUserSyncHistory {
   created_count: number;
   updated_count: number;
   unchanged_count: number;
+  removed_count: number;
   unmapped_count: number;
   error_count: number;
   duration_seconds: number;
   error_details?: any;
+}
+
+export interface DeviceCapabilities {
+  supportsUserFetch: boolean;
+  supportsCard: boolean;
+  supportsPassword: boolean;
+  supportsFingerprintMetadata: boolean;
+  supportsFaceMetadata: boolean;
+  supportsGroups: boolean;
+  supportsTimezone: boolean;
+  supportsUserEnableDisable: boolean;
+  supportsUserCreate: boolean;
+  supportsUserUpdate: boolean;
+  supportsUserDelete: boolean;
 }
 
 export interface SyncProgressEvent {
@@ -191,6 +238,7 @@ export interface SyncProgressEvent {
     new: number;
     updated: number;
     unchanged: number;
+    removed: number;
     unmapped: number;
     errors: number;
     durationSec: number;
@@ -209,6 +257,7 @@ const STORAGE_KEYS = {
 const STORAGE_KEYS_EXT = {
   ...STORAGE_KEYS,
   SYNC_HISTORY: 'workforce_bio_sync_history_v1',
+  USER_HISTORY: 'workforce_bio_user_history_v1',
   ACTIVE_SYNC_LOCKS: 'workforce_bio_sync_locks_v1',
 };
 
@@ -729,6 +778,7 @@ class BiometricGatewayService {
       let createdCount = 0;
       let updatedCount = 0;
       let unchangedCount = 0;
+      let removedCount = 0;
       let unmappedCount = 0;
       let errorCount = 0;
       let errorDetails: any = null;
@@ -765,36 +815,6 @@ class BiometricGatewayService {
           errorDetails = { message: err.message };
         }
 
-        if (rawUsers.length === 0) {
-          // Fallback to local registry if agent was offline or returned empty
-          rawUsers = [
-            {
-              biometric_pin: '1001',
-              name: 'Dr. Aarav Patel',
-              privilege: 'Admin',
-              fingerprints_count: 2,
-              has_face_enrolled: true,
-              card_number: 'CARD-84920',
-            },
-            {
-              biometric_pin: '1002',
-              name: 'Priya Sharma',
-              privilege: 'User',
-              fingerprints_count: 1,
-              has_face_enrolled: true,
-              card_number: 'CARD-12048',
-            },
-            {
-              biometric_pin: '1003',
-              name: 'Rohan Gupta',
-              privilege: 'User',
-              fingerprints_count: 2,
-              has_face_enrolled: false,
-              card_number: 'CARD-59302',
-            },
-          ];
-        }
-
         fetchedCount = rawUsers.length;
 
         // Step C: Progress stream
@@ -812,11 +832,15 @@ class BiometricGatewayService {
         const existingUsersStore = getStore<Record<string, BiometricDeviceUser[]>>(STORAGE_KEYS.DEVICE_USERS, {});
         const currentDeviceUsers = existingUsersStore[deviceId] || [];
         const incomingPins = new Set<string>();
+        let removedCount = 0;
+        const userHistoryStore = getStore<BiometricDeviceUserHistory[]>(STORAGE_KEYS_EXT.USER_HISTORY, []);
+        const newHistoryEntries: BiometricDeviceUserHistory[] = [];
 
         const updatedList: BiometricDeviceUser[] = [];
 
         for (const raw of rawUsers) {
-          const pin = String(raw.biometric_pin || raw.deviceUserId || raw.pin);
+          const pin = String(raw.userId || raw.biometric_pin || raw.deviceUserId || raw.pin);
+          const uid = raw.uid ? String(raw.uid) : null;
           incomingPins.add(pin);
 
           const existing = currentDeviceUsers.find(u => u.device_user_id === pin);
@@ -835,10 +859,19 @@ class BiometricGatewayService {
             : existing?.mapped_employee_name;
           const mappedEmpCode = matchedEmp ? (matchedEmp.employee_code || matchedEmp.id) : existing?.mapped_employee_code;
           const mappedDept = matchedEmp ? (matchedEmp.department_name || matchedEmp.department) : existing?.mapped_department;
+          const mappedDesig = matchedEmp ? (matchedEmp.designation_title || matchedEmp.designation) : existing?.mapped_designation;
 
           if (!isMapped) {
             unmappedCount++;
           }
+
+          const rawPrivilege = String(raw.privilege || 'USER').toUpperCase();
+          const privilege: 'USER' | 'ADMIN' | 'SUPERADMIN' | 'ENROLLER' =
+            rawPrivilege.includes('SUPER') ? 'SUPERADMIN' : rawPrivilege.includes('ADMIN') ? 'ADMIN' : rawPrivilege.includes('ENROLL') ? 'ENROLLER' : 'USER';
+
+          const fpCount = raw.fingerprintCount !== undefined ? raw.fingerprintCount : raw.fingerprints_count !== undefined ? raw.fingerprints_count : null;
+          const faceCount = raw.faceCount !== undefined ? raw.faceCount : null;
+          const faceEnrolled = raw.faceEnrolled !== undefined ? raw.faceEnrolled : raw.has_face_enrolled !== undefined ? !!raw.has_face_enrolled : null;
 
           if (!existing) {
             createdCount++;
@@ -847,31 +880,81 @@ class BiometricGatewayService {
               organization_id: 'org-joy-01',
               branch_id: dev.branch,
               device_id: dev.id,
+              device_user_uid: uid,
               device_user_id: pin,
-              display_name: raw.name || `User ${pin}`,
-              privilege: (raw.privilege === 'Admin' || raw.privilege === 'ADMIN' ? 'ADMIN' : 'USER') as any,
-              enabled: true,
-              card_number: raw.card_number || raw.cardNumber || null,
-              password_present: !!raw.passwordPresent,
-              fingerprint_count: raw.fingerprints_count || raw.fingerprintCount || 1,
-              face_enrolled: !!raw.has_face_enrolled || !!raw.faceEnrolled,
-              sync_status: 'SYNCED',
+              name: raw.name || `User ${pin}`,
+              privilege,
+              password_configured: !!raw.passwordConfigured || !!raw.password_present,
+              card_number: raw.cardNumber || raw.card_number || null,
+              group_id: raw.groupId || raw.group_id || '1',
+              timezone: raw.timezone || 'Asia/Kolkata',
+              user_group: raw.userGroup || raw.user_group || 'Default Group',
+              enabled: raw.enabled !== undefined ? !!raw.enabled : true,
+              fingerprint_count: fpCount,
+              face_count: faceCount,
+              face_enrolled: faceEnrolled,
+              palm_enrolled: raw.palmEnrolled !== undefined ? raw.palmEnrolled : null,
+              iris_enrolled: raw.irisEnrolled !== undefined ? raw.irisEnrolled : null,
+              raw_capabilities: raw.rawCapabilities || null,
+              device_created_at: raw.deviceCreatedAt || null,
+              first_seen_at: new Date().toISOString(),
               last_seen_at: new Date().toISOString(),
               last_synced_at: new Date().toISOString(),
+              sync_status: 'SYNCED',
               is_mapped: isMapped,
               mapped_employee_id: mappedEmpId,
               mapped_employee_name: mappedEmpName,
               mapped_employee_code: mappedEmpCode,
               mapped_department: mappedDept,
+              mapped_designation: mappedDesig,
               mapped_at: isMapped ? new Date().toISOString() : undefined,
               mapped_by: isMapped ? requestedBy : undefined,
             });
+
+            newHistoryEntries.push({
+              id: `hist-${Date.now()}-${pin}`,
+              organization_id: 'org-joy-01',
+              branch_id: dev.branch,
+              device_id: dev.id,
+              device_user_id: pin,
+              change_type: 'USER_CREATED_ON_MACHINE',
+              new_value: `Enrolled as ${raw.name || `User ${pin}`} (${privilege})`,
+              recorded_at: new Date().toISOString(),
+            });
           } else {
-            // Check if modified or unchanged
-            const isChanged =
-              existing.display_name !== (raw.name || existing.display_name) ||
-              existing.fingerprint_count !== (raw.fingerprints_count || existing.fingerprint_count) ||
-              existing.face_enrolled !== (raw.has_face_enrolled ?? existing.face_enrolled);
+            // Detailed change detection
+            let isChanged = false;
+            if (existing.name !== (raw.name || existing.name)) {
+              newHistoryEntries.push({
+                id: `hist-${Date.now()}-${pin}-name`,
+                organization_id: 'org-joy-01',
+                branch_id: dev.branch,
+                device_id: dev.id,
+                device_user_id: pin,
+                change_type: 'NAME_CHANGED',
+                field_name: 'name',
+                old_value: existing.name,
+                new_value: raw.name,
+                recorded_at: new Date().toISOString(),
+              });
+              isChanged = true;
+            }
+
+            if (existing.card_number !== (raw.cardNumber || raw.card_number || existing.card_number)) {
+              newHistoryEntries.push({
+                id: `hist-${Date.now()}-${pin}-card`,
+                organization_id: 'org-joy-01',
+                branch_id: dev.branch,
+                device_id: dev.id,
+                device_user_id: pin,
+                change_type: 'CARD_NUMBER_CHANGED',
+                field_name: 'card_number',
+                old_value: existing.card_number || 'None',
+                new_value: raw.cardNumber || raw.card_number || 'None',
+                recorded_at: new Date().toISOString(),
+              });
+              isChanged = true;
+            }
 
             if (isChanged) {
               updatedCount++;
@@ -881,10 +964,17 @@ class BiometricGatewayService {
 
             updatedList.push({
               ...existing,
-              display_name: raw.name || existing.display_name,
-              fingerprint_count: raw.fingerprints_count ?? existing.fingerprint_count,
-              face_enrolled: raw.has_face_enrolled ?? existing.face_enrolled,
-              card_number: raw.card_number ?? existing.card_number,
+              device_user_uid: uid || existing.device_user_uid,
+              name: raw.name || existing.name,
+              privilege,
+              password_configured: raw.passwordConfigured !== undefined ? !!raw.passwordConfigured : existing.password_configured,
+              card_number: raw.cardNumber || raw.card_number || existing.card_number,
+              group_id: raw.groupId || existing.group_id,
+              timezone: raw.timezone || existing.timezone,
+              enabled: raw.enabled !== undefined ? !!raw.enabled : existing.enabled,
+              fingerprint_count: fpCount !== null ? fpCount : existing.fingerprint_count,
+              face_count: faceCount !== null ? faceCount : existing.face_count,
+              face_enrolled: faceEnrolled !== null ? faceEnrolled : existing.face_enrolled,
               sync_status: 'SYNCED',
               last_seen_at: new Date().toISOString(),
               last_synced_at: new Date().toISOString(),
@@ -893,6 +983,7 @@ class BiometricGatewayService {
               mapped_employee_name: mappedEmpName,
               mapped_employee_code: mappedEmpCode,
               mapped_department: mappedDept,
+              mapped_designation: mappedDesig,
             });
           }
         }
@@ -900,16 +991,33 @@ class BiometricGatewayService {
         // Detect removed users (Present in WorkForceOS but missing on physical terminal)
         for (const oldUser of currentDeviceUsers) {
           if (!incomingPins.has(oldUser.device_user_id)) {
+            removedCount++;
             updatedList.push({
               ...oldUser,
               sync_status: 'NOT_PRESENT_ON_DEVICE',
               last_synced_at: new Date().toISOString(),
+            });
+
+            newHistoryEntries.push({
+              id: `hist-${Date.now()}-${oldUser.device_user_id}-removed`,
+              organization_id: 'org-joy-01',
+              branch_id: dev.branch,
+              device_id: dev.id,
+              device_user_id: oldUser.device_user_id,
+              change_type: 'REMOVED_FROM_MACHINE',
+              field_name: 'sync_status',
+              old_value: oldUser.sync_status,
+              new_value: 'NOT_PRESENT_ON_DEVICE',
+              recorded_at: new Date().toISOString(),
             });
           }
         }
 
         existingUsersStore[deviceId] = updatedList;
         setStore(STORAGE_KEYS.DEVICE_USERS, existingUsersStore);
+        if (newHistoryEntries.length > 0) {
+          setStore(STORAGE_KEYS_EXT.USER_HISTORY, [...newHistoryEntries, ...userHistoryStore]);
+        }
 
         // Update device registered users count
         dev.registered_users_count = updatedList.filter(u => u.sync_status === 'SYNCED').length;
@@ -939,6 +1047,7 @@ class BiometricGatewayService {
           created_count: createdCount,
           updated_count: updatedCount,
           unchanged_count: unchangedCount,
+          removed_count: removedCount,
           unmapped_count: unmappedCount,
           error_count: errorCount,
           duration_seconds: durationSec,
@@ -982,6 +1091,80 @@ class BiometricGatewayService {
     };
   }
 
+  getDeviceUserHistory(deviceId: string, pin?: string): BiometricDeviceUserHistory[] {
+    const history = getStore<BiometricDeviceUserHistory[]>(STORAGE_KEYS_EXT.USER_HISTORY, []);
+    let filtered = history.filter(h => h.device_id === deviceId);
+    if (pin) {
+      filtered = filtered.filter(h => h.device_user_id === pin);
+    }
+    return filtered;
+  }
+
+  getDeviceCapabilities(deviceId: string): DeviceCapabilities {
+    const devices = this.getBiometricDevices();
+    const dev = devices.find(d => d.id === deviceId);
+    const vendor = dev?.vendor || 'ZKTeco';
+
+    return {
+      supportsUserFetch: true,
+      supportsCard: true,
+      supportsPassword: true,
+      supportsFingerprintMetadata: true,
+      supportsFaceMetadata: vendor === 'ZKTeco' || vendor === 'Suprema',
+      supportsGroups: true,
+      supportsTimezone: true,
+      supportsUserEnableDisable: true,
+      supportsUserCreate: true,
+      supportsUserUpdate: true,
+      supportsUserDelete: true,
+    };
+  }
+
+  exportDeviceUsersCsv(deviceId: string): string {
+    const users = this.getDeviceUsers(deviceId, { pageSize: 5000 }).users;
+    const headers = [
+      'Machine User ID',
+      'Machine UID',
+      'Machine Name',
+      'Privilege',
+      'Card Number',
+      'Group ID',
+      'Timezone',
+      'Enabled',
+      'Fingerprint Count',
+      'Face Enrolled',
+      'Mapping Status',
+      'Mapped Employee Name',
+      'Mapped Employee Code',
+      'Mapped Department',
+      'Sync Status',
+      'First Seen',
+      'Last Seen',
+    ];
+
+    const rows = users.map(u => [
+      `"${u.device_user_id}"`,
+      `"${u.device_user_uid || ''}"`,
+      `"${u.name}"`,
+      `"${u.privilege}"`,
+      `"${u.card_number || ''}"`,
+      `"${u.group_id || ''}"`,
+      `"${u.timezone || ''}"`,
+      `"${u.enabled ? 'Yes' : 'No'}"`,
+      `"${u.fingerprint_count !== null ? u.fingerprint_count : 'Not reported'}"`,
+      `"${u.face_enrolled !== null ? (u.face_enrolled ? 'Yes' : 'No') : 'Not reported'}"`,
+      `"${u.is_mapped ? 'MAPPED' : 'UNMAPPED'}"`,
+      `"${u.mapped_employee_name || ''}"`,
+      `"${u.mapped_employee_code || ''}"`,
+      `"${u.mapped_department || ''}"`,
+      `"${u.sync_status}"`,
+      `"${u.first_seen_at}"`,
+      `"${u.last_seen_at}"`,
+    ]);
+
+    return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  }
+
   getDeviceUsers(
     deviceId: string,
     options?: {
@@ -999,7 +1182,7 @@ class BiometricGatewayService {
     if (search) {
       list = list.filter(
         u =>
-          u.display_name.toLowerCase().includes(search) ||
+          u.name.toLowerCase().includes(search) ||
           u.device_user_id.includes(search) ||
           (u.mapped_employee_name && u.mapped_employee_name.toLowerCase().includes(search)) ||
           (u.mapped_employee_code && u.mapped_employee_code.toLowerCase().includes(search))
@@ -1024,11 +1207,11 @@ class BiometricGatewayService {
     const res = this.getDeviceUsers(deviceId, { pageSize: 500 });
     return res.users.map(u => ({
       biometric_pin: u.device_user_id,
-      name: u.display_name,
+      name: u.name,
       card_number: u.card_number || '',
       privilege: u.privilege === 'ADMIN' ? 'Admin' : 'User',
-      fingerprints_count: u.fingerprint_count,
-      has_face_enrolled: u.face_enrolled,
+      fingerprints_count: u.fingerprint_count || 0,
+      has_face_enrolled: !!u.face_enrolled,
       is_mapped: u.is_mapped,
       mapped_employee_id: u.mapped_employee_id,
       mapped_employee_name: u.mapped_employee_name,
@@ -1054,12 +1237,14 @@ class BiometricGatewayService {
     const empName = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || 'Employee';
     const empCode = emp.employee_code || emp.employee_id || emp.id;
     const dept = emp.department_name || emp.department || 'General';
+    const desig = emp.designation_title || emp.designation || 'Team Member';
 
     user.is_mapped = true;
     user.mapped_employee_id = emp.id;
     user.mapped_employee_name = empName;
     user.mapped_employee_code = empCode;
     user.mapped_department = dept;
+    user.mapped_designation = desig;
     user.mapped_at = new Date().toISOString();
     user.mapped_by = mappedBy;
 
@@ -1086,6 +1271,7 @@ class BiometricGatewayService {
     delete user.mapped_employee_name;
     delete user.mapped_employee_code;
     delete user.mapped_department;
+    delete user.mapped_designation;
     delete user.mapped_at;
     delete user.mapped_by;
 
@@ -1135,15 +1321,23 @@ class BiometricGatewayService {
             organization_id: 'org-joy-01',
             branch_id: dev.branch,
             device_id: dev.id,
+            device_user_uid: null,
             device_user_id: payload.pin,
-            display_name: payload.userName || 'Employee',
+            name: payload.userName || 'Employee',
             privilege: 'USER',
-            enabled: true,
+            password_configured: false,
             card_number: `CARD-${Math.floor(10000 + Math.random() * 90000)}`,
-            password_present: false,
+            group_id: '1',
+            timezone: 'Asia/Kolkata',
+            user_group: 'Default Group',
+            enabled: true,
             fingerprint_count: 1,
+            face_count: null,
             face_enrolled: false,
+            palm_enrolled: null,
+            iris_enrolled: null,
             sync_status: 'SYNCED',
+            first_seen_at: new Date().toISOString(),
             last_seen_at: new Date().toISOString(),
             last_synced_at: new Date().toISOString(),
             is_mapped: false,

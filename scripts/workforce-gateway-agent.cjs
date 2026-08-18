@@ -14,47 +14,8 @@ const HTTP_PORT = 11105;
 let pairingKey = process.env.PAIRING_KEY || '';
 let tenantId = process.env.TENANT_ID || 'org-joy-01';
 
-// In-memory enrolled users registry per terminal IP
-const enrolledUsersRegistry = {
-  '192.168.1.58': [
-    {
-      biometric_pin: '1001',
-      name: 'Dr. Aarav Patel',
-      card_number: 'CARD-84920',
-      privilege: 'Admin',
-      fingerprints_count: 2,
-      has_face_enrolled: true,
-      is_mapped: true,
-      mapped_employee_id: 'emp-001',
-      mapped_employee_name: 'Dr. Aarav Patel',
-      mapped_employee_code: 'EMP-001',
-      enrollment_date: new Date(Date.now() - 86400000 * 5).toISOString(),
-    },
-    {
-      biometric_pin: '1002',
-      name: 'Priya Sharma',
-      card_number: 'CARD-12048',
-      privilege: 'User',
-      fingerprints_count: 1,
-      has_face_enrolled: true,
-      is_mapped: true,
-      mapped_employee_id: 'emp-002',
-      mapped_employee_name: 'Priya Sharma',
-      mapped_employee_code: 'EMP-002',
-      enrollment_date: new Date(Date.now() - 86400000 * 3).toISOString(),
-    },
-    {
-      biometric_pin: '1003',
-      name: 'Rohan Gupta',
-      card_number: 'CARD-59302',
-      privilege: 'User',
-      fingerprints_count: 2,
-      has_face_enrolled: false,
-      is_mapped: false,
-      enrollment_date: new Date(Date.now() - 86400000 * 1).toISOString(),
-    },
-  ],
-};
+// In-memory enrolled users registry per terminal IP (populated strictly via real TCP queries or live enrollments)
+const enrolledUsersRegistry = {};
 
 // Parse command line arguments
 process.argv.forEach((val, index) => {
@@ -253,41 +214,7 @@ const server = http.createServer(async (req, res) => {
     const targetIp = parsedUrl.query.ip || '192.168.1.58';
     console.log(`[USERS] Fetching enrolled hardware users from ${targetIp}...`);
 
-    const users = enrolledUsersRegistry[targetIp] || [
-      {
-        biometric_pin: '1001',
-        name: 'Dr. Aarav Patel',
-        card_number: 'CARD-84920',
-        privilege: 'Admin',
-        fingerprints_count: 2,
-        has_face_enrolled: true,
-        is_mapped: true,
-        mapped_employee_id: 'emp-001',
-        mapped_employee_name: 'Dr. Aarav Patel',
-        mapped_employee_code: 'EMP-001',
-      },
-      {
-        biometric_pin: '1002',
-        name: 'Priya Sharma',
-        card_number: 'CARD-12048',
-        privilege: 'User',
-        fingerprints_count: 1,
-        has_face_enrolled: true,
-        is_mapped: true,
-        mapped_employee_id: 'emp-002',
-        mapped_employee_name: 'Priya Sharma',
-        mapped_employee_code: 'EMP-002',
-      },
-      {
-        biometric_pin: '1003',
-        name: 'Rohan Gupta',
-        card_number: 'CARD-59302',
-        privilege: 'User',
-        fingerprints_count: 2,
-        has_face_enrolled: false,
-        is_mapped: false,
-      },
-    ];
+    const users = enrolledUsersRegistry[targetIp] || [];
 
     console.log(`[USERS] Returning ${users.length} enrolled users for ${targetIp}.`);
     res.writeHead(200, { 'Content-Type': 'application/json' });

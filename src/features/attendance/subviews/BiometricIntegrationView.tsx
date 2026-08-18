@@ -429,7 +429,10 @@ export const BiometricIntegrationView: React.FC = () => {
                       {dev.ip_address} : {dev.port}
                     </TableCell>
                     <TableCell className="font-mono text-xs text-gray-700">
-                      {dev.registered_users_count} Users
+                      <div className="font-bold text-gray-900">{dev.registered_users_count || 0} Users</div>
+                      <div className="text-[10px] text-gray-400 font-mono">
+                        {dev.last_sync ? `Synced ${new Date(dev.last_sync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not synced'}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {dev.status === 'Online' ? (

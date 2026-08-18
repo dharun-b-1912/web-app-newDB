@@ -1,7 +1,7 @@
 // src/features/attendance/components/DeviceUsersManagerModal.tsx
 // ============================================================================
-// WorkForceOS — Enterprise Biometric Hardware User Manager & Sync Console
-// Real TCP User Fetch → LAN Agent → Cloud → DB → Web App with Live Progress
+// WorkForceOS — Complete Biometric Machine User Management Console
+// Real TCP User Fetch → LAN Agent → Cloud → DB → Web App with Machine Details
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
@@ -30,6 +30,14 @@ import {
   Check,
   AlertTriangle,
   FileText,
+  Download,
+  Eye,
+  Layers,
+  Globe,
+  Lock,
+  UserCheck,
+  UserX,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
@@ -47,6 +55,7 @@ import {
   biometricGatewayService,
   BiometricDevice,
   BiometricDeviceUser,
+  BiometricDeviceUserHistory,
   DeviceUserSyncHistory,
   SyncProgressEvent,
 } from '../../../services/attendance/biometricGatewayService';
@@ -73,13 +82,17 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
   const [pageSize] = useState(25);
   const [searchQuery, setSearchQuery] = useState('');
   const [mappingFilter, setMappingFilter] = useState<'ALL' | 'MAPPED' | 'UNMAPPED'>('ALL');
-  const [activeView, setActiveView] = useState<'users' | 'history'>('users');
+  const [activeView, setActiveView] = useState<'users' | 'history' | 'changes'>('users');
   const [syncHistory, setSyncHistory] = useState<DeviceUserSyncHistory[]>([]);
 
   // Sync Progress & Summary State
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgressEvent | null>(null);
   const [lastSyncSummary, setLastSyncSummary] = useState<any | null>(null);
+
+  // Machine User Detail Drawer State
+  const [selectedUserDetail, setSelectedUserDetail] = useState<BiometricDeviceUser | null>(null);
+  const [userDetailHistory, setUserDetailHistory] = useState<BiometricDeviceUserHistory[]>([]);
 
   // Mapping Drawer State
   const [selectedUserForMapping, setSelectedUserForMapping] = useState<BiometricDeviceUser | null>(null);
@@ -172,6 +185,13 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
     setSyncHistory(hist);
   };
 
+  const handleOpenUserDetail = (u: BiometricDeviceUser) => {
+    if (!device) return;
+    setSelectedUserDetail(u);
+    const hist = biometricGatewayService.getDeviceUserHistory(device.id, u.device_user_id);
+    setUserDetailHistory(hist);
+  };
+
   const handleTriggerSync = async () => {
     if (!device || isSyncing) return;
     try {
@@ -195,6 +215,10 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
       setSelectedUserForMapping(null);
       setSelectedEmployeeId('');
       loadUsers();
+      if (selectedUserDetail && selectedUserDetail.device_user_id === selectedUserForMapping.device_user_id) {
+        const refreshed = biometricGatewayService.getDeviceUsers(device.id).users.find(x => x.device_user_id === selectedUserForMapping.device_user_id);
+        if (refreshed) setSelectedUserDetail(refreshed);
+      }
     } catch (err: any) {
       showToast(err.message || 'Failed to map user', 'error');
     }
@@ -206,9 +230,27 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
       await biometricGatewayService.unmapDeviceUser(device.id, user.device_user_id);
       showToast(`PIN #${user.device_user_id} unmapped successfully.`);
       loadUsers();
+      if (selectedUserDetail && selectedUserDetail.device_user_id === user.device_user_id) {
+        const refreshed = biometricGatewayService.getDeviceUsers(device.id).users.find(x => x.device_user_id === user.device_user_id);
+        if (refreshed) setSelectedUserDetail(refreshed);
+      }
     } catch (err: any) {
       showToast(err.message || 'Failed to unmap user', 'error');
     }
+  };
+
+  const handleExportCsv = () => {
+    if (!device) return;
+    const csvContent = biometricGatewayService.exportDeviceUsersCsv(device.id);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${device.device_name.toLowerCase().replace(/\s+/g, '_')}_machine_users.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Machine user directory exported to CSV.');
   };
 
   const handleTriggerEnrollment = async () => {
@@ -245,6 +287,14 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
 
   const lastSync = biometricGatewayService.getLastSyncForDevice(device.id);
   const totalPages = Math.ceil(totalUsers / pageSize) || 1;
+  const capabilities = biometricGatewayService.getDeviceCapabilities(device.id);
+
+  // Compute live summary statistics from store
+  const allCurrentUsers = biometricGatewayService.getDeviceUsers(device.id, { pageSize: 5000 }).users;
+  const mappedCount = allCurrentUsers.filter(u => u.is_mapped).length;
+  const unmappedCount = allCurrentUsers.filter(u => !u.is_mapped).length;
+  const disabledCount = allCurrentUsers.filter(u => !u.enabled).length;
+  const missingCount = allCurrentUsers.filter(u => u.sync_status === 'NOT_PRESENT_ON_DEVICE').length;
 
   // Filter employees for mapping search
   const filteredEmployeesForMapping = employees.filter(e => {
@@ -270,10 +320,12 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                 <Badge variant="emerald" className="text-[10px] font-mono">
                   TCP {device.ip_address}:{device.port}
                 </Badge>
-                {lastSync && (
+                {lastSync ? (
                   <span className="text-[10px] text-gray-400 font-mono">
                     Last Synced: {new Date(lastSync.completed_at || lastSync.started_at).toLocaleTimeString()}
                   </span>
+                ) : (
+                  <span className="text-[10px] text-amber-600 font-mono">Never Synchronized</span>
                 )}
               </div>
               <p className="text-xs text-gray-500">
@@ -283,6 +335,16 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportCsv}
+              disabled={totalUsers === 0}
+              className="text-xs rounded-xl border-gray-200"
+            >
+              <Download className="w-3.5 h-3.5 mr-1" />
+              Export
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -337,7 +399,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
             </div>
             {syncProgress.receivedCount !== undefined && (
               <Badge variant="blue" className="text-xs font-mono font-bold">
-                {syncProgress.receivedCount} Users Received
+                {syncProgress.receivedCount} Machine Users Received
               </Badge>
             )}
           </div>
@@ -355,14 +417,46 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                 </span>
               </div>
             </div>
-            <button
-              onClick={() => setLastSyncSummary(null)}
-              className="text-[11px] text-emerald-700 hover:underline font-bold"
-            >
-              Dismiss
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setActiveView('changes')}
+                className="text-[11px] text-emerald-800 underline font-bold"
+              >
+                View Changes
+              </button>
+              <button
+                onClick={() => setLastSyncSummary(null)}
+                className="text-[11px] text-gray-500 hover:text-gray-700 font-bold"
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
         )}
+
+        {/* SUMMARY STATS METRIC CARDS */}
+        <div className="p-4 bg-gray-50/70 border-b border-gray-100 grid grid-cols-5 gap-3 text-xs">
+          <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs">
+            <div className="text-gray-400 font-medium text-[11px]">Total Machine Users</div>
+            <div className="text-lg font-bold text-gray-900 mt-0.5">{allCurrentUsers.length}</div>
+          </div>
+          <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs">
+            <div className="text-emerald-600 font-medium text-[11px]">Mapped to Employees</div>
+            <div className="text-lg font-bold text-emerald-700 mt-0.5">{mappedCount}</div>
+          </div>
+          <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs">
+            <div className="text-amber-600 font-medium text-[11px]">Unmapped</div>
+            <div className="text-lg font-bold text-amber-700 mt-0.5">{unmappedCount}</div>
+          </div>
+          <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs">
+            <div className="text-gray-500 font-medium text-[11px]">Disabled / Inactive</div>
+            <div className="text-lg font-bold text-gray-700 mt-0.5">{disabledCount}</div>
+          </div>
+          <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs">
+            <div className="text-rose-600 font-medium text-[11px]">Missing on Device</div>
+            <div className="text-lg font-bold text-rose-700 mt-0.5">{missingCount}</div>
+          </div>
+        </div>
 
         {/* VIEW 1: ENROLLED USERS DIRECTORY */}
         {activeView === 'users' && (
@@ -374,7 +468,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                   <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Search User ID, name, employee..."
+                    placeholder="Search Machine ID, Name, Employee..."
                     value={searchQuery}
                     onChange={e => {
                       setSearchQuery(e.target.value);
@@ -407,7 +501,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                       mappingFilter === 'MAPPED' ? 'bg-[#07563D] text-white shadow-2xs' : 'text-gray-600 hover:text-gray-900'
                     )}
                   >
-                    Mapped
+                    Mapped ({mappedCount})
                   </button>
                   <button
                     onClick={() => {
@@ -419,13 +513,15 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                       mappingFilter === 'UNMAPPED' ? 'bg-[#07563D] text-white shadow-2xs' : 'text-gray-600 hover:text-gray-900'
                     )}
                   >
-                    Unmapped
+                    Unmapped ({unmappedCount})
                   </button>
                 </div>
               </div>
 
-              <div className="text-xs text-gray-500">
-                Showing <span className="font-bold text-gray-900">{users.length}</span> of <span className="font-bold text-gray-900">{totalUsers}</span> users
+              <div className="flex items-center gap-3 text-xs text-gray-500">
+                <span>
+                  Showing <span className="font-bold text-gray-900">{users.length}</span> of <span className="font-bold text-gray-900">{totalUsers}</span> users
+                </span>
               </div>
             </div>
 
@@ -456,59 +552,41 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-gray-50/80 text-[11px] font-bold text-gray-600">
-                        <TableHead>User ID (PIN)</TableHead>
-                        <TableHead>Display Name</TableHead>
+                        <TableHead>Machine ID / UID</TableHead>
+                        <TableHead>Machine Name</TableHead>
+                        <TableHead>WorkForceOS Mapping</TableHead>
                         <TableHead>Privilege</TableHead>
+                        <TableHead>Status</TableHead>
                         <TableHead>Card</TableHead>
                         <TableHead>Fingerprint</TableHead>
                         <TableHead>Face</TableHead>
-                        <TableHead>Employee Mapping</TableHead>
-                        <TableHead>Sync Status</TableHead>
+                        <TableHead>Group / TZ</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {users.map(u => (
                         <TableRow key={u.device_user_id} className="hover:bg-gray-50/50">
-                          <TableCell className="font-mono text-xs font-bold text-gray-900">
-                            #{u.device_user_id}
+                          <TableCell>
+                            <div className="font-mono text-xs font-bold text-gray-900">
+                              #{u.device_user_id}
+                            </div>
+                            {u.device_user_uid && (
+                              <div className="text-[10px] text-gray-400 font-mono">UID: {u.device_user_uid}</div>
+                            )}
                           </TableCell>
                           <TableCell className="text-xs font-semibold text-gray-900">
-                            {u.display_name}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={u.privilege === 'ADMIN' ? 'purple' : 'gray'} className="text-[10px]">
-                              {u.privilege}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs text-gray-500">
-                            {u.card_number || '—'}
-                          </TableCell>
-                          <TableCell>
-                            {u.fingerprint_count > 0 ? (
-                              <Badge variant="blue" className="text-[10px] gap-1">
-                                <Fingerprint className="w-3 h-3" /> {u.fingerprint_count} FP
-                              </Badge>
-                            ) : (
-                              <span className="text-[10px] text-gray-400">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {u.face_enrolled ? (
-                              <Badge variant="emerald" className="text-[10px] gap-1">
-                                <ScanFace className="w-3 h-3" /> Enrolled
-                              </Badge>
-                            ) : (
-                              <span className="text-[10px] text-gray-400">No Face</span>
-                            )}
+                            {u.name}
                           </TableCell>
                           <TableCell>
                             {u.is_mapped && u.mapped_employee_name ? (
                               <div className="flex items-center gap-1.5 text-xs">
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                                 <div>
-                                  <span className="font-bold text-gray-900">{u.mapped_employee_name}</span>
-                                  <span className="text-gray-400 font-mono ml-1.5">({u.mapped_employee_code})</span>
+                                  <div className="font-bold text-gray-900">{u.mapped_employee_name}</div>
+                                  <div className="text-[10px] text-gray-500 font-mono">
+                                    {u.mapped_employee_code} • {u.mapped_department || 'Engineering'}
+                                  </div>
                                 </div>
                               </div>
                             ) : (
@@ -519,15 +597,56 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                             )}
                           </TableCell>
                           <TableCell>
+                            <Badge variant={u.privilege === 'ADMIN' || u.privilege === 'SUPERADMIN' ? 'purple' : 'gray'} className="text-[10px]">
+                              {u.privilege}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
                             <Badge
-                              variant={u.sync_status === 'SYNCED' ? 'emerald' : u.sync_status === 'NOT_PRESENT_ON_DEVICE' ? 'rose' : 'amber'}
+                              variant={u.sync_status === 'NOT_PRESENT_ON_DEVICE' ? 'rose' : u.enabled ? 'emerald' : 'gray'}
                               className="text-[10px]"
                             >
-                              {u.sync_status === 'NOT_PRESENT_ON_DEVICE' ? 'Missing on Terminal' : u.sync_status}
+                              {u.sync_status === 'NOT_PRESENT_ON_DEVICE' ? 'Missing' : u.enabled ? 'Enabled' : 'Disabled'}
                             </Badge>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-gray-500">
+                            {u.card_number || '—'}
+                          </TableCell>
+                          <TableCell>
+                            {u.fingerprint_count !== null ? (
+                              <Badge variant="blue" className="text-[10px] gap-1">
+                                <Fingerprint className="w-3 h-3" /> {u.fingerprint_count} Enrolled
+                              </Badge>
+                            ) : (
+                              <span className="text-[10px] text-gray-400">Not reported</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {u.face_enrolled !== null ? (
+                              u.face_enrolled ? (
+                                <Badge variant="emerald" className="text-[10px] gap-1">
+                                  <ScanFace className="w-3 h-3" /> {u.face_count !== null ? `${u.face_count} Face` : 'Enrolled'}
+                                </Badge>
+                              ) : (
+                                <span className="text-[10px] text-gray-400">No Face</span>
+                              )
+                            ) : (
+                              <span className="text-[10px] text-gray-400">Not reported</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-[11px] text-gray-500">
+                            <div>Group {u.group_id || '1'}</div>
+                            <div className="text-[9px] text-gray-400">{u.timezone || 'Asia/Kolkata'}</div>
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleOpenUserDetail(u)}
+                                title="View Machine User Details"
+                                className="p-1.5 text-gray-400 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
                               {u.is_mapped ? (
                                 <>
                                   <Button
@@ -556,7 +675,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                                   size="sm"
                                   onClick={() => {
                                     setSelectedUserForMapping(u);
-                                    setEmployeeSearch(u.display_name);
+                                    setEmployeeSearch(u.name);
                                     setSelectedEmployeeId('');
                                   }}
                                   className="text-[11px] h-7 px-2.5 rounded-lg border-blue-300 text-blue-800 bg-blue-50/50 hover:bg-blue-100 font-semibold"
@@ -633,6 +752,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                       <TableHead>New</TableHead>
                       <TableHead>Updated</TableHead>
                       <TableHead>Unchanged</TableHead>
+                      <TableHead>Removed</TableHead>
                       <TableHead>Unmapped</TableHead>
                       <TableHead>Duration</TableHead>
                     </TableRow>
@@ -656,12 +776,159 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                         <TableCell className="font-mono text-xs text-emerald-700 font-bold">+{h.created_count}</TableCell>
                         <TableCell className="font-mono text-xs text-blue-700">{h.updated_count}</TableCell>
                         <TableCell className="font-mono text-xs text-gray-500">{h.unchanged_count}</TableCell>
+                        <TableCell className="font-mono text-xs text-rose-700">{h.removed_count || 0}</TableCell>
                         <TableCell className="font-mono text-xs text-amber-700">{h.unmapped_count}</TableCell>
                         <TableCell className="font-mono text-xs text-gray-600">{h.duration_seconds}s</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* VIEW 3: LAST SYNC CHANGES BREAKDOWN */}
+        {activeView === 'changes' && lastSyncSummary && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-bold text-gray-900">Last User Synchronization Breakdown</h4>
+                <p className="text-xs text-gray-500">Changes detected between previous snapshot and physical terminal</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setActiveView('users')} className="text-xs rounded-xl">
+                Back to Directory
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-4 gap-3 text-xs">
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                <div className="font-bold text-emerald-950 text-sm">New Machine Users</div>
+                <div className="text-2xl font-bold text-emerald-700 mt-1">+{lastSyncSummary.new}</div>
+                <p className="text-[11px] text-emerald-600 mt-1">Added to directory snapshot</p>
+              </div>
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl">
+                <div className="font-bold text-blue-950 text-sm">Updated Attributes</div>
+                <div className="text-2xl font-bold text-blue-700 mt-1">{lastSyncSummary.updated}</div>
+                <p className="text-[11px] text-blue-600 mt-1">Names, cards, or biometrics modified</p>
+              </div>
+              <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl">
+                <div className="font-bold text-gray-950 text-sm">Unchanged Records</div>
+                <div className="text-2xl font-bold text-gray-700 mt-1">{lastSyncSummary.unchanged}</div>
+                <p className="text-[11px] text-gray-500 mt-1">Identical to local database</p>
+              </div>
+              <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl">
+                <div className="font-bold text-rose-950 text-sm">Missing on Device</div>
+                <div className="text-2xl font-bold text-rose-700 mt-1">{lastSyncSummary.removed || 0}</div>
+                <p className="text-[11px] text-rose-600 mt-1">Preserved for historical attendance</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Machine User Details Drawer */}
+        {selectedUserDetail && (
+          <div className="p-6 border-t border-gray-200 bg-gray-50 space-y-4 animate-in slide-in-from-bottom-2">
+            <div className="flex items-center justify-between border-b border-gray-200 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-800 flex items-center justify-center font-mono font-bold text-sm">
+                  #{selectedUserDetail.device_user_id}
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900">{selectedUserDetail.name}</h4>
+                  <p className="text-xs text-gray-500">
+                    Terminal: {device.device_name} ({device.ip_address}:{device.port})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedUserDetail(null)}
+                className="w-7 h-7 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-4 gap-4 text-xs">
+              {/* Card 1: Machine Identity */}
+              <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1.5">
+                <div className="font-bold text-gray-900 border-b border-gray-100 pb-1 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-blue-600" /> Machine Identity
+                </div>
+                <div><span className="text-gray-500">User ID / PIN:</span> <span className="font-mono font-bold">#{selectedUserDetail.device_user_id}</span></div>
+                <div><span className="text-gray-500">Machine UID:</span> <span className="font-mono">{selectedUserDetail.device_user_uid || 'Not reported'}</span></div>
+                <div><span className="text-gray-500">Machine Name:</span> <span className="font-semibold">{selectedUserDetail.name}</span></div>
+                <div><span className="text-gray-500">Privilege:</span> <span className="font-semibold">{selectedUserDetail.privilege}</span></div>
+              </div>
+
+              {/* Card 2: Credentials & Access */}
+              <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1.5">
+                <div className="font-bold text-gray-900 border-b border-gray-100 pb-1 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-purple-600" /> Credentials & Access
+                </div>
+                <div><span className="text-gray-500">Status:</span> <span className="font-semibold">{selectedUserDetail.enabled ? 'Enabled' : 'Disabled'}</span></div>
+                <div><span className="text-gray-500">Card Number:</span> <span className="font-mono">{selectedUserDetail.card_number || 'None'}</span></div>
+                <div><span className="text-gray-500">Password Set:</span> <span className="font-semibold">{selectedUserDetail.password_configured ? 'Yes' : 'No'}</span></div>
+                <div><span className="text-gray-500">Group / TZ:</span> <span>Group {selectedUserDetail.group_id || '1'} ({selectedUserDetail.timezone || 'Asia/Kolkata'})</span></div>
+              </div>
+
+              {/* Card 3: Biometrics */}
+              <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1.5">
+                <div className="font-bold text-gray-900 border-b border-gray-100 pb-1 flex items-center gap-1.5">
+                  <Fingerprint className="w-3.5 h-3.5 text-emerald-600" /> Biometrics
+                </div>
+                <div><span className="text-gray-500">Fingerprint:</span> <span className="font-semibold">{selectedUserDetail.fingerprint_count !== null ? `${selectedUserDetail.fingerprint_count} Enrolled` : 'Not reported'}</span></div>
+                <div><span className="text-gray-500">Face:</span> <span className="font-semibold">{selectedUserDetail.face_enrolled !== null ? (selectedUserDetail.face_enrolled ? 'Enrolled' : 'No Face') : 'Not reported'}</span></div>
+                <div><span className="text-gray-500">Palm:</span> <span className="text-gray-400">Not supported</span></div>
+                <div><span className="text-gray-500">Iris:</span> <span className="text-gray-400">Not supported</span></div>
+              </div>
+
+              {/* Card 4: WorkForceOS Employee Mapping */}
+              <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1.5">
+                <div className="font-bold text-gray-900 border-b border-gray-100 pb-1 flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" /> WorkForceOS Mapping
+                </div>
+                {selectedUserDetail.is_mapped ? (
+                  <>
+                    <div><span className="text-gray-500">Employee:</span> <span className="font-bold text-gray-900">{selectedUserDetail.mapped_employee_name}</span></div>
+                    <div><span className="text-gray-500">Employee ID:</span> <span className="font-mono">{selectedUserDetail.mapped_employee_code}</span></div>
+                    <div><span className="text-gray-500">Department:</span> <span>{selectedUserDetail.mapped_department || 'Engineering'}</span></div>
+                    <div><span className="text-gray-500">Mapped By:</span> <span className="text-gray-600">{selectedUserDetail.mapped_by || 'Admin'}</span></div>
+                  </>
+                ) : (
+                  <div className="text-amber-700 py-2">
+                    <div className="font-bold">Not linked to employee</div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedUserForMapping(selectedUserDetail);
+                        setEmployeeSearch(selectedUserDetail.name);
+                      }}
+                      className="mt-2 text-xs rounded-lg border-blue-300 text-blue-700"
+                    >
+                      <Link className="w-3 h-3 mr-1" /> Map Now
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Audit History of Changes for this Machine User */}
+            {userDetailHistory.length > 0 && (
+              <div className="mt-3 p-3 bg-white rounded-xl border border-gray-200 text-xs">
+                <div className="font-bold text-gray-900 mb-2 flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-gray-500" /> Machine Audit Trail
+                </div>
+                <div className="space-y-1">
+                  {userDetailHistory.map(h => (
+                    <div key={h.id} className="flex items-center justify-between text-[11px] py-0.5 border-b border-gray-50 last:border-0">
+                      <span className="font-mono text-gray-400">{new Date(h.recorded_at).toLocaleTimeString()}</span>
+                      <Badge variant="gray" className="text-[10px]">{h.change_type}</Badge>
+                      <span className="text-gray-700">{h.new_value || h.old_value}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -675,7 +942,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                 <ShieldCheck className="w-5 h-5 text-blue-700" />
                 <div>
                   <h4 className="text-xs font-bold text-gray-900">
-                    Link Terminal User #{selectedUserForMapping.device_user_id} ({selectedUserForMapping.display_name})
+                    Link Terminal User #{selectedUserForMapping.device_user_id} ({selectedUserForMapping.name})
                   </h4>
                   <p className="text-[11px] text-gray-500">
                     Search and associate with an active WorkForceOS employee record
@@ -837,10 +1104,15 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
           </div>
         )}
 
-        {/* Footer */}
+        {/* Footer with Device Capabilities Checklist */}
         <div className="p-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/80 text-xs text-gray-500">
-          <div>
-            Gateway Agent: <span className="font-mono text-gray-700 font-semibold">{device.gateway_agent_id} (Zero-Port Forwarding Active)</span>
+          <div className="flex items-center gap-2 text-[11px]">
+            <span className="font-semibold text-gray-700">Capabilities:</span>
+            <Badge variant="emerald" className="text-[9px]">Card ✓</Badge>
+            <Badge variant="emerald" className="text-[9px]">Password Presence ✓</Badge>
+            <Badge variant="emerald" className="text-[9px]">Fingerprint Metadata ✓</Badge>
+            <Badge variant="emerald" className="text-[9px]">Face Metadata ✓</Badge>
+            <Badge variant="emerald" className="text-[9px]">Groups & TZ ✓</Badge>
           </div>
           <Button variant="outline" size="sm" onClick={onClose} className="rounded-xl">
             Done
