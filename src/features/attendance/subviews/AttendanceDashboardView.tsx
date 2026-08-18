@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -28,6 +28,7 @@ import { AttendanceDaily, PunchSource } from '../../../types/attendance';
 import { attendanceApi } from '../../../services/attendanceApi';
 import { useToast } from '../../../components/ui/Toast';
 import { formatMinutesToHoursStr } from '../../../lib/attendance/attendanceEngine';
+import { hrEventBus } from '../../../services/hrEventBus';
 
 interface AttendanceDashboardViewProps {
   onSelectKpiFilter?: (filterStatus: string) => void;
@@ -52,6 +53,13 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
   const [isOnBreak, setIsOnBreak] = useState(false);
   const [gpsLocation, setGpsLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [isGettingGps, setIsGettingGps] = useState(false);
+
+  useEffect(() => {
+    const unsub = hrEventBus.subscribe('attendance.punch_received', () => {
+      setDailyRecords(attendanceApi.getDailyAttendance(undefined, deptFilter, undefined, searchQuery));
+    });
+    return () => unsub();
+  }, [deptFilter, searchQuery]);
 
   const refreshData = () => {
     setDailyRecords(attendanceApi.getDailyAttendance(undefined, deptFilter, undefined, searchQuery));

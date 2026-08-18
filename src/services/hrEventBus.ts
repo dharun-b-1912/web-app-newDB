@@ -97,6 +97,11 @@ export type HREventType =
   | 'recruitment.offer_created'
   | 'recruitment.offer_accepted'
   | 'recruitment.candidate_converted'
+  | 'attendance.punch_received'
+  | 'attendance.regularization_requested'
+  | 'attendance.overtime_approved'
+  | 'biometric.device_status_changed'
+  | 'biometric.agent_heartbeat'
   | 'custom';
 
 export type HREventPattern = HREventType | `${string}.*` | '*';
