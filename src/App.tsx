@@ -200,7 +200,17 @@ const AppContent: React.FC = () => {
       case 'audit-logs':
         return <AdminMasterModule initialTab={currentRoute} />;
       case 'recruitment':
-        return <RecruitmentView />;
+      case 'recruitment-dashboard':
+      case 'recruitment-requisitions':
+      case 'recruitment-jobs':
+      case 'recruitment-applicants':
+      case 'recruitment-interviews':
+      case 'recruitment-offers':
+      case 'recruitment-referrals':
+      case 'recruitment-talent-pool':
+      case 'recruitment-analytics':
+      case 'recruitment-automation':
+        return <RecruitmentView initialTab={currentRoute} />;
       case 'onboarding':
         return <OnboardingView />;
       case 'offboarding':

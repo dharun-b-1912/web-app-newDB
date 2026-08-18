@@ -1,362 +1,509 @@
-import React, { useState } from 'react';
+// src/features/talent/recruitment/RequisitionManager.tsx
+// ============================================================================
+// WorkForceOS — Requisition Master & Multi-Tier Approval Lifecycle
+// ============================================================================
+
+import React, { useState, useEffect } from 'react';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
-import { Input } from '../../../components/ui/Input';
-import { Select } from '../../../components/ui/Select';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
-import { Plus, Search, Filter, FileCheck2, CheckCircle, XCircle, Clock, ArrowRight, Building2, User } from 'lucide-react';
-import { atsService } from '../../../services/atsService';
-import { Requisition, RequisitionType, RequisitionPriority } from '../../../types/ats';
 import { useToast } from '../../../components/ui/Toast';
+import {
+  FileCheck2,
+  Plus,
+  Search,
+  Filter,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Building2,
+  DollarSign,
+  User,
+  Users,
+  ChevronRight,
+  ShieldCheck,
+  Briefcase,
+} from 'lucide-react';
+import { Requisition, RequisitionPriority, RequisitionType } from '../../../types/ats';
+import { recruitmentService } from '../../../services/recruitment/recruitmentService';
+import { hrEventBus } from '../../../services/hrEventBus';
+import { cn } from '../../../lib/utils';
 
-export const RequisitionManager: React.FC<{ onCreateJob?: (reqId: string) => void }> = ({ onCreateJob }) => {
+export const RequisitionManager: React.FC = () => {
   const { showToast } = useToast();
+  const [requisitions, setRequisitions] = useState<Requisition[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedReq, setSelectedReq] = useState<Requisition | null>(null);
 
-  const requisitions = atsService.getRequisitions();
+  // Modals
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedReqForApproval, setSelectedReqForApproval] = useState<Requisition | null>(null);
+  const [approvalComments, setApprovalComments] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [isRejecting, setIsRejecting] = useState(false);
 
-  // Form State
-  const [formData, setFormData] = useState({
-    job_title: '',
-    company_name: 'Acme Technologies Pvt Ltd',
-    business_unit: 'Core Product Engineering',
-    department_name: 'Engineering',
-    location_name: 'Coimbatore HQ - Tech Park',
-    hiring_manager_name: 'Anand V.',
-    recruiter_name: 'Dharun Joy',
-    designation_title: 'Senior Software Engineer',
-    job_level: 'L5',
-    employment_type: 'Full Time',
-    number_of_positions: 1,
-    requisition_type: 'New Position' as RequisitionType,
-    replacement_employee_name: '',
-    reason_for_hiring: '',
-    priority: 'High' as RequisitionPriority,
-    expected_joining_date: '2026-10-01',
-    budget: 2400000,
-    min_salary: 1800000,
-    max_salary: 2400000,
-    currency: 'INR',
-    required_skills: 'React, TypeScript, Node.js',
-    preferred_skills: 'AWS, Tailwind CSS',
-    education: "Bachelor's Degree in CS/IT",
-    job_description: 'Responsible for leading key full-stack software initiatives.',
-    responsibilities: 'Develop high quality web applications; Mentor junior developers.',
-    qualifications: '4+ years software engineering experience.',
-  });
+  // Form States
+  const [jobTitle, setJobTitle] = useState('');
+  const [departmentName, setDepartmentName] = useState('Engineering');
+  const [locationName, setLocationName] = useState('Coimbatore HQ Campus');
+  const [numberOfPositions, setNumberOfPositions] = useState(1);
+  const [requisitionType, setRequisitionType] = useState<RequisitionType>('New Position');
+  const [priority, setPriority] = useState<RequisitionPriority>('Medium');
+  const [budget, setBudget] = useState(1800000);
+  const [minSalary, setMinSalary] = useState(1200000);
+  const [maxSalary, setMaxSalary] = useState(1800000);
+  const [hiringManagerName, setHiringManagerName] = useState('Dharun Joy');
+  const [jobDescription, setJobDescription] = useState('');
+  const [businessJustification, setBusinessJustification] = useState('');
 
-  const handleCreateRequisition = (e: React.FormEvent) => {
-    e.preventDefault();
+  const loadData = async () => {
+    setIsLoading(true);
     try {
-      const created = atsService.createRequisition({
-        company_id: 'comp-01',
-        company_name: formData.company_name,
-        business_unit: formData.business_unit,
-        department_id: 'dept-eng',
-        department_name: formData.department_name,
-        location_id: 'loc-01',
-        location_name: formData.location_name,
-        hiring_manager_id: 'emp-02',
-        hiring_manager_name: formData.hiring_manager_name,
-        recruiter_id: 'emp-01',
-        recruiter_name: formData.recruiter_name,
-        job_title: formData.job_title,
-        designation_id: 'desig-staffeng',
-        designation_title: formData.designation_title,
-        job_level: formData.job_level,
-        employment_type: formData.employment_type,
-        number_of_positions: Number(formData.number_of_positions),
-        requisition_type: formData.requisition_type,
-        replacement_employee_name: formData.replacement_employee_name,
-        reason_for_hiring: formData.reason_for_hiring,
-        priority: formData.priority,
-        expected_joining_date: formData.expected_joining_date,
-        budget: Number(formData.budget),
-        min_salary: Number(formData.min_salary),
-        max_salary: Number(formData.max_salary),
-        currency: formData.currency,
-        required_skills: formData.required_skills.split(',').map(s => s.trim()),
-        preferred_skills: formData.preferred_skills.split(',').map(s => s.trim()),
-        education: formData.education,
-        job_description: formData.job_description,
-        responsibilities: formData.responsibilities.split(';').map(s => s.trim()),
-        qualifications: formData.qualifications.split(';').map(s => s.trim()),
-        approval_workflow: [
-          { role: 'Hiring Manager', approver_name: formData.hiring_manager_name, status: 'Approved' },
-          { role: 'HR Head', approver_name: 'Arun Kumar', status: 'Pending' },
-        ],
-        created_by_name: 'Dharun Joy',
-      });
-
-      showToast(`Requisition ${created.id} submitted for approval`);
-      setIsModalOpen(false);
-    } catch (err: any) {
-      showToast(err.message || 'Error creating requisition');
+      const list = await recruitmentService.getRequisitions({ status: statusFilter, search });
+      setRequisitions(list);
+    } catch (err) {
+      console.error('[RequisitionManager] load error:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleApproveStep = (reqId: string, roleName: string) => {
-    atsService.approveRequisitionStep(reqId, roleName, 'Arun Kumar');
-    showToast(`Requisition ${reqId} approved by HR Head!`);
+  useEffect(() => {
+    loadData();
+  }, [statusFilter, search]);
+
+  useEffect(() => {
+    const unsub = hrEventBus.subscribe('recruitment.*', () => {
+      loadData();
+    });
+    return () => unsub();
+  }, []);
+
+  const handleCreateRequisition = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!jobTitle) return;
+
+    try {
+      await recruitmentService.createRequisition({
+        job_title: jobTitle,
+        department_name: departmentName,
+        location_name: locationName,
+        number_of_positions: numberOfPositions,
+        requisition_type: requisitionType,
+        priority,
+        budget,
+        min_salary: minSalary,
+        max_salary: maxSalary,
+        hiring_manager_name: hiringManagerName,
+        job_description: jobDescription,
+        business_justification: businessJustification,
+      });
+
+      showToast(`Requisition for ${jobTitle} submitted for multi-tier approval!`);
+      setIsCreateModalOpen(false);
+      setJobTitle('');
+      setJobDescription('');
+      setBusinessJustification('');
+      loadData();
+    } catch {
+      showToast('Error creating requisition', 'error');
+    }
   };
 
-  const filteredRequisitions = requisitions.filter(r => {
-    const matchesSearch =
-      r.job_title.toLowerCase().includes(search.toLowerCase()) ||
-      r.id.toLowerCase().includes(search.toLowerCase()) ||
-      r.department_name.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === 'ALL' || r.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const handleApproveStep = async (reqId: string, stepOrder: number) => {
+    try {
+      await recruitmentService.approveRequisitionStep(reqId, stepOrder, approvalComments || 'Approved by reviewer');
+      showToast('Requisition approval step confirmed!');
+      setSelectedReqForApproval(null);
+      setApprovalComments('');
+      loadData();
+    } catch {
+      showToast('Error approving requisition', 'error');
+    }
+  };
+
+  const handleRejectRequisition = async (reqId: string) => {
+    if (!rejectionReason.trim()) return;
+    try {
+      await recruitmentService.rejectRequisition(reqId, rejectionReason, 'HR Reviewer');
+      showToast('Requisition rejected with recorded justification', 'error');
+      setSelectedReqForApproval(null);
+      setRejectionReason('');
+      setIsRejecting(false);
+      loadData();
+    } catch {
+      showToast('Error rejecting requisition', 'error');
+    }
+  };
 
   return (
     <div className="space-y-6">
-      {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-100 shadow-xs">
-        <div>
-          <h1 className="text-xl font-extrabold text-gray-900 tracking-tight flex items-center gap-2">
-            <FileCheck2 className="w-5 h-5 text-[#07563D]" /> Job Requisitions Engine
-          </h1>
-          <p className="text-xs text-gray-500 mt-1">
-            Submit, approve, and convert internal hiring requests into active Job Openings
-          </p>
+      {/* Action Header & Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search requisitions..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#07563D] w-64"
+            />
+          </div>
+
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="p-2 text-xs rounded-xl border border-gray-200 bg-white font-bold text-gray-700"
+          >
+            <option value="ALL">All Statuses</option>
+            <option value="Pending Approval">Pending Approval</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+            <option value="Open">Open</option>
+          </select>
         </div>
-        <Button leftIcon={<Plus className="w-4 h-4" />} onClick={() => setIsModalOpen(true)}>
+
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => setIsCreateModalOpen(true)}
+          className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl"
+        >
+          <Plus className="w-4 h-4" />
           Create Requisition
         </Button>
       </div>
 
-      {/* Filter and Search */}
-      <Card className="p-4 bg-white rounded-2xl border border-gray-100 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="w-full sm:w-80">
-          <Input
-            placeholder="Search Requisition ID, Title, Dept..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            leftIcon={<Search className="w-4 h-4" />}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Select
-            value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value)}
-            options={[
-              { value: 'ALL', label: 'All Statuses' },
-              { value: 'Draft', label: 'Draft' },
-              { value: 'Submitted', label: 'Submitted' },
-              { value: 'Pending Approval', label: 'Pending Approval' },
-              { value: 'Approved', label: 'Approved' },
-              { value: 'Open', label: 'Open' },
-              { value: 'Closed', label: 'Closed' },
-            ]}
-          />
-        </div>
-      </Card>
-
-      {/* Table */}
-      <Card className="p-6 bg-white rounded-2xl border border-gray-100 shadow-xs">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Req ID</TableHead>
-              <TableHead>Job Title & Dept</TableHead>
-              <TableHead>Type & Priority</TableHead>
-              <TableHead>Positions</TableHead>
-              <TableHead>Budget Range</TableHead>
-              <TableHead>Approval Workflow</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredRequisitions.map(req => (
-              <TableRow key={req.id}>
-                <TableCell className="font-mono text-xs font-bold text-gray-900">{req.id}</TableCell>
-                <TableCell>
-                  <div className="font-bold text-gray-900 text-sm">{req.job_title}</div>
-                  <div className="text-xs text-gray-500">{req.department_name} • {req.location_name}</div>
-                </TableCell>
-                <TableCell>
-                  <div className="text-xs font-semibold text-gray-800">{req.requisition_type}</div>
-                  <Badge variant={req.priority === 'Urgent' ? 'rose' : req.priority === 'High' ? 'amber' : 'neutral'} size="sm">
-                    {req.priority}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-xs font-semibold text-gray-800">
-                  {req.positions_filled} / {req.number_of_positions}
-                </TableCell>
-                <TableCell className="text-xs text-gray-700 font-medium">
-                  ₹{(req.min_salary / 100000).toFixed(1)}L - ₹{(req.max_salary / 100000).toFixed(1)}L
-                </TableCell>
-                <TableCell>
-                  <div className="space-y-1">
-                    {(req.approval_workflow || []).map((step, idx) => (
-                      <div key={idx} className="flex items-center gap-1.5 text-[11px]">
-                        {step.status === 'Approved' ? (
-                          <CheckCircle className="w-3 h-3 text-emerald-600" />
-                        ) : (
-                          <Clock className="w-3 h-3 text-amber-500" />
-                        )}
-                        <span className="font-medium text-gray-700">{step.role}: {step.approver_name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={req.status === 'Approved' || req.status === 'Open' ? 'emerald' : 'amber'} size="sm">
-                    {req.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => setSelectedReq(req)}>
-                    Details
-                  </Button>
-                  {(req.status === 'Approved' || req.status === 'Open') && onCreateJob && (
-                    <Button size="sm" onClick={() => onCreateJob(req.id)}>
-                      Create Job
-                    </Button>
-                  )}
-                  {req.status === 'Pending Approval' && (
-                    <Button size="sm" variant="secondary" onClick={() => handleApproveStep(req.id, 'HR Head')}>
-                      Approve
-                    </Button>
-                  )}
-                </TableCell>
+      {/* Requisitions Data Table */}
+      <Card className="rounded-3xl border-gray-200/80 shadow-2xs overflow-hidden">
+        {isLoading ? (
+          <div className="p-12 text-center text-xs font-bold text-gray-400">Loading requisitions...</div>
+        ) : requisitions.length === 0 ? (
+          <div className="p-12 text-center max-w-sm mx-auto">
+            <FileCheck2 className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+            <h4 className="text-sm font-bold text-gray-900">No Job Requisitions Found</h4>
+            <p className="text-xs text-gray-500 mt-1 mb-4">
+              Submit headcount requisitions for manager, department head, and HR approval.
+            </p>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsCreateModalOpen(true)}
+              className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl"
+            >
+              <Plus className="w-4 h-4" />
+              Create First Requisition
+            </Button>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="font-bold text-gray-700">Requisition & Role</TableHead>
+                <TableHead className="font-bold text-gray-700">Department</TableHead>
+                <TableHead className="font-bold text-gray-700 text-center">Openings</TableHead>
+                <TableHead className="font-bold text-gray-700">Budget (CTC)</TableHead>
+                <TableHead className="font-bold text-gray-700">Approvals</TableHead>
+                <TableHead className="font-bold text-gray-700">Status</TableHead>
+                <TableHead className="text-right font-bold text-gray-700">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {requisitions.map(req => {
+                const approvedCount = (req.approval_workflow || []).filter(w => w.status === 'Approved').length;
+                const totalSteps = req.approval_workflow?.length || 3;
+                return (
+                  <TableRow key={req.id} className="hover:bg-emerald-50/40 transition-colors">
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] font-bold text-gray-400">{req.id}</span>
+                        <Badge variant={req.priority === 'Urgent' ? 'rose' : 'gray'} size="sm" className="text-[9px]">
+                          {req.priority}
+                        </Badge>
+                      </div>
+                      <div className="font-bold text-gray-900 text-xs mt-0.5">{req.job_title}</div>
+                      <div className="text-[11px] text-gray-400">{req.requisition_type} • {req.job_level}</div>
+                    </TableCell>
+                    <TableCell className="text-xs text-gray-800 font-medium">
+                      {req.department_name}
+                      <div className="text-[11px] text-gray-400">{req.location_name}</div>
+                    </TableCell>
+                    <TableCell className="text-center font-bold text-xs text-gray-900">
+                      {req.number_of_positions}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs font-semibold text-gray-800">
+                      INR {req.budget?.toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-[#07563D]">
+                          {approvedCount}/{totalSteps}
+                        </span>
+                        <span className="text-[10px] text-gray-400">Steps</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={req.status === 'Approved' ? 'emerald' : req.status === 'Rejected' ? 'rose' : 'amber'}
+                        className="text-[10px]"
+                      >
+                        {req.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {req.status === 'Pending Approval' ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedReqForApproval(req)}
+                          className="text-xs font-bold text-[#07563D] border-emerald-300 rounded-xl"
+                        >
+                          Review & Approve
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSelectedReqForApproval(req)}
+                          className="text-xs text-gray-500 hover:text-gray-900"
+                        >
+                          View Details
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
       </Card>
 
-      {/* CREATE REQUISITION MODAL */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create Job Requisition" size="xl">
-        <form onSubmit={handleCreateRequisition} className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* Modal: Create Requisition */}
+      <Modal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        title="Create Job Headcount Requisition"
+        description="Submit requisition for workforce planning, budget validation, and multi-tier approvals"
+      >
+        <form onSubmit={handleCreateRequisition} className="p-6 space-y-4 max-h-[80vh] overflow-auto">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Job Title *</label>
+            <input
+              type="text"
+              placeholder="e.g. Lead Distributed Backend Engineer"
+              value={jobTitle}
+              onChange={e => setJobTitle(e.target.value)}
+              required
+              className="w-full p-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#07563D]"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="font-bold text-gray-700">Job Title *</label>
-              <Input
-                value={formData.job_title}
-                onChange={e => setFormData({ ...formData, job_title: e.target.value })}
-                placeholder="e.g. Senior Frontend Architect"
-                required
+              <label className="block text-xs font-bold text-gray-700 mb-1">Department</label>
+              <select
+                value={departmentName}
+                onChange={e => setDepartmentName(e.target.value)}
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200 bg-white"
+              >
+                <option value="Engineering">Engineering</option>
+                <option value="Product & Design">Product & Design</option>
+                <option value="People & HR">People & HR</option>
+                <option value="Finance & Legal">Finance & Legal</option>
+                <option value="Sales & Marketing">Sales & Marketing</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Location Campus</label>
+              <input
+                type="text"
+                value={locationName}
+                onChange={e => setLocationName(e.target.value)}
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Headcount</label>
+              <input
+                type="number"
+                min="1"
+                value={numberOfPositions}
+                onChange={e => setNumberOfPositions(Number(e.target.value))}
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200"
               />
             </div>
             <div>
-              <label className="font-bold text-gray-700">Requisition Type</label>
-              <Select
-                value={formData.requisition_type}
-                onChange={e => setFormData({ ...formData, requisition_type: e.target.value as RequisitionType })}
-                options={[
-                  { value: 'New Position', label: 'New Position' },
-                  { value: 'Replacement', label: 'Replacement' },
-                  { value: 'Expansion', label: 'Expansion' },
-                  { value: 'Backfill', label: 'Backfill' },
-                  { value: 'Campus Hiring', label: 'Campus Hiring' },
-                  { value: 'Urgent Hiring', label: 'Urgent Hiring' },
-                ]}
+              <label className="block text-xs font-bold text-gray-700 mb-1">Requisition Type</label>
+              <select
+                value={requisitionType}
+                onChange={e => setRequisitionType(e.target.value as RequisitionType)}
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200 bg-white"
+              >
+                <option value="New Position">New Position</option>
+                <option value="Replacement">Replacement</option>
+                <option value="Expansion">Expansion</option>
+                <option value="Backfill">Backfill</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Priority</label>
+              <select
+                value={priority}
+                onChange={e => setPriority(e.target.value as RequisitionPriority)}
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200 bg-white"
+              >
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+                <option value="Urgent">Urgent</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Annual Budget (INR) *</label>
+              <input
+                type="number"
+                step="50000"
+                value={budget}
+                onChange={e => setBudget(Number(e.target.value))}
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200"
               />
             </div>
             <div>
-              <label className="font-bold text-gray-700">Department</label>
-              <Input value={formData.department_name} onChange={e => setFormData({ ...formData, department_name: e.target.value })} />
-            </div>
-            <div>
-              <label className="font-bold text-gray-700">Location</label>
-              <Input value={formData.location_name} onChange={e => setFormData({ ...formData, location_name: e.target.value })} />
-            </div>
-            <div>
-              <label className="font-bold text-gray-700">Number of Openings</label>
-              <Input type="number" min={1} value={formData.number_of_positions} onChange={e => setFormData({ ...formData, number_of_positions: Number(e.target.value) })} />
-            </div>
-            <div>
-              <label className="font-bold text-gray-700">Priority</label>
-              <Select
-                value={formData.priority}
-                onChange={e => setFormData({ ...formData, priority: e.target.value as RequisitionPriority })}
-                options={[
-                  { value: 'Low', label: 'Low' },
-                  { value: 'Medium', label: 'Medium' },
-                  { value: 'High', label: 'High' },
-                  { value: 'Urgent', label: 'Urgent' },
-                ]}
+              <label className="block text-xs font-bold text-gray-700 mb-1">Hiring Manager</label>
+              <input
+                type="text"
+                value={hiringManagerName}
+                onChange={e => setHiringManagerName(e.target.value)}
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200"
               />
-            </div>
-            <div>
-              <label className="font-bold text-gray-700">Min Salary (INR)</label>
-              <Input type="number" value={formData.min_salary} onChange={e => setFormData({ ...formData, min_salary: Number(e.target.value) })} />
-            </div>
-            <div>
-              <label className="font-bold text-gray-700">Max Salary (INR)</label>
-              <Input type="number" value={formData.max_salary} onChange={e => setFormData({ ...formData, max_salary: Number(e.target.value) })} />
             </div>
           </div>
 
           <div>
-            <label className="font-bold text-gray-700">Required Skills (Comma separated)</label>
-            <Input value={formData.required_skills} onChange={e => setFormData({ ...formData, required_skills: e.target.value })} />
-          </div>
-
-          <div>
-            <label className="font-bold text-gray-700">Reason for Hiring</label>
-            <Input value={formData.reason_for_hiring} onChange={e => setFormData({ ...formData, reason_for_hiring: e.target.value })} placeholder="Justification for budget approval..." />
+            <label className="block text-xs font-bold text-gray-700 mb-1">Business Justification</label>
+            <textarea
+              placeholder="Explain why this position is required, impact on team delivery, and hiring goals..."
+              value={businessJustification}
+              onChange={e => setBusinessJustification(e.target.value)}
+              rows={2}
+              className="w-full p-2.5 text-xs rounded-xl border border-gray-200"
+            />
           </div>
 
           <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-            <Button variant="outline" type="button" onClick={() => setIsModalOpen(false)}>
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit">Submit Requisition</Button>
+            <Button type="submit" variant="primary" size="sm" className="bg-[#07563D] hover:bg-[#0b7a57] text-white">
+              Submit Requisition
+            </Button>
           </div>
         </form>
       </Modal>
 
-      {/* REQUISITION DETAILS MODAL */}
-      {selectedReq && (
-        <Modal isOpen={Boolean(selectedReq)} onClose={() => setSelectedReq(null)} title={`Requisition Details: ${selectedReq.id}`} size="lg">
-          <div className="space-y-4 text-xs">
-            <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl">
-              <div>
-                <span className="font-bold text-gray-500">Job Title:</span>
-                <p className="text-sm font-extrabold text-gray-900">{selectedReq.job_title}</p>
-              </div>
-              <div>
-                <span className="font-bold text-gray-500">Department:</span>
-                <p className="text-sm font-semibold text-gray-800">{selectedReq.department_name}</p>
-              </div>
-              <div>
-                <span className="font-bold text-gray-500">Hiring Manager:</span>
-                <p className="text-sm font-semibold text-gray-800">{selectedReq.hiring_manager_name}</p>
-              </div>
-              <div>
-                <span className="font-bold text-gray-500">Budget Range:</span>
-                <p className="text-sm font-bold text-emerald-800">
-                  ₹{(selectedReq.min_salary / 100000).toFixed(1)}L - ₹{(selectedReq.max_salary / 100000).toFixed(1)}L
-                </p>
-              </div>
+      {/* Modal: Requisition Approval & Review */}
+      {selectedReqForApproval && (
+        <Modal
+          isOpen={!!selectedReqForApproval}
+          onClose={() => setSelectedReqForApproval(null)}
+          title={`Requisition Review: ${selectedReqForApproval.job_title}`}
+          description={`ID: ${selectedReqForApproval.id} • Budget: INR ${selectedReqForApproval.budget?.toLocaleString()}`}
+        >
+          <div className="p-6 space-y-5">
+            {/* Approval Workflow Chain */}
+            <div className="space-y-2.5 bg-gray-50 p-4 rounded-2xl border border-gray-200/80">
+              <h5 className="text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">Multi-Tier Approval Chain</h5>
+              {(selectedReqForApproval.approval_workflow || []).map((step, idx) => (
+                <div key={idx} className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-gray-200/80 text-xs">
+                  <div>
+                    <span className="font-bold text-gray-900">{step.role}:</span>{' '}
+                    <span className="text-gray-600">{step.approver_name}</span>
+                  </div>
+                  <Badge variant={step.status === 'Approved' ? 'emerald' : 'amber'} size="sm" className="text-[9px]">
+                    {step.status}
+                  </Badge>
+                </div>
+              ))}
             </div>
 
-            <div>
-              <h4 className="font-extrabold text-gray-900">Required Skills:</h4>
-              <div className="flex flex-wrap gap-1 mt-1">
-                {selectedReq.required_skills.map((s, idx) => (
-                  <Badge key={idx} variant="emerald" size="sm">{s}</Badge>
-                ))}
+            {isRejecting ? (
+              <div className="space-y-3 p-4 bg-rose-50 rounded-2xl border border-rose-200">
+                <label className="block text-xs font-bold text-rose-900">Rejection Justification *</label>
+                <textarea
+                  placeholder="Provide detailed feedback on why this requisition cannot be approved (budget, headcount limits, timing)..."
+                  value={rejectionReason}
+                  onChange={e => setRejectionReason(e.target.value)}
+                  rows={3}
+                  className="w-full p-2.5 text-xs rounded-xl border border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-500 bg-white"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setIsRejecting(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    onClick={() => handleRejectRequisition(selectedReqForApproval.id)}
+                  >
+                    Confirm Rejection
+                  </Button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Review Comments (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Approved within Q3 hiring budget"
+                  value={approvalComments}
+                  onChange={e => setApprovalComments(e.target.value)}
+                  className="w-full p-2.5 text-xs rounded-xl border border-gray-200"
+                />
+              </div>
+            )}
 
-            <div>
-              <h4 className="font-extrabold text-gray-900">Reason for Hiring:</h4>
-              <p className="text-gray-700 mt-1 bg-white p-3 rounded-xl border border-gray-200">{selectedReq.reason_for_hiring}</p>
-            </div>
+            {!isRejecting && (
+              <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsRejecting(true)}
+                  className="text-rose-600 border-rose-300 hover:bg-rose-50 text-xs"
+                >
+                  <XCircle className="w-3.5 h-3.5 mr-1" />
+                  Reject Requisition
+                </Button>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setSelectedReq(null)}>Close</Button>
-            </div>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setSelectedReqForApproval(null)}>
+                    Close
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    onClick={() => handleApproveStep(selectedReqForApproval.id, 0)}
+                    className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Approve Step
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </Modal>
       )}

@@ -34,9 +34,72 @@ export type HREventType =
   | 'leave.rejected'
   | 'payroll.processed'
   | 'position.created'
-  | 'position.filled';
+  | 'position.filled'
+  | 'separation.created'
+  | 'separation.updated'
+  | 'separation.status_changed'
+  | 'manager.reviewed'
+  | 'clearance.created'
+  | 'clearance.completed'
+  | 'asset.returned'
+  | 'asset.missing'
+  | 'exit_interview.completed'
+  | 'fnf.ready'
+  | 'separation.ready'
+  | 'separation.completed'
+  | 'access.revoked'
+  | 'document.created'
+  | 'document.updated'
+  | 'document.verified'
+  | 'document.rejected'
+  | 'document.expiring'
+  | 'document.expired'
+  | 'esign.created'
+  | 'esign.sent'
+  | 'esign.viewed'
+  | 'esign.signed'
+  | 'esign.completed'
+  | 'esign.rejected'
+  | 'share.created'
+  | 'share.revoked'
+  | 'asset.created'
+  | 'asset.updated'
+  | 'asset.assigned'
+  | 'asset.returned'
+  | 'asset.transferred'
+  | 'asset.maintenance_started'
+  | 'asset.maintenance_completed'
+  | 'asset.retired'
+  | 'inventory.stock_in'
+  | 'inventory.stock_out'
+  | 'inventory.adjusted'
+  | 'inventory.low_stock'
+  | 'maintenance.scheduled'
+  | 'maintenance.completed'
+  | 'warranty.expiring'
+  | 'organization.created'
+  | 'organization.legal_entity_created'
+  | 'organization.branch_created'
+  | 'organization.department_created'
+  | 'organization.team_created'
+  | 'organization.hierarchy_updated'
+  | 'vendor.worker_created'
+  | 'vendor.deployment_created'
+  | 'recruitment.requisition_created'
+  | 'recruitment.requisition_approved'
+  | 'recruitment.requisition_rejected'
+  | 'recruitment.job_published'
+  | 'recruitment.candidate_created'
+  | 'recruitment.candidate_stage_changed'
+  | 'recruitment.interview_scheduled'
+  | 'recruitment.interview_completed'
+  | 'recruitment.scorecard_submitted'
+  | 'recruitment.offer_created'
+  | 'recruitment.offer_accepted'
+  | 'recruitment.candidate_converted'
+  | 'custom';
 
-export type HREventPattern = HREventType | '*' | 'employee.*' | 'attendance.*' | 'leave.*' | 'vendor.*' | 'onboarding.*' | 'task.*' | string;
+export type HREventPattern = HREventType | `${string}.*` | '*';
 
 export interface HREventPayload {
   eventId: string;
@@ -64,6 +127,11 @@ class HREventBusService {
     return () => {
       this.listeners.get(eventType)?.delete(listener);
     };
+  }
+
+  // Alias for publish
+  emit(type: HREventType | string, data?: any, options?: { organizationId?: string; companyId?: string; actorId?: string }): void {
+    this.publish(type as HREventType, data, options);
   }
 
   // Publish an HR domain event with idempotency protection

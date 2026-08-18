@@ -1,241 +1,404 @@
-import React, { useState } from 'react';
+// src/features/talent/recruitment/OfferManager.tsx
+// ============================================================================
+// WorkForceOS — Employment Offers & Candidate-to-Employee Conversion Hub
+// Structured CTC Breakdown, AI Letter Generator, E-Signature & Conversion Engine
+// ============================================================================
+
+import React, { useState, useEffect } from 'react';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
-import { Input } from '../../../components/ui/Input';
-import { Select } from '../../../components/ui/Select';
 import { Badge } from '../../../components/ui/Badge';
-import { Modal } from '../../../components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
-import { Award, Plus, FileText, CheckCircle2, XCircle, Clock, Eye, Download, UserCheck, Sparkles } from 'lucide-react';
-import { atsService } from '../../../services/atsService';
-import { OfferLetter } from '../../../types/ats';
 import { useToast } from '../../../components/ui/Toast';
+import {
+  Award,
+  Plus,
+  Search,
+  CheckCircle2,
+  DollarSign,
+  UserCheck,
+  Calendar,
+  FileCheck,
+  ShieldCheck,
+  Clock,
+  Send,
+  AlertTriangle,
+  ChevronRight,
+  Eye,
+  RefreshCw,
+  Sparkles,
+} from 'lucide-react';
+import { Offer, Candidate, OfferStatus } from '../../../types/ats';
+import { offerManagementService } from '../../../services/recruitment/offerManagementService';
+import { recruitmentService } from '../../../services/recruitment/recruitmentService';
+import { OfferCreateWorkspace } from './OfferCreateWorkspace';
+import { OfferDetailDrawer } from './OfferDetailDrawer';
+import { hrEventBus } from '../../../services/hrEventBus';
+import { cn } from '../../../lib/utils';
 
-export const OfferManager: React.FC<{ onConvertCandidate?: (candidateId: string) => void }> = ({ onConvertCandidate }) => {
+export const OfferManager: React.FC = () => {
   const { showToast } = useToast();
-  const offers = atsService.getOffers();
-  const candidates = atsService.getCandidates();
-  const jobs = atsService.getJobs();
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [search, setSearch] = useState('');
 
-  const [isGenerateOpen, setIsGenerateOpen] = useState(false);
-  const [selectedOffer, setSelectedOffer] = useState<OfferLetter | null>(null);
+  // Modals & Drawers
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
+  const [selectedOfferForDrawer, setSelectedOfferForDrawer] = useState<Offer | null>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isConvertingId, setIsConvertingId] = useState<string | null>(null);
 
-  const [form, setForm] = useState({
-    candidate_id: candidates[0]?.id || '',
-    job_id: jobs[0]?.id || '',
-    annual_ctc: 2400000,
-    basic_salary: 1200000,
-    hra: 480000,
-    joining_bonus: 200000,
-    joining_date: '2026-10-01',
-    valid_until: '2026-08-30',
-  });
-
-  const handleCreateOffer = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cand = candidates.find(c => c.id === form.candidate_id);
-    const job = jobs.find(j => j.id === form.job_id);
-
+  const loadData = async () => {
+    setIsLoading(true);
     try {
-      const created = atsService.createOffer({
-        application_id: 'app-01',
-        candidate_id: form.candidate_id,
-        candidate_name: cand?.full_name || 'Candidate',
-        candidate_email: cand?.email || 'cand@example.com',
-        job_id: form.job_id,
-        job_title: job?.job_title || 'Software Role',
-        designation_title: job?.job_title || 'Senior Software Engineer',
-        department_name: 'Engineering',
-        offered_annual_ctc: Number(form.annual_ctc),
-        ctc_breakdown: {
-          basic_salary: Number(form.basic_salary),
-          hra: Number(form.hra),
-          special_allowance: 400000,
-          performance_bonus: 120000,
-          joining_bonus: Number(form.joining_bonus),
-          gratuity: 50000,
-          employer_pf: 150000,
-          total_ctc: Number(form.annual_ctc),
-        },
-        offered_joining_date: form.joining_date,
-        valid_until: form.valid_until,
-      });
-
-      showToast(`Offer letter ${created.id} generated!`);
-      setIsGenerateOpen(false);
-    } catch (err: any) {
-      showToast(err.message || 'Error generating offer');
+      const [oList, cList] = await Promise.all([
+        offerManagementService.getOffers({ status: statusFilter, search }),
+        recruitmentService.getCandidates(),
+      ]);
+      setOffers(oList);
+      setCandidates(cList);
+    } catch (err) {
+      console.error('[OfferManager] load error:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleUpdateStatus = (offerId: string, status: any) => {
-    atsService.updateOfferStatus(offerId, status);
-    showToast(`Offer ${offerId} status updated to ${status}`);
+  useEffect(() => {
+    loadData();
+  }, [statusFilter, search]);
+
+  useEffect(() => {
+    const unsub = hrEventBus.subscribe('recruitment.*', () => {
+      loadData();
+    });
+    return () => unsub();
+  }, []);
+
+  const handleConvertToEmployee = async (offer: Offer) => {
+    setIsConvertingId(offer.id);
+    try {
+      const created = await offerManagementService.convertCandidateToEmployee(offer.candidate_id, offer.id);
+      showToast(`Successfully converted ${offer.candidate_name} to Employee (${created.employee_code})!`);
+      loadData();
+    } catch (err: any) {
+      showToast(err?.message || 'Error converting candidate to employee', 'error');
+    } finally {
+      setIsConvertingId(null);
+    }
   };
+
+  const handleSendEsign = async (offerId: string) => {
+    try {
+      await offerManagementService.sendOfferForEsign(offerId);
+      showToast('E-Signature envelope dispatched to candidate!');
+      loadData();
+    } catch {
+      showToast('Error dispatching e-signature', 'error');
+    }
+  };
+
+  const openOfferDetail = (offer: Offer) => {
+    setSelectedOfferForDrawer(offer);
+    setIsDrawerOpen(true);
+  };
+
+  // KPI Calculations
+  const draftCount = offers.filter(o => o.status === 'Draft').length;
+  const pendingApprovalCount = offers.filter(o => o.status === 'Pending Approval').length;
+  const approvedCount = offers.filter(o => o.status === 'Approved').length;
+  const sentCount = offers.filter(o => o.status === 'Sent').length;
+  const acceptedCount = offers.filter(o => o.status === 'Accepted').length;
+  const declinedCount = offers.filter(o => o.status === 'Declined').length;
+
+  // Expiring offers in next 3 days
+  const now = new Date().getTime();
+  const expiringOffers = offers.filter(o => {
+    if (o.status !== 'Sent' && o.status !== 'Pending Approval') return false;
+    if (!o.offer_expiry_date) return false;
+    const diffDays = Math.ceil((new Date(o.offer_expiry_date).getTime() - now) / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays <= 3;
+  });
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-100 shadow-xs">
+      {/* 1. Action Header & KPI Cards */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-extrabold text-gray-900 tracking-tight flex items-center gap-2">
-            <Award className="w-5 h-5 text-[#07563D]" /> Offer Management & CTC Calculator Engine
-          </h1>
-          <p className="text-xs text-gray-500 mt-1">
-            Build structured CTC offer packages, generate PDF preview letters, handle version revisions (v1/v2/v3), and trigger employee conversion
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-black text-gray-900 tracking-tight">Offer Management & E-Sign Engine</h2>
+            <Badge variant="emerald" size="sm" className="text-[10px] gap-1 font-mono">
+              <Sparkles className="w-3 h-3" /> AI Letter Generator
+            </Badge>
+          </div>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Structured compensation breakdown, automated template rendering, multi-tier approvals, and candidate-to-employee conversion.
           </p>
         </div>
-        <Button leftIcon={<Plus className="w-4 h-4" />} onClick={() => setIsGenerateOpen(true)}>
-          Generate Offer Package
+
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => setIsWorkspaceOpen(true)}
+          className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl shadow-xs"
+        >
+          <Plus className="w-4 h-4" /> Create Offer
         </Button>
       </div>
 
-      {/* Offers Table */}
-      <Card className="p-6 bg-white rounded-2xl border border-gray-100 shadow-xs">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Offer ID & Version</TableHead>
-              <TableHead>Candidate & Role</TableHead>
-              <TableHead>Offered CTC</TableHead>
-              <TableHead>Joining Bonus</TableHead>
-              <TableHead>Joining Date</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {offers.map(off => (
-              <TableRow key={off.id}>
-                <TableCell>
-                  <div className="font-mono text-xs font-bold text-gray-900">{off.id}</div>
-                  <Badge variant="neutral" size="sm">v{off.version}</Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="font-bold text-gray-900 text-sm">{off.candidate_name}</div>
-                  <div className="text-xs text-gray-500">{off.job_title}</div>
-                </TableCell>
-                <TableCell className="text-xs font-black text-emerald-800">
-                  ₹{(((off.offered_annual_ctc || off.ctc || 0)) / 100000).toFixed(2)} Lakhs / Yr
-                </TableCell>
-                <TableCell className="text-xs font-semibold text-gray-800">
-                  ₹{(((off.ctc_breakdown?.joining_bonus || off.joining_bonus || 0)) / 100000).toFixed(2)} Lakhs
-                </TableCell>
-                <TableCell className="text-xs font-medium text-gray-700">{off.offered_joining_date || off.joining_date}</TableCell>
-                <TableCell>
-                  <Badge variant={off.status === 'Accepted' ? 'emerald' : off.status === 'Sent' ? 'amber' : 'neutral'} size="sm">
-                    {off.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right space-x-2">
-                  <Button variant="outline" size="sm" onClick={() => setSelectedOffer(off)}>
-                    CTC Breakdown
-                  </Button>
-                  {off.status === 'Sent' && (
-                    <Button size="sm" onClick={() => handleUpdateStatus(off.id, 'Accepted')}>
-                      Mark Accepted
-                    </Button>
-                  )}
-                  {off.status === 'Accepted' && onConvertCandidate && (
-                    <Button size="sm" leftIcon={<UserCheck className="w-3.5 h-3.5" />} onClick={() => onConvertCandidate(off.candidate_id)}>
-                      Convert to Employee
-                    </Button>
-                  )}
-                </TableCell>
+      {/* 2. Top KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+        <Card
+          onClick={() => setStatusFilter('Draft')}
+          className="p-4 rounded-2xl border-gray-200/80 hover:border-emerald-300 transition cursor-pointer shadow-2xs bg-white"
+        >
+          <span className="text-[10px] font-bold text-gray-400 uppercase">Drafts</span>
+          <div className="text-2xl font-black text-gray-900 mt-1">{draftCount}</div>
+        </Card>
+
+        <Card
+          onClick={() => setStatusFilter('Pending Approval')}
+          className="p-4 rounded-2xl border-gray-200/80 hover:border-emerald-300 transition cursor-pointer shadow-2xs bg-white"
+        >
+          <span className="text-[10px] font-bold text-amber-600 uppercase">Pending Approval</span>
+          <div className="text-2xl font-black text-amber-700 mt-1">{pendingApprovalCount}</div>
+        </Card>
+
+        <Card
+          onClick={() => setStatusFilter('Approved')}
+          className="p-4 rounded-2xl border-gray-200/80 hover:border-emerald-300 transition cursor-pointer shadow-2xs bg-white"
+        >
+          <span className="text-[10px] font-bold text-emerald-600 uppercase">Approved</span>
+          <div className="text-2xl font-black text-emerald-700 mt-1">{approvedCount}</div>
+        </Card>
+
+        <Card
+          onClick={() => setStatusFilter('Sent')}
+          className="p-4 rounded-2xl border-gray-200/80 hover:border-emerald-300 transition cursor-pointer shadow-2xs bg-white"
+        >
+          <span className="text-[10px] font-bold text-blue-600 uppercase">Dispatched / Sent</span>
+          <div className="text-2xl font-black text-blue-700 mt-1">{sentCount}</div>
+        </Card>
+
+        <Card
+          onClick={() => setStatusFilter('Accepted')}
+          className="p-4 rounded-2xl border-gray-200/80 hover:border-emerald-300 transition cursor-pointer shadow-2xs bg-white"
+        >
+          <span className="text-[10px] font-bold text-[#07563D] uppercase">Accepted</span>
+          <div className="text-2xl font-black text-[#07563D] mt-1">{acceptedCount}</div>
+        </Card>
+
+        <Card
+          onClick={() => setStatusFilter('Declined')}
+          className="p-4 rounded-2xl border-gray-200/80 hover:border-emerald-300 transition cursor-pointer shadow-2xs bg-white"
+        >
+          <span className="text-[10px] font-bold text-rose-600 uppercase">Declined</span>
+          <div className="text-2xl font-black text-rose-700 mt-1">{declinedCount}</div>
+        </Card>
+      </div>
+
+      {/* 3. Expiring Offers Alert Banner */}
+      {expiringOffers.length > 0 && (
+        <Card className="p-4 rounded-2xl border-amber-200 bg-amber-50/70 shadow-2xs flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">
+              <AlertTriangle className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-amber-900">
+                {expiringOffers.length} Candidate Offer(s) Expiring Soon
+              </h4>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                {expiringOffers.map(o => `${o.candidate_name} (${o.offer_expiry_date})`).join(', ')}
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setStatusFilter('Sent')}
+            className="text-xs border-amber-300 text-amber-900 bg-white"
+          >
+            Review Expiring Offers
+          </Button>
+        </Card>
+      )}
+
+      {/* 4. Filter Bar & Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search by candidate name, role, offer ID..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#07563D] w-72"
+            />
+          </div>
+
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="p-2 text-xs rounded-xl border border-gray-200 bg-white font-bold text-gray-700"
+          >
+            <option value="ALL">All Statuses ({offers.length})</option>
+            <option value="Draft">Drafts</option>
+            <option value="Pending Approval">Pending Approval</option>
+            <option value="Approved">Approved</option>
+            <option value="Sent">Sent / E-Sign</option>
+            <option value="Accepted">Accepted</option>
+            <option value="Declined">Declined</option>
+            <option value="Revoked">Revoked</option>
+          </select>
+        </div>
+      </div>
+
+      {/* 5. Offers Table */}
+      <Card className="rounded-3xl border-gray-200/80 shadow-2xs overflow-hidden bg-white">
+        {isLoading ? (
+          <div className="p-12 text-center text-xs font-bold text-gray-400">Loading offer records...</div>
+        ) : offers.length === 0 ? (
+          <div className="p-12 text-center max-w-sm mx-auto">
+            <Award className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+            <h4 className="text-sm font-bold text-gray-900">No Candidate Offers Created Yet</h4>
+            <p className="text-xs text-gray-500 mt-1 mb-4">
+              Generate structured CTC breakdowns, AI-drafted letters, and dispatch formal agreements for e-signature.
+            </p>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsWorkspaceOpen(true)}
+              className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl"
+            >
+              <Plus className="w-4 h-4" /> Create First Offer
+            </Button>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="font-bold text-gray-700">Offer & Candidate</TableHead>
+                <TableHead className="font-bold text-gray-700">Designation / Department</TableHead>
+                <TableHead className="font-bold text-gray-700">Annual CTC (INR)</TableHead>
+                <TableHead className="font-bold text-gray-700">Joining Date</TableHead>
+                <TableHead className="font-bold text-gray-700">E-Sign Status</TableHead>
+                <TableHead className="font-bold text-gray-700">Status</TableHead>
+                <TableHead className="text-right font-bold text-gray-700">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {offers.map(o => (
+                <TableRow
+                  key={o.id}
+                  onClick={() => openOfferDetail(o)}
+                  className="hover:bg-emerald-50/40 transition-colors cursor-pointer"
+                >
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] font-bold text-gray-400">{o.id}</span>
+                    </div>
+                    <div className="font-bold text-gray-900 text-xs mt-0.5">{o.candidate_name}</div>
+                    <div className="text-[11px] text-gray-400">{o.candidate_email}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-xs font-semibold text-gray-800">{o.job_title}</div>
+                    <div className="text-[11px] text-gray-400">{o.department_name} • {o.location_name || 'Coimbatore'}</div>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs font-bold text-gray-900">
+                    INR {o.ctc_annual?.toLocaleString()}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-gray-700">
+                    {o.joining_date}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={o.esign_status === 'Signed & Completed' ? 'emerald' : 'blue'} className="text-[10px]">
+                      {o.esign_status || 'Ready'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        o.status === 'Accepted'
+                          ? 'emerald'
+                          : o.status === 'Sent'
+                          ? 'blue'
+                          : o.status === 'Declined' || o.status === 'Revoked'
+                          ? 'rose'
+                          : 'amber'
+                      }
+                      className="text-[10px]"
+                    >
+                      {o.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1.5">
+                      {o.status === 'Accepted' ? (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          disabled={isConvertingId === o.id || o.preboarding_status === 'Completed'}
+                          onClick={() => handleConvertToEmployee(o)}
+                          className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl shadow-xs"
+                        >
+                          <UserCheck className="w-3.5 h-3.5" />
+                          {o.preboarding_status === 'Completed' ? 'Converted' : isConvertingId === o.id ? 'Converting...' : 'Convert to Employee'}
+                        </Button>
+                      ) : o.status === 'Approved' ? (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => handleSendEsign(o.id)}
+                          className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1 rounded-xl"
+                        >
+                          <Send className="w-3 h-3" /> Send E-Sign
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openOfferDetail(o)}
+                          className="text-xs font-bold text-gray-700 border-gray-200 rounded-xl gap-1"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> Inspect
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </Card>
 
-      {/* GENERATE OFFER MODAL */}
-      <Modal isOpen={isGenerateOpen} onClose={() => setIsGenerateOpen(false)} title="Generate Compensation & Offer Package" size="lg">
-        <form onSubmit={handleCreateOffer} className="space-y-4 text-xs">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="font-bold text-gray-700">Candidate *</label>
-              <Select
-                value={form.candidate_id}
-                onChange={e => setForm({ ...form, candidate_id: e.target.value })}
-                options={candidates.map(c => ({ value: c.id, label: `${c.full_name} (${c.email})` }))}
-              />
-            </div>
-            <div>
-              <label className="font-bold text-gray-700">Job Position *</label>
-              <Select
-                value={form.job_id}
-                onChange={e => setForm({ ...form, job_id: e.target.value })}
-                options={jobs.map(j => ({ value: j.id, label: j.job_title }))}
-              />
-            </div>
-            <div>
-              <label className="font-bold text-gray-700">Annual CTC (INR) *</label>
-              <Input type="number" value={form.annual_ctc} onChange={e => setForm({ ...form, annual_ctc: Number(e.target.value) })} required />
-            </div>
-            <div>
-              <label className="font-bold text-gray-700">Joining Bonus (INR)</label>
-              <Input type="number" value={form.joining_bonus} onChange={e => setForm({ ...form, joining_bonus: Number(e.target.value) })} />
-            </div>
-            <div>
-              <label className="font-bold text-gray-700">Expected Joining Date</label>
-              <Input type="date" value={form.joining_date} onChange={e => setForm({ ...form, joining_date: e.target.value })} />
-            </div>
-            <div>
-              <label className="font-bold text-gray-700">Offer Validity Expiry</label>
-              <Input type="date" value={form.valid_until} onChange={e => setForm({ ...form, valid_until: e.target.value })} />
-            </div>
-          </div>
+      {/* Full-Screen / Modal Offer Create Workspace */}
+      <OfferCreateWorkspace
+        isOpen={isWorkspaceOpen}
+        onClose={() => setIsWorkspaceOpen(false)}
+        onOfferCreated={() => {
+          loadData();
+        }}
+      />
 
-          <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
-            <Button variant="outline" type="button" onClick={() => setIsGenerateOpen(false)}>Cancel</Button>
-            <Button type="submit">Generate Offer Letter</Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* CTC BREAKDOWN INSPECTOR MODAL */}
-      {selectedOffer && (() => {
-        const ctcVal = selectedOffer.offered_annual_ctc || selectedOffer.ctc || 0;
-        const basicSalaryVal = selectedOffer.ctc_breakdown?.basic_salary ?? Math.round(ctcVal * 0.5);
-        const hraVal = selectedOffer.ctc_breakdown?.hra ?? Math.round(ctcVal * 0.2);
-        const specialAllowanceVal = selectedOffer.ctc_breakdown?.special_allowance ?? Math.round(ctcVal * 0.15);
-        const performanceBonusVal = selectedOffer.ctc_breakdown?.performance_bonus ?? selectedOffer.variable_pay ?? 0;
-        const joiningBonusVal = selectedOffer.ctc_breakdown?.joining_bonus ?? selectedOffer.joining_bonus ?? 0;
-        const employerPfVal = selectedOffer.ctc_breakdown?.employer_pf ?? Math.round(ctcVal * 0.05);
-        const gratuityVal = selectedOffer.ctc_breakdown?.gratuity ?? Math.round(ctcVal * 0.02);
-
-        return (
-          <Modal isOpen={Boolean(selectedOffer)} onClose={() => setSelectedOffer(null)} title={`CTC Component Breakdown: ${selectedOffer.candidate_name}`} size="lg">
-            <div className="space-y-4 text-xs">
-              <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 flex items-center justify-between text-[#07563D]">
-                <div>
-                  <span className="font-bold text-[10px] uppercase">Annual Compensation Package:</span>
-                  <p className="text-xl font-black">₹{(ctcVal / 100000).toFixed(2)} Lakhs</p>
-                </div>
-                <Badge variant="emerald" size="sm">
-                  Status: {selectedOffer.status}
-                </Badge>
-              </div>
-
-              <div className="space-y-2">
-                <h4 className="font-extrabold text-gray-900">Fixed & Variable Component Matrix:</h4>
-                <div className="grid grid-cols-2 gap-2 bg-gray-50 p-4 rounded-xl">
-                  <div><span>Basic Salary:</span> <strong className="float-right">₹{basicSalaryVal.toLocaleString()}</strong></div>
-                  <div><span>House Rent Allowance (HRA):</span> <strong className="float-right">₹{hraVal.toLocaleString()}</strong></div>
-                  <div><span>Special Allowance:</span> <strong className="float-right">₹{specialAllowanceVal.toLocaleString()}</strong></div>
-                  <div><span>Performance Bonus:</span> <strong className="float-right">₹{performanceBonusVal.toLocaleString()}</strong></div>
-                  <div><span>Joining Bonus:</span> <strong className="float-right text-emerald-800">₹{joiningBonusVal.toLocaleString()}</strong></div>
-                  <div><span>Employer PF & Gratuity:</span> <strong className="float-right">₹{(employerPfVal + gratuityVal).toLocaleString()}</strong></div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setSelectedOffer(null)}>Close</Button>
-              </div>
-            </div>
-          </Modal>
-        );
-      })()}
+      {/* Offer Detail Deep Inspector Drawer */}
+      <OfferDetailDrawer
+        offer={selectedOfferForDrawer}
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        onOfferUpdated={() => {
+          loadData();
+          if (selectedOfferForDrawer) {
+            offerManagementService.getOfferById(selectedOfferForDrawer.id).then(res => {
+              setSelectedOfferForDrawer(res);
+            });
+          }
+        }}
+      />
     </div>
   );
 };

@@ -75,20 +75,20 @@ export const essApi = {
   },
   getProfile(): EssProfileData {
     const user = api.getCurrentUser();
-    const fullName = user?.name || 'Hari Priya';
-    const email = user?.email || 'haripriya@joycorporate.com';
-    const designation = (user?.roles || [])[0]?.name || 'HR Head';
+    const fullName = user?.name || 'Authorized User';
+    const email = user?.email || 'user@workforceos.com';
+    const designation = (user?.roles || [])[0]?.name || (user?.role === 'superadmin' ? 'Platform Super Admin' : 'Staff Member');
     return {
-      employee_id: user?.employee_id || 'WF-1001',
+      employee_id: user?.employee_id || (user?.id ? `WF-${user.id.replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase()}` : 'WF-1001'),
       full_name: fullName,
       email: email,
       designation: designation === 'Super Admin' ? 'Platform Super Admin' : designation,
-      department: 'People & HR',
-      joining_date: '2025-01-15',
-      manager_name: 'Dharun Joy (Company Admin)',
-      phone: '+91 98401 22334',
-      emergency_contact: 'Sundararajan P (Spouse) - +91 98401 99887',
-      bank_name: 'HDFC Bank Ltd (Tidel Park Branch)',
+      department: user?.role === 'superadmin' ? 'Platform Administration' : 'Enterprise Operations',
+      joining_date: '2024-01-01',
+      manager_name: user?.role === 'superadmin' ? 'Board of Directors' : 'Executive Management',
+      phone: user?.phone || '+91 98401 00000',
+      emergency_contact: 'Not Specified',
+      bank_name: 'HDFC Bank Ltd',
       account_number_masked: 'XXXX XXXX 4521',
     };
   },

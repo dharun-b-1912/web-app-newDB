@@ -640,14 +640,15 @@ export const api = {
         let q = supabase.from('branches').select('*');
         if (companyId) q = q.eq('company_id', companyId);
         const { data, error } = await q;
-        if (data && !error && data.length > 0) return data;
+        if (!error && data) return data;
       } catch (err) {
         console.warn('[API] Failed to fetch branches from Supabase:', err);
       }
     }
     let list = getStorage<Branch[]>(KEYS.BRANCHES, []);
-    if (!list || list.length === 0) {
-      list = defaultBranches;
+    // Purge legacy mock branches if present
+    if (list && list.some(b => b.name === 'Chennai Tech Park' || b.name === 'Remote Distributed Hub')) {
+      list = list.filter(b => b.name !== 'Chennai Tech Park' && b.name !== 'Bengaluru Innovation Center' && b.name !== 'Remote Distributed Hub');
       setStorage(KEYS.BRANCHES, list);
     }
     if (companyId) return list.filter((b) => b.company_id === companyId);
@@ -662,12 +663,13 @@ export const api = {
     };
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('branches').insert(newBranch);
+        const { data, error } = await supabase.from('branches').insert(newBranch).select().single();
+        if (!error && data) return data;
       } catch (err) {
         console.warn('[API] Failed to insert branch into Supabase:', err);
       }
     }
-    const list = getStorage<Branch[]>(KEYS.BRANCHES, defaultBranches);
+    const list = getStorage<Branch[]>(KEYS.BRANCHES, []);
     setStorage(KEYS.BRANCHES, [newBranch, ...list]);
     return newBranch;
   },
@@ -1102,14 +1104,8 @@ export const api = {
   },
 
   async getAssets(): Promise<Asset[]> {
-    return [
-      { id: 'AST-001', name: 'MacBook Pro 16" M3 Max', category: 'Laptop', type: 'Hardware', serial_number: 'C02G1234MD6R', asset_tag: 'TAG-MBP-01', assignedTo: 'Priya Sharma', empCode: 'EMP-1024', status: 'Assigned', value: '$3,499' },
-      { id: 'AST-002', name: 'Dell UltraSharp 32" 4K Monitor', category: 'Peripheral', type: 'Hardware', serial_number: 'CN-01234-DELL', asset_tag: 'TAG-MON-02', assignedTo: 'Dharun Joy', empCode: 'EMP-001', status: 'Assigned', value: '$899' },
-      { id: 'AST-003', name: 'ThinkPad P1 Gen 6', category: 'Laptop', type: 'Hardware', serial_number: 'PF-49102-LEN', asset_tag: 'TAG-LEN-03', assignedTo: 'Ananya Reddy', empCode: 'EMP-1025', status: 'Assigned', value: '$2,299' },
-      { id: 'AST-004', name: 'MacBook Air 15" M2 (Available)', category: 'Laptop', type: 'Hardware', serial_number: 'F2L9201934', asset_tag: 'TAG-MBA-04', assignedTo: '', empCode: '-', status: 'Available', value: '$1,299' },
-      { id: 'AST-005', name: 'Dell Latitude 7440 (Available)', category: 'Laptop', type: 'Hardware', serial_number: 'DL-992011A', asset_tag: 'TAG-DEL-05', assignedTo: '', empCode: '-', status: 'Available', value: '$1,499' },
-      { id: 'AST-006', name: 'Apple Studio Display 27" (Available)', category: 'Peripheral', type: 'Hardware', serial_number: 'ASD-29381', asset_tag: 'TAG-DSP-06', assignedTo: '', empCode: '-', status: 'Available', value: '$1,599' },
-    ];
+    const { assetService } = await import('./asset/assetService');
+    return assetService.getAssets({ limit: 1000 }).items;
   },
 
   // Active Company & Current User Session

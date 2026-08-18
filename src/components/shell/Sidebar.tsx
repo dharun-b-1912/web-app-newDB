@@ -67,6 +67,10 @@ import {
   LifeBuoy,
   CreditCard,
   Plus,
+  FileCheck2,
+  Folder,
+  Share2,
+  Zap,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { usePermission } from '../../hooks/usePermission';
@@ -255,8 +259,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'RECRUITMENT & ATS',
       items: [
-        { id: 'recruitment', label: 'Recruitment / ATS', icon: Briefcase },
-        { id: 'career-dev', label: 'Career Development', icon: TrendingUp },
+        { id: 'recruitment-dashboard', label: 'Recruitment Dashboard', icon: Briefcase },
+        { id: 'recruitment-requisitions', label: 'Requisitions', icon: FileCheck2 },
+        { id: 'recruitment-jobs', label: 'Job Openings', icon: Layers },
+        { id: 'recruitment-applicants', label: 'Applicants', icon: Users },
+        { id: 'recruitment-interviews', label: 'Interviews', icon: Calendar },
+        { id: 'recruitment-offers', label: 'Offers', icon: Award },
+        { id: 'recruitment-referrals', label: 'Referrals', icon: Share2 },
+        { id: 'recruitment-talent-pool', label: 'Talent Pool', icon: Folder },
+        { id: 'recruitment-analytics', label: 'Recruitment Analytics', icon: BarChart3 },
+        { id: 'recruitment-automation', label: 'Recruitment Automation', icon: Zap },
       ],
     },
     {

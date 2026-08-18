@@ -302,17 +302,13 @@ export const vendorService = {
         if (params?.vendorType && params.vendorType !== 'ALL') q = q.eq('vendor_type', params.vendorType);
         if (params?.legalEntityId && params.legalEntityId !== 'ALL') q = q.eq('legal_entity_id', params.legalEntityId);
         const { data, error } = await q;
-        if (data && !error && data.length > 0) return data;
+        if (!error && data) return data;
       } catch (err) {
         console.warn('[VendorService] Supabase getVendors failed:', err);
       }
     }
 
-    let list = getStorage<Vendor[]>(VENDOR_STORAGE_KEY, INITIAL_VENDORS);
-    if (!list || list.length === 0) {
-      list = INITIAL_VENDORS;
-      setStorage(VENDOR_STORAGE_KEY, list);
-    }
+    let list = getStorage<Vendor[]>(VENDOR_STORAGE_KEY, []);
 
     // Refresh dynamically computed workforce counts & contract status
     const assignments = getStorage<VendorEmployeeAssignment[]>(VENDOR_ASSIGNMENTS_KEY, INITIAL_ASSIGNMENTS);

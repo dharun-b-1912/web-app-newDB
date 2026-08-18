@@ -93,8 +93,8 @@ export const ApplicationsList: React.FC = () => {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={app.current_stage === 'Joined' || app.current_stage === 'Offer Accepted' ? 'emerald' : 'amber'} size="sm">
-                    {app.current_stage}
+                  <Badge variant={app.stage === 'Hired' || app.stage === 'Selected' ? 'emerald' : 'amber'} size="sm">
+                    {app.stage || 'New'}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">

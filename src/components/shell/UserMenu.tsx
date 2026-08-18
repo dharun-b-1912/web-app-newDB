@@ -261,7 +261,7 @@ export const UserMenu: React.FC = () => {
     window.dispatchEvent(new CustomEvent('platform:navigate', { detail: { tab: 'platform-account', subTab } }));
   };
 
-  const displayName = user.name || (isPlatformAdmin && platformProfile ? platformProfile.display_name : 'Hari Priya');
+  const displayName = user.name || (isPlatformAdmin && platformProfile ? platformProfile.display_name : 'Authorized User');
   const avatarSrc = user.avatar_url || (isPlatformAdmin && platformProfile?.avatar_url ? platformProfile.avatar_url : '');
 
   return (
@@ -318,51 +318,88 @@ export const UserMenu: React.FC = () => {
 
           {/* Primary Profile & Workspace Actions */}
           <div className="py-1 border-b border-gray-100">
-            <button
-              onClick={handleNavigateToProfile}
-              className="w-full text-left px-4 py-2.5 text-xs font-bold text-gray-800 hover:bg-emerald-50/70 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
-            >
-              <span className="flex items-center gap-2.5">
-                <UserIcon className="w-4 h-4 text-[#07563D]" />
-                My Profile Workspace
-              </span>
-              <span className="text-gray-400 font-bold">→</span>
-            </button>
-
             {isPlatformAdmin ? (
-              <button
-                onClick={() => handleNavigateToAccount('security')}
-                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
-              >
-                <span className="flex items-center gap-2.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  Platform Security & IAM
-                </span>
-                <span className="text-gray-400">→</span>
-              </button>
-            ) : (
-              <button
-                onClick={handleNavigateToProfile}
-                className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
-              >
-                <span className="flex items-center gap-2.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  Account & Security
-                </span>
-                <span className="text-gray-400">→</span>
-              </button>
-            )}
+              <>
+                <button
+                  onClick={() => handleNavigateToAccount('overview')}
+                  className="w-full text-left px-4 py-2.5 text-xs font-bold text-gray-800 hover:bg-emerald-50/70 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <UserIcon className="w-4 h-4 text-[#07563D]" />
+                    Platform Identity & Account Center
+                  </span>
+                  <span className="text-gray-400 font-bold">→</span>
+                </button>
 
-            <button
-              onClick={handleNavigateToProfile}
-              className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
-            >
-              <span className="flex items-center gap-2.5">
-                <Bell className="w-4 h-4 text-gray-400" />
-                Notification Preferences
-              </span>
-              <span className="text-gray-400">→</span>
-            </button>
+                <button
+                  onClick={() => handleNavigateToAccount('security')}
+                  className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    Platform Security & IAM
+                  </span>
+                  <span className="text-gray-400">→</span>
+                </button>
+
+                <button
+                  onClick={() => handleNavigateToAccount('sessions')}
+                  className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Smartphone className="w-4 h-4 text-blue-600" />
+                    Active Sessions & Devices
+                  </span>
+                  <span className="text-gray-400">→</span>
+                </button>
+
+                <button
+                  onClick={() => handleNavigateToAccount('preferences')}
+                  className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Bell className="w-4 h-4 text-gray-400" />
+                    Platform Preferences & Alerts
+                  </span>
+                  <span className="text-gray-400">→</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={handleNavigateToProfile}
+                  className="w-full text-left px-4 py-2.5 text-xs font-bold text-gray-800 hover:bg-emerald-50/70 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <UserIcon className="w-4 h-4 text-[#07563D]" />
+                    My Profile Workspace
+                  </span>
+                  <span className="text-gray-400 font-bold">→</span>
+                </button>
+
+                <button
+                  onClick={handleNavigateToProfile}
+                  className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    Account & Security
+                  </span>
+                  <span className="text-gray-400">→</span>
+                </button>
+
+                <button
+                  onClick={handleNavigateToProfile}
+                  className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Bell className="w-4 h-4 text-gray-400" />
+                    Notification Preferences
+                  </span>
+                  <span className="text-gray-400">→</span>
+                </button>
+              </>
+            )}
           </div>
 
           {/* Collapsible Developer / QA Mode Switcher */}

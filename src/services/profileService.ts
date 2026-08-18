@@ -165,40 +165,45 @@ const STORAGE_KEYS = {
 
 class ProfileService {
   /**
-   * Resolves the canonical authenticated employee profile from database/state.
+   * Resolves the canonical authenticated employee profile from database/state in strict isolation.
    */
   async getProfileContext(user: User): Promise<FullProfileContext> {
     const orgContext = await organizationContextService.resolveUserContext(user);
-    const storageKey = `${STORAGE_KEYS.PROFILE_PREFIX}${user.id}`;
+    const storageKey = `${STORAGE_KEYS.PROFILE_PREFIX}${user.id || user.email}`;
     const cached = localStorage.getItem(storageKey);
 
-    // Initial Authoritative Template based on verified User / Employee
-    const isHrHead = user.email.includes('hari') || (user.roles || []).some((r) => r.name === 'HR Head');
+    const nameParts = (user.name || 'User').trim().split(/\s+/);
+    const firstName = nameParts[0] || 'User';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    const displayName = user.name || `${firstName} ${lastName}`.trim();
+    const primaryRole = (user.roles || [])[0]?.name || (user.role === 'superadmin' ? 'Platform Super Admin' : 'Staff Member');
+    const isPlatformAdmin = user.role === 'superadmin' || (user.roles || []).some(r => r.name.toLowerCase().includes('admin'));
+    const empCode = user.employee_code || `WF-${(user.id || '1001').replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase()}`;
 
     let baseEmployee: Employee = {
-      id: user.employee_id || 'emp-hr-001',
-      employee_code: 'WF-1001',
-      first_name: isHrHead ? 'Hari' : user.name.split(' ')[0] || 'Hari',
-      last_name: isHrHead ? 'Priya' : user.name.split(' ').slice(1).join(' ') || 'Priya',
-      display_name: isHrHead ? 'Hari Priya' : user.name,
+      id: user.employee_id || `emp-${user.id || 'user-01'}`,
+      employee_code: empCode,
+      first_name: firstName,
+      last_name: lastName,
+      display_name: displayName,
       work_email: user.email,
       organization_id: orgContext.activeOrganization.id,
       company_id: orgContext.activeLegalEntity.id,
-      department_id: 'dept-hr-01',
-      department_name: isHrHead ? 'People & HR' : 'Management',
-      designation_id: 'desig-hr-01',
-      designation_title: isHrHead ? 'HR Head' : (user.roles || [])[0]?.name || 'HR Head',
+      department_id: isPlatformAdmin ? 'dept-admin-01' : 'dept-gen-01',
+      department_name: isPlatformAdmin ? 'Platform Management & Operations' : 'Enterprise Operations',
+      designation_id: 'desig-01',
+      designation_title: primaryRole,
       status: 'Active',
       employment_type: 'Full Time',
       branch_name: 'Coimbatore Campus',
       avatar_url: user.avatar_url || '',
       profile: {
-        preferred_name: 'Hari Priya',
-        personal_email: 'haripriya.personal@gmail.com',
-        phone: '+91 98401 23456',
-        date_of_birth: '1993-08-14',
-        gender: 'Female',
-        marital_status: 'Married',
+        preferred_name: displayName,
+        personal_email: user.email,
+        phone: user.phone || '+91 98401 00000',
+        date_of_birth: '1995-01-01',
+        gender: 'Prefer not to say',
+        marital_status: 'Single',
         blood_group: 'O+',
         nationality: 'Indian',
       },
@@ -206,7 +211,7 @@ class ProfileService {
         doj: '2024-01-01',
         employment_type: 'Full Time',
         work_location: 'Coimbatore HQ, Joy Tech Park',
-        reporting_manager_name: 'Dharun Joy (Company Admin)',
+        reporting_manager_name: isPlatformAdmin ? 'Board of Directors' : 'Executive Management',
       },
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
@@ -214,14 +219,26 @@ class ProfileService {
 
     if (cached) {
       try {
-        const parsed = JSON.parse(cached);
-        return {
-          ...parsed,
-          user,
-          organization: orgContext.activeOrganization,
-          legalEntity: orgContext.activeLegalEntity,
-        };
-      } catch (_) {}
+        const parsed: FullProfileContext = JSON.parse(cached);
+        // Security check: Validate cached profile belongs strictly to this user
+        if (
+          parsed.user?.id === user.id &&
+          parsed.user?.email === user.email &&
+          (parsed.personal?.legalFirstName === firstName || parsed.personal?.preferredName === displayName)
+        ) {
+          return {
+            ...parsed,
+            user,
+            organization: orgContext.activeOrganization,
+            legalEntity: orgContext.activeLegalEntity,
+          };
+        } else {
+          // Stale or contaminated cache from previous user session - purge immediately
+          localStorage.removeItem(storageKey);
+        }
+      } catch (_) {
+        localStorage.removeItem(storageKey);
+      }
     }
 
     const defaultProfile: FullProfileContext = {
@@ -230,37 +247,37 @@ class ProfileService {
       organization: orgContext.activeOrganization,
       legalEntity: orgContext.activeLegalEntity,
       personal: {
-        legalFirstName: baseEmployee.first_name,
+        legalFirstName: firstName,
         legalMiddleName: '',
-        legalLastName: baseEmployee.last_name,
-        preferredName: 'Hari Priya',
-        dateOfBirth: '1993-08-14',
-        gender: 'Female',
-        maritalStatus: 'Married',
+        legalLastName: lastName,
+        preferredName: displayName,
+        dateOfBirth: '1995-01-01',
+        gender: 'Prefer not to say',
+        maritalStatus: 'Single',
         nationality: 'Indian',
         bloodGroup: 'O+',
         preferredLanguage: 'English',
       },
       contact: {
         workEmail: user.email,
-        personalEmail: 'haripriya.personal@gmail.com',
-        primaryMobile: '+91 98401 23456',
-        alternateMobile: '+91 98409 87654',
+        personalEmail: user.email,
+        primaryMobile: user.phone || '+91 98401 00000',
+        alternateMobile: '',
         isEmailVerified: true,
         isMobileVerified: true,
       },
       address: {
         currentAddress: {
-          line1: 'Flat 402, Green Meadows',
-          line2: 'Avinashi Road, Peelamedu',
+          line1: 'Joy Tech Park, Avinashi Road',
+          line2: 'Peelamedu',
           city: 'Coimbatore',
           state: 'Tamil Nadu',
           postalCode: '641004',
           country: 'India',
         },
         permanentAddress: {
-          line1: 'Flat 402, Green Meadows',
-          line2: 'Avinashi Road, Peelamedu',
+          line1: 'Joy Tech Park, Avinashi Road',
+          line2: 'Peelamedu',
           city: 'Coimbatore',
           state: 'Tamil Nadu',
           postalCode: '641004',
@@ -270,23 +287,23 @@ class ProfileService {
       },
       employment: {
         employeeId: baseEmployee.id,
-        employeeCode: baseEmployee.employee_code || 'WF-1001',
+        employeeCode: empCode,
         legalEntityName: orgContext.activeLegalEntity.legal_name,
-        departmentName: baseEmployee.department_name || 'People & HR',
-        designationTitle: baseEmployee.designation_title || 'HR Head',
+        departmentName: baseEmployee.department_name || 'Platform Management',
+        designationTitle: primaryRole,
         employmentType: 'Full Time',
         joiningDate: '01 Jan 2024',
         confirmationDate: '01 Jul 2024',
         workLocation: 'Coimbatore HQ, Joy Tech Park',
-        reportingManagerName: 'Dharun Joy (Company Admin)',
-        hrbpName: 'Self (HR Head)',
+        reportingManagerName: isPlatformAdmin ? 'Board of Directors' : 'Executive Management',
+        hrbpName: 'HR Operations Desk',
         status: 'Active',
       },
       bank: {
-        id: 'bank-01',
+        id: `bank-${user.id || '01'}`,
         bankName: 'HDFC Bank',
         accountNumberMasked: '•••• •••• 4521',
-        accountHolderName: 'Hari Priya',
+        accountHolderName: displayName,
         ifscCode: 'HDFC0001234',
         branchName: 'Peelamedu, Coimbatore',
         paymentMethod: 'Bank Transfer (NEFT/RTGS)',
@@ -302,100 +319,18 @@ class ProfileService {
         esiStatus: 'Not Applicable (Exempted)',
         taxRegime: 'New',
       },
-      nominees: [
-        {
-          id: 'nom-01',
-          schemeType: 'PF Nominee',
-          name: 'Karthik Natarajan',
-          relationship: 'Spouse',
-          dateOfBirth: '1990-05-14',
-          phone: '+91 98409 87654',
-          sharePercent: 100,
-          address: 'Flat 402, Green Meadows, Coimbatore 641004',
-        },
-        {
-          id: 'nom-02',
-          schemeType: 'Gratuity Nominee',
-          name: 'Karthik Natarajan',
-          relationship: 'Spouse',
-          dateOfBirth: '1990-05-14',
-          phone: '+91 98409 87654',
-          sharePercent: 100,
-          address: 'Flat 402, Green Meadows, Coimbatore 641004',
-        },
-      ],
-      emergencyContacts: [
-        {
-          id: 'emg-01',
-          name: 'Karthik Natarajan',
-          relationship: 'Spouse',
-          primaryPhone: '+91 98409 87654',
-          alternatePhone: '+91 98401 11223',
-          email: 'karthik.n@gmail.com',
-          address: 'Flat 402, Green Meadows, Coimbatore 641004',
-          isPrimary: true,
-        },
-      ],
-      documents: [
-        {
-          id: 'doc-01',
-          category: 'Identity',
-          type: 'PAN Card',
-          fileName: 'pan_card_verified.pdf',
-          fileUrl: '#',
-          fileSizeBytes: 420000,
-          verificationStatus: 'Verified',
-          uploadedAt: '2024-01-02T10:00:00Z',
-        },
-        {
-          id: 'doc-02',
-          category: 'Identity',
-          type: 'Aadhaar Card',
-          fileName: 'aadhaar_card_verified.pdf',
-          fileUrl: '#',
-          fileSizeBytes: 580000,
-          verificationStatus: 'Verified',
-          uploadedAt: '2024-01-02T10:05:00Z',
-        },
-        {
-          id: 'doc-03',
-          category: 'Employment',
-          type: 'Appointment Letter',
-          fileName: 'appointment_letter_hr_head.pdf',
-          fileUrl: '#',
-          fileSizeBytes: 1200000,
-          verificationStatus: 'Verified',
-          uploadedAt: '2024-01-01T09:00:00Z',
-        },
-        {
-          id: 'doc-04',
-          category: 'Bank',
-          type: 'Bank Passbook / Cancelled Cheque',
-          fileName: 'hdfc_cancelled_cheque.pdf',
-          fileUrl: '#',
-          fileSizeBytes: 310000,
-          verificationStatus: 'Verified',
-          uploadedAt: '2024-01-02T11:00:00Z',
-        },
-      ],
+      nominees: [],
+      emergencyContacts: [],
+      documents: [],
       sessions: [
         {
-          id: 'sess-01',
-          deviceName: 'Windows 11 PC (Chrome 126)',
+          id: 'sess-current',
+          deviceName: 'Desktop (Chrome on Windows)',
           browserName: 'Google Chrome',
-          ipAddress: '103.24.12.88',
+          ipAddress: '192.168.1.100 (Internal)',
           locationName: 'Coimbatore, India',
-          lastActive: 'Just now',
+          lastActive: 'Active Now',
           isCurrent: true,
-        },
-        {
-          id: 'sess-02',
-          deviceName: 'Apple iPhone 15 Pro (Safari Mobile)',
-          browserName: 'Mobile Safari',
-          ipAddress: '49.207.198.14',
-          locationName: 'Coimbatore, India',
-          lastActive: '3 hours ago',
-          isCurrent: false,
         },
       ],
       notificationPreferences: {
@@ -406,11 +341,11 @@ class ProfileService {
       },
       recentActivity: [
         {
-          id: 'act-01',
-          action: 'PROFILE_VIEWED',
-          timestamp: new Date().toISOString(),
-          details: 'Accessed personal HR identity & statutory profile',
-          actorName: user.name,
+          id: `act-${Date.now()}`,
+          action: 'PROFILE_LOADED',
+          details: 'Profile workspace authenticated session initialized.',
+          timestamp: 'Just now',
+          actorName: displayName,
         },
       ],
     };

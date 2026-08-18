@@ -1,256 +1,340 @@
-import React, { useState } from 'react';
+// src/features/talent/recruitment/InterviewManager.tsx
+// ============================================================================
+// WorkForceOS — Interview Management & Panel Scorecards
+// ============================================================================
+
+import React, { useState, useEffect } from 'react';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
-import { Input } from '../../../components/ui/Input';
-import { Select } from '../../../components/ui/Select';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
-import { Calendar, Plus, Clock, Users, Award, AlertTriangle, CheckCircle2, MessageSquare, Star } from 'lucide-react';
-import { atsService } from '../../../services/atsService';
-import { Interview, InterviewRoundType } from '../../../types/ats';
 import { useToast } from '../../../components/ui/Toast';
+import {
+  Calendar,
+  Plus,
+  Search,
+  Clock,
+  Video,
+  Star,
+  CheckCircle2,
+  User,
+  ChevronRight,
+  ExternalLink,
+  Award,
+} from 'lucide-react';
+import { Interview, Candidate, JobOpening } from '../../../types/ats';
+import { recruitmentService } from '../../../services/recruitment/recruitmentService';
+import { InterviewScorecardModal } from './InterviewScorecardModal';
+import { hrEventBus } from '../../../services/hrEventBus';
+import { cn } from '../../../lib/utils';
 
 export const InterviewManager: React.FC = () => {
   const { showToast } = useToast();
-  const interviews = atsService.getInterviews();
-  const candidates = atsService.getCandidates();
-  const jobs = atsService.getJobs();
+  const [interviews, setInterviews] = useState<Interview[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [jobs, setJobs] = useState<JobOpening[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('ALL');
 
-  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
-  const [selectedInterview, setSelectedInterview] = useState<Interview | null>(null);
+  // Modals
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [selectedInterviewForScorecard, setSelectedInterviewForScorecard] = useState<Interview | null>(null);
 
-  // Form
-  const [form, setForm] = useState({
-    candidate_id: candidates[0]?.id || '',
-    job_id: jobs[0]?.id || '',
-    round_type: 'Technical Round 1' as InterviewRoundType,
-    date: new Date().toISOString().split('T')[0],
-    start_time: '14:00',
-    end_time: '15:00',
-    location_or_link: 'https://meet.google.com/abc-defg-hij',
-    interviewer_names: 'Anand V. (Eng Lead), Priyesh K. (Architect)',
-  });
+  // Form States
+  const [selectedCandidateId, setSelectedCandidateId] = useState('');
+  const [roundName, setRoundName] = useState('Technical Round 1');
+  const [interviewType, setInterviewType] = useState<'Video' | 'Phone' | 'In-Person'>('Video');
+  const [scheduledDate, setScheduledDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startTime, setStartTime] = useState('11:00 AM');
+  const [interviewerName, setInterviewerName] = useState('Dharun Joy');
+  const [meetingLink, setMeetingLink] = useState('https://meet.google.com/joy-interview-room');
 
-  const handleSchedule = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cand = candidates.find(c => c.id === form.candidate_id);
-    const job = jobs.find(j => j.id === form.job_id);
-
+  const loadData = async () => {
+    setIsLoading(true);
     try {
-        const panelMembers = form.interviewer_names.split(',').map((name, i) => ({
-          user_id: `emp-0${i + 2}`,
-          interviewer_id: `emp-0${i + 2}`,
-          name: name.trim(),
-          interviewer_name: name.trim(),
-          email: 'interviewer@acme.com',
-          interviewer_email: 'interviewer@acme.com',
-          role: 'Technical Lead',
-          is_required: true,
-          accepted: true,
-        }));
-
-        const created = atsService.scheduleInterview({
-          application_id: 'app-01',
-          candidate_id: form.candidate_id,
-          candidate_name: cand?.full_name || 'Candidate',
-          candidate_email: cand?.email || 'cand@example.com',
-          job_id: form.job_id,
-          job_title: job?.job_title || 'Software Role',
-          round_name: form.round_type,
-          round_type: form.round_type,
-          round_number: 1,
-          date: form.date,
-          start_time: form.start_time,
-          end_time: form.end_time,
-          timezone: 'IST',
-          panel: panelMembers,
-          interviewers: panelMembers,
-          mode: 'Online',
-          location_or_link: form.location_or_link,
-        });
-
-      showToast(`Interview scheduled for ${created.candidate_name}!`);
-      setIsScheduleOpen(false);
-    } catch (err: any) {
-      showToast(err.message || 'Error scheduling interview');
+      const [iList, cList, jList] = await Promise.all([
+        recruitmentService.getInterviews({ status: statusFilter }),
+        recruitmentService.getCandidates(),
+        recruitmentService.getJobs(),
+      ]);
+      setInterviews(iList);
+      setCandidates(cList);
+      setJobs(jList);
+      if (cList.length > 0 && !selectedCandidateId) {
+        setSelectedCandidateId(cList[0].id);
+      }
+    } catch (err) {
+      console.error('[InterviewManager] load error:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const submitScorecard = (interviewId: string, rating: number, recommendation: any) => {
-    atsService.submitInterviewFeedback(interviewId, {
-      interview_id: interviewId,
-      interviewer_id: 'emp-02',
-      interviewer_name: 'Anand V.',
-      overall_rating: rating,
-      recommendation,
-      technical_skills_rating: rating,
-      communication_rating: rating,
-      problem_solving_rating: rating,
-      culture_fit_rating: rating,
-      strengths: 'Strong React architecture knowledge and clean code practices.',
-      areas_for_improvement: 'Can deepen cloud infrastructure knowledge.',
-      detailed_notes: 'Candidate performed exceptionally well during the live coding exercise.',
-      submitted_at: new Date().toISOString(),
-    });
+  useEffect(() => {
+    loadData();
+  }, [statusFilter]);
 
-    showToast('Interview Scorecard & Feedback submitted successfully!');
-    setSelectedInterview(null);
+  useEffect(() => {
+    const unsub = hrEventBus.subscribe('recruitment.*', () => {
+      loadData();
+    });
+    return () => unsub();
+  }, []);
+
+  const handleScheduleInterview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cand = candidates.find(c => c.id === selectedCandidateId);
+    if (!cand) return;
+
+    try {
+      await recruitmentService.scheduleInterview({
+        candidate_id: cand.id,
+        candidate_name: cand.display_name || `${cand.first_name} ${cand.last_name}`,
+        candidate_email: cand.email,
+        job_id: cand.applied_job_id || 'JOB-2026-101',
+        job_title: cand.applied_job_title || 'Position',
+        round_name: roundName,
+        interview_type: interviewType,
+        scheduled_date: scheduledDate,
+        start_time: startTime,
+        interviewer_name: interviewerName,
+        meeting_link: meetingLink,
+      });
+
+      // Move candidate stage to 'Interview'
+      await recruitmentService.updateCandidateStage(cand.id, 'Interview', `Scheduled ${roundName}`);
+
+      showToast(`Interview scheduled for ${cand.display_name || cand.first_name}!`);
+      setIsScheduleModalOpen(false);
+      loadData();
+    } catch {
+      showToast('Error scheduling interview', 'error');
+    }
   };
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-100 shadow-xs">
-        <div>
-          <h1 className="text-xl font-extrabold text-gray-900 tracking-tight flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-[#07563D]" /> Interview Operations & Conflict Engine
-          </h1>
-          <p className="text-xs text-gray-500 mt-1">
-            Schedule round panels, detect interviewer calendar conflicts, and record structured feedback scorecards
-          </p>
+      {/* Action Header & Filters */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="p-2 text-xs rounded-xl border border-gray-200 bg-white font-bold text-gray-700"
+          >
+            <option value="ALL">All Statuses ({interviews.length})</option>
+            <option value="Scheduled">Scheduled</option>
+            <option value="Completed">Completed</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
         </div>
-        <Button leftIcon={<Plus className="w-4 h-4" />} onClick={() => setIsScheduleOpen(true)}>
-          Schedule Interview
+
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => setIsScheduleModalOpen(true)}
+          className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl"
+        >
+          <Plus className="w-4 h-4" /> Schedule Interview
         </Button>
       </div>
 
-      {/* Scheduled Interviews Matrix */}
-      <Card className="p-6 bg-white rounded-2xl border border-gray-100 shadow-xs">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Interview ID</TableHead>
-              <TableHead>Candidate & Role</TableHead>
-              <TableHead>Round Type</TableHead>
-              <TableHead>Date & Time</TableHead>
-              <TableHead>Interviewers / Panel</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Scorecard</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {interviews.map(inv => (
-              <TableRow key={inv.id}>
-                <TableCell className="font-mono text-xs font-bold text-gray-900">{inv.id}</TableCell>
-                <TableCell>
-                  <div className="font-bold text-gray-900 text-sm">{inv.candidate_name}</div>
-                  <div className="text-xs text-gray-500">{inv.job_title}</div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="purple" size="sm">{inv.round_type}</Badge>
-                </TableCell>
-                <TableCell className="text-xs font-semibold text-gray-800">
-                  {inv.date} ({inv.start_time} - {inv.end_time})
-                </TableCell>
-                <TableCell className="text-xs text-gray-700">
-                  {(inv.interviewers || inv.panel || []).map(i => i.interviewer_name || i.name).join(', ')}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={inv.status === 'Completed' ? 'emerald' : 'amber'} size="sm">
-                    {inv.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button variant="outline" size="sm" onClick={() => setSelectedInterview(inv)}>
-                    Scorecard Form
-                  </Button>
-                </TableCell>
+      {/* Interviews Table */}
+      <Card className="rounded-3xl border-gray-200/80 shadow-2xs overflow-hidden">
+        {isLoading ? (
+          <div className="p-12 text-center text-xs font-bold text-gray-400">Loading interview schedules...</div>
+        ) : interviews.length === 0 ? (
+          <div className="p-12 text-center max-w-sm mx-auto">
+            <Calendar className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+            <h4 className="text-sm font-bold text-gray-900">No Interviews Scheduled</h4>
+            <p className="text-xs text-gray-500 mt-1 mb-4">
+              Schedule technical or culture rounds and submit structured 5-point evaluation scorecards.
+            </p>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsScheduleModalOpen(true)}
+              className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl"
+            >
+              <Plus className="w-4 h-4" /> Schedule First Interview
+            </Button>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="font-bold text-gray-700">Candidate & Role</TableHead>
+                <TableHead className="font-bold text-gray-700">Round & Type</TableHead>
+                <TableHead className="font-bold text-gray-700">Interviewer</TableHead>
+                <TableHead className="font-bold text-gray-700">Date & Time</TableHead>
+                <TableHead className="font-bold text-gray-700">Scorecard Recommendation</TableHead>
+                <TableHead className="font-bold text-gray-700">Status</TableHead>
+                <TableHead className="text-right font-bold text-gray-700">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {interviews.map(i => (
+                <TableRow key={i.id} className="hover:bg-emerald-50/40 transition-colors">
+                  <TableCell>
+                    <div className="font-bold text-gray-900 text-xs">{i.candidate_name}</div>
+                    <div className="text-[11px] text-gray-400">{i.job_title}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-xs font-semibold text-gray-800">{i.round_name}</div>
+                    <div className="text-[11px] text-gray-500 flex items-center gap-1">
+                      <Video className="w-3 h-3 text-gray-400" /> {i.interview_type}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs text-gray-800 font-medium">
+                    {i.interviewer_name || 'Technical Lead'}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-gray-700">
+                    {i.scheduled_date || i.date} • {i.start_time || i.time}
+                  </TableCell>
+                  <TableCell>
+                    {i.overall_recommendation ? (
+                      <Badge variant={i.overall_recommendation === 'Strong Hire' || i.overall_recommendation === 'Hire' ? 'emerald' : 'amber'} className="text-[10px]">
+                        {i.overall_recommendation}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-gray-400 italic">Pending feedback</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={i.status === 'Completed' ? 'emerald' : 'blue'} className="text-[10px]">
+                      {i.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedInterviewForScorecard(i)}
+                      className="text-xs font-bold text-[#07563D] border-emerald-300 rounded-xl gap-1"
+                    >
+                      <Star className="w-3.5 h-3.5 fill-[#07563D]" />
+                      {i.status === 'Completed' ? 'View Scorecard' : 'Submit Scorecard'}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </Card>
 
-      {/* SCHEDULE MODAL */}
-      <Modal isOpen={isScheduleOpen} onClose={() => setIsScheduleOpen(false)} title="Schedule Round Panel Interview" size="md">
-        <form onSubmit={handleSchedule} className="space-y-3 text-xs">
+      {/* Modal: Schedule Interview */}
+      <Modal
+        isOpen={isScheduleModalOpen}
+        onClose={() => setIsScheduleModalOpen(false)}
+        title="Schedule Candidate Interview"
+        description="Select candidate, assign interviewer panel, specify round type and meeting link"
+      >
+        <form onSubmit={handleScheduleInterview} className="p-6 space-y-4 max-h-[80vh] overflow-auto">
           <div>
-            <label className="font-bold text-gray-700">Select Candidate *</label>
-            <Select
-              value={form.candidate_id}
-              onChange={e => setForm({ ...form, candidate_id: e.target.value })}
-              options={candidates.map(c => ({ value: c.id, label: `${c.full_name} (${c.email})` }))}
-            />
+            <label className="block text-xs font-bold text-gray-700 mb-1">Select Candidate *</label>
+            <select
+              value={selectedCandidateId}
+              onChange={e => setSelectedCandidateId(e.target.value)}
+              className="w-full p-2.5 text-xs rounded-xl border border-gray-200 bg-white"
+            >
+              {candidates.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.display_name || `${c.first_name} ${c.last_name}`} — {c.applied_job_title}
+                </option>
+              ))}
+            </select>
           </div>
-          <div>
-            <label className="font-bold text-gray-700">Select Job Opening *</label>
-            <Select
-              value={form.job_id}
-              onChange={e => setForm({ ...form, job_id: e.target.value })}
-              options={jobs.map(j => ({ value: j.id, label: j.job_title }))}
-            />
-          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="font-bold text-gray-700">Round Type</label>
-              <Select
-                value={form.round_type}
-                onChange={e => setForm({ ...form, round_type: e.target.value as InterviewRoundType })}
-                options={[
-                  { value: 'HR Screening', label: 'HR Screening' },
-                  { value: 'Technical Round 1', label: 'Technical Round 1' },
-                  { value: 'Technical Round 2', label: 'Technical Round 2' },
-                  { value: 'System Design', label: 'System Design' },
-                  { value: 'Hiring Manager Round', label: 'Hiring Manager Round' },
-                  { value: 'Culture Fit', label: 'Culture Fit' },
-                ]}
+              <label className="block text-xs font-bold text-gray-700 mb-1">Round Name</label>
+              <input
+                type="text"
+                value={roundName}
+                onChange={e => setRoundName(e.target.value)}
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200"
               />
             </div>
             <div>
-              <label className="font-bold text-gray-700">Date</label>
-              <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
+              <label className="block text-xs font-bold text-gray-700 mb-1">Interview Type</label>
+              <select
+                value={interviewType}
+                onChange={e => setInterviewType(e.target.value as any)}
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200 bg-white"
+              >
+                <option value="Video">Video Call</option>
+                <option value="Phone">Phone Discussion</option>
+                <option value="In-Person">In-Person Campus</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Date *</label>
+              <input
+                type="date"
+                value={scheduledDate}
+                onChange={e => setScheduledDate(e.target.value)}
+                required
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200"
+              />
             </div>
             <div>
-              <label className="font-bold text-gray-700">Start Time</label>
-              <Input value={form.start_time} onChange={e => setForm({ ...form, start_time: e.target.value })} />
+              <label className="block text-xs font-bold text-gray-700 mb-1">Time *</label>
+              <input
+                type="text"
+                value={startTime}
+                onChange={e => setStartTime(e.target.value)}
+                required
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200"
+              />
             </div>
-            <div>
-              <label className="font-bold text-gray-700">End Time</label>
-              <Input value={form.end_time} onChange={e => setForm({ ...form, end_time: e.target.value })} />
-            </div>
           </div>
+
           <div>
-            <label className="font-bold text-gray-700">Interviewer Panel Names (Comma separated)</label>
-            <Input value={form.interviewer_names} onChange={e => setForm({ ...form, interviewer_names: e.target.value })} />
+            <label className="block text-xs font-bold text-gray-700 mb-1">Interviewer Name</label>
+            <input
+              type="text"
+              value={interviewerName}
+              onChange={e => setInterviewerName(e.target.value)}
+              className="w-full p-2.5 text-xs rounded-xl border border-gray-200"
+            />
           </div>
+
           <div>
-            <label className="font-bold text-gray-700">Meeting Link / Location</label>
-            <Input value={form.location_or_link} onChange={e => setForm({ ...form, location_or_link: e.target.value })} />
+            <label className="block text-xs font-bold text-gray-700 mb-1">Meeting Link</label>
+            <input
+              type="text"
+              value={meetingLink}
+              onChange={e => setMeetingLink(e.target.value)}
+              className="w-full p-2.5 text-xs rounded-xl border border-gray-200"
+            />
           </div>
-          <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
-            <Button variant="outline" type="button" onClick={() => setIsScheduleOpen(false)}>Cancel</Button>
-            <Button type="submit">Confirm Schedule</Button>
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsScheduleModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" className="bg-[#07563D] hover:bg-[#0b7a57] text-white">
+              Confirm & Send Invite
+            </Button>
           </div>
         </form>
       </Modal>
 
-      {/* SCORECARD FEEDBACK MODAL */}
-      {selectedInterview && (
-        <Modal isOpen={Boolean(selectedInterview)} onClose={() => setSelectedInterview(null)} title={`Submit Interview Scorecard: ${selectedInterview.round_type}`} size="lg">
-          <div className="space-y-4 text-xs">
-            <div className="p-3 bg-gray-50 rounded-xl">
-              <p className="font-bold text-gray-900">{selectedInterview.candidate_name}</p>
-              <p className="text-gray-500">{selectedInterview.job_title} • {selectedInterview.date}</p>
-            </div>
-
-            <div className="space-y-2">
-              <label className="font-bold text-gray-800 block">Overall Score Rating:</label>
-              <div className="flex gap-2">
-                {[1, 2, 3, 4, 5].map(star => (
-                  <Button key={star} size="sm" variant="outline" onClick={() => submitScorecard(selectedInterview.id, star, 'Strong Hire')}>
-                    <Star className="w-3.5 h-3.5 mr-1 fill-amber-400 text-amber-400 inline" /> {star} Star
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-              <Button variant="outline" onClick={() => setSelectedInterview(null)}>Close</Button>
-            </div>
-          </div>
-        </Modal>
-      )}
+      {/* Modal: Evaluation Scorecard */}
+      <InterviewScorecardModal
+        interview={selectedInterviewForScorecard}
+        isOpen={!!selectedInterviewForScorecard}
+        onClose={() => setSelectedInterviewForScorecard(null)}
+        onSubmitted={() => {
+          loadData();
+          setSelectedInterviewForScorecard(null);
+        }}
+      />
     </div>
   );
 };

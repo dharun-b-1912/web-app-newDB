@@ -31,9 +31,9 @@ export const WorkspacePersonalHeader: React.FC<Props> = ({
 }) => {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const fullName = employee.display_name || user.name || 'Hari Priya';
-  const designation = employee.designation_title || 'HR Head';
-  const department = employee.department_name || 'People & HR';
+  const fullName = employee.display_name || user.name || 'Team Member';
+  const designation = employee.designation_title || (user.roles?.[0]?.name) || 'Team Member';
+  const department = employee.department_name || 'Enterprise Operations';
   const managerName = employee.employment?.reporting_manager_name || 'Dharun Joy (Company Admin)';
   const location = employee.branch_name || 'Coimbatore HQ';
 

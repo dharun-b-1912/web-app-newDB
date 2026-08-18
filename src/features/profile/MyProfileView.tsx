@@ -247,7 +247,7 @@ export const MyProfileView: React.FC = () => {
             {/* Avatar with Upload Trigger */}
             <div className="relative group shrink-0">
               <Avatar
-                name={employee.display_name || user?.name || 'Hari Priya'}
+                name={employee.display_name || user?.name || 'Authorized User'}
                 src={employee.avatar_url || user?.avatar_url}
                 size="2xl"
                 className="w-24 h-24 sm:w-28 sm:h-28 text-2xl font-black shadow-md border-4 border-white"
@@ -273,7 +273,7 @@ export const MyProfileView: React.FC = () => {
             <div className="space-y-1.5 min-w-0">
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
-                  {personal.preferredName || employee.display_name || 'Hari Priya'}
+                  {personal.preferredName || employee.display_name || user?.name || 'Authorized User'}
                 </h1>
                 <Badge variant="emerald" className="bg-emerald-50 text-emerald-800 border-emerald-300 text-xs font-bold px-2.5 py-0.5">
                   {employment.status}
