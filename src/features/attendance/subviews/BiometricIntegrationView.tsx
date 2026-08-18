@@ -103,7 +103,8 @@ export const BiometricIntegrationView: React.FC = () => {
     elapsedMs: number;
   } | null>(null);
 
-  const loadData = () => {
+  const loadData = async () => {
+    await biometricGatewayService.syncLocalAgentStatus();
     setAgents(biometricGatewayService.getGatewayAgents());
     setDevices(biometricGatewayService.getBiometricDevices());
     setPunches(biometricGatewayService.getRawPunches(50));
@@ -113,11 +114,19 @@ export const BiometricIntegrationView: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(() => {
+      biometricGatewayService.syncLocalAgentStatus().then(ag => {
+        if (ag) setAgents(biometricGatewayService.getGatewayAgents());
+      });
+    }, 3000);
     const unsub = hrEventBus.subscribe('attendance.punch_received', () => {
       setPunches(biometricGatewayService.getRawPunches(50));
       setDiagnosticLogs(biometricGatewayService.getDiagnosticLogs());
     });
-    return () => unsub();
+    return () => {
+      clearInterval(interval);
+      unsub();
+    };
   }, []);
 
   const handleGeneratePairing = () => {

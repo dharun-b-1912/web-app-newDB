@@ -168,7 +168,55 @@ class BiometricGatewayService {
   // ==========================================================================
 
   getGatewayAgents(): BiometricGatewayAgent[] {
-    return getStore<BiometricGatewayAgent[]>(STORAGE_KEYS.AGENTS, DEFAULT_AGENTS);
+    return getStore<BiometricGatewayAgent[]>(STORAGE_KEYS.AGENTS, []);
+  }
+
+  async syncLocalAgentStatus(): Promise<BiometricGatewayAgent | null> {
+    try {
+      const resp = await fetch('http://127.0.0.1:11105/health');
+      if (resp.ok) {
+        const data = await resp.json();
+        const agents = this.getGatewayAgents();
+        const pairing = data.pairing_key || 'PAIR-COI-9915';
+        const branch = pairing.includes('COI')
+          ? 'Coimbatore Plant & Manufacturing Unit'
+          : pairing.includes('MUM')
+          ? 'Mumbai Regional Headquarters'
+          : 'Bengaluru Tech Park Campus';
+
+        let existing = agents.find(a => a.pairing_key === pairing || a.id === 'agent-local-daemon');
+        if (!existing) {
+          existing = {
+            id: 'agent-local-daemon',
+            organization_id: data.tenant_id || 'org-joy-01',
+            branch_name: branch,
+            agent_name: `LAN-GATEWAY-DAEMON (${pairing})`,
+            pairing_key: pairing,
+            version: data.agent_version || '2.4.0-enterprise',
+            os_platform: data.platform === 'win32' ? 'Windows Service (x64)' : 'Linux Service',
+            local_ip: '127.0.0.1:11105',
+            public_ip: '103.22.14.99',
+            status: 'ONLINE',
+            last_heartbeat: new Date().toISOString(),
+            offline_buffer_count: 0,
+            connected_devices_count: this.getBiometricDevices().length,
+            created_at: new Date().toISOString(),
+          };
+          setStore(STORAGE_KEYS.AGENTS, [existing, ...agents.filter(a => a.id !== 'agent-local-daemon')]);
+        } else {
+          existing.status = 'ONLINE';
+          existing.last_heartbeat = new Date().toISOString();
+          existing.pairing_key = pairing;
+          existing.branch_name = branch;
+          existing.connected_devices_count = this.getBiometricDevices().length;
+          setStore(STORAGE_KEYS.AGENTS, agents);
+        }
+        return existing;
+      }
+    } catch {
+      // Local agent offline
+    }
+    return null;
   }
 
   generatePairingKey(branchName: string): {
