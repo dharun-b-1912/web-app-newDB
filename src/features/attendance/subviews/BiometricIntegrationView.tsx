@@ -31,6 +31,7 @@ import {
   Clock,
   Layers,
   ArrowUpRight,
+  Trash2,
 } from 'lucide-react';
 import {
   biometricGatewayService,
@@ -130,6 +131,18 @@ export const BiometricIntegrationView: React.FC = () => {
     } else {
       showToast(res.message, 'error');
     }
+  };
+
+  const handleDeleteDevice = (devId: string) => {
+    biometricGatewayService.deleteDevice(devId);
+    loadData();
+    showToast('Biometric terminal removed successfully.');
+  };
+
+  const handleDeleteAgent = (agentId: string) => {
+    biometricGatewayService.deleteAgent(agentId);
+    loadData();
+    showToast('LAN Gateway Agent removed successfully.');
   };
 
   const handleRunStressTest = async () => {
@@ -347,14 +360,23 @@ export const BiometricIntegrationView: React.FC = () => {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleTestConnection(dev.id)}
-                        className="text-[11px] font-bold rounded-xl border-gray-200"
-                      >
-                        Test Socket
-                      </Button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleTestConnection(dev.id)}
+                          className="text-[11px] font-bold rounded-xl border-gray-200"
+                        >
+                          Test Socket
+                        </Button>
+                        <button
+                          onClick={() => handleDeleteDevice(dev.id)}
+                          title="Remove Device"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -397,6 +419,7 @@ export const BiometricIntegrationView: React.FC = () => {
                   <TableHead className="font-bold text-gray-700">Terminals</TableHead>
                   <TableHead className="font-bold text-gray-700">Tunnel Status</TableHead>
                   <TableHead className="font-bold text-gray-700">Last Heartbeat</TableHead>
+                  <TableHead className="text-right font-bold text-gray-700">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -422,6 +445,15 @@ export const BiometricIntegrationView: React.FC = () => {
                     </TableCell>
                     <TableCell className="text-xs text-gray-500 font-mono">
                       {new Date(ag.last_heartbeat).toLocaleTimeString()}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <button
+                        onClick={() => handleDeleteAgent(ag.id)}
+                        title="Remove Agent"
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </TableCell>
                   </TableRow>
                 ))}

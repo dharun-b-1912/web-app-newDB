@@ -1,7 +1,7 @@
 // src/features/attendance/components/BiometricSetupWizardModal.tsx
 // ============================================================================
 // WorkForceOS — Biometric Setup & Local Network Auto-Discovery Wizard
-// 5-Stage Zero-Config Workflow: Deploy Agent, Sweep Subnet, Adopt Terminals & Push PINs
+// Real-Time Discovery Workflow: Deploy Agent, Sweep Subnet, Adopt Terminals & Push PINs
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -60,12 +60,18 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedBranch, setSelectedBranch] = useState('Bengaluru Tech Park Campus');
   const [pairingData, setPairingData] = useState<{ pairingKey: string; oneLinerScript: string } | null>(null);
+  const [activeAgent, setActiveAgent] = useState<BiometricGatewayAgent | null>(null);
 
   // Discovery State
   const [subnetRange, setSubnetRange] = useState('192.168.1.0/24');
   const [isScanning, setIsScanning] = useState(false);
+  const [hasScanned, setHasScanned] = useState(false);
   const [discoveredDevices, setDiscoveredDevices] = useState<DiscoveredDevice[]>([]);
   const [selectedDiscoveredDevice, setSelectedDiscoveredDevice] = useState<DiscoveredDevice | null>(null);
+
+  // Direct IP Probe State
+  const [probeIp, setProbeIp] = useState('192.168.1.201');
+  const [probePort, setProbePort] = useState(4370);
 
   // Adoption Form State
   const [adoptName, setAdoptName] = useState('Main Lobby Facial Ingress');
@@ -83,12 +89,31 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
     setCurrentStep(2);
   };
 
+  const handleConfirmHandshake = () => {
+    if (!pairingData) return;
+    const ag = biometricGatewayService.registerPairedAgent({
+      branchName: selectedBranch,
+      pairingKey: pairingData.pairingKey,
+    });
+    setActiveAgent(ag);
+    showToast(`Agent ${ag.agent_name} successfully paired and active!`);
+    setCurrentStep(3);
+  };
+
   const handleScanSubnet = async () => {
     setIsScanning(true);
+    setHasScanned(true);
     try {
-      const devices = await biometricGatewayService.scanLocalNetwork('agent-blr-01', subnetRange);
+      const devices = await biometricGatewayService.scanLocalNetwork(
+        activeAgent?.id || 'agent-default',
+        subnetRange
+      );
       setDiscoveredDevices(devices);
-      showToast(`Discovered ${devices.length} biometric hardware devices on subnet ${subnetRange}!`);
+      if (devices.length > 0) {
+        showToast(`Discovered ${devices.length} biometric hardware devices!`);
+      } else {
+        showToast('Scan complete. No hardware terminals responded on broadcast. Use direct IP probe below.');
+      }
     } catch {
       showToast('Error scanning local subnet', 'error');
     } finally {
@@ -96,11 +121,19 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
     }
   };
 
+  const handleProbeDirectIp = () => {
+    if (!probeIp.trim()) return;
+    const dev = biometricGatewayService.probeSingleDevice(probeIp.trim(), Number(probePort) || 4370);
+    setDiscoveredDevices(prev => [dev, ...prev.filter(p => p.ip_address !== dev.ip_address)]);
+    showToast(`Hardware terminal detected on ${dev.ip_address}:${dev.port} (${dev.vendor} ${dev.model})!`);
+  };
+
   const handleAdoptDevice = (dev: DiscoveredDevice) => {
     const adopted = biometricGatewayService.adoptDiscoveredDevice(dev, {
       deviceName: adoptName || dev.model,
       branch: selectedBranch,
       location: adoptLocation || 'Campus Entrance',
+      gatewayAgentId: activeAgent?.id,
     });
     showToast(`Device ${adopted.device_name} (${adopted.ip_address}:${adopted.port}) successfully enrolled!`);
     setDiscoveredDevices(prev =>
@@ -114,6 +147,10 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
     setIsSyncingEmployees(true);
     try {
       const devices = biometricGatewayService.getBiometricDevices();
+      if (devices.length === 0) {
+        showToast('No active devices enrolled to sync', 'error');
+        return;
+      }
       const target = devices[0];
       const res = await biometricGatewayService.syncEmployeesToTerminal(target.id);
       setSyncedResult(res.message);
@@ -127,6 +164,10 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
 
   const handleSimulateTestTap = async () => {
     const devices = biometricGatewayService.getBiometricDevices();
+    if (devices.length === 0) {
+      showToast('Enroll a hardware terminal first before testing', 'error');
+      return;
+    }
     const target = devices[0];
     const res = await biometricGatewayService.ingestRawPunch({
       deviceId: target.id,
@@ -134,7 +175,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
       verificationMode: 'Face',
       sourceType: 'LAN_AGENT',
     });
-    setTestTapResult(`Verified Punch from Arun Kumar on ${target.device_name} (${res.punch.dedup_hash})`);
+    setTestTapResult(`Verified Punch recorded on ${target.device_name} (Hash: ${res.punch.dedup_hash})`);
     showToast('Live biometric tap received and processed into Attendance Engine!');
   };
 
@@ -193,7 +234,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                 <Radio className="w-4 h-4" /> Zero-Port Forwarding On-Premises Architecture
               </div>
               <p className="text-[11px] text-emerald-800 leading-relaxed">
-                The WorkForceOS LAN Gateway Agent runs as a background Windows Service or Linux daemon on any machine inside the customer's local network. It connects via outbound WebSocket (WSS) to the WorkForceOS Cloud. No public static IP or firewall pinholes needed!
+                The WorkForceOS LAN Gateway Agent runs as a background service inside the customer's local network. It connects via outbound WebSocket (WSS) to the WorkForceOS Cloud. No public static IP or firewall pinholes needed!
               </p>
             </Card>
 
@@ -242,29 +283,17 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
               />
             </div>
 
-            <Card className="p-4 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
-                  <CheckCircle2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-emerald-900">Agent Handshake Confirmed</h4>
-                  <p className="text-[10px] text-emerald-700">Outbound TLS Tunnel Active (12ms latency, IP: 192.168.1.100)</p>
-                </div>
-              </div>
-              <Badge variant="emerald" size="sm" className="text-[10px]">
-                ONLINE
-              </Badge>
-            </Card>
-
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-between gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setCurrentStep(1)} className="text-xs rounded-xl">
+                Back
+              </Button>
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => setCurrentStep(3)}
+                onClick={handleConfirmHandshake}
                 className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1 rounded-xl"
               >
-                Continue to Subnet Scan <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                Confirm Agent Connected & Continue <ArrowRight className="w-3.5 h-3.5 ml-1" />
               </Button>
             </div>
           </div>
@@ -298,11 +327,45 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
               </div>
             </div>
 
+            {/* Direct IP Probe Section */}
+            <div className="p-4 bg-white rounded-2xl border border-gray-200 space-y-2">
+              <div className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5 text-[#07563D]" /> Direct IP / Port Hardware Probe
+              </div>
+              <p className="text-[11px] text-gray-500">
+                If UDP auto-discovery is restricted on your office switch, probe the terminal's IP address directly:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                <input
+                  type="text"
+                  placeholder="e.g. 192.168.1.201"
+                  value={probeIp}
+                  onChange={e => setProbeIp(e.target.value)}
+                  className="p-2 text-xs rounded-xl border border-gray-200 font-mono font-bold"
+                />
+                <input
+                  type="number"
+                  placeholder="Port (4370, 11100, 8000)"
+                  value={probePort}
+                  onChange={e => setProbePort(Number(e.target.value))}
+                  className="p-2 text-xs rounded-xl border border-gray-200 font-mono"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleProbeDirectIp}
+                  className="text-xs font-bold rounded-xl border-emerald-300 text-[#07563D] hover:bg-emerald-50"
+                >
+                  <Search className="w-3.5 h-3.5 mr-1" /> Probe IP Socket
+                </Button>
+              </div>
+            </div>
+
             {/* Discovered Terminals Matrix */}
-            {discoveredDevices.length > 0 && (
+            {discoveredDevices.length > 0 ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-xs font-bold text-gray-700">
-                  <span>Discovered Hardware Terminals ({discoveredDevices.length})</span>
+                  <span>Detected Hardware Terminals ({discoveredDevices.length})</span>
                   <span className="text-[11px] text-gray-400 font-mono">Ports: 4370 (ZKTeco), 11100 (Mantra), 8000 (Matrix)</span>
                 </div>
 
@@ -335,8 +398,6 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                             <span className="font-mono font-bold text-gray-800">{dev.ip_address}:{dev.port}</span>
                             <span>•</span>
                             <span className="font-mono text-gray-400">MAC: {dev.mac_address}</span>
-                            <span>•</span>
-                            <span>{dev.user_count} Enrolled Users</span>
                           </div>
                         </div>
                       </div>
@@ -365,7 +426,13 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                   ))}
                 </div>
               </div>
-            )}
+            ) : hasScanned ? (
+              <div className="p-8 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+                <p className="text-xs text-gray-500">
+                  No active biometric devices responded on subnet <code className="font-bold">{subnetRange}</code>. Try probing the direct IP above or verify the hardware power/Ethernet connection.
+                </p>
+              </div>
+            ) : null}
           </div>
         )}
 

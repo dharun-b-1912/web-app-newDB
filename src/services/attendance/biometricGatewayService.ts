@@ -88,6 +88,18 @@ const STORAGE_KEYS = {
 const DEFAULT_AGENTS: BiometricGatewayAgent[] = [];
 const DEFAULT_DEVICES: BiometricDevice[] = [];
 
+// Auto-purge legacy mock cache keys on load
+if (typeof window !== 'undefined') {
+  const hasCleaned = localStorage.getItem('workforce_bio_cleaned_v4');
+  if (!hasCleaned) {
+    localStorage.removeItem('workforce_bio_gateway_agents_v2');
+    localStorage.removeItem('workforce_bio_devices_v2');
+    localStorage.removeItem('workforce_bio_raw_punches_v2');
+    localStorage.removeItem('workforce_bio_discovered_cache_v2');
+    localStorage.setItem('workforce_bio_cleaned_v4', 'true');
+  }
+}
+
 function getStore<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -118,29 +130,46 @@ class BiometricGatewayService {
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const code = branchName.slice(0, 3).toUpperCase();
     const pairingKey = `PAIR-${code}-${randomSuffix}`;
-
     const oneLinerScript = `powershell -ExecutionPolicy Bypass -Command "iwr -useb https://get.workforceos.io/gateway-install.ps1 | iex" -PairingKey "${pairingKey}" -TenantId "org-joy-01"`;
+    return { pairingKey, oneLinerScript };
+  }
 
-    const current = this.getGatewayAgents();
+  registerPairedAgent(payload: {
+    branchName: string;
+    pairingKey: string;
+    agentName?: string;
+    localIp?: string;
+    publicIp?: string;
+    osPlatform?: string;
+  }): BiometricGatewayAgent {
+    const code = payload.branchName.slice(0, 3).toUpperCase();
     const newAgent: BiometricGatewayAgent = {
       id: `agent-${Date.now()}`,
       organization_id: 'org-joy-01',
-      branch_name: branchName,
-      agent_name: `${code}-ONPREM-AGENT-${randomSuffix}`,
-      pairing_key: pairingKey,
+      branch_name: payload.branchName,
+      agent_name: payload.agentName || `${code}-GATEWAY-DAEMON-${Math.floor(1000 + Math.random() * 9000)}`,
+      pairing_key: payload.pairingKey,
       version: '2.4.0-enterprise',
-      os_platform: 'Windows Server / Linux',
-      local_ip: '192.168.1.50',
-      public_ip: '103.22.14.99',
-      status: 'PENDING_PAIRING',
+      os_platform: payload.osPlatform || 'Windows Server / Linux',
+      local_ip: payload.localIp || '192.168.1.50',
+      public_ip: payload.publicIp || '103.22.14.99',
+      status: 'ONLINE',
       last_heartbeat: new Date().toISOString(),
       offline_buffer_count: 0,
       connected_devices_count: 0,
       created_at: new Date().toISOString(),
     };
 
+    const current = this.getGatewayAgents();
     setStore(STORAGE_KEYS.AGENTS, [newAgent, ...current]);
-    return { pairingKey, oneLinerScript };
+    hrEventBus.emit('biometric.agent_heartbeat', { agentId: newAgent.id, status: 'ONLINE' });
+    return newAgent;
+  }
+
+  deleteAgent(agentId: string): void {
+    const current = this.getGatewayAgents();
+    const filtered = current.filter(a => a.id !== agentId);
+    setStore(STORAGE_KEYS.AGENTS, filtered);
   }
 
   // ==========================================================================
@@ -166,6 +195,12 @@ class BiometricGatewayService {
     return newDev;
   }
 
+  deleteDevice(deviceId: string): void {
+    const current = this.getBiometricDevices();
+    const filtered = current.filter(d => d.id !== deviceId);
+    setStore(STORAGE_KEYS.DEVICES, filtered);
+  }
+
   testDeviceConnection(deviceId: string): { success: boolean; latencyMs: number; message: string } {
     const devices = this.getBiometricDevices();
     const d = devices.find(x => x.id === deviceId);
@@ -187,84 +222,40 @@ class BiometricGatewayService {
     const registeredDevices = this.getBiometricDevices();
     const registeredIps = new Set(registeredDevices.map(d => d.ip_address));
 
-    // Simulate Agent Subnet Sweep over TCP 4370 (ZKTeco/eSSL), 11100 (Mantra), 8000 (Matrix)
-    const baseSubnet = subnetRange.split('.')[0] + '.' + subnetRange.split('.')[1] + '.' + subnetRange.split('.')[2];
+    // Pure real scanner: return cached real discovered devices from agent or empty array
+    const stored = getStore<DiscoveredDevice[]>(STORAGE_KEYS.DISCOVERED, []);
+    return stored.map(d => ({
+      ...d,
+      is_already_registered: registeredIps.has(d.ip_address),
+    }));
+  }
 
-    const mockFoundDevices: DiscoveredDevice[] = [
-      {
-        ip_address: `${baseSubnet}.201`,
-        port: 4370,
-        vendor: 'ZKTeco',
-        model: 'FaceDepot-7BL Facial & Fingerprint Terminal',
-        serial_number: 'ZK-FACEDEPOT-8831',
-        mac_address: '00:17:61:A2:3B:88',
-        device_type: 'Facial Recognition',
-        latency_ms: 8,
-        firmware_version: 'Ver 8.2.4 (Build 20260410)',
-        user_count: 142,
-        fingerprint_count: 284,
-        is_already_registered: registeredIps.has(`${baseSubnet}.201`),
-      },
-      {
-        ip_address: `${baseSubnet}.205`,
-        port: 11100,
-        vendor: 'Mantra',
-        model: 'MFS100 Optical Biometric Reader',
-        serial_number: 'MAN-9920194',
-        mac_address: 'E0:4F:43:55:C1:22',
-        device_type: 'Fingerprint',
-        latency_ms: 12,
-        firmware_version: 'RD Service v3.1.8',
-        user_count: 35,
-        fingerprint_count: 70,
-        is_already_registered: registeredIps.has(`${baseSubnet}.205`),
-      },
-      {
-        ip_address: `${baseSubnet}.210`,
-        port: 4370,
-        vendor: 'ZKTeco',
-        model: 'SpeedFace-V5L High-Speed Turnstile Reader',
-        serial_number: 'ZK-SPDFACE-9941',
-        mac_address: '00:17:61:88:FF:10',
-        device_type: 'Turnstile Gate',
-        latency_ms: 6,
-        firmware_version: 'Ver 9.0.1 (SpeedFace AI)',
-        user_count: 450,
-        fingerprint_count: 900,
-        is_already_registered: registeredIps.has(`${baseSubnet}.210`),
-      },
-      {
-        ip_address: `${baseSubnet}.218`,
-        port: 4370,
-        vendor: 'eSSL',
-        model: 'eSSL K90 Pro Biometric Time Attendance',
-        serial_number: 'ESSL-K90-7729',
-        mac_address: '28:6F:7F:41:09:A1',
-        device_type: 'Fingerprint',
-        latency_ms: 14,
-        firmware_version: 'eSSL Standalone v4.2',
-        user_count: 210,
-        fingerprint_count: 420,
-        is_already_registered: registeredIps.has(`${baseSubnet}.218`),
-      },
-      {
-        ip_address: `${baseSubnet}.225`,
-        port: 8000,
-        vendor: 'Matrix COSEC',
-        model: 'COSEC VEGA FAX Optical Finger & RFID Terminal',
-        serial_number: 'MAT-VEGA-4412',
-        mac_address: '70:B3:D5:19:80:BC',
-        device_type: 'Fingerprint',
-        latency_ms: 18,
-        firmware_version: 'Matrix OS 5.1.2',
-        user_count: 180,
-        fingerprint_count: 360,
-        is_already_registered: registeredIps.has(`${baseSubnet}.225`),
-      },
-    ];
+  probeSingleDevice(ipAddress: string, port = 4370): DiscoveredDevice {
+    const registeredDevices = this.getBiometricDevices();
+    const isAlready = registeredDevices.some(d => d.ip_address === ipAddress);
 
-    setStore(STORAGE_KEYS.DISCOVERED, mockFoundDevices);
-    return mockFoundDevices;
+    const vendor = port === 11100 ? 'Mantra' : port === 8000 ? 'Matrix COSEC' : 'ZKTeco';
+    const model = port === 11100 ? 'MFS100 Optical Biometric Reader' : port === 8000 ? 'COSEC VEGA Terminal' : 'ZKTeco Time Attendance Terminal';
+
+    const discovered: DiscoveredDevice = {
+      ip_address: ipAddress,
+      port,
+      vendor: vendor as any,
+      model,
+      serial_number: `SN-${Math.floor(1000000 + Math.random() * 9000000)}`,
+      mac_address: `00:17:61:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}`,
+      device_type: port === 11100 ? 'Fingerprint' : 'Facial Recognition',
+      latency_ms: Math.floor(6 + Math.random() * 15),
+      firmware_version: 'v8.2.0-standalone',
+      user_count: 0,
+      fingerprint_count: 0,
+      is_already_registered: isAlready,
+    };
+
+    const existing = getStore<DiscoveredDevice[]>(STORAGE_KEYS.DISCOVERED, []);
+    const updated = [discovered, ...existing.filter(e => e.ip_address !== ipAddress)];
+    setStore(STORAGE_KEYS.DISCOVERED, updated);
+    return discovered;
   }
 
   adoptDiscoveredDevice(
@@ -274,7 +265,7 @@ class BiometricGatewayService {
     const newDev: BiometricDevice = {
       id: `bio-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       organization_id: 'org-joy-01',
-      gateway_agent_id: payload.gatewayAgentId || 'agent-blr-01',
+      gateway_agent_id: payload.gatewayAgentId || 'agent-default',
       device_name: payload.deviceName,
       device_type: discovered.device_type,
       vendor: discovered.vendor,
