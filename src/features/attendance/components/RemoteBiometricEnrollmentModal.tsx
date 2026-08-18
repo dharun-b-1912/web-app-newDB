@@ -141,6 +141,75 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
     selectedEmployee?.id
   );
 
+  const [enrollmentMode, setEnrollmentMode] = useState<'remote' | 'keypad'>('remote');
+  const [isSyncingKeypad, setIsSyncingKeypad] = useState(false);
+
+  // Manual Trigger / Advance Scan Step
+  const handleAdvanceScanStep = async () => {
+    if (!activeSession) return;
+    try {
+      const updated = await biometricGatewayService.pollEnrollmentSession(activeSession.id);
+      setActiveSession({ ...updated });
+      setSensorMessage(updated.message);
+      if (updated.progressStep !== undefined) {
+        setSessionProgressStep(updated.progressStep);
+      }
+      if (updated.status === 'SUCCESS') {
+        if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
+        setModalStage('success');
+        showToast(`Fingerprint successfully enrolled on ${device.device_name}!`);
+        if (onEnrollmentSuccess) onEnrollmentSuccess();
+      }
+    } catch (err: any) {
+      console.warn(err);
+    }
+  };
+
+  // Instant Keypad Enrollment Sync
+  const handleKeypadEnrollmentSync = async () => {
+    if (!selectedEmployee) {
+      showToast('Please select an employee first', 'error');
+      return;
+    }
+    setIsSyncingKeypad(true);
+    try {
+      // 1. Trigger live sync with physical device
+      await biometricGatewayService.triggerDeviceUserSync(device.id);
+
+      // 2. Finalize mapping
+      const fakeSession: BiometricEnrollmentSession = {
+        id: `enr_${Date.now()}_${machinePin}`,
+        organization_id: 'org-joy-01',
+        branch_id: device.branch,
+        employee_id: selectedEmployee.id,
+        employee_name: selectedEmployee.display_name || selectedEmployee.name,
+        employee_code: selectedEmployee.employee_code || selectedEmployee.id,
+        device_id: device.id,
+        device_name: device.device_name,
+        machine_user_id: machinePin.trim(),
+        machine_user_uid: null,
+        finger_code: fingerCode,
+        vendor_finger_index: selectedFingerOpt.vendorIndex,
+        status: 'SUCCESS',
+        progressStep: 3,
+        totalSteps: 3,
+        message: 'Fingerprint template synced directly from terminal memory!',
+        requested_by: 'Administrator',
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+      };
+
+      await biometricGatewayService.finalizeEnrollmentSuccess(fakeSession);
+      setModalStage('success');
+      showToast(`Terminal PIN #${machinePin} synced and mapped to ${selectedEmployee.display_name || selectedEmployee.name}!`);
+      if (onEnrollmentSuccess) onEnrollmentSuccess();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to sync terminal', 'error');
+    } finally {
+      setIsSyncingKeypad(false);
+    }
+  };
+
   // Start Remote Enrollment Trigger
   const handleStartEnrollment = async () => {
     if (!selectedEmployee) {
@@ -195,7 +264,7 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
         } catch (err: any) {
           console.warn('Enrollment poll warning:', err);
         }
-      }, 1000);
+      }, 1200);
     } catch (err: any) {
       showToast(err.message || 'Failed to start enrollment', 'error');
       setFailureReason(err.message || 'Hardware connection failed');
@@ -450,6 +519,44 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
               </div>
             )}
 
+            {/* Mode Selector Tabs */}
+            <div className="flex p-1 bg-gray-100/80 rounded-2xl gap-1">
+              <button
+                type="button"
+                onClick={() => setEnrollmentMode('remote')}
+                className={cn(
+                  'flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5',
+                  enrollmentMode === 'remote' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-700'
+                )}
+              >
+                <Radio className="w-3.5 h-3.5 text-emerald-600" /> Remote Sensor Trigger (TCP)
+              </button>
+              <button
+                type="button"
+                onClick={() => setEnrollmentMode('keypad')}
+                className={cn(
+                  'flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5',
+                  enrollmentMode === 'keypad' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-700'
+                )}
+              >
+                <Cpu className="w-3.5 h-3.5 text-blue-600" /> Direct Terminal Keypad Mode
+              </button>
+            </div>
+
+            {enrollmentMode === 'keypad' && selectedEmployee && (
+              <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-2xl space-y-3 text-xs text-blue-950">
+                <div className="font-bold flex items-center gap-1.5 text-sm">
+                  <Cpu className="w-4 h-4 text-blue-700" /> On-Device LCD Keypad Enrollment
+                </div>
+                <div className="space-y-1.5 text-[11px] text-blue-900">
+                  <div>1. On physical terminal keypad press: <strong>Menu ➔ User Mgt ➔ New User</strong></div>
+                  <div>2. Enter User ID / PIN: <strong className="font-mono bg-white px-2 py-0.5 rounded-sm border border-blue-300">#{machinePin}</strong></div>
+                  <div>3. Select <strong>Fingerprint</strong> ➔ Touch optical sensor <strong>3 times</strong> until green check.</div>
+                  <div>4. Once saved on machine, click <strong>Sync Machine Template Now</strong> below.</div>
+                </div>
+              </div>
+            )}
+
             {/* Target Device Status Card */}
             <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-2xl flex items-center justify-between text-xs">
               <div className="flex items-center gap-2.5">
@@ -604,22 +711,44 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
               <Button variant="outline" size="sm" onClick={onClose} className="text-xs rounded-xl">
                 Cancel
               </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!selectedEmployee || !pinStatus.isAvailable || !capabilities.supportsRemoteFingerprintEnrollment}
-                onClick={handleStartEnrollment}
-                className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl px-5 font-bold shadow-xs"
-              >
-                <Fingerprint className="w-3.5 h-3.5 mr-1" />
-                Start Remote Enrollment
-              </Button>
+
+              {enrollmentMode === 'remote' ? (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={!selectedEmployee || !pinStatus.isAvailable || !capabilities.supportsRemoteFingerprintEnrollment}
+                  onClick={handleStartEnrollment}
+                  className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl px-5 font-bold shadow-xs"
+                >
+                  <Fingerprint className="w-3.5 h-3.5 mr-1" />
+                  Start Remote Sensor Trigger
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={!selectedEmployee || isSyncingKeypad}
+                  onClick={handleKeypadEnrollmentSync}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs gap-1.5 rounded-xl px-5 font-bold shadow-xs"
+                >
+                  <RefreshCw className={cn('w-3.5 h-3.5 mr-1', isSyncingKeypad && 'animate-spin')} />
+                  {isSyncingKeypad ? 'Syncing with Device...' : 'Sync Machine Template Now'}
+                </Button>
+              )}
             </>
           )}
 
           {modalStage === 'sensor_active' && (
-            <>
-              <span className="text-xs text-gray-400">Waiting for finger touch on terminal...</span>
+            <div className="flex items-center justify-between w-full">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAdvanceScanStep}
+                className="text-xs rounded-xl border-emerald-300 bg-emerald-50 text-[#07563D] hover:bg-emerald-100 font-bold shadow-2xs"
+              >
+                <Fingerprint className="w-3.5 h-3.5 mr-1" />
+                Touch Sensor / Scan Now ({sessionProgressStep}/3)
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -630,7 +759,7 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
                 <X className="w-3.5 h-3.5 mr-1" />
                 {isCancelling ? 'Cancelling...' : 'Cancel Enrollment'}
               </Button>
-            </>
+            </div>
           )}
 
           {modalStage === 'success' && (

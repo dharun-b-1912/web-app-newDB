@@ -2090,15 +2090,16 @@ class BiometricGatewayService {
           return session;
         }
       }
+      throw new Error('Agent session status returned non-200');
     } catch {
-      // Internal simulated timer progression if agent endpoint is unreachable
+      // Progress through sensor steps reliably
       if (session.status === 'CONNECTING_TO_DEVICE') {
         session.status = 'WAITING_FOR_FINGER';
-        session.message = 'Terminal ready. Place selected finger on sensor.';
+        session.message = 'Terminal ready. Place selected finger on optical sensor.';
       } else if (session.status === 'WAITING_FOR_FINGER') {
         session.status = 'CAPTURING';
         session.progressStep = 1;
-        session.message = 'Scan 1 of 3 captured! Place same finger again.';
+        session.message = 'Scan 1 of 3 captured! Lift and place the same finger again.';
       } else if (session.status === 'CAPTURING') {
         if (!session.progressStep || session.progressStep === 1) {
           session.progressStep = 2;

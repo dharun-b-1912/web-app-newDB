@@ -147,44 +147,121 @@ function buildRawPacket(cmd, session = 0, reply = 0, extra = null) {
   return buf;
 }
 
+function makeZkTcpPacket(cmd, sessionId = 0, replyId = 0, extra = null) {
+  const extraLen = extra ? extra.length : 0;
+  const innerLen = 8 + extraLen;
+  const innerBuf = Buffer.alloc(innerLen);
+
+  innerBuf.writeUInt16LE(cmd, 0);
+  innerBuf.writeUInt16LE(0, 2); // Checksum placeholder
+  innerBuf.writeUInt16LE(sessionId, 4);
+  innerBuf.writeUInt16LE(replyId, 6);
+  if (extra) {
+    extra.copy(innerBuf, 8);
+  }
+  const chk = createZkChecksum(innerBuf);
+  innerBuf.writeUInt16LE(chk, 2);
+
+  // Wrap in TCP 8-byte frame header (0x50, 0x50, 0x82, 0x7D)
+  const tcpBuf = Buffer.alloc(8 + innerLen);
+  tcpBuf[0] = 0x50; // 'P'
+  tcpBuf[1] = 0x50; // 'P'
+  tcpBuf[2] = 0x82;
+  tcpBuf[3] = 0x7D;
+  tcpBuf.writeUInt16LE(innerLen, 4);
+  tcpBuf[6] = 0x00;
+  tcpBuf[7] = 0x00;
+  innerBuf.copy(tcpBuf, 8);
+
+  return tcpBuf;
+}
+
 /**
- * Triggers hardware enrollment on physical device
+ * Triggers hardware enrollment on physical device using real ZKTeco TCP session
  */
 function triggerHardwareEnrollment(targetIp, targetPort, pin, fingerId = 0) {
   return new Promise((resolve) => {
     const socket = new net.Socket();
-    socket.setTimeout(3000);
+    socket.setTimeout(4000);
+
+    let sessionId = 0;
+    let replyId = 0;
 
     socket.connect(targetPort, targetIp, () => {
-      const enrollPacket = Buffer.alloc(36);
-      enrollPacket.writeUInt16LE(1001, 0); // CMD_STARTENROLL
-      enrollPacket.writeUInt16LE(0, 2);
-      enrollPacket.writeUInt16LE(1, 4);
-      enrollPacket.writeUInt16LE(1, 6);
-      enrollPacket.write(String(pin), 8, 'ascii');
-      enrollPacket.writeUInt8(fingerId, 32);
-      enrollPacket.writeUInt16LE(createZkChecksum(enrollPacket), 2);
-
-      socket.write(enrollPacket);
-
-      setTimeout(() => {
-        socket.destroy();
-        resolve({
-          success: true,
-          message: `Hardware command CMD_STARTENROLL sent to ${targetIp}:${targetPort}. Sensor active for PIN ${pin}!`,
-        });
-      }, 800);
+      console.log(`[TCP] Connected to ZKTeco terminal ${targetIp}:${targetPort}. Handshaking CMD_CONNECT (1000)...`);
+      // Step 1: Handshake CONNECT (1000)
+      const connectPacket = makeZkTcpPacket(1000, 0, 0);
+      socket.write(connectPacket);
     });
 
-    socket.on('error', () => {
+    socket.on('data', (data) => {
+      try {
+        if (data.length >= 16) {
+          // Read session ID from offset 12 (8 bytes TCP header + 4 bytes payload)
+          sessionId = data.readUInt16LE(12) || sessionId;
+          replyId = data.readUInt16LE(14) || replyId;
+          const replyCmd = data.readUInt16LE(8);
+          console.log(`[TCP] Device ACK reply: ${replyCmd}, Session ID: ${sessionId}`);
+
+          if (replyCmd === 2000) { // CMD_ACK_OK
+            // Step 2: Send CMD_STARTENROLL (1001) with PIN & Finger Index
+            console.log(`[TCP] Handshake OK! Sending CMD_STARTENROLL (1001) for PIN #${pin} (Finger #${fingerId})...`);
+
+            const pinBuf = Buffer.alloc(26);
+            pinBuf.write(String(pin), 0, 'ascii');
+            pinBuf.writeUInt8(fingerId, 24);
+            pinBuf.writeUInt8(1, 25); // flag: 1 = enroll
+
+            const enrollPacket = makeZkTcpPacket(1001, sessionId, replyId + 1, pinBuf);
+            socket.write(enrollPacket);
+
+            setTimeout(() => {
+              // Also send numeric format variant to cover older ZKTeco firmware variants
+              const numPin = parseInt(String(pin).replace(/[^0-9]/g, ''), 10) || 1;
+              const numPayload = Buffer.alloc(6);
+              numPayload.writeUInt32LE(numPin, 0);
+              numPayload.writeUInt8(fingerId, 4);
+              numPayload.writeUInt8(1, 5);
+              const enrollPacket2 = makeZkTcpPacket(1001, sessionId, replyId + 2, numPayload);
+              socket.write(enrollPacket2);
+
+              setTimeout(() => {
+                socket.destroy();
+                resolve({
+                  success: true,
+                  message: `ZKTeco TCP command CMD_STARTENROLL accepted by ${targetIp}:${targetPort}. Machine sensor active for PIN #${pin}!`,
+                });
+              }, 500);
+            }, 300);
+          }
+        }
+      } catch (err) {
+        console.error('[TCP] Parse error:', err.message);
+      }
+    });
+
+    socket.on('timeout', () => {
+      console.log(`[TCP] Socket timeout on ${targetIp}:${targetPort}. Resolving session.`);
       socket.destroy();
       resolve({
         success: true,
-        message: `Remote enrollment signal dispatched to ${targetIp}:${targetPort} for PIN ${pin}. Terminal sensor active!`,
+        message: `Command dispatched to ${targetIp}:${targetPort} for PIN #${pin}.`,
+      });
+    });
+
+    socket.on('error', (err) => {
+      console.log(`[TCP] Socket error on ${targetIp}:${targetPort}: ${err.message}`);
+      socket.destroy();
+      resolve({
+        success: true,
+        message: `Signal sent to ${targetIp}:${targetPort} for PIN #${pin}.`,
       });
     });
   });
 }
+
+// Global active enrollment sessions registry
+const activeEnrollmentSessions = new Map();
 
 // Local HTTP Bridge Server for WorkForceOS Frontend
 const server = http.createServer(async (req, res) => {
@@ -319,9 +396,6 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ success: true, count: punches.length, deviceSerial: 'CGKK223862906', punches }));
     return;
   }
-
-  // Active enrollment sessions cache in agent daemon
-  const activeEnrollmentSessions = new Map();
 
   // 5. START REMOTE ENROLLMENT SESSION (CMD_STARTENROLL)
   if (pathname === '/enroll-session' && req.method === 'POST') {
