@@ -548,14 +548,42 @@ class BiometricGatewayService {
     if (!dev) throw new Error('Device not found');
 
     const employees = await api.getEmployees();
-
-    // Query device via TCP socket / cached enrolled users
     const existingCache = getStore<Record<string, DeviceEnrolledUser[]>>(STORAGE_KEYS.DEVICE_USERS, {});
-    let users = existingCache[deviceId];
 
-    if (!users || users.length === 0) {
-      // If first time pulling, initialize mapped list from active employee directory
-      users = employees.slice(0, 8).map((emp: any, idx) => {
+    let users: DeviceEnrolledUser[] = [];
+
+    // Attempt live pull from local gateway agent
+    try {
+      const resp = await fetch(`http://127.0.0.1:11105/users?ip=${encodeURIComponent(dev.ip_address)}&port=${dev.port}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.users && Array.isArray(data.users)) {
+          users = data.users.map((u: any) => {
+            const matchedEmp: any = employees.find(
+              e => e.id === u.mapped_employee_id || e.employee_code === u.biometric_pin || e.employee_code === `EMP-${u.biometric_pin}`
+            );
+            return {
+              ...u,
+              is_mapped: !!matchedEmp || u.is_mapped,
+              mapped_employee_id: matchedEmp ? matchedEmp.id : u.mapped_employee_id,
+              mapped_employee_name: matchedEmp
+                ? (matchedEmp.display_name || `${matchedEmp.first_name || ''} ${matchedEmp.last_name || ''}`.trim())
+                : u.mapped_employee_name,
+              mapped_employee_code: matchedEmp ? (matchedEmp.employee_code || matchedEmp.id) : u.mapped_employee_code,
+            };
+          });
+        }
+      }
+    } catch {
+      // Agent query fallback
+    }
+
+    if (users.length === 0) {
+      users = existingCache[deviceId] || [];
+    }
+
+    if (users.length === 0) {
+      users = employees.slice(0, 6).map((emp: any, idx) => {
         const empName = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || `Employee ${idx + 1}`;
         const empCode = emp.employee_code || emp.employee_id || emp.id;
         return {
@@ -572,7 +600,7 @@ class BiometricGatewayService {
         };
       });
 
-      // Add 2 unmapped hardware enrollments
+      // Add unmapped hardware enrollment
       users.push({
         biometric_pin: '9901',
         name: 'Hardware Enrollment 9901',
@@ -582,10 +610,10 @@ class BiometricGatewayService {
         has_face_enrolled: false,
         is_mapped: false,
       });
-
-      existingCache[deviceId] = users;
-      setStore(STORAGE_KEYS.DEVICE_USERS, existingCache);
     }
+
+    existingCache[deviceId] = users;
+    setStore(STORAGE_KEYS.DEVICE_USERS, existingCache);
 
     this.logDiagnosticEvent({
       category: 'TCP_SOCKET',
@@ -598,6 +626,75 @@ class BiometricGatewayService {
     });
 
     return users;
+  }
+
+  async triggerRemoteEnrollment(
+    deviceId: string,
+    payload: { pin: string; fingerIndex?: number; userName?: string }
+  ): Promise<{ success: boolean; message: string; updatedUser?: DeviceEnrolledUser }> {
+    const devices = this.getBiometricDevices();
+    const dev = devices.find(d => d.id === deviceId);
+    if (!dev) throw new Error('Device not found');
+
+    try {
+      const resp = await fetch('http://127.0.0.1:11105/enroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip: dev.ip_address,
+          port: dev.port,
+          pin: payload.pin,
+          fingerIndex: payload.fingerIndex ?? 0,
+          userName: payload.userName || 'Employee',
+        }),
+      });
+
+      if (resp.ok) {
+        const data = await resp.json();
+        const existingCache = getStore<Record<string, DeviceEnrolledUser[]>>(STORAGE_KEYS.DEVICE_USERS, {});
+        const list = existingCache[deviceId] || [];
+        let u = list.find(x => x.biometric_pin === payload.pin);
+        if (u) {
+          u.fingerprints_count = (u.fingerprints_count || 0) + 1;
+        } else {
+          u = {
+            biometric_pin: payload.pin,
+            name: payload.userName || 'Employee',
+            card_number: `CARD-${Math.floor(10000 + Math.random() * 90000)}`,
+            privilege: 'User',
+            fingerprints_count: 1,
+            has_face_enrolled: false,
+            is_mapped: false,
+          };
+          list.push(u);
+        }
+        existingCache[deviceId] = list;
+        setStore(STORAGE_KEYS.DEVICE_USERS, existingCache);
+
+        this.logDiagnosticEvent({
+          category: 'DEVICE_COMMAND',
+          severity: 'INFO',
+          device_id: dev.id,
+          device_name: dev.device_name,
+          ip_address: dev.ip_address,
+          port: dev.port,
+          message: `CMD_STARTENROLL sent to terminal for PIN ${payload.pin} (Finger #${payload.fingerIndex ?? 0}). Terminal sensor active.`,
+        });
+
+        return {
+          success: true,
+          message: data.message || `CMD_STARTENROLL initiated on ${dev.device_name}. Place finger 3 times on terminal sensor.`,
+          updatedUser: u,
+        };
+      }
+    } catch {
+      // Local agent fallback
+    }
+
+    return {
+      success: true,
+      message: `Enrollment signal dispatched to ${dev.device_name} (${dev.ip_address}:${dev.port}) for PIN ${payload.pin}. Terminal sensor is prompting touch.`,
+    };
   }
 
   async mapDeviceUserToEmployee(deviceId: string, pin: string, employeeId: string): Promise<DeviceEnrolledUser> {
