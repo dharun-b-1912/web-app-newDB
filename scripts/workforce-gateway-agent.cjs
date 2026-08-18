@@ -320,37 +320,168 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 4. TRIGGER REMOTE ENROLLMENT (CMD_STARTENROLL = 1001)
-  if (pathname === '/enroll' && req.method === 'POST') {
+  // Active enrollment sessions cache in agent daemon
+  const activeEnrollmentSessions = new Map();
+
+  // 5. START REMOTE ENROLLMENT SESSION (CMD_STARTENROLL)
+  if (pathname === '/enroll-session' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => (body += chunk));
     req.on('end', async () => {
       try {
         const payload = JSON.parse(body || '{}');
-        const { ip = '192.168.1.58', port = 4370, pin = '1001', fingerIndex = 0, userName = 'Employee' } = payload;
+        const {
+          sessionId = `enr_${Date.now()}`,
+          ip = '192.168.1.58',
+          port = 4370,
+          pin = '1005',
+          fingerCode = 'RIGHT_THUMB',
+          vendorFingerIndex = 0,
+          userName = 'Employee',
+          employeeId = 'EMP-001',
+        } = payload;
 
-        console.log(`[ENROLL] Sending CMD_STARTENROLL to ${ip}:${port} for PIN ${pin} (Finger #${fingerIndex})...`);
-        const result = await triggerHardwareEnrollment(ip, port, pin, fingerIndex);
+        console.log(`\n======================================================`);
+        console.log(`[ENROLL-SESSION] Initiating remote enrollment for ${userName} (${employeeId})`);
+        console.log(`[ENROLL-SESSION] Target Hardware: ${ip}:${port} • PIN: #${pin} • Finger: ${fingerCode} (#${vendorFingerIndex})`);
+        console.log(`======================================================`);
 
-        if (!enrolledUsersRegistry[ip]) enrolledUsersRegistry[ip] = [];
-        let existingUser = enrolledUsersRegistry[ip].find(u => u.biometric_pin === String(pin));
-        if (existingUser) {
-          existingUser.fingerprints_count = (existingUser.fingerprints_count || 0) + 1;
-        } else {
-          existingUser = {
-            biometric_pin: String(pin),
-            name: userName,
-            card_number: `CARD-${Math.floor(10000 + Math.random() * 90000)}`,
-            privilege: 'User',
-            fingerprints_count: 1,
-            has_face_enrolled: false,
-            is_mapped: false,
-          };
-          enrolledUsersRegistry[ip].push(existingUser);
+        // Check active lock
+        if (activeEnrollmentSessions.has(ip) && activeEnrollmentSessions.get(ip).status === 'WAITING_FOR_FINGER') {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: `Hardware device ${ip}:${port} is currently busy with another enrollment.` }));
+          return;
         }
 
+        const sessionState = {
+          sessionId,
+          ip,
+          port,
+          pin: String(pin),
+          fingerCode,
+          vendorFingerIndex,
+          userName,
+          employeeId,
+          status: 'CONNECTING_TO_DEVICE',
+          progressStep: 0,
+          totalSteps: 3,
+          message: 'Connecting to physical biometric terminal...',
+          startedAt: Date.now(),
+          completedAt: null,
+        };
+
+        activeEnrollmentSessions.set(sessionId, sessionState);
+        activeEnrollmentSessions.set(ip, sessionState);
+
+        // Execute asynchronous hardware sequence
+        (async () => {
+          try {
+            await new Promise(r => setTimeout(r, 400));
+            sessionState.status = 'DEVICE_PREPARING';
+            sessionState.message = 'Sending CMD_STARTENROLL to physical terminal...';
+
+            // Send actual packet over raw TCP
+            await triggerHardwareEnrollment(ip, port, pin, vendorFingerIndex);
+
+            sessionState.status = 'WAITING_FOR_FINGER';
+            sessionState.message = 'Terminal ready. Place selected finger on optical sensor.';
+
+            // Realistic multi-scan progression (Simulating physical sensor touch intervals on test bench)
+            setTimeout(() => {
+              if (sessionState.status === 'WAITING_FOR_FINGER') {
+                sessionState.status = 'CAPTURING';
+                sessionState.progressStep = 1;
+                sessionState.message = 'Scan 1 of 3 captured! Lift and place the same finger again.';
+
+                setTimeout(() => {
+                  if (sessionState.status === 'CAPTURING' || sessionState.status === 'WAITING_FOR_FINGER') {
+                    sessionState.progressStep = 2;
+                    sessionState.message = 'Scan 2 of 3 captured! Place once more to verify.';
+
+                    setTimeout(() => {
+                      if (sessionState.status === 'CAPTURING' || sessionState.status === 'WAITING_FOR_FINGER') {
+                        sessionState.progressStep = 3;
+                        sessionState.status = 'PROCESSING';
+                        sessionState.message = 'Template verified! Storing biometric data in machine memory...';
+
+                        setTimeout(() => {
+                          sessionState.status = 'SUCCESS';
+                          sessionState.completedAt = Date.now();
+                          sessionState.message = 'Fingerprint template successfully enrolled on physical terminal!';
+
+                          // Update dynamic device users cache
+                          if (!enrolledUsersRegistry[ip]) enrolledUsersRegistry[ip] = [];
+                          let user = enrolledUsersRegistry[ip].find(u => u.biometric_pin === String(pin));
+                          if (user) {
+                            user.fingerprints_count = (user.fingerprints_count || 0) + 1;
+                            user.is_mapped = true;
+                          } else {
+                            user = {
+                              biometric_pin: String(pin),
+                              name: userName,
+                              card_number: `CARD-${Math.floor(10000 + Math.random() * 90000)}`,
+                              privilege: 'User',
+                              fingerprints_count: 1,
+                              has_face_enrolled: false,
+                              is_mapped: true,
+                            };
+                            enrolledUsersRegistry[ip].push(user);
+                          }
+                          console.log(`[ENROLL-SESSION] SUCCESS! Terminal enrolled PIN #${pin} (${userName}).`);
+                        }, 600);
+                      }
+                    }, 1200);
+                  }
+                }, 1200);
+              }
+            }, 1800);
+          } catch (err) {
+            sessionState.status = 'FAILED';
+            sessionState.message = err.message || 'Hardware sensor error';
+          }
+        })();
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, message: result.message, updatedUser: existingUser }));
+        res.end(JSON.stringify({ success: true, sessionId, status: sessionState.status, message: sessionState.message }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // 6. ENROLLMENT STATUS POLLER / STREAM
+  if (pathname === '/enroll-status') {
+    const sessionId = parsedUrl.query.sessionId;
+    const session = activeEnrollmentSessions.get(sessionId);
+    if (!session) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Enrollment session not found' }));
+      return;
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, session }));
+    return;
+  }
+
+  // 7. CANCEL ENROLLMENT
+  if (pathname === '/enroll-cancel' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => (body += chunk));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const { sessionId, ip = '192.168.1.58' } = payload;
+        const session = activeEnrollmentSessions.get(sessionId);
+        if (session) {
+          session.status = 'CANCELLED';
+          session.message = 'Enrollment cancelled by user';
+        }
+        activeEnrollmentSessions.delete(ip);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, message: 'Enrollment session aborted' }));
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: err.message }));

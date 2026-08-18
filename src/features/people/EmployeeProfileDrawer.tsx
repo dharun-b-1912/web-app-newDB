@@ -20,9 +20,11 @@ import {
   Users,
   FileText,
   Clock,
+  Fingerprint,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useToast } from '../../components/ui/Toast';
+import { biometricGatewayService } from '../../services/attendance/biometricGatewayService';
 
 export interface EmployeeProfileDrawerProps {
   employee: Employee | null;
@@ -152,6 +154,65 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                 </div>
               </div>
             </Card>
+
+            {/* Biometric Access & Terminal Mappings */}
+            {(() => {
+              const bioDevices = biometricGatewayService.getEmployeeBiometricDevices(employee.id);
+              const enrollments = biometricGatewayService.getEmployeeExistingEnrollments(employee.id);
+
+              return (
+                <Card className="p-4 space-y-3 bg-gray-50/70 border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Fingerprint className="w-4 h-4 text-[#07563D]" />
+                      <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
+                        Biometric Hardware Access
+                      </h3>
+                    </div>
+                    <Badge variant={bioDevices.length > 0 ? 'emerald' : 'gray'} className="text-[10px]">
+                      {bioDevices.length > 0 ? `${bioDevices.length} Terminal Linked` : 'Not Enrolled'}
+                    </Badge>
+                  </div>
+
+                  {bioDevices.length > 0 ? (
+                    <div className="space-y-2.5">
+                      {bioDevices.map((dev, i) => {
+                        const enr = enrollments.find(e => e.device_id === dev.deviceId);
+
+                        return (
+                          <div key={i} className="p-3 bg-white rounded-xl border border-gray-200 text-xs space-y-1.5 shadow-2xs">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-gray-900">{dev.deviceName}</span>
+                              <Badge variant="blue" className="text-[9px] font-mono font-bold">
+                                Machine PIN #{dev.machinePin}
+                              </Badge>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600">
+                              <div>
+                                <span className="text-gray-400">Location:</span> {dev.branch}
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Finger:</span> {enr ? enr.finger_code : 'Enrolled'}
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Enrolled:</span> {new Date(dev.mappedAt).toLocaleDateString()}
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Status:</span> <span className="text-emerald-700 font-semibold">{dev.status}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">
+                      No physical biometric terminals linked to this employee yet. Use the <strong>Hardware Terminals</strong> console to enroll fingerprints or map machine users.
+                    </p>
+                  )}
+                </Card>
+              );
+            })()}
           </div>
         )}
 

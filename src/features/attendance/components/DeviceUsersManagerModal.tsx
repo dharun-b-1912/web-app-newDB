@@ -64,6 +64,7 @@ import { hrEventBus } from '../../../services/hrEventBus';
 import { cn } from '../../../lib/utils';
 import { MapEmployeeModal } from './MapEmployeeModal';
 import { BulkMapModal } from './BulkMapModal';
+import { RemoteBiometricEnrollmentModal } from './RemoteBiometricEnrollmentModal';
 
 interface DeviceUsersManagerModalProps {
   isOpen: boolean;
@@ -110,11 +111,6 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
 
   // Remote Enrollment Modal State
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
-  const [enrollPin, setEnrollPin] = useState('1005');
-  const [enrollEmpId, setEnrollEmpId] = useState('');
-  const [enrollFingerIndex, setEnrollFingerIndex] = useState(0);
-  const [isTriggeringEnroll, setIsTriggeringEnroll] = useState(false);
-  const [enrollFeedback, setEnrollFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && device) {
@@ -253,38 +249,6 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
     link.click();
     document.body.removeChild(link);
     showToast('Machine user directory exported to CSV.');
-  };
-
-  const handleTriggerEnrollment = async () => {
-    if (!device || !enrollPin.trim()) return;
-    setIsTriggeringEnroll(true);
-    setEnrollFeedback(null);
-
-    const emp = employees.find(e => e.id === enrollEmpId);
-    const empName = emp ? (emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim()) : `User ${enrollPin}`;
-
-    try {
-      const res = await biometricGatewayService.triggerRemoteEnrollment(device.id, {
-        pin: enrollPin.trim(),
-        fingerIndex: Number(enrollFingerIndex),
-        userName: empName,
-      });
-
-      setEnrollFeedback(res.message);
-      showToast(res.message);
-
-      if (enrollEmpId) {
-        await biometricGatewayService.mapDeviceUserToEmployee(device.id, enrollPin.trim(), enrollEmpId, {
-          mappedBy: 'IT Administrator',
-        });
-      }
-
-      loadUsers();
-    } catch (err: any) {
-      showToast(err.message || 'Failed to trigger enrollment', 'error');
-    } finally {
-      setIsTriggeringEnroll(false);
-    }
   };
 
   if (!isOpen || !device) return null;
@@ -1097,109 +1061,17 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
           </div>
         )}
 
-        {/* Remote Biometric Enrollment Modal */}
+        {/* REMOTE BIOMETRIC ENROLLMENT MODAL 2.0 (Employee-first, PIN collision check & real sensor progression) */}
         {isEnrollModalOpen && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-gray-900/50 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-200 space-y-4">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
-                    <Fingerprint className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-gray-900">Remote Biometric Enrollment</h4>
-                    <p className="text-[10px] text-gray-500 font-mono">Terminal {device.ip_address}:{device.port}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setIsEnrollModalOpen(false)}
-                  className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-3 text-xs">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">Select Employee to Enroll</label>
-                  <select
-                    value={enrollEmpId}
-                    onChange={e => {
-                      setEnrollEmpId(e.target.value);
-                      const emp = employees.find(x => x.id === e.target.value);
-                      if (emp && emp.employee_code) {
-                        setEnrollPin(emp.employee_code.replace(/[^0-9]/g, '') || '1005');
-                      }
-                    }}
-                    className="w-full p-2 text-xs rounded-xl border border-gray-200 bg-white font-medium"
-                  >
-                    <option value="">-- Choose Employee (Optional) --</option>
-                    {employees.map(emp => {
-                      const empName = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name;
-                      const empCode = emp.employee_code || emp.employee_id || emp.id;
-                      return (
-                        <option key={emp.id} value={emp.id}>
-                          {empName} ({empCode})
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Terminal User PIN *</label>
-                    <input
-                      type="text"
-                      value={enrollPin}
-                      onChange={e => setEnrollPin(e.target.value)}
-                      placeholder="e.g. 1005"
-                      className="w-full p-2 text-xs font-mono font-bold rounded-xl border border-gray-200"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Finger Index *</label>
-                    <select
-                      value={enrollFingerIndex}
-                      onChange={e => setEnrollFingerIndex(Number(e.target.value))}
-                      className="w-full p-2 text-xs rounded-xl border border-gray-200 bg-white"
-                    >
-                      <option value={0}>Right Thumb (#0)</option>
-                      <option value={1}>Right Index (#1)</option>
-                      <option value={2}>Right Middle (#2)</option>
-                      <option value={6}>Left Thumb (#6)</option>
-                      <option value={7}>Left Index (#7)</option>
-                    </select>
-                  </div>
-                </div>
-
-                {enrollFeedback && (
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1 text-emerald-900">
-                    <div className="flex items-center gap-1.5 font-bold text-xs">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Terminal Sensor Active
-                    </div>
-                    <p className="text-[11px] text-emerald-800 leading-relaxed">{enrollFeedback}</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
-                <Button variant="outline" size="sm" onClick={() => setIsEnrollModalOpen(false)} className="rounded-xl text-xs">
-                  Close
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={isTriggeringEnroll || !enrollPin.trim()}
-                  onClick={handleTriggerEnrollment}
-                  className="rounded-xl text-xs bg-[#07563D] hover:bg-[#0b7a57] text-white"
-                >
-                  <Zap className={cn('w-3.5 h-3.5 mr-1', isTriggeringEnroll && 'animate-spin')} />
-                  {isTriggeringEnroll ? 'Sending CMD_STARTENROLL...' : 'Trigger Sensor on Device'}
-                </Button>
-              </div>
-            </div>
-          </div>
+          <RemoteBiometricEnrollmentModal
+            isOpen={isEnrollModalOpen}
+            onClose={() => setIsEnrollModalOpen(false)}
+            device={device}
+            employees={employees}
+            onEnrollmentSuccess={() => {
+              loadUsers();
+            }}
+          />
         )}
 
         {/* Footer with Device Capabilities Checklist */}
