@@ -2029,7 +2029,7 @@ class BiometricGatewayService {
 
     // Send command to LAN agent
     try {
-      await fetch('http://127.0.0.1:11105/enroll-session', {
+      await fetch('http://127.0.0.1:11108/enroll-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2062,7 +2062,7 @@ class BiometricGatewayService {
     }
 
     try {
-      const resp = await fetch(`http://127.0.0.1:11105/enroll-status?sessionId=${sessionId}`);
+      const resp = await fetch(`http://127.0.0.1:11108/enroll-status?sessionId=${sessionId}`);
       if (resp.ok) {
         const data = await resp.json();
         if (data.session) {
@@ -2150,7 +2150,7 @@ class BiometricGatewayService {
     setStore(STORAGE_KEYS_EXT.ENROLLMENT_SESSIONS, sessions);
 
     try {
-      await fetch('http://127.0.0.1:11105/enroll-cancel', {
+      await fetch('http://127.0.0.1:11108/enroll-cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId }),
