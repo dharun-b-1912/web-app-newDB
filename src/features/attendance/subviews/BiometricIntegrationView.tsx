@@ -278,156 +278,223 @@ export const BiometricIntegrationView: React.FC = () => {
       {/* TAB 1: Configured Hardware Terminals */}
       {activeSubTab === 'terminals' && (
         <Card className="rounded-3xl border-gray-200/80 shadow-2xs overflow-hidden bg-white">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="font-bold text-gray-700">Terminal & Model</TableHead>
-                <TableHead className="font-bold text-gray-700">Vendor & Protocol</TableHead>
-                <TableHead className="font-bold text-gray-700">Campus / Branch</TableHead>
-                <TableHead className="font-bold text-gray-700">Local IP : Port</TableHead>
-                <TableHead className="font-bold text-gray-700">Enrolled Users</TableHead>
-                <TableHead className="font-bold text-gray-700">Status</TableHead>
-                <TableHead className="text-right font-bold text-gray-700">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {devices.map(dev => (
-                <TableRow key={dev.id} className="hover:bg-emerald-50/40 transition-colors">
-                  <TableCell>
-                    <div className="font-bold text-gray-900 text-xs">{dev.device_name}</div>
-                    <div className="text-[10px] text-gray-400 font-mono">SN: {dev.serial_number}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-xs font-semibold text-gray-800">{dev.vendor} • {dev.model}</div>
-                    <div className="text-[10px] text-gray-400 font-mono">
-                      {dev.port === 4370 ? 'Raw TCP Socket' : 'HTTP REST / WS'}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-xs font-medium text-gray-800">{dev.branch}</div>
-                    <div className="text-[10px] text-gray-400">{dev.location_description}</div>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-gray-900 font-bold">
-                    {dev.ip_address} : {dev.port}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-gray-700">
-                    {dev.registered_users_count} Users
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={dev.status === 'Online' ? 'emerald' : 'rose'} className="text-[10px] gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      {dev.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleTestConnection(dev.id)}
-                      className="text-[11px] font-bold rounded-xl border-gray-200"
-                    >
-                      Test Socket
-                    </Button>
-                  </TableCell>
+          {devices.length === 0 ? (
+            <div className="p-12 text-center max-w-md mx-auto">
+              <Cpu className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <h4 className="text-sm font-bold text-gray-900">No Biometric Terminals Registered</h4>
+              <p className="text-xs text-gray-500 mt-1 mb-5">
+                Run the local network auto-discovery scan to detect ZKTeco, Mantra, and eSSL hardware or register devices manually.
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setIsWizardOpen(true)}
+                  className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl shadow-xs"
+                >
+                  <Radio className="w-3.5 h-3.5" /> Auto-Discover & Setup Wizard
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsAddDeviceModalOpen(true)}
+                  className="text-xs rounded-xl border-gray-200"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Add Terminal
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="font-bold text-gray-700">Terminal & Model</TableHead>
+                  <TableHead className="font-bold text-gray-700">Vendor & Protocol</TableHead>
+                  <TableHead className="font-bold text-gray-700">Campus / Branch</TableHead>
+                  <TableHead className="font-bold text-gray-700">Local IP : Port</TableHead>
+                  <TableHead className="font-bold text-gray-700">Enrolled Users</TableHead>
+                  <TableHead className="font-bold text-gray-700">Status</TableHead>
+                  <TableHead className="text-right font-bold text-gray-700">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {devices.map(dev => (
+                  <TableRow key={dev.id} className="hover:bg-emerald-50/40 transition-colors">
+                    <TableCell>
+                      <div className="font-bold text-gray-900 text-xs">{dev.device_name}</div>
+                      <div className="text-[10px] text-gray-400 font-mono">SN: {dev.serial_number}</div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-xs font-semibold text-gray-800">{dev.vendor} • {dev.model}</div>
+                      <div className="text-[10px] text-gray-400 font-mono">
+                        {dev.port === 4370 ? 'Raw TCP Socket' : 'HTTP REST / WS'}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-xs font-medium text-gray-800">{dev.branch}</div>
+                      <div className="text-[10px] text-gray-400">{dev.location_description}</div>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-gray-900 font-bold">
+                      {dev.ip_address} : {dev.port}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-gray-700">
+                      {dev.registered_users_count} Users
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={dev.status === 'Online' ? 'emerald' : 'rose'} className="text-[10px] gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        {dev.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleTestConnection(dev.id)}
+                        className="text-[11px] font-bold rounded-xl border-gray-200"
+                      >
+                        Test Socket
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </Card>
       )}
 
       {/* TAB 2: LAN Gateway Daemons */}
       {activeSubTab === 'agents' && (
         <Card className="rounded-3xl border-gray-200/80 shadow-2xs overflow-hidden bg-white">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="font-bold text-gray-700">Gateway Agent Daemon</TableHead>
-                <TableHead className="font-bold text-gray-700">Branch Location</TableHead>
-                <TableHead className="font-bold text-gray-700">OS Platform</TableHead>
-                <TableHead className="font-bold text-gray-700">Network IPs</TableHead>
-                <TableHead className="font-bold text-gray-700">Terminals</TableHead>
-                <TableHead className="font-bold text-gray-700">Tunnel Status</TableHead>
-                <TableHead className="font-bold text-gray-700">Last Heartbeat</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {agents.map(ag => (
-                <TableRow key={ag.id} className="hover:bg-emerald-50/40 transition-colors">
-                  <TableCell>
-                    <div className="font-bold text-gray-900 text-xs">{ag.agent_name}</div>
-                    <div className="text-[10px] text-gray-400 font-mono">v{ag.version} • {ag.pairing_key}</div>
-                  </TableCell>
-                  <TableCell className="text-xs font-medium text-gray-800">{ag.branch_name}</TableCell>
-                  <TableCell className="text-xs text-gray-600">{ag.os_platform}</TableCell>
-                  <TableCell className="font-mono text-xs text-gray-700">
-                    <div>LAN: {ag.local_ip}</div>
-                    <div className="text-[10px] text-gray-400">WAN: {ag.public_ip}</div>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs font-bold text-gray-900">
-                    {ag.connected_devices_count} Terminals
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={ag.status === 'ONLINE' ? 'emerald' : 'amber'} className="text-[10px]">
-                      {ag.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-xs text-gray-500 font-mono">
-                    {new Date(ag.last_heartbeat).toLocaleTimeString()}
-                  </TableCell>
+          {agents.length === 0 ? (
+            <div className="p-12 text-center max-w-md mx-auto">
+              <Server className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <h4 className="text-sm font-bold text-gray-900">No LAN Gateway Agents Paired</h4>
+              <p className="text-xs text-gray-500 mt-1 mb-5">
+                Deploy an outbound-only gateway agent on your local network to connect on-premises biometric devices to WorkForceOS Cloud.
+              </p>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setGeneratedPairingData(null);
+                  setIsPairingModalOpen(true);
+                }}
+                className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl shadow-xs"
+              >
+                <Terminal className="w-3.5 h-3.5" /> Pair Your First LAN Agent
+              </Button>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="font-bold text-gray-700">Gateway Agent Daemon</TableHead>
+                  <TableHead className="font-bold text-gray-700">Branch Location</TableHead>
+                  <TableHead className="font-bold text-gray-700">OS Platform</TableHead>
+                  <TableHead className="font-bold text-gray-700">Network IPs</TableHead>
+                  <TableHead className="font-bold text-gray-700">Terminals</TableHead>
+                  <TableHead className="font-bold text-gray-700">Tunnel Status</TableHead>
+                  <TableHead className="font-bold text-gray-700">Last Heartbeat</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {agents.map(ag => (
+                  <TableRow key={ag.id} className="hover:bg-emerald-50/40 transition-colors">
+                    <TableCell>
+                      <div className="font-bold text-gray-900 text-xs">{ag.agent_name}</div>
+                      <div className="text-[10px] text-gray-400 font-mono">v{ag.version} • {ag.pairing_key}</div>
+                    </TableCell>
+                    <TableCell className="text-xs font-medium text-gray-800">{ag.branch_name}</TableCell>
+                    <TableCell className="text-xs text-gray-600">{ag.os_platform}</TableCell>
+                    <TableCell className="font-mono text-xs text-gray-700">
+                      <div>LAN: {ag.local_ip}</div>
+                      <div className="text-[10px] text-gray-400">WAN: {ag.public_ip}</div>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs font-bold text-gray-900">
+                      {ag.connected_devices_count} Terminals
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={ag.status === 'ONLINE' ? 'emerald' : 'amber'} className="text-[10px]">
+                        {ag.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-gray-500 font-mono">
+                      {new Date(ag.last_heartbeat).toLocaleTimeString()}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </Card>
       )}
 
       {/* TAB 3: Live Punch Ingestion Stream */}
       {activeSubTab === 'punches' && (
         <Card className="rounded-3xl border-gray-200/80 shadow-2xs overflow-hidden bg-white">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="font-bold text-gray-700">Punch ID & Hash</TableHead>
-                <TableHead className="font-bold text-gray-700">Employee & PIN</TableHead>
-                <TableHead className="font-bold text-gray-700">Hardware Terminal</TableHead>
-                <TableHead className="font-bold text-gray-700">Verification Mode</TableHead>
-                <TableHead className="font-bold text-gray-700">Timestamp</TableHead>
-                <TableHead className="font-bold text-gray-700">Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {punches.map(p => (
-                <TableRow key={p.id} className="hover:bg-emerald-50/40 transition-colors">
-                  <TableCell>
-                    <div className="font-mono text-xs font-bold text-gray-900">{p.id}</div>
-                    <div className="text-[10px] text-gray-400 font-mono truncate max-w-[140px]">{p.dedup_hash}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-bold text-gray-900 text-xs">{p.employee_name}</div>
-                    <div className="text-[10px] text-gray-400 font-mono">PIN: {p.biometric_pin}</div>
-                  </TableCell>
-                  <TableCell className="text-xs font-medium text-gray-800">{p.device_name}</TableCell>
-                  <TableCell>
-                    <Badge variant="blue" className="text-[10px]">
-                      {p.verification_mode}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-gray-700">
-                    {new Date(p.punch_time).toLocaleTimeString()}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={p.processed_status === 'PROCESSED' ? 'emerald' : 'gray'}
-                      className="text-[10px]"
-                    >
-                      {p.processed_status}
-                    </Badge>
-                  </TableCell>
+          {punches.length === 0 ? (
+            <div className="p-12 text-center max-w-md mx-auto">
+              <Activity className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <h4 className="text-sm font-bold text-gray-900">Awaiting Live Biometric Events</h4>
+              <p className="text-xs text-gray-500 mt-1 mb-5">
+                No raw punches received yet today. Punches will stream here in real-time as employees tap their finger or face.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsStressTestModalOpen(true)}
+                className="text-xs rounded-xl border-amber-300 text-amber-900"
+              >
+                <Zap className="w-3.5 h-3.5 mr-1 text-amber-600" /> Run Punch Test Simulation
+              </Button>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="font-bold text-gray-700">Punch ID & Hash</TableHead>
+                  <TableHead className="font-bold text-gray-700">Employee & PIN</TableHead>
+                  <TableHead className="font-bold text-gray-700">Hardware Terminal</TableHead>
+                  <TableHead className="font-bold text-gray-700">Verification Mode</TableHead>
+                  <TableHead className="font-bold text-gray-700">Timestamp</TableHead>
+                  <TableHead className="font-bold text-gray-700">Status</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {punches.map(p => (
+                  <TableRow key={p.id} className="hover:bg-emerald-50/40 transition-colors">
+                    <TableCell>
+                      <div className="font-mono text-xs font-bold text-gray-900">{p.id}</div>
+                      <div className="text-[10px] text-gray-400 font-mono truncate max-w-[140px]">{p.dedup_hash}</div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-bold text-gray-900 text-xs">{p.employee_name}</div>
+                      <div className="text-[10px] text-gray-400 font-mono">PIN: {p.biometric_pin}</div>
+                    </TableCell>
+                    <TableCell className="text-xs font-medium text-gray-800">{p.device_name}</TableCell>
+                    <TableCell>
+                      <Badge variant="blue" className="text-[10px]">
+                        {p.verification_mode}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-gray-700">
+                      {new Date(p.punch_time).toLocaleTimeString()}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={p.processed_status === 'PROCESSED' ? 'emerald' : 'gray'}
+                        className="text-[10px]"
+                      >
+                        {p.processed_status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </Card>
       )}
 

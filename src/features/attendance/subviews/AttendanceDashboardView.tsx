@@ -110,19 +110,19 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
     showToast(isOnBreak ? 'Break ended. Working timer resumed.' : 'Break started. Timer paused.');
   };
 
-  // KPI Calculations
-  const totalEmployees = 428;
-  const expectedToday = 412;
-  const presentCount = dailyRecords.filter(r => r.status === 'Present' || r.status === 'Checked Out').length + 320;
-  const absentCount = dailyRecords.filter(r => r.status === 'Absent').length + 18;
-  const onLeaveCount = dailyRecords.filter(r => r.status === 'On Leave').length + 24;
-  const wfhCount = dailyRecords.filter(r => r.status === 'WFH').length + 38;
-  const lateCount = dailyRecords.filter(r => r.status === 'Late').length + 14;
-  const earlyCheckoutCount = dailyRecords.filter(r => r.status === 'Early Checkout').length + 6;
-  const halfDayCount = dailyRecords.filter(r => r.status === 'Half Day').length + 4;
-  const missingPunchCount = dailyRecords.filter(r => r.status === 'Missing Punch').length + 5;
-  const overtimeCount = dailyRecords.filter(r => r.status === 'Overtime' || r.overtime_minutes > 0).length + 12;
-  const notCheckedInCount = expectedToday - presentCount - wfhCount - onLeaveCount;
+  // Pure Real-Time KPI Calculations from actual attendance records
+  const totalEmployees = dailyRecords.length;
+  const expectedToday = dailyRecords.length;
+  const presentCount = dailyRecords.filter(r => r.status === 'Present' || r.status === 'Checked Out').length;
+  const absentCount = dailyRecords.filter(r => r.status === 'Absent').length;
+  const onLeaveCount = dailyRecords.filter(r => r.status === 'On Leave').length;
+  const wfhCount = dailyRecords.filter(r => r.status === 'WFH').length;
+  const lateCount = dailyRecords.filter(r => r.status === 'Late').length;
+  const earlyCheckoutCount = dailyRecords.filter(r => r.status === 'Early Checkout').length;
+  const halfDayCount = dailyRecords.filter(r => r.status === 'Half Day').length;
+  const missingPunchCount = dailyRecords.filter(r => r.status === 'Missing Punch').length;
+  const overtimeCount = dailyRecords.filter(r => r.status === 'Overtime' || (r.overtime_minutes && r.overtime_minutes > 0)).length;
+  const notCheckedInCount = Math.max(expectedToday - presentCount - wfhCount - onLeaveCount, 0);
 
   const filteredRecords = dailyRecords.filter(item => {
     const matchesSearch =
