@@ -39,6 +39,10 @@ import {
   BiometricDevice,
   RawBiometricPunch,
 } from '../../../services/attendance/biometricGatewayService';
+import {
+  biometricCommandService,
+  BiometricDeviceCommand,
+} from '../../../services/attendance/biometricCommandService';
 import { BiometricSetupWizardModal } from '../components/BiometricSetupWizardModal';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { cn } from '../../../lib/utils';
@@ -48,7 +52,8 @@ export const BiometricIntegrationView: React.FC = () => {
   const [agents, setAgents] = useState<BiometricGatewayAgent[]>([]);
   const [devices, setDevices] = useState<BiometricDevice[]>([]);
   const [punches, setPunches] = useState<RawBiometricPunch[]>([]);
-  const [activeSubTab, setActiveSubTab] = useState<'terminals' | 'agents' | 'punches'>('terminals');
+  const [commands, setCommands] = useState<BiometricDeviceCommand[]>([]);
+  const [activeSubTab, setActiveSubTab] = useState<'terminals' | 'agents' | 'commands' | 'punches'>('terminals');
 
   // Modals
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -85,6 +90,7 @@ export const BiometricIntegrationView: React.FC = () => {
     setAgents(biometricGatewayService.getGatewayAgents());
     setDevices(biometricGatewayService.getBiometricDevices());
     setPunches(biometricGatewayService.getRawPunches(50));
+    setCommands(biometricCommandService.getCommands());
   };
 
   useEffect(() => {
@@ -99,6 +105,15 @@ export const BiometricIntegrationView: React.FC = () => {
     const data = biometricGatewayService.generatePairingKey(pairingBranch);
     setGeneratedPairingData(data);
     setAgents(biometricGatewayService.getGatewayAgents());
+  };
+
+  const handleDispatchCommand = async (deviceId: string, cmdType: any) => {
+    await biometricCommandService.dispatchCommand({
+      deviceId,
+      commandType: cmdType,
+    });
+    showToast(`Command ${cmdType} dispatched to hardware terminal.`);
+    setTimeout(() => loadData(), 500);
   };
 
   const handleRegisterDevice = (e: React.FormEvent) => {
@@ -266,6 +281,7 @@ export const BiometricIntegrationView: React.FC = () => {
         {[
           { id: 'terminals', label: 'Hardware Terminals', icon: Cpu },
           { id: 'agents', label: 'LAN Gateway Daemons', icon: Server },
+          { id: 'commands', label: 'Remote Commands Bus', icon: Terminal },
           { id: 'punches', label: 'Live Punch Ingestion Stream', icon: Activity },
         ].map(tab => {
           const Icon = tab.icon;
@@ -463,7 +479,86 @@ export const BiometricIntegrationView: React.FC = () => {
         </Card>
       )}
 
-      {/* TAB 3: Live Punch Ingestion Stream */}
+      {/* TAB 3: Remote Commands Bus */}
+      {activeSubTab === 'commands' && (
+        <Card className="rounded-3xl border-gray-200/80 shadow-2xs overflow-hidden bg-white">
+          {commands.length === 0 ? (
+            <div className="p-12 text-center max-w-md mx-auto">
+              <Terminal className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <h4 className="text-sm font-bold text-gray-900">No Remote Hardware Commands</h4>
+              <p className="text-xs text-gray-500 mt-1 mb-5">
+                Dispatch clock synchronization, employee sync, and diagnostic commands to connected biometric machines.
+              </p>
+              {devices.length > 0 && (
+                <div className="flex items-center justify-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDispatchCommand(devices[0].id, 'SYNC_TIME')}
+                    className="text-xs rounded-xl"
+                  >
+                    Sync Device Clock
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => handleDispatchCommand(devices[0].id, 'TEST_CONNECTION')}
+                    className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs rounded-xl"
+                  >
+                    Test TCP Socket
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="font-bold text-gray-700">Command ID</TableHead>
+                  <TableHead className="font-bold text-gray-700">Hardware Terminal</TableHead>
+                  <TableHead className="font-bold text-gray-700">Command Type</TableHead>
+                  <TableHead className="font-bold text-gray-700">Status</TableHead>
+                  <TableHead className="font-bold text-gray-700">Dispatched At</TableHead>
+                  <TableHead className="font-bold text-gray-700">Response / Outcome</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {commands.map(cmd => (
+                  <TableRow key={cmd.id} className="hover:bg-emerald-50/40 transition-colors">
+                    <TableCell className="font-mono text-xs font-bold text-gray-900">
+                      {cmd.id}
+                    </TableCell>
+                    <TableCell className="text-xs font-semibold text-gray-800">
+                      {cmd.device_name}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="gray" className="text-[10px] font-mono">
+                        {cmd.command_type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={cmd.status === 'SUCCESS' ? 'emerald' : cmd.status === 'RUNNING' ? 'amber' : 'rose'}
+                        className="text-[10px]"
+                      >
+                        {cmd.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-gray-700">
+                      {new Date(cmd.created_at).toLocaleTimeString()}
+                    </TableCell>
+                    <TableCell className="text-xs text-gray-600 font-mono text-[11px] truncate max-w-[260px]">
+                      {cmd.response_payload?.message || JSON.stringify(cmd.response_payload || {})}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Card>
+      )}
+
+      {/* TAB 4: Live Punch Ingestion Stream */}
       {activeSubTab === 'punches' && (
         <Card className="rounded-3xl border-gray-200/80 shadow-2xs overflow-hidden bg-white">
           {punches.length === 0 ? (

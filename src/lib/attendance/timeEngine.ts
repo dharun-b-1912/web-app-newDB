@@ -81,6 +81,13 @@ export interface PunchRecord {
   source: string;
 }
 
+export interface AttendanceInterval {
+  inTimeIso: string;
+  outTimeIso: string | null;
+  durationMinutes: number;
+  status: 'COMPLETED' | 'OPEN' | 'MISSING_OUT';
+}
+
 export interface DayAttendanceResult {
   employeeId: string;
   shiftDate: string; // "YYYY-MM-DD"
@@ -88,6 +95,7 @@ export interface DayAttendanceResult {
   firstIn: string | null; // "09:04 AM"
   lastOut: string | null; // "06:12 PM"
   totalPunches: number;
+  intervals: AttendanceInterval[];
   grossDurationMinutes: number;
   breakDurationMinutes: number;
   netDurationMinutes: number;
@@ -100,6 +108,7 @@ export interface DayAttendanceResult {
   overtimeMinutes: number;
   overtimeHoursFormatted: string;
   status: 'PRESENT' | 'HALF_DAY' | 'ABSENT' | 'MISSING_PUNCH' | 'ON_DUTY' | 'WEEK_OFF';
+  calculationVersion: string;
   exceptionReason?: string;
 }
 
@@ -173,6 +182,7 @@ export class WorkForceTimeEngine {
         firstIn: null,
         lastOut: null,
         totalPunches: 0,
+        intervals: [],
         grossDurationMinutes: 0,
         breakDurationMinutes: 0,
         netDurationMinutes: 0,
@@ -185,6 +195,7 @@ export class WorkForceTimeEngine {
         overtimeMinutes: 0,
         overtimeHoursFormatted: '0h 0m',
         status: 'ABSENT',
+        calculationVersion: 'ATT-V3',
         exceptionReason: 'No biometric event logged',
       };
     }
@@ -262,6 +273,32 @@ export class WorkForceTimeEngine {
       exceptionReason = `Net duration (${this.formatMinutesToDuration(netMinutes)}) below full-day requirement`;
     }
 
+    // Interval Pair Generation (IN -> OUT -> IN -> OUT)
+    const intervals: AttendanceInterval[] = [];
+    for (let i = 0; i < sorted.length; i += 2) {
+      const inPunch = sorted[i];
+      const outPunch = sorted[i + 1];
+
+      if (outPunch) {
+        const inD = new Date(inPunch.timestamp);
+        const outD = new Date(outPunch.timestamp);
+        const dur = Math.max(Math.round((outD.getTime() - inD.getTime()) / (1000 * 60)), 0);
+        intervals.push({
+          inTimeIso: inPunch.timestamp,
+          outTimeIso: outPunch.timestamp,
+          durationMinutes: dur,
+          status: 'COMPLETED',
+        });
+      } else {
+        intervals.push({
+          inTimeIso: inPunch.timestamp,
+          outTimeIso: null,
+          durationMinutes: 0,
+          status: 'MISSING_OUT',
+        });
+      }
+    }
+
     return {
       employeeId,
       shiftDate,
@@ -269,6 +306,7 @@ export class WorkForceTimeEngine {
       firstIn: firstInTimeStr,
       lastOut: lastOutTimeStr,
       totalPunches: sorted.length,
+      intervals,
       grossDurationMinutes: grossMinutes,
       breakDurationMinutes: breakMinutes,
       netDurationMinutes: netMinutes,
@@ -281,6 +319,7 @@ export class WorkForceTimeEngine {
       overtimeMinutes,
       overtimeHoursFormatted: this.formatMinutesToDuration(overtimeMinutes),
       status,
+      calculationVersion: 'ATT-V3',
       exceptionReason,
     };
   }
