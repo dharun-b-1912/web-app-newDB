@@ -227,24 +227,25 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
     >
       <div className="p-6 space-y-6 max-h-[85vh] overflow-y-auto">
         {/* Wizard Steps Progress Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3 overflow-x-auto">
+        <div className="flex items-center justify-between border-b border-gray-100 pb-3 overflow-x-auto gap-1">
           {WIZARD_STAGES.map(stage => {
             const isActive = currentStep === stage.id;
             const isPast = currentStep > stage.id;
             return (
-              <div
+              <button
                 key={stage.id}
+                onClick={() => setCurrentStep(stage.id)}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap',
+                  'flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer',
                   isActive
                     ? 'bg-[#07563D] text-white shadow-2xs'
                     : isPast
-                    ? 'bg-emerald-100 text-[#07563D]'
-                    : 'text-gray-400'
+                    ? 'bg-emerald-100 text-[#07563D] hover:bg-emerald-200'
+                    : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
                 )}
               >
                 <span>{stage.label}</span>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -278,7 +279,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
               variant="primary"
               size="sm"
               onClick={handleInitAgent}
-              className="w-full bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl py-3 shadow-xs"
+              className="w-full bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl py-3 shadow-xs font-bold"
             >
               <Zap className="w-4 h-4" /> Generate Gateway Activation Key & Continue
             </Button>
@@ -364,7 +365,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                 variant="primary"
                 size="sm"
                 onClick={handleConfirmHandshake}
-                className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1 rounded-xl"
+                className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1 rounded-xl font-bold"
               >
                 Confirm Agent Connected & Continue <ArrowRight className="w-3.5 h-3.5 ml-1" />
               </Button>
@@ -392,7 +393,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                   size="sm"
                   disabled={isScanning}
                   onClick={handleScanSubnet}
-                  className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl shadow-xs whitespace-nowrap"
+                  className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl shadow-xs whitespace-nowrap font-bold"
                 >
                   <Search className="w-4 h-4" />
                   {isScanning ? 'Scanning 254 IPs on TCP 4370 & 11100...' : 'Scan Local Network for Devices'}
@@ -474,7 +475,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                       className={cn(
                         'p-4 rounded-2xl border transition shadow-2xs flex items-center justify-between',
                         dev.is_already_registered
-                          ? 'bg-gray-50 border-gray-200 opacity-75'
+                          ? 'bg-emerald-50/40 border-emerald-200'
                           : 'bg-white border-gray-200 hover:border-emerald-300'
                       )}
                     >
@@ -500,11 +501,36 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                         </div>
                       </div>
 
-                      <div>
+                      <div className="flex items-center gap-2">
                         {dev.is_already_registered ? (
-                          <Badge variant="emerald" size="sm" className="text-[10px]">
-                            Enrolled in WorkForceOS
-                          </Badge>
+                          <>
+                            <Badge variant="emerald" size="sm" className="text-[10px]">
+                              Enrolled in WorkForceOS
+                            </Badge>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedDiscoveredDevice(dev);
+                                setAdoptName(dev.model.split(' ')[0] + ' Terminal');
+                                setCurrentStep(4);
+                              }}
+                              className="text-xs rounded-xl border-gray-200 text-gray-700"
+                            >
+                              Configure
+                            </Button>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedDiscoveredDevice(dev);
+                                setCurrentStep(5);
+                              }}
+                              className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1 rounded-xl"
+                            >
+                              Next: Sync & Test <ArrowRight className="w-3.5 h-3.5" />
+                            </Button>
+                          </>
                         ) : (
                           <Button
                             variant="primary"
@@ -531,19 +557,57 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                 </p>
               </div>
             ) : null}
+
+            {/* Step 3 Footer Navigation */}
+            <div className="flex items-center justify-between pt-4 border-t border-gray-100 mt-4">
+              <Button variant="outline" size="sm" onClick={() => setCurrentStep(2)} className="text-xs rounded-xl">
+                <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Back to Tunnel
+              </Button>
+              {discoveredDevices.length > 0 ? (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    const unenrolled = discoveredDevices.find(d => !d.is_already_registered);
+                    if (unenrolled) {
+                      setSelectedDiscoveredDevice(unenrolled);
+                      setAdoptName(unenrolled.model.split(' ')[0] + ' Terminal');
+                      setCurrentStep(4);
+                    } else {
+                      setSelectedDiscoveredDevice(discoveredDevices[0]);
+                      setCurrentStep(5);
+                    }
+                  }}
+                  className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl font-bold shadow-xs"
+                >
+                  Continue to Next Step <ArrowRight className="w-3.5 h-3.5" />
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleManualRegister}
+                  className="text-xs rounded-xl border-gray-200 text-gray-700"
+                >
+                  Skip to Manual Setup <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                </Button>
+              )}
+            </div>
           </div>
         )}
 
         {/* STAGE 4: Adopt Device & Location Mapping */}
-        {currentStep === 4 && selectedDiscoveredDevice && (
+        {currentStep === 4 && (
           <div className="space-y-4 max-w-xl mx-auto">
-            <Card className="p-4 bg-emerald-50/50 border border-emerald-200 rounded-2xl space-y-1">
-              <span className="text-[10px] font-bold text-emerald-800 uppercase">Selected Discovered Terminal</span>
-              <div className="text-xs font-bold text-gray-900">{selectedDiscoveredDevice.model}</div>
-              <div className="text-[11px] font-mono text-gray-600">
-                IP: {selectedDiscoveredDevice.ip_address}:{selectedDiscoveredDevice.port} • MAC: {selectedDiscoveredDevice.mac_address}
-              </div>
-            </Card>
+            {selectedDiscoveredDevice && (
+              <Card className="p-4 bg-emerald-50/50 border border-emerald-200 rounded-2xl space-y-1">
+                <span className="text-[10px] font-bold text-emerald-800 uppercase">Selected Discovered Terminal</span>
+                <div className="text-xs font-bold text-gray-900">{selectedDiscoveredDevice.model}</div>
+                <div className="text-[11px] font-mono text-gray-600">
+                  IP: {selectedDiscoveredDevice.ip_address}:{selectedDiscoveredDevice.port} • MAC: {selectedDiscoveredDevice.mac_address}
+                </div>
+              </Card>
+            )}
 
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">Friendly Display Name *</label>
@@ -566,18 +630,34 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-between gap-2 pt-2 border-t border-gray-100">
               <Button variant="outline" size="sm" onClick={() => setCurrentStep(3)} className="text-xs rounded-xl">
-                Back to Scan
+                <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Back to Scan
               </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => handleAdoptDevice(selectedDiscoveredDevice)}
-                className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1 rounded-xl shadow-xs"
-              >
-                Enroll & Pair Device <ArrowRight className="w-3.5 h-3.5 ml-1" />
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentStep(5)}
+                  className="text-xs rounded-xl border-gray-200 text-gray-700"
+                >
+                  Skip to Sync & Test
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    if (selectedDiscoveredDevice) {
+                      handleAdoptDevice(selectedDiscoveredDevice);
+                    } else {
+                      setCurrentStep(5);
+                    }
+                  }}
+                  className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1 rounded-xl shadow-xs font-bold"
+                >
+                  Enroll & Pair Device <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -645,7 +725,10 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
               )}
             </Card>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+            <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+              <Button variant="outline" size="sm" onClick={() => setCurrentStep(4)} className="text-xs rounded-xl">
+                <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Back to Config
+              </Button>
               <Button
                 variant="primary"
                 size="sm"
@@ -653,9 +736,9 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                   onSetupCompleted();
                   onClose();
                 }}
-                className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1 rounded-xl"
+                className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl font-bold px-5 py-2.5 shadow-sm"
               >
-                Complete Setup & Return to Console <CheckCircle2 className="w-3.5 h-3.5 ml-1" />
+                Complete Setup & Go to Hardware Console <CheckCircle2 className="w-4 h-4 ml-1" />
               </Button>
             </div>
           </div>

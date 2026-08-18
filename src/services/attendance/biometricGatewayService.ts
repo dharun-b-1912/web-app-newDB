@@ -347,7 +347,12 @@ class BiometricGatewayService {
   // ==========================================================================
 
   getGatewayAgents(): BiometricGatewayAgent[] {
-    return getStore<BiometricGatewayAgent[]>(STORAGE_KEYS.AGENTS, []);
+    const list = getStore<BiometricGatewayAgent[]>(STORAGE_KEYS.AGENTS, DEFAULT_AGENTS);
+    if (!list || list.length === 0) {
+      setStore(STORAGE_KEYS.AGENTS, DEFAULT_AGENTS);
+      return DEFAULT_AGENTS;
+    }
+    return list;
   }
 
   async syncLocalAgentStatus(): Promise<BiometricGatewayAgent | null> {
@@ -363,17 +368,17 @@ class BiometricGatewayService {
           ? 'Mumbai Regional Headquarters'
           : 'Bengaluru Tech Park Campus';
 
-        let existing = agents.find(a => a.pairing_key === pairing || a.id === 'agent-local-daemon');
+        let existing = agents.find(a => a.pairing_key === pairing || a.id === 'agent-local-daemon' || a.id === 'agent-blr-01');
         if (!existing) {
           existing = {
             id: 'agent-local-daemon',
             organization_id: data.tenant_id || 'org-joy-01',
             branch_name: branch,
-            agent_name: `LAN-GATEWAY-DAEMON (${pairing})`,
+            agent_name: `LAN-GATEWAY-DAEMON-${data.platform || 'LOCAL'}`,
             pairing_key: pairing,
-            version: data.agent_version || '2.4.0-enterprise',
-            os_platform: data.platform === 'win32' ? 'Windows Service (x64)' : 'Linux Service',
-            local_ip: '127.0.0.1:11105',
+            version: data.version || '2.4.0-enterprise',
+            os_platform: `Node.js (${data.platform || 'Windows'})`,
+            local_ip: '127.0.0.1',
             public_ip: '103.22.14.99',
             status: 'ONLINE',
             last_heartbeat: new Date().toISOString(),
@@ -381,7 +386,8 @@ class BiometricGatewayService {
             connected_devices_count: this.getBiometricDevices().length,
             created_at: new Date().toISOString(),
           };
-          setStore(STORAGE_KEYS.AGENTS, [existing, ...agents.filter(a => a.id !== 'agent-local-daemon')]);
+          agents.unshift(existing);
+          setStore(STORAGE_KEYS.AGENTS, agents);
         } else {
           existing.status = 'ONLINE';
           existing.last_heartbeat = new Date().toISOString();
@@ -456,7 +462,12 @@ class BiometricGatewayService {
   // ==========================================================================
 
   getBiometricDevices(): BiometricDevice[] {
-    return getStore<BiometricDevice[]>(STORAGE_KEYS.DEVICES, DEFAULT_DEVICES);
+    const list = getStore<BiometricDevice[]>(STORAGE_KEYS.DEVICES, DEFAULT_DEVICES);
+    if (!list || list.length === 0) {
+      setStore(STORAGE_KEYS.DEVICES, DEFAULT_DEVICES);
+      return DEFAULT_DEVICES;
+    }
+    return list;
   }
 
   registerDevice(payload: Omit<BiometricDevice, 'id' | 'last_sync' | 'status' | 'organization_id'>): BiometricDevice {
