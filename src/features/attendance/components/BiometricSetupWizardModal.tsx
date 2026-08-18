@@ -314,14 +314,14 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                 <div className="flex items-center gap-2">
                   <input
                     readOnly
-                    value={`node scripts/workforce-gateway-agent.cjs --pair ${pairingData?.pairingKey || 'PAIR-BLR-9921'}`}
+                    value={`cd J:\\workforceos-enterprise-hrms; node scripts/workforce-gateway-agent.cjs --pair ${pairingData?.pairingKey || 'PAIR-BLR-9921'}`}
                     className="flex-1 p-2.5 font-mono text-[11px] rounded-xl border border-gray-200 bg-gray-900 text-emerald-400 select-all"
                   />
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      navigator.clipboard.writeText(`node scripts/workforce-gateway-agent.cjs --pair ${pairingData?.pairingKey || 'PAIR-BLR-9921'}`);
+                      navigator.clipboard.writeText(`cd J:\\workforceos-enterprise-hrms; node scripts/workforce-gateway-agent.cjs --pair ${pairingData?.pairingKey || 'PAIR-BLR-9921'}`);
                       showToast('Command copied to clipboard!');
                     }}
                     className="text-xs rounded-xl shrink-0"
@@ -338,14 +338,14 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                 <div className="flex items-center gap-2">
                   <input
                     readOnly
-                    value={`powershell -ExecutionPolicy Bypass -File scripts/workforce-gateway-agent.ps1 -PairingKey "${pairingData?.pairingKey || 'PAIR-BLR-9921'}"`}
+                    value={`cd J:\\workforceos-enterprise-hrms; powershell -ExecutionPolicy Bypass -File scripts/workforce-gateway-agent.ps1 -PairingKey "${pairingData?.pairingKey || 'PAIR-BLR-9921'}"`}
                     className="flex-1 p-2.5 font-mono text-[11px] rounded-xl border border-gray-200 bg-gray-900 text-emerald-400 select-all"
                   />
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      navigator.clipboard.writeText(`powershell -ExecutionPolicy Bypass -File scripts/workforce-gateway-agent.ps1 -PairingKey "${pairingData?.pairingKey || 'PAIR-BLR-9921'}"`);
+                      navigator.clipboard.writeText(`cd J:\\workforceos-enterprise-hrms; powershell -ExecutionPolicy Bypass -File scripts/workforce-gateway-agent.ps1 -PairingKey "${pairingData?.pairingKey || 'PAIR-BLR-9921'}"`);
                       showToast('PowerShell command copied!');
                     }}
                     className="text-xs rounded-xl shrink-0"
