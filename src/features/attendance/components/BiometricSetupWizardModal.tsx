@@ -70,8 +70,10 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
   const [selectedDiscoveredDevice, setSelectedDiscoveredDevice] = useState<DiscoveredDevice | null>(null);
 
   // Direct IP Probe State
-  const [probeIp, setProbeIp] = useState('192.168.1.201');
+  const [probeIp, setProbeIp] = useState('192.168.1.58');
   const [probePort, setProbePort] = useState(4370);
+  const [isProbing, setIsProbing] = useState(false);
+  const [probeError, setProbeError] = useState<string | null>(null);
 
   // Adoption Form State
   const [adoptName, setAdoptName] = useState('Main Lobby Facial Ingress');
@@ -121,11 +123,45 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
     }
   };
 
-  const handleProbeDirectIp = () => {
+  const handleProbeDirectIp = async () => {
     if (!probeIp.trim()) return;
-    const dev = biometricGatewayService.probeSingleDevice(probeIp.trim(), Number(probePort) || 4370);
-    setDiscoveredDevices(prev => [dev, ...prev.filter(p => p.ip_address !== dev.ip_address)]);
-    showToast(`Hardware terminal detected on ${dev.ip_address}:${dev.port} (${dev.vendor} ${dev.model})!`);
+    setIsProbing(true);
+    setProbeError(null);
+    try {
+      const res = await biometricGatewayService.probeSingleDevice(probeIp.trim(), Number(probePort) || 4370);
+      if (res.success && res.device) {
+        setDiscoveredDevices(prev => [res.device!, ...prev.filter(p => p.ip_address !== res.device!.ip_address)]);
+        showToast(`Hardware terminal detected on ${res.device.ip_address}:${res.device.port} (${res.device.vendor})!`);
+      } else {
+        setProbeError(res.error || 'Connection timed out. Terminal is offline or unreachable.');
+        showToast(res.error || 'Connection timed out', 'error');
+      }
+    } catch (err: any) {
+      setProbeError(err.message || 'Probe failed');
+      showToast(err.message || 'Probe failed', 'error');
+    } finally {
+      setIsProbing(false);
+    }
+  };
+
+  const handleManualRegister = () => {
+    const manualDev: DiscoveredDevice = {
+      ip_address: probeIp.trim(),
+      port: Number(probePort) || 4370,
+      vendor: Number(probePort) === 11100 ? 'Mantra' : Number(probePort) === 8000 ? 'Matrix COSEC' : 'ZKTeco',
+      model: 'Standalone Biometric Terminal',
+      serial_number: `ZK-${probeIp.replace(/\./g, '')}`,
+      mac_address: `00:17:61:A2:${probeIp.split('.')[2] || '10'}:${probeIp.split('.')[3] || '20'}`,
+      device_type: Number(probePort) === 11100 ? 'Fingerprint' : 'Facial Recognition',
+      latency_ms: 0,
+      firmware_version: 'v8.4.3',
+      user_count: 0,
+      fingerprint_count: 0,
+      is_already_registered: false,
+    };
+    setSelectedDiscoveredDevice(manualDev);
+    setAdoptName(`Terminal (${manualDev.ip_address})`);
+    setCurrentStep(4);
   };
 
   const handleAdoptDevice = (dev: DiscoveredDevice) => {
@@ -270,17 +306,54 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
               </div>
             </Card>
 
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-gray-700">Windows PowerShell One-Liner Installer</label>
-              <textarea
-                readOnly
-                rows={3}
-                value={
-                  pairingData?.oneLinerScript ||
-                  `powershell -ExecutionPolicy Bypass -Command "iwr -useb https://get.workforceos.io/gateway-install.ps1 | iex" -PairingKey "PAIR-BLR-9921" -TenantId "org-joy-01"`
-                }
-                className="w-full p-3 font-mono text-[11px] rounded-xl border border-gray-200 bg-gray-900 text-emerald-400 select-all"
-              />
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  1. Local Node.js Agent Command (Recommended)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={`node scripts/workforce-gateway-agent.cjs --pair ${pairingData?.pairingKey || 'PAIR-BLR-9921'}`}
+                    className="flex-1 p-2.5 font-mono text-[11px] rounded-xl border border-gray-200 bg-gray-900 text-emerald-400 select-all"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`node scripts/workforce-gateway-agent.cjs --pair ${pairingData?.pairingKey || 'PAIR-BLR-9921'}`);
+                      showToast('Command copied to clipboard!');
+                    }}
+                    className="text-xs rounded-xl shrink-0"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  2. PowerShell Script Launcher
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={`powershell -ExecutionPolicy Bypass -File scripts/workforce-gateway-agent.ps1 -PairingKey "${pairingData?.pairingKey || 'PAIR-BLR-9921'}"`}
+                    className="flex-1 p-2.5 font-mono text-[11px] rounded-xl border border-gray-200 bg-gray-900 text-emerald-400 select-all"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`powershell -ExecutionPolicy Bypass -File scripts/workforce-gateway-agent.ps1 -PairingKey "${pairingData?.pairingKey || 'PAIR-BLR-9921'}"`);
+                      showToast('PowerShell command copied!');
+                    }}
+                    className="text-xs rounded-xl shrink-0"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-between gap-2 pt-2">
@@ -328,17 +401,17 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
             </div>
 
             {/* Direct IP Probe Section */}
-            <div className="p-4 bg-white rounded-2xl border border-gray-200 space-y-2">
+            <div className="p-4 bg-white rounded-2xl border border-gray-200 space-y-3">
               <div className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
                 <Terminal className="w-3.5 h-3.5 text-[#07563D]" /> Direct IP / Port Hardware Probe
               </div>
               <p className="text-[11px] text-gray-500">
-                If UDP auto-discovery is restricted on your office switch, probe the terminal's IP address directly:
+                Probe target terminal's raw TCP socket directly:
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <input
                   type="text"
-                  placeholder="e.g. 192.168.1.201"
+                  placeholder="e.g. 192.168.1.58"
                   value={probeIp}
                   onChange={e => setProbeIp(e.target.value)}
                   className="p-2 text-xs rounded-xl border border-gray-200 font-mono font-bold"
@@ -353,12 +426,37 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                 <Button
                   variant="outline"
                   size="sm"
+                  disabled={isProbing}
                   onClick={handleProbeDirectIp}
                   className="text-xs font-bold rounded-xl border-emerald-300 text-[#07563D] hover:bg-emerald-50"
                 >
-                  <Search className="w-3.5 h-3.5 mr-1" /> Probe IP Socket
+                  <RefreshCw className={cn('w-3.5 h-3.5 mr-1', isProbing && 'animate-spin')} />
+                  {isProbing ? 'Probing Socket...' : 'Probe Real Hardware'}
                 </Button>
               </div>
+
+              {probeError && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2 text-xs text-amber-900">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold">Hardware Probe Notice:</p>
+                      <p className="text-[11px] text-amber-800 leading-relaxed mt-0.5">{probeError}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-amber-200/60">
+                    <span className="text-[10px] text-amber-700">Want to register this IP anyway?</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleManualRegister}
+                      className="text-[11px] h-7 px-2.5 rounded-lg border-amber-300 text-amber-900 bg-white"
+                    >
+                      <Plus className="w-3 h-3 mr-1" /> Register Manually
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Discovered Terminals Matrix */}

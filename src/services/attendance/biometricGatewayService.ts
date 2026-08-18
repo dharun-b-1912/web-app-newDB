@@ -171,12 +171,19 @@ class BiometricGatewayService {
     return getStore<BiometricGatewayAgent[]>(STORAGE_KEYS.AGENTS, DEFAULT_AGENTS);
   }
 
-  generatePairingKey(branchName: string): { pairingKey: string; oneLinerScript: string } {
+  generatePairingKey(branchName: string): {
+    pairingKey: string;
+    oneLinerScript: string;
+    nodeCommand: string;
+    psScriptCommand: string;
+  } {
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const code = branchName.slice(0, 3).toUpperCase();
     const pairingKey = `PAIR-${code}-${randomSuffix}`;
-    const oneLinerScript = `powershell -ExecutionPolicy Bypass -Command "iwr -useb https://get.workforceos.io/gateway-install.ps1 | iex" -PairingKey "${pairingKey}" -TenantId "org-joy-01"`;
-    return { pairingKey, oneLinerScript };
+    const oneLinerScript = `powershell -ExecutionPolicy Bypass -File scripts/workforce-gateway-agent.ps1 -PairingKey "${pairingKey}"`;
+    const nodeCommand = `node scripts/workforce-gateway-agent.cjs --pair ${pairingKey}`;
+    const psScriptCommand = `$env:PAIRING_KEY="${pairingKey}"; $env:TENANT_ID="org-joy-01"; node scripts/workforce-gateway-agent.cjs --pair ${pairingKey}`;
+    return { pairingKey, oneLinerScript, nodeCommand, psScriptCommand };
   }
 
   registerPairedAgent(payload: {
@@ -411,32 +418,66 @@ class BiometricGatewayService {
     }));
   }
 
-  probeSingleDevice(ipAddress: string, port = 4370): DiscoveredDevice {
-    const registeredDevices = this.getBiometricDevices();
-    const isAlready = registeredDevices.some(d => d.ip_address === ipAddress);
+  async probeSingleDevice(
+    ipAddress: string,
+    port = 4370
+  ): Promise<{ success: boolean; device?: DiscoveredDevice; error?: string }> {
+    try {
+      const resp = await fetch(
+        `http://127.0.0.1:11105/probe?ip=${encodeURIComponent(ipAddress)}&port=${port}`
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.success) {
+          const isAlready = this.getBiometricDevices().some(d => d.ip_address === ipAddress);
+          const discovered: DiscoveredDevice = {
+            ip_address: ipAddress,
+            port,
+            vendor: data.vendor || 'ZKTeco',
+            model: data.model || 'ZKTeco Time Attendance Terminal',
+            serial_number: `ZK-${ipAddress.replace(/\./g, '')}`,
+            mac_address: `00:17:61:A2:${ipAddress.split('.')[2] || '10'}:${ipAddress.split('.')[3] || '20'}`,
+            device_type: port === 11100 ? 'Fingerprint' : 'Facial Recognition',
+            latency_ms: data.latency_ms || 12,
+            firmware_version: 'v8.4.3-standalone',
+            user_count: 0,
+            fingerprint_count: 0,
+            is_already_registered: isAlready,
+          };
 
-    const vendor = port === 11100 ? 'Mantra' : port === 8000 ? 'Matrix COSEC' : 'ZKTeco';
-    const model = port === 11100 ? 'MFS100 Optical Biometric Reader' : port === 8000 ? 'COSEC VEGA Terminal' : 'ZKTeco Time Attendance Terminal';
+          const existing = getStore<DiscoveredDevice[]>(STORAGE_KEYS.DISCOVERED, []);
+          const updated = [discovered, ...existing.filter(e => e.ip_address !== ipAddress)];
+          setStore(STORAGE_KEYS.DISCOVERED, updated);
 
-    const discovered: DiscoveredDevice = {
-      ip_address: ipAddress,
-      port,
-      vendor: vendor as any,
-      model,
-      serial_number: `SN-${Math.floor(1000000 + Math.random() * 9000000)}`,
-      mac_address: `00:17:61:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}:${Math.floor(10 + Math.random() * 89)}`,
-      device_type: port === 11100 ? 'Fingerprint' : 'Facial Recognition',
-      latency_ms: Math.floor(6 + Math.random() * 15),
-      firmware_version: 'v8.2.0-standalone',
-      user_count: 0,
-      fingerprint_count: 0,
-      is_already_registered: isAlready,
+          this.logDiagnosticEvent({
+            category: 'TCP_SOCKET',
+            severity: 'INFO',
+            ip_address: ipAddress,
+            port,
+            message: `Real hardware probe successful on ${ipAddress}:${port} (${data.latency_ms}ms latency).`,
+          });
+
+          return { success: true, device: discovered };
+        } else {
+          this.logDiagnosticEvent({
+            category: 'CRASH_ERROR',
+            severity: 'ERROR',
+            ip_address: ipAddress,
+            port,
+            message: `Hardware probe failed: ${data.message}`,
+            error_code: data.error_code || 'ERR_PROBE_FAILED',
+          });
+          return { success: false, error: data.message || `No response from ${ipAddress}:${port}` };
+        }
+      }
+    } catch {
+      // Local agent not active on 127.0.0.1:11105
+    }
+
+    return {
+      success: false,
+      error: `Local LAN Gateway Agent not running on 127.0.0.1:11105. Please start the local agent using 'node scripts/workforce-gateway-agent.cjs --pair ...' or run 'powershell -File scripts/workforce-gateway-agent.ps1' to probe real hardware on your LAN.`,
     };
-
-    const existing = getStore<DiscoveredDevice[]>(STORAGE_KEYS.DISCOVERED, []);
-    const updated = [discovered, ...existing.filter(e => e.ip_address !== ipAddress)];
-    setStore(STORAGE_KEYS.DISCOVERED, updated);
-    return discovered;
   }
 
   adoptDiscoveredDevice(
