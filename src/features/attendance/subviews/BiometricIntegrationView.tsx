@@ -35,6 +35,8 @@ import {
   FileText,
   Bug,
   Users,
+  PowerOff,
+  WifiOff,
 } from 'lucide-react';
 import {
   biometricGatewayService,
@@ -49,6 +51,7 @@ import {
 } from '../../../services/attendance/biometricCommandService';
 import { BiometricSetupWizardModal } from '../components/BiometricSetupWizardModal';
 import { DeviceUsersManagerModal } from '../components/DeviceUsersManagerModal';
+import { DeviceDiagnosticDetailsModal } from '../components/DeviceDiagnosticDetailsModal';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { cn } from '../../../lib/utils';
 
@@ -68,6 +71,8 @@ export const BiometricIntegrationView: React.FC = () => {
   const [isStressTestModalOpen, setIsStressTestModalOpen] = useState(false);
   const [isDeviceUsersModalOpen, setIsDeviceUsersModalOpen] = useState(false);
   const [selectedDeviceForUsers, setSelectedDeviceForUsers] = useState<BiometricDevice | null>(null);
+  const [isDiagnosticModalOpen, setIsDiagnosticModalOpen] = useState(false);
+  const [selectedDeviceForDiagnostic, setSelectedDeviceForDiagnostic] = useState<BiometricDevice | null>(null);
 
   // Log Filters
   const [logCategoryFilter, setLogCategoryFilter] = useState('ALL');
@@ -418,13 +423,66 @@ export const BiometricIntegrationView: React.FC = () => {
                       {dev.registered_users_count} Users
                     </TableCell>
                     <TableCell>
-                      <Badge variant={dev.status === 'Online' ? 'emerald' : 'rose'} className="text-[10px] gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        {dev.status}
-                      </Badge>
+                      {dev.status === 'Online' ? (
+                        <button
+                          onClick={() => {
+                            setSelectedDeviceForDiagnostic(dev);
+                            setIsDiagnosticModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Online ({dev.diagnostic?.latency_ms || 12}ms)
+                        </button>
+                      ) : dev.status === 'No Power' ? (
+                        <button
+                          onClick={() => {
+                            setSelectedDeviceForDiagnostic(dev);
+                            setIsDiagnosticModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 transition"
+                        >
+                          <PowerOff className="w-3 h-3 text-rose-600" />
+                          No Power / Offline
+                        </button>
+                      ) : dev.status === 'No Network' ? (
+                        <button
+                          onClick={() => {
+                            setSelectedDeviceForDiagnostic(dev);
+                            setIsDiagnosticModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100 transition"
+                        >
+                          <WifiOff className="w-3 h-3 text-amber-600" />
+                          No LAN / Internet
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setSelectedDeviceForDiagnostic(dev);
+                            setIsDiagnosticModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition"
+                        >
+                          <AlertTriangle className="w-3 h-3 text-amber-600" />
+                          {dev.status}
+                        </button>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedDeviceForDiagnostic(dev);
+                            setIsDiagnosticModalOpen(true);
+                          }}
+                          className="text-[11px] font-bold rounded-xl border-amber-200 text-amber-900 bg-amber-50/40 hover:bg-amber-100"
+                        >
+                          <Activity className="w-3 h-3 mr-1 text-amber-600" />
+                          Health Check
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -855,6 +913,18 @@ export const BiometricIntegrationView: React.FC = () => {
           loadData();
         }}
         device={selectedDeviceForUsers}
+      />
+
+      {/* Modal: Power & Network Diagnostic Details */}
+      <DeviceDiagnosticDetailsModal
+        isOpen={isDiagnosticModalOpen}
+        onClose={() => {
+          setIsDiagnosticModalOpen(false);
+          setSelectedDeviceForDiagnostic(null);
+          loadData();
+        }}
+        device={selectedDeviceForDiagnostic}
+        onDiagnosticUpdated={loadData}
       />
 
       {/* Modal: Agent Pairing Wizard */}

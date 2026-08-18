@@ -26,6 +26,19 @@ export interface BiometricGatewayAgent {
   created_at: string;
 }
 
+export interface DeviceHealthDiagnostic {
+  status: 'ONLINE' | 'NO_POWER' | 'NO_NETWORK' | 'PORT_CLOSED' | 'AUTH_FAILED';
+  power_status: 'POWERED_ON' | 'NO_POWER_DETECTED';
+  lan_status: 'CONNECTED' | 'UNREACHABLE';
+  port_status: 'PORT_OPEN' | 'PORT_CLOSED' | 'TIMEOUT';
+  internet_status: 'CONNECTED' | 'DISCONNECTED';
+  latency_ms: number;
+  error_code?: string;
+  failure_reason?: string;
+  troubleshooting_steps: string[];
+  last_checked_at: string;
+}
+
 export interface BiometricDevice {
   id: string;
   organization_id: string;
@@ -39,7 +52,8 @@ export interface BiometricDevice {
   port: number;
   location_description: string;
   branch: string;
-  status: 'Online' | 'Offline' | 'Syncing' | 'Maintenance';
+  status: 'Online' | 'Offline' | 'No Power' | 'No Network' | 'Port Closed' | 'Syncing' | 'Maintenance';
+  diagnostic?: DeviceHealthDiagnostic;
   last_sync: string;
   last_event_at?: string;
   registered_users_count: number;
@@ -232,17 +246,153 @@ class BiometricGatewayService {
     setStore(STORAGE_KEYS.DEVICES, filtered);
   }
 
-  testDeviceConnection(deviceId: string): { success: boolean; latencyMs: number; message: string } {
+  runDeviceHealthDiagnostic(
+    deviceId: string,
+    forcedState?: 'ONLINE' | 'NO_POWER' | 'NO_NETWORK' | 'PORT_CLOSED' | 'AUTH_FAILED'
+  ): DeviceHealthDiagnostic {
     const devices = this.getBiometricDevices();
     const d = devices.find(x => x.id === deviceId);
-    if (!d) return { success: false, latencyMs: 0, message: 'Device not found' };
+    if (!d) throw new Error('Device not found');
 
-    const latency = Math.floor(12 + Math.random() * 25);
-    return {
-      success: true,
-      latencyMs: latency,
-      message: `TCP Socket established on ${d.ip_address}:${d.port} (${d.vendor} ${d.model}) in ${latency}ms. Zero packet loss.`,
-    };
+    const state = forcedState || (d.status === 'No Power' ? 'NO_POWER' : d.status === 'No Network' ? 'NO_NETWORK' : d.status === 'Port Closed' ? 'PORT_CLOSED' : 'ONLINE');
+
+    let diag: DeviceHealthDiagnostic;
+
+    if (state === 'NO_POWER') {
+      diag = {
+        status: 'NO_POWER',
+        power_status: 'NO_POWER_DETECTED',
+        lan_status: 'UNREACHABLE',
+        port_status: 'TIMEOUT',
+        internet_status: 'DISCONNECTED',
+        latency_ms: 0,
+        error_code: 'ERR_SOCKET_TIMEOUT_ETIMEDOUT',
+        failure_reason: 'Terminal is completely unresponsive (100% packet loss). No ICMP echo / ARP reply from hardware.',
+        troubleshooting_steps: [
+          'Verify DC 12V / 3A power adapter is securely plugged in and wall outlet is live.',
+          'Check device LCD screen / power LED indicator on the front panel.',
+          'If using PoE (Power over Ethernet), ensure PoE switch port delivery is enabled (802.3af/at).',
+          'Inspect the DC power barrel jack or terminal wiring for loose contacts.',
+        ],
+        last_checked_at: new Date().toISOString(),
+      };
+      d.status = 'No Power';
+      this.logDiagnosticEvent({
+        category: 'CRASH_ERROR',
+        severity: 'CRASH',
+        device_id: d.id,
+        device_name: d.device_name,
+        ip_address: d.ip_address,
+        port: d.port,
+        message: `NO POWER DETECTED: Hardware terminal unresponsive on ${d.ip_address}:${d.port}`,
+        error_code: 'ERR_DEVICE_NO_POWER_ETIMEDOUT',
+        stack_trace: `Error: connect ETIMEDOUT ${d.ip_address}:${d.port}\n    at TCPConnectWrap.afterConnect (node:net:1494:16)\n    at ZkTecoStandaloneProtocol.connect (zktecoStandaloneSdk.ts:88)`,
+      });
+    } else if (state === 'NO_NETWORK') {
+      diag = {
+        status: 'NO_NETWORK',
+        power_status: 'POWERED_ON',
+        lan_status: 'UNREACHABLE',
+        port_status: 'TIMEOUT',
+        internet_status: 'DISCONNECTED',
+        latency_ms: 0,
+        error_code: 'ERR_HOST_UNREACHABLE_EHOSTUNREACH',
+        failure_reason: 'Device IP is not reachable from Gateway Agent subnet. Router / Ethernet cable disconnected.',
+        troubleshooting_steps: [
+          'Verify RJ-45 Ethernet network cable is firmly clicked into the terminal back-plate.',
+          `Ensure device IP ${d.ip_address} belongs to the same LAN subnet as the Gateway Agent.`,
+          'Check local network switch link lights and VLAN isolation rules.',
+          'If configured via Wi-Fi, verify Wi-Fi signal strength and SSID credentials on terminal.',
+        ],
+        last_checked_at: new Date().toISOString(),
+      };
+      d.status = 'No Network';
+      this.logDiagnosticEvent({
+        category: 'TCP_SOCKET',
+        severity: 'ERROR',
+        device_id: d.id,
+        device_name: d.device_name,
+        ip_address: d.ip_address,
+        port: d.port,
+        message: `NO NETWORK ROUTE: EHOSTUNREACH on ${d.ip_address}:${d.port}`,
+        error_code: 'ERR_NETWORK_UNREACHABLE',
+      });
+    } else if (state === 'PORT_CLOSED') {
+      diag = {
+        status: 'PORT_CLOSED',
+        power_status: 'POWERED_ON',
+        lan_status: 'CONNECTED',
+        port_status: 'PORT_CLOSED',
+        internet_status: 'CONNECTED',
+        latency_ms: 4,
+        error_code: 'ERR_CONNECTION_REFUSED_ECONNREFUSED',
+        failure_reason: `Device IP is pingable, but TCP port ${d.port} is closed. Service is stopped or blocked.`,
+        troubleshooting_steps: [
+          `Enter device system menu -> Comm Settings -> PC Connection.`,
+          `Verify TCP port is configured to ${d.port} and Standalone SDK Mode is enabled.`,
+          'Reboot terminal hardware from admin menu or power cycle.',
+          `Verify local firewall is not blocking inbound port ${d.port}.`,
+        ],
+        last_checked_at: new Date().toISOString(),
+      };
+      d.status = 'Port Closed';
+      this.logDiagnosticEvent({
+        category: 'TCP_SOCKET',
+        severity: 'WARN',
+        device_id: d.id,
+        device_name: d.device_name,
+        ip_address: d.ip_address,
+        port: d.port,
+        message: `PORT CLOSED: ECONNREFUSED on ${d.ip_address}:${d.port}`,
+        error_code: 'ERR_TCP_PORT_REFUSED',
+      });
+    } else {
+      const latency = Math.floor(10 + Math.random() * 18);
+      diag = {
+        status: 'ONLINE',
+        power_status: 'POWERED_ON',
+        lan_status: 'CONNECTED',
+        port_status: 'PORT_OPEN',
+        internet_status: 'CONNECTED',
+        latency_ms: latency,
+        troubleshooting_steps: [],
+        last_checked_at: new Date().toISOString(),
+      };
+      d.status = 'Online';
+      this.logDiagnosticEvent({
+        category: 'TCP_SOCKET',
+        severity: 'INFO',
+        device_id: d.id,
+        device_name: d.device_name,
+        ip_address: d.ip_address,
+        port: d.port,
+        message: `HEALTH DIAGNOSTIC PASSED: TCP Socket healthy (${latency}ms latency, 0% packet loss).`,
+      });
+    }
+
+    d.diagnostic = diag;
+    setStore(STORAGE_KEYS.DEVICES, devices);
+    hrEventBus.emit('biometric.device_status_changed', { deviceId: d.id, status: d.status });
+    return diag;
+  }
+
+  testDeviceConnection(deviceId: string): { success: boolean; latencyMs: number; message: string; diagnostic?: DeviceHealthDiagnostic } {
+    const diag = this.runDeviceHealthDiagnostic(deviceId);
+    if (diag.status === 'ONLINE') {
+      return {
+        success: true,
+        latencyMs: diag.latency_ms,
+        message: `TCP Socket established successfully (${diag.latency_ms}ms latency, 0% packet loss).`,
+        diagnostic: diag,
+      };
+    } else {
+      return {
+        success: false,
+        latencyMs: 0,
+        message: `${diag.status.replace(/_/g, ' ')}: ${diag.failure_reason}`,
+        diagnostic: diag,
+      };
+    }
   }
 
   // ==========================================================================
