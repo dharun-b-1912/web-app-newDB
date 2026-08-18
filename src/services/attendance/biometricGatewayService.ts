@@ -1467,6 +1467,35 @@ class BiometricGatewayService {
     return { punch: newPunch, isDeduplicated: false };
   }
 
+  async syncRealPunchesFromAgent(deviceId?: string): Promise<{ count: number; message: string }> {
+    try {
+      const resp = await fetch('http://127.0.0.1:11105/punches');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.punches && Array.isArray(data.punches)) {
+          const devices = this.getBiometricDevices();
+          const targetDev = deviceId ? devices.find(d => d.id === deviceId) || devices[0] : devices[0];
+          let count = 0;
+          for (const p of data.punches) {
+            await this.ingestRawPunch({
+              deviceId: targetDev ? targetDev.id : 'bio-default',
+              biometricPin: p.pin,
+              punchTime: new Date(p.timestamp).toISOString(),
+              verificationMode: p.verifyType || 'Fingerprint',
+              punchDirection: p.punchState === 'Check-In' ? 'IN' : 'OUT',
+              sourceType: 'LAN_AGENT',
+            });
+            count++;
+          }
+          return { count, message: `Successfully synchronized ${count} real attendance punches from terminal CGKK223862906.` };
+        }
+      }
+    } catch {
+      // Local agent offline
+    }
+    return { count: 0, message: 'No punches synchronized.' };
+  }
+
   // ==========================================================================
   // 4. FACTORY STRESS TESTER (1,000+ Simultaneous Punches)
   // ==========================================================================

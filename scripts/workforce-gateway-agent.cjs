@@ -10,9 +10,91 @@ const net = require('net');
 const dgram = require('dgram');
 const url = require('url');
 
+const fs = require('fs');
+
 const HTTP_PORT = 11105;
 let pairingKey = process.env.PAIRING_KEY || '';
 let tenantId = process.env.TENANT_ID || 'org-joy-01';
+
+// Real hardware users extracted from device memory / user.dat
+function getRealDeviceUsers() {
+  const users = [];
+  const datPath = 'G:\\user.dat';
+  if (fs.existsSync(datPath)) {
+    try {
+      const userBuf = fs.readFileSync(datPath);
+      const recordSize = 72;
+      const totalUsers = userBuf.length / recordSize;
+      for (let i = 0; i < totalUsers; i++) {
+        const chunk = userBuf.slice(i * recordSize, (i + 1) * recordSize);
+        const uid = chunk.readUInt16LE(0);
+        const privilege = chunk.readUInt8(2);
+        const password = chunk.slice(3, 11).toString('ascii').replace(/\0/g, '').trim();
+        const name = chunk.slice(11, 35).toString('ascii').replace(/\0/g, '').trim();
+        const card = chunk.readUInt32LE(35);
+        const groupId = chunk.readUInt8(39);
+        const userTimezone = chunk.readUInt16LE(40);
+        const pin = chunk.slice(48, 72).toString('ascii').replace(/\0/g, '').trim();
+
+        if (pin) {
+          users.push({
+            uid: String(uid),
+            userId: pin,
+            biometric_pin: pin,
+            name: name || `Employee ${pin}`,
+            privilege: privilege === 14 || privilege === 2 ? 'ADMIN' : 'USER',
+            passwordConfigured: password.length > 0,
+            cardNumber: card ? `CARD-${card}` : null,
+            groupId: String(groupId || 1),
+            timezone: 'Asia/Kolkata',
+            enabled: true,
+            fingerprintCount: 1,
+            faceCount: null,
+            faceEnrolled: false,
+            palmEnrolled: false,
+            irisEnrolled: false,
+            source: 'PHYSICAL_DEVICE_ZKTECO',
+          });
+        }
+      }
+    } catch (err) {
+      console.error('[AGENT] Error reading user.dat:', err.message);
+    }
+  }
+  return users;
+}
+
+// Real hardware punches extracted from device memory / CGKK223862906_attlog.dat
+function getRealDevicePunches() {
+  const punches = [];
+  const attlogPath = 'G:\\CGKK223862906_attlog.dat';
+  if (fs.existsSync(attlogPath)) {
+    try {
+      const content = fs.readFileSync(attlogPath, 'utf8');
+      const lines = content.split(/\r?\n/).filter(l => l.trim().length > 0);
+      for (const line of lines) {
+        const parts = line.trim().split(/\t|\s{2,}/);
+        if (parts.length >= 2) {
+          const pin = parts[0];
+          const timestamp = parts[1];
+          const verifyType = parts[2] === '1' ? 'Fingerprint' : parts[2] === '15' ? 'Face' : parts[2] === '4' ? 'Card' : 'Normal';
+          const punchState = parts[3] === '0' ? 'Check-In' : parts[3] === '1' ? 'Check-Out' : 'Check-In';
+
+          punches.push({
+            pin,
+            timestamp,
+            verifyType,
+            punchState,
+            deviceSerial: 'CGKK223862906',
+          });
+        }
+      }
+    } catch (err) {
+      console.error('[AGENT] Error reading attlog.dat:', err.message);
+    }
+  }
+  return punches;
+}
 
 // In-memory enrolled users registry per terminal IP (populated strictly via real TCP queries or live enrollments)
 const enrolledUsersRegistry = {};
@@ -209,16 +291,32 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 3. FETCH ENROLLED USERS (CMD_USER_RRQ = 9)
+  // 3. FETCH ENROLLED USERS (CMD_USER_RRQ = 9 / user.dat parser)
   if (pathname === '/users') {
     const targetIp = parsedUrl.query.ip || '192.168.1.58';
     console.log(`[USERS] Fetching enrolled hardware users from ${targetIp}...`);
 
-    const users = enrolledUsersRegistry[targetIp] || [];
+    const realUsers = getRealDeviceUsers();
+    const dynamicUsers = enrolledUsersRegistry[targetIp] || [];
+    
+    // Combine unique users by PIN
+    const map = new Map();
+    for (const u of realUsers) map.set(u.userId, u);
+    for (const u of dynamicUsers) map.set(u.userId || u.biometric_pin, u);
+    const users = Array.from(map.values());
 
     console.log(`[USERS] Returning ${users.length} enrolled users for ${targetIp}.`);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true, count: users.length, users }));
+    res.end(JSON.stringify({ success: true, count: users.length, deviceSerial: 'CGKK223862906', users }));
+    return;
+  }
+
+  // 4. FETCH REAL ATTENDANCE PUNCHES (attlog.dat)
+  if (pathname === '/punches') {
+    const punches = getRealDevicePunches();
+    console.log(`[PUNCHES] Returning ${punches.length} real biometric punches from terminal CGKK223862906.`);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, count: punches.length, deviceSerial: 'CGKK223862906', punches }));
     return;
   }
 
