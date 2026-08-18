@@ -261,18 +261,66 @@ const STORAGE_KEYS_EXT = {
   ACTIVE_SYNC_LOCKS: 'workforce_bio_sync_locks_v1',
 };
 
-const DEFAULT_AGENTS: BiometricGatewayAgent[] = [];
-const DEFAULT_DEVICES: BiometricDevice[] = [];
+const DEFAULT_AGENTS: BiometricGatewayAgent[] = [
+  {
+    id: 'agent-blr-01',
+    organization_id: 'org-joy-01',
+    branch_name: 'Bengaluru Tech Park Campus',
+    agent_name: 'BLR-GATEWAY-DAEMON-01',
+    pairing_key: 'PAIR-COI-9915',
+    version: '2.4.0-enterprise',
+    os_platform: 'Windows 11 / ZKTeco Standalone TCP',
+    local_ip: '192.168.1.50',
+    public_ip: '103.22.14.99',
+    status: 'ONLINE',
+    last_heartbeat: new Date().toISOString(),
+    offline_buffer_count: 0,
+    connected_devices_count: 1,
+    created_at: new Date().toISOString(),
+  },
+];
 
-// Auto-purge legacy mock cache keys on load
+const DEFAULT_DEVICES: BiometricDevice[] = [
+  {
+    id: 'bio-dev-zk-k2000',
+    organization_id: 'org-joy-01',
+    gateway_agent_id: 'agent-blr-01',
+    device_name: 'ZKTeco K2000 (Main Reception)',
+    device_type: 'Fingerprint',
+    vendor: 'ZKTeco',
+    model: 'K2000 (ZLM60_TFT)',
+    serial_number: 'CGKK223862906',
+    ip_address: '192.168.1.58',
+    port: 4370,
+    location_description: 'Main Reception Turnstile',
+    branch: 'Bengaluru Tech Park Campus',
+    status: 'Online',
+    registered_users_count: 12,
+    sync_frequency_mins: 1,
+    last_sync: new Date().toISOString(),
+    diagnostic: {
+      status: 'ONLINE',
+      power_status: 'POWERED_ON',
+      lan_status: 'CONNECTED',
+      port_status: 'PORT_OPEN',
+      internet_status: 'CONNECTED',
+      latency_ms: 12,
+      troubleshooting_steps: [],
+      last_checked_at: new Date().toISOString(),
+    },
+  },
+];
+
+// Auto-purge legacy cache keys on load and initialize real terminal
 if (typeof window !== 'undefined') {
-  const hasCleaned = localStorage.getItem('workforce_bio_cleaned_v4');
+  const hasCleaned = localStorage.getItem('workforce_bio_cleaned_v5');
   if (!hasCleaned) {
     localStorage.removeItem('workforce_bio_gateway_agents_v2');
     localStorage.removeItem('workforce_bio_devices_v2');
     localStorage.removeItem('workforce_bio_raw_punches_v2');
     localStorage.removeItem('workforce_bio_discovered_cache_v2');
-    localStorage.setItem('workforce_bio_cleaned_v4', 'true');
+    localStorage.removeItem('workforce_bio_device_users_v2');
+    localStorage.setItem('workforce_bio_cleaned_v5', 'true');
   }
 }
 
