@@ -32,18 +32,23 @@ import {
   Layers,
   ArrowUpRight,
   Trash2,
+  FileText,
+  Bug,
+  Users,
 } from 'lucide-react';
 import {
   biometricGatewayService,
   BiometricGatewayAgent,
   BiometricDevice,
   RawBiometricPunch,
+  BiometricDiagnosticLog,
 } from '../../../services/attendance/biometricGatewayService';
 import {
   biometricCommandService,
   BiometricDeviceCommand,
 } from '../../../services/attendance/biometricCommandService';
 import { BiometricSetupWizardModal } from '../components/BiometricSetupWizardModal';
+import { DeviceUsersManagerModal } from '../components/DeviceUsersManagerModal';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { cn } from '../../../lib/utils';
 
@@ -53,13 +58,20 @@ export const BiometricIntegrationView: React.FC = () => {
   const [devices, setDevices] = useState<BiometricDevice[]>([]);
   const [punches, setPunches] = useState<RawBiometricPunch[]>([]);
   const [commands, setCommands] = useState<BiometricDeviceCommand[]>([]);
-  const [activeSubTab, setActiveSubTab] = useState<'terminals' | 'agents' | 'commands' | 'punches'>('terminals');
+  const [diagnosticLogs, setDiagnosticLogs] = useState<BiometricDiagnosticLog[]>([]);
+  const [activeSubTab, setActiveSubTab] = useState<'terminals' | 'agents' | 'commands' | 'punches' | 'logs'>('terminals');
 
   // Modals
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [isPairingModalOpen, setIsPairingModalOpen] = useState(false);
   const [isAddDeviceModalOpen, setIsAddDeviceModalOpen] = useState(false);
   const [isStressTestModalOpen, setIsStressTestModalOpen] = useState(false);
+  const [isDeviceUsersModalOpen, setIsDeviceUsersModalOpen] = useState(false);
+  const [selectedDeviceForUsers, setSelectedDeviceForUsers] = useState<BiometricDevice | null>(null);
+
+  // Log Filters
+  const [logCategoryFilter, setLogCategoryFilter] = useState('ALL');
+  const [logSeverityFilter, setLogSeverityFilter] = useState('ALL');
 
   // Pairing State
   const [pairingBranch, setPairingBranch] = useState('Bengaluru Tech Park Campus');
@@ -91,12 +103,14 @@ export const BiometricIntegrationView: React.FC = () => {
     setDevices(biometricGatewayService.getBiometricDevices());
     setPunches(biometricGatewayService.getRawPunches(50));
     setCommands(biometricCommandService.getCommands());
+    setDiagnosticLogs(biometricGatewayService.getDiagnosticLogs());
   };
 
   useEffect(() => {
     loadData();
     const unsub = hrEventBus.subscribe('attendance.punch_received', () => {
       setPunches(biometricGatewayService.getRawPunches(50));
+      setDiagnosticLogs(biometricGatewayService.getDiagnosticLogs());
     });
     return () => unsub();
   }, []);
@@ -114,6 +128,39 @@ export const BiometricIntegrationView: React.FC = () => {
     });
     showToast(`Command ${cmdType} dispatched to hardware terminal.`);
     setTimeout(() => loadData(), 500);
+  };
+
+  const handleSimulateCrashLog = () => {
+    biometricGatewayService.logDiagnosticEvent({
+      category: 'CRASH_ERROR',
+      severity: 'CRASH',
+      device_id: devices[0]?.id || 'dev-zk-sim',
+      device_name: devices[0]?.device_name || 'Main Gate Terminal',
+      ip_address: devices[0]?.ip_address || '192.168.1.201',
+      port: devices[0]?.port || 4370,
+      message: 'TCP Connection Reset by Peer (ECONNRESET): Terminal watchdog triggered unexpected hardware reboot.',
+      error_code: 'ERR_SOCKET_CONNECTION_RESET',
+      stack_trace: 'Error: ECONNRESET at TCP.onStreamRead (node:internal/stream_base_commons:217:20)\n    at ZkTecoStandaloneProtocol.connect (zktecoStandaloneSdk.ts:88)\n    at EdgeAgentEngine.runDiagnostic (edgeAgentEngine.ts:142)',
+    });
+    showToast('Diagnostic crash log recorded for hardware inspection.', 'error');
+    loadData();
+  };
+
+  const handleClearLogs = () => {
+    biometricGatewayService.clearDiagnosticLogs();
+    setDiagnosticLogs([]);
+    showToast('Biometric diagnostic logs cleared.');
+  };
+
+  const handleExportLogsJson = () => {
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(diagnosticLogs, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('download', `workforce_biometric_diagnostics_${new Date().toISOString().split('T')[0]}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+    showToast('Diagnostic logs report exported as JSON.');
   };
 
   const handleRegisterDevice = (e: React.FormEvent) => {
@@ -283,6 +330,7 @@ export const BiometricIntegrationView: React.FC = () => {
           { id: 'agents', label: 'LAN Gateway Daemons', icon: Server },
           { id: 'commands', label: 'Remote Commands Bus', icon: Terminal },
           { id: 'punches', label: 'Live Punch Ingestion Stream', icon: Activity },
+          { id: 'logs', label: 'Diagnostic & Crash Logs', icon: Bug },
         ].map(tab => {
           const Icon = tab.icon;
           const isActive = activeSubTab === tab.id;
@@ -377,6 +425,18 @@ export const BiometricIntegrationView: React.FC = () => {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedDeviceForUsers(dev);
+                            setIsDeviceUsersModalOpen(true);
+                          }}
+                          className="text-[11px] font-bold rounded-xl border-blue-200 text-blue-800 bg-blue-50/50 hover:bg-blue-100"
+                        >
+                          <Users className="w-3 h-3 mr-1" />
+                          Enrolled Users
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -624,6 +684,178 @@ export const BiometricIntegrationView: React.FC = () => {
           )}
         </Card>
       )}
+
+      {/* TAB 5: Diagnostic & Crash Logs */}
+      {activeSubTab === 'logs' && (
+        <Card className="rounded-3xl border-gray-200/80 shadow-2xs overflow-hidden bg-white">
+          <div className="p-5 border-b border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="font-bold text-gray-700">Category:</span>
+                <select
+                  value={logCategoryFilter}
+                  onChange={e => setLogCategoryFilter(e.target.value)}
+                  className="px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800"
+                >
+                  <option value="ALL">All Categories</option>
+                  <option value="TCP_SOCKET">TCP Socket / Handshake</option>
+                  <option value="PUNCH_INGESTION">Punch Ingestion</option>
+                  <option value="DEVICE_COMMAND">Device Commands</option>
+                  <option value="AGENT_HEARTBEAT">Agent Heartbeat</option>
+                  <option value="CRASH_ERROR">Crash / Hardware Errors</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="font-bold text-gray-700">Severity:</span>
+                <select
+                  value={logSeverityFilter}
+                  onChange={e => setLogSeverityFilter(e.target.value)}
+                  className="px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800"
+                >
+                  <option value="ALL">All Severities</option>
+                  <option value="INFO">INFO</option>
+                  <option value="WARN">WARN</option>
+                  <option value="ERROR">ERROR</option>
+                  <option value="CRASH">CRASH</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSimulateCrashLog}
+                className="text-xs rounded-xl border-rose-200 text-rose-800 hover:bg-rose-50"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 mr-1 text-rose-600" />
+                Simulate TCP Socket Crash
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportLogsJson}
+                disabled={diagnosticLogs.length === 0}
+                className="text-xs rounded-xl border-gray-200"
+              >
+                <Download className="w-3.5 h-3.5 mr-1" />
+                Export JSON
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearLogs}
+                disabled={diagnosticLogs.length === 0}
+                className="text-xs rounded-xl border-gray-200 text-gray-600 hover:text-rose-600"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1" />
+                Clear Logs
+              </Button>
+            </div>
+          </div>
+
+          {diagnosticLogs.length === 0 ? (
+            <div className="p-12 text-center max-w-md mx-auto">
+              <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <h4 className="text-sm font-bold text-gray-900">No Diagnostic Logs Recorded</h4>
+              <p className="text-xs text-gray-500 mt-1 mb-5">
+                TCP socket handshakes, heartbeat pings, user sync operations, and network timeouts will be logged here in real-time.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSimulateCrashLog}
+                className="text-xs rounded-xl border-gray-300"
+              >
+                Record Test Diagnostic Log
+              </Button>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="font-bold text-gray-700">Timestamp</TableHead>
+                  <TableHead className="font-bold text-gray-700">Category & Level</TableHead>
+                  <TableHead className="font-bold text-gray-700">Device & Endpoint</TableHead>
+                  <TableHead className="font-bold text-gray-700">Log Message</TableHead>
+                  <TableHead className="font-bold text-gray-700">Diagnostic Details</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {diagnosticLogs
+                  .filter(l => (logCategoryFilter === 'ALL' || l.category === logCategoryFilter) && (logSeverityFilter === 'ALL' || l.severity === logSeverityFilter))
+                  .map(log => (
+                    <TableRow key={log.id} className={cn('hover:bg-gray-50/70 transition-colors', log.severity === 'CRASH' && 'bg-rose-50/20')}>
+                      <TableCell className="font-mono text-xs text-gray-600">
+                        {new Date(log.timestamp).toLocaleTimeString()}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          <Badge
+                            variant={
+                              log.severity === 'CRASH'
+                                ? 'rose'
+                                : log.severity === 'ERROR'
+                                ? 'rose'
+                                : log.severity === 'WARN'
+                                ? 'amber'
+                                : 'emerald'
+                            }
+                            className="text-[10px]"
+                          >
+                            {log.severity}
+                          </Badge>
+                          <span className="text-[10px] text-gray-500 font-mono">{log.category}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {log.device_name ? (
+                          <div>
+                            <div className="text-xs font-bold text-gray-800">{log.device_name}</div>
+                            {log.ip_address && (
+                              <div className="text-[10px] text-gray-400 font-mono">
+                                {log.ip_address}:{log.port}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">Gateway Core</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs font-medium text-gray-800">
+                        {log.message}
+                      </TableCell>
+                      <TableCell>
+                        {log.stack_trace ? (
+                          <details className="cursor-pointer text-[10px] text-rose-700 font-mono">
+                            <summary className="hover:underline font-bold">View Stack & Error Code ({log.error_code || 'ERROR'})</summary>
+                            <pre className="mt-1 p-2 bg-gray-900 text-gray-100 rounded-lg overflow-x-auto whitespace-pre-wrap max-w-sm">
+                              {log.stack_trace}
+                            </pre>
+                          </details>
+                        ) : (
+                          <span className="text-[10px] text-gray-400 font-mono">OK</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          )}
+        </Card>
+      )}
+
+      {/* Modal: Enrolled Users Manager */}
+      <DeviceUsersManagerModal
+        isOpen={isDeviceUsersModalOpen}
+        onClose={() => {
+          setIsDeviceUsersModalOpen(false);
+          setSelectedDeviceForUsers(null);
+          loadData();
+        }}
+        device={selectedDeviceForUsers}
+      />
 
       {/* Modal: Agent Pairing Wizard */}
       <Modal
