@@ -38,6 +38,7 @@ import {
   BiometricDevice,
   RawBiometricPunch,
 } from '../../../services/attendance/biometricGatewayService';
+import { BiometricSetupWizardModal } from '../components/BiometricSetupWizardModal';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { cn } from '../../../lib/utils';
 
@@ -49,6 +50,7 @@ export const BiometricIntegrationView: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<'terminals' | 'agents' | 'punches'>('terminals');
 
   // Modals
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [isPairingModalOpen, setIsPairingModalOpen] = useState(false);
   const [isAddDeviceModalOpen, setIsAddDeviceModalOpen] = useState(false);
   const [isStressTestModalOpen, setIsStressTestModalOpen] = useState(false);
@@ -167,6 +169,15 @@ export const BiometricIntegrationView: React.FC = () => {
 
         <div className="flex items-center gap-2 flex-wrap">
           <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setIsWizardOpen(true)}
+            className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl shadow-xs"
+          >
+            <Radio className="w-4 h-4" /> Auto-Discover & Setup Wizard
+          </Button>
+
+          <Button
             variant="outline"
             size="sm"
             onClick={() => setIsStressTestModalOpen(true)}
@@ -188,12 +199,12 @@ export const BiometricIntegrationView: React.FC = () => {
           </Button>
 
           <Button
-            variant="primary"
+            variant="outline"
             size="sm"
             onClick={() => setIsAddDeviceModalOpen(true)}
-            className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl shadow-xs"
+            className="text-xs gap-1.5 rounded-xl border-gray-200 text-gray-700"
           >
-            <Plus className="w-4 h-4" /> Add Terminal
+            <Plus className="w-4 h-4" /> Add Terminal Manual
           </Button>
         </div>
       </div>
@@ -668,6 +679,15 @@ export const BiometricIntegrationView: React.FC = () => {
           </Button>
         </div>
       </Modal>
+
+      {/* 5-Stage LAN Auto-Discovery & Zero-Config Setup Wizard Modal */}
+      <BiometricSetupWizardModal
+        isOpen={isWizardOpen}
+        onClose={() => setIsWizardOpen(false)}
+        onSetupCompleted={() => {
+          loadData();
+        }}
+      />
     </div>
   );
 };
