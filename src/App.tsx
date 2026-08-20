@@ -335,7 +335,6 @@ const AppContent: React.FC = () => {
       case 'analytics-reports':
       case 'analytics-settings':
       case 'workforce-analytics':
-      case 'recruitment-analytics':
       case 'attendance-analytics':
       case 'payroll-analytics':
       case 'reports':

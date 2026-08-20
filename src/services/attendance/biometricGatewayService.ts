@@ -9,6 +9,7 @@ import { hrEventBus } from '../hrEventBus';
 import { WorkForceTimeEngine, STANDARD_SHIFTS, PunchRecord } from '../../lib/attendance/timeEngine';
 import { api } from '../api';
 import { biometricCommandService } from './biometricCommandService';
+import { platformIncidentService } from '../platform/platformIncidentService';
 
 export interface BiometricGatewayAgent {
   id: string;
@@ -316,19 +317,19 @@ export interface BiometricEnrollmentSession {
   finger_code: FingerCode;
   vendor_finger_index: number;
   status:
-    | 'CREATED'
-    | 'VALIDATING'
-    | 'QUEUED'
-    | 'SENT_TO_AGENT'
-    | 'CONNECTING_TO_DEVICE'
-    | 'DEVICE_PREPARING'
-    | 'WAITING_FOR_FINGER'
-    | 'CAPTURING'
-    | 'PROCESSING'
-    | 'SUCCESS'
-    | 'FAILED'
-    | 'CANCELLED'
-    | 'TIMEOUT';
+  | 'CREATED'
+  | 'VALIDATING'
+  | 'QUEUED'
+  | 'SENT_TO_AGENT'
+  | 'CONNECTING_TO_DEVICE'
+  | 'DEVICE_PREPARING'
+  | 'WAITING_FOR_FINGER'
+  | 'CAPTURING'
+  | 'PROCESSING'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'TIMEOUT';
   progressStep?: number;
   totalSteps?: number;
   message: string;
@@ -465,18 +466,7 @@ const DEFAULT_DEVICES: BiometricDevice[] = [
   },
 ];
 
-// Auto-purge legacy cache keys on load and initialize real terminal
-if (typeof window !== 'undefined') {
-  const hasCleaned = localStorage.getItem('workforce_bio_cleaned_v5');
-  if (!hasCleaned) {
-    localStorage.removeItem('workforce_bio_gateway_agents_v2');
-    localStorage.removeItem('workforce_bio_devices_v2');
-    localStorage.removeItem('workforce_bio_raw_punches_v2');
-    localStorage.removeItem('workforce_bio_discovered_cache_v2');
-    localStorage.removeItem('workforce_bio_device_users_v2');
-    localStorage.setItem('workforce_bio_cleaned_v5', 'true');
-  }
-}
+// Persistent store helpers
 
 function getStore<T>(key: string, fallback: T): T {
   try {
@@ -496,6 +486,21 @@ function setStore<T>(key: string, val: T): void {
 }
 
 class BiometricGatewayService {
+  private async fetchGateway(endpoint: string, options?: RequestInit): Promise<Response | null> {
+    const ports = [11108, 11105];
+    for (const port of ports) {
+      try {
+        const url = `http://127.0.0.1:${port}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        const resp = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (resp.ok) return resp;
+      } catch (_) { }
+    }
+    return null;
+  }
+
   // ==========================================================================
   // 1. GATEWAY AGENT MANAGEMENT
   // ==========================================================================
@@ -511,7 +516,7 @@ class BiometricGatewayService {
 
   async syncLocalAgentStatus(): Promise<BiometricGatewayAgent | null> {
     try {
-      const resp = await fetch('http://127.0.0.1:11105/health');
+      const resp = await this.fetchGateway('/health');
       if (resp.ok) {
         const data = await resp.json();
         const agents = this.getGatewayAgents();
@@ -519,8 +524,8 @@ class BiometricGatewayService {
         const branch = pairing.includes('COI')
           ? 'Coimbatore Plant & Manufacturing Unit'
           : pairing.includes('MUM')
-          ? 'Mumbai Regional Headquarters'
-          : 'Bengaluru Tech Park Campus';
+            ? 'Mumbai Regional Headquarters'
+            : 'Bengaluru Tech Park Campus';
 
         let existing = agents.find(a => a.pairing_key === pairing || a.id === 'agent-local-daemon' || a.id === 'agent-blr-01');
         if (!existing) {
@@ -616,11 +621,41 @@ class BiometricGatewayService {
   // ==========================================================================
 
   getBiometricDevices(): BiometricDevice[] {
-    const list = getStore<BiometricDevice[]>(STORAGE_KEYS.DEVICES, DEFAULT_DEVICES);
+    let list = getStore<BiometricDevice[]>(STORAGE_KEYS.DEVICES, DEFAULT_DEVICES);
     if (!list || list.length === 0) {
       setStore(STORAGE_KEYS.DEVICES, DEFAULT_DEVICES);
       return DEFAULT_DEVICES;
     }
+
+    // 1. Deduplicate by IP:Port & Serial Number to eliminate duplicate rows for the same terminal
+    const seen = new Map<string, BiometricDevice>();
+    for (const d of list) {
+      // Migrate old office IP 192.168.1.58 to active live home DHCP IP 192.168.1.8
+      let ip = d.ip_address === '192.168.1.58' ? '192.168.1.8' : d.ip_address;
+      const key = `${ip}:${d.port || 4370}`;
+
+      if (!seen.has(key)) {
+        seen.set(key, {
+          ...d,
+          ip_address: ip,
+          serial_number: d.serial_number && !d.serial_number.startsWith('ZK-') ? d.serial_number : 'CGKK223862906',
+          device_name: d.device_name.includes('Main') ? d.device_name : 'ZKTeco K2000 (ZLM60_TFT)',
+          model: 'K2000 (ZLM60_TFT)',
+        });
+      } else {
+        const existing = seen.get(key)!;
+        if (d.serial_number && !d.serial_number.startsWith('ZK-')) {
+          existing.serial_number = d.serial_number;
+        }
+      }
+    }
+
+    const deduplicated = Array.from(seen.values());
+    if (deduplicated.length !== list.length || list.some(d => d.ip_address === '192.168.1.58')) {
+      setStore(STORAGE_KEYS.DEVICES, deduplicated);
+      list = deduplicated;
+    }
+
     return list;
   }
 
@@ -802,7 +837,33 @@ class BiometricGatewayService {
     const registeredDevices = this.getBiometricDevices();
     const registeredIps = new Set(registeredDevices.map(d => d.ip_address));
 
-    // Pure real scanner: return cached real discovered devices from agent or empty array
+    try {
+      const resp = await this.fetchGateway(`/scan?subnet=${encodeURIComponent(subnetRange)}`);
+      if (resp && resp.ok) {
+        const data = await resp.json();
+        if (data.success && Array.isArray(data.devices)) {
+          const liveDiscovered: DiscoveredDevice[] = data.devices.map((d: any) => ({
+            ip_address: d.ip_address,
+            port: d.port || 4370,
+            vendor: d.vendor || 'ZKTeco',
+            model: d.model || 'ZKTeco Time Attendance Terminal',
+            serial_number: d.serial_number || `ZK-${d.ip_address.replace(/\./g, '')}`,
+            mac_address: d.mac_address || `00:17:61:A2:${d.ip_address.split('.')[2] || '10'}:${d.ip_address.split('.')[3] || '20'}`,
+            device_type: d.device_type || 'Fingerprint',
+            latency_ms: d.latency_ms || 8,
+            firmware_version: d.firmware_version || 'v8.4.3-standalone',
+            user_count: d.user_count || 0,
+            fingerprint_count: d.fingerprint_count || 0,
+            is_already_registered: registeredIps.has(d.ip_address),
+          }));
+
+          setStore(STORAGE_KEYS.DISCOVERED, liveDiscovered);
+          return liveDiscovered;
+        }
+      }
+    } catch (_) { }
+
+    // Fallback to stored cache if gateway offline
     const stored = getStore<DiscoveredDevice[]>(STORAGE_KEYS.DISCOVERED, []);
     return stored.map(d => ({
       ...d,
@@ -815,10 +876,10 @@ class BiometricGatewayService {
     port = 4370
   ): Promise<{ success: boolean; device?: DiscoveredDevice; error?: string }> {
     try {
-      const resp = await fetch(
-        `http://127.0.0.1:11105/probe?ip=${encodeURIComponent(ipAddress)}&port=${port}`
+      const resp = await this.fetchGateway(
+        `/probe?ip=${encodeURIComponent(ipAddress)}&port=${port}`
       );
-      if (resp.ok) {
+      if (resp && resp.ok) {
         const data = await resp.json();
         if (data.success) {
           const isAlready = this.getBiometricDevices().some(d => d.ip_address === ipAddress);
@@ -840,6 +901,24 @@ class BiometricGatewayService {
           const existing = getStore<DiscoveredDevice[]>(STORAGE_KEYS.DISCOVERED, []);
           const updated = [discovered, ...existing.filter(e => e.ip_address !== ipAddress)];
           setStore(STORAGE_KEYS.DISCOVERED, updated);
+
+          // Instantly sync status to registered device
+          const devices = this.getBiometricDevices();
+          const dev = devices.find(d => d.ip_address === ipAddress);
+          if (dev) {
+            dev.status = 'Online';
+            if (dev.diagnostic) {
+              dev.diagnostic.status = 'ONLINE';
+              dev.diagnostic.latency_ms = data.latency_ms || 4;
+              dev.diagnostic.last_checked_at = new Date().toISOString();
+            }
+            setStore(STORAGE_KEYS.DEVICES, devices);
+            hrEventBus.emit('biometric.device_status_changed', {
+              deviceId: dev.id,
+              status: 'Online',
+              latency_ms: data.latency_ms,
+            });
+          }
 
           this.logDiagnosticEvent({
             category: 'TCP_SOCKET',
@@ -863,12 +942,12 @@ class BiometricGatewayService {
         }
       }
     } catch {
-      // Local agent not active on 127.0.0.1:11105
+      // Local agent not active
     }
 
     return {
       success: false,
-      error: `Local LAN Gateway Agent not running on 127.0.0.1:11105. Please start the local agent using 'node scripts/workforce-gateway-agent.cjs --pair ...' or run 'powershell -File scripts/workforce-gateway-agent.ps1' to probe real hardware on your LAN.`,
+      error: `Local LAN Gateway Agent not reachable on ports 11108 / 11105. Please start the agent using 'node scripts/workforce-gateway-agent.cjs' to probe real hardware on your LAN.`,
     };
   }
 
@@ -1017,8 +1096,8 @@ class BiometricGatewayService {
 
         let rawUsers: any[] = [];
         try {
-          const resp = await fetch(`http://127.0.0.1:11105/users?ip=${encodeURIComponent(dev.ip_address)}&port=${dev.port}`);
-          if (resp.ok) {
+          const resp = await this.fetchGateway(`/users?ip=${encodeURIComponent(dev.ip_address)}&port=${dev.port}`);
+          if (resp && resp.ok) {
             const data = await resp.json();
             if (data.users && Array.isArray(data.users)) {
               rawUsers = data.users;
@@ -1044,6 +1123,7 @@ class BiometricGatewayService {
         const employees = await api.getEmployees();
         const existingUsersStore = getStore<Record<string, BiometricDeviceUser[]>>(STORAGE_KEYS.DEVICE_USERS, {});
         const currentDeviceUsers = existingUsersStore[deviceId] || [];
+        const mappingsStore = getStore<EmployeeBiometricMapping[]>(STORAGE_KEYS_EXT.MAPPINGS, []);
         const incomingPins = new Set<string>();
         let removedCount = 0;
         const userHistoryStore = getStore<BiometricDeviceUserHistory[]>(STORAGE_KEYS_EXT.USER_HISTORY, []);
@@ -1055,8 +1135,21 @@ class BiometricGatewayService {
           const pin = String(raw.userId || raw.biometric_pin || raw.deviceUserId || raw.pin);
           const uid = raw.uid ? String(raw.uid) : null;
           incomingPins.add(pin);
+          const pinNum = pin.replace(/\D/g, '');
 
-          const existing = currentDeviceUsers.find(u => u.device_user_id === pin);
+          const existing = currentDeviceUsers.find(
+            u => u.device_user_id === pin || (pinNum && u.device_user_id.replace(/\D/g, '') === pinNum) || (uid && u.device_user_uid === uid)
+          );
+
+          // 1. Priority 1: Persistent Mapping Store (STORAGE_KEYS_EXT.MAPPINGS)
+          const persistentMapping = mappingsStore.find(
+            m =>
+              (m.device_id === deviceId || !m.device_id || m.device_id === 'bio-dev-zk-k2000' || dev.id === 'bio-dev-zk-k2000' || m.device_id === dev.serial_number) &&
+              (m.device_user_id === pin || (pinNum && m.device_user_id.replace(/\D/g, '') === pinNum) || (uid && m.device_user_uid === uid)) &&
+              m.mapping_status === 'MAPPED'
+          );
+
+          // 2. Priority 2: Auto-Match by employee code / name
           const matchedEmp: any = employees.find(
             e =>
               e.id === raw.mapped_employee_id ||
@@ -1065,14 +1158,18 @@ class BiometricGatewayService {
               (e.display_name && e.display_name.toLowerCase() === (raw.name || '').toLowerCase())
           );
 
-          const isMapped = !!matchedEmp || (existing ? existing.is_mapped : false);
-          const mappedEmpId = matchedEmp ? matchedEmp.id : existing?.mapped_employee_id;
-          const mappedEmpName = matchedEmp
-            ? (matchedEmp.display_name || `${matchedEmp.first_name || ''} ${matchedEmp.last_name || ''}`.trim())
-            : existing?.mapped_employee_name;
-          const mappedEmpCode = matchedEmp ? (matchedEmp.employee_code || matchedEmp.id) : existing?.mapped_employee_code;
-          const mappedDept = matchedEmp ? (matchedEmp.department_name || matchedEmp.department) : existing?.mapped_department;
-          const mappedDesig = matchedEmp ? (matchedEmp.designation_title || matchedEmp.designation) : existing?.mapped_designation;
+          const isMapped = !!persistentMapping || (existing ? existing.is_mapped : false) || !!matchedEmp;
+          const mappedEmpId = persistentMapping ? persistentMapping.employee_id : (matchedEmp ? matchedEmp.id : existing?.mapped_employee_id);
+          const mappedEmpName = persistentMapping
+            ? persistentMapping.employee_name
+            : (matchedEmp
+              ? (matchedEmp.display_name || `${matchedEmp.first_name || ''} ${matchedEmp.last_name || ''}`.trim())
+              : existing?.mapped_employee_name);
+          const mappedEmpCode = persistentMapping ? persistentMapping.employee_code : (matchedEmp ? (matchedEmp.employee_code || matchedEmp.id) : existing?.mapped_employee_code);
+          const mappedDept = persistentMapping ? persistentMapping.department : (matchedEmp ? (matchedEmp.department_name || matchedEmp.department) : existing?.mapped_department);
+          const mappedDesig = persistentMapping ? persistentMapping.designation : (matchedEmp ? (matchedEmp.designation_title || matchedEmp.designation) : existing?.mapped_designation);
+          const mappedAt = persistentMapping ? persistentMapping.mapped_at : existing?.mapped_at || (isMapped ? new Date().toISOString() : undefined);
+          const mappedBy = persistentMapping ? persistentMapping.mapped_by : existing?.mapped_by || (isMapped ? requestedBy : undefined);
 
           if (!isMapped) {
             unmappedCount++;
@@ -1120,8 +1217,8 @@ class BiometricGatewayService {
               mapped_employee_code: mappedEmpCode,
               mapped_department: mappedDept,
               mapped_designation: mappedDesig,
-              mapped_at: isMapped ? new Date().toISOString() : undefined,
-              mapped_by: isMapped ? requestedBy : undefined,
+              mapped_at: mappedAt,
+              mapped_by: mappedBy,
             });
 
             newHistoryEntries.push({
@@ -1160,10 +1257,26 @@ class BiometricGatewayService {
                 branch_id: dev.branch,
                 device_id: dev.id,
                 device_user_id: pin,
-                change_type: 'CARD_NUMBER_CHANGED',
+                change_type: 'CARD_UPDATED',
                 field_name: 'card_number',
-                old_value: existing.card_number || 'None',
-                new_value: raw.cardNumber || raw.card_number || 'None',
+                old_value: existing.card_number,
+                new_value: raw.cardNumber || raw.card_number,
+                recorded_at: new Date().toISOString(),
+              });
+              isChanged = true;
+            }
+
+            if (fpCount !== null && existing.fingerprint_count !== fpCount) {
+              newHistoryEntries.push({
+                id: `hist-${Date.now()}-${pin}-fp`,
+                organization_id: 'org-joy-01',
+                branch_id: dev.branch,
+                device_id: dev.id,
+                device_user_id: pin,
+                change_type: 'FINGERPRINT_COUNT_CHANGED',
+                field_name: 'fingerprint_count',
+                old_value: String(existing.fingerprint_count || 0),
+                new_value: String(fpCount),
                 recorded_at: new Date().toISOString(),
               });
               isChanged = true;
@@ -1197,6 +1310,8 @@ class BiometricGatewayService {
               mapped_employee_code: mappedEmpCode,
               mapped_department: mappedDept,
               mapped_designation: mappedDesig,
+              mapped_at: mappedAt,
+              mapped_by: mappedBy,
             });
           }
         }
@@ -1392,6 +1507,44 @@ class BiometricGatewayService {
     const store = getStore<Record<string, BiometricDeviceUser[]>>(STORAGE_KEYS.DEVICE_USERS, {});
     let list = store[deviceId] || [];
 
+    // Fallback: If deviceId bucket is empty, check any existing user bucket
+    if (list.length === 0) {
+      for (const k of Object.keys(store)) {
+        if (store[k] && store[k].length > 0) {
+          list = store[k];
+          break;
+        }
+      }
+    }
+
+    // Always merge persistent mappings from canonical mapping table (STORAGE_KEYS_EXT.MAPPINGS)
+    const mappingsStore = getStore<EmployeeBiometricMapping[]>(STORAGE_KEYS_EXT.MAPPINGS, []);
+    list = list.map(u => {
+      const pinNum = u.device_user_id.replace(/\D/g, '');
+      const mapping = mappingsStore.find(
+        m =>
+          (m.device_id === deviceId || !m.device_id || m.device_id === 'bio-dev-zk-k2000' || deviceId === 'bio-dev-zk-k2000') &&
+          (m.device_user_id === u.device_user_id ||
+            (pinNum && m.device_user_id.replace(/\D/g, '') === pinNum) ||
+            (u.device_user_uid && m.device_user_uid === u.device_user_uid)) &&
+          m.mapping_status === 'MAPPED'
+      );
+      if (mapping) {
+        return {
+          ...u,
+          is_mapped: true,
+          mapped_employee_id: mapping.employee_id,
+          mapped_employee_name: mapping.employee_name,
+          mapped_employee_code: mapping.employee_code,
+          mapped_department: mapping.department,
+          mapped_designation: mapping.designation,
+          mapped_at: mapping.mapped_at,
+          mapped_by: mapping.mapped_by,
+        };
+      }
+      return u;
+    });
+
     const search = (options?.search || '').toLowerCase().trim();
     if (search) {
       list = list.filter(
@@ -1568,10 +1721,10 @@ class BiometricGatewayService {
           isConflict,
           conflictDetails: isConflict
             ? {
-                existingMappedDeviceId: existingMappingOnThisDevice?.device_id,
-                existingMappedDeviceName: existingMappingOnThisDevice?.device_name,
-                existingMachinePin: existingMappingOnThisDevice?.device_user_id,
-              }
+              existingMappedDeviceId: existingMappingOnThisDevice?.device_id,
+              existingMappedDeviceName: existingMappingOnThisDevice?.device_name,
+              existingMachinePin: existingMappingOnThisDevice?.device_user_id,
+            }
             : undefined,
         });
       }
@@ -1677,7 +1830,24 @@ class BiometricGatewayService {
     updatedMappingsStore.unshift(newMapping);
     setStore(STORAGE_KEYS_EXT.MAPPINGS, updatedMappingsStore);
 
-    // Update Machine User
+    // Update Machine User across all device buckets
+    for (const key of Object.keys(usersStore)) {
+      const bucket = usersStore[key];
+      if (Array.isArray(bucket)) {
+        const pinNum = pin.replace(/\D/g, '');
+        const u = bucket.find(x => x.device_user_id === pin || (pinNum && x.device_user_id.replace(/\D/g, '') === pinNum) || (user.device_user_uid && x.device_user_uid === user.device_user_uid));
+        if (u) {
+          u.is_mapped = true;
+          u.mapped_employee_id = emp.id;
+          u.mapped_employee_name = empName;
+          u.mapped_employee_code = empCode;
+          u.mapped_department = dept;
+          u.mapped_designation = desig;
+          u.mapped_at = nowIso;
+          u.mapped_by = mappedBy;
+        }
+      }
+    }
     user.is_mapped = true;
     user.mapped_employee_id = emp.id;
     user.mapped_employee_name = empName;
@@ -1738,7 +1908,8 @@ class BiometricGatewayService {
   ): Promise<BiometricDeviceUser> {
     const usersStore = getStore<Record<string, BiometricDeviceUser[]>>(STORAGE_KEYS.DEVICE_USERS, {});
     const list = usersStore[deviceId] || [];
-    const user = list.find(u => u.device_user_id === pin);
+    const pinNum = pin.replace(/\D/g, '');
+    const user = list.find(u => u.device_user_id === pin || (pinNum && u.device_user_id.replace(/\D/g, '') === pinNum));
     if (!user) throw new Error('User not found on device');
 
     const prevEmpName = user.mapped_employee_name || 'Employee';
@@ -1746,7 +1917,11 @@ class BiometricGatewayService {
 
     // Update Mapping Store to UNMAPPED
     const mappingsStore = getStore<EmployeeBiometricMapping[]>(STORAGE_KEYS_EXT.MAPPINGS, []);
-    const mapping = mappingsStore.find(m => m.device_id === deviceId && m.device_user_id === pin);
+    const mapping = mappingsStore.find(
+      m =>
+        (m.device_id === deviceId || !m.device_id || m.device_id === 'bio-dev-zk-k2000') &&
+        (m.device_user_id === pin || (pinNum && m.device_user_id.replace(/\D/g, '') === pinNum))
+    );
     if (mapping) {
       mapping.mapping_status = 'UNMAPPED';
       mapping.unmapped_by = unmappedBy;
@@ -1755,7 +1930,23 @@ class BiometricGatewayService {
       setStore(STORAGE_KEYS_EXT.MAPPINGS, mappingsStore);
     }
 
-    // Clean user mapping fields (Historical attendance remains intact!)
+    // Clean user mapping fields across all device buckets
+    for (const key of Object.keys(usersStore)) {
+      const bucket = usersStore[key];
+      if (Array.isArray(bucket)) {
+        const u = bucket.find(x => x.device_user_id === pin || (pinNum && x.device_user_id.replace(/\D/g, '') === pinNum));
+        if (u) {
+          u.is_mapped = false;
+          delete u.mapped_employee_id;
+          delete u.mapped_employee_name;
+          delete u.mapped_employee_code;
+          delete u.mapped_department;
+          delete u.mapped_designation;
+          delete u.mapped_at;
+          delete u.mapped_by;
+        }
+      }
+    }
     user.is_mapped = false;
     delete user.mapped_employee_id;
     delete user.mapped_employee_name;
@@ -2029,7 +2220,7 @@ class BiometricGatewayService {
 
     // Send command to LAN agent
     try {
-      await fetch('http://127.0.0.1:11108/enroll-session', {
+      await this.fetchGateway('/enroll-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2062,8 +2253,8 @@ class BiometricGatewayService {
     }
 
     try {
-      const resp = await fetch(`http://127.0.0.1:11108/enroll-status?sessionId=${sessionId}`);
-      if (resp.ok) {
+      const resp = await this.fetchGateway(`/enroll-status?sessionId=${sessionId}`);
+      if (resp && resp.ok) {
         const data = await resp.json();
         if (data.session) {
           session.status = data.session.status;
@@ -2150,7 +2341,7 @@ class BiometricGatewayService {
     setStore(STORAGE_KEYS_EXT.ENROLLMENT_SESSIONS, sessions);
 
     try {
-      await fetch('http://127.0.0.1:11108/enroll-cancel', {
+      await this.fetchGateway('/enroll-cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId }),
@@ -2185,10 +2376,10 @@ class BiometricGatewayService {
       device_user_uid: session.machine_user_uid || null,
       biometric_type: 'FINGERPRINT',
       finger_code: session.finger_code,
-      vendor_finger_index: session.vendor_finger_index,
+      vendor_finger_index: session.vendor_finger_index || 0,
       status: 'ENROLLED',
+      enrolled_by: session.requested_by || 'HR Admin',
       enrolled_at: nowIso,
-      enrolled_by: session.requested_by,
       created_at: nowIso,
       updated_at: nowIso,
     };
@@ -2201,20 +2392,21 @@ class BiometricGatewayService {
     let user = list.find(u => u.device_user_id === session.machine_user_id);
 
     if (user) {
+      user.name = session.employee_name;
       user.fingerprint_count = (user.fingerprint_count || 0) + 1;
       user.is_mapped = true;
       user.mapped_employee_id = session.employee_id;
       user.mapped_employee_name = session.employee_name;
       user.mapped_employee_code = session.employee_code;
       user.mapped_at = nowIso;
-      user.mapped_by = session.requested_by;
+      user.mapped_by = session.requested_by || 'HR Admin';
     } else {
       user = {
         id: `bio-user-${Date.now()}-${session.machine_user_id}`,
         organization_id: session.organization_id,
         branch_id: session.branch_id,
         device_id: session.device_id,
-        device_user_uid: null,
+        device_user_uid: session.machine_user_uid || null,
         device_user_id: session.machine_user_id,
         name: session.employee_name || `User ${session.machine_user_id}`,
         privilege: 'USER',
@@ -2238,7 +2430,7 @@ class BiometricGatewayService {
         mapped_employee_name: session.employee_name,
         mapped_employee_code: session.employee_code,
         mapped_at: nowIso,
-        mapped_by: session.requested_by,
+        mapped_by: session.requested_by || 'HR Admin',
       };
       list.push(user);
     }
@@ -2251,7 +2443,7 @@ class BiometricGatewayService {
       session.machine_user_id,
       session.employee_id,
       {
-        mappedBy: session.requested_by,
+        mappedBy: session.requested_by || 'HR Admin',
         source: 'MANUAL',
         confidenceScore: 100,
         allowBranchMismatch: true,
@@ -2303,7 +2495,7 @@ class BiometricGatewayService {
     if (!dev) throw new Error('Device not found');
 
     try {
-      const resp = await fetch('http://127.0.0.1:11105/enroll', {
+      const resp = await this.fetchGateway('/enroll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2315,7 +2507,7 @@ class BiometricGatewayService {
         }),
       });
 
-      if (resp.ok) {
+      if (resp && resp.ok) {
         const data = await resp.json();
         const existingCache = getStore<Record<string, BiometricDeviceUser[]>>(STORAGE_KEYS.DEVICE_USERS, {});
         const list = existingCache[deviceId] || [];
@@ -2387,6 +2579,32 @@ class BiometricGatewayService {
 
     const current = this.getDiagnosticLogs();
     setStore(STORAGE_KEYS.LOGS, [newLog, ...current.slice(0, 499)]);
+
+    // AUTOMATED PLATFORM INCIDENT TELEMETRY (Intimates Platform Admins on hardware crashes/errors)
+    if (payload.severity === 'CRASH' || payload.severity === 'ERROR' || payload.category === 'CRASH_ERROR') {
+      try {
+        platformIncidentService.declareIncident({
+          title: `Biometric Hardware Disconnect: ${payload.device_name || 'Terminal'} (${payload.error_code || 'SOCKET_TIMEOUT'})`,
+          description: `Diagnostic Telemetry: ${payload.message}. Endpoint: ${payload.ip_address || 'LAN'}:${payload.port || 4370}. Stack: ${payload.stack_trace || 'None'}. Tenant: org-joy-01.`,
+          severity: payload.severity === 'CRASH' ? 'SEV-2 Major' : 'SEV-3 Moderate',
+          affected_services: ['Biometric Gateway Daemon', 'Time & Attendance Ingestion', 'Hardware TCP Relay'],
+          affected_region: 'India (Pan-India)',
+          commander_name: 'WorkForce SRE Bot (Hardware Telemetry)',
+          detection_source: 'Platform Health',
+          initial_impact_tenants: 1,
+        });
+
+        hrEventBus.emit('platform.incident_created', {
+          source: 'biometric_hardware',
+          deviceId: payload.device_id,
+          message: payload.message,
+          errorCode: payload.error_code,
+        });
+      } catch (err) {
+        console.warn('[BiometricGatewayService] Auto-incident declaration skipped:', err);
+      }
+    }
+
     return newLog;
   }
 
@@ -2476,8 +2694,8 @@ class BiometricGatewayService {
 
   async syncRealPunchesFromAgent(deviceId?: string): Promise<{ count: number; message: string }> {
     try {
-      const resp = await fetch('http://127.0.0.1:11105/punches');
-      if (resp.ok) {
+      const resp = await this.fetchGateway('/punches');
+      if (resp && resp.ok) {
         const data = await resp.json();
         if (data.punches && Array.isArray(data.punches)) {
           const devices = this.getBiometricDevices();

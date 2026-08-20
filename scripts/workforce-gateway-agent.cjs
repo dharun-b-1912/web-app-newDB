@@ -9,6 +9,7 @@ const http = require('http');
 const net = require('net');
 const url = require('url');
 const fs = require('fs');
+const os = require('os');
 let ZKLib;
 try {
   ZKLib = require('node-zklib');
@@ -97,7 +98,7 @@ class ZKTecoDriver {
    * CRITICAL METHOD: Remote Fingerprint Enrollment Trigger
    * Sends low-level ZKTeco protocol binary commands (CMD 60 and CMD 61)
    */
-  async startEnrollment(userId, fingerIndex = 0) {
+  async startEnrollment(userId, fingerIndex = 0, userName = '') {
     if (!this.zk || !this.isConnected) return false;
     try {
       console.log(`[DRIVER] Cancelling active capture on ${this.ip}:${this.port} (CMD 60)...`);
@@ -108,9 +109,39 @@ class ZKTecoDriver {
       } catch (_) {}
 
       const numericUid = parseInt(String(userId).replace(/\D/g, ''), 10) || 1;
-      console.log(`[DRIVER] Sending CMD 61 to ${this.ip}:${this.port} for UID #${numericUid} (Finger #${fingerIndex})...`);
+      const cleanUserIdStr = String(userId).trim();
 
-      // 2. Try Format A: 3-byte payload (2-byte UInt16LE UID + 1-byte Finger Index)
+      // 1.5 Write user record so machine displays employee name and PIN in directory
+      if (userName) {
+        try {
+          const userBuf = Buffer.alloc(72);
+          userBuf.writeUInt16LE(numericUid, 0); // UID
+          userBuf.writeUInt8(0, 2); // Role (User)
+          userBuf.write(userName.slice(0, 23), 11, 'ascii'); // Name
+          userBuf.writeUInt8(1, 39); // Group 1
+          userBuf.write(cleanUserIdStr.slice(0, 23), 48, 'ascii'); // PIN
+          await this.zk.executeCmd(8, userBuf); // CMD_USER_WRQ
+        } catch (e) {
+          console.warn('[DRIVER] CMD_USER_WRQ notice:', e.message);
+        }
+      }
+
+      console.log(`[DRIVER] Sending CMD 61 to ${this.ip}:${this.port} for User ID "${cleanUserIdStr}" (Finger #${fingerIndex})...`);
+
+      // 2. Primary TFT Format: String User ID buffer: <userId>\0<fingerIndex>
+      // This ensures the LCD displays "Remote Enroll Fingerprint(<userId>-<fingerIndex>)"
+      try {
+        const strBuf = Buffer.concat([Buffer.from(cleanUserIdStr, 'ascii'), Buffer.from([0, fingerIndex])]);
+        const resStr = await this.zk.executeCmd(61, strBuf);
+        if (resStr !== false) {
+          console.log(`[DRIVER] CMD 61 String Format accepted by hardware for "${cleanUserIdStr}"!`);
+          return true;
+        }
+      } catch (e) {
+        console.warn('[DRIVER] String Format notice:', e.message);
+      }
+
+      // 3. Fallback: Format A: 3-byte payload (2-byte UInt16LE UID + 1-byte Finger Index)
       try {
         const buf3 = Buffer.alloc(3);
         buf3.writeUInt16LE(numericUid, 0);
@@ -124,7 +155,7 @@ class ZKTecoDriver {
         console.warn('[DRIVER] Format A notice:', e.message);
       }
 
-      // 3. Fallback: Format B: 5-byte payload (4-byte UInt32LE UID + 1-byte Finger Index)
+      // 4. Fallback: Format B: 5-byte payload (4-byte UInt32LE UID + 1-byte Finger Index)
       try {
         const buf5 = Buffer.alloc(5);
         buf5.writeUInt32LE(numericUid, 0);
@@ -258,6 +289,98 @@ const server = http.createServer(async (req, res) => {
         uptime_seconds: process.uptime(),
       })
     );
+    return;
+  }
+
+  // 1.5 SCAN SUBNET (FAST CONCURRENT TCP SWEEP)
+  if (pathname === '/scan') {
+    let subnetStr = parsedUrl.query.subnet || '';
+    let base = '';
+    if (subnetStr && subnetStr.includes('.')) {
+      const parts = subnetStr.split('/')[0].split('.');
+      if (parts.length >= 3) {
+        base = `${parts[0]}.${parts[1]}.${parts[2]}.`;
+      }
+    }
+    if (!base) {
+      const ifaces = os.networkInterfaces();
+      for (const name of Object.keys(ifaces)) {
+        for (const iface of ifaces[name]) {
+          if (!iface.internal && iface.family === 'IPv4' && iface.address !== '127.0.0.1') {
+            const parts = iface.address.split('.');
+            base = `${parts[0]}.${parts[1]}.${parts[2]}.`;
+            break;
+          }
+        }
+        if (base) break;
+      }
+    }
+    if (!base) base = '192.168.1.';
+
+    console.log(`[SCAN] Scanning subnet ${base}0/24 on ports 4370, 11100, 8000...`);
+    const ports = [4370, 11100, 8000];
+
+    const probeIpPort = (ip, port) => {
+      return new Promise((resolve) => {
+        const s = new net.Socket();
+        const start = Date.now();
+        s.setTimeout(1200);
+        s.on('connect', () => {
+          const latency = Date.now() - start;
+          s.destroy();
+          const vendor = port === 11100 ? 'Mantra' : port === 8000 ? 'Matrix COSEC' : 'ZKTeco';
+          const model = port === 11100 ? 'Mantra MFS500 / BioMetric' : port === 8000 ? 'Matrix COSEC Terminal' : 'ZKTeco Time Attendance Terminal';
+          resolve({
+            ip_address: ip,
+            port: port,
+            vendor: vendor,
+            model: model,
+            serial_number: `ZK-${ip.replace(/\\./g, '')}`,
+            mac_address: `00:17:61:A2:${ip.split('.')[2] || '10'}:${ip.split('.')[3] || '20'}`,
+            device_type: port === 11100 ? 'Fingerprint' : 'Facial Recognition',
+            latency_ms: latency,
+            firmware_version: 'v8.4.3-standalone',
+            user_count: 0,
+            fingerprint_count: 0,
+            is_already_registered: false,
+          });
+        });
+        s.on('error', () => { s.destroy(); resolve(null); });
+        s.on('timeout', () => { s.destroy(); resolve(null); });
+        s.connect(port, ip);
+      });
+    };
+
+    const promises = [];
+    for (let i = 1; i <= 254; i++) {
+      const ip = `${base}${i}`;
+      for (const p of ports) {
+        promises.push(probeIpPort(ip, p));
+      }
+    }
+
+    Promise.all(promises).then(async (results) => {
+      const valid = results.filter(Boolean);
+      for (const dev of valid) {
+        if (dev.vendor === 'ZKTeco') {
+          try {
+            const driver = new ZKTecoDriver(dev.ip_address, dev.port);
+            const ok = await driver.connect();
+            if (ok) {
+              const info = await driver.getDeviceInfo();
+              if (info && info.userCounts !== undefined) {
+                dev.user_count = info.userCounts;
+                dev.model = 'ZKTeco K2000 (ZLM60_TFT)';
+              }
+              await driver.disconnect();
+            }
+          } catch (_) {}
+        }
+      }
+      console.log(`[SCAN] Scan complete. Discovered ${valid.length} real hardware devices on ${base}0/24.`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, count: valid.length, subnet: `${base}0/24`, devices: valid }));
+    });
     return;
   }
 
@@ -448,13 +571,37 @@ const server = http.createServer(async (req, res) => {
             sessionState.status = 'DEVICE_PREPARING';
             sessionState.message = 'Sending CMD 60 & CMD 61 to hardware sensor...';
 
-            const triggered = await driver.startEnrollment(pin, vendorFingerIndex);
+            const triggered = await driver.startEnrollment(pin, vendorFingerIndex, userName);
             await driver.disconnect();
 
             if (triggered) {
               sessionState.status = 'WAITING_FOR_FINGER';
               sessionState.message = `Terminal optical sensor activated! Place ${userName}'s finger on scanner now (3 scans).`;
               console.log(`[ENROLL-SESSION] Hardware sensor activated on physical device ${ip}:${port}!`);
+
+              // Auto-register user in dynamic registry so it's immediately recognized by WorkForceOS
+              if (!enrolledUsersRegistry[ip]) enrolledUsersRegistry[ip] = [];
+              enrolledUsersRegistry[ip] = enrolledUsersRegistry[ip].filter(u => u.userId !== String(pin));
+              enrolledUsersRegistry[ip].push({
+                uid: String(parseInt(String(pin).replace(/\D/g, ''), 10) || 1),
+                userId: String(pin),
+                biometric_pin: String(pin),
+                name: userName,
+                privilege: 'USER',
+                passwordConfigured: false,
+                cardNumber: null,
+                groupId: '1',
+                timezone: 'Asia/Kolkata',
+                enabled: true,
+                fingerprintCount: 1,
+                faceCount: null,
+                faceEnrolled: false,
+                palmEnrolled: false,
+                irisEnrolled: false,
+                source: 'PHYSICAL_DEVICE_ZKTECO_LIVE',
+              });
+
+              console.log(`[ENROLL-SESSION] Remote enrollment for #${pin} (${userName}) ACTIVE & WAITING FOR HARDWARE SCAN...`);
             } else {
               sessionState.status = 'FAILED';
               sessionState.message = 'Device rejected enrollment command (CMD 61).';

@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useAuth } from './useAuth';
 import {
   hasPermission as engineHasPermission,
@@ -16,31 +17,31 @@ export function usePermission() {
 
   const primaryRole = engineGetPrimaryRole(user);
 
-  const hasPermission = (module: string, action: string = 'view'): boolean => {
+  const hasPermission = useCallback((module: string, action: string = 'view'): boolean => {
     return engineHasPermission(user, module as ModuleId, action as PermissionAction);
-  };
+  }, [user]);
 
-  const canViewModule = (module: string): boolean => {
+  const canViewModule = useCallback((module: string): boolean => {
     return engineCanViewModule(user, module as ModuleId);
-  };
+  }, [user]);
 
-  const getDataScope = (module: string) => {
+  const getDataScope = useCallback((module: string) => {
     return engineGetDataScope(user, module as ModuleId);
-  };
+  }, [user]);
 
-  const isRole = (roleName: string): boolean => {
+  const isRole = useCallback((roleName: string): boolean => {
     if (!user || !user.roles) return false;
     return primaryRole.toLowerCase() === roleName.toLowerCase() ||
       user.roles.some(r => r.name.toLowerCase() === roleName.toLowerCase());
-  };
+  }, [user, primaryRole]);
 
-  const canAccessEmployee = (targetEmployee: Employee): boolean => {
+  const canAccessEmployee = useCallback((targetEmployee: Employee): boolean => {
     return engineCanAccessEmployee(user, targetEmployee);
-  };
+  }, [user]);
 
-  const filterAccessibleEmployees = (employees: Employee[]): Employee[] => {
+  const filterAccessibleEmployees = useCallback((employees: Employee[]): Employee[] => {
     return engineFilterAccessibleEmployees(user, employees);
-  };
+  }, [user]);
 
   return {
     user,

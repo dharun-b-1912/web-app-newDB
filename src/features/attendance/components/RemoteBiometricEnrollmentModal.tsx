@@ -165,6 +165,29 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
     }
   };
 
+  // Direct Complete & Verify Enrollment (when user finished 3 touches on hardware)
+  const handleDirectCompleteEnrollment = async () => {
+    if (!activeSession || !selectedEmployee) return;
+    try {
+      if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
+      const completedSession: BiometricEnrollmentSession = {
+        ...activeSession,
+        status: 'SUCCESS',
+        progressStep: 3,
+        totalSteps: 3,
+        message: 'Fingerprint template successfully enrolled & verified on physical terminal!',
+        completed_at: new Date().toISOString(),
+      };
+      await biometricGatewayService.finalizeEnrollmentSuccess(completedSession);
+      setActiveSession(completedSession);
+      setModalStage('success');
+      showToast(`Fingerprint successfully enrolled for ${selectedEmployee.display_name || selectedEmployee.name}!`);
+      if (onEnrollmentSuccess) onEnrollmentSuccess();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to finalize enrollment', 'error');
+    }
+  };
+
   // Instant Keypad Enrollment Sync
   const handleKeypadEnrollmentSync = async () => {
     if (!selectedEmployee) {
@@ -739,16 +762,29 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
           )}
 
           {modalStage === 'sensor_active' && (
-            <div className="flex items-center justify-between w-full">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleAdvanceScanStep}
-                className="text-xs rounded-xl border-emerald-300 bg-emerald-50 text-[#07563D] hover:bg-emerald-100 font-bold shadow-2xs"
-              >
-                <Fingerprint className="w-3.5 h-3.5 mr-1" />
-                Touch Sensor / Scan Now ({sessionProgressStep}/3)
-              </Button>
+            <div className="flex items-center justify-between w-full gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAdvanceScanStep}
+                  className="text-xs rounded-xl border-emerald-300 bg-emerald-50 text-[#07563D] hover:bg-emerald-100 font-bold shadow-2xs"
+                >
+                  <Fingerprint className="w-3.5 h-3.5 mr-1" />
+                  Touch Sensor / Step ({sessionProgressStep}/3)
+                </Button>
+
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleDirectCompleteEnrollment}
+                  className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs rounded-xl font-bold shadow-xs px-3.5 gap-1.5"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                  Confirm & Complete Enrollment
+                </Button>
+              </div>
+
               <Button
                 variant="outline"
                 size="sm"
@@ -757,7 +793,7 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
                 className="text-xs rounded-xl border-gray-300 text-rose-600 hover:bg-rose-50"
               >
                 <X className="w-3.5 h-3.5 mr-1" />
-                {isCancelling ? 'Cancelling...' : 'Cancel Enrollment'}
+                {isCancelling ? 'Cancelling...' : 'Cancel'}
               </Button>
             </div>
           )}

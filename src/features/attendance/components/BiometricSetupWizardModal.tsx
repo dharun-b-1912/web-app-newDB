@@ -70,7 +70,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
   const [selectedDiscoveredDevice, setSelectedDiscoveredDevice] = useState<DiscoveredDevice | null>(null);
 
   // Direct IP Probe State
-  const [probeIp, setProbeIp] = useState('192.168.1.58');
+  const [probeIp, setProbeIp] = useState('192.168.1.8');
   const [probePort, setProbePort] = useState(4370);
   const [isProbing, setIsProbing] = useState(false);
   const [probeError, setProbeError] = useState<string | null>(null);
@@ -112,6 +112,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
       );
       setDiscoveredDevices(devices);
       if (devices.length > 0) {
+        setProbeIp(devices[0].ip_address);
         showToast(`Discovered ${devices.length} biometric hardware devices!`);
       } else {
         showToast('Scan complete. No hardware terminals responded on broadcast. Use direct IP probe below.');

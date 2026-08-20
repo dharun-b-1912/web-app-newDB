@@ -38,22 +38,22 @@ export interface IncidentTimelineEvent {
   id: string;
   timestamp: string;
   event_type:
-    | 'Incident Declared'
-    | 'Severity Changed'
-    | 'Status Changed'
-    | 'Responder Added'
-    | 'Service Affected'
-    | 'Impact Updated'
-    | 'Investigation Note'
-    | 'Mitigation Started'
-    | 'Customer Update'
-    | 'Internal Update'
-    | 'Rollback'
-    | 'Feature Flag Changed'
-    | 'Service Recovered'
-    | 'Incident Resolved'
-    | 'Postmortem Created'
-    | 'Reopened';
+  | 'Incident Declared'
+  | 'Severity Changed'
+  | 'Status Changed'
+  | 'Responder Added'
+  | 'Service Affected'
+  | 'Impact Updated'
+  | 'Investigation Note'
+  | 'Mitigation Started'
+  | 'Customer Update'
+  | 'Internal Update'
+  | 'Rollback'
+  | 'Feature Flag Changed'
+  | 'Service Recovered'
+  | 'Incident Resolved'
+  | 'Postmortem Created'
+  | 'Reopened';
   actor: string;
   actor_role: string;
   visibility: 'internal' | 'customer';
@@ -129,14 +129,14 @@ export interface PlatformIncidentRecord {
   error_rate_pct: number;
   latency_increase_ms: number;
   detection_source:
-    | 'Monitoring Alert'
-    | 'Platform Health'
-    | 'Engineer Report'
-    | 'Customer Support'
-    | 'Background Job'
-    | 'Security Alert'
-    | 'External Provider'
-    | 'Manual';
+  | 'Monitoring Alert'
+  | 'Platform Health'
+  | 'Engineer Report'
+  | 'Customer Support'
+  | 'Background Job'
+  | 'Security Alert'
+  | 'External Provider'
+  | 'Manual';
 
   started_at: string;
   detected_at: string;

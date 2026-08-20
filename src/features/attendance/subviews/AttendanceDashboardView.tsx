@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -26,9 +26,12 @@ import {
 } from 'lucide-react';
 import { AttendanceDaily, PunchSource } from '../../../types/attendance';
 import { attendanceApi } from '../../../services/attendanceApi';
+import { api } from '../../../services/api';
 import { useToast } from '../../../components/ui/Toast';
 import { formatMinutesToHoursStr } from '../../../lib/attendance/attendanceEngine';
 import { hrEventBus } from '../../../services/hrEventBus';
+import { useAuth } from '../../../hooks/useAuth';
+import { usePermission } from '../../../hooks/usePermission';
 
 interface AttendanceDashboardViewProps {
   onSelectKpiFilter?: (filterStatus: string) => void;
@@ -40,29 +43,55 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
   onOpenEmployeeProfile,
 }) => {
   const { showToast } = useToast();
+  const { user } = useAuth();
+  const { filterAccessibleEmployees } = usePermission();
+  const activeCompany = api.getActiveCompany();
+
+  const [employees, setEmployees] = useState<any[]>([]);
   const [dailyRecords, setDailyRecords] = useState<AttendanceDaily[]>(() => attendanceApi.getDailyAttendance());
   const [searchQuery, setSearchQuery] = useState('');
   const [deptFilter, setDeptFilter] = useState('ALL');
+  const [departments, setDepartments] = useState<string[]>(['People & HR']);
 
   // Clock-in / Clock-out state for current logged-in employee
-  const currentEmpId = 'emp-001';
-  const currentEmpName = 'Arun Kumar';
-  const myRecord = dailyRecords.find(r => r.employee_id === currentEmpId && r.date === new Date().toISOString().split('T')[0]);
+  const currentEmpId = user?.employee_id || user?.id || 'WF-1001';
+  const currentEmpName = user?.name || 'Hari Priya';
+  const myRecord = dailyRecords.find(r => (r.employee_id === currentEmpId || r.employee_code === currentEmpId) && r.date === new Date().toISOString().split('T')[0]);
 
   const [isCheckedIn, setIsCheckedIn] = useState(!!myRecord?.first_check_in && !myRecord?.last_check_out);
   const [isOnBreak, setIsOnBreak] = useState(false);
   const [gpsLocation, setGpsLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [isGettingGps, setIsGettingGps] = useState(false);
 
+  const loadData = useCallback(() => {
+    const activeComp = api.getActiveCompany();
+    api.getEmployees(activeComp?.id).then(emps => {
+      const accessible = filterAccessibleEmployees ? filterAccessibleEmployees(emps) : emps;
+      setEmployees(accessible);
+    }).catch(() => {});
+
+    api.getDepartments(activeComp?.id).then(depts => {
+      if (depts && depts.length > 0) {
+        setDepartments(depts.map(d => d.name));
+      }
+    }).catch(() => {});
+
+    setDailyRecords(attendanceApi.getDailyAttendance(undefined, deptFilter, undefined, searchQuery));
+  }, [filterAccessibleEmployees, deptFilter, searchQuery]);
+
   useEffect(() => {
-    const unsub = hrEventBus.subscribe('attendance.punch_received', () => {
-      setDailyRecords(attendanceApi.getDailyAttendance(undefined, deptFilter, undefined, searchQuery));
-    });
-    return () => unsub();
+    loadData();
   }, [deptFilter, searchQuery]);
 
+  useEffect(() => {
+    const unsub = hrEventBus.subscribe('attendance.punch_received', () => {
+      loadData();
+    });
+    return () => unsub();
+  }, [loadData]);
+
   const refreshData = () => {
-    setDailyRecords(attendanceApi.getDailyAttendance(undefined, deptFilter, undefined, searchQuery));
+    loadData();
     showToast('Real-time attendance sync completed');
   };
 
@@ -110,19 +139,22 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
     showToast(isOnBreak ? 'Break ended. Working timer resumed.' : 'Break started. Timer paused.');
   };
 
-  // Pure Real-Time KPI Calculations from actual attendance records
-  const totalEmployees = dailyRecords.length;
-  const expectedToday = dailyRecords.length;
+  // Pure Real-Time KPI Calculations from real active employee headcount & attendance
+  const totalEmployees = employees.length > 0 ? employees.length : 1;
+  const onLeaveCount = dailyRecords.filter(r => r.status === 'On Leave').length;
+  const expectedToday = Math.max(totalEmployees - onLeaveCount, 0);
   const presentCount = dailyRecords.filter(r => r.status === 'Present' || r.status === 'Checked Out').length;
   const absentCount = dailyRecords.filter(r => r.status === 'Absent').length;
-  const onLeaveCount = dailyRecords.filter(r => r.status === 'On Leave').length;
   const wfhCount = dailyRecords.filter(r => r.status === 'WFH').length;
   const lateCount = dailyRecords.filter(r => r.status === 'Late').length;
   const earlyCheckoutCount = dailyRecords.filter(r => r.status === 'Early Checkout').length;
   const halfDayCount = dailyRecords.filter(r => r.status === 'Half Day').length;
   const missingPunchCount = dailyRecords.filter(r => r.status === 'Missing Punch').length;
   const overtimeCount = dailyRecords.filter(r => r.status === 'Overtime' || (r.overtime_minutes && r.overtime_minutes > 0)).length;
-  const notCheckedInCount = Math.max(expectedToday - presentCount - wfhCount - onLeaveCount, 0);
+  const notCheckedInCount = Math.max(expectedToday - presentCount - wfhCount, 0);
+
+  const attendancePercentage = totalEmployees > 0 ? Math.round((presentCount / totalEmployees) * 100) : 0;
+  const absentPercentage = totalEmployees > 0 ? Math.round((absentCount / totalEmployees) * 100) : 0;
 
   const filteredRecords = dailyRecords.filter(item => {
     const matchesSearch =
@@ -151,7 +183,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
               <span>•</span>
               <span>Expected: <strong className="text-white">8h 00m Net Work</strong></span>
               <span>•</span>
-              <span>Location: <strong className="text-white">HQ Bengaluru (Verified IP & Geofence)</strong></span>
+              <span>Location: <strong className="text-white">{(activeCompany as any)?.registered_address?.city || (activeCompany as any)?.name || 'Coimbatore HQ'} (Verified IP & Geofence)</strong></span>
             </div>
           </div>
 
@@ -221,7 +253,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
             <Users className="w-4 h-4 text-[#07563D]" />
           </div>
           <div className="text-2xl font-black text-gray-900 group-hover:text-[#07563D]">{totalEmployees}</div>
-          <div className="text-[10px] text-gray-500 mt-1">428 Active Roster</div>
+          <div className="text-[10px] text-gray-500 mt-1">{totalEmployees} Active in Roster</div>
         </div>
 
         <div
@@ -233,7 +265,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
             <Calendar className="w-4 h-4 text-blue-600" />
           </div>
           <div className="text-2xl font-black text-gray-900 group-hover:text-blue-600">{expectedToday}</div>
-          <div className="text-[10px] text-gray-500 mt-1">Excl. Approved Leaves</div>
+          <div className="text-[10px] text-gray-500 mt-1">Excl. {onLeaveCount} on Leave</div>
         </div>
 
         <div
@@ -245,7 +277,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-2xl font-black text-emerald-900 group-hover:text-emerald-600">{presentCount}</div>
-          <div className="text-[10px] text-emerald-600 font-medium mt-1">82.5% Attendance</div>
+          <div className="text-[10px] text-emerald-600 font-medium mt-1">{attendancePercentage}% Attendance</div>
         </div>
 
         <div
@@ -257,7 +289,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
             <XCircle className="w-4 h-4 text-rose-600" />
           </div>
           <div className="text-2xl font-black text-rose-900 group-hover:text-rose-600">{absentCount}</div>
-          <div className="text-[10px] text-rose-600 font-medium mt-1">4.3% Unapproved</div>
+          <div className="text-[10px] text-rose-600 font-medium mt-1">{absentPercentage}% Unapproved</div>
         </div>
 
         <div
@@ -269,7 +301,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
             <Calendar className="w-4 h-4 text-amber-600" />
           </div>
           <div className="text-2xl font-black text-amber-900 group-hover:text-amber-600">{onLeaveCount}</div>
-          <div className="text-[10px] text-amber-600 font-medium mt-1">Annual / Casual</div>
+          <div className="text-[10px] text-amber-600 font-medium mt-1">{onLeaveCount > 0 ? 'Approved Leave' : 'No Leaves Today'}</div>
         </div>
 
         <div
@@ -281,7 +313,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
             <Laptop className="w-4 h-4 text-purple-600" />
           </div>
           <div className="text-2xl font-black text-purple-900 group-hover:text-purple-600">{wfhCount}</div>
-          <div className="text-[10px] text-purple-600 font-medium mt-1">Approved WFH</div>
+          <div className="text-[10px] text-purple-600 font-medium mt-1">{wfhCount > 0 ? 'Active Remote' : 'No Remote Workers'}</div>
         </div>
 
         <div
@@ -383,11 +415,9 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
               className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#07563D]"
             >
               <option value="ALL">All Departments</option>
-              <option value="Engineering">Engineering</option>
-              <option value="People Operations">People Operations</option>
-              <option value="Finance & Accounts">Finance & Accounts</option>
-              <option value="Product Strategy">Product Strategy</option>
-              <option value="Quality Assurance">Quality Assurance</option>
+              {departments.map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
             </select>
 
             <Button variant="outline" size="sm" leftIcon={<RefreshCw className="w-3.5 h-3.5" />} onClick={refreshData}>

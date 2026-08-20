@@ -57,6 +57,48 @@ function saveStorage<T>(key: string, data: T): void {
 export const attendanceApi = {
   getDailyAttendance: (date?: string, department?: string, status?: string, search?: string): AttendanceDaily[] => {
     let list = loadStorage<AttendanceDaily[]>(STORAGE_KEY_DAILY, SEED_DAILY);
+
+    // Purge mock/legacy attendance records: only keep records strictly matching existing employees in directory
+    try {
+      const rawEmployees = localStorage.getItem('workforce_employees');
+      if (rawEmployees) {
+        const employees: any[] = JSON.parse(rawEmployees);
+        const realEmployees = employees.filter(e => e.status !== 'Terminated' && e.status !== 'Exited');
+
+        const cleaned: AttendanceDaily[] = [];
+        const seenEmpKeys = new Set<string>();
+
+        for (const item of list) {
+          // Find matching real employee strictly by ID or (exact Code AND Name)
+          const matchedEmp = realEmployees.find(e =>
+            (e.id && item.employee_id && e.id.toLowerCase() === item.employee_id.toLowerCase()) ||
+            (e.employee_code && item.employee_code &&
+             e.employee_code.toLowerCase() === item.employee_code.toLowerCase() &&
+             (e.display_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || e.name || '').toLowerCase() === (item.employee_name || '').toLowerCase())
+          );
+
+          if (matchedEmp) {
+            const empKey = `${matchedEmp.id || matchedEmp.employee_code}_${item.date || 'today'}`;
+            if (!seenEmpKeys.has(empKey)) {
+              seenEmpKeys.add(empKey);
+              // Ensure department, designation, name, and code are accurately synced from the real employee!
+              cleaned.push({
+                ...item,
+                employee_id: matchedEmp.id,
+                employee_code: matchedEmp.employee_code || item.employee_code,
+                employee_name: matchedEmp.display_name || `${matchedEmp.first_name || ''} ${matchedEmp.last_name || ''}`.trim() || item.employee_name,
+                department: matchedEmp.department_name || matchedEmp.department || 'People & HR',
+                designation: matchedEmp.designation_title || matchedEmp.designation || 'HR Head',
+              });
+            }
+          }
+        }
+
+        saveStorage(STORAGE_KEY_DAILY, cleaned);
+        list = cleaned;
+      }
+    } catch (_) {}
+
     if (date) {
       list = list.filter(item => item.date === date || !date);
     }

@@ -105,7 +105,7 @@ interface NavGroup {
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const { canViewModule, primaryRole } = usePermission();
+  const { canViewModule, primaryRole, filterAccessibleEmployees } = usePermission();
 
   // Each role gets its own isolated collapse-state key so Super Admin and
   // Company Admin (or any other role switch) never share or overwrite each other.
@@ -150,14 +150,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
 
   const refreshCounts = useCallback(() => {
     if (!isPlatformAdmin) {
-      api.getEmployees().then((emps) => {
-        setEmployeeCount(emps.length);
+      const activeComp = api.getActiveCompany();
+      api.getEmployees(activeComp?.id).then((emps) => {
+        const accessible = filterAccessibleEmployees(emps);
+        setEmployeeCount(accessible.length);
       }).catch(() => {});
       onboardingService.getMetrics().then((m) => {
         setOnboardingCount(m.active_onboardings);
       }).catch(() => {});
     }
-  }, [isPlatformAdmin]);
+  }, [isPlatformAdmin, filterAccessibleEmployees]);
 
   useEffect(() => {
     refreshCounts();
@@ -168,10 +170,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
 
     const handleEmployeeCreated = () => refreshCounts();
     window.addEventListener('employee:created', handleEmployeeCreated);
+    window.addEventListener('storage', handleEmployeeCreated);
 
     return () => {
       unsub();
       window.removeEventListener('employee:created', handleEmployeeCreated);
+      window.removeEventListener('storage', handleEmployeeCreated);
     };
   }, [refreshCounts, primaryRole]);
 

@@ -4,7 +4,7 @@
 // LAN Gateway Agents, ZKTeco TCP Socket, Mantra RD, Live Punch Stream & Stress Tester
 // ============================================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -112,20 +112,74 @@ export const BiometricIntegrationView: React.FC = () => {
     setDiagnosticLogs(biometricGatewayService.getDiagnosticLogs());
   };
 
+  const isPollingRef = useRef(false);
+
   useEffect(() => {
     loadData();
-    const interval = setInterval(() => {
-      biometricGatewayService.syncLocalAgentStatus().then(ag => {
-        if (ag) setAgents(biometricGatewayService.getGatewayAgents());
-      });
-    }, 3000);
-    const unsub = hrEventBus.subscribe('attendance.punch_received', () => {
+
+    // Stable background pulse without UI flickering
+    const runPulse = async () => {
+      if (isPollingRef.current) return;
+      isPollingRef.current = true;
+      try {
+        await biometricGatewayService.syncLocalAgentStatus();
+        const currentAgents = biometricGatewayService.getGatewayAgents();
+        setAgents(currentAgents);
+
+        const currentDevs = biometricGatewayService.getBiometricDevices();
+        let hasChanges = false;
+
+        for (const d of currentDevs) {
+          if (d.ip_address) {
+            try {
+              const probe = await biometricGatewayService.probeSingleDevice(d.ip_address, d.port);
+              if (probe && probe.success && probe.device) {
+                if (d.status !== 'Online') {
+                  d.status = 'Online';
+                  hasChanges = true;
+                }
+                if (d.diagnostic) {
+                  d.diagnostic.status = 'ONLINE';
+                  if (Math.abs((d.diagnostic.latency_ms || 0) - (probe.device.latency_ms || 0)) > 2) {
+                    d.diagnostic.latency_ms = probe.device.latency_ms;
+                    hasChanges = true;
+                  }
+                  d.diagnostic.last_checked_at = new Date().toISOString();
+                }
+              } else {
+                if (d.status !== 'Offline') {
+                  d.status = 'Offline';
+                  hasChanges = true;
+                }
+              }
+            } catch (_) {}
+          }
+        }
+
+        if (hasChanges) {
+          setDevices([...currentDevs]);
+        }
+      } finally {
+        isPollingRef.current = false;
+      }
+    };
+
+    runPulse();
+    const interval = setInterval(runPulse, 3500);
+
+    const unsubPunch = hrEventBus.subscribe('attendance.punch_received', () => {
       setPunches(biometricGatewayService.getRawPunches(50));
       setDiagnosticLogs(biometricGatewayService.getDiagnosticLogs());
     });
+
+    const unsubAgent = hrEventBus.subscribe('biometric.agent_heartbeat', () => {
+      setAgents(biometricGatewayService.getGatewayAgents());
+    });
+
     return () => {
       clearInterval(interval);
-      unsub();
+      unsubPunch();
+      unsubAgent();
     };
   }, []);
 
