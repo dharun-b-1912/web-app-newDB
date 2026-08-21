@@ -755,7 +755,7 @@ export interface PayrollAuditEvent {
   tenant_id: string;
   actor_name: string;
   actor_role: string;
-  action_type: 'RUN_CREATED' | 'CALCULATED' | 'APPROVED' | 'FINALIZED' | 'LOCKED' | 'SALARY_REVISED' | 'DISBURSED' | 'FNF_SETTLED';
+  action_type: 'RUN_CREATED' | 'CALCULATED' | 'APPROVED' | 'FINALIZED' | 'LOCKED' | 'SALARY_REVISED' | 'DISBURSED' | 'FNF_SETTLED' | 'UPDATED';
   entity_id: string;
   summary: string;
   timestamp: string;

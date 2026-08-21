@@ -355,15 +355,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'PAYROLL',
       items: [
         { id: 'payroll-dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard },
-        { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
         { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
+        { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
         { id: 'payroll-earnings', label: 'Earnings & Claims', icon: TrendingUp },
         { id: 'payroll-deductions', label: 'Deductions, Loans & LOP', icon: Minus },
-        { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
-        { id: 'payroll-documents', label: 'Digital Payslips & Docs', icon: FileText },
+        { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
         { id: 'payroll-disbursement', label: 'Bank Disbursement', icon: CreditCard },
-        { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
+        { id: 'payroll-documents', label: 'Digital Payslips & Docs', icon: FileText },
         { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
+        { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
         { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
       ],
     },
@@ -575,15 +575,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'PAYROLL',
       items: [
         { id: 'payroll-dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard },
-        { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
         { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
+        { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
         { id: 'payroll-earnings', label: 'Earnings & Claims', icon: TrendingUp },
         { id: 'payroll-deductions', label: 'Deductions, Loans & LOP', icon: Minus },
-        { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
-        { id: 'payroll-documents', label: 'Digital Payslips & Docs', icon: FileText },
+        { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
         { id: 'payroll-disbursement', label: 'Bank Disbursement', icon: CreditCard },
-        { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
+        { id: 'payroll-documents', label: 'Digital Payslips & Docs', icon: FileText },
         { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
+        { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
         { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
       ],
     },
@@ -848,8 +848,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     return standardGroups; // fallback (HR Admin, etc.)
   })();
 
-  // Tenant-level feature toggle: For Joy Manpower / current tenant, Performance, L&D, Analytics, and Travel & Expense are disabled,
-  // while remaining fully preserved and configurable in the SaaS platform.
+  // Tenant-level feature toggle: For Joy Manpower / current tenant, Recruitment & ATS, Career Development, Performance, L&D, Analytics, and Travel & Expense are disabled,
+  // while remaining fully preserved and configurable in the SaaS platform for future tenants.
+  const isRecruitmentEnabledForTenant = false;
   const isPerformanceEnabledForTenant = false;
   const isLndEnabledForTenant = false;
   const isAnalyticsEnabledForTenant = false;
@@ -858,6 +859,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
   const filteredNavGroups = navGroups
     .filter(group => {
       if (!isPlatformAdmin) {
+        if (group.groupName === 'RECRUITMENT & ATS' && !isRecruitmentEnabledForTenant) return false;
         if (group.groupName === 'PERFORMANCE' && !isPerformanceEnabledForTenant) return false;
         if (group.groupName === 'LEARNING & DEVELOPMENT' && !isLndEnabledForTenant) return false;
         if (group.groupName === 'ANALYTICS & REPORTS' && !isAnalyticsEnabledForTenant) return false;
@@ -869,6 +871,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ...group,
       items: group.items.filter(item => {
         if (!isPlatformAdmin) {
+          if (!isRecruitmentEnabledForTenant && (item.id === 'recruitment' || item.id.startsWith('recruitment-') || item.id === 'career-dev')) {
+            return false;
+          }
           if (!isPerformanceEnabledForTenant && (item.id.startsWith('performance-') || item.id === 'ess-performance' || item.id === 'tl-performance')) {
             return false;
           }
