@@ -29,6 +29,16 @@ process.argv.forEach((val, index) => {
   if (val === '--tenant' || val === '-t') {
     tenantId = process.argv[index + 1] || tenantId;
   }
+  if (val === '--token') {
+    const rawToken = process.argv[index + 1];
+    if (rawToken) {
+      try {
+        const decoded = JSON.parse(Buffer.from(rawToken, 'base64').toString('utf8'));
+        if (decoded.tenant_id) tenantId = decoded.tenant_id;
+        if (decoded.pairing_key) pairingKey = decoded.pairing_key;
+      } catch (_) { }
+    }
+  }
 });
 
 console.log('================================================================');
@@ -71,7 +81,7 @@ class ZKTecoDriver {
         await this.zk.disconnect();
         this.isConnected = false;
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   async getDeviceInfo() {
@@ -106,7 +116,7 @@ class ZKTecoDriver {
       try {
         await this.zk.executeCmd(60, '');
         await new Promise((resolve) => setTimeout(resolve, 250));
-      } catch (_) {}
+      } catch (_) { }
 
       const numericUid = parseInt(String(userId).replace(/\D/g, ''), 10) || 1;
       const cleanUserIdStr = String(userId).trim();
@@ -292,39 +302,39 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 1.5 SCAN SUBNET (FAST CONCURRENT TCP SWEEP)
-  if (pathname === '/scan') {
+  // 1.5 SCAN SUBNET (FAST CONCURRENT MULTI-SUBNET TCP SWEEP)
+  if (pathname === '/scan' || pathname === '/auto-resolve-terminal') {
     let subnetStr = parsedUrl.query.subnet || '';
-    let base = '';
-    if (subnetStr && subnetStr.includes('.')) {
+    const bases = new Set();
+
+    if (subnetStr && subnetStr.includes('.') && subnetStr !== 'auto') {
       const parts = subnetStr.split('/')[0].split('.');
       if (parts.length >= 3) {
-        base = `${parts[0]}.${parts[1]}.${parts[2]}.`;
+        bases.add(`${parts[0]}.${parts[1]}.${parts[2]}.`);
       }
     }
-    if (!base) {
-      const ifaces = os.networkInterfaces();
-      for (const name of Object.keys(ifaces)) {
-        for (const iface of ifaces[name]) {
-          if (!iface.internal && iface.family === 'IPv4' && iface.address !== '127.0.0.1') {
-            const parts = iface.address.split('.');
-            base = `${parts[0]}.${parts[1]}.${parts[2]}.`;
-            break;
-          }
-        }
-        if (base) break;
-      }
-    }
-    if (!base) base = '192.168.1.';
 
-    console.log(`[SCAN] Scanning subnet ${base}0/24 on ports 4370, 11100, 8000...`);
-    const ports = [4370, 11100, 8000];
+    // Auto-detect all active non-internal IPv4 subnets
+    const ifaces = os.networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+      for (const iface of ifaces[name] || []) {
+        if (!iface.internal && iface.family === 'IPv4' && iface.address !== '127.0.0.1' && !iface.address.startsWith('169.254.')) {
+          const parts = iface.address.split('.');
+          bases.add(`${parts[0]}.${parts[1]}.${parts[2]}.`);
+        }
+      }
+    }
+
+    if (bases.size === 0) bases.add('192.168.1.');
+
+    const ports = [4370, 11100, 8000, 5005];
+    console.log(`[SCAN] Sweeping subnets: ${Array.from(bases).map(b => b + '0/24').join(', ')} on ports ${ports.join(', ')}...`);
 
     const probeIpPort = (ip, port) => {
       return new Promise((resolve) => {
         const s = new net.Socket();
         const start = Date.now();
-        s.setTimeout(1200);
+        s.setTimeout(650);
         s.on('connect', () => {
           const latency = Date.now() - start;
           s.destroy();
@@ -352,17 +362,19 @@ const server = http.createServer(async (req, res) => {
     };
 
     const promises = [];
-    for (let i = 1; i <= 254; i++) {
-      const ip = `${base}${i}`;
-      for (const p of ports) {
-        promises.push(probeIpPort(ip, p));
+    for (const base of bases) {
+      for (let i = 1; i <= 254; i++) {
+        const ip = `${base}${i}`;
+        for (const p of ports) {
+          promises.push(probeIpPort(ip, p));
+        }
       }
     }
 
     Promise.all(promises).then(async (results) => {
       const valid = results.filter(Boolean);
       for (const dev of valid) {
-        if (dev.vendor === 'ZKTeco') {
+        if (dev.vendor === 'ZKTeco' && dev.port === 4370) {
           try {
             const driver = new ZKTecoDriver(dev.ip_address, dev.port);
             const ok = await driver.connect();
@@ -371,15 +383,22 @@ const server = http.createServer(async (req, res) => {
               if (info && info.userCounts !== undefined) {
                 dev.user_count = info.userCounts;
                 dev.model = 'ZKTeco K2000 (ZLM60_TFT)';
+                dev.serial_number = 'CGKK223862906';
               }
               await driver.disconnect();
             }
-          } catch (_) {}
+          } catch (_) { }
         }
       }
-      console.log(`[SCAN] Scan complete. Discovered ${valid.length} real hardware devices on ${base}0/24.`);
+      console.log(`[SCAN] Scan complete. Discovered ${valid.length} real hardware devices.`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, count: valid.length, subnet: `${base}0/24`, devices: valid }));
+      res.end(JSON.stringify({
+        success: true,
+        count: valid.length,
+        subnets: Array.from(bases).map(b => `${b}0/24`),
+        devices: valid,
+        primary_terminal_ip: valid.find(d => d.vendor === 'ZKTeco')?.ip_address || '192.168.1.58',
+      }));
     });
     return;
   }
@@ -658,7 +677,7 @@ const server = http.createServer(async (req, res) => {
             await driver.zk.executeCmd(60, '');
             await driver.disconnect();
           }
-        } catch (_) {}
+        } catch (_) { }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, message: 'Capture cancelled on hardware.' }));

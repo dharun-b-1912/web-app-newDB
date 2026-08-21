@@ -50,6 +50,7 @@ import { MyProfileView } from './features/profile/MyProfileView';
 import { parseRouteFromUrl, syncUrlWithRoute } from './lib/router/urlRouter';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { realtimeSyncEngine } from './services/realtimeSyncEngine';
+import { excelTestDataService } from './services/excelTestDataService';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
@@ -58,6 +59,16 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     realtimeSyncEngine.initialize();
     return () => realtimeSyncEngine.destroy();
+  }, []);
+
+  // Auto-initialize Excel test dataset on startup if not yet loaded
+  useEffect(() => {
+    const status = excelTestDataService.getTestDataStatus();
+    if (!status.is_loaded) {
+      excelTestDataService.loadMasterExcelTestData().catch(err => {
+        console.warn('[App] Auto-loading Excel test data failed:', err);
+      });
+    }
   }, []);
 
   // Compute the correct starting route URL-FIRST from the browser location
@@ -252,14 +263,56 @@ const AppContent: React.FC = () => {
       case 'attendance':
       case 'attendance-dashboard':
       case 'attendance-employees':
+      case 'employee-attendance':
+      case 'employees':
+      case 'daily':
+      case 'history':
+      case 'attendance-history':
+      case 'ledger':
       case 'regularization':
-      case 'overtime':
-      case 'biometric':
-      case 'gps':
+      case 'exceptions':
       case 'late-early':
+      case 'shifts':
+      case 'roster':
+      case 'shift-calendar':
+      case 'policies':
+      case 'biometric':
+      case 'biometric-devices':
+      case 'device-enrollment':
+      case 'device-sync':
+      case 'punch-mapping':
+      case 'device-logs':
+      case 'face-attendance':
+      case 'face-enrollment':
+      case 'face-devices':
+      case 'face-logs':
+      case 'face-exceptions':
+      case 'gps':
+      case 'gps-attendance':
+      case 'geofences':
+      case 'mobile-clocking':
+      case 'location-logs':
+      case 'location-exceptions':
+      case 'overtime':
+      case 'overtime-requests':
+      case 'wfh':
+      case 'breaks-workhours':
+      case 'payroll-inputs':
+      case 'payable-days':
+      case 'lop-desk':
+      case 'ot-pay-inputs':
+      case 'payroll-freeze':
+      case 'calculation-audit':
+      case 'attendance-corrections':
+      case 'approval-history':
+      case 'attendance-activity-logs':
+      case 'calendar':
+      case 'holidays':
+      case 'manual':
+      case 'reports':
         return (
           <AttendanceModuleMaster
-            currentSubPath={currentRoute === 'attendance' ? 'dashboard' : currentRoute}
+            currentSubPath={currentRoute}
             onNavigateSubPath={sub => setCurrentRoute(sub)}
           />
         );
@@ -279,9 +332,7 @@ const AppContent: React.FC = () => {
       case 'leave-exceptions':
       case 'leave-reports':
         return <LeaveManagementModule initialTab={currentRoute} />;
-      case 'shifts':
       case 'time-tracking':
-      case 'wfh':
       case 'workforce-planning':
         return <TimeAndPayView />;
       case 'payroll':
@@ -292,6 +343,9 @@ const AppContent: React.FC = () => {
       case 'payroll-deductions':
       case 'payroll-statutory':
       case 'payroll-documents':
+      case 'payroll-disbursement':
+      case 'disbursement':
+      case 'bank-disbursement':
       case 'payroll-fnf':
       case 'payroll-reports':
       case 'payroll-settings':

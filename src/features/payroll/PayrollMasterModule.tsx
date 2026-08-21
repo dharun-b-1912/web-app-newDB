@@ -6,12 +6,14 @@ import { EarningsView } from './subviews/EarningsView';
 import { DeductionsView } from './subviews/DeductionsView';
 import { StatutoryView } from './subviews/StatutoryView';
 import { EmployeeDocumentsView } from './subviews/EmployeeDocumentsView';
+import { BankDisbursementView } from './subviews/BankDisbursementView';
 import { FnFSettlementView } from './subviews/FnFSettlementView';
 import { PayrollReportsView } from './subviews/PayrollReportsView';
 import { PayrollSettingsView } from './subviews/PayrollSettingsView';
 import { PayslipModal } from './components/PayslipModal';
 import { payrollApi } from '../../services/payrollApi';
 import { Payslip } from '../../types/payroll';
+import { cn } from '../../lib/utils';
 
 import {
   LayoutDashboard,
@@ -24,7 +26,7 @@ import {
   UserMinus,
   FileSpreadsheet,
   Settings,
-  CircleDollarSign,
+  CreditCard,
 } from 'lucide-react';
 
 interface PayrollMasterModuleProps {
@@ -40,6 +42,7 @@ const resolveTabId = (route?: string): string => {
   if (clean === 'deductions' || clean === 'lop' || clean === 'loans' || clean === 'advance') return 'deductions';
   if (clean === 'statutory' || clean === 'pf' || clean === 'esi' || clean === 'pt' || clean === 'tds' || clean === 'lwf' || clean === 'gratuity') return 'statutory';
   if (clean === 'documents' || clean === 'payslips' || clean === 'tax-docs' || clean === 'form16') return 'documents';
+  if (clean === 'disbursement' || clean === 'payouts' || clean === 'bank') return 'disbursement';
   if (clean === 'fnf' || clean === 'settlement') return 'fnf';
   if (clean === 'reports') return 'reports';
   if (clean === 'settings') return 'settings';
@@ -65,13 +68,14 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
     { id: 'deductions', label: 'Deductions & LOP', icon: Minus },
     { id: 'statutory', label: 'Statutory Compliance', icon: ShieldCheck },
     { id: 'documents', label: 'Payslips & Tax Docs', icon: FileText },
+    { id: 'disbursement', label: 'Bank Disbursement', icon: CreditCard },
     { id: 'fnf', label: 'Full & Final (F&F)', icon: UserMinus },
     { id: 'reports', label: 'Payroll Reports', icon: FileSpreadsheet },
     { id: 'settings', label: 'Payroll Settings', icon: Settings },
   ];
 
   const handleOpenPayslip = (employeeId: string) => {
-    const slip = payrollApi.getPayslipForEmployee(employeeId, 'July 2026');
+    const slip = payrollApi.getPayslipForEmployee(employeeId, 'August 2026');
     setSelectedPayslip(slip);
     setIsPayslipModalOpen(true);
   };
@@ -100,7 +104,26 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
         </div>
       </div>
 
-
+      {/* Top Module Subtabs Navigation */}
+      <div className="bg-white p-2 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center gap-1.5 overflow-x-auto">
+        {tabs.map(tab => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer",
+                isActive ? "bg-[#07563D] text-white shadow-xs" : "text-gray-600 hover:bg-gray-100"
+              )}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
 
       {/* Main Subview Container */}
       <div className="transition-all duration-200">
@@ -116,6 +139,7 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
         {activeTab === 'deductions' && <DeductionsView />}
         {activeTab === 'statutory' && <StatutoryView />}
         {activeTab === 'documents' && <EmployeeDocumentsView onOpenPayslip={handleOpenPayslip} />}
+        {activeTab === 'disbursement' && <BankDisbursementView />}
         {activeTab === 'fnf' && <FnFSettlementView />}
         {activeTab === 'reports' && <PayrollReportsView />}
         {activeTab === 'settings' && <PayrollSettingsView />}

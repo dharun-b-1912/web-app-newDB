@@ -1,0 +1,215 @@
+{
+  "All Banks Summary": [
+    [
+      "Corporate Salary Disbursement Template Matrix"
+    ],
+    [
+      "Select the respective tab at the bottom for your specific corporate banking engine layout."
+    ],
+    [
+      "Index of Bank Layouts Available:"
+    ],
+    [
+      "•  HDFC Bank (ENet)"
+    ],
+    [
+      "•  ICICI Bank (CIB)"
+    ],
+    [
+      "•  State Bank of India (SBI)"
+    ],
+    [
+      "•  Axis Bank (iConnect)"
+    ],
+    [
+      "•  Kotak Mahindra Bank"
+    ]
+  ],
+  "HDFC Bank": [
+    [
+      "HDFC Bank (ENet) Bulk Upload Structure Template"
+    ],
+    [
+      "⚠️ Instructions: HDFC ENet typically reads files as flat text/CSV without header labels in Row 1. Payout Mode Codes: 'I' = Same Bank (FT), 'N' = NEFT, 'R' = RTGS."
+    ],
+    [
+      "Beneficiary Account Number",
+      "Transaction Amount",
+      "Beneficiary Name",
+      "Beneficiary Bank IFSC Code",
+      "Payout Mode Code",
+      "Corporate Debit Account Number",
+      "Sender Narration / Remarks"
+    ],
+    [
+      "12345678901234",
+      "25000",
+      "Amit Kumar Sharma",
+      "HDFC0000123",
+      "I",
+      "50200012345678",
+      "SALARY AUG 2026"
+    ],
+    [
+      "98765432109876",
+      "42500.5",
+      "Priya Balasubramanian",
+      "ICIC0000047",
+      "N",
+      "50200012345678",
+      "SALARY AUG 2026"
+    ]
+  ],
+  "ICICI Bank": [
+    [
+      "ICICI Bank (CIB) Bulk Upload Structure Template"
+    ],
+    [
+      "⚠️ Instructions: ICICI CIB (BizPay360) accepts explicit headers which can be manually mapped on the platform setup. Payment Mode Codes: FT, NEFT, RTGS, IMPS."
+    ],
+    [
+      "Payment Mode Code",
+      "Debit Account Number",
+      "Beneficiary Account Number",
+      "Beneficiary Name",
+      "Transaction Amount",
+      "Value Date",
+      "IFSC Code",
+      "Sender Narration / Remarks",
+      "Beneficiary Email ID"
+    ],
+    [
+      "FT",
+      "000405001234",
+      "000401509876",
+      "Rajesh Varma",
+      "55000.00",
+      "31/08/2026",
+      "ICIC0000004",
+      "SALARY AUGUST 2026",
+      "rajesh@example.com"
+    ],
+    [
+      "NEFT",
+      "000405001234",
+      "10023456789",
+      "Sunita Deshmukh",
+      "32000.00",
+      "31/08/2026",
+      "SBIN0000212",
+      "SALARY AUGUST 2026",
+      "sunita@example.com"
+    ]
+  ],
+  "State Bank of India": [
+    [
+      "State Bank of India (SBI) Bulk Upload Structure Template"
+    ],
+    [
+      "⚠️ Instructions: SBI CINB text layout requires zero-padding or precise column spaces if generated as fixed-width, but CSV spreadsheets can map directly using standard columns."
+    ],
+    [
+      "Debit Account Number",
+      "Beneficiary Account Number",
+      "Beneficiary Name",
+      "Transaction Amount",
+      "Beneficiary Bank IFSC Code",
+      "Purpose Code / Narration Code",
+      "Employee Reference ID / Code"
+    ],
+    [
+      "33445566778",
+      "11223344556",
+      "Vikram Singh",
+      "62000",
+      "SBIN0004123",
+      "SALARY",
+      "EMP001"
+    ],
+    [
+      "33445566778",
+      "50100234567891",
+      "Ananya Reddy",
+      "48000",
+      "HDFC0000012",
+      "SALARY",
+      "EMP002"
+    ]
+  ],
+  "Axis Bank": [
+    [
+      "Axis Bank (iConnect) Bulk Upload Structure Template"
+    ],
+    [
+      "⚠️ Instructions: Customer Reference Number must be globally unique for each line inside the transaction batch. Payment Type Codes: AXIS, NEFT, RTGS."
+    ],
+    [
+      "Customer Reference Number",
+      "Corporate Debit Account Number",
+      "Beneficiary Account Number",
+      "Beneficiary Name",
+      "Payout Amount",
+      "IFSC Code",
+      "Payment Type Code",
+      "Payout Description Line"
+    ],
+    [
+      "REF2026083101",
+      "912020012345678",
+      "915010098765432",
+      "Deepak Gupta",
+      "70000",
+      "UTIB0000010",
+      "AXIS",
+      "PAYROLL DISBURSEMENT"
+    ],
+    [
+      "REF2026083102",
+      "912020012345678",
+      "201010203040",
+      "Meera Nair",
+      "35000",
+      "BARB0BOMBAY",
+      "NEFT",
+      "PAYROLL DISBURSEMENT"
+    ]
+  ],
+  "Kotak Mahindra Bank": [
+    [
+      "Kotak Mahindra Bank Bulk Upload Structure Template"
+    ],
+    [
+      "⚠️ Instructions: Kotak Connect layout works smoothly via automated ERP pipeline configurations (H2H) or standard CSV uploads. Payment Type Codes: IFT, NEFT, RTGS."
+    ],
+    [
+      "Payment Type Protocol Code",
+      "Corporate Client Code / Debit ID",
+      "Source Account Number",
+      "Destination Account Number",
+      "Beneficiary Name",
+      "Payment Instrument Amount",
+      "Destination Bank IFSC Code",
+      "Bank Statement Narrative Text"
+    ],
+    [
+      "IFT",
+      "CORP12345",
+      "1211223344",
+      "1211556677",
+      "Sanjay Dutt",
+      "85000",
+      "KKBK0000461",
+      "SALARY FOR AUG"
+    ],
+    [
+      "NEFT",
+      "CORP12345",
+      "1211223344",
+      "051234567890",
+      "Rohan Mehta",
+      "41000",
+      "PUNB0012300",
+      "SALARY FOR AUG"
+    ]
+  ]
+}

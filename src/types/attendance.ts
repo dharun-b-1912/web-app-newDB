@@ -15,7 +15,7 @@ export type AttendanceStatus =
 
 export type EventType = 'CHECK_IN' | 'CHECK_OUT' | 'BREAK_START' | 'BREAK_END' | 'OTHER';
 
-export type PunchSource = 'BIOMETRIC' | 'GPS' | 'WEB' | 'MOBILE' | 'MANUAL' | 'API' | 'IMPORT';
+export type PunchSource = 'BIOMETRIC' | 'GPS' | 'WEB' | 'MOBILE' | 'MANUAL' | 'API' | 'IMPORT' | 'SYSTEM';
 
 export type RegularizationStatus = 'Draft' | 'Submitted' | 'Pending Manager' | 'Pending HR' | 'Approved' | 'Rejected' | 'Cancelled';
 

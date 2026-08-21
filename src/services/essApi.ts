@@ -50,10 +50,39 @@ const initialDocuments: EssDocumentItem[] = [
 ];
 
 import { api } from './api';
+import { attendanceRosterService } from './attendance/attendanceRosterService';
+import { attendanceApi } from './attendanceApi';
 
 export const essApi = {
   getAttendanceState(): EssAttendanceState {
-    return initialAttendance;
+    const user = api.getCurrentUser();
+    const todayStr = new Date().toISOString().split('T')[0];
+    const empId = user?.employee_id || user?.id || 'WF-1001';
+    const orgId = user?.organization_id || 'org-joy-01';
+
+    const roster = attendanceRosterService.getRosterForEmployeeOnDate(empId, todayStr, orgId);
+    const shift = attendanceRosterService.getShiftById(roster.shift_id, orgId) || {
+      shift_name: roster.shift_name,
+      shift_code: roster.shift_code,
+      start_time: '09:00',
+      end_time: '18:00',
+    };
+
+    const isNight = roster.shift_code.includes('NGT');
+    const shiftTimings = roster.is_weekly_off
+      ? 'Weekly Off (Rest Day)'
+      : `${shift.start_time || '09:00 AM'} – ${shift.end_time || '06:00 PM'} ${isNight ? '(Next Day)' : ''}`;
+
+    const dailyAtt = attendanceApi.getDailyAttendance(todayStr).find(a => a.employee_id === empId);
+
+    return {
+      is_clocked_in: dailyAtt?.status === 'Present' || (!!dailyAtt?.first_check_in && !dailyAtt?.last_check_out),
+      clock_in_time: dailyAtt?.first_check_in || '09:10 AM',
+      today_hours: dailyAtt?.gross_working_minutes ? `${Math.floor(dailyAtt.gross_working_minutes / 60)}h ${dailyAtt.gross_working_minutes % 60}m` : '01h 51m',
+      shift_name: `${roster.shift_name} (${roster.shift_code})`,
+      shift_timing: shiftTimings,
+      location_status: 'Inside Office Geofence (Coimbatore HQ)',
+    };
   },
   getLeaveBalances(): EssLeaveBalanceItem[] {
     return initialLeaveBalances;

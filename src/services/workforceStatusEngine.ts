@@ -38,27 +38,69 @@ export const workforceStatusEngine = {
     ).length;
 
     // Filter today's attendance for scoped employees
-    const scopedAttendance = attendanceDaily.filter((a) => scopedEmpIds.has(a.employee_id));
+    const scopedAttendance = attendanceDaily.filter((a) =>
+      scopedEmpIds.has(a.employee_id) || (a.employee_code && scopedEmps.some(e => e.employee_code === a.employee_code))
+    );
 
-    const presentCount = scopedAttendance.filter(
-      (a) => a.status === 'Present' || a.status === 'Late' || a.status === 'WFH' || a.status === 'Checked Out'
-    ).length;
+    const attMap = new Map<string, AttendanceDaily>();
+    scopedAttendance.forEach((a) => {
+      if (a.employee_id) attMap.set(a.employee_id.toLowerCase(), a);
+      if (a.employee_code) attMap.set(a.employee_code.toLowerCase(), a);
+    });
 
-    const lateCount = scopedAttendance.filter((a) => a.status === 'Late').length;
-    const wfhCount = scopedAttendance.filter((a) => a.status === 'WFH').length;
-    const fieldCount = 0;
+    let presentCount = 0;
+    let lateCount = 0;
+    let wfhCount = 0;
+    let absentCount = 0;
+    let notMarkedCount = 0;
+    let onLeaveMatches = 0;
 
-    // Filter approved leave covering dateStr
-    const onLeaveMatches = leaveRequests.filter(
-      (l) => scopedEmpIds.has(l.employee_id) && l.status === 'Approved' && l.from_date <= dateStr && l.to_date >= dateStr
-    ).length;
+    const leaveEmpIds = new Set(
+      leaveRequests
+        .filter((l) => scopedEmpIds.has(l.employee_id) && l.status === 'Approved' && l.from_date <= dateStr && l.to_date >= dateStr)
+        .map((l) => l.employee_id.toLowerCase())
+    );
 
-    const absentCount = Math.max(0, total - presentCount - onLeaveMatches);
-    const notMarkedCount = Math.max(0, total - presentCount - onLeaveMatches - absentCount);
+    scopedEmps.forEach((emp) => {
+      const isLeave = leaveEmpIds.has(emp.id.toLowerCase()) || (emp.status || '').toLowerCase() === 'on leave';
+      if (isLeave) {
+        onLeaveMatches++;
+        return;
+      }
 
-    const presentRatePct = total > 0 ? Math.round((presentCount / total) * 100) : 0;
-    const leaveRatePct = total > 0 ? Math.round((onLeaveMatches / total) * 100) : 0;
-    const absenceRatePct = total > 0 ? Math.round((absentCount / total) * 100) : 0;
+      const rec = attMap.get(emp.id.toLowerCase()) || attMap.get((emp.employee_code || '').toLowerCase());
+      if (rec) {
+        if (rec.status === 'On Leave') {
+          onLeaveMatches++;
+        } else if (rec.status === 'WFH') {
+          wfhCount++;
+          presentCount++;
+        } else if (rec.status === 'Absent') {
+          absentCount++;
+        } else if (
+          rec.status === 'Present' ||
+          rec.status === 'Late' ||
+          rec.status === 'Checked Out' ||
+          rec.status === 'Early Checkout' ||
+          rec.status === 'Half Day' ||
+          rec.status === 'Overtime' ||
+          Boolean(rec.first_check_in)
+        ) {
+          presentCount++;
+          if (rec.late_minutes > 0 || rec.status === 'Late') {
+            lateCount++;
+          }
+        } else {
+          notMarkedCount++;
+        }
+      } else {
+        notMarkedCount++;
+      }
+    });
+
+    const presentRatePct = total > 0 ? Math.min(100, Math.round((presentCount / total) * 100)) : 0;
+    const leaveRatePct = total > 0 ? Math.min(100, Math.round((onLeaveMatches / total) * 100)) : 0;
+    const absenceRatePct = total > 0 ? Math.min(100, Math.round((absentCount / total) * 100)) : 0;
 
     return {
       date: dateStr,
@@ -67,7 +109,7 @@ export const workforceStatusEngine = {
       presentCount,
       lateCount,
       wfhCount,
-      fieldCount,
+      fieldCount: 0,
       onLeaveCount: onLeaveMatches,
       absentCount,
       notMarkedCount,

@@ -71,6 +71,19 @@ import {
   Folder,
   Share2,
   Zap,
+  ScanFace,
+  Camera,
+  MonitorDot,
+  Crosshair,
+  Smartphone,
+  Navigation,
+  Coffee,
+  ArrowRightLeft,
+  CheckCircle2,
+  MinusCircle,
+  FileEdit,
+  Terminal,
+  DollarSign,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { usePermission } from '../../hooks/usePermission';
@@ -154,10 +167,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       api.getEmployees(activeComp?.id).then((emps) => {
         const accessible = filterAccessibleEmployees(emps);
         setEmployeeCount(accessible.length);
-      }).catch(() => {});
+      }).catch(() => { });
       onboardingService.getMetrics().then((m) => {
         setOnboardingCount(m.active_onboardings);
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }, [isPlatformAdmin, filterAccessibleEmployees]);
 
@@ -276,18 +289,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
-      groupName: 'ATTENDANCE & TIME',
+      groupName: 'CORE ATTENDANCE',
       items: [
         { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
         { id: 'attendance-employees', label: 'Employee Attendance', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'history', label: 'Attendance History & Ledger', icon: History },
+        { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
         { id: 'regularization', label: 'Regularization Desk', icon: FileText },
-        { id: 'overtime', label: 'Overtime Engine', icon: TrendingUp },
-        { id: 'shifts', label: 'Shift Roster & Swaps', icon: CalendarRange },
-        { id: 'time-tracking', label: 'Time Tracking & Log', icon: Hourglass },
-        { id: 'wfh', label: 'WFH Requests', icon: Laptop },
-        { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
-        { id: 'gps', label: 'GPS Geofence Clocking', icon: MapPin },
-        { id: 'late-early', label: 'Late / Early Tracking', icon: Clock },
+        { id: 'exceptions', label: 'Exceptions Queue', icon: ShieldAlert },
       ],
     },
     {
@@ -310,17 +319,51 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
+      groupName: 'WORK & OVERTIME',
+      items: [
+        { id: 'overtime', label: 'Overtime Engine', icon: TrendingUp },
+        { id: 'overtime-requests', label: 'Overtime Requests', icon: Clock },
+        { id: 'wfh', label: 'WFH Requests', icon: Laptop },
+        { id: 'breaks-workhours', label: 'Breaks & Work Hours', icon: Coffee },
+      ],
+    },
+    {
+      groupName: 'SHIFT & SCHEDULING',
+      items: [
+        { id: 'shifts', label: 'Shift Master', icon: Clock },
+        { id: 'roster', label: 'Shift Roster & Matrix', icon: CalendarRange },
+        { id: 'shift-calendar', label: 'Shift Calendar', icon: Calendar },
+        { id: 'policies', label: 'Attendance Policies', icon: SlidersHorizontal },
+      ],
+    },
+    {
+      groupName: 'CLOCKING & DEVICES',
+      items: [
+        { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
+      ],
+    },
+    {
+      groupName: 'AUDIT & CONTROL',
+      items: [
+        { id: 'calculation-audit', label: 'Ledger & Audits', icon: ShieldCheck },
+        { id: 'attendance-corrections', label: 'Attendance Corrections', icon: FileEdit },
+        { id: 'approval-history', label: 'Approval History', icon: History },
+        { id: 'attendance-activity-logs', label: 'System Activity Logs', icon: Terminal },
+      ],
+    },
+    {
       groupName: 'PAYROLL',
       items: [
         { id: 'payroll-dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard },
-        { id: 'payroll-salary', label: 'Salary Management', icon: Building2 },
-        { id: 'payroll-processing', label: 'Payroll Processing', icon: Play },
-        { id: 'payroll-earnings', label: 'Earnings', icon: TrendingUp },
-        { id: 'payroll-deductions', label: 'Deductions & LOP', icon: Minus },
-        { id: 'payroll-statutory', label: 'Statutory Compliance', icon: ShieldCheck },
-        { id: 'payroll-documents', label: 'Payslips & Tax Docs', icon: FileText },
+        { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
+        { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
+        { id: 'payroll-earnings', label: 'Earnings & Claims', icon: TrendingUp },
+        { id: 'payroll-deductions', label: 'Deductions, Loans & LOP', icon: Minus },
+        { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
+        { id: 'payroll-documents', label: 'Digital Payslips & Docs', icon: FileText },
+        { id: 'payroll-disbursement', label: 'Bank Disbursement', icon: CreditCard },
         { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
-        { id: 'payroll-reports', label: 'Payroll Reports', icon: FileSpreadsheet },
+        { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
         { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
       ],
     },
@@ -466,18 +509,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
-      groupName: 'ATTENDANCE & TIME',
+      groupName: 'CORE ATTENDANCE',
       items: [
         { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
         { id: 'attendance-employees', label: 'Employee Attendance', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'history', label: 'Attendance History & Ledger', icon: History },
+        { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
         { id: 'regularization', label: 'Regularization Desk', icon: FileText },
-        { id: 'overtime', label: 'Overtime Engine', icon: TrendingUp },
-        { id: 'shifts', label: 'Shift Roster & Swaps', icon: CalendarRange },
-        { id: 'time-tracking', label: 'Time Tracking & Log', icon: Hourglass },
-        { id: 'wfh', label: 'WFH Requests', icon: Laptop },
-        { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
-        { id: 'gps', label: 'GPS Geofence Clocking', icon: MapPin },
-        { id: 'late-early', label: 'Late / Early Tracking', icon: Clock },
+        { id: 'exceptions', label: 'Exceptions Queue', icon: ShieldAlert },
       ],
     },
     {
@@ -500,17 +539,51 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
+      groupName: 'WORK & OVERTIME',
+      items: [
+        { id: 'overtime', label: 'Overtime Engine', icon: TrendingUp },
+        { id: 'overtime-requests', label: 'Overtime Requests', icon: Clock },
+        { id: 'wfh', label: 'WFH Requests', icon: Laptop },
+        { id: 'breaks-workhours', label: 'Breaks & Work Hours', icon: Coffee },
+      ],
+    },
+    {
+      groupName: 'SHIFT & SCHEDULING',
+      items: [
+        { id: 'shifts', label: 'Shift Master', icon: Clock },
+        { id: 'roster', label: 'Shift Roster & Matrix', icon: CalendarRange },
+        { id: 'shift-calendar', label: 'Shift Calendar', icon: Calendar },
+        { id: 'policies', label: 'Attendance Policies', icon: SlidersHorizontal },
+      ],
+    },
+    {
+      groupName: 'CLOCKING & DEVICES',
+      items: [
+        { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
+      ],
+    },
+    {
+      groupName: 'AUDIT & CONTROL',
+      items: [
+        { id: 'calculation-audit', label: 'Ledger & Audits', icon: ShieldCheck },
+        { id: 'attendance-corrections', label: 'Attendance Corrections', icon: FileEdit },
+        { id: 'approval-history', label: 'Approval History', icon: History },
+        { id: 'attendance-activity-logs', label: 'System Activity Logs', icon: Terminal },
+      ],
+    },
+    {
       groupName: 'PAYROLL',
       items: [
         { id: 'payroll-dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard },
-        { id: 'payroll-salary', label: 'Salary Management', icon: Building2 },
-        { id: 'payroll-processing', label: 'Payroll Processing', icon: Play },
-        { id: 'payroll-earnings', label: 'Earnings', icon: TrendingUp },
-        { id: 'payroll-deductions', label: 'Deductions & LOP', icon: Minus },
-        { id: 'payroll-statutory', label: 'Statutory Compliance', icon: ShieldCheck },
-        { id: 'payroll-documents', label: 'Payslips & Tax Docs', icon: FileText },
+        { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
+        { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
+        { id: 'payroll-earnings', label: 'Earnings & Claims', icon: TrendingUp },
+        { id: 'payroll-deductions', label: 'Deductions, Loans & LOP', icon: Minus },
+        { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
+        { id: 'payroll-documents', label: 'Digital Payslips & Docs', icon: FileText },
+        { id: 'payroll-disbursement', label: 'Bank Disbursement', icon: CreditCard },
         { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
-        { id: 'payroll-reports', label: 'Payroll Reports', icon: FileSpreadsheet },
+        { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
         { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
       ],
     },
@@ -623,16 +696,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
-      groupName: 'ATTENDANCE & TIME',
+      groupName: 'CORE ATTENDANCE',
       items: [
         { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
         { id: 'attendance-employees', label: 'Employee Attendance', icon: Users },
+        { id: 'history', label: 'Attendance History & Ledger', icon: History },
+        { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
         { id: 'regularization', label: 'Regularization Desk', icon: FileText },
-        { id: 'overtime', label: 'Overtime Engine', icon: TrendingUp },
-        { id: 'shifts', label: 'Shift Roster & Swaps', icon: CalendarRange },
-        { id: 'time-tracking', label: 'Time Tracking & Log', icon: Hourglass },
-        { id: 'wfh', label: 'WFH Requests', icon: Laptop },
-        { id: 'late-early', label: 'Late / Early Tracking', icon: Clock },
+        { id: 'exceptions', label: 'Exceptions Queue', icon: ShieldAlert },
       ],
     },
     {
@@ -643,6 +714,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'leave-approval', label: 'Approval', icon: CheckCircle },
         { id: 'leave-balance', label: 'Leave Balance', icon: Layers },
         { id: 'leave-calendar', label: 'Leave Calendar', icon: Calendar },
+      ],
+    },
+    {
+      groupName: 'WORK & OVERTIME',
+      items: [
+        { id: 'overtime', label: 'Overtime Engine', icon: TrendingUp },
+        { id: 'wfh', label: 'WFH Requests', icon: Laptop },
+        { id: 'breaks-workhours', label: 'Breaks & Work Hours', icon: Coffee },
+      ],
+    },
+    {
+      groupName: 'SHIFT & SCHEDULING',
+      items: [
+        { id: 'shifts', label: 'Shift Master', icon: Clock },
+        { id: 'roster', label: 'Shift Roster & Matrix', icon: CalendarRange },
+        { id: 'shift-calendar', label: 'Shift Calendar', icon: Calendar },
+        { id: 'policies', label: 'Attendance Policies', icon: SlidersHorizontal },
+      ],
+    },
+    {
+      groupName: 'CLOCKING & DEVICES',
+      items: [
+        { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
       ],
     },
     {
@@ -745,20 +839,51 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
 
   // Select nav groups based on the user's primary role
   const navGroups = (() => {
-    if (isPlatformAdmin)                 return platformGroups;
+    if (isPlatformAdmin) return platformGroups;
     if (primaryRole === 'Company Admin') return standardGroups;
-    if (primaryRole === 'HR Head')       return hrHeadGroups;
-    if (primaryRole === 'Manager')       return managerGroups;
-    if (primaryRole === 'Team Lead')     return teamLeadGroups;
-    if (primaryRole === 'Employee')      return employeeGroups;
+    if (primaryRole === 'HR Head') return hrHeadGroups;
+    if (primaryRole === 'Manager') return managerGroups;
+    if (primaryRole === 'Team Lead') return teamLeadGroups;
+    if (primaryRole === 'Employee') return employeeGroups;
     return standardGroups; // fallback (HR Admin, etc.)
   })();
 
+  // Tenant-level feature toggle: For Joy Manpower / current tenant, Performance, L&D, Analytics, and Travel & Expense are disabled,
+  // while remaining fully preserved and configurable in the SaaS platform.
+  const isPerformanceEnabledForTenant = false;
+  const isLndEnabledForTenant = false;
+  const isAnalyticsEnabledForTenant = false;
+  const isTravelExpenseEnabledForTenant = false;
 
   const filteredNavGroups = navGroups
+    .filter(group => {
+      if (!isPlatformAdmin) {
+        if (group.groupName === 'PERFORMANCE' && !isPerformanceEnabledForTenant) return false;
+        if (group.groupName === 'LEARNING & DEVELOPMENT' && !isLndEnabledForTenant) return false;
+        if (group.groupName === 'ANALYTICS & REPORTS' && !isAnalyticsEnabledForTenant) return false;
+        if (group.groupName === 'TRAVEL & EXPENSE' && !isTravelExpenseEnabledForTenant) return false;
+      }
+      return true;
+    })
     .map(group => ({
       ...group,
-      items: group.items.filter(item => canViewModule(item.id)),
+      items: group.items.filter(item => {
+        if (!isPlatformAdmin) {
+          if (!isPerformanceEnabledForTenant && (item.id.startsWith('performance-') || item.id === 'ess-performance' || item.id === 'tl-performance')) {
+            return false;
+          }
+          if (!isLndEnabledForTenant && (item.id.startsWith('lms-') || item.id === 'ess-learning' || item.id === 'tl-training')) {
+            return false;
+          }
+          if (!isAnalyticsEnabledForTenant && item.id.startsWith('analytics-')) {
+            return false;
+          }
+          if (!isTravelExpenseEnabledForTenant && (item.id === 'other-travel' || item.id.startsWith('travel-'))) {
+            return false;
+          }
+        }
+        return canViewModule(item.id);
+      }),
     }))
     .filter(group => group.items.length > 0);
 
@@ -784,8 +909,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
                 {isPlatformAdmin
                   ? 'Platform Control Plane'
                   : primaryRole.includes('HR Head')
-                  ? 'HR Head Master Console'
-                  : 'Enterprise HRMS'}
+                    ? 'HR Head Master Console'
+                    : 'Enterprise HRMS'}
               </div>
             </div>
           </div>

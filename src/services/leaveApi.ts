@@ -13,6 +13,7 @@ import {
   LeaveType,
 } from '../types/leave';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { attendanceRosterService } from './attendance/attendanceRosterService';
 
 const STORAGE_KEYS = {
   LEAVE_TYPES: 'workforce_leave_types_v1',
@@ -577,15 +578,18 @@ export const leaveApi = {
       req.daily_breakdown.forEach(day => {
         if (day.is_working_day) {
           const status = day.is_half_day ? 'Half Day' : 'On Leave';
+          const roster = attendanceRosterService.getRosterForEmployeeOnDate(req.employee_id, day.date, req.company_id);
+          const shift = attendanceRosterService.getShiftById(roster.shift_id, req.company_id);
+
           attLogs.unshift({
             id: `att-leave-${Date.now()}-${day.date}`,
             employee_id: req.employee_id,
             employee_name: req.employee_name,
             department: req.department_name,
             date: day.date,
-            shift_name: 'General Day Shift (09:00 - 18:00)',
-            scheduled_start: '09:00',
-            scheduled_end: '18:00',
+            shift_name: `${roster.shift_name} (${roster.shift_code})`,
+            scheduled_start: shift?.start_time || '09:00',
+            scheduled_end: shift?.end_time || '18:00',
             first_check_in: '-',
             last_check_out: '-',
             gross_hours: 0,

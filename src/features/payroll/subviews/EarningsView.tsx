@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { payrollApi } from '../../../services/payrollApi';
-import { EarningRecord } from '../../../types/payroll';
+import { ReimbursementClaim } from '../../../types/payroll';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
-import { TrendingUp, Gift, Coins, Receipt, Plus, Search } from 'lucide-react';
+import { TrendingUp, Gift, Coins, Receipt, Plus, Search, Check, Clock } from 'lucide-react';
 import { useToast } from '../../../components/ui/Toast';
+import { cn } from '../../../lib/utils';
+import { hrEventBus } from '../../../services/hrEventBus';
 
 interface EarningsViewProps {
   initialSubTab?: string;
@@ -13,24 +15,29 @@ interface EarningsViewProps {
 export const EarningsView: React.FC<EarningsViewProps> = ({ initialSubTab }) => {
   const { showToast } = useToast();
   const [subTab, setSubTab] = useState<string>(initialSubTab || 'overtime');
-  const [earnings, setEarnings] = useState<EarningRecord[]>([]);
+  const [reimbursements, setReimbursements] = useState<ReimbursementClaim[]>([]);
+
+  const loadData = () => {
+    setReimbursements(payrollApi.getReimbursements());
+  };
 
   useEffect(() => {
-    setEarnings(payrollApi.getEarnings());
+    loadData();
+    const unsub = hrEventBus.subscribe('*', () => loadData());
+    return () => unsub();
   }, []);
 
   const subTabs = [
     { id: 'overtime', label: 'Overtime Earnings', icon: TrendingUp },
-    { id: 'incentives', label: 'Sales & Tech Incentives', icon: Coins },
-    { id: 'bonus', label: 'Annual & Performance Bonus', icon: Gift },
-    { id: 'reimbursements', label: 'Expense Reimbursements', icon: Receipt },
+    { id: 'incentives', label: 'Incentives & Bonuses', icon: Coins },
+    { id: 'reimbursements', label: 'Expense Claims & Reimbursements', icon: Receipt },
   ];
 
   return (
     <div className="space-y-6">
       {/* Subnav Ribbon */}
-      <div className="bg-white p-2 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between gap-4">
-        <div className="flex items-center gap-1 overflow-x-auto">
+      <div className="bg-white p-2.5 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-1.5 overflow-x-auto">
           {subTabs.map(t => {
             const Icon = t.icon;
             const isActive = subTab === t.id;
@@ -38,58 +45,101 @@ export const EarningsView: React.FC<EarningsViewProps> = ({ initialSubTab }) => 
               <button
                 key={t.id}
                 onClick={() => setSubTab(t.id)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
-                  isActive ? 'bg-[#07563D] text-white shadow-2xs' : 'text-gray-600 hover:bg-gray-100'
-                }`}
+                className={cn(
+                  "px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer",
+                  isActive ? "bg-[#07563D] text-white shadow-2xs" : "text-gray-600 hover:bg-gray-100"
+                )}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-3.5 h-3.5" />
                 <span>{t.label}</span>
               </button>
             );
           })}
         </div>
-
-        <Button size="sm" leftIcon={<Plus className="w-4 h-4" />} onClick={() => showToast('Add Earning modal opened')}>
-          Add Earning Record
-        </Button>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs overflow-hidden">
-        <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
-          <span className="text-xs font-black text-gray-900 uppercase tracking-wider">
-            Variable Earning Disbursements ({earnings.length} Records)
-          </span>
+      {/* 1. Overtime Earnings */}
+      {subTab === 'overtime' && (
+        <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">Overtime Earnings & Multipliers</h3>
+              <p className="text-xs text-gray-500">Calculated directly from approved Overtime requests in Attendance module</p>
+            </div>
+            <Badge variant="emerald">Live Attendance Linked</Badge>
+          </div>
+
+          <div className="p-4 rounded-xl bg-gray-50/80 border border-gray-200/80 text-xs space-y-2">
+            <span className="font-bold text-gray-900 block">Overtime Pay Rate Formulation:</span>
+            <p className="font-mono text-gray-700">Hourly OT Rate = ((Monthly Gross Salary ÷ 30) ÷ 8 Hours) × 1.5 Multiplier</p>
+            <p className="text-gray-500 text-[11px]">Computed dynamically per employee and aggregated into the current payroll run.</p>
+          </div>
         </div>
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-gray-50/80 border-b border-gray-200 text-[11px] font-black text-gray-500 uppercase tracking-wider">
-              <th className="p-4">Employee</th>
-              <th className="p-4">Earning Category</th>
-              <th className="p-4">Pay Period</th>
-              <th className="p-4 text-right">Amount (₹)</th>
-              <th className="p-4">Description / Justification</th>
-              <th className="p-4 text-center">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100 text-xs">
-            {earnings.map(earn => (
-              <tr key={earn.id} className="hover:bg-gray-50/60 transition-colors">
-                <td className="p-4 font-extrabold text-gray-900">{earn.employee_name}</td>
-                <td className="p-4 font-bold text-gray-800">{earn.type}</td>
-                <td className="p-4 font-mono text-gray-600">{earn.period}</td>
-                <td className="p-4 text-right font-mono font-black text-[#07563D]">
-                  + ₹ {earn.amount.toLocaleString('en-IN')}
-                </td>
-                <td className="p-4 text-gray-600 max-w-xs truncate">{earn.description}</td>
-                <td className="p-4 text-center">
-                  <Badge variant="emerald">{earn.status}</Badge>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      )}
+
+      {/* 2. Incentives & Bonuses */}
+      {subTab === 'incentives' && (
+        <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900">Incentive & Bonus Allocations</h3>
+            <p className="text-xs text-gray-500">Performance bonuses and variable incentives</p>
+          </div>
+
+          <div className="p-8 text-center text-gray-400 bg-gray-50/50 rounded-2xl border border-gray-100">
+            <Coins className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+            <p className="font-semibold text-gray-700">No variable bonuses configured for this cycle</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">Approved incentives will automatically appear here before payroll calculation.</p>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Reimbursements */}
+      {subTab === 'reimbursements' && (
+        <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900">Approved Expense Claims & Reimbursements</h3>
+            <p className="text-xs text-gray-500">Reimbursements verified by finance for inclusion in active payroll</p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-100">
+                <tr>
+                  <th className="p-3">Employee</th>
+                  <th className="p-3">Category</th>
+                  <th className="p-3 font-mono">Claimed Amount</th>
+                  <th className="p-3 font-mono">Approved Amount</th>
+                  <th className="p-3">Receipt / Ref</th>
+                  <th className="p-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {reimbursements.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-gray-400">
+                      <Receipt className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+                      <p className="font-semibold text-gray-700">No reimbursement claims submitted</p>
+                    </td>
+                  </tr>
+                ) : (
+                  reimbursements.map(claim => (
+                    <tr key={claim.id} className="hover:bg-gray-50/70">
+                      <td className="p-3 font-bold text-gray-900">{claim.employee_name}</td>
+                      <td className="p-3 text-gray-700">{claim.category}</td>
+                      <td className="p-3 font-mono text-gray-600">₹ {claim.amount.toLocaleString('en-IN')}</td>
+                      <td className="p-3 font-mono font-bold text-[#07563D]">₹ {claim.approved_amount.toLocaleString('en-IN')}</td>
+                      <td className="p-3 font-mono text-gray-500">{claim.receipt_number}</td>
+                      <td className="p-3">
+                        <Badge variant="emerald">{claim.status}</Badge>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

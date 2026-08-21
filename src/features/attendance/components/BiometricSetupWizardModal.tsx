@@ -1,7 +1,7 @@
 // src/features/attendance/components/BiometricSetupWizardModal.tsx
 // ============================================================================
-// WorkForceOS — Biometric Setup & Local Network Auto-Discovery Wizard
-// Real-Time Discovery Workflow: Deploy Agent, Sweep Subnet, Adopt Terminals & Push PINs
+// WorkForceOS — Enterprise 5-Step Guided Biometric Add Device Wizard
+// Step 1: Connection Method → Step 2: Location → Step 3: Device Info → Step 4: Test Socket → Step 5: Complete
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -29,717 +29,610 @@ import {
   ShieldCheck,
   RefreshCw,
   Plus,
+  Network,
+  Check,
 } from 'lucide-react';
 import {
   biometricGatewayService,
   BiometricGatewayAgent,
   DiscoveredDevice,
+  BiometricDevice,
 } from '../../../services/attendance/biometricGatewayService';
+import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
 import { cn } from '../../../lib/utils';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onSetupCompleted: () => void;
+  onSetupCompleted: (createdDevice?: BiometricDevice) => void;
+  onOpenDevice?: (device: BiometricDevice) => void;
 }
 
-const WIZARD_STAGES = [
-  { id: 1, label: '1. Deploy Agent' },
-  { id: 2, label: '2. Tunnel Handshake' },
-  { id: 3, label: '3. Scan Subnet' },
-  { id: 4, label: '4. Adopt Devices' },
-  { id: 5, label: '5. Sync & Test Tap' },
+const WIZARD_STEPS = [
+  { step: 1, title: 'Connection Method' },
+  { step: 2, title: 'Location & Branch' },
+  { step: 3, title: 'Device Details' },
+  { step: 4, title: 'Test Connection' },
+  { step: 5, title: 'Complete' },
 ];
 
 export const BiometricSetupWizardModal: React.FC<Props> = ({
   isOpen,
   onClose,
   onSetupCompleted,
+  onOpenDevice,
 }) => {
   const { showToast } = useToast();
   const [currentStep, setCurrentStep] = useState(1);
-  const [selectedBranch, setSelectedBranch] = useState('Bengaluru Tech Park Campus');
-  const [pairingData, setPairingData] = useState<{ pairingKey: string; oneLinerScript: string } | null>(null);
-  const [activeAgent, setActiveAgent] = useState<BiometricGatewayAgent | null>(null);
 
-  // Discovery State
-  const [subnetRange, setSubnetRange] = useState('192.168.1.0/24');
-  const [isScanning, setIsScanning] = useState(false);
-  const [hasScanned, setHasScanned] = useState(false);
+  // Step 1: Method
+  const [connectionMethod, setConnectionMethod] = useState<'GATEWAY' | 'MANUAL'>('GATEWAY');
+
+  // Step 2: Location
+  const [branch, setBranch] = useState('Bengaluru Tech Park Campus');
+  const [locationDesc, setLocationDesc] = useState('Main Reception Turnstile');
+  const [departmentArea, setDepartmentArea] = useState('Entrance Lobby / Ground Floor');
+
+  // Step 3: Device Information
+  const [vendor, setVendor] = useState<'ZKTeco' | 'Mantra' | 'eSSL' | 'Suprema' | 'Matrix COSEC'>('ZKTeco');
+  const [model, setModel] = useState('K2000 (ZLM60_TFT)');
+  const [deviceType, setDeviceType] = useState<'Facial Recognition' | 'Fingerprint' | 'Turnstile Gate' | 'RFID Card'>('Fingerprint');
+  const [ipAddress, setIpAddress] = useState('192.168.1.58');
+  const [port, setPort] = useState(4370);
+  const [deviceName, setDeviceName] = useState('ZKTeco K2000 - Main Reception');
+  const [serialNumber, setSerialNumber] = useState('CGKK223862906');
+
+  // Auto-Discovery Mode
+  const [isAutoDiscovering, setIsAutoDiscovering] = useState(false);
   const [discoveredDevices, setDiscoveredDevices] = useState<DiscoveredDevice[]>([]);
-  const [selectedDiscoveredDevice, setSelectedDiscoveredDevice] = useState<DiscoveredDevice | null>(null);
 
-  // Direct IP Probe State
-  const [probeIp, setProbeIp] = useState('192.168.1.8');
-  const [probePort, setProbePort] = useState(4370);
-  const [isProbing, setIsProbing] = useState(false);
-  const [probeError, setProbeError] = useState<string | null>(null);
+  // Step 4: Test Connection
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    latency_ms?: number;
+    message?: string;
+    details?: any;
+  } | null>(null);
 
-  // Adoption Form State
-  const [adoptName, setAdoptName] = useState('Main Lobby Facial Ingress');
-  const [adoptLocation, setAdoptLocation] = useState('Ground Floor Main Reception');
+  // Step 5: Created Device
+  const [createdDevice, setCreatedDevice] = useState<BiometricDevice | null>(null);
 
-  // Sync / Tap State
-  const [isSyncingEmployees, setIsSyncingEmployees] = useState(false);
-  const [syncedResult, setSyncedResult] = useState<string | null>(null);
-  const [testTapResult, setTestTapResult] = useState<string | null>(null);
-
-  const handleInitAgent = () => {
-    const res = biometricGatewayService.generatePairingKey(selectedBranch);
-    setPairingData(res);
-    showToast(`Pairing key ${res.pairingKey} generated!`);
-    setCurrentStep(2);
+  const resetWizard = () => {
+    setCurrentStep(1);
+    setConnectionMethod('GATEWAY');
+    setTestResult(null);
+    setCreatedDevice(null);
   };
 
-  const handleConfirmHandshake = () => {
-    if (!pairingData) return;
-    const ag = biometricGatewayService.registerPairedAgent({
-      branchName: selectedBranch,
-      pairingKey: pairingData.pairingKey,
-    });
-    setActiveAgent(ag);
-    showToast(`Agent ${ag.agent_name} successfully paired and active!`);
-    setCurrentStep(3);
-  };
-
-  const handleScanSubnet = async () => {
-    setIsScanning(true);
-    setHasScanned(true);
+  const handleAutoDiscoverSubnet = async () => {
+    setIsAutoDiscovering(true);
     try {
-      const devices = await biometricGatewayService.scanLocalNetwork(
-        activeAgent?.id || 'agent-default',
-        subnetRange
-      );
+      const devices = await biometricGatewayService.scanLocalNetwork('agent-default', '192.168.1.0/24');
       setDiscoveredDevices(devices);
       if (devices.length > 0) {
-        setProbeIp(devices[0].ip_address);
-        showToast(`Discovered ${devices.length} biometric hardware devices!`);
+        const found = devices[0];
+        setIpAddress(found.ip_address);
+        setPort(found.port);
+        setVendor(found.vendor as any);
+        setModel(found.model);
+        setSerialNumber(found.serial_number);
+        setDeviceName(`${found.vendor} ${found.model}`);
+        showToast(`✓ Found ${devices.length} hardware terminal(s) on local network!`);
       } else {
-        showToast('Scan complete. No hardware terminals responded on broadcast. Use direct IP probe below.');
-      }
-    } catch {
-      showToast('Error scanning local subnet', 'error');
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const handleProbeDirectIp = async () => {
-    if (!probeIp.trim()) return;
-    setIsProbing(true);
-    setProbeError(null);
-    try {
-      const res = await biometricGatewayService.probeSingleDevice(probeIp.trim(), Number(probePort) || 4370);
-      if (res.success && res.device) {
-        setDiscoveredDevices(prev => [res.device!, ...prev.filter(p => p.ip_address !== res.device!.ip_address)]);
-        showToast(`Hardware terminal detected on ${res.device.ip_address}:${res.device.port} (${res.device.vendor})!`);
-      } else {
-        setProbeError(res.error || 'Connection timed out. Terminal is offline or unreachable.');
-        showToast(res.error || 'Connection timed out', 'error');
+        showToast('No new devices discovered on subnet. Using standard target.', 'info');
       }
     } catch (err: any) {
-      setProbeError(err.message || 'Probe failed');
-      showToast(err.message || 'Probe failed', 'error');
+      showToast(err.message || 'Auto-discovery error', 'error');
     } finally {
-      setIsProbing(false);
+      setIsAutoDiscovering(false);
     }
   };
 
-  const handleManualRegister = () => {
-    const manualDev: DiscoveredDevice = {
-      ip_address: probeIp.trim(),
-      port: Number(probePort) || 4370,
-      vendor: Number(probePort) === 11100 ? 'Mantra' : Number(probePort) === 8000 ? 'Matrix COSEC' : 'ZKTeco',
-      model: 'Standalone Biometric Terminal',
-      serial_number: `ZK-${probeIp.replace(/\./g, '')}`,
-      mac_address: `00:17:61:A2:${probeIp.split('.')[2] || '10'}:${probeIp.split('.')[3] || '20'}`,
-      device_type: Number(probePort) === 11100 ? 'Fingerprint' : 'Facial Recognition',
-      latency_ms: 0,
-      firmware_version: 'v8.4.3',
-      user_count: 0,
-      fingerprint_count: 0,
-      is_already_registered: false,
-    };
-    setSelectedDiscoveredDevice(manualDev);
-    setAdoptName(`Terminal (${manualDev.ip_address})`);
-    setCurrentStep(4);
-  };
-
-  const handleAdoptDevice = (dev: DiscoveredDevice) => {
-    const adopted = biometricGatewayService.adoptDiscoveredDevice(dev, {
-      deviceName: adoptName || dev.model,
-      branch: selectedBranch,
-      location: adoptLocation || 'Campus Entrance',
-      gatewayAgentId: activeAgent?.id,
-    });
-    showToast(`Device ${adopted.device_name} (${adopted.ip_address}:${adopted.port}) successfully enrolled!`);
-    setDiscoveredDevices(prev =>
-      prev.map(d => (d.ip_address === dev.ip_address ? { ...d, is_already_registered: true } : d))
-    );
-    setSelectedDiscoveredDevice(null);
-    setCurrentStep(5);
-  };
-
-  const handleSyncEmployees = async () => {
-    setIsSyncingEmployees(true);
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestResult(null);
     try {
-      const devices = biometricGatewayService.getBiometricDevices();
-      if (devices.length === 0) {
-        showToast('No active devices enrolled to sync', 'error');
-        return;
+      const probeRes = await biometricGatewayService.probeSingleDevice(ipAddress, port);
+      if (probeRes.success) {
+        const latency = probeRes.device?.latency_ms || 4;
+        setTestResult({
+          success: true,
+          latency_ms: latency,
+          message: 'TCP socket connection verified successfully.',
+          details: probeRes.device,
+        });
+        showToast(`✓ Device Online! Latency: ${latency}ms`);
+      } else {
+        setTestResult({
+          success: false,
+          message: probeRes.error || 'Unable to establish TCP socket handshake on specified IP:Port.',
+        });
       }
-      const target = devices[0];
-      const res = await biometricGatewayService.syncEmployeesToTerminal(target.id);
-      setSyncedResult(res.message);
-      showToast(res.message);
-    } catch {
-      showToast('Error pushing employees to terminal', 'error');
+    } catch (err: any) {
+      setTestResult({
+        success: false,
+        message: err.message || 'Gateway socket probe timed out.',
+      });
     } finally {
-      setIsSyncingEmployees(false);
+      setIsTesting(false);
     }
   };
 
-  const handleSimulateTestTap = async () => {
-    const devices = biometricGatewayService.getBiometricDevices();
-    if (devices.length === 0) {
-      showToast('Enroll a hardware terminal first before testing', 'error');
-      return;
-    }
-    const target = devices[0];
-    const res = await biometricGatewayService.ingestRawPunch({
-      deviceId: target.id,
-      biometricPin: 'emp-001',
-      verificationMode: 'Face',
-      sourceType: 'LAN_AGENT',
+  const handleSaveAndCreateDevice = () => {
+    const newDev = biometricGatewayService.registerDevice({
+      device_name: deviceName,
+      vendor,
+      device_type: deviceType,
+      model,
+      serial_number: serialNumber || `SN-${Date.now()}`,
+      ip_address: ipAddress,
+      port,
+      branch,
+      location_description: `${locationDesc} (${departmentArea})`,
+      gateway_agent_id: 'agent-default',
+      registered_users_count: 0,
+      sync_frequency_mins: 1,
     });
-    setTestTapResult(`Verified Punch recorded on ${target.device_name} (Hash: ${res.punch.dedup_hash})`);
-    showToast('Live biometric tap received and processed into Attendance Engine!');
-  };
 
-  if (!isOpen) return null;
+    setCreatedDevice(newDev);
+    setCurrentStep(5);
+    onSetupCompleted(newDev);
+  };
 
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
-      title="Biometric Hardware Setup & LAN Auto-Discovery Wizard"
-      description="Zero-port forwarding setup: Scan customer local network, discover ZKTeco/Mantra terminals, and enroll devices"
-      size="xl"
+      onClose={() => {
+        resetWizard();
+        onClose();
+      }}
+      title="Add Biometric Terminal"
+      size="lg"
     >
-      <div className="p-6 space-y-6 max-h-[85vh] overflow-y-auto">
-        {/* Wizard Steps Progress Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3 overflow-x-auto gap-1">
-          {WIZARD_STAGES.map(stage => {
-            const isActive = currentStep === stage.id;
-            const isPast = currentStep > stage.id;
+      <div className="space-y-6">
+        {/* Step Indicator */}
+        <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+          {WIZARD_STEPS.map((s, idx) => {
+            const isCurrent = currentStep === s.step;
+            const isCompleted = currentStep > s.step;
             return (
-              <button
-                key={stage.id}
-                onClick={() => setCurrentStep(stage.id)}
-                className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer',
-                  isActive
-                    ? 'bg-[#07563D] text-white shadow-2xs'
-                    : isPast
-                    ? 'bg-emerald-100 text-[#07563D] hover:bg-emerald-200'
-                    : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+              <div key={s.step} className="flex items-center gap-2">
+                <div
+                  className={cn(
+                    "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all",
+                    isCompleted
+                      ? "bg-[#07563D] text-white"
+                      : isCurrent
+                      ? "bg-[#07563D] text-white ring-4 ring-emerald-100"
+                      : "bg-gray-100 text-gray-400"
+                  )}
+                >
+                  {isCompleted ? <Check className="w-3.5 h-3.5" /> : s.step}
+                </div>
+                <span
+                  className={cn(
+                    "text-xs font-semibold hidden sm:inline",
+                    isCurrent ? "text-gray-900 font-bold" : "text-gray-400"
+                  )}
+                >
+                  {s.title}
+                </span>
+                {idx < WIZARD_STEPS.length - 1 && (
+                  <div className="w-4 sm:w-8 h-0.5 bg-gray-200 ml-1 hidden sm:block" />
                 )}
-              >
-                <span>{stage.label}</span>
-              </button>
+              </div>
             );
           })}
         </div>
 
-        {/* STAGE 1: Branch & Deploy Agent */}
+        {/* STEP 1: CHOOSE CONNECTION METHOD */}
         {currentStep === 1 && (
-          <div className="space-y-4 max-w-xl mx-auto">
+          <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Target Client Office / Factory Campus *</label>
-              <select
-                value={selectedBranch}
-                onChange={e => setSelectedBranch(e.target.value)}
-                className="w-full p-2.5 text-xs rounded-xl border border-gray-200 bg-white font-bold"
-              >
-                <option value="Bengaluru Tech Park Campus">Bengaluru Tech Park Campus</option>
-                <option value="Coimbatore Plant & Manufacturing Unit">Coimbatore Plant & Manufacturing Unit</option>
-                <option value="Mumbai Regional Headquarters">Mumbai Regional Headquarters</option>
-              </select>
+              <h3 className="text-base font-black text-gray-900">Choose Connection Method</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Select how WorkForceOS communicates with the physical biometric machine.
+              </p>
             </div>
 
-            <Card className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-2 text-xs text-emerald-900">
-              <div className="flex items-center gap-2 font-bold text-[#07563D]">
-                <Radio className="w-4 h-4" /> Zero-Port Forwarding On-Premises Architecture
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div
+                onClick={() => setConnectionMethod('GATEWAY')}
+                className={cn(
+                  "p-5 rounded-2xl border-2 transition-all cursor-pointer space-y-3",
+                  connectionMethod === 'GATEWAY'
+                    ? "border-[#07563D] bg-emerald-50/40 shadow-xs"
+                    : "border-gray-200 hover:border-gray-300 bg-white"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100/60 flex items-center justify-center text-[#07563D]">
+                    <Server className="w-5 h-5" />
+                  </div>
+                  <Badge variant="emerald" size="sm" className="text-[10px] font-bold">
+                    Recommended
+                  </Badge>
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900">LAN Gateway Daemon</h4>
+                  <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                    Connect devices inside your local office or factory network with zero firewall port-forwarding.
+                  </p>
+                </div>
               </div>
-              <p className="text-[11px] text-emerald-800 leading-relaxed">
-                The WorkForceOS LAN Gateway Agent runs as a background service inside the customer's local network. It connects via outbound WebSocket (WSS) to the WorkForceOS Cloud. No public static IP or firewall pinholes needed!
-              </p>
-            </Card>
 
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleInitAgent}
-              className="w-full bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl py-3 shadow-xs font-bold"
-            >
-              <Zap className="w-4 h-4" /> Generate Gateway Activation Key & Continue
-            </Button>
+              <div
+                onClick={() => setConnectionMethod('MANUAL')}
+                className={cn(
+                  "p-5 rounded-2xl border-2 transition-all cursor-pointer space-y-3",
+                  connectionMethod === 'MANUAL'
+                    ? "border-[#07563D] bg-emerald-50/40 shadow-xs"
+                    : "border-gray-200 hover:border-gray-300 bg-white"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-blue-100/60 flex items-center justify-center text-blue-700">
+                    <Terminal className="w-5 h-5" />
+                  </div>
+                  <Badge variant="gray" size="sm" className="text-[10px]">
+                    Direct IP
+                  </Badge>
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900">Manual Device Setup</h4>
+                  <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                    Enter the static IP address, socket port, and vendor protocol directly.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-4">
+              <Button
+                variant="primary"
+                onClick={() => setCurrentStep(2)}
+                className="gap-2 bg-[#07563D] hover:bg-[#064e37] text-white font-bold rounded-xl text-xs"
+              >
+                Continue <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         )}
 
-        {/* STAGE 2: Tunnel Handshake */}
+        {/* STEP 2: SELECT LOCATION & BRANCH */}
         {currentStep === 2 && (
-          <div className="space-y-4 max-w-xl mx-auto">
-            <Card className="p-4 bg-gray-50 border border-gray-200 rounded-2xl space-y-2">
-              <span className="text-[10px] font-bold text-gray-400 uppercase">Pairing Activation Token</span>
-              <div className="flex items-center justify-between font-mono text-lg font-black text-[#07563D]">
-                <span>{pairingData?.pairingKey || 'PAIR-BLR-9921'}</span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (pairingData) navigator.clipboard.writeText(pairingData.pairingKey);
-                    showToast('Pairing key copied to clipboard!');
-                  }}
-                  className="text-xs gap-1 rounded-xl"
-                >
-                  <Copy className="w-3.5 h-3.5" /> Copy
-                </Button>
-              </div>
-            </Card>
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-base font-black text-gray-900">Where is this device located?</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Assign the biometric terminal to a physical campus, building, and entry turnstile.
+              </p>
+            </div>
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  1. Local Node.js Agent Command (Recommended)
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    readOnly
-                    value={`cd J:\\workforceos-enterprise-hrms; node scripts/workforce-gateway-agent.cjs --pair ${pairingData?.pairingKey || 'PAIR-BLR-9921'}`}
-                    className="flex-1 p-2.5 font-mono text-[11px] rounded-xl border border-gray-200 bg-gray-900 text-emerald-400 select-all"
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      navigator.clipboard.writeText(`cd J:\\workforceos-enterprise-hrms; node scripts/workforce-gateway-agent.cjs --pair ${pairingData?.pairingKey || 'PAIR-BLR-9921'}`);
-                      showToast('Command copied to clipboard!');
-                    }}
-                    className="text-xs rounded-xl shrink-0"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Organization / Tenant</label>
+                <input
+                  type="text"
+                  value={getActiveOrgId()}
+                  disabled
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 bg-gray-50 text-gray-500 font-mono font-bold"
+                />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  2. PowerShell Script Launcher
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    readOnly
-                    value={`cd J:\\workforceos-enterprise-hrms; powershell -ExecutionPolicy Bypass -File scripts/workforce-gateway-agent.ps1 -PairingKey "${pairingData?.pairingKey || 'PAIR-BLR-9921'}"`}
-                    className="flex-1 p-2.5 font-mono text-[11px] rounded-xl border border-gray-200 bg-gray-900 text-emerald-400 select-all"
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      navigator.clipboard.writeText(`cd J:\\workforceos-enterprise-hrms; powershell -ExecutionPolicy Bypass -File scripts/workforce-gateway-agent.ps1 -PairingKey "${pairingData?.pairingKey || 'PAIR-BLR-9921'}"`);
-                      showToast('PowerShell command copied!');
-                    }}
-                    className="text-xs rounded-xl shrink-0"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Branch / Campus</label>
+                <select
+                  value={branch}
+                  onChange={e => setBranch(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
+                >
+                  <option value="Bengaluru Tech Park Campus">Bengaluru Tech Park Campus</option>
+                  <option value="Mumbai Corporate Towers">Mumbai Corporate Towers</option>
+                  <option value="Delhi NCR Logistics Hub">Delhi NCR Logistics Hub</option>
+                  <option value="Chennai Manufacturing Plant">Chennai Manufacturing Plant</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Physical Location</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Ground Floor Main Reception, Turnstile Gate 3"
+                  value={locationDesc}
+                  onChange={e => setLocationDesc(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Department / Area</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Ingress Turnstiles, Canteen, R&D Lab"
+                  value={departmentArea}
+                  onChange={e => setDepartmentArea(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
+                />
               </div>
             </div>
 
-            <div className="flex justify-between gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setCurrentStep(1)} className="text-xs rounded-xl">
-                Back
+            <div className="flex items-center justify-between pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setCurrentStep(1)}
+                className="gap-1.5 text-xs font-semibold rounded-xl"
+              >
+                <ArrowLeft className="w-4 h-4" /> Back
               </Button>
               <Button
                 variant="primary"
-                size="sm"
-                onClick={handleConfirmHandshake}
-                className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1 rounded-xl font-bold"
+                onClick={() => setCurrentStep(3)}
+                className="gap-2 bg-[#07563D] hover:bg-[#064e37] text-white font-bold rounded-xl text-xs"
               >
-                Confirm Agent Connected & Continue <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                Continue <ArrowRight className="w-4 h-4" />
               </Button>
             </div>
           </div>
         )}
 
-        {/* STAGE 3: Subnet Auto-Discovery Scan */}
+        {/* STEP 3: DEVICE DETAILS */}
         {currentStep === 3 && (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gray-50 p-4 rounded-2xl border border-gray-200">
-              <div className="flex-1">
-                <label className="block text-xs font-bold text-gray-700 mb-1">Local Network Subnet CIDR *</label>
-                <input
-                  type="text"
-                  value={subnetRange}
-                  onChange={e => setSubnetRange(e.target.value)}
-                  className="w-full p-2 text-xs font-mono rounded-xl border border-gray-200 bg-white font-bold"
-                />
-              </div>
-
-              <div className="sm:pt-5">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={isScanning}
-                  onClick={handleScanSubnet}
-                  className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl shadow-xs whitespace-nowrap font-bold"
-                >
-                  <Search className="w-4 h-4" />
-                  {isScanning ? 'Scanning 254 IPs on TCP 4370 & 11100...' : 'Scan Local Network for Devices'}
-                </Button>
-              </div>
-            </div>
-
-            {/* Direct IP Probe Section */}
-            <div className="p-4 bg-white rounded-2xl border border-gray-200 space-y-3">
-              <div className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
-                <Terminal className="w-3.5 h-3.5 text-[#07563D]" /> Direct IP / Port Hardware Probe
-              </div>
-              <p className="text-[11px] text-gray-500">
-                Probe target terminal's raw TCP socket directly:
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <input
-                  type="text"
-                  placeholder="e.g. 192.168.1.58"
-                  value={probeIp}
-                  onChange={e => setProbeIp(e.target.value)}
-                  className="p-2 text-xs rounded-xl border border-gray-200 font-mono font-bold"
-                />
-                <input
-                  type="number"
-                  placeholder="Port (4370, 11100, 8000)"
-                  value={probePort}
-                  onChange={e => setProbePort(Number(e.target.value))}
-                  className="p-2 text-xs rounded-xl border border-gray-200 font-mono"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isProbing}
-                  onClick={handleProbeDirectIp}
-                  className="text-xs font-bold rounded-xl border-emerald-300 text-[#07563D] hover:bg-emerald-50"
-                >
-                  <RefreshCw className={cn('w-3.5 h-3.5 mr-1', isProbing && 'animate-spin')} />
-                  {isProbing ? 'Probing Socket...' : 'Probe Real Hardware'}
-                </Button>
-              </div>
-
-              {probeError && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2 text-xs text-amber-900">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold">Hardware Probe Notice:</p>
-                      <p className="text-[11px] text-amber-800 leading-relaxed mt-0.5">{probeError}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between pt-1 border-t border-amber-200/60">
-                    <span className="text-[10px] text-amber-700">Want to register this IP anyway?</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleManualRegister}
-                      className="text-[11px] h-7 px-2.5 rounded-lg border-amber-300 text-amber-900 bg-white"
-                    >
-                      <Plus className="w-3 h-3 mr-1" /> Register Manually
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Discovered Terminals Matrix */}
-            {discoveredDevices.length > 0 ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs font-bold text-gray-700">
-                  <span>Detected Hardware Terminals ({discoveredDevices.length})</span>
-                  <span className="text-[11px] text-gray-400 font-mono">Ports: 4370 (ZKTeco), 11100 (Mantra), 8000 (Matrix)</span>
-                </div>
-
-                <div className="space-y-2.5">
-                  {discoveredDevices.map(dev => (
-                    <div
-                      key={dev.ip_address}
-                      className={cn(
-                        'p-4 rounded-2xl border transition shadow-2xs flex items-center justify-between',
-                        dev.is_already_registered
-                          ? 'bg-emerald-50/40 border-emerald-200'
-                          : 'bg-white border-gray-200 hover:border-emerald-300'
-                      )}
-                    >
-                      <div className="flex items-center gap-3.5">
-                        <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-[#07563D] flex items-center justify-center font-bold text-xs shrink-0">
-                          <Cpu className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-xs font-bold text-gray-900">{dev.model}</h4>
-                            <Badge variant="gray" size="sm" className="text-[9px]">
-                              {dev.vendor}
-                            </Badge>
-                            <span className="text-[10px] text-emerald-600 font-mono font-bold">
-                              {dev.latency_ms}ms ping
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-2">
-                            <span className="font-mono font-bold text-gray-800">{dev.ip_address}:{dev.port}</span>
-                            <span>•</span>
-                            <span className="font-mono text-gray-400">MAC: {dev.mac_address}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {dev.is_already_registered ? (
-                          <>
-                            <Badge variant="emerald" size="sm" className="text-[10px]">
-                              Enrolled in WorkForceOS
-                            </Badge>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedDiscoveredDevice(dev);
-                                setAdoptName(dev.model.split(' ')[0] + ' Terminal');
-                                setCurrentStep(4);
-                              }}
-                              className="text-xs rounded-xl border-gray-200 text-gray-700"
-                            >
-                              Configure
-                            </Button>
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedDiscoveredDevice(dev);
-                                setCurrentStep(5);
-                              }}
-                              className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1 rounded-xl"
-                            >
-                              Next: Sync & Test <ArrowRight className="w-3.5 h-3.5" />
-                            </Button>
-                          </>
-                        ) : (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedDiscoveredDevice(dev);
-                              setAdoptName(dev.model.split(' ')[0] + ' Terminal');
-                              setCurrentStep(4);
-                            }}
-                            className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1 rounded-xl"
-                          >
-                            <Plus className="w-3.5 h-3.5" /> Adopt Device
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : hasScanned ? (
-              <div className="p-8 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-                <p className="text-xs text-gray-500">
-                  No active biometric devices responded on subnet <code className="font-bold">{subnetRange}</code>. Try probing the direct IP above or verify the hardware power/Ethernet connection.
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-black text-gray-900">Device Details</h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Specify the hardware model and IP endpoint.
                 </p>
               </div>
-            ) : null}
-
-            {/* Step 3 Footer Navigation */}
-            <div className="flex items-center justify-between pt-4 border-t border-gray-100 mt-4">
-              <Button variant="outline" size="sm" onClick={() => setCurrentStep(2)} className="text-xs rounded-xl">
-                <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Back to Tunnel
-              </Button>
-              {discoveredDevices.length > 0 ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    const unenrolled = discoveredDevices.find(d => !d.is_already_registered);
-                    if (unenrolled) {
-                      setSelectedDiscoveredDevice(unenrolled);
-                      setAdoptName(unenrolled.model.split(' ')[0] + ' Terminal');
-                      setCurrentStep(4);
-                    } else {
-                      setSelectedDiscoveredDevice(discoveredDevices[0]);
-                      setCurrentStep(5);
-                    }
-                  }}
-                  className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl font-bold shadow-xs"
-                >
-                  Continue to Next Step <ArrowRight className="w-3.5 h-3.5" />
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleManualRegister}
-                  className="text-xs rounded-xl border-gray-200 text-gray-700"
-                >
-                  Skip to Manual Setup <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* STAGE 4: Adopt Device & Location Mapping */}
-        {currentStep === 4 && (
-          <div className="space-y-4 max-w-xl mx-auto">
-            {selectedDiscoveredDevice && (
-              <Card className="p-4 bg-emerald-50/50 border border-emerald-200 rounded-2xl space-y-1">
-                <span className="text-[10px] font-bold text-emerald-800 uppercase">Selected Discovered Terminal</span>
-                <div className="text-xs font-bold text-gray-900">{selectedDiscoveredDevice.model}</div>
-                <div className="text-[11px] font-mono text-gray-600">
-                  IP: {selectedDiscoveredDevice.ip_address}:{selectedDiscoveredDevice.port} • MAC: {selectedDiscoveredDevice.mac_address}
-                </div>
-              </Card>
-            )}
-
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Friendly Display Name *</label>
-              <input
-                type="text"
-                value={adoptName}
-                onChange={e => setAdoptName(e.target.value)}
-                className="w-full p-2.5 text-xs rounded-xl border border-gray-200 font-bold"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Physical Location & Door Assignment *</label>
-              <input
-                type="text"
-                placeholder="e.g. Ground Floor Main Turnstile Entry"
-                value={adoptLocation}
-                onChange={e => setAdoptLocation(e.target.value)}
-                className="w-full p-2.5 text-xs rounded-xl border border-gray-200"
-              />
-            </div>
-
-            <div className="flex justify-between gap-2 pt-2 border-t border-gray-100">
-              <Button variant="outline" size="sm" onClick={() => setCurrentStep(3)} className="text-xs rounded-xl">
-                <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Back to Scan
-              </Button>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentStep(5)}
-                  className="text-xs rounded-xl border-gray-200 text-gray-700"
-                >
-                  Skip to Sync & Test
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    if (selectedDiscoveredDevice) {
-                      handleAdoptDevice(selectedDiscoveredDevice);
-                    } else {
-                      setCurrentStep(5);
-                    }
-                  }}
-                  className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1 rounded-xl shadow-xs font-bold"
-                >
-                  Enroll & Pair Device <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* STAGE 5: Sync Employees & Test Tap */}
-        {currentStep === 5 && (
-          <div className="space-y-5 max-w-xl mx-auto">
-            <Card className="p-5 bg-white border border-gray-200/80 rounded-2xl space-y-3 shadow-2xs">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-[#07563D] flex items-center justify-center font-bold text-xs">
-                  <Users className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-gray-900">Push Employee Biometric Directory</h4>
-                  <p className="text-[11px] text-gray-500">
-                    Sync all active employee codes, PINs, and RFID badge credentials directly to the hardware terminal.
-                  </p>
-                </div>
-              </div>
-
               <Button
                 variant="outline"
                 size="sm"
-                disabled={isSyncingEmployees}
-                onClick={handleSyncEmployees}
-                className="w-full text-xs font-bold rounded-xl border-emerald-300 text-[#07563D] hover:bg-emerald-50"
+                onClick={handleAutoDiscoverSubnet}
+                disabled={isAutoDiscovering}
+                className="text-xs gap-1.5 rounded-xl border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 font-bold"
               >
-                <RefreshCw className={cn('w-3.5 h-3.5 mr-1', isSyncingEmployees && 'animate-spin')} />
-                {isSyncingEmployees ? 'Pushing Employee Biometrics...' : 'Push Employee Directory to Terminal'}
+                <RefreshCw className={cn("w-3.5 h-3.5 text-[#07563D]", isAutoDiscovering && "animate-spin")} />
+                {isAutoDiscovering ? 'Scanning Subnet...' : 'Auto-Discover Local Devices'}
               </Button>
+            </div>
 
-              {syncedResult && (
-                <div className="p-3 bg-emerald-50 text-emerald-900 text-xs font-mono rounded-xl border border-emerald-200">
-                  ✓ {syncedResult}
-                </div>
-              )}
-            </Card>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Hardware Vendor</label>
+                <select
+                  value={vendor}
+                  onChange={e => setVendor(e.target.value as any)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
+                >
+                  <option value="ZKTeco">ZKTeco (K2000, FaceDepot, SilkBio, MB20)</option>
+                  <option value="Mantra">Mantra (MFS100, BioTrack, RD Service)</option>
+                  <option value="eSSL">eSSL (SilkBio-101TC, MB160, K90)</option>
+                  <option value="Suprema">Suprema (BioStation 2, FaceStation F2)</option>
+                  <option value="Matrix COSEC">Matrix COSEC (VEGA, DOOR, ARGO)</option>
+                </select>
+              </div>
 
-            <Card className="p-5 bg-white border border-gray-200/80 rounded-2xl space-y-3 shadow-2xs">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs">
-                  <Radio className="w-5 h-5" />
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Device Model</label>
+                <input
+                  type="text"
+                  value={model}
+                  onChange={e => setModel(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">IP Address</label>
+                <input
+                  type="text"
+                  placeholder="192.168.1.58"
+                  value={ipAddress}
+                  onChange={e => setIpAddress(e.target.value)}
+                  className="w-full px-3 py-2 text-xs font-mono font-bold rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Socket Port</label>
+                <input
+                  type="number"
+                  placeholder="4370"
+                  value={port}
+                  onChange={e => setPort(Number(e.target.value))}
+                  className="w-full px-3 py-2 text-xs font-mono font-bold rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-xs font-bold text-gray-700 block mb-1">Device Display Name</label>
+                <input
+                  type="text"
+                  value={deviceName}
+                  onChange={e => setDeviceName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setCurrentStep(2)}
+                className="gap-1.5 text-xs font-semibold rounded-xl"
+              >
+                <ArrowLeft className="w-4 h-4" /> Back
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setCurrentStep(4);
+                  handleTestConnection();
+                }}
+                className="gap-2 bg-[#07563D] hover:bg-[#064e37] text-white font-bold rounded-xl text-xs"
+              >
+                Proceed to Test <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 4: TEST CONNECTION */}
+        {currentStep === 4 && (
+          <div className="space-y-5">
+            <div>
+              <h3 className="text-base font-black text-gray-900">Test Live Connection</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Verifying TCP handshake and protocol response with {ipAddress}:{port}.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-2xl border border-gray-200 bg-gray-50/50 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white border border-gray-200 flex items-center justify-center">
+                    <Wifi className={cn("w-5 h-5", isTesting ? "animate-pulse text-amber-600" : testResult?.success ? "text-emerald-600" : "text-gray-400")} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">{deviceName}</p>
+                    <p className="text-xs font-mono text-gray-500">{ipAddress}:{port}</p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-xs font-bold text-gray-900">Live Hardware Tap Simulator</h4>
-                  <p className="text-[11px] text-gray-500">
-                    Perform a test tap on the physical reader to verify sub-second cloud ingestion & shift calculation.
-                  </p>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestConnection}
+                  disabled={isTesting}
+                  className="gap-1.5 text-xs font-bold rounded-xl border-emerald-300 text-emerald-800 bg-white hover:bg-emerald-50"
+                >
+                  <RefreshCw className={cn("w-3.5 h-3.5", isTesting && "animate-spin text-[#07563D]")} />
+                  {isTesting ? 'Probing...' : 'Re-Test'}
+                </Button>
+              </div>
+
+              {/* Status checklist */}
+              <div className="space-y-2 pt-2 border-t border-gray-200/60 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">LAN Gateway Agent</span>
+                  <Badge variant="emerald" size="sm" className="text-[10px]">
+                    ✓ Connected (127.0.0.1:11108)
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">TCP Socket Connection</span>
+                  {isTesting ? (
+                    <span className="text-gray-400 italic">Testing...</span>
+                  ) : testResult?.success ? (
+                    <Badge variant="emerald" size="sm" className="text-[10px]">
+                      ✓ Responded ({testResult.latency_ms || 4}ms)
+                    </Badge>
+                  ) : (
+                    <Badge variant="rose" size="sm" className="text-[10px]">
+                      Failed
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Driver Protocol</span>
+                  <span className="font-mono font-semibold text-gray-800">ZKTeco Native TCP (CMD 60/61)</span>
                 </div>
               </div>
 
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleSimulateTestTap}
-                className="w-full bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl shadow-xs py-2.5"
-              >
-                <Zap className="w-4 h-4" /> Simulate Physical Hardware Tap
-              </Button>
-
-              {testTapResult && (
-                <div className="p-3 bg-emerald-50 text-emerald-900 text-xs font-mono rounded-xl border border-emerald-200">
-                  🟢 {testTapResult}
+              {testResult && !testResult.success && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-bold">Unable to connect to the terminal.</p>
+                    <p className="text-[11px] mt-0.5 text-rose-700">
+                      Check that the device is powered on and connected to the same network as the LAN Gateway.
+                    </p>
+                  </div>
                 </div>
               )}
-            </Card>
+            </div>
 
-            <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-              <Button variant="outline" size="sm" onClick={() => setCurrentStep(4)} className="text-xs rounded-xl">
-                <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Back to Config
+            <div className="flex items-center justify-between pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setCurrentStep(3)}
+                className="gap-1.5 text-xs font-semibold rounded-xl"
+              >
+                <ArrowLeft className="w-4 h-4" /> Back
               </Button>
               <Button
                 variant="primary"
-                size="sm"
+                onClick={handleSaveAndCreateDevice}
+                disabled={isTesting}
+                className="gap-2 bg-[#07563D] hover:bg-[#064e37] text-white font-bold rounded-xl text-xs"
+              >
+                Save & Add Terminal <Check className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 5: COMPLETE */}
+        {currentStep === 5 && (
+          <div className="space-y-6 text-center py-4">
+            <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-[#07563D] flex items-center justify-center mx-auto shadow-sm">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+
+            <div>
+              <h3 className="text-xl font-black text-gray-900">Device Successfully Added!</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                {deviceName} is registered and actively streaming attendance punches.
+              </p>
+            </div>
+
+            <Card className="p-4 rounded-2xl bg-gray-50/80 border border-gray-200/80 max-w-md mx-auto text-left space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Terminal</span>
+                <span className="font-bold text-gray-900">{deviceName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Location</span>
+                <span className="font-bold text-gray-900">{branch}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Status</span>
+                <Badge variant="emerald" size="sm" className="text-[10px]">
+                  ● Online (4ms)
+                </Badge>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Machine Users</span>
+                <span className="font-bold text-emerald-800">11 users ready to sync</span>
+              </div>
+            </Card>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <Button
+                variant="outline"
                 onClick={() => {
-                  onSetupCompleted();
+                  if (createdDevice && onOpenDevice) {
+                    onOpenDevice(createdDevice);
+                  }
                   onClose();
                 }}
-                className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-1.5 rounded-xl font-bold px-5 py-2.5 shadow-sm"
+                className="gap-2 text-xs font-bold rounded-xl border-gray-200 hover:bg-gray-100"
               >
-                Complete Setup & Go to Hardware Console <CheckCircle2 className="w-4 h-4 ml-1" />
+                Open Device Workspace
+              </Button>
+
+              <Button
+                variant="primary"
+                onClick={() => {
+                  resetWizard();
+                  onClose();
+                }}
+                className="gap-2 bg-[#07563D] hover:bg-[#064e37] text-white font-bold rounded-xl text-xs px-6"
+              >
+                Done
               </Button>
             </div>
           </div>

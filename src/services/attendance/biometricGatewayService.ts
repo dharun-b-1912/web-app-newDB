@@ -8,8 +8,9 @@ import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { hrEventBus } from '../hrEventBus';
 import { WorkForceTimeEngine, STANDARD_SHIFTS, PunchRecord } from '../../lib/attendance/timeEngine';
 import { api } from '../api';
-import { biometricCommandService } from './biometricCommandService';
+import { biometricCommandService, getActiveOrgId } from './biometricCommandService';
 import { platformIncidentService } from '../platform/platformIncidentService';
+import { attendanceApi } from '../attendanceApi';
 
 export interface BiometricGatewayAgent {
   id: string;
@@ -466,22 +467,41 @@ const DEFAULT_DEVICES: BiometricDevice[] = [
   },
 ];
 
-// Persistent store helpers
+// Persistent store helpers with multi-tenant scoping and automated legacy migration
 
-function getStore<T>(key: string, fallback: T): T {
+export function getTenantStorageKey(baseKey: string, orgId?: string): string {
+  const activeOrg = orgId || getActiveOrgId();
+  return `${baseKey}_${activeOrg}`;
+}
+
+function getStore<T>(baseKey: string, fallback: T, orgId?: string): T {
   try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
+    const tenantKey = getTenantStorageKey(baseKey, orgId);
+    const raw = localStorage.getItem(tenantKey);
+    if (raw) return JSON.parse(raw);
+
+    // Backward-compatible fallback: read from legacy global baseKey and auto-migrate
+    const legacyRaw = localStorage.getItem(baseKey);
+    if (legacyRaw) {
+      try {
+        const parsed = JSON.parse(legacyRaw);
+        localStorage.setItem(tenantKey, legacyRaw);
+        return parsed;
+      } catch (_) {}
+    }
+
+    return fallback;
   } catch {
     return fallback;
   }
 }
 
-function setStore<T>(key: string, val: T): void {
+function setStore<T>(baseKey: string, val: T, orgId?: string): void {
   try {
-    localStorage.setItem(key, JSON.stringify(val));
+    const tenantKey = getTenantStorageKey(baseKey, orgId);
+    localStorage.setItem(tenantKey, JSON.stringify(val));
   } catch (err) {
-    console.error(`[BiometricGatewayService] storage error for ${key}:`, err);
+    console.error(`[BiometricGatewayService] storage error for ${baseKey}:`, err);
   }
 }
 
@@ -531,7 +551,7 @@ class BiometricGatewayService {
         if (!existing) {
           existing = {
             id: 'agent-local-daemon',
-            organization_id: data.tenant_id || 'org-joy-01',
+            organization_id: data.tenant_id || getActiveOrgId(),
             branch_name: branch,
             agent_name: `LAN-GATEWAY-DAEMON-${data.platform || 'LOCAL'}`,
             pairing_key: pairing,
@@ -572,9 +592,10 @@ class BiometricGatewayService {
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const code = branchName.slice(0, 3).toUpperCase();
     const pairingKey = `PAIR-${code}-${randomSuffix}`;
-    const oneLinerScript = `powershell -ExecutionPolicy Bypass -File scripts/workforce-gateway-agent.ps1 -PairingKey "${pairingKey}"`;
-    const nodeCommand = `node scripts/workforce-gateway-agent.cjs --pair ${pairingKey}`;
-    const psScriptCommand = `$env:PAIRING_KEY="${pairingKey}"; $env:TENANT_ID="org-joy-01"; node scripts/workforce-gateway-agent.cjs --pair ${pairingKey}`;
+    const orgId = getActiveOrgId();
+    const oneLinerScript = `powershell -ExecutionPolicy Bypass -File scripts/workforce-gateway-agent.ps1 -PairingKey "${pairingKey}" -TenantId "${orgId}"`;
+    const nodeCommand = `node scripts/workforce-gateway-agent.cjs --pair ${pairingKey} --tenant ${orgId}`;
+    const psScriptCommand = `$env:PAIRING_KEY="${pairingKey}"; $env:TENANT_ID="${orgId}"; node scripts/workforce-gateway-agent.cjs --pair ${pairingKey} --tenant ${orgId}`;
     return { pairingKey, oneLinerScript, nodeCommand, psScriptCommand };
   }
 
@@ -589,7 +610,7 @@ class BiometricGatewayService {
     const code = payload.branchName.slice(0, 3).toUpperCase();
     const newAgent: BiometricGatewayAgent = {
       id: `agent-${Date.now()}`,
-      organization_id: 'org-joy-01',
+      organization_id: getActiveOrgId(),
       branch_name: payload.branchName,
       agent_name: payload.agentName || `${code}-GATEWAY-DAEMON-${Math.floor(1000 + Math.random() * 9000)}`,
       pairing_key: payload.pairingKey,
@@ -610,10 +631,39 @@ class BiometricGatewayService {
     return newAgent;
   }
 
-  deleteAgent(agentId: string): void {
+  async deleteAgent(agentId: string): Promise<void> {
     const current = this.getGatewayAgents();
+    const target = current.find(a => a.id === agentId);
     const filtered = current.filter(a => a.id !== agentId);
     setStore(STORAGE_KEYS.AGENTS, filtered);
+
+    // Unlink gateway_agent_id from any devices
+    const devices = this.getBiometricDevices();
+    let devsModified = false;
+    for (const d of devices) {
+      if (d.gateway_agent_id === agentId) {
+        d.gateway_agent_id = undefined;
+        devsModified = true;
+      }
+    }
+    if (devsModified) setStore(STORAGE_KEYS.DEVICES, devices);
+
+    if (isSupabaseEnabled && supabase) {
+      try {
+        await supabase.from('biometric_gateway_agents').delete().eq('id', agentId);
+      } catch (err: any) {
+        console.warn('[BiometricGatewayService] Supabase agent delete warning:', err.message);
+      }
+    }
+
+    this.logDiagnosticEvent({
+      category: 'AGENT_HEARTBEAT',
+      severity: 'INFO',
+      agent_id: agentId,
+      message: `LAN Gateway Daemon "${target?.agent_name || agentId}" permanently deleted.`,
+    });
+
+    hrEventBus.emit('biometric.agent_heartbeat', { agentId, status: 'OFFLINE' });
   }
 
   // ==========================================================================
@@ -627,12 +677,12 @@ class BiometricGatewayService {
       return DEFAULT_DEVICES;
     }
 
-    // 1. Deduplicate by IP:Port & Serial Number to eliminate duplicate rows for the same terminal
+    // 1. Deduplicate by Serial Number & IP:Port to eliminate duplicate rows for the same terminal
     const seen = new Map<string, BiometricDevice>();
     for (const d of list) {
-      // Migrate old office IP 192.168.1.58 to active live home DHCP IP 192.168.1.8
-      let ip = d.ip_address === '192.168.1.58' ? '192.168.1.8' : d.ip_address;
-      const key = `${ip}:${d.port || 4370}`;
+      // Auto-migrate any stale 192.168.1.8 IP to active live terminal IP 192.168.1.58
+      let ip = d.ip_address === '192.168.1.8' ? '192.168.1.58' : d.ip_address;
+      const key = d.serial_number && !d.serial_number.startsWith('ZK-') ? d.serial_number : `${ip}:${d.port || 4370}`;
 
       if (!seen.has(key)) {
         seen.set(key, {
@@ -644,14 +694,13 @@ class BiometricGatewayService {
         });
       } else {
         const existing = seen.get(key)!;
-        if (d.serial_number && !d.serial_number.startsWith('ZK-')) {
-          existing.serial_number = d.serial_number;
-        }
+        existing.ip_address = ip;
+        if (d.status === 'Online') existing.status = 'Online';
       }
     }
 
     const deduplicated = Array.from(seen.values());
-    if (deduplicated.length !== list.length || list.some(d => d.ip_address === '192.168.1.58')) {
+    if (deduplicated.length !== list.length || list.some(d => d.ip_address === '192.168.1.8')) {
       setStore(STORAGE_KEYS.DEVICES, deduplicated);
       list = deduplicated;
     }
@@ -663,7 +712,7 @@ class BiometricGatewayService {
     const newDev: BiometricDevice = {
       ...payload,
       id: `bio-${Date.now()}`,
-      organization_id: 'org-joy-01',
+      organization_id: (payload as any).organization_id || getActiveOrgId(),
       status: 'Online',
       last_sync: new Date().toISOString(),
     };
@@ -674,10 +723,39 @@ class BiometricGatewayService {
     return newDev;
   }
 
-  deleteDevice(deviceId: string): void {
+  async deleteDevice(deviceId: string): Promise<void> {
     const current = this.getBiometricDevices();
+    const target = current.find(d => d.id === deviceId);
     const filtered = current.filter(d => d.id !== deviceId);
     setStore(STORAGE_KEYS.DEVICES, filtered);
+
+    // Clean up associated commands and user caches
+    biometricCommandService.deleteCommandsForDevice(deviceId);
+
+    const usersCache = getStore<Record<string, any>>(STORAGE_KEYS.DEVICE_USERS, {});
+    if (usersCache[deviceId]) {
+      delete usersCache[deviceId];
+      setStore(STORAGE_KEYS.DEVICE_USERS, usersCache);
+    }
+
+    if (isSupabaseEnabled && supabase) {
+      try {
+        await supabase.from('biometric_devices').delete().eq('id', deviceId);
+      } catch (err: any) {
+        console.warn('[BiometricGatewayService] Supabase delete warning:', err.message);
+      }
+    }
+
+    this.logDiagnosticEvent({
+      category: 'DEVICE_COMMAND',
+      severity: 'INFO',
+      device_id: deviceId,
+      device_name: target?.device_name,
+      ip_address: target?.ip_address,
+      message: `Biometric terminal "${target?.device_name || deviceId}" permanently deleted from inventory.`,
+    });
+
+    hrEventBus.emit('biometric.device_status_changed', { deviceId, status: 'Offline' });
   }
 
   runDeviceHealthDiagnostic(
@@ -781,7 +859,7 @@ class BiometricGatewayService {
         error_code: 'ERR_TCP_PORT_REFUSED',
       });
     } else {
-      const latency = Math.floor(10 + Math.random() * 18);
+      const latency = Math.floor(4 + Math.random() * 6);
       diag = {
         status: 'ONLINE',
         power_status: 'POWERED_ON',
@@ -810,21 +888,72 @@ class BiometricGatewayService {
     return diag;
   }
 
-  testDeviceConnection(deviceId: string): { success: boolean; latencyMs: number; message: string; diagnostic?: DeviceHealthDiagnostic } {
-    const diag = this.runDeviceHealthDiagnostic(deviceId);
-    if (diag.status === 'ONLINE') {
-      return {
-        success: true,
-        latencyMs: diag.latency_ms,
-        message: `TCP Socket established successfully (${diag.latency_ms}ms latency, 0% packet loss).`,
-        diagnostic: diag,
-      };
-    } else {
+  async testDeviceConnection(deviceId: string): Promise<{ success: boolean; latencyMs: number; message: string; diagnostic?: DeviceHealthDiagnostic }> {
+    const devices = this.getBiometricDevices();
+    const d = devices.find(x => x.id === deviceId);
+    if (!d) return { success: false, latencyMs: 0, message: 'Device not found' };
+
+    try {
+      const probeRes = await this.probeSingleDevice(d.ip_address, d.port || 4370);
+      if (probeRes.success && probeRes.device) {
+        d.status = 'Online';
+        d.last_sync = new Date().toISOString();
+        const latency = probeRes.device.latency_ms || 5;
+        const diag: DeviceHealthDiagnostic = {
+          status: 'ONLINE',
+          power_status: 'POWERED_ON',
+          lan_status: 'CONNECTED',
+          port_status: 'PORT_OPEN',
+          internet_status: 'CONNECTED',
+          latency_ms: latency,
+          troubleshooting_steps: [],
+          last_checked_at: new Date().toISOString(),
+        };
+        d.diagnostic = diag;
+        setStore(STORAGE_KEYS.DEVICES, devices);
+
+        if (isSupabaseEnabled && supabase) {
+          try {
+            await supabase.from('biometric_devices').update({
+              status: 'Online',
+              last_sync: d.last_sync,
+            }).eq('id', d.id);
+          } catch (_) {}
+        }
+
+        hrEventBus.emit('biometric.device_status_changed', { deviceId: d.id, status: 'Online' });
+
+        this.logDiagnosticEvent({
+          category: 'TCP_SOCKET',
+          severity: 'INFO',
+          device_id: d.id,
+          device_name: d.device_name,
+          ip_address: d.ip_address,
+          port: d.port,
+          message: `LIVE TCP SOCKET VERIFIED: Connected to ${d.ip_address}:${d.port} in ${latency}ms (0% packet loss).`,
+        });
+
+        return {
+          success: true,
+          latencyMs: latency,
+          message: `TCP Socket established successfully to ${d.ip_address}:${d.port} (${latency}ms latency, 0% packet loss).`,
+          diagnostic: diag,
+        };
+      } else {
+        d.status = 'Offline';
+        const diag = this.runDeviceHealthDiagnostic(deviceId, 'NO_NETWORK');
+        return {
+          success: false,
+          latencyMs: 0,
+          message: probeRes.error || `Failed to connect to ${d.ip_address}:${d.port}. Socket timed out.`,
+          diagnostic: diag,
+        };
+      }
+    } catch (err: any) {
       return {
         success: false,
         latencyMs: 0,
-        message: `${diag.status.replace(/_/g, ' ')}: ${diag.failure_reason}`,
-        diagnostic: diag,
+        message: err.message || 'Socket test failed',
       };
     }
   }
@@ -957,7 +1086,7 @@ class BiometricGatewayService {
   ): BiometricDevice {
     const newDev: BiometricDevice = {
       id: `bio-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      organization_id: 'org-joy-01',
+      organization_id: getActiveOrgId(),
       gateway_agent_id: payload.gatewayAgentId || 'agent-default',
       device_name: payload.deviceName,
       device_type: discovered.device_type,
@@ -978,6 +1107,79 @@ class BiometricGatewayService {
     setStore(STORAGE_KEYS.DEVICES, [newDev, ...current]);
     hrEventBus.emit('biometric.device_status_changed', { deviceId: newDev.id, status: 'Online' });
     return newDev;
+  }
+
+  async autoDetectAndFixTerminalIp(deviceId?: string): Promise<{ success: boolean; oldIp?: string; newIp?: string; message: string; device?: BiometricDevice }> {
+    const devices = this.getBiometricDevices();
+    let target = deviceId ? devices.find(d => d.id === deviceId) : devices[0];
+    if (!target && devices.length > 0) target = devices[0];
+
+    const oldIp = target?.ip_address || '192.168.1.8';
+
+    try {
+      // 1. First probe current IP
+      if (target?.ip_address) {
+        const directProbe = await this.probeSingleDevice(target.ip_address, target.port || 4370);
+        if (directProbe && directProbe.success) {
+          target.status = 'Online';
+          setStore(STORAGE_KEYS.DEVICES, devices);
+          return {
+            success: true,
+            oldIp: target.ip_address,
+            newIp: target.ip_address,
+            message: `Terminal is already active & online at ${target.ip_address}:${target.port}`,
+            device: target,
+          };
+        }
+      }
+
+      // 2. Perform live multi-subnet sweep via gateway agent
+      const discovered = await this.scanLocalNetwork(target?.gateway_agent_id || 'agent-default', 'auto');
+      const foundZk = discovered.find(d => d.vendor === 'ZKTeco' && d.port === 4370) || discovered[0];
+
+      if (foundZk) {
+        const newIp = foundZk.ip_address;
+        if (target) {
+          target.ip_address = newIp;
+          target.status = 'Online';
+          target.registered_users_count = foundZk.user_count || target.registered_users_count;
+          if (target.diagnostic) {
+            target.diagnostic.status = 'ONLINE';
+            target.diagnostic.latency_ms = foundZk.latency_ms || 8;
+            target.diagnostic.last_checked_at = new Date().toISOString();
+          }
+        } else {
+          target = this.adoptDiscoveredDevice(foundZk, {
+            deviceName: 'ZKTeco K2000 (ZLM60_TFT)',
+            branch: 'Coimbatore Plant & Manufacturing Unit',
+            location: 'Main Reception Turnstile',
+          });
+        }
+
+        setStore(STORAGE_KEYS.DEVICES, devices);
+        hrEventBus.emit('biometric.device_status_changed', { deviceId: target.id, status: 'Online' });
+
+        return {
+          success: true,
+          oldIp,
+          newIp,
+          message: `Hardware dynamically discovered and re-linked to ${newIp}:${foundZk.port}!`,
+          device: target,
+        };
+      }
+    } catch (err: any) {
+      return {
+        success: false,
+        oldIp,
+        message: err.message || 'Auto-detection failed',
+      };
+    }
+
+    return {
+      success: false,
+      oldIp,
+      message: 'No hardware terminal responded on local network scan.',
+    };
   }
 
   async syncEmployeesToTerminal(deviceId: string): Promise<{ syncedCount: number; message: string }> {
@@ -1187,7 +1389,7 @@ class BiometricGatewayService {
             createdCount++;
             updatedList.push({
               id: `bio-user-${Date.now()}-${pin}`,
-              organization_id: 'org-joy-01',
+              organization_id: getActiveOrgId(),
               branch_id: dev.branch,
               device_id: dev.id,
               device_user_uid: uid,
@@ -1223,7 +1425,7 @@ class BiometricGatewayService {
 
             newHistoryEntries.push({
               id: `hist-${Date.now()}-${pin}`,
-              organization_id: 'org-joy-01',
+              organization_id: getActiveOrgId(),
               branch_id: dev.branch,
               device_id: dev.id,
               device_user_id: pin,
@@ -1237,7 +1439,7 @@ class BiometricGatewayService {
             if (existing.name !== (raw.name || existing.name)) {
               newHistoryEntries.push({
                 id: `hist-${Date.now()}-${pin}-name`,
-                organization_id: 'org-joy-01',
+                organization_id: getActiveOrgId(),
                 branch_id: dev.branch,
                 device_id: dev.id,
                 device_user_id: pin,
@@ -1253,7 +1455,7 @@ class BiometricGatewayService {
             if (existing.card_number !== (raw.cardNumber || raw.card_number || existing.card_number)) {
               newHistoryEntries.push({
                 id: `hist-${Date.now()}-${pin}-card`,
-                organization_id: 'org-joy-01',
+                organization_id: getActiveOrgId(),
                 branch_id: dev.branch,
                 device_id: dev.id,
                 device_user_id: pin,
@@ -1269,7 +1471,7 @@ class BiometricGatewayService {
             if (fpCount !== null && existing.fingerprint_count !== fpCount) {
               newHistoryEntries.push({
                 id: `hist-${Date.now()}-${pin}-fp`,
-                organization_id: 'org-joy-01',
+                organization_id: getActiveOrgId(),
                 branch_id: dev.branch,
                 device_id: dev.id,
                 device_user_id: pin,
@@ -1328,7 +1530,7 @@ class BiometricGatewayService {
 
             newHistoryEntries.push({
               id: `hist-${Date.now()}-${oldUser.device_user_id}-removed`,
-              organization_id: 'org-joy-01',
+              organization_id: getActiveOrgId(),
               branch_id: dev.branch,
               device_id: dev.id,
               device_user_id: oldUser.device_user_id,
@@ -1362,7 +1564,7 @@ class BiometricGatewayService {
         // Save Sync History Record
         const historyRecord: DeviceUserSyncHistory = {
           sync_id: syncId,
-          organization_id: 'org-joy-01',
+          organization_id: getActiveOrgId(),
           branch_id: dev.branch,
           device_id: dev.id,
           agent_id: dev.gateway_agent_id,
@@ -1806,7 +2008,7 @@ class BiometricGatewayService {
 
     const newMapping: EmployeeBiometricMapping = {
       id: `map-${Date.now()}-${pin}`,
-      organization_id: 'org-joy-01',
+      organization_id: getActiveOrgId(),
       branch_id: dev.branch,
       employee_id: emp.id,
       employee_name: empName,
@@ -1868,7 +2070,7 @@ class BiometricGatewayService {
     const userHistoryStore = getStore<BiometricDeviceUserHistory[]>(STORAGE_KEYS_EXT.USER_HISTORY, []);
     const auditRecord: BiometricDeviceUserHistory = {
       id: `hist-map-${Date.now()}-${pin}`,
-      organization_id: 'org-joy-01',
+      organization_id: getActiveOrgId(),
       branch_id: dev.branch,
       device_id: dev.id,
       device_user_id: pin,
@@ -1889,7 +2091,7 @@ class BiometricGatewayService {
 
     // Realtime Event
     hrEventBus.emit('biometric.mapping.created', {
-      organizationId: 'org-joy-01',
+      organizationId: getActiveOrgId(),
       branchId: dev.branch,
       deviceId: dev.id,
       deviceUserId: pin,
@@ -1961,7 +2163,7 @@ class BiometricGatewayService {
     const userHistoryStore = getStore<BiometricDeviceUserHistory[]>(STORAGE_KEYS_EXT.USER_HISTORY, []);
     const auditRecord: BiometricDeviceUserHistory = {
       id: `hist-unmap-${Date.now()}-${pin}`,
-      organization_id: 'org-joy-01',
+      organization_id: getActiveOrgId(),
       branch_id: user.branch_id,
       device_id: deviceId,
       device_user_id: pin,
@@ -1982,7 +2184,7 @@ class BiometricGatewayService {
 
     // Realtime Event
     hrEventBus.emit('biometric.mapping.removed', {
-      organizationId: 'org-joy-01',
+      organizationId: getActiveOrgId(),
       deviceId,
       deviceUserId: pin,
       mappingStatus: 'UNMAPPED',
@@ -2517,7 +2719,7 @@ class BiometricGatewayService {
         } else {
           u = {
             id: `bio-user-${Date.now()}-${payload.pin}`,
-            organization_id: 'org-joy-01',
+            organization_id: getActiveOrgId(),
             branch_id: dev.branch,
             device_id: dev.id,
             device_user_uid: null,
@@ -2531,14 +2733,16 @@ class BiometricGatewayService {
             user_group: 'Default Group',
             enabled: true,
             fingerprint_count: 1,
-            face_count: null,
+            face_count: 0,
             face_enrolled: false,
-            palm_enrolled: null,
-            iris_enrolled: null,
-            sync_status: 'SYNCED',
+            palm_enrolled: false,
+            iris_enrolled: false,
+            raw_capabilities: null,
+            device_created_at: new Date().toISOString(),
             first_seen_at: new Date().toISOString(),
             last_seen_at: new Date().toISOString(),
             last_synced_at: new Date().toISOString(),
+            sync_status: 'SYNCED',
             is_mapped: false,
           };
           list.push(u);
@@ -2585,7 +2789,7 @@ class BiometricGatewayService {
       try {
         platformIncidentService.declareIncident({
           title: `Biometric Hardware Disconnect: ${payload.device_name || 'Terminal'} (${payload.error_code || 'SOCKET_TIMEOUT'})`,
-          description: `Diagnostic Telemetry: ${payload.message}. Endpoint: ${payload.ip_address || 'LAN'}:${payload.port || 4370}. Stack: ${payload.stack_trace || 'None'}. Tenant: org-joy-01.`,
+          description: `Diagnostic Telemetry: ${payload.message}. Endpoint: ${payload.ip_address || 'LAN'}:${payload.port || 4370}. Stack: ${payload.stack_trace || 'None'}. Tenant: ${getActiveOrgId()}.`,
           severity: payload.severity === 'CRASH' ? 'SEV-2 Major' : 'SEV-3 Moderate',
           affected_services: ['Biometric Gateway Daemon', 'Time & Attendance Ingestion', 'Hardware TCP Relay'],
           affected_region: 'India (Pan-India)',
@@ -2608,8 +2812,13 @@ class BiometricGatewayService {
     return newLog;
   }
 
-  clearDiagnosticLogs(): void {
+  async clearDiagnosticLogs(): Promise<void> {
     setStore(STORAGE_KEYS.LOGS, []);
+    if (isSupabaseEnabled && supabase) {
+      try {
+        await supabase.from('biometric_diagnostic_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      } catch (_) {}
+    }
   }
 
   // ==========================================================================
@@ -2682,6 +2891,17 @@ class BiometricGatewayService {
     };
 
     setStore(STORAGE_KEYS.PUNCHES, [newPunch, ...currentPunches].slice(0, 500));
+
+    // Update real-time attendance daily record
+    if (matchedEmployee?.id) {
+      attendanceApi.recordBiometricPunch({
+        employeeId: matchedEmployee.id,
+        punchTime: punchIso,
+        direction: (payload.punchDirection as any) || 'AUTO',
+        deviceName: device.device_name,
+        verificationMode: payload.verificationMode || 'Fingerprint',
+      });
+    }
 
     // Emit live event for real-time attendance dashboard
     hrEventBus.emit('attendance.punch_received', {

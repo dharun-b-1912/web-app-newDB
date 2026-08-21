@@ -9,6 +9,7 @@ import { leaveApi } from '../../services/leaveApi';
 import { approvalService } from '../../services/notification/approvalService';
 import { hrEventBus } from '../../services/hrEventBus';
 import { Employee, Department } from '../../types';
+import { workforceStatusEngine } from '../../services/workforceStatusEngine';
 
 // Subcomponents
 import { HRDashboardHeader } from './components/HRDashboardHeader';
@@ -181,50 +182,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         ninetyDays: { newJoiners: newJoiners90D, exits: exitsCount, transfers: 4, promotions: 6, netChange: newJoiners90D - exitsCount },
       });
 
-      // --- ATTENDANCE RECONCILIATION ---
-      let presentCount = 0;
-      let lateCount = 0;
-      let wfhCount = 0;
-      let onLeaveCount = employees.filter((e) => e.status === 'On Leave').length;
-      let absentCount = 0;
-
-      if (dailyAttendanceList && dailyAttendanceList.length > 0) {
-        dailyAttendanceList.forEach((att) => {
-          if (att.status === 'Present' || att.status === 'Checked Out' || att.status === 'Early Checkout' || att.status === 'Half Day') {
-            presentCount++;
-          } else if (att.status === 'Late') {
-            presentCount++;
-            lateCount++;
-          } else if (att.status === 'WFH') {
-            wfhCount++;
-          } else if (att.status === 'On Leave') {
-            onLeaveCount++;
-          } else if (att.status === 'Absent') {
-            absentCount++;
-          }
-        });
-      } else {
-        // Compute dynamically from active employees if daily list not seeded yet
-        presentCount = Math.round(activeEmps.length * 0.94);
-        lateCount = Math.round(activeEmps.length * 0.04);
-        wfhCount = Math.round(activeEmps.length * 0.08);
-        absentCount = Math.max(0, activeEmps.length - presentCount - onLeaveCount);
-      }
-
-      const effectiveTotal = Math.max(activeEmps.length, totalEmployees);
-      const notMarkedCount = Math.max(0, effectiveTotal - (presentCount + absentCount + onLeaveCount));
-      const presentRatePct = effectiveTotal > 0 ? Math.round((presentCount / effectiveTotal) * 100) : 0;
+      // --- AUTHORITATIVE ATTENDANCE RECONCILIATION ---
+      const statusSnapshot = workforceStatusEngine.getDailyStatusSnapshot(
+        todayStr,
+        employees,
+        dailyAttendanceList,
+        []
+      );
 
       setAttendanceData({
-        totalCount: effectiveTotal,
-        presentCount,
-        absentCount,
-        lateCount,
-        onLeaveCount,
-        wfhCount,
-        notMarkedCount,
-        presentRatePct,
+        totalCount: statusSnapshot.totalWorkforce,
+        presentCount: statusSnapshot.presentCount,
+        absentCount: statusSnapshot.absentCount,
+        lateCount: statusSnapshot.lateCount,
+        onLeaveCount: statusSnapshot.onLeaveCount,
+        wfhCount: statusSnapshot.wfhCount,
+        notMarkedCount: statusSnapshot.notMarkedCount,
+        presentRatePct: statusSnapshot.presentRatePct,
       });
+
+      const effectiveTotal = statusSnapshot.totalWorkforce;
+      const presentCount = statusSnapshot.presentCount;
+      const onLeaveCount = statusSnapshot.onLeaveCount;
+      const presentRatePct = statusSnapshot.presentRatePct;
 
       // --- APPROVALS & ATTENTION CENTER ---
       const pendingApprovals = approvalRequests.filter((a) => a.status === 'Pending');

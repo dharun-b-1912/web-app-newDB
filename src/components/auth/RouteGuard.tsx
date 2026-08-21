@@ -42,7 +42,10 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
   }
 
   // Determine required permission code
-  const requiredPermissionCode = `platform.${module.replace(/^platform-/, '')}.${action}`;
+  const isPlatformModule = module.startsWith('platform') || module.startsWith('saas-');
+  const requiredPermissionCode = isPlatformModule
+    ? `platform.${module.replace(/^platform-/, '')}.${action}`
+    : `hrms.${module}.${action}`;
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[440px] p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm my-6 max-w-xl mx-auto">
@@ -58,7 +61,7 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
         Your current administrative role (<span className="font-semibold text-slate-800 dark:text-slate-200">{primaryRole}</span>) does not include authorization for this section.
       </p>
 
-      {/* Permission Explanation Box (Requirement 48) */}
+      {/* Permission Explanation Box */}
       <div className="w-full bg-slate-50 dark:bg-slate-800/70 rounded-xl p-4 my-5 border border-slate-200 dark:border-slate-700 text-left space-y-2">
         <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
           <Info className="w-4 h-4 text-indigo-500 shrink-0" />
@@ -72,7 +75,7 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
             </code>
           </div>
           <div>
-            Contact a <strong>Platform Super Admin</strong> if your job responsibilities require access to this module.
+            Contact a <strong>{isPlatformModule ? 'Platform Super Admin' : 'Company Administrator'}</strong> if your job responsibilities require access to this module.
           </div>
         </div>
       </div>

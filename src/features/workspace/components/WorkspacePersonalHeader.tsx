@@ -116,18 +116,36 @@ export const WorkspacePersonalHeader: React.FC<Props> = ({
           <div className="text-xl font-black text-gray-900 flex items-center gap-2">
             <Clock className="w-5 h-5 text-[#07563D]" />
             {isCheckedIn ? (
-              <span>{todayAttendance?.first_check_in || '09:12 AM'}</span>
+              <span>{todayAttendance?.first_check_in || 'Checked In'}</span>
             ) : isCheckedOut ? (
-              <span>{todayAttendance?.last_check_out || '06:10 PM'}</span>
+              <span>{todayAttendance?.last_check_out || 'Checked Out'}</span>
             ) : (
               <span className="text-gray-500 font-semibold text-base">Not Started</span>
             )}
           </div>
 
           <div className="text-[11px] text-gray-500 flex items-center gap-2">
-            <span>Duration: <strong className="text-gray-800">{workingDuration}</strong></span>
-            <span>•</span>
-            <span>Office — {location}</span>
+            {isCheckedIn ? (
+              <>
+                <span>Duration: <strong className="text-gray-800">{workingDuration}</strong></span>
+                <span>•</span>
+                <span className="text-emerald-700 font-semibold">
+                  {todayAttendance?.source === 'BIOMETRIC' ? 'Biometric Terminal' : 'Web Portal'}
+                </span>
+              </>
+            ) : isCheckedOut ? (
+              <>
+                <span>Total: <strong className="text-gray-800">{workingDuration}</strong></span>
+                <span>•</span>
+                <span>Shift Completed</span>
+              </>
+            ) : (
+              <>
+                <span>Office — {location}</span>
+                <span>•</span>
+                <span className="text-gray-400">Scan biometric or clock in below</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -160,9 +178,9 @@ export const WorkspacePersonalHeader: React.FC<Props> = ({
               onClick={onCheckIn}
               disabled={isProcessing}
               leftIcon={isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-              className="w-full sm:w-auto text-xs font-bold shadow-sm"
+              className="w-full sm:w-auto text-xs font-bold shadow-sm bg-[#07563D] hover:bg-[#064e37]"
             >
-              {isProcessing ? 'Recording...' : 'Check In'}
+              {isProcessing ? 'Recording...' : 'Clock In (Web)'}
             </Button>
           )}
         </div>

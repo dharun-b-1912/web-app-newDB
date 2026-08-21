@@ -13,16 +13,19 @@ import {
 } from '../types/attendance';
 import { DEFAULT_ATTENDANCE_POLICY, minutesToTimeString, processAttendanceStatus, timeStringToMinutes } from '../lib/attendance/attendanceEngine';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { attendanceRosterService } from './attendance/attendanceRosterService';
 
-const STORAGE_KEY_DAILY = 'workforceos_attendance_daily_v1';
-const STORAGE_KEY_EVENTS = 'workforceos_attendance_events_v1';
-const STORAGE_KEY_REGULARIZATIONS = 'workforceos_attendance_regularizations_v1';
-const STORAGE_KEY_OVERTIME = 'workforceos_attendance_overtime_v1';
-const STORAGE_KEY_WFH = 'workforceos_attendance_wfh_v1';
-const STORAGE_KEY_DEVICES = 'workforceos_biometric_devices_v1';
-const STORAGE_KEY_POLICIES = 'workforceos_attendance_policies_v1';
-const STORAGE_KEY_SNAPSHOTS = 'workforceos_attendance_snapshots_v1';
-const STORAGE_KEY_EXCEPTIONS = 'workforceos_attendance_exceptions_v1';
+import { getActiveOrgId } from './attendance/biometricCommandService';
+
+const STORAGE_KEY_DAILY = 'workforceos_attendance_daily_v2';
+const STORAGE_KEY_EVENTS = 'workforceos_attendance_events_v2';
+const STORAGE_KEY_REGULARIZATIONS = 'workforceos_attendance_regularizations_v2';
+const STORAGE_KEY_OVERTIME = 'workforceos_attendance_overtime_v2';
+const STORAGE_KEY_WFH = 'workforceos_attendance_wfh_v2';
+const STORAGE_KEY_DEVICES = 'workforceos_biometric_devices_v2';
+const STORAGE_KEY_POLICIES = 'workforceos_attendance_policies_v2';
+const STORAGE_KEY_SNAPSHOTS = 'workforceos_attendance_snapshots_v2';
+const STORAGE_KEY_EXCEPTIONS = 'workforceos_attendance_exceptions_v2';
 
 // Pure database initial state - 0 mock records
 const SEED_DAILY: AttendanceDaily[] = [];
@@ -32,12 +35,25 @@ const SEED_OVERTIME: OvertimeRequest[] = [];
 const SEED_WFH: WfhRequest[] = [];
 const SEED_EXCEPTIONS: AttendanceException[] = [];
 
-// LocalStorage helpers
-function loadStorage<T>(key: string, seed: T): T {
+function getTenantStorageKey(baseKey: string, tenantId = getActiveOrgId()): string {
+  return `${baseKey}_${tenantId}`;
+}
+
+// LocalStorage helpers with tenant isolation
+function loadStorage<T>(baseKey: string, seed: T, tenantId = getActiveOrgId()): T {
   try {
+    const key = getTenantStorageKey(baseKey, tenantId);
     const raw = localStorage.getItem(key);
     if (!raw) {
-      localStorage.setItem(key, JSON.stringify(seed));
+      // Legacy fallback check
+      const legacy = localStorage.getItem(baseKey);
+      if (legacy) {
+        try {
+          const parsed = JSON.parse(legacy);
+          localStorage.setItem(key, legacy);
+          return parsed;
+        } catch (_) {}
+      }
       return seed;
     }
     return JSON.parse(raw);
@@ -46,8 +62,9 @@ function loadStorage<T>(key: string, seed: T): T {
   }
 }
 
-function saveStorage<T>(key: string, data: T): void {
+function saveStorage<T>(baseKey: string, data: T, tenantId = getActiveOrgId()): void {
   try {
+    const key = getTenantStorageKey(baseKey, tenantId);
     localStorage.setItem(key, JSON.stringify(data));
   } catch (e) {
     console.error('Failed to save to localStorage', e);
@@ -68,6 +85,8 @@ export const attendanceApi = {
         const cleaned: AttendanceDaily[] = [];
         const seenEmpKeys = new Set<string>();
 
+        const targetDate = date || new Date().toISOString().split('T')[0];
+
         for (const item of list) {
           // Find matching real employee strictly by ID or (exact Code AND Name)
           const matchedEmp = realEmployees.find(e =>
@@ -78,19 +97,67 @@ export const attendanceApi = {
           );
 
           if (matchedEmp) {
-            const empKey = `${matchedEmp.id || matchedEmp.employee_code}_${item.date || 'today'}`;
+            const empKey = `${matchedEmp.id || matchedEmp.employee_code}_${item.date || targetDate}`;
             if (!seenEmpKeys.has(empKey)) {
               seenEmpKeys.add(empKey);
-              // Ensure department, designation, name, and code are accurately synced from the real employee!
+              const roster = attendanceRosterService.getRosterForEmployeeOnDate(matchedEmp.id, item.date || targetDate);
+              const shiftStart = roster.shift_code.includes('NGT') ? '10:00 PM' : roster.shift_code.includes('MOR') ? '06:00 AM' : '09:00 AM';
+              const shiftEnd = roster.shift_code.includes('NGT') ? '06:00 AM' : roster.shift_code.includes('MOR') ? '02:30 PM' : '06:00 PM';
+
               cleaned.push({
                 ...item,
                 employee_id: matchedEmp.id,
                 employee_code: matchedEmp.employee_code || item.employee_code,
                 employee_name: matchedEmp.display_name || `${matchedEmp.first_name || ''} ${matchedEmp.last_name || ''}`.trim() || item.employee_name,
                 department: matchedEmp.department_name || matchedEmp.department || 'People & HR',
-                designation: matchedEmp.designation_title || matchedEmp.designation || 'HR Head',
+                designation: matchedEmp.designation_title || matchedEmp.designation || 'Staff',
+                shift_id: roster.shift_id,
+                shift_name: `${roster.shift_name} (${roster.shift_code})`,
+                expected_check_in: shiftStart,
+                expected_check_out: shiftEnd,
+                status: roster.is_weekly_off ? 'Weekly Off' : item.status || 'Present',
               });
             }
+          }
+        }
+
+        // For any real employee without an attendance record yet, create one resolved with their shift schedule
+        for (const emp of realEmployees) {
+          const empKey = `${emp.id}_${targetDate}`;
+          if (!seenEmpKeys.has(empKey)) {
+            seenEmpKeys.add(empKey);
+            const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, targetDate);
+            const isOff = roster.is_weekly_off;
+            const shiftStart = roster.shift_code.includes('NGT') ? '10:00 PM' : roster.shift_code.includes('MOR') ? '06:00 AM' : '09:00 AM';
+            const shiftEnd = roster.shift_code.includes('NGT') ? '06:00 AM' : roster.shift_code.includes('MOR') ? '02:30 PM' : '06:00 PM';
+
+            cleaned.push({
+              id: `att-dyn-${emp.id}-${targetDate}`,
+              employee_id: emp.id,
+              employee_code: emp.employee_code || `WF-${emp.id}`,
+              employee_name: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || 'Employee',
+              department: emp.department_name || emp.department || 'Operations',
+              designation: emp.designation_title || emp.designation || 'Staff',
+              organization_id: emp.organization_id || getActiveOrgId(),
+              company_id: emp.company_id || 'cmp-01',
+              date: targetDate,
+              shift_id: roster.shift_id,
+              shift_name: `${roster.shift_name} (${roster.shift_code})`,
+              expected_check_in: shiftStart,
+              expected_check_out: shiftEnd,
+              first_check_in: undefined,
+              last_check_out: undefined,
+              gross_working_minutes: 0,
+              net_working_minutes: 0,
+              total_break_minutes: 0,
+              late_minutes: 0,
+              early_checkout_minutes: 0,
+              overtime_minutes: 0,
+              status: isOff ? 'Weekly Off' : 'Not Checked In',
+              source: isOff ? 'SYSTEM' : 'WEB',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
           }
         }
 
@@ -269,6 +336,76 @@ export const attendanceApi = {
     }
 
     return updated;
+  },
+
+  recordBiometricPunch: (payload: {
+    employeeId: string;
+    punchTime: string;
+    direction?: 'IN' | 'OUT' | 'AUTO';
+    deviceName?: string;
+    verificationMode?: string;
+  }): AttendanceDaily => {
+    const list = loadStorage<AttendanceDaily[]>(STORAGE_KEY_DAILY, SEED_DAILY);
+    const todayStr = payload.punchTime ? payload.punchTime.split('T')[0] : new Date().toISOString().split('T')[0];
+    const punchDate = new Date(payload.punchTime);
+    const timeStr = !isNaN(punchDate.getTime())
+      ? punchDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : payload.punchTime;
+
+    const existingIdx = list.findIndex(e => e.employee_id === payload.employeeId && e.date === todayStr);
+
+    if (existingIdx >= 0) {
+      const existing = list[existingIdx];
+      if (!existing.first_check_in || payload.direction === 'IN') {
+        existing.first_check_in = existing.first_check_in || timeStr;
+        existing.status = 'Present';
+        existing.source = 'BIOMETRIC';
+      } else {
+        existing.last_check_out = timeStr;
+        const checkInMins = timeStringToMinutes(existing.first_check_in);
+        const checkOutMins = timeStringToMinutes(timeStr);
+        const calc = processAttendanceStatus(checkInMins, checkOutMins);
+        existing.gross_working_minutes = calc.grossMinutes;
+        existing.net_working_minutes = calc.netMinutes;
+        existing.status = calc.status;
+        existing.source = 'BIOMETRIC';
+      }
+      existing.updated_at = new Date().toISOString();
+      list[existingIdx] = existing;
+      saveStorage(STORAGE_KEY_DAILY, list);
+      return existing;
+    } else {
+      const roster = attendanceRosterService.getRosterForEmployeeOnDate(payload.employeeId, todayStr);
+      const newItem: AttendanceDaily = {
+        id: `att-bio-${Date.now()}`,
+        employee_id: payload.employeeId,
+        employee_code: `WF-${payload.employeeId}`,
+        employee_name: 'Employee',
+        department: 'Operations',
+        designation: 'Staff',
+        organization_id: getActiveOrgId(),
+        company_id: 'cmp-01',
+        date: todayStr,
+        shift_id: roster.shift_id,
+        shift_name: `${roster.shift_name} (${roster.shift_code})`,
+        expected_check_in: '09:00 AM',
+        expected_check_out: '06:00 PM',
+        first_check_in: timeStr,
+        gross_working_minutes: 0,
+        net_working_minutes: 0,
+        total_break_minutes: 0,
+        late_minutes: 0,
+        early_checkout_minutes: 0,
+        overtime_minutes: 0,
+        status: 'Present',
+        source: 'BIOMETRIC',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      list.unshift(newItem);
+      saveStorage(STORAGE_KEY_DAILY, list);
+      return newItem;
+    }
   },
 
   getRegularizations: (): RegularizationRequest[] => {

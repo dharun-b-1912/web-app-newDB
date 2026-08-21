@@ -6,6 +6,8 @@ import { AttendanceDaily } from '../types/attendance';
 import { LeaveEntitlement, LeaveRequest, HolidayCalendar } from '../types/leave';
 import { hrEventBus } from './hrEventBus';
 import { profileService, FullProfileContext } from './profileService';
+import { attendanceRosterService } from './attendance/attendanceRosterService';
+import { getActiveOrgId } from './attendance/biometricCommandService';
 
 export interface PendingTaskItem {
   id: string;
@@ -111,23 +113,35 @@ export const workspaceService = {
     if (activeLeave) {
       attendanceState = 'OnLeave';
     } else if (todayAttendance) {
-      if (todayAttendance.last_check_out) {
+      if (todayAttendance.last_check_out && todayAttendance.first_check_in) {
         attendanceState = 'CheckedOut';
-        workingDuration = todayAttendance.work_hours_gross ? `${todayAttendance.work_hours_gross}h` : '08h 15m';
+        const mins = todayAttendance.net_working_minutes || todayAttendance.gross_working_minutes || 0;
+        const hrs = Math.floor(mins / 60);
+        const remMins = mins % 60;
+        workingDuration = `${String(hrs).padStart(2, '0')}h ${String(remMins).padStart(2, '0')}m`;
       } else if (todayAttendance.first_check_in) {
         attendanceState = 'CheckedIn';
         const now = new Date();
-        const checkInParts = todayAttendance.first_check_in.split(':');
-        if (checkInParts.length >= 2) {
+        const rawTime = todayAttendance.first_check_in;
+        const timeMatch = rawTime.match(/(\d+):(\d+)(?::\d+)?\s*(AM|PM)?/i);
+        if (timeMatch) {
+          let hours = parseInt(timeMatch[1], 10);
+          const minutes = parseInt(timeMatch[2], 10);
+          const ampm = timeMatch[3];
+          if (ampm && ampm.toUpperCase() === 'PM' && hours < 12) hours += 12;
+          if (ampm && ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
           const checkInDate = new Date();
-          checkInDate.setHours(parseInt(checkInParts[0], 10), parseInt(checkInParts[1], 10), 0);
+          checkInDate.setHours(hours, minutes, 0, 0);
           const diffMs = Math.max(0, now.getTime() - checkInDate.getTime());
           const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
           const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
           workingDuration = `${String(diffHrs).padStart(2, '0')}h ${String(diffMins).padStart(2, '0')}m`;
         } else {
-          workingDuration = '04h 32m';
+          workingDuration = '00h 00m';
         }
+      } else {
+        attendanceState = 'NotCheckedIn';
+        workingDuration = '00h 00m';
       }
     }
 
@@ -330,11 +344,30 @@ export const workspaceService = {
       leaveEntitlements: userEntitlements,
       pendingTasks,
       upcomingHoliday,
-      activeShift: {
-        name: 'General Day Shift (GS)',
-        timings: '09:00 AM - 06:00 PM',
-        location: 'Joy Tech Park, Coimbatore HQ',
-      },
+      activeShift: (() => {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const empId = employee?.id || user.employee_id || user.id;
+        const orgId = user.organization_id || employee?.organization_id || getActiveOrgId();
+
+        const roster = attendanceRosterService.getRosterForEmployeeOnDate(empId, todayStr, orgId);
+        const shift = attendanceRosterService.getShiftById(roster.shift_id, orgId) || {
+          shift_name: roster.shift_name,
+          shift_code: roster.shift_code,
+          start_time: '09:00',
+          end_time: '18:00',
+        };
+
+        const isNight = roster.shift_code.includes('NGT');
+        const shiftTimings = roster.is_weekly_off
+          ? 'Weekly Off (Rest Day)'
+          : `${shift.start_time || '09:00 AM'} - ${shift.end_time || '06:00 PM'} ${isNight ? '(Next Day)' : ''}`;
+
+        return {
+          name: `${roster.shift_name} (${roster.shift_code})`,
+          timings: shiftTimings,
+          location: employee?.location || 'Joy Tech Park, Coimbatore HQ',
+        };
+      })(),
       latestPayslip: {
         period: 'July 2026',
         grossPay: 185000,

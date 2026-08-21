@@ -13,6 +13,16 @@ export interface EmployeeListProps {
   onSelectEmployee: (emp: Employee) => void;
 }
 
+const checkIsVendor = (emp: Employee): boolean => {
+  const source = emp.employment_source || emp.employment?.employment_source;
+  if (source === 'VENDOR' || source === 'MANPOWER_PROVIDER') return true;
+  if (source === 'DIRECT') return false;
+  if (emp.vendor_name && emp.vendor_name.trim() !== '') return true;
+  if (emp.employment?.vendor_name && emp.employment.vendor_name.trim() !== '') return true;
+  if (emp.company_name && emp.company_name.toLowerCase().includes('vendor')) return true;
+  return false;
+};
+
 export const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onSelectEmployee }) => {
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
 
@@ -75,7 +85,7 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onSelectE
             </TableHeader>
             <TableBody>
               {employees.map((emp) => {
-                const isVendor = emp.employment_source === 'VENDOR' || emp.employment?.employment_source === 'VENDOR';
+                const isVendor = checkIsVendor(emp);
                 const managerName = emp.employment?.reporting_manager_name || 'Not assigned';
                 const location = emp.employment?.work_location || 'Coimbatore HQ';
 
@@ -154,7 +164,7 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onSelectE
         /* Grid Cards View */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {employees.map((emp) => {
-            const isVendor = emp.employment_source === 'VENDOR' || emp.employment?.employment_source === 'VENDOR';
+            const isVendor = checkIsVendor(emp);
             return (
               <Card
                 key={emp.id}

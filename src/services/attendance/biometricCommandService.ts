@@ -48,26 +48,48 @@ export interface BiometricDeviceCommand {
 
 const STORAGE_KEY_COMMANDS = 'workforce_bio_commands_v2';
 
-function getStoredCommands(): BiometricDeviceCommand[] {
+export function getActiveOrgId(): string {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('workforce_active_org_id') || 'org-joy-01';
+  }
+  return 'org-joy-01';
+}
+
+function getStoredCommands(orgId = getActiveOrgId()): BiometricDeviceCommand[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_COMMANDS);
-    return raw ? JSON.parse(raw) : [];
+    const tenantKey = `${STORAGE_KEY_COMMANDS}_${orgId}`;
+    const raw = localStorage.getItem(tenantKey);
+    if (raw) return JSON.parse(raw);
+
+    // Backward-compatible fallback: read from legacy global baseKey and auto-migrate
+    const legacyRaw = localStorage.getItem(STORAGE_KEY_COMMANDS);
+    if (legacyRaw) {
+      try {
+        const parsed = JSON.parse(legacyRaw);
+        const filtered = Array.isArray(parsed) ? parsed.filter((c: any) => c.organization_id === orgId) : [];
+        localStorage.setItem(tenantKey, JSON.stringify(filtered));
+        return filtered;
+      } catch (_) {}
+    }
+
+    return [];
   } catch {
     return [];
   }
 }
 
-function saveCommands(commands: BiometricDeviceCommand[]): void {
+function saveCommands(commands: BiometricDeviceCommand[], orgId = getActiveOrgId()): void {
   try {
-    localStorage.setItem(STORAGE_KEY_COMMANDS, JSON.stringify(commands));
+    const tenantKey = `${STORAGE_KEY_COMMANDS}_${orgId}`;
+    localStorage.setItem(tenantKey, JSON.stringify(commands));
   } catch (err) {
     console.error('[BiometricCommandService] storage error:', err);
   }
 }
 
 class BiometricCommandService {
-  getCommands(organizationId = 'org-joy-01'): BiometricDeviceCommand[] {
-    return getStoredCommands().filter(c => c.organization_id === organizationId);
+  getCommands(organizationId = getActiveOrgId()): BiometricDeviceCommand[] {
+    return getStoredCommands(organizationId);
   }
 
   async dispatchCommand(payload: {
@@ -83,7 +105,7 @@ class BiometricCommandService {
 
     const newCmd: BiometricDeviceCommand = {
       id: `cmd-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
-      organization_id: payload.organizationId || 'org-joy-01',
+      organization_id: payload.organizationId || getActiveOrgId(),
       branch_id: payload.branchId || dev?.branch,
       agent_id: dev?.gateway_agent_id,
       device_id: payload.deviceId,
@@ -97,12 +119,17 @@ class BiometricCommandService {
     };
 
     const current = getStoredCommands();
-    saveCommands([newCmd, ...current]);
+    const updated = [newCmd, ...current];
+    saveCommands(updated);
 
-    // Asynchronously execute command via agent adapter
-    setTimeout(() => {
-      this.executeCommand(newCmd.id);
-    }, 400);
+    hrEventBus.emit('biometric.command_dispatched', {
+      commandId: newCmd.id,
+      deviceId: newCmd.device_id,
+      commandType: newCmd.command_type,
+    });
+
+    // Asynchronously execute simulation/relay to gateway
+    this.executeCommand(newCmd.id).catch(console.error);
 
     return newCmd;
   }
@@ -120,7 +147,7 @@ class BiometricCommandService {
 
       switch (cmd.command_type) {
         case 'TEST_CONNECTION': {
-          const testRes = biometricGatewayService.testDeviceConnection(cmd.device_id);
+          const testRes = await biometricGatewayService.testDeviceConnection(cmd.device_id);
           responsePayload = testRes;
           cmd.status = testRes.success ? 'SUCCESS' : 'FAILED';
           break;
@@ -130,6 +157,23 @@ class BiometricCommandService {
             synced_at: new Date().toISOString(),
             drift_ms: 14,
             message: 'Device hardware clock synchronized with WorkForceOS NTP Cloud.',
+          };
+          cmd.status = 'SUCCESS';
+          break;
+        }
+        case 'REBOOT': {
+          responsePayload = {
+            message: 'Hardware reboot sequence initiated over TCP port 4370.',
+            estimated_restart_sec: 25,
+          };
+          cmd.status = 'SUCCESS';
+          break;
+        }
+        case 'CREATE_USER': {
+          responsePayload = {
+            enrolled_pin: cmd.payload?.biometricPin,
+            name: cmd.payload?.employeeName,
+            status: 'WRITTEN_TO_HARDWARE_RAM',
           };
           cmd.status = 'SUCCESS';
           break;
@@ -173,6 +217,20 @@ class BiometricCommandService {
 
     saveCommands(list);
     return cmd;
+  }
+
+  clearCommands(organizationId = getActiveOrgId()): void {
+    saveCommands([], organizationId);
+  }
+
+  deleteCommand(commandId: string, organizationId = getActiveOrgId()): void {
+    const list = getStoredCommands(organizationId).filter(c => c.id !== commandId);
+    saveCommands(list, organizationId);
+  }
+
+  deleteCommandsForDevice(deviceId: string, organizationId = getActiveOrgId()): void {
+    const list = getStoredCommands(organizationId).filter(c => c.device_id !== deviceId);
+    saveCommands(list, organizationId);
   }
 }
 
