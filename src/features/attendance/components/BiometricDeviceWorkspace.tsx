@@ -5,6 +5,7 @@
 // ============================================================================
 
 import React, { useState, useEffect, useRef } from 'react';
+import { Modal } from '../../../components/ui/Modal';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -38,6 +39,12 @@ import {
   Check,
   Search,
   Filter,
+  UploadCloud,
+  DownloadCloud,
+  Sparkles,
+  Info,
+  Unlock,
+  Key,
 } from 'lucide-react';
 import {
   biometricGatewayService,
@@ -190,19 +197,135 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
     }
   };
 
-  const handleSyncUsersFromTerminal = async () => {
-    setIsSyncingUsers(true);
+  const [isPushingEmployees, setIsPushingEmployees] = useState(false);
+
+  const handlePushEmployeesToTerminal = async () => {
+    setIsPushingEmployees(true);
     try {
       const res = await biometricGatewayService.syncEmployeesToTerminal(liveDevice.id);
-      if (res.syncedCount !== undefined) {
-        showToast(`✓ ${res.message}`);
-        loadWorkspaceData();
-        onDeviceUpdated();
-      } else {
-        showToast(`Sync failed: ${res.message}`, 'error');
-      }
+      showToast(`✓ ${res.message}`);
+      loadWorkspaceData();
+      onDeviceUpdated();
     } catch (err: any) {
-      showToast(err.message || 'User sync failed', 'error');
+      showToast(err.message || 'Push to device failed', 'error');
+    } finally {
+      setIsPushingEmployees(false);
+    }
+  };
+
+  const [isClearingData, setIsClearingData] = useState(false);
+  const [isUnlockingAdmin, setIsUnlockingAdmin] = useState(false);
+  const [isWipingHardware, setIsWipingHardware] = useState(false);
+
+  // Modern Enterprise Confirmation Modal State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    impactList?: string[];
+    confirmLabel: string;
+    variant: 'danger' | 'amber' | 'primary';
+    isLoading?: boolean;
+    onConfirm: () => Promise<void>;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    confirmLabel: 'Confirm',
+    variant: 'danger',
+    onConfirm: async () => {},
+  });
+
+  const handleUnlockAdmin = async () => {
+    setIsUnlockingAdmin(true);
+    try {
+      const res = await biometricGatewayService.unlockTerminalAdmin(liveDevice.id);
+      showToast(`✓ ${res.message}`);
+      loadWorkspaceData();
+    } catch (err: any) {
+      showToast(err.message || 'Admin unlock failed', 'error');
+    } finally {
+      setIsUnlockingAdmin(false);
+    }
+  };
+
+  const handleDirectionModeChange = (newMode: 'CHECK_IN' | 'CHECK_OUT' | 'BOTH') => {
+    const updated = biometricGatewayService.setDeviceDirectionMode(liveDevice.id, newMode);
+    if (updated) {
+      setLiveDevice(updated);
+      onDeviceUpdated();
+      showToast(`✓ Punch direction configured to: ${newMode === 'CHECK_IN' ? 'Check-In Only (Entry)' : newMode === 'CHECK_OUT' ? 'Check-Out Only (Exit)' : 'Bidirectional (BOTH)'}`);
+    }
+  };
+
+  const handleWipeHardwareMemory = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Factory Wipe Physical Terminal RAM?',
+      description: `This will completely erase all enrolled users, fingerprints, and attendance records from the physical hardware memory of ${liveDevice.device_name} (${liveDevice.ip_address}:4370) and clear the admin lock.`,
+      impactList: [
+        'All employee biometric fingerprints in device RAM will be permanently deleted.',
+        'All offline punch logs on the terminal will be purged.',
+        'The physical M/OK screen menu will be unlocked without password.',
+        'Dashboard counts will reset to 0 for a clean production setup.',
+      ],
+      confirmLabel: 'Yes, Factory Wipe Hardware',
+      variant: 'danger',
+      onConfirm: async () => {
+        setIsWipingHardware(true);
+        try {
+          const res = await biometricGatewayService.wipeHardwareMemory(liveDevice.id);
+          showToast(`✓ ${res.message}`);
+          loadWorkspaceData();
+          onDeviceUpdated();
+        } catch (err: any) {
+          showToast(err.message || 'Wipe failed', 'error');
+        } finally {
+          setIsWipingHardware(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
+  };
+
+  const handleClearDeviceData = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Clear Cached Users & Test Logs?',
+      description: `This will reset the cached user profiles, biometric mappings, and test punches for ${liveDevice.device_name} (${liveDevice.ip_address}) in the WorkForceOS workspace.`,
+      impactList: [
+        'Resets user count in SaaS workspace to 0.',
+        'Clears the punch queue today to 0.',
+        'Allows re-pushing a clean directory from WorkForceOS.',
+      ],
+      confirmLabel: 'Clear Cached Data',
+      variant: 'danger',
+      onConfirm: async () => {
+        setIsClearingData(true);
+        try {
+          const res = await biometricGatewayService.clearDeviceData(liveDevice.id);
+          showToast(`✓ ${res.message}`);
+          loadWorkspaceData();
+          onDeviceUpdated();
+        } catch (err: any) {
+          showToast(err.message || 'Clear failed', 'error');
+        } finally {
+          setIsClearingData(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
+  };
+
+  const handlePullUsersFromTerminal = async () => {
+    setIsSyncingUsers(true);
+    try {
+      const res = await biometricGatewayService.triggerDeviceUserSync(liveDevice.id, 'HR Administrator');
+      showToast(`✓ Read from device: ${res.message}`);
+      loadWorkspaceData();
+      onDeviceUpdated();
+    } catch (err: any) {
+      showToast(err.message || 'Read from device failed', 'error');
     } finally {
       setIsSyncingUsers(false);
     }
@@ -271,6 +394,50 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
                 <span className={cn("w-1.5 h-1.5 rounded-full", liveDevice.status === 'Online' ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} />
                 {liveDevice.status === 'Online' ? `Online (${socketLatency || 4}ms)` : 'Offline'}
               </Badge>
+
+              {/* Interactive Direction Role Quick Selector */}
+              <div className="flex items-center gap-1 bg-gray-100/90 p-0.5 rounded-xl border border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => handleDirectionModeChange('CHECK_IN')}
+                  className={cn(
+                    "text-[10px] font-bold px-2 py-0.5 rounded-lg transition-all cursor-pointer",
+                    liveDevice.direction_mode === 'CHECK_IN'
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "text-gray-600 hover:text-emerald-700"
+                  )}
+                  title="All punches on this device will be recorded as Check-In (Entry Turnstile)"
+                >
+                  🟢 Check-In Only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDirectionModeChange('CHECK_OUT')}
+                  className={cn(
+                    "text-[10px] font-bold px-2 py-0.5 rounded-lg transition-all cursor-pointer",
+                    liveDevice.direction_mode === 'CHECK_OUT'
+                      ? "bg-blue-600 text-white shadow-xs"
+                      : "text-gray-600 hover:text-blue-700"
+                  )}
+                  title="All punches on this device will be recorded as Check-Out (Exit Turnstile)"
+                >
+                  🔵 Check-Out Only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDirectionModeChange('BOTH')}
+                  className={cn(
+                    "text-[10px] font-bold px-2 py-0.5 rounded-lg transition-all cursor-pointer",
+                    (!liveDevice.direction_mode || liveDevice.direction_mode === 'BOTH')
+                      ? "bg-purple-600 text-white shadow-xs"
+                      : "text-gray-600 hover:text-purple-700"
+                  )}
+                  title="Standard standalone machine: first punch is Check-In, subsequent punch closes the session"
+                >
+                  🟣 BOTH
+                </button>
+              </div>
+
               <Badge variant="gray" size="sm" className="font-mono text-[10px] text-gray-600">
                 {liveDevice.ip_address}:{liveDevice.port}
               </Badge>
@@ -295,23 +462,47 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
             <Button
               variant="outline"
               size="sm"
-              onClick={handleSyncAll}
-              disabled={isSyncingAll}
-              className="gap-1.5 rounded-xl text-xs font-bold text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100"
+              onClick={handleUnlockAdmin}
+              disabled={isUnlockingAdmin}
+              className="gap-1.5 rounded-xl text-xs font-bold text-amber-800 bg-amber-50 border-amber-300 hover:bg-amber-100"
+              title="Clears admin lock on physical terminal so the M/OK menu opens"
             >
-              <RefreshCw className={cn("w-3.5 h-3.5 text-purple-600", isSyncingAll && "animate-spin")} />
-              {isSyncingAll ? 'Syncing...' : 'Sync All Devices'}
+              <Unlock className={cn("w-3.5 h-3.5 text-amber-600", isUnlockingAdmin && "animate-spin")} />
+              {isUnlockingAdmin ? 'Unlocking...' : 'Unlock Terminal Admin'}
             </Button>
 
             <Button
               variant="outline"
               size="sm"
-              onClick={handleSyncUsersFromTerminal}
+              onClick={handlePushEmployeesToTerminal}
+              disabled={isPushingEmployees}
+              className="gap-1.5 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100"
+            >
+              <UploadCloud className={cn("w-3.5 h-3.5 text-indigo-600", isPushingEmployees && "animate-spin")} />
+              {isPushingEmployees ? 'Pushing to Device...' : 'Push Employees to Device'}
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePullUsersFromTerminal}
               disabled={isSyncingUsers}
               className="gap-1.5 rounded-xl text-xs font-bold text-gray-700 bg-gray-50 border-gray-200 hover:bg-gray-100"
             >
-              <Users className={cn("w-3.5 h-3.5 text-gray-600", isSyncingUsers && "animate-spin")} />
-              {isSyncingUsers ? 'Syncing...' : 'Sync Users'}
+              <DownloadCloud className={cn("w-3.5 h-3.5 text-gray-600", isSyncingUsers && "animate-spin")} />
+              {isSyncingUsers ? 'Reading...' : 'Sync from Device'}
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleWipeHardwareMemory}
+              disabled={isWipingHardware}
+              className="gap-1.5 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100"
+              title="Factory wipes all users and punch logs from physical machine memory"
+            >
+              <Trash2 className={cn("w-3.5 h-3.5 text-rose-600", isWipingHardware && "animate-spin")} />
+              {isWipingHardware ? 'Wiping RAM...' : 'Wipe Device Memory'}
             </Button>
 
             <Button
@@ -320,7 +511,7 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
               onClick={() => setIsEnrollModalOpen(true)}
               className="gap-1.5 rounded-xl text-xs font-bold bg-[#07563D] hover:bg-[#064e37] text-white shadow-xs"
             >
-              <UserPlus className="w-3.5 h-3.5" />
+              <Fingerprint className="w-3.5 h-3.5" />
               Enroll Employee
             </Button>
           </div>
@@ -494,6 +685,93 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
               </div>
             </Card>
           </div>
+
+          {/* Dedicated Direction & Punch Role Configuration Card */}
+          <Card className="p-6 rounded-2xl bg-white border border-gray-200/80 shadow-2xs space-y-4">
+            <div>
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                <Radio className="w-4 h-4 text-[#07563D]" />
+                Punch Direction & Attendance Session Mode
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Controls whether biometric punches from this terminal initiate shifts, conclude shifts, or auto-detect state.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* CHECK_IN */}
+              <div
+                onClick={() => handleDirectionModeChange('CHECK_IN')}
+                className={cn(
+                  "p-4 rounded-2xl border text-xs cursor-pointer transition-all space-y-2",
+                  liveDevice.direction_mode === 'CHECK_IN'
+                    ? "bg-emerald-50/80 border-emerald-400 ring-2 ring-emerald-200 shadow-xs"
+                    : "bg-gray-50/50 border-gray-200 hover:border-gray-300"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-emerald-950 flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
+                    Check-In Only (IN)
+                  </span>
+                  {liveDevice.direction_mode === 'CHECK_IN' && (
+                    <Badge variant="emerald" size="sm" className="text-[10px]">Active</Badge>
+                  )}
+                </div>
+                <p className="text-[11px] text-emerald-800 leading-relaxed">
+                  Best for <strong>Entry Turnstiles</strong> and Ingress Gates. Every punch is registered as a Check-In and opens an attendance session.
+                </p>
+              </div>
+
+              {/* CHECK_OUT */}
+              <div
+                onClick={() => handleDirectionModeChange('CHECK_OUT')}
+                className={cn(
+                  "p-4 rounded-2xl border text-xs cursor-pointer transition-all space-y-2",
+                  liveDevice.direction_mode === 'CHECK_OUT'
+                    ? "bg-blue-50/80 border-blue-400 ring-2 ring-blue-200 shadow-xs"
+                    : "bg-gray-50/50 border-gray-200 hover:border-gray-300"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-blue-950 flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+                    Check-Out Only (OUT)
+                  </span>
+                  {liveDevice.direction_mode === 'CHECK_OUT' && (
+                    <Badge variant="blue" size="sm" className="text-[10px]">Active</Badge>
+                  )}
+                </div>
+                <p className="text-[11px] text-blue-800 leading-relaxed">
+                  Best for <strong>Exit Turnstiles</strong> and Egress Gates. Punches immediately close open employee shifts and calculate net hours.
+                </p>
+              </div>
+
+              {/* BOTH */}
+              <div
+                onClick={() => handleDirectionModeChange('BOTH')}
+                className={cn(
+                  "p-4 rounded-2xl border text-xs cursor-pointer transition-all space-y-2",
+                  (!liveDevice.direction_mode || liveDevice.direction_mode === 'BOTH')
+                    ? "bg-purple-50/80 border-purple-400 ring-2 ring-purple-200 shadow-xs"
+                    : "bg-gray-50/50 border-gray-200 hover:border-gray-300"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-purple-950 flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-purple-600" />
+                    Bidirectional (BOTH)
+                  </span>
+                  {(!liveDevice.direction_mode || liveDevice.direction_mode === 'BOTH') && (
+                    <Badge variant="purple" size="sm" className="text-[10px]">Active</Badge>
+                  )}
+                </div>
+                <p className="text-[11px] text-purple-800 leading-relaxed">
+                  Best for <strong>Single Standalone Machines</strong>. State machine auto-resolves first punch as Check-In and subsequent punch as Check-Out.
+                </p>
+              </div>
+            </div>
+          </Card>
         </div>
       )}
 
@@ -506,7 +784,7 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
                 Enrolled Machine Users ({users.length})
               </h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                Profiles synchronized directly from terminal memory over TCP socket.
+                Profiles pushed from directory or read directly from terminal memory over TCP socket.
               </p>
             </div>
 
@@ -514,12 +792,34 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleSyncUsersFromTerminal}
+                onClick={handlePushEmployeesToTerminal}
+                disabled={isPushingEmployees}
+                className="gap-1.5 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100"
+              >
+                <UploadCloud className={cn("w-3.5 h-3.5", isPushingEmployees && "animate-spin text-indigo-600")} />
+                {isPushingEmployees ? 'Pushing...' : 'Push Employees to Device'}
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePullUsersFromTerminal}
                 disabled={isSyncingUsers}
                 className="gap-1.5 rounded-xl text-xs font-bold text-gray-700 bg-gray-50 border-gray-200 hover:bg-gray-100"
               >
-                <RefreshCw className={cn("w-3.5 h-3.5", isSyncingUsers && "animate-spin text-[#07563D]")} />
-                {isSyncingUsers ? 'Reading Device...' : 'Sync From Device'}
+                <DownloadCloud className={cn("w-3.5 h-3.5", isSyncingUsers && "animate-spin text-[#07563D]")} />
+                {isSyncingUsers ? 'Reading Device...' : 'Sync from Device'}
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearDeviceData}
+                disabled={isClearingData}
+                className="gap-1.5 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100"
+              >
+                <Trash2 className={cn("w-3.5 h-3.5 text-rose-600", isClearingData && "animate-spin")} />
+                {isClearingData ? 'Clearing...' : 'Clear Test Data'}
               </Button>
 
               <Button
@@ -532,6 +832,32 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
                 Manage & Map Users ({unmappedCount} Unmapped)
               </Button>
             </div>
+          </div>
+
+          {/* Guided Biometric Provisioning Workflow Banner */}
+          <div className="p-4 bg-linear-to-r from-emerald-50/80 via-blue-50/60 to-purple-50/50 border border-emerald-200/80 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+            <div className="flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-100 text-[#07563D] flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="font-extrabold text-gray-900">Biometric Provisioning & Onboarding Workflow</p>
+                <p className="text-gray-600 text-[11px] mt-0.5">
+                  <span className="font-bold text-indigo-900">1. Push Directory:</span> Uploads employee names & PINs to device → 
+                  <span className="font-bold text-emerald-900"> 2. Biometric Scan:</span> Enroll fingerprints on the device menu for that employee → 
+                  <span className="font-bold text-purple-900"> 3. Sync:</span> Pulls templates to WorkForceOS.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsEnrollModalOpen(true)}
+              className="gap-1.5 rounded-xl text-xs font-bold bg-[#07563D] hover:bg-[#064e37] text-white shrink-0 shadow-xs"
+            >
+              <Fingerprint className="w-3.5 h-3.5" />
+              Enroll Biometrics
+            </Button>
           </div>
 
           {/* User Search & Filter Bar */}
@@ -579,7 +905,7 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
                 {filteredUsers.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-gray-500 text-xs">
-                      No users found. Click "Sync From Device" to read biometric memory.
+                      No users on this device yet. Click <strong>"Push Employees to Device"</strong> to provision directory profiles.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -593,11 +919,15 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5">
-                          {u.fingerprint_count ? (
-                            <Badge variant="emerald" size="sm" className="text-[10px] gap-1">
-                              <Fingerprint className="w-3 h-3" /> {u.fingerprint_count} FP
+                          {u.fingerprint_count && u.fingerprint_count > 0 ? (
+                            <Badge variant="emerald" size="sm" className="text-[10px] gap-1 font-semibold">
+                              <Fingerprint className="w-3 h-3 text-[#07563D]" /> {u.fingerprint_count} FP
                             </Badge>
-                          ) : null}
+                          ) : (
+                            <Badge variant="amber" size="sm" className="text-[10px] gap-1 font-medium bg-amber-50/90 text-amber-800 border-amber-200">
+                              <AlertTriangle className="w-3 h-3" /> Awaiting Biometrics
+                            </Badge>
+                          )}
                           {u.face_enrolled ? (
                             <Badge variant="blue" size="sm" className="text-[10px]">Face</Badge>
                           ) : null}
@@ -723,7 +1053,27 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
               <Terminal className="w-4 h-4 text-[#07563D]" />
               Remote Hardware Command Dispatcher
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <Button
+                variant="outline"
+                onClick={handleUnlockAdmin}
+                disabled={isUnlockingAdmin}
+                className="justify-start gap-2 text-xs font-bold rounded-xl border-amber-300 text-amber-900 bg-amber-50/70 hover:bg-amber-100 hover:border-amber-400"
+              >
+                <Unlock className={cn("w-4 h-4 text-amber-600", isUnlockingAdmin && "animate-spin")} />
+                {isUnlockingAdmin ? 'Unlocking...' : 'Unlock Terminal Admin (CMD 7)'}
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={handleWipeHardwareMemory}
+                disabled={isWipingHardware}
+                className="justify-start gap-2 text-xs font-bold rounded-xl border-rose-300 text-rose-900 bg-rose-50/70 hover:bg-rose-100 hover:border-rose-400"
+              >
+                <Trash2 className={cn("w-4 h-4 text-rose-600", isWipingHardware && "animate-spin")} />
+                {isWipingHardware ? 'Wiping RAM...' : 'Wipe Hardware RAM (Factory Reset)'}
+              </Button>
+
               <Button
                 variant="outline"
                 onClick={() => handleDispatchCommand('SYNC_TIME')}
@@ -746,11 +1096,11 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
 
               <Button
                 variant="outline"
-                onClick={() => handleDispatchCommand('SYNC_USERS')}
-                disabled={isDispatchingCmd === 'SYNC_USERS'}
+                onClick={handlePullUsersFromTerminal}
+                disabled={isSyncingUsers}
                 className="justify-start gap-2 text-xs font-bold rounded-xl border-gray-200 hover:bg-emerald-50 hover:border-emerald-200"
               >
-                <Users className="w-4 h-4 text-purple-600" />
+                <DownloadCloud className={cn("w-4 h-4 text-purple-600", isSyncingUsers && "animate-spin")} />
                 Pull User Directory
               </Button>
 
@@ -992,6 +1342,72 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
           onDeviceUpdated();
         }}
       />
+
+      {/* Enterprise Confirmation Dialog Modal */}
+      <Modal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => {
+          if (!isWipingHardware && !isClearingData) {
+            setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+          }
+        }}
+        title={confirmDialog.title}
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200/80">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-950 space-y-1">
+              <p className="font-bold text-amber-900 leading-relaxed">
+                {confirmDialog.description}
+              </p>
+            </div>
+          </div>
+
+          {confirmDialog.impactList && confirmDialog.impactList.length > 0 && (
+            <div className="space-y-2 p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 text-xs">
+              <p className="font-bold text-gray-800">Impact Summary:</p>
+              <ul className="space-y-1.5 text-gray-600">
+                {confirmDialog.impactList.map((item, idx) => (
+                  <li key={idx} className="flex items-start gap-2">
+                    <span className="text-rose-500 font-bold">•</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isWipingHardware || isClearingData}
+              onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+              className="text-xs font-semibold rounded-xl"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={isWipingHardware || isClearingData}
+              onClick={() => confirmDialog.onConfirm()}
+              className={cn(
+                "gap-1.5 text-xs font-bold rounded-xl shadow-xs",
+                confirmDialog.variant === 'danger'
+                  ? "bg-rose-600 hover:bg-rose-700 text-white"
+                  : "bg-[#07563D] hover:bg-[#064e37] text-white"
+              )}
+            >
+              {(isWipingHardware || isClearingData) && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+              {isWipingHardware ? 'Wiping RAM...' : isClearingData ? 'Clearing...' : confirmDialog.confirmLabel}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

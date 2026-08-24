@@ -935,6 +935,27 @@ export const api = {
     }
 
     setStorage(KEYS.EMPLOYEES, [newEmp, ...list]);
+
+    // Provision Authenticated Employee Identity
+    try {
+      const { employeeAuthService } = await import('./auth/employeeAuthService');
+      const phoneNum = newEmp.profile?.phone || input.primary_mobile || input.phone || '+919840999999';
+      await employeeAuthService.provisionEmployeeAuth({
+        tenantId: newEmp.organization_id || 'org-joy-01',
+        employeeId: newEmp.id,
+        phone: phoneNum,
+        email: newEmp.work_email,
+        firstName: newEmp.first_name,
+        lastName: newEmp.last_name,
+        role: newEmp.designation_title?.toLowerCase().includes('manager') ? 'Manager' :
+              newEmp.designation_title?.toLowerCase().includes('lead') ? 'Team Lead' :
+              newEmp.designation_title?.toLowerCase().includes('hr') ? 'HR Head' : 'Employee',
+        sendSms: true,
+      });
+    } catch (authErr) {
+      console.warn('[API] Auto-provisioning employee auth identity warning:', authErr);
+    }
+
     hrEventBus.publish('employee.created', newEmp);
     return newEmp;
   },

@@ -4,7 +4,7 @@ import { LeaveType, LeaveCategory } from '../../../types/leave';
 import { Badge } from '../../../components/ui/Badge';
 import {
   Plus,
-  Sliders,
+  SlidersHorizontal,
   CheckCircle,
   XCircle,
   FileText,
@@ -14,12 +14,29 @@ import {
   Paperclip,
   Clock,
   Layers,
+  X,
+  Search,
+  Check,
+  AlertTriangle,
+  History,
+  Coins,
+  FileCheck,
+  Zap,
 } from 'lucide-react';
+import { cn } from '../../../lib/utils';
 
 export const LeaveTypesView: React.FC = () => {
   const [types, setTypes] = useState<LeaveType[]>([]);
-  const [editingType, setEditingType] = useState<Partial<LeaveType> | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('All');
+  const [statusFilter, setStatusFilter] = useState<string>('All');
+
+  // Modal State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [editingType, setEditingType] = useState<Partial<LeaveType> | null>(null);
+  const [activeModalTab, setActiveModalTab] = useState<
+    'general' | 'eligibility' | 'rules' | 'accrual' | 'carryForward' | 'encashment' | 'documents' | 'approval' | 'audit'
+  >('general');
 
   useEffect(() => {
     setTypes(leaveApi.getLeaveTypes());
@@ -35,18 +52,30 @@ export const LeaveTypesView: React.FC = () => {
       is_paid: true,
       is_active: true,
       gender_applicability: 'All',
-      employment_types: ['Full Time'],
+      employment_types: ['Full Time', 'Confirmed'],
       min_service_days: 0,
-      max_days_per_request: 5,
+      max_days_per_request: 14,
       min_days_per_request: 0.5,
+      max_consecutive_days: 30,
+      min_notice_days: 2,
       allow_half_day: true,
       allow_hourly: false,
       allow_negative_balance: false,
-      allow_carry_forward: false,
+      max_negative_balance_days: 0,
+      allow_carry_forward: true,
+      max_carry_forward_days: 10,
+      carry_forward_expiry_months: 3,
       allow_encashment: false,
+      min_balance_for_encashment: 15,
+      max_encashment_days: 10,
+      encashment_salary_component: 'Basic',
       attachment_required: false,
+      attachment_mandatory_days_threshold: 2,
+      reason_required: true,
       approval_required: true,
+      approval_levels: 2,
       allow_backdated: true,
+      max_backdated_days: 3,
       allow_future: true,
       allow_cancellation: true,
       allow_modification: true,
@@ -54,7 +83,17 @@ export const LeaveTypesView: React.FC = () => {
       applicable_locations: ['All'],
       applicable_departments: ['All'],
       applicable_employee_groups: ['All'],
+      applicable_designations: ['All'],
+      applicable_grades: ['All'],
+      probation_rule: 'FullAccess',
     });
+    setActiveModalTab('general');
+    setIsDrawerOpen(true);
+  };
+
+  const handleOpenEdit = (t: LeaveType) => {
+    setEditingType({ ...t });
+    setActiveModalTab('general');
     setIsDrawerOpen(true);
   };
 
@@ -65,6 +104,8 @@ export const LeaveTypesView: React.FC = () => {
       setTypes(leaveApi.getLeaveTypes());
       setIsDrawerOpen(false);
       setEditingType(null);
+    } else {
+      alert('Please fill in Name and Code.');
     }
   };
 
@@ -74,252 +115,695 @@ export const LeaveTypesView: React.FC = () => {
     setTypes(leaveApi.getLeaveTypes());
   };
 
+  const handleDelete = (type: LeaveType) => {
+    if (confirm(`Are you sure you want to delete or deactivate ${type.name}?`)) {
+      try {
+        const res = leaveApi.deleteLeaveType(type.id);
+        alert(res.message);
+        setTypes(leaveApi.getLeaveTypes());
+      } catch (err: any) {
+        alert(err.message);
+      }
+    }
+  };
+
+  const filteredTypes = types.filter(t => {
+    const matchesSearch =
+      t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.description.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = categoryFilter === 'All' || t.category === categoryFilter;
+    const matchesStatus =
+      statusFilter === 'All' || (statusFilter === 'Active' ? t.is_active : !t.is_active);
+    return matchesSearch && matchesCategory && matchesStatus;
+  });
+
   return (
     <div className="space-y-6">
       {/* Header bar */}
       <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-black text-gray-900 tracking-tight flex items-center gap-2">
-            <Sliders className="w-5 h-5 text-[#07563D]" />
-            <span>Master Leave Types Architecture</span>
+            <SlidersHorizontal className="w-5 h-5 text-[#07563D]" />
+            <span>Master Leave Types Configuration</span>
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Configure custom leave classifications, statutory rules, gender applicability, and validation constraints
+            Configure custom leave classifications, statutory limits, eligibility rules, and approval policies
           </p>
         </div>
         <button
           onClick={handleOpenNew}
-          className="px-4 py-2.5 rounded-xl bg-[#07563D] hover:bg-[#05402e] text-white text-xs font-bold flex items-center gap-2 shadow-xs transition-colors self-start sm:self-auto"
+          className="px-4 py-2.5 rounded-xl bg-[#07563D] hover:bg-[#05402e] text-white text-xs font-bold flex items-center gap-2 shadow-xs transition-colors self-start sm:self-auto cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Create Custom Leave Type</span>
         </button>
       </div>
 
-      {/* Grid of Leave Types */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {types.map(t => (
-          <div
-            key={t.id}
-            className={`bg-white p-5 rounded-2xl border transition-all ${
-              t.is_active ? 'border-gray-200/80 hover:border-[#07563D]/40 shadow-2xs' : 'border-gray-200 opacity-60 bg-gray-50/50'
-            }`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-black font-mono bg-gray-100 text-gray-800 px-2 py-0.5 rounded-md">
-                    {t.code}
-                  </span>
-                  <h3 className="text-sm font-extrabold text-gray-900">{t.name}</h3>
-                </div>
-                <p className="text-xs text-gray-500 mt-1 line-clamp-2">{t.description}</p>
-              </div>
-              <button
-                onClick={() => toggleActive(t)}
-                className={`p-1 rounded-full transition-colors ${t.is_active ? 'text-emerald-600' : 'text-gray-400'}`}
-                title="Toggle Active Status"
-              >
-                {t.is_active ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
-              </button>
-            </div>
-
-            <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-2 text-[11px]">
-              <div>
-                <span className="text-gray-400 font-bold block">Category</span>
-                <span className="font-extrabold text-gray-800">{t.category}</span>
-              </div>
-              <div>
-                <span className="text-gray-400 font-bold block">Paid / Unpaid</span>
-                <Badge variant={t.is_paid ? 'emerald' : 'danger'} size="sm">
-                  {t.is_paid ? 'Paid' : 'Unpaid LOP'}
-                </Badge>
-              </div>
-              <div>
-                <span className="text-gray-400 font-bold block">Gender Rule</span>
-                <span className="font-extrabold text-gray-800">{t.gender_applicability}</span>
-              </div>
-              <div>
-                <span className="text-gray-400 font-bold block">Max Days/Req</span>
-                <span className="font-mono font-bold text-gray-900">{t.max_days_per_request} Days</span>
-              </div>
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-1 text-[10px]">
-              {t.allow_half_day && <span className="bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-md">Half Day</span>}
-              {t.allow_carry_forward && <span className="bg-purple-50 text-purple-700 font-bold px-2 py-0.5 rounded-md">Carry Forward</span>}
-              {t.allow_encashment && <span className="bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded-md">Encashable</span>}
-              {t.attachment_required && <span className="bg-amber-50 text-amber-800 font-bold px-2 py-0.5 rounded-md">Attachment Required</span>}
-            </div>
-
-            <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between">
-              <span className="text-[10px] text-gray-400 font-medium">Updated: {new Date(t.updated_at).toLocaleDateString()}</span>
-              <button
-                onClick={() => {
-                  setEditingType(t);
-                  setIsDrawerOpen(true);
-                }}
-                className="text-xs font-bold text-[#07563D] hover:underline flex items-center gap-1"
-              >
-                <Edit2 className="w-3 h-3" />
-                <span>Configure</span>
-              </button>
-            </div>
+      {/* Filter Bar */}
+      <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+          <div className="relative w-full max-w-xs">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              placeholder="Search leave types by name, code..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-9 pr-4 py-2 border border-gray-300 rounded-xl text-xs bg-white w-full"
+            />
           </div>
-        ))}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={categoryFilter}
+            onChange={e => setCategoryFilter(e.target.value)}
+            className="p-2 border border-gray-300 rounded-xl text-xs font-bold bg-white"
+          >
+            <option value="All">All Categories</option>
+            <option value="Paid">Paid</option>
+            <option value="Unpaid">Unpaid</option>
+            <option value="Statutory">Statutory</option>
+            <option value="Compensatory">Compensatory</option>
+            <option value="OptionalHoliday">Optional Holiday</option>
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="p-2 border border-gray-300 rounded-xl text-xs font-bold bg-white"
+          >
+            <option value="All">All Statuses</option>
+            <option value="Active">Active Only</option>
+            <option value="Inactive">Inactive / Archived</option>
+          </select>
+        </div>
       </div>
 
-      {/* Slide-over Configuration Drawer */}
+      {/* Structured Table */}
+      <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs overflow-hidden">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-gray-50/80 border-b border-gray-200 text-[10px] font-black text-gray-500 uppercase tracking-wider">
+              <th className="p-4">Code & Name</th>
+              <th className="p-4">Category</th>
+              <th className="p-4">Gender & Eligibility</th>
+              <th className="p-4 text-center">Request Limits</th>
+              <th className="p-4 text-center">Accrual & Carry Forward</th>
+              <th className="p-4 text-center">Status</th>
+              <th className="p-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 text-xs">
+            {filteredTypes.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="p-8 text-center text-xs text-gray-400">
+                  No leave types match your filter criteria.
+                </td>
+              </tr>
+            ) : (
+              filteredTypes.map(t => (
+                <tr key={t.id} className="hover:bg-gray-50/60 transition-colors">
+                  <td className="p-4">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-[11px] px-2 py-0.5 rounded bg-gray-100 text-gray-800">
+                        {t.code}
+                      </span>
+                      <strong className="text-gray-900 font-extrabold">{t.name}</strong>
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-1">{t.description}</p>
+                  </td>
+
+                  <td className="p-4">
+                    <Badge
+                      variant={
+                        t.category === 'Paid'
+                          ? 'emerald'
+                          : t.category === 'Statutory'
+                          ? 'purple'
+                          : t.category === 'Compensatory'
+                          ? 'blue'
+                          : 'amber'
+                      }
+                      size="sm"
+                    >
+                      {t.category}
+                    </Badge>
+                  </td>
+
+                  <td className="p-4 text-gray-700">
+                    <span className="font-bold">{t.gender_applicability} Genders</span>
+                    <span className="block text-[11px] text-gray-400">
+                      {t.employment_types.join(', ')}
+                    </span>
+                  </td>
+
+                  <td className="p-4 text-center font-mono">
+                    <span className="font-bold text-gray-800">
+                      {t.min_days_per_request} – {t.max_days_per_request} d
+                    </span>
+                    <span className="block text-[10px] text-gray-400">
+                      Notice: {t.min_notice_days || 0}d
+                    </span>
+                  </td>
+
+                  <td className="p-4 text-center font-mono">
+                    {t.allow_carry_forward ? (
+                      <span className="text-emerald-700 font-bold">
+                        Max CF: {t.max_carry_forward_days || 0}d
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">No CF</span>
+                    )}
+                    {t.allow_encashment && (
+                      <span className="block text-[10px] text-amber-700 font-semibold">Encashable</span>
+                    )}
+                  </td>
+
+                  <td className="p-4 text-center">
+                    <button
+                      onClick={() => toggleActive(t)}
+                      className={cn(
+                        'px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors cursor-pointer',
+                        t.is_active
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                          : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'
+                      )}
+                    >
+                      {t.is_active ? 'Active' : 'Inactive'}
+                    </button>
+                  </td>
+
+                  <td className="p-4 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        onClick={() => handleOpenEdit(t)}
+                        className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors"
+                        title="Edit Configuration"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(t)}
+                        className="p-1.5 rounded-lg hover:bg-rose-50 text-gray-400 hover:text-rose-700 transition-colors"
+                        title="Delete / Deactivate"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 9-Tab Create / Edit Modal Drawer */}
       {isDrawerOpen && editingType && (
-        <div className="fixed inset-0 z-50 bg-gray-900/40 backdrop-blur-xs flex justify-end">
-          <div className="bg-white w-full max-w-xl h-full shadow-2xl flex flex-col p-6 overflow-y-auto">
-            <h3 className="text-base font-black text-gray-900 border-b border-gray-200 pb-4">
-              {editingType.code ? `Edit Leave Type: ${editingType.code}` : 'Create New Leave Type'}
-            </h3>
-
-            <form onSubmit={handleSave} className="space-y-4 mt-4 flex-1">
-              <div className="grid grid-cols-2 gap-3">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl shadow-2xl border border-gray-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 rounded-xl bg-[#07563D]/10 text-[#07563D]">
+                  <SlidersHorizontal className="w-5 h-5" />
+                </span>
                 <div>
-                  <label className="text-xs font-bold text-gray-700">Leave Code *</label>
-                  <input
-                    type="text"
-                    required
-                    value={editingType.code || ''}
-                    onChange={e => setEditingType({ ...editingType, code: e.target.value.toUpperCase() })}
-                    placeholder="e.g. CL, SL, PL"
-                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-700">Leave Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={editingType.name || ''}
-                    onChange={e => setEditingType({ ...editingType, name: e.target.value })}
-                    placeholder="e.g. Casual Leave"
-                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs font-bold"
-                  />
+                  <h3 className="text-sm font-black text-gray-900">
+                    {editingType.id && types.some(t => t.id === editingType.id)
+                      ? `Edit Leave Type: ${editingType.name}`
+                      : 'Create Custom Leave Type Architecture'}
+                  </h3>
+                  <p className="text-[11px] text-gray-500">
+                    Configure multi-dimensional leave parameters across 9 specialized domain tabs
+                  </p>
                 </div>
               </div>
+              <button
+                onClick={() => setIsDrawerOpen(false)}
+                className="p-2 rounded-xl hover:bg-gray-200 text-gray-500 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-              <div>
-                <label className="text-xs font-bold text-gray-700">Description</label>
-                <textarea
-                  rows={2}
-                  value={editingType.description || ''}
-                  onChange={e => setEditingType({ ...editingType, description: e.target.value })}
-                  className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs"
-                />
-              </div>
+            {/* 9 Tab Navigation Strip */}
+            <div className="flex items-center gap-1 overflow-x-auto px-5 py-2.5 border-b border-gray-100 bg-gray-50/30 text-xs font-bold scrollbar-none">
+              {[
+                { id: 'general', label: '1. General' },
+                { id: 'eligibility', label: '2. Eligibility' },
+                { id: 'rules', label: '3. Request Rules' },
+                { id: 'accrual', label: '4. Accrual' },
+                { id: 'carryForward', label: '5. Carry Forward' },
+                { id: 'encashment', label: '6. Encashment' },
+                { id: 'documents', label: '7. Documents' },
+                { id: 'approval', label: '8. Approval' },
+                { id: 'audit', label: '9. Audit' },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveModalTab(tab.id as any)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-xl transition-all whitespace-nowrap cursor-pointer',
+                    activeModalTab === tab.id
+                      ? 'bg-[#07563D] text-white shadow-2xs'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-gray-700">Category</label>
-                  <select
-                    value={editingType.category || 'Paid'}
-                    onChange={e => setEditingType({ ...editingType, category: e.target.value as LeaveCategory })}
-                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs font-semibold"
-                  >
-                    <option value="Paid">Paid Leave</option>
-                    <option value="Unpaid">Unpaid Leave (LOP)</option>
-                    <option value="Statutory">Statutory / Special</option>
-                    <option value="Compensatory">Compensatory</option>
-                    <option value="OptionalHoliday">Optional Holiday</option>
-                    <option value="Custom">Custom</option>
-                  </select>
+            {/* Modal Body */}
+            <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-6 space-y-4">
+              {/* Tab 1: General */}
+              {activeModalTab === 'general' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Leave Type Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={editingType.name || ''}
+                        onChange={e => setEditingType({ ...editingType, name: e.target.value })}
+                        placeholder="e.g. Privilege Leave"
+                        className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-semibold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Leave Code *</label>
+                      <input
+                        type="text"
+                        required
+                        value={editingType.code || ''}
+                        onChange={e => setEditingType({ ...editingType, code: e.target.value.toUpperCase() })}
+                        placeholder="e.g. PL"
+                        className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-mono font-bold uppercase"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Description</label>
+                    <textarea
+                      rows={2}
+                      value={editingType.description || ''}
+                      onChange={e => setEditingType({ ...editingType, description: e.target.value })}
+                      placeholder="Purpose of this leave classification..."
+                      className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Category</label>
+                      <select
+                        value={editingType.category || 'Paid'}
+                        onChange={e => setEditingType({ ...editingType, category: e.target.value as LeaveCategory })}
+                        className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-bold"
+                      >
+                        <option value="Paid">Paid Leave</option>
+                        <option value="Unpaid">Unpaid / Loss of Pay (LOP)</option>
+                        <option value="Statutory">Statutory Leave (e.g. Maternity)</option>
+                        <option value="Compensatory">Compensatory Off</option>
+                        <option value="OptionalHoliday">Optional / Restricted Holiday</option>
+                        <option value="Custom">Custom</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-6 pt-5">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={editingType.is_paid ?? true}
+                          onChange={e => setEditingType({ ...editingType, is_paid: e.target.checked })}
+                          className="rounded text-[#07563D] focus:ring-[#07563D] w-4 h-4"
+                        />
+                        <span>Paid Leave (Zero Salary Deduction)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={editingType.is_active ?? true}
+                          onChange={e => setEditingType({ ...editingType, is_active: e.target.checked })}
+                          className="rounded text-[#07563D] focus:ring-[#07563D] w-4 h-4"
+                        />
+                        <span>Active in System</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-700">Gender Applicability</label>
-                  <select
-                    value={editingType.gender_applicability || 'All'}
-                    onChange={e => setEditingType({ ...editingType, gender_applicability: e.target.value as any })}
-                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs font-semibold"
-                  >
-                    <option value="All">All Genders</option>
-                    <option value="Male">Male Only</option>
-                    <option value="Female">Female Only</option>
-                  </select>
+              )}
+
+              {/* Tab 2: Eligibility */}
+              {activeModalTab === 'eligibility' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Gender Applicability</label>
+                      <select
+                        value={editingType.gender_applicability || 'All'}
+                        onChange={e => setEditingType({ ...editingType, gender_applicability: e.target.value as any })}
+                        className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-bold"
+                      >
+                        <option value="All">All Genders</option>
+                        <option value="Female">Female Only (e.g. Maternity)</option>
+                        <option value="Male">Male Only (e.g. Paternity)</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Minimum Service Requirement (Days)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editingType.min_service_days ?? 0}
+                        onChange={e => setEditingType({ ...editingType, min_service_days: Number(e.target.value) })}
+                        className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Probation Period Rule</label>
+                    <select
+                      value={editingType.probation_rule || 'FullAccess'}
+                      onChange={e => setEditingType({ ...editingType, probation_rule: e.target.value as any })}
+                      className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-semibold"
+                    >
+                      <option value="FullAccess">Full Access (Allowed during probation)</option>
+                      <option value="AccrueOnly">Accrue Only (Cannot apply until confirmed)</option>
+                      <option value="Ineligible">Ineligible (No accrual or leave during probation)</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-gray-700">Max Days per Request</label>
-                  <input
-                    type="number"
-                    value={editingType.max_days_per_request || 5}
-                    onChange={e => setEditingType({ ...editingType, max_days_per_request: parseFloat(e.target.value) })}
-                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs font-mono"
-                  />
+              {/* Tab 3: Request Rules */}
+              {activeModalTab === 'rules' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Min Days / Request</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0.5"
+                        value={editingType.min_days_per_request ?? 0.5}
+                        onChange={e => setEditingType({ ...editingType, min_days_per_request: Number(e.target.value) })}
+                        className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Max Days / Request</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={editingType.max_days_per_request ?? 14}
+                        onChange={e => setEditingType({ ...editingType, max_days_per_request: Number(e.target.value) })}
+                        className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Min Advance Notice (Days)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editingType.min_notice_days ?? 2}
+                        onChange={e => setEditingType({ ...editingType, min_notice_days: Number(e.target.value) })}
+                        className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-800">
+                      <input
+                        type="checkbox"
+                        checked={editingType.allow_half_day ?? true}
+                        onChange={e => setEditingType({ ...editingType, allow_half_day: e.target.checked })}
+                        className="rounded text-[#07563D] focus:ring-[#07563D] w-4 h-4"
+                      />
+                      <span>Allow Half Day</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-800">
+                      <input
+                        type="checkbox"
+                        checked={editingType.allow_hourly ?? false}
+                        onChange={e => setEditingType({ ...editingType, allow_hourly: e.target.checked })}
+                        className="rounded text-[#07563D] focus:ring-[#07563D] w-4 h-4"
+                      />
+                      <span>Allow Hourly Permission</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-800">
+                      <input
+                        type="checkbox"
+                        checked={editingType.allow_negative_balance ?? false}
+                        onChange={e => setEditingType({ ...editingType, allow_negative_balance: e.target.checked })}
+                        className="rounded text-[#07563D] focus:ring-[#07563D] w-4 h-4"
+                      />
+                      <span>Allow Negative Balance</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-800">
+                      <input
+                        type="checkbox"
+                        checked={editingType.allow_backdated ?? true}
+                        onChange={e => setEditingType({ ...editingType, allow_backdated: e.target.checked })}
+                        className="rounded text-[#07563D] focus:ring-[#07563D] w-4 h-4"
+                      />
+                      <span>Allow Backdated Requests</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-800">
+                      <input
+                        type="checkbox"
+                        checked={editingType.allow_cancellation ?? true}
+                        onChange={e => setEditingType({ ...editingType, allow_cancellation: e.target.checked })}
+                        className="rounded text-[#07563D] focus:ring-[#07563D] w-4 h-4"
+                      />
+                      <span>Allow Cancellation</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-800">
+                      <input
+                        type="checkbox"
+                        checked={editingType.converts_to_lop_if_exhausted ?? true}
+                        onChange={e => setEditingType({ ...editingType, converts_to_lop_if_exhausted: e.target.checked })}
+                        className="rounded text-[#07563D] focus:ring-[#07563D] w-4 h-4"
+                      />
+                      <span>Convert to LOP if Exhausted</span>
+                    </label>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-700">Min Service Requirement (Days)</label>
-                  <input
-                    type="number"
-                    value={editingType.min_service_days || 0}
-                    onChange={e => setEditingType({ ...editingType, min_service_days: parseInt(e.target.value) })}
-                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs font-mono"
-                  />
+              )}
+
+              {/* Tab 4: Accrual */}
+              {activeModalTab === 'accrual' && (
+                <div className="space-y-4">
+                  <p className="text-xs text-gray-500">
+                    Accrual frequencies, proration algorithms, and automated scheduled calculations are managed at the Policy layer or default settings below.
+                  </p>
+                  <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200 text-xs text-emerald-900 space-y-1">
+                    <strong className="block font-black">Automated Accrual Engine Connected</strong>
+                    <span>
+                      Leave balance calculations are computed continuously via the idempotent Accrual Engine with proration based on joining date.
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Toggles Group */}
-              <div className="space-y-2 pt-3 border-t border-gray-200 text-xs font-bold text-gray-800">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editingType.allow_half_day || false}
-                    onChange={e => setEditingType({ ...editingType, allow_half_day: e.target.checked })}
-                    className="rounded text-[#07563D]"
-                  />
-                  <span>Allow Half-Day Requests</span>
-                </label>
+              {/* Tab 5: Carry Forward */}
+              {activeModalTab === 'carryForward' && (
+                <div className="space-y-4">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={editingType.allow_carry_forward ?? true}
+                      onChange={e => setEditingType({ ...editingType, allow_carry_forward: e.target.checked })}
+                      className="rounded text-[#07563D] focus:ring-[#07563D] w-4 h-4"
+                    />
+                    <span>Enable Year-End Carry Forward</span>
+                  </label>
 
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editingType.allow_carry_forward || false}
-                    onChange={e => setEditingType({ ...editingType, allow_carry_forward: e.target.checked })}
-                    className="rounded text-[#07563D]"
-                  />
-                  <span>Allow Year-End Carry Forward</span>
-                </label>
+                  {editingType.allow_carry_forward && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Max Carry Forward Days</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={editingType.max_carry_forward_days ?? 10}
+                          onChange={e => setEditingType({ ...editingType, max_carry_forward_days: Number(e.target.value) })}
+                          className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Carry Forward Expiry (Months)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={editingType.carry_forward_expiry_months ?? 3}
+                          onChange={e => setEditingType({ ...editingType, carry_forward_expiry_months: Number(e.target.value) })}
+                          placeholder="0 = No Expiry"
+                          className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editingType.allow_encashment || false}
-                    onChange={e => setEditingType({ ...editingType, allow_encashment: e.target.checked })}
-                    className="rounded text-[#07563D]"
-                  />
-                  <span>Allow Leave Encashment</span>
-                </label>
+              {/* Tab 6: Encashment */}
+              {activeModalTab === 'encashment' && (
+                <div className="space-y-4">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={editingType.allow_encashment ?? false}
+                      onChange={e => setEditingType({ ...editingType, allow_encashment: e.target.checked })}
+                      className="rounded text-[#07563D] focus:ring-[#07563D] w-4 h-4"
+                    />
+                    <span>Allow Encashment of Unused Balance</span>
+                  </label>
 
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editingType.attachment_required || false}
-                    onChange={e => setEditingType({ ...editingType, attachment_required: e.target.checked })}
-                    className="rounded text-[#07563D]"
-                  />
-                  <span>Require Supporting Document / Attachment</span>
-                </label>
-              </div>
+                  {editingType.allow_encashment && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Min Balance to Encash</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={editingType.min_balance_for_encashment ?? 15}
+                          onChange={e => setEditingType({ ...editingType, min_balance_for_encashment: Number(e.target.value) })}
+                          className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Max Days / Year</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={editingType.max_encashment_days ?? 10}
+                          onChange={e => setEditingType({ ...editingType, max_encashment_days: Number(e.target.value) })}
+                          className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Salary Basis</label>
+                        <select
+                          value={editingType.encashment_salary_component || 'Basic'}
+                          onChange={e => setEditingType({ ...editingType, encashment_salary_component: e.target.value as any })}
+                          className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-bold"
+                        >
+                          <option value="Basic">Basic Salary Only</option>
+                          <option value="Gross">Gross Salary</option>
+                          <option value="Fixed">Fixed Daily Rate</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
-              <div className="pt-6 border-t border-gray-200 flex justify-end gap-2">
+              {/* Tab 7: Documents */}
+              {activeModalTab === 'documents' && (
+                <div className="space-y-4">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={editingType.attachment_required ?? false}
+                      onChange={e => setEditingType({ ...editingType, attachment_required: e.target.checked })}
+                      className="rounded text-[#07563D] focus:ring-[#07563D] w-4 h-4"
+                    />
+                    <span>Require Supporting Document / Attachment</span>
+                  </label>
+
+                  {editingType.attachment_required && (
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Mandatory Threshold (Days)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={editingType.attachment_mandatory_days_threshold ?? 2}
+                        onChange={e => setEditingType({ ...editingType, attachment_mandatory_days_threshold: Number(e.target.value) })}
+                        placeholder="e.g. 2 days or more requires doctor certificate"
+                        className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-mono max-w-xs"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tab 8: Approval */}
+              {activeModalTab === 'approval' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Approval Levels</label>
+                      <select
+                        value={editingType.approval_levels ?? 2}
+                        onChange={e => setEditingType({ ...editingType, approval_levels: Number(e.target.value) })}
+                        className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-bold"
+                      >
+                        <option value={1}>1 Level (Reporting Manager Only)</option>
+                        <option value={2}>2 Levels (Manager → HR Admin)</option>
+                        <option value={3}>3 Levels (Manager → Department Head → HR)</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center pt-6">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={editingType.reason_required ?? true}
+                          onChange={e => setEditingType({ ...editingType, reason_required: e.target.checked })}
+                          className="rounded text-[#07563D] focus:ring-[#07563D] w-4 h-4"
+                        />
+                        <span>Mandatory Justification Reason</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 9: Audit */}
+              {activeModalTab === 'audit' && (
+                <div className="space-y-3">
+                  <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 text-xs space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Record ID:</span>
+                      <span className="font-mono font-bold text-gray-800">{editingType.id}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Created At:</span>
+                      <span className="font-mono text-gray-800">{editingType.created_at || 'New'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Last Modified:</span>
+                      <span className="font-mono text-gray-800">{editingType.updated_at || 'Just now'}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Footer Actions */}
+              <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsDrawerOpen(false)}
-                  className="px-4 py-2 rounded-lg border border-gray-300 text-xs font-bold text-gray-700"
+                  className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 text-xs font-bold hover:bg-gray-100 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg bg-[#07563D] text-white text-xs font-bold shadow-xs hover:bg-[#05402e]"
+                  className="px-5 py-2 rounded-xl bg-[#07563D] hover:bg-[#05402e] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
                 >
-                  Save Leave Type
+                  <Check className="w-4 h-4" />
+                  <span>Save Leave Type</span>
                 </button>
               </div>
             </form>

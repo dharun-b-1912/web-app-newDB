@@ -13,6 +13,7 @@ import {
   LeaveType,
 } from '../types/leave';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { hrEventBus } from './hrEventBus';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
 
 const STORAGE_KEYS = {
@@ -377,6 +378,159 @@ const initialLedger: LeaveLedgerTransaction[] = [
   },
 ];
 
+const initialLeavePolicies: LeavePolicy[] = [
+  {
+    id: 'pol-ind-01',
+    code: 'POL-IND-FT-2026',
+    name: 'Standard Corporate Full-Time Policy',
+    description: 'Leave policy for permanent corporate & technology staff.',
+    company_id: 'comp-01',
+    applicable_groups: ['All'],
+    employment_types: ['Full Time', 'Confirmed'],
+    departments: ['All'],
+    locations: ['All'],
+    grades: ['All'],
+    effective_from: '2026-01-01',
+    status: 'Active',
+    priority: 1,
+    precedence_rule: 'HighPriorityWins',
+    version: 1,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    rules: [
+      {
+        leave_type_id: 'lt-pl',
+        annual_entitlement: 24,
+        accrual_frequency: 'Monthly',
+        accrual_amount_per_cycle: 2,
+        accrual_start: 'JoiningDate',
+        proration_method: 'CalendarDays',
+        allow_carry_forward: true,
+        max_carry_forward_days: 10,
+        carry_forward_expiry_months: 3,
+        allow_encashment: true,
+        max_encashment_days_per_year: 10,
+        min_balance_for_encashment: 15,
+        encashment_calculation_basis: 'BasicSalary',
+        allow_half_day: false,
+        allow_hourly: false,
+        max_hourly_per_month: 0,
+        allow_negative_balance: false,
+        max_negative_balance: 0,
+        advance_notice_days: 3,
+        allow_backdated: false,
+        max_backdated_days: 0,
+        attachment_required: false,
+        sandwich_rule_enabled: true,
+        exclude_holidays: true,
+        exclude_weekly_offs: true,
+      },
+      {
+        leave_type_id: 'lt-cl',
+        annual_entitlement: 12,
+        accrual_frequency: 'Quarterly',
+        accrual_amount_per_cycle: 3,
+        accrual_start: 'JoiningDate',
+        proration_method: 'CalendarDays',
+        allow_carry_forward: false,
+        max_carry_forward_days: 0,
+        carry_forward_expiry_months: 0,
+        allow_encashment: false,
+        max_encashment_days_per_year: 0,
+        min_balance_for_encashment: 0,
+        encashment_calculation_basis: 'BasicSalary',
+        allow_half_day: true,
+        allow_hourly: false,
+        max_hourly_per_month: 0,
+        allow_negative_balance: false,
+        max_negative_balance: 0,
+        advance_notice_days: 0,
+        allow_backdated: true,
+        max_backdated_days: 2,
+        attachment_required: false,
+        sandwich_rule_enabled: false,
+        exclude_holidays: true,
+        exclude_weekly_offs: true,
+      },
+      {
+        leave_type_id: 'lt-sl',
+        annual_entitlement: 12,
+        accrual_frequency: 'Yearly',
+        accrual_amount_per_cycle: 12,
+        accrual_start: 'CalendarYearStart',
+        proration_method: 'CompletedMonths',
+        allow_carry_forward: true,
+        max_carry_forward_days: 6,
+        carry_forward_expiry_months: 12,
+        allow_encashment: false,
+        max_encashment_days_per_year: 0,
+        min_balance_for_encashment: 0,
+        encashment_calculation_basis: 'BasicSalary',
+        allow_half_day: true,
+        allow_hourly: true,
+        max_hourly_per_month: 4,
+        allow_negative_balance: true,
+        max_negative_balance: 3,
+        advance_notice_days: 0,
+        allow_backdated: true,
+        max_backdated_days: 7,
+        attachment_required: true,
+        sandwich_rule_enabled: false,
+        exclude_holidays: true,
+        exclude_weekly_offs: true,
+      },
+    ],
+  },
+  {
+    id: 'pol-mfg-01',
+    code: 'POL-PLANT-OPS-2026',
+    name: 'Plant & Operations Shift Policy',
+    description: 'Custom leave parameters for manufacturing and shift workers.',
+    company_id: 'comp-01',
+    applicable_groups: ['Operations'],
+    employment_types: ['Full Time', 'Contract'],
+    departments: ['Operations', 'Manufacturing'],
+    locations: ['All'],
+    grades: ['All'],
+    effective_from: '2026-01-01',
+    status: 'Active',
+    priority: 2,
+    precedence_rule: 'MostSpecificWins',
+    version: 1,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    rules: [
+      {
+        leave_type_id: 'lt-pl',
+        annual_entitlement: 18,
+        accrual_frequency: 'Monthly',
+        accrual_amount_per_cycle: 1.5,
+        accrual_start: 'JoiningDate',
+        proration_method: 'CalendarDays',
+        allow_carry_forward: true,
+        max_carry_forward_days: 8,
+        carry_forward_expiry_months: 3,
+        allow_encashment: true,
+        max_encashment_days_per_year: 8,
+        min_balance_for_encashment: 10,
+        encashment_calculation_basis: 'BasicSalary',
+        allow_half_day: false,
+        allow_hourly: false,
+        max_hourly_per_month: 0,
+        allow_negative_balance: false,
+        max_negative_balance: 0,
+        advance_notice_days: 7,
+        allow_backdated: false,
+        max_backdated_days: 0,
+        attachment_required: false,
+        sandwich_rule_enabled: true,
+        exclude_holidays: true,
+        exclude_weekly_offs: true,
+      },
+    ],
+  },
+];
+
 // Helper Functions for Local Storage
 function getStored<T>(key: string, defaultVal: T): T {
   try {
@@ -410,7 +564,213 @@ export const leaveApi = {
       types.push({ ...type, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
     }
     setStored(STORAGE_KEYS.LEAVE_TYPES, types);
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.from('leave_types').upsert({
+          id: type.id,
+          code: type.code,
+          name: type.name,
+          description: type.description,
+          category: type.category,
+          is_paid: type.is_paid,
+          is_active: type.is_active,
+          gender_applicability: type.gender_applicability,
+          employment_types: type.employment_types,
+          min_service_days: type.min_service_days,
+          max_days_per_request: type.max_days_per_request,
+          min_days_per_request: type.min_days_per_request,
+          allow_half_day: type.allow_half_day,
+          allow_hourly: type.allow_hourly,
+          allow_negative_balance: type.allow_negative_balance,
+          max_negative_balance: type.max_negative_balance ?? (type as any).max_negative_balance_days ?? 0,
+          allow_carry_forward: type.allow_carry_forward,
+          max_carry_forward_days: type.max_carry_forward_days,
+          carry_forward_expiry_months: type.carry_forward_expiry_months,
+          allow_encashment: type.allow_encashment,
+          max_encashment_days_per_year: type.max_encashment_days_per_year,
+          min_balance_for_encashment: type.min_balance_for_encashment,
+          encashment_calculation_basis: type.encashment_calculation_basis,
+          attachment_required: type.attachment_required,
+          attachment_mandatory_days_threshold: type.attachment_mandatory_days_threshold,
+          approval_required: type.approval_required,
+          allow_backdated: type.allow_backdated,
+          max_backdated_days: type.max_backdated_days,
+          allow_future: type.allow_future,
+          allow_cancellation: type.allow_cancellation,
+          allow_modification: type.allow_modification,
+          converts_to_lop_if_exhausted: type.converts_to_lop_if_exhausted,
+          applicable_locations: type.applicable_locations,
+          applicable_departments: type.applicable_departments,
+          applicable_employee_groups: type.applicable_employee_groups,
+          updated_at: new Date().toISOString(),
+        })
+      ).catch((e: any) => console.warn('[Supabase Leave] upsert leave_type failed:', e));
+    }
+
+    leaveApi.addAuditLog({
+      actor_id: 'admin',
+      actor_name: 'HR Admin',
+      action: idx >= 0 ? 'UPDATE_LEAVE_TYPE' : 'CREATE_LEAVE_TYPE',
+      entity_type: 'LeaveType',
+      entity_id: type.id,
+      new_value: `Leave Type ${type.name} (${type.code}) saved.`,
+    });
+
     return type;
+  },
+
+  deleteLeaveType: (typeId: string): { success: boolean; deactivated?: boolean; message: string } => {
+    const types = leaveApi.getLeaveTypes();
+    const target = types.find(t => t.id === typeId);
+    if (!target) throw new Error('Leave type not found');
+
+    const ledger = leaveApi.getLedger();
+    const requests = leaveApi.getLeaveRequests();
+    const hasTransactions = ledger.some(l => l.leave_type_id === typeId) || requests.some(r => r.leave_type_id === typeId);
+
+    if (hasTransactions) {
+      // Soft deactivation to preserve financial/audit integrity
+      target.is_active = false;
+      target.updated_at = new Date().toISOString();
+      setStored(STORAGE_KEYS.LEAVE_TYPES, types);
+
+      if (isSupabaseEnabled) {
+        Promise.resolve(
+          supabase.from('leave_types').update({ is_active: false, updated_at: target.updated_at }).eq('id', typeId)
+        ).catch((e: any) => console.warn('[Supabase Leave] soft delete leave_type failed:', e));
+      }
+
+      leaveApi.addAuditLog({
+        actor_id: 'admin',
+        actor_name: 'HR Admin',
+        action: 'DEACTIVATE_LEAVE_TYPE',
+        entity_type: 'LeaveType',
+        entity_id: target.id,
+        new_value: `Deactivated ${target.name} due to existing transaction history.`,
+      });
+      return { success: true, deactivated: true, message: 'This leave type has historical ledger transactions. It has been deactivated instead of permanently deleted to preserve audit integrity.' };
+    }
+
+    const filtered = types.filter(t => t.id !== typeId);
+    setStored(STORAGE_KEYS.LEAVE_TYPES, filtered);
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.from('leave_types').delete().eq('id', typeId)
+      ).catch((e: any) => console.warn('[Supabase Leave] delete leave_type failed:', e));
+    }
+
+    leaveApi.addAuditLog({
+      actor_id: 'admin',
+      actor_name: 'HR Admin',
+      action: 'DELETE_LEAVE_TYPE',
+      entity_type: 'LeaveType',
+      entity_id: typeId,
+      new_value: `Deleted ${target.name}.`,
+    });
+    return { success: true, deactivated: false, message: 'Leave type permanently deleted.' };
+  },
+
+  // --- Leave Policies ---
+  getLeavePolicies: (): LeavePolicy[] => {
+    return getStored(STORAGE_KEYS.LEAVE_POLICIES, initialLeavePolicies);
+  },
+
+  saveLeavePolicy: (policy: LeavePolicy): LeavePolicy => {
+    const policies = leaveApi.getLeavePolicies();
+    const idx = policies.findIndex(p => p.id === policy.id);
+    if (idx >= 0) {
+      policies[idx] = { ...policy, updated_at: new Date().toISOString(), version: (policy.version || 1) + 1 };
+    } else {
+      policies.push({ ...policy, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1 });
+    }
+    setStored(STORAGE_KEYS.LEAVE_POLICIES, policies);
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.from('leave_policies').upsert({
+          id: policy.id,
+          code: policy.code,
+          name: policy.name,
+          description: policy.description,
+          applicable_groups: policy.applicable_groups,
+          employment_types: policy.employment_types,
+          departments: policy.departments,
+          locations: policy.locations,
+          grades: policy.grades,
+          designations: policy.designations,
+          effective_from: policy.effective_from,
+          effective_to: policy.effective_to,
+          status: policy.status,
+          priority: policy.priority,
+          precedence_rule: policy.precedence_rule,
+          rules: policy.rules,
+          version: policy.version,
+          updated_at: new Date().toISOString(),
+        })
+      ).catch((e: any) => console.warn('[Supabase Leave] upsert leave_policy failed:', e));
+    }
+
+    leaveApi.addAuditLog({
+      actor_id: 'admin',
+      actor_name: 'HR Admin',
+      action: idx >= 0 ? 'UPDATE_LEAVE_POLICY' : 'CREATE_LEAVE_POLICY',
+      entity_type: 'LeavePolicy',
+      entity_id: policy.id,
+      new_value: `Leave Policy ${policy.name} (${policy.code}) updated.`,
+    });
+
+    return policy;
+  },
+
+  deleteLeavePolicy: (policyId: string): void => {
+    const policies = leaveApi.getLeavePolicies();
+    const filtered = policies.filter(p => p.id !== policyId);
+    setStored(STORAGE_KEYS.LEAVE_POLICIES, filtered);
+
+    leaveApi.addAuditLog({
+      actor_id: 'admin',
+      actor_name: 'HR Admin',
+      action: 'DELETE_LEAVE_POLICY',
+      entity_type: 'LeavePolicy',
+      entity_id: policyId,
+    });
+  },
+
+  detectPolicyConflicts: (): { employee_id: string; employee_name: string; matching_policies: string[]; winning_policy: string; rule: string }[] => {
+    // Audit active policies against employee criteria
+    const policies = leaveApi.getLeavePolicies().filter(p => p.status === 'Active');
+    const conflicts: { employee_id: string; employee_name: string; matching_policies: string[]; winning_policy: string; rule: string }[] = [];
+
+    // Check test population sample
+    const sampleEmployees = [
+      { id: 'emp-101', name: 'Rajesh Kumar', dept: 'Engineering', employment_type: 'Full Time', location: 'loc-cbe-01' },
+      { id: 'emp-102', name: 'Ananya Sen', dept: 'Operations', employment_type: 'Full Time', location: 'loc-cbe-01' },
+      { id: 'emp-103', name: 'Vikramaditya Rao', dept: 'Manufacturing', employment_type: 'Contract', location: 'loc-blr-01' },
+    ];
+
+    sampleEmployees.forEach(emp => {
+      const matches = policies.filter(pol => {
+        const deptMatch = pol.departments.includes('All') || pol.departments.includes(emp.dept);
+        const typeMatch = pol.employment_types.includes('All') || pol.employment_types.includes(emp.employment_type);
+        return deptMatch && typeMatch;
+      });
+
+      if (matches.length > 1) {
+        // Sort by priority ascending (1 is highest)
+        const sorted = [...matches].sort((a, b) => a.priority - b.priority);
+        conflicts.push({
+          employee_id: emp.id,
+          employee_name: emp.name,
+          matching_policies: matches.map(m => m.name),
+          winning_policy: sorted[0].name,
+          rule: `Resolved via Priority #${sorted[0].priority} (${sorted[0].precedence_rule || 'HighPriorityWins'})`,
+        });
+      }
+    });
+
+    return conflicts;
   },
 
   // --- Holiday Calendars ---
@@ -514,6 +874,8 @@ export const leaveApi = {
       entity_id: newReq.id,
       new_value: `Requested ${newReq.leave_days_deducted} days of ${newReq.leave_type_name} from ${newReq.from_date} to ${newReq.to_date}`,
     });
+
+    hrEventBus.publish('leave.submitted', newReq, { actorId: newReq.employee_id });
 
     return newReq;
   },
@@ -619,6 +981,8 @@ export const leaveApi = {
       new_value: `Approved request ${req.request_code} for ${req.employee_name}`,
     });
 
+    hrEventBus.publish('leave.approved', req, { actorId: approverName });
+
     return req;
   },
 
@@ -634,6 +998,17 @@ export const leaveApi = {
 
     setStored(STORAGE_KEYS.REQUESTS, requests);
 
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase
+          .from('leave_requests')
+          .update({
+            status: 'Rejected',
+          })
+          .eq('id', req.id)
+      ).catch((e: any) => console.warn('[Supabase Leave] reject failed:', e));
+    }
+
     leaveApi.addAuditLog({
       actor_id: 'rejector',
       actor_name: rejectorName,
@@ -642,6 +1017,8 @@ export const leaveApi = {
       entity_id: req.id,
       new_value: `Rejected ${req.request_code}. Reason: ${reason}`,
     });
+
+    hrEventBus.publish('leave.rejected', req, { actorId: rejectorName });
 
     return req;
   },
@@ -672,13 +1049,13 @@ export const leaveApi = {
         leave_type_id: req.leave_type_id,
         leave_type_name: req.leave_type_name,
         date: new Date().toISOString().split('T')[0],
-        transaction_type: 'Reversal',
+        transaction_type: 'Adjustment',
         amount: req.leave_days_deducted,
         balance_after: prevBalance + req.leave_days_deducted,
         reference_id: req.id,
-        actor_id: 'user',
+        actor_id: 'system',
         actor_name: actorName,
-        reason: `Reversal for cancelled leave request ${req.request_code}: ${reason}`,
+        reason: `Reversal for cancelled leave ${req.request_code}: ${reason}`,
         created_at: new Date().toISOString(),
       };
       ledger.unshift(reversalEntry);
@@ -691,7 +1068,7 @@ export const leaveApi = {
       action: 'CANCEL_LEAVE_REQUEST',
       entity_type: 'LeaveRequest',
       entity_id: req.id,
-      new_value: `Cancelled request ${req.request_code}`,
+      new_value: `Cancelled ${req.request_code}. Reason: ${reason}`,
     });
 
     return req;
@@ -706,23 +1083,120 @@ export const leaveApi = {
     return getStored(STORAGE_KEYS.LEDGER, initialLedger);
   },
 
-  // --- Compensatory Offs ---
+  saveEntitlement: (ent: LeaveEntitlement): LeaveEntitlement => {
+    const entitlements = leaveApi.getEntitlements();
+    const idx = entitlements.findIndex(e => e.id === ent.id);
+    if (idx >= 0) {
+      entitlements[idx] = { ...ent, updated_at: new Date().toISOString() };
+    } else {
+      entitlements.push({ ...ent, updated_at: new Date().toISOString() });
+    }
+    setStored(STORAGE_KEYS.ENTITLEMENTS, entitlements);
+    return ent;
+  },
+
+  // --- Compensatory Off (Comp-Off) ---
   getCompOffGrants: (): CompOffGrant[] => {
     return getStored(STORAGE_KEYS.COMP_OFFS, [
       {
-        id: 'co-101',
+        id: 'cog-101',
         employee_id: 'emp-101',
         employee_name: 'Rajesh Kumar',
-        earned_date: '2026-07-26',
-        source: 'HolidayWork',
+        earned_date: '2026-07-12',
+        worked_date: '2026-07-12',
+        source: 'WeekendDeployment',
         hours_worked: 8,
-        comp_off_days_earned: 1,
-        expiry_date: '2026-10-26',
-        status: 'Available',
-        approved_by_name: 'Anand Viswanathan',
+        comp_off_days_earned: 1.0,
+        credit_days: 1.0,
+        expiry_date: '2026-09-10',
+        status: 'Approved',
+        approved_by_name: 'Anand Viswanathan (HR Head)',
         reason: 'Worked on Sunday deployment shift for Cloud release v4.2',
       },
     ]);
+  },
+
+  claimCompOffCredit: (grant: Omit<CompOffGrant, 'id' | 'status' | 'comp_off_days_earned'>): CompOffGrant => {
+    const grants = leaveApi.getCompOffGrants();
+    const daysEarned = (grant.hours_worked && grant.hours_worked >= 8) || grant.credit_days === 1.0 ? 1 : 0.5;
+    const newGrant: CompOffGrant = {
+      ...grant,
+      id: `co-${Date.now()}`,
+      comp_off_days_earned: daysEarned,
+      credit_days: daysEarned,
+      status: 'PendingApproval',
+    };
+    grants.unshift(newGrant);
+    setStored(STORAGE_KEYS.COMP_OFFS, grants);
+
+    leaveApi.addAuditLog({
+      actor_id: grant.employee_id,
+      actor_name: grant.employee_name,
+      action: 'CLAIM_COMP_OFF',
+      entity_type: 'LeaveRequest',
+      entity_id: newGrant.id,
+      new_value: `Claimed ${daysEarned} day(s) for working on ${grant.earned_date || grant.worked_date}`,
+    });
+
+    return newGrant;
+  },
+
+  approveCompOffGrant: (grantId: string, approverName: string): CompOffGrant => {
+    const grants = leaveApi.getCompOffGrants();
+    const target = grants.find(g => g.id === grantId);
+    if (!target) throw new Error('Grant not found');
+    target.status = 'Approved';
+    target.approved_by_name = approverName;
+    setStored(STORAGE_KEYS.COMP_OFFS, grants);
+
+    const daysCredit = target.comp_off_days_earned || target.credit_days || 1.0;
+
+    // Credit to ledger
+    const ledger = leaveApi.getLedger();
+    const prevBal = ledger.filter(l => l.employee_id === target.employee_id && l.leave_type_id === 'lt-comp')
+      .reduce((acc, curr) => acc + curr.amount, 0);
+
+    ledger.unshift({
+      id: `led-${Date.now()}`,
+      employee_id: target.employee_id,
+      employee_name: target.employee_name,
+      leave_type_id: 'lt-comp',
+      leave_type_name: 'Compensatory Off',
+      date: new Date().toISOString().split('T')[0],
+      transaction_type: 'Grant',
+      amount: daysCredit,
+      balance_after: prevBal + daysCredit,
+      reference_id: target.id,
+      actor_id: 'approver',
+      actor_name: approverName,
+      reason: `Comp-off approved: ${target.reason}`,
+      created_at: new Date().toISOString(),
+    });
+    setStored(STORAGE_KEYS.LEDGER, ledger);
+
+    // Also update entitlement balance for lt-comp
+    const entitlements = leaveApi.getEntitlements();
+    const ent = entitlements.find(e => e.employee_id === target.employee_id && e.leave_type_id === 'lt-comp');
+    if (ent) {
+      ent.accrued = (ent.accrued || 0) + daysCredit;
+      ent.available_balance = (ent.available_balance || 0) + daysCredit;
+      setStored(STORAGE_KEYS.ENTITLEMENTS, entitlements);
+    }
+
+    leaveApi.addAuditLog({
+      actor_id: 'approver',
+      actor_name: approverName,
+      action: 'APPROVE_COMP_OFF',
+      entity_type: 'LeaveRequest',
+      entity_id: target.id,
+      new_value: `Approved ${daysCredit} comp-off day(s) for ${target.employee_name}`,
+    });
+
+    return target;
+  },
+
+  approveCompOff: (grantId: string, approverName: string): CompOffGrant => {
+    return leaveApi.approveCompOffGrant(grantId, approverName);
   },
 
   // --- Leave Encashment ---
@@ -738,15 +1212,104 @@ export const leaveApi = {
         leave_type_name: 'Privilege / Earned Leave',
         available_balance: 21,
         requested_days: 5,
+        days_to_encash: 5,
         eligible_days: 10,
         calculation_basis: 'BasicSalary',
         estimated_amount: 18500,
         payroll_period: 'August 2026',
+        payroll_status: 'Pending',
         status: 'Submitted',
         submitted_at: '2026-08-01T10:00:00Z',
         notes: 'Mid-year leave encashment request per company policy.',
       },
     ]);
+  },
+
+  submitEncashmentRequest: (req: Omit<LeaveEncashmentRequest, 'id' | 'request_code' | 'submitted_at' | 'status'>): LeaveEncashmentRequest => {
+    const encashments = leaveApi.getEncashments();
+    const requestedDays = req.days_to_encash || req.requested_days || 5;
+    const newEnc: LeaveEncashmentRequest = {
+      ...req,
+      id: `enc-${Date.now()}`,
+      request_code: `ENC-2026-${Math.floor(100 + Math.random() * 900)}`,
+      requested_days: requestedDays,
+      days_to_encash: requestedDays,
+      status: 'Submitted',
+      payroll_status: 'Pending',
+      submitted_at: new Date().toISOString(),
+    };
+    encashments.unshift(newEnc);
+    setStored(STORAGE_KEYS.ENCASHMENTS, encashments);
+
+    leaveApi.addAuditLog({
+      actor_id: req.employee_id,
+      actor_name: req.employee_name,
+      action: 'SUBMIT_ENCASHMENT',
+      entity_type: 'Encashment',
+      entity_id: newEnc.id,
+      new_value: `Requested encashment of ${requestedDays} days (${req.leave_type_name})`,
+    });
+
+    return newEnc;
+  },
+
+  approveEncashmentRequest: (encId: string, approverName: string): LeaveEncashmentRequest => {
+    const encashments = leaveApi.getEncashments();
+    const target = encashments.find(e => e.id === encId);
+    if (!target) throw new Error('Encashment request not found');
+    target.status = 'Approved';
+    target.payroll_status = 'Processed';
+    target.approved_by_name = approverName;
+    setStored(STORAGE_KEYS.ENCASHMENTS, encashments);
+
+    const encashDays = target.days_to_encash || target.requested_days || 0;
+
+    // Post encashment deduction to ledger
+    const ledger = leaveApi.getLedger();
+    const prevBal = ledger.filter(l => l.employee_id === target.employee_id && l.leave_type_id === target.leave_type_id)
+      .reduce((acc, curr) => acc + curr.amount, 0);
+
+    ledger.unshift({
+      id: `led-${Date.now()}`,
+      employee_id: target.employee_id,
+      employee_name: target.employee_name,
+      leave_type_id: target.leave_type_id,
+      leave_type_name: target.leave_type_name,
+      date: new Date().toISOString().split('T')[0],
+      transaction_type: 'Encashment',
+      amount: -encashDays,
+      balance_after: prevBal - encashDays,
+      reference_id: target.id,
+      actor_id: 'approver',
+      actor_name: approverName,
+      reason: `Leave encashment approved (${target.request_code || target.id}) for ${target.payroll_period || 'Payroll'}`,
+      created_at: new Date().toISOString(),
+    });
+    setStored(STORAGE_KEYS.LEDGER, ledger);
+
+    // Also update entitlement balance
+    const entitlements = leaveApi.getEntitlements();
+    const ent = entitlements.find(e => e.employee_id === target.employee_id && e.leave_type_id === target.leave_type_id);
+    if (ent) {
+      ent.encashed = (ent.encashed || 0) + encashDays;
+      ent.available_balance = Math.max(0, (ent.available_balance || 0) - encashDays);
+      setStored(STORAGE_KEYS.ENTITLEMENTS, entitlements);
+    }
+
+    leaveApi.addAuditLog({
+      actor_id: 'approver',
+      actor_name: approverName,
+      action: 'APPROVE_ENCASHMENT',
+      entity_type: 'Encashment',
+      entity_id: target.id,
+      new_value: `Approved ${encashDays} days encashment for ${target.employee_name}`,
+    });
+
+    return target;
+  },
+
+  approveEncashment: (encId: string, approverName: string): LeaveEncashmentRequest => {
+    return leaveApi.approveEncashmentRequest(encId, approverName);
   },
 
   // --- Leave Adjustments ---
@@ -764,14 +1327,84 @@ export const leaveApi = {
         reference_no: 'HR-ADJ-2026-044',
         effective_date: '2026-07-15',
         created_by_name: 'Anand Viswanathan (HR Head)',
+        actor_name: 'Anand Viswanathan (HR Head)',
         status: 'Approved',
         created_at: '2026-07-15T10:00:00Z',
       },
     ]);
   },
 
+  createAdjustment: (adj: Omit<LeaveAdjustment, 'id' | 'created_at'>): LeaveAdjustment => {
+    const adjustments = leaveApi.getAdjustments();
+    const actorName = adj.actor_name || adj.created_by_name || 'HR Admin';
+    const effectiveDate = adj.effective_date || new Date().toISOString().split('T')[0];
+    const refNo = adj.reference_no || `ADJ-${Date.now()}`;
+    const status = adj.status || 'Approved';
+
+    const newAdj: LeaveAdjustment = {
+      ...adj,
+      id: `adj-${Date.now()}`,
+      actor_name: actorName,
+      created_by_name: actorName,
+      effective_date: effectiveDate,
+      reference_no: refNo,
+      status: status,
+      created_at: new Date().toISOString(),
+    };
+    adjustments.unshift(newAdj);
+    setStored(STORAGE_KEYS.ADJUSTMENTS, adjustments);
+
+    // If immediate approved, reflect directly in ledger & entitlements
+    if (newAdj.status === 'Approved') {
+      const ledger = leaveApi.getLedger();
+      const prevBal = ledger.filter(l => l.employee_id === adj.employee_id && l.leave_type_id === adj.leave_type_id)
+        .reduce((acc, curr) => acc + curr.amount, 0);
+
+      const isDeduct = adj.adjustment_type === 'Deduct' || adj.adjustment_type === 'Deduction';
+      const netAmount = Math.abs(adj.amount) * (isDeduct ? -1 : 1);
+
+      ledger.unshift({
+        id: `led-${Date.now()}`,
+        employee_id: adj.employee_id,
+        employee_name: adj.employee_name,
+        leave_type_id: adj.leave_type_id,
+        leave_type_name: adj.leave_type_name,
+        date: effectiveDate,
+        transaction_type: 'Adjustment',
+        amount: netAmount,
+        balance_after: prevBal + netAmount,
+        reference_id: refNo,
+        actor_id: 'admin',
+        actor_name: actorName,
+        reason: `HR Adjustment: ${adj.reason}`,
+        created_at: new Date().toISOString(),
+      });
+      setStored(STORAGE_KEYS.LEDGER, ledger);
+
+      // Update entitlement balance
+      const entitlements = leaveApi.getEntitlements();
+      const ent = entitlements.find(e => e.employee_id === adj.employee_id && e.leave_type_id === adj.leave_type_id);
+      if (ent) {
+        ent.adjusted = (ent.adjusted || 0) + netAmount;
+        ent.available_balance = (ent.available_balance || 0) + netAmount;
+        setStored(STORAGE_KEYS.ENTITLEMENTS, entitlements);
+      }
+    }
+
+    leaveApi.addAuditLog({
+      actor_id: 'admin',
+      actor_name: actorName,
+      action: 'CREATE_LEAVE_ADJUSTMENT',
+      entity_type: 'LeaveAdjustment',
+      entity_id: newAdj.id,
+      new_value: `${adj.adjustment_type} ${adj.amount} days for ${adj.employee_name}. Reason: ${adj.reason}`,
+    });
+
+    return newAdj;
+  },
+
   // --- Accrual Engine Logs & Batch Processing ---
-  getAccrualLogs: () => {
+  getAccrualLogs: (): AccrualExecutionLog[] => {
     return getStored('workforce_accrual_logs_v1', [
       {
         id: 'acc-2026-07',
@@ -792,53 +1425,127 @@ export const leaveApi = {
     ]);
   },
 
-  runMonthlyAccrualJob: (period: string) => {
+  runMonthlyAccrualJob: (period: string): AccrualExecutionLog => {
     const logs = leaveApi.getAccrualLogs();
-    const existing = logs.find(l => l.period === period);
+    const existing = logs.find(l => l.period === period && l.status === 'Completed');
     if (existing) {
       return existing; // Idempotent check
     }
 
-    const newLog = {
+    const newLog: AccrualExecutionLog = {
       id: `acc-${Date.now()}`,
       period: period,
       run_timestamp: new Date().toISOString(),
       employees_processed: 428,
       total_leave_days_credited: 856,
-      status: 'Completed' as const,
+      status: 'Completed',
     };
 
     logs.unshift(newLog);
     setStored('workforce_accrual_logs_v1', logs);
+
+    leaveApi.addAuditLog({
+      actor_id: 'system',
+      actor_name: 'Accrual Scheduler Engine',
+      action: 'RUN_ACCRUAL_BATCH',
+      entity_type: 'AccrualBatch',
+      entity_id: newLog.id,
+      new_value: `Executed monthly accrual for ${period}. Credited ${newLog.total_leave_days_credited} days across ${newLog.employees_processed} employees.`,
+    });
+
     return newLog;
   },
 
+  reverseAccrualJob: (logId: string, actorName: string): AccrualExecutionLog => {
+    const logs = leaveApi.getAccrualLogs();
+    const target = logs.find(l => l.id === logId);
+    if (!target) throw new Error('Accrual log not found');
+    target.status = 'Reversed';
+    target.reversed_at = new Date().toISOString();
+    target.reversed_by = actorName;
+    setStored('workforce_accrual_logs_v1', logs);
+
+    leaveApi.addAuditLog({
+      actor_id: 'admin',
+      actor_name: actorName,
+      action: 'REVERSE_ACCRUAL_BATCH',
+      entity_type: 'AccrualBatch',
+      entity_id: target.id,
+      new_value: `Reversed accrual batch ${target.period} (${target.id})`,
+    });
+
+    return target;
+  },
+
   // --- Leave Exceptions ---
-  getExceptions: () => {
+  getExceptions: (): LeaveException[] => {
     return getStored('workforce_leave_exceptions_v1', [
       {
         id: 'exc-01',
         type: 'Staffing Capacity Threshold Warning',
-        severity: 'High' as const,
+        severity: 'High',
         title: 'Engineering Team Availability Under 80%',
         description: '4 members in Engineering requested leave on August 18–21.',
         employee_name: 'Rajesh Kumar & 3 Others',
         department_name: 'Engineering',
+        rule_violated: 'Min 80% department attendance required',
+        current_state: '4 concurrent leave requests pending',
+        recommended_action: 'Review department holiday roster before approval',
         flagged_at: '2026-08-10T12:00:00Z',
-        status: 'Open' as const,
+        status: 'Open',
       },
       {
         id: 'exc-02',
         type: 'Missing Attachment Flag',
-        severity: 'Medium' as const,
+        severity: 'Medium',
         title: 'Sick Leave > 2 Days Without Medical Certificate',
         description: 'Vikramaditya Rao applied for 3 days Sick Leave without mandatory attachment.',
         employee_name: 'Vikramaditya Rao',
         department_name: 'DevOps & Cloud',
+        rule_violated: 'Sick Leave policy requires medical certificate for >= 2 days',
+        current_state: 'Uploaded document missing',
+        recommended_action: 'Request medical proof or convert excess to Loss of Pay',
         flagged_at: '2026-08-11T08:00:00Z',
-        status: 'Open' as const,
+        status: 'Open',
+      },
+      {
+        id: 'exc-03',
+        type: 'Negative Balance Risk',
+        severity: 'Low',
+        title: 'Negative CL Balance Requested',
+        description: 'Priya Sharma applied for 2 days Casual Leave with 0 remaining balance.',
+        employee_name: 'Priya Sharma',
+        department_name: 'Product Design',
+        rule_violated: 'Casual Leave does not permit negative balance',
+        current_state: 'Balance 0, Requested 2',
+        recommended_action: 'Approve as Loss of Pay (LOP) or advance next quarter accrual',
+        flagged_at: '2026-08-12T09:30:00Z',
+        status: 'Open',
       },
     ]);
+  },
+
+  resolveException: (exceptionId: string, resolvedBy: string, resolutionNotes?: string): void => {
+    const exceptions = leaveApi.getExceptions();
+    const target = exceptions.find(e => e.id === exceptionId);
+    if (target) {
+      target.status = 'Resolved';
+      target.resolved_by = resolvedBy;
+      target.resolved_at = new Date().toISOString();
+      if (resolutionNotes) {
+        target.resolution_notes = resolutionNotes;
+      }
+      setStored('workforce_leave_exceptions_v1', exceptions);
+
+      leaveApi.addAuditLog({
+        actor_id: 'admin',
+        actor_name: resolvedBy,
+        action: 'RESOLVE_LEAVE_EXCEPTION',
+        entity_type: 'LeaveRequest',
+        entity_id: exceptionId,
+        new_value: `Resolved exception #${exceptionId} (${target.title})${resolutionNotes ? `: ${resolutionNotes}` : ''}`,
+      });
+    }
   },
 
   // --- Audit Logs ---

@@ -26,6 +26,8 @@ import { api } from '../../services/api';
 import { useToast } from '../../components/ui/Toast';
 import { biometricGatewayService } from '../../services/attendance/biometricGatewayService';
 
+import { employeeAuthService, EmployeeAuthIdentity, AuthAuditEvent, ActiveSession } from '../../services/auth/employeeAuthService';
+
 export interface EmployeeProfileDrawerProps {
   employee: Employee | null;
   isOpen: boolean;
@@ -41,6 +43,8 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [isProcessingAuth, setIsProcessingAuth] = useState(false);
+  const [showAuditLogs, setShowAuditLogs] = useState(false);
   const { showToast } = useToast();
 
   if (!employee) return null;
@@ -49,6 +53,10 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
   const joinDate = employee.employment?.doj || employee.created_at?.split('T')[0] || '2025-01-15';
   const managerName = employee.employment?.reporting_manager_name || 'Not assigned';
   const workLocation = employee.employment?.work_location || 'Coimbatore HQ';
+
+  const authStatus = employeeAuthService.getEmployeeAuthStatus(employee.id, employee.organization_id);
+  const activeSessions = employeeAuthService.listActiveSessions(employee.id);
+  const auditLogs = employeeAuthService.getAuthAuditLogs(employee.id, employee.organization_id);
 
   const handleStatusChange = async (newStatus: EmployeeStatus) => {
     setIsUpdatingStatus(true);
@@ -110,6 +118,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
             { id: 'overview', label: 'Overview', icon: <UserCheck className="w-4 h-4" /> },
             { id: 'organization', label: 'Entity & Sourcing', icon: <Building2 className="w-4 h-4" /> },
             { id: 'compensation', label: 'Statutory & Bank', icon: <CreditCard className="w-4 h-4" /> },
+            { id: 'access', label: 'Access & Security', icon: <ShieldCheck className="w-4 h-4" /> },
             { id: 'lifecycle', label: 'Lifecycle & Actions', icon: <AlertTriangle className="w-4 h-4" /> },
           ]}
           activeTab={activeTab}
@@ -321,7 +330,261 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
           </div>
         )}
 
-        {/* Tab 4: Lifecycle & Actions */}
+        {/* Tab 4: Access & Security */}
+        {activeTab === 'access' && (
+          <div className="space-y-4">
+            {/* Identity & Account Card */}
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-[#07563D]" />
+                  <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
+                    Authentication Account & Login Identity
+                  </h3>
+                </div>
+                <Badge
+                  variant={
+                    authStatus?.status === 'ACTIVE'
+                      ? 'emerald'
+                      : authStatus?.status === 'SUSPENDED'
+                      ? 'rose'
+                      : 'blue'
+                  }
+                  className="text-[10px] font-bold"
+                >
+                  {authStatus?.status || 'INVITED'}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-gray-50 p-3 rounded-xl border border-gray-200">
+                <div>
+                  <span className="text-gray-400 text-[11px] block">Login Phone (E.164)</span>
+                  <span className="font-mono font-bold text-gray-900">
+                    {authStatus?.phone || employee.profile?.phone || '+91 98401 22334'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-400 text-[11px] block">Authentication Policy</span>
+                  <span className="font-bold text-gray-900">Phone + OTP / Password</span>
+                </div>
+                <div>
+                  <span className="text-gray-400 text-[11px] block">First-Time Login</span>
+                  <span className="font-bold text-[#07563D]">
+                    {authStatus?.first_login_completed ? '✅ Completed' : '⏳ Pending Activation'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-400 text-[11px] block">Last Login</span>
+                  <span className="font-mono text-gray-700">
+                    {authStatus?.last_login_at
+                      ? new Date(authStatus.last_login_at).toLocaleString()
+                      : 'Never logged in'}
+                  </span>
+                </div>
+              </div>
+            </Card>
+
+            {/* Quick Administrative Security Actions */}
+            <Card className="p-4 space-y-3">
+              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                Security Administration & Recovery
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isProcessingAuth}
+                  onClick={async () => {
+                    setIsProcessingAuth(true);
+                    try {
+                      const phone = authStatus?.phone || employee.profile?.phone || '+91 98401 22334';
+                      await employeeAuthService.requestPasswordResetOtp(phone);
+                      showToast(`Password reset SMS sent to ${phone}`, 'success');
+                    } catch (e: any) {
+                      showToast(e.message || 'Failed to send password reset', 'error');
+                    } finally {
+                      setIsProcessingAuth(false);
+                    }
+                  }}
+                  className="text-xs font-bold justify-start"
+                >
+                  <Mail className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+                  Send Password Reset SMS
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isProcessingAuth}
+                  onClick={async () => {
+                    setIsProcessingAuth(true);
+                    try {
+                      await employeeAuthService.provisionEmployeeAuth({
+                        tenantId: employee.organization_id || 'org-joy-01',
+                        employeeId: employee.id,
+                        phone: authStatus?.phone || employee.profile?.phone || '+91 98401 22334',
+                        email: employee.work_email,
+                        firstName: employee.first_name,
+                        lastName: employee.last_name,
+                        role: employee.designation_title || 'Employee',
+                        sendSms: true,
+                      });
+                      showToast('Activation instructions dispatched via SMS', 'success');
+                    } catch (e: any) {
+                      showToast(e.message || 'Failed to send activation instructions', 'error');
+                    } finally {
+                      setIsProcessingAuth(false);
+                    }
+                  }}
+                  className="text-xs font-bold justify-start"
+                >
+                  <Phone className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+                  Resend Activation Instructions
+                </Button>
+
+                {authStatus?.status === 'ACTIVE' ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isProcessingAuth}
+                    onClick={async () => {
+                      setIsProcessingAuth(true);
+                      try {
+                        await employeeAuthService.suspendEmployeeAuth(employee.id, employee.organization_id);
+                        showToast(`Suspended login access for ${employee.first_name}`, 'warning');
+                      } catch (e: any) {
+                        showToast(e.message || 'Failed to suspend account', 'error');
+                      } finally {
+                        setIsProcessingAuth(false);
+                      }
+                    }}
+                    className="text-xs font-bold text-amber-700 hover:bg-amber-50 justify-start"
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
+                    Suspend Login Access
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isProcessingAuth}
+                    onClick={async () => {
+                      setIsProcessingAuth(true);
+                      try {
+                        await employeeAuthService.activateEmployeeAuth(employee.id, employee.organization_id);
+                        showToast(`Reactivated login access for ${employee.first_name}`, 'success');
+                      } catch (e: any) {
+                        showToast(e.message || 'Failed to reactivate account', 'error');
+                      } finally {
+                        setIsProcessingAuth(false);
+                      }
+                    }}
+                    className="text-xs font-bold text-emerald-700 hover:bg-emerald-50 justify-start"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+                    Reactivate Account Access
+                  </Button>
+                )}
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isProcessingAuth}
+                  onClick={() => {
+                    employeeAuthService.revokeAllSessions(employee.id, 'HR Admin remote session revocation');
+                    showToast('All active sessions revoked successfully', 'info');
+                  }}
+                  className="text-xs font-bold text-rose-700 hover:bg-rose-50 justify-start"
+                >
+                  <Clock className="w-3.5 h-3.5 mr-1.5 text-rose-600" />
+                  Revoke All Active Sessions
+                </Button>
+              </div>
+            </Card>
+
+            {/* Active Device Sessions */}
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Active Device Sessions</h3>
+                <span className="text-[10px] font-mono text-gray-400">
+                  {activeSessions.length} active session{activeSessions.length === 1 ? '' : 's'}
+                </span>
+              </div>
+
+              {activeSessions.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">No active login sessions recorded for this employee.</p>
+              ) : (
+                <div className="space-y-2">
+                  {activeSessions.map((s, idx) => (
+                    <div
+                      key={idx}
+                      className="p-2.5 bg-gray-50 rounded-xl border border-gray-200 text-xs flex items-center justify-between"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-gray-900 flex items-center gap-1.5">
+                          <span>{s.browser} on {s.os}</span>
+                          <Badge variant="emerald" className="text-[9px]">Online</Badge>
+                        </div>
+                        <div className="text-[10px] text-gray-500 font-mono">
+                          IP: {s.ip_address} • Last Active: {new Date(s.last_active_at).toLocaleTimeString()}
+                        </div>
+                      </div>
+                      <Button
+                        size="xs"
+                        variant="destructive"
+                        onClick={() => {
+                          employeeAuthService.revokeSession(s.id);
+                          showToast('Session revoked', 'info');
+                        }}
+                        className="text-[10px] font-bold"
+                      >
+                        Sign Out
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* Security Audit Trail Summary */}
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Security & Auth Audit Logs</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowAuditLogs(!showAuditLogs)}
+                  className="text-[11px] font-bold text-[#07563D] hover:underline"
+                >
+                  {showAuditLogs ? 'Hide Details' : `View (${auditLogs.length}) Events`}
+                </button>
+              </div>
+
+              {showAuditLogs && (
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {auditLogs.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic">No recent authentication events recorded.</p>
+                  ) : (
+                    auditLogs.map((log, i) => (
+                      <div key={i} className="p-2 bg-gray-50 rounded-lg border border-gray-200 text-[11px] space-y-0.5">
+                        <div className="flex items-center justify-between font-bold text-gray-800">
+                          <span>{log.event_type}</span>
+                          <span className="font-mono text-[10px] text-gray-400">
+                            {new Date(log.created_at).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <p className="text-gray-500 font-mono text-[10px]">
+                          Actor: {log.actor_name} ({log.actor_type}) • Status: {log.status}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* Tab 5: Lifecycle & Actions */}
         {activeTab === 'lifecycle' && (
           <div className="space-y-4">
             <Card className="p-4 space-y-3">

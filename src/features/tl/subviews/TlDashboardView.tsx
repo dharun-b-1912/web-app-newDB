@@ -15,15 +15,18 @@ import {
   GraduationCap,
   Sparkles,
 } from 'lucide-react';
-import { useToast } from '../../../components/ui/Toast';
+import { useAuth } from '../../../hooks/useAuth';
 
 interface TlDashboardViewProps {
   onNavigateTab?: (tabKey: string) => void;
 }
 
 export const TlDashboardView: React.FC<TlDashboardViewProps> = ({ onNavigateTab }) => {
+  const { user } = useAuth();
   const { showToast } = useToast();
   const summary = tlApi.getTeamSummary();
+
+  const tlName = user?.name?.split(' ')?.[0] || 'Team Lead';
 
   const metrics = [
     { label: 'Team Strength', val: summary.total_strength, sub: 'Active Team Members', icon: Users, tab: 'my-team' },
@@ -46,7 +49,7 @@ export const TlDashboardView: React.FC<TlDashboardViewProps> = ({ onNavigateTab 
             <span>•</span>
             <span>{summary.team_name}</span>
           </div>
-          <h1 className="text-2xl font-black tracking-tight mt-1">Good Morning, Anand! (TL Operational Hub)</h1>
+          <h1 className="text-2xl font-black tracking-tight mt-1">Good Morning, {tlName}! (TL Operational Hub)</h1>
           <p className="text-xs text-emerald-100/80 mt-1 max-w-xl">
             Real-time team attendance monitoring, approval center, task dispatching, goal tracking & skill gap reviews.
           </p>

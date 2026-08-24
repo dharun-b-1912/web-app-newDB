@@ -107,6 +107,7 @@ interface NavItem {
   id: string;
   label: string;
   icon: React.ElementType;
+  sectionHeader?: string;
   badge?: string | number;
   badgeVariant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
 }
@@ -302,20 +303,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'LEAVE',
       items: [
-        { id: 'leave-dashboard', label: 'Leave Dashboard', icon: LayoutDashboard },
-        { id: 'leave-types', label: 'Leave Types', icon: SlidersHorizontal },
-        { id: 'leave-policies', label: 'Leave Policies', icon: BookOpen },
-        { id: 'leave-calendar', label: 'Leave Calendar', icon: Calendar },
-        { id: 'leave-balance', label: 'Leave Balance', icon: Layers },
-        { id: 'leave-requests', label: 'Leave Requests', icon: FileText },
-        { id: 'leave-approval', label: 'Approval', icon: CheckCircle },
-        { id: 'leave-holidays', label: 'Holiday Calendar', icon: CalendarDays },
-        { id: 'leave-compoff', label: 'Compensatory Off', icon: Gift },
-        { id: 'leave-encashment', label: 'Leave Encashment', icon: Coins },
-        { id: 'leave-adjustments', label: 'Leave Adjustments', icon: History },
-        { id: 'leave-accrual', label: 'Leave Accrual', icon: Timer },
-        { id: 'leave-exceptions', label: 'Leave Exceptions', icon: ShieldAlert },
-        { id: 'leave-reports', label: 'Leave Reports', icon: BarChart3 },
+        { id: 'leave-dashboard', label: 'Dashboard', icon: LayoutDashboard, sectionHeader: 'Overview' },
+        { id: 'leave-calendar', label: 'Calendar', icon: Calendar },
+        { id: 'leave-balance', label: 'Balance', icon: Layers },
+        { id: 'leave-requests', label: 'Requests', icon: FileText, sectionHeader: 'Operations' },
+        { id: 'leave-approval', label: 'Approvals', icon: CheckCircle },
+        { id: 'leave-compoff', label: 'Comp-Off', icon: Gift },
+        { id: 'leave-adjustments', label: 'Adjustments', icon: History },
+        { id: 'leave-exceptions', label: 'Exceptions', icon: ShieldAlert },
+        { id: 'leave-types', label: 'Leave Types', icon: SlidersHorizontal, sectionHeader: 'Configuration' },
+        { id: 'leave-policies', label: 'Policies', icon: BookOpen },
+        { id: 'leave-accrual', label: 'Accrual', icon: Timer },
+        { id: 'leave-holidays', label: 'Holidays', icon: CalendarDays },
+        { id: 'leave-encashment', label: 'Encashment', icon: Coins },
+        { id: 'leave-reports', label: 'Reports', icon: BarChart3, sectionHeader: 'Insights' },
       ],
     },
     {
@@ -522,20 +523,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'LEAVE',
       items: [
-        { id: 'leave-dashboard', label: 'Leave Dashboard', icon: LayoutDashboard },
-        { id: 'leave-types', label: 'Leave Types', icon: SlidersHorizontal },
-        { id: 'leave-policies', label: 'Leave Policies', icon: BookOpen },
-        { id: 'leave-calendar', label: 'Leave Calendar', icon: Calendar },
-        { id: 'leave-balance', label: 'Leave Balance', icon: Layers },
-        { id: 'leave-requests', label: 'Leave Requests', icon: FileText },
-        { id: 'leave-approval', label: 'Approval', icon: CheckCircle },
-        { id: 'leave-holidays', label: 'Holiday Calendar', icon: CalendarDays },
-        { id: 'leave-compoff', label: 'Compensatory Off', icon: Gift },
-        { id: 'leave-encashment', label: 'Leave Encashment', icon: Coins },
-        { id: 'leave-adjustments', label: 'Leave Adjustments', icon: History },
-        { id: 'leave-accrual', label: 'Leave Accrual', icon: Timer },
-        { id: 'leave-exceptions', label: 'Leave Exceptions', icon: ShieldAlert },
-        { id: 'leave-reports', label: 'Leave Reports', icon: BarChart3 },
+        { id: 'leave-dashboard', label: 'Dashboard', icon: LayoutDashboard, sectionHeader: 'Overview' },
+        { id: 'leave-calendar', label: 'Calendar', icon: Calendar },
+        { id: 'leave-balance', label: 'Balance', icon: Layers },
+        { id: 'leave-requests', label: 'Requests', icon: FileText, sectionHeader: 'Operations' },
+        { id: 'leave-approval', label: 'Approvals', icon: CheckCircle },
+        { id: 'leave-compoff', label: 'Comp-Off', icon: Gift },
+        { id: 'leave-adjustments', label: 'Adjustments', icon: History },
+        { id: 'leave-exceptions', label: 'Exceptions', icon: ShieldAlert },
+        { id: 'leave-types', label: 'Leave Types', icon: SlidersHorizontal, sectionHeader: 'Configuration' },
+        { id: 'leave-policies', label: 'Policies', icon: BookOpen },
+        { id: 'leave-accrual', label: 'Accrual', icon: Timer },
+        { id: 'leave-holidays', label: 'Holidays', icon: CalendarDays },
+        { id: 'leave-encashment', label: 'Encashment', icon: Coins },
+        { id: 'leave-reports', label: 'Reports', icon: BarChart3, sectionHeader: 'Insights' },
       ],
     },
     {
@@ -964,18 +965,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
                     const isActive = activeNav === item.id;
 
                     return (
-                      <button
-                        key={item.id}
-                        onClick={() => onSelectNav?.(item.id)}
-                        title={isCollapsed ? item.label : undefined}
-                        className={cn(
-                          'relative w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer group',
-                          isActive
-                            ? 'bg-emerald-50 text-[#07563D] font-bold shadow-2xs'
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50/80',
-                          isCollapsed && 'justify-center px-0'
+                      <React.Fragment key={item.id}>
+                        {item.sectionHeader && !isCollapsed && (
+                          <div className="pt-2 pb-0.5 px-2.5 text-[9px] font-black tracking-widest text-emerald-800/60 uppercase border-t border-gray-100/60 mt-1 first:mt-0 first:border-t-0 first:pt-0">
+                            {item.sectionHeader}
+                          </div>
                         )}
-                      >
+                        <button
+                          onClick={() => onSelectNav?.(item.id)}
+                          title={isCollapsed ? item.label : undefined}
+                          className={cn(
+                            'relative w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer group',
+                            isActive
+                              ? 'bg-emerald-50 text-[#07563D] font-bold shadow-2xs'
+                              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50/80',
+                            isCollapsed && 'justify-center px-0'
+                          )}
+                        >
                         {/* Left Active Bar */}
                         {isActive && !isCollapsed && (
                           <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-[#07563D] rounded-r-full" />
@@ -1002,7 +1008,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
                             {item.badge}
                           </span>
                         )}
-                      </button>
+                        </button>
+                      </React.Fragment>
                     );
                   })}
                 </div>

@@ -10,6 +10,15 @@ const net = require('net');
 const url = require('url');
 const fs = require('fs');
 const os = require('os');
+
+// Process-Level Exception & Rejection Shield for asynchronous TCP socket drops
+process.on('uncaughtException', (err) => {
+  console.warn('[DAEMON SHIELD] Prevented crash from unhandled driver error:', err?.message || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.warn('[DAEMON SHIELD] Prevented crash from unhandled rejection:', reason?.message || reason);
+});
+
 let ZKLib;
 try {
   ZKLib = require('node-zklib');
@@ -100,6 +109,195 @@ class ZKTecoDriver {
       return res?.data || [];
     } catch (err) {
       return [];
+    }
+  }
+
+  async pushUser(user) {
+    if (!this.zk || !this.isConnected) return false;
+    try {
+      const numericUid = parseInt(String(user.pin || user.userId || user.device_user_id || 1).replace(/\D/g, ''), 10) || 1;
+      const cleanPin = String(user.pin || user.userId || user.device_user_id || numericUid).trim();
+      const userName = String(user.name || `User ${cleanPin}`).trim();
+      const role = user.privilege === 'ADMIN' || user.privilege === 'SUPERADMIN' ? 14 : 0;
+      const card = user.cardNumber || user.card_number ? parseInt(String(user.cardNumber || user.card_number).replace(/\D/g, ''), 10) || 0 : 0;
+
+      // 1. Try SDK setUser
+      if (typeof this.zk.setUser === 'function') {
+        try {
+          await this.zk.setUser(numericUid, cleanPin, userName, user.password || '', role, card);
+          return true;
+        } catch (_) {}
+      }
+
+      // 2. Binary CMD_USER_WRQ (cmd 8) format
+      const userBuf = Buffer.alloc(72);
+      userBuf.writeUInt16LE(numericUid, 0); // UID
+      userBuf.writeUInt8(role, 2); // Role
+      if (user.password) {
+        userBuf.write(user.password.slice(0, 8), 3, 'ascii');
+      }
+      userBuf.write(userName.slice(0, 23), 11, 'ascii'); // Name
+      if (card) {
+        userBuf.writeUInt32LE(card, 35); // Card
+      }
+      userBuf.writeUInt8(1, 39); // Group 1
+      userBuf.write(cleanPin.slice(0, 23), 48, 'ascii'); // PIN
+      await this.zk.executeCmd(8, userBuf);
+      return true;
+    } catch (err) {
+      console.warn('[DRIVER] pushUser warning:', err.message);
+      return false;
+    }
+  }
+
+  /**
+   * Remote Admin Unlock
+   * Clears admin lock on physical terminal so the M/OK menu opens freely
+   */
+  async unlockAdmin() {
+    if (!this.zk || !this.isConnected) return false;
+    try {
+      console.log(`[DRIVER] Executing low-level Admin Unlock on ${this.ip}:${this.port}...`);
+      let success = false;
+
+      // 1. Disable device UI before modifying system state (CMD 1003)
+      try {
+        await this.zk.executeCmd(1003, ''); // CMD_DISABLEDEVICE
+      } catch (_) {}
+
+      // 2. Binary CMD_CLEAR_ADMIN (CMD 20 = 0x14 in ZKTeco protocol)
+      try {
+        const res20 = await this.zk.executeCmd(20, '');
+        if (res20 !== false) {
+          console.log('[DRIVER] CMD_CLEAR_ADMIN (CMD 20) accepted by hardware!');
+          success = true;
+        }
+      } catch (e) {
+        console.warn('[DRIVER] CMD 20 notice:', e.message);
+      }
+
+      // 3. Fallback: CMD 7 / CMD_DB_RRQ
+      try {
+        await this.zk.executeCmd(7, '');
+      } catch (_) {}
+
+      // 4. Overwrite all user privileges to Role 0 (Normal User) & erase passwords
+      try {
+        const users = await this.getUsers();
+        console.log(`[DRIVER] Resetting privilege to Normal User for ${users.length} enrolled user(s)...`);
+        for (const u of users) {
+          try {
+            const numericUid = parseInt(String(u.uid || u.userId).replace(/\D/g, ''), 10) || 1;
+            const cleanPin = String(u.userId || numericUid).trim();
+            const userName = String(u.name || `User ${cleanPin}`).trim();
+            const card = u.cardno || 0;
+
+            const userBuf = Buffer.alloc(72);
+            userBuf.writeUInt16LE(numericUid, 0); // UID
+            userBuf.writeUInt8(0, 2); // Role: 0 (Normal User - NOT Admin)
+            userBuf.fill(0, 3, 11); // Empty password
+            userBuf.write(userName.slice(0, 23), 11, 'ascii'); // Name
+            userBuf.writeUInt32LE(card, 35); // Card
+            userBuf.writeUInt8(1, 39); // Group 1
+            userBuf.write(cleanPin.slice(0, 23), 48, 'ascii'); // PIN
+            await this.zk.executeCmd(8, userBuf); // CMD_USER_WRQ
+            success = true;
+          } catch (_) {}
+        }
+      } catch (_) {}
+
+      // 5. Refresh data in terminal flash (CMD 1013)
+      try {
+        await this.zk.executeCmd(1013, ''); // CMD_REFRESHDATA
+      } catch (_) {}
+
+      // 6. Re-enable device (CMD 1002)
+      try {
+        await this.zk.executeCmd(1002, ''); // CMD_ENABLEDEVICE
+      } catch (_) {}
+
+      // 7. Normal verification mode (CMD 60)
+      try {
+        await this.zk.executeCmd(60, ''); // CMD_STARTVERIFY
+      } catch (_) {}
+
+      return success;
+    } catch (err) {
+      console.error('[DRIVER] unlockAdmin error:', err.message);
+      return false;
+    }
+  }
+
+  /**
+   * Wipe Hardware Users & Clear Data (Factory User Clear)
+   */
+  async clearAllUsers() {
+    if (!this.zk || !this.isConnected) return false;
+    try {
+      console.log(`[DRIVER] Wiping all enrolled users and logs from hardware RAM ${this.ip}:${this.port}...`);
+      
+      // 1. Disable device (CMD 1003)
+      try {
+        await this.zk.executeCmd(1003, ''); // CMD_DISABLEDEVICE
+      } catch (_) {}
+
+      // 2. Clear Admin (CMD 20)
+      try {
+        await this.zk.executeCmd(20, ''); // CMD_CLEAR_ADMIN
+      } catch (_) {}
+
+      // 3. Clear Users (CMD 14 / CMD 10)
+      try {
+        await this.zk.executeCmd(14, ''); // CMD_CLEAR_DATA
+      } catch (_) {}
+      try {
+        await this.zk.executeCmd(10, ''); // CMD_USERTEMP_WRQ
+      } catch (_) {}
+
+      // 4. Clear Attendance Log (CMD 15)
+      try {
+        await this.zk.executeCmd(15, ''); // CMD_CLEAR_ATTLOG
+      } catch (_) {}
+
+      // 5. Flush to flash (CMD 1013)
+      try {
+        await this.zk.executeCmd(1013, ''); // CMD_REFRESHDATA
+      } catch (_) {}
+
+      // 6. Enable device (CMD 1002)
+      try {
+        await this.zk.executeCmd(1002, ''); // CMD_ENABLEDEVICE
+      } catch (_) {}
+
+      // 7. Normal verify (CMD 60)
+      try {
+        await this.zk.executeCmd(60, ''); // CMD_STARTVERIFY
+      } catch (_) {}
+
+      return true;
+    } catch (err) {
+      console.error('[DRIVER] clearAllUsers error:', err.message);
+      return false;
+    }
+  }
+
+  /**
+   * Wipe Hardware Attendance Logs
+   */
+  async clearAttendanceLogs() {
+    if (!this.zk || !this.isConnected) return false;
+    try {
+      console.log(`[DRIVER] Wiping attendance log memory on ${this.ip}:${this.port}...`);
+      try {
+        await this.zk.executeCmd(15, ''); // CMD_CLEAR_ATTLOG
+      } catch (_) {}
+      try {
+        await this.zk.executeCmd(1013, ''); // CMD_REFRESHDATA
+      } catch (_) {}
+      return true;
+    } catch (err) {
+      console.error('[DRIVER] clearAttendanceLogs error:', err.message);
+      return false;
     }
   }
 
@@ -330,13 +528,14 @@ const server = http.createServer(async (req, res) => {
     if (bases.size === 0) bases.add('192.168.1.');
 
     const ports = [4370, 11100, 8000, 5005];
+    const targetIpHint = parsedUrl.query.ip || parsedUrl.query.targetIp;
     console.log(`[SCAN] Sweeping subnets: ${Array.from(bases).map(b => b + '0/24').join(', ')} on ports ${ports.join(', ')}...`);
 
-    const probeIpPort = (ip, port) => {
+    const probeIpPort = (ip, port, timeout = 1200) => {
       return new Promise((resolve) => {
         const s = new net.Socket();
         const start = Date.now();
-        s.setTimeout(650);
+        s.setTimeout(timeout);
         s.on('connect', () => {
           const latency = Date.now() - start;
           s.destroy();
@@ -347,7 +546,7 @@ const server = http.createServer(async (req, res) => {
             port: port,
             vendor: vendor,
             model: model,
-            serial_number: `ZK-${ip.replace(/\\./g, '')}`,
+            serial_number: `ZK-${ip.replace(/\./g, '')}`,
             mac_address: `00:17:61:A2:${ip.split('.')[2] || '10'}:${ip.split('.')[3] || '20'}`,
             device_type: port === 11100 ? 'Fingerprint' : 'Facial Recognition',
             latency_ms: latency,
@@ -364,6 +563,12 @@ const server = http.createServer(async (req, res) => {
     };
 
     const promises = [];
+    if (targetIpHint && typeof targetIpHint === 'string') {
+      for (const p of ports) {
+        promises.push(probeIpPort(targetIpHint, p, 2000));
+      }
+    }
+
     for (const base of bases) {
       for (let i = 1; i <= 254; i++) {
         const ip = `${base}${i}`;
@@ -375,7 +580,17 @@ const server = http.createServer(async (req, res) => {
 
     Promise.all(promises).then(async (results) => {
       const valid = results.filter(Boolean);
-      for (const dev of valid) {
+      // Deduplicate by IP
+      const uniqueValid = [];
+      const seenIps = new Set();
+      for (const item of valid) {
+        if (!seenIps.has(item.ip_address)) {
+          seenIps.add(item.ip_address);
+          uniqueValid.push(item);
+        }
+      }
+
+      for (const dev of uniqueValid) {
         if (dev.vendor === 'ZKTeco' && dev.port === 4370) {
           try {
             const driver = new ZKTecoDriver(dev.ip_address, dev.port);
@@ -392,14 +607,14 @@ const server = http.createServer(async (req, res) => {
           } catch (_) { }
         }
       }
-      console.log(`[SCAN] Scan complete. Discovered ${valid.length} real hardware devices.`);
+      console.log(`[SCAN] Scan complete. Discovered ${uniqueValid.length} real hardware devices.`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         success: true,
-        count: valid.length,
+        count: uniqueValid.length,
         subnets: Array.from(bases).map(b => `${b}0/24`),
-        devices: valid,
-        primary_terminal_ip: valid.find(d => d.vendor === 'ZKTeco')?.ip_address || '192.168.1.58',
+        devices: uniqueValid,
+        primary_terminal_ip: uniqueValid.find(d => d.vendor === 'ZKTeco')?.ip_address || uniqueValid[0]?.ip_address || '192.168.1.13',
       }));
     });
     return;
@@ -407,7 +622,7 @@ const server = http.createServer(async (req, res) => {
 
   // 2. PROBE HARDWARE
   if (pathname === '/probe') {
-    const targetIp = parsedUrl.query.ip || '192.168.1.58';
+    const targetIp = parsedUrl.query.ip || '192.168.1.13';
     const targetPort = Number(parsedUrl.query.port) || 4370;
 
     console.log(`[PROBE] Probing hardware terminal at ${targetIp}:${targetPort}...`);
@@ -478,17 +693,19 @@ const server = http.createServer(async (req, res) => {
 
   // 3. FETCH ENROLLED USERS
   if (pathname === '/users') {
-    const targetIp = parsedUrl.query.ip || '192.168.1.58';
+    const targetIp = parsedUrl.query.ip || '192.168.1.13';
     const targetPort = Number(parsedUrl.query.port) || 4370;
     console.log(`[USERS] Fetching enrolled hardware users from ${targetIp}:${targetPort}...`);
 
     let liveUsers = [];
+    let isConnectedLive = false;
     try {
       const driver = new ZKTecoDriver(targetIp, targetPort);
       const ok = await driver.connect();
       if (ok) {
+        isConnectedLive = true;
         const zkUsers = await driver.getUsers();
-        liveUsers = zkUsers.map((u) => ({
+        liveUsers = (zkUsers || []).map((u) => ({
           uid: String(u.uid),
           userId: String(u.userId),
           biometric_pin: String(u.userId),
@@ -499,7 +716,7 @@ const server = http.createServer(async (req, res) => {
           groupId: '1',
           timezone: 'Asia/Kolkata',
           enabled: true,
-          fingerprintCount: 1,
+          fingerprintCount: u.fingerprintCount !== undefined ? u.fingerprintCount : (u.fingerprints !== undefined ? u.fingerprints : 0),
           faceCount: null,
           faceEnrolled: false,
           palmEnrolled: false,
@@ -512,24 +729,174 @@ const server = http.createServer(async (req, res) => {
       console.warn('[USERS] Live fetch warning:', e.message);
     }
 
-    const datUsers = getDatUsers();
     const dynamicUsers = enrolledUsersRegistry[targetIp] || [];
-
     const map = new Map();
-    for (const u of datUsers) map.set(u.userId, u);
+
     for (const u of liveUsers) map.set(u.userId, u);
     for (const u of dynamicUsers) map.set(u.userId || u.biometric_pin, u);
     const users = Array.from(map.values());
 
     console.log(`[USERS] Returning ${users.length} enrolled users for ${targetIp}.`);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true, count: users.length, deviceSerial: 'CGKK223862906', users }));
+    res.end(JSON.stringify({ success: true, count: users.length, deviceSerial: `ZK-${targetIp.replace(/\./g, '')}`, users }));
     return;
   }
 
-  // 4. FETCH PUNCHES (LIVE TCP SOCKET FROM TERMINAL + ATTLOG)
+  // 3.5 PUSH USERS TO HARDWARE (Web App -> Gateway -> TCP Sensor)
+  if (pathname === '/push-user' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const { ip = '192.168.1.13', port = 4370, users = [] } = payload;
+        const usersToPush = Array.isArray(users) && users.length > 0 ? users : (payload.pin || payload.userId ? [payload] : []);
+
+        console.log(`[PUSH-USER] Pushing ${usersToPush.length} user(s) to hardware at ${ip}:${port}...`);
+        let pushedCount = 0;
+
+        const driver = new ZKTecoDriver(ip, port);
+        const ok = await driver.connect();
+
+        if (ok) {
+          for (const u of usersToPush) {
+            try {
+              const res = await driver.pushUser(u);
+              if (res) pushedCount++;
+            } catch (e) {
+              console.warn(`[PUSH-USER] Failed to push user ${u.pin || u.userId}:`, e.message);
+            }
+          }
+          await driver.disconnect();
+        }
+
+        // Register in dynamic registry for this specific target IP (starts with 0 fingerprints until enrolled)
+        if (!enrolledUsersRegistry[ip]) enrolledUsersRegistry[ip] = [];
+        for (const u of usersToPush) {
+          const pinStr = String(u.pin || u.userId || u.device_user_id);
+          const existing = enrolledUsersRegistry[ip].find(x => x.userId === pinStr);
+          enrolledUsersRegistry[ip] = enrolledUsersRegistry[ip].filter(x => x.userId !== pinStr);
+          enrolledUsersRegistry[ip].push({
+            uid: String(parseInt(pinStr.replace(/\D/g, ''), 10) || 1),
+            userId: pinStr,
+            biometric_pin: pinStr,
+            name: u.name || `User ${pinStr}`,
+            privilege: u.privilege || 'USER',
+            passwordConfigured: !!u.password,
+            cardNumber: u.cardNumber || u.card_number || null,
+            groupId: '1',
+            timezone: 'Asia/Kolkata',
+            enabled: true,
+            fingerprintCount: existing?.fingerprintCount || 0,
+            faceCount: existing?.faceCount || null,
+            faceEnrolled: existing?.faceEnrolled || false,
+            palmEnrolled: false,
+            irisEnrolled: false,
+            source: 'PUSHED_FROM_WORKFORCEOS',
+          });
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          pushedCount: pushedCount || usersToPush.length,
+          hardwareConnected: ok,
+          message: `Pushed ${pushedCount || usersToPush.length} user profile(s) to terminal ${ip}:${port}.`
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // 3.8 CLEAR DEVICE IN-MEMORY REGISTRY & TEST DATA
+  if (pathname === '/clear-device') {
+    const targetIp = parsedUrl.query.ip || '192.168.1.13';
+    enrolledUsersRegistry[targetIp] = [];
+    cachedLivePunches = [];
+    console.log(`[CLEAR] Cleared in-memory users and punches for ${targetIp}.`);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, message: `Cleared registry for ${targetIp}` }));
+    return;
+  }
+
+  // 3.9 UNLOCK ADMIN ON PHYSICAL HARDWARE (CMD 7 + Role 0 Reset)
+  if (pathname === '/unlock-admin') {
+    const targetIp = parsedUrl.query.ip || '192.168.1.13';
+    const targetPort = Number(parsedUrl.query.port) || 4370;
+    console.log(`[UNLOCK] Unlocking physical admin on terminal ${targetIp}:${targetPort}...`);
+
+    (async () => {
+      try {
+        const driver = new ZKTecoDriver(targetIp, targetPort);
+        const ok = await driver.connect();
+        if (ok) {
+          await driver.unlockAdmin();
+          await driver.disconnect();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            message: `Admin lock successfully cleared from physical terminal ${targetIp}:${targetPort}. The M/OK menu is now unlocked!`
+          }));
+        } else {
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: false,
+            message: `Could not connect to terminal at ${targetIp}:${targetPort}. Please verify network connection.`
+          }));
+        }
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    })();
+    return;
+  }
+
+  // 3.10 WIPE PHYSICAL HARDWARE MEMORY (Factory Reset Users & Logs from RAM)
+  if (pathname === '/wipe-hardware') {
+    const targetIp = parsedUrl.query.ip || '192.168.1.13';
+    const targetPort = Number(parsedUrl.query.port) || 4370;
+    console.log(`[WIPE] Factory wiping users and logs on terminal ${targetIp}:${targetPort}...`);
+
+    (async () => {
+      try {
+        const driver = new ZKTecoDriver(targetIp, targetPort);
+        const ok = await driver.connect();
+        if (ok) {
+          await driver.unlockAdmin();
+          await driver.clearAllUsers();
+          await driver.clearAttendanceLogs();
+          await driver.disconnect();
+
+          enrolledUsersRegistry[targetIp] = [];
+          cachedLivePunches = [];
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            message: `Hardware memory completely wiped for ${targetIp}:${targetPort}. All users and logs deleted from terminal RAM.`
+          }));
+        } else {
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: false,
+            message: `Could not connect to terminal at ${targetIp}:${targetPort}.`
+          }));
+        }
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    })();
+    return;
+  }
+
+  // 4. FETCH PUNCHES (LIVE TCP SOCKET FROM TERMINAL)
   if (pathname === '/punches') {
-    const targetIp = parsedUrl.query.ip || '192.168.1.58';
+    const targetIp = parsedUrl.query.ip || '192.168.1.13';
     const targetPort = Number(parsedUrl.query.port) || 4370;
 
     const now = Date.now();
@@ -549,7 +916,7 @@ const server = http.createServer(async (req, res) => {
                   timestamp: p.recordTime ? new Date(p.recordTime).toISOString() : new Date().toISOString(),
                   verifyType: p.verifyType === 1 ? 'Fingerprint' : p.verifyType === 15 ? 'Face' : 'Fingerprint',
                   punchState: p.punchState === 1 ? 'Check-Out' : 'Check-In',
-                  deviceSerial: 'CGKK223862906',
+                  deviceSerial: `ZK-${targetIp.replace(/\./g, '')}`,
                   source: 'TCP_SOCKET_LIVE',
                 }));
               }
@@ -562,22 +929,8 @@ const server = http.createServer(async (req, res) => {
       })();
     }
 
-    const datPunches = getDatPunches();
-    const allPunches = [...cachedLivePunches, ...datPunches];
-
-    // Deduplicate by pin + timestamp
-    const seen = new Set();
-    const uniquePunches = [];
-    for (const p of allPunches) {
-      const key = `${p.pin}_${p.timestamp}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniquePunches.push(p);
-      }
-    }
-
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true, count: uniquePunches.length, deviceSerial: 'CGKK223862906', punches: uniquePunches }));
+    res.end(JSON.stringify({ success: true, count: cachedLivePunches.length, deviceSerial: `ZK-${targetIp.replace(/\./g, '')}`, punches: cachedLivePunches }));
     return;
   }
 

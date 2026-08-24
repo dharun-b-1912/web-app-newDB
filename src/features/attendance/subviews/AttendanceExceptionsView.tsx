@@ -21,14 +21,17 @@ import {
   Activity,
   Layers,
   Sparkles,
+  RefreshCw,
+  UserCheck,
+  Building,
 } from 'lucide-react';
 import {
-  attendanceOperationsEngine,
-  AttendanceExceptionItem,
-  ExceptionSeverity,
-  ExceptionStatus,
-  ExceptionType,
-} from '../../../services/attendance/attendanceOperationsEngine';
+  attendanceExceptionEngineService,
+  AttendanceException,
+} from '../../../services/attendance/attendanceExceptionEngineService';
+import {
+  biometricEventPipelineService,
+} from '../../../services/attendance/biometricEventPipelineService';
 import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
@@ -46,157 +49,179 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
   const { showToast } = useToast();
   const { user } = useAuth();
 
-  const [exceptions, setExceptions] = useState<AttendanceExceptionItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'ALL' | 'CRITICAL' | 'NEW' | 'INVESTIGATING' | 'RESOLVED'>('ALL');
+  const [exceptions, setExceptions] = useState<AttendanceException[]>([]);
+  const [activeTab, setActiveTab] = useState<'ALL' | 'CRITICAL' | 'MISSING_OUT' | 'MISSING_IN' | 'UNMAPPED' | 'RESOLVED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedException, setSelectedException] = useState<AttendanceExceptionItem | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [selectedException, setSelectedException] = useState<AttendanceException | null>(null);
 
   // Resolution modal
   const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
-  const [resolutionNotes, setResolutionNotes] = useState('');
+  const [resolutionMode, setResolutionMode] = useState<'MANUAL_OUT' | 'APPROVE_INCOMPLETE' | 'IGNORE'>('MANUAL_OUT');
+  const [manualOutTime, setManualOutTime] = useState('18:00');
+  const [resolutionReason, setResolutionReason] = useState('');
+  const [isSubmittingResolve, setIsSubmittingResolve] = useState(false);
 
-  // Route to Regularization modal
-  const [isRouteRegModalOpen, setIsRouteRegModalOpen] = useState(false);
-  const [reqIn, setReqIn] = useState('09:00 AM');
-  const [reqOut, setReqOut] = useState('06:00 PM');
-  const [regReason, setRegReason] = useState('');
-
-  const loadData = () => {
-    // Purge any legacy mock exceptions
-    try {
-      const stored = localStorage.getItem('wf_att_ops_exceptions_list_org-joy-01');
-      if (stored && (stored.includes('exc-sys-101') || stored.includes('exc-sys-102'))) {
-        localStorage.removeItem('wf_att_ops_exceptions_list_org-joy-01');
-      }
-    } catch (_) {}
-
-    const list = attendanceOperationsEngine.getExceptions();
+  const loadData = async () => {
+    // Initial evaluation
+    await attendanceExceptionEngineService.evaluateExceptions();
+    const list = attendanceExceptionEngineService.getExceptions();
     setExceptions(list);
+  };
+
+  const handleRunScanner = async () => {
+    setIsScanning(true);
+    try {
+      const res = await attendanceExceptionEngineService.evaluateExceptions();
+      showToast(`✓ Evaluated ${res.evaluatedCount} punches/sessions: ${res.newExceptionsCount} new anomalies detected.`);
+      const list = attendanceExceptionEngineService.getExceptions();
+      setExceptions(list);
+    } catch (err: any) {
+      showToast(err.message || 'Scanner failed', 'error');
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   useEffect(() => {
     loadData();
-    const unsub = hrEventBus.subscribe('exception.resolved', () => loadData());
-    return () => unsub();
+    const unsub = hrEventBus.subscribe('exception.created', () => {
+      setExceptions(attendanceExceptionEngineService.getExceptions());
+    });
+    const unsub2 = hrEventBus.subscribe('exception.resolved', () => {
+      setExceptions(attendanceExceptionEngineService.getExceptions());
+    });
+    return () => {
+      unsub();
+      unsub2();
+    };
   }, []);
 
   const filteredExceptions = useMemo(() => {
     return exceptions.filter(e => {
-      if (activeTab === 'CRITICAL' && e.severity !== 'CRITICAL') return false;
-      if (activeTab === 'NEW' && e.status !== 'NEW') return false;
-      if (activeTab === 'INVESTIGATING' && e.status !== 'INVESTIGATING') return false;
-      if (activeTab === 'RESOLVED' && e.status !== 'RESOLVED') return false;
+      if (activeTab === 'CRITICAL' && e.severity !== 'CRITICAL' && e.severity !== 'HIGH') return false;
+      if (activeTab === 'MISSING_OUT' && e.exception_type !== 'MISSING_CHECK_OUT') return false;
+      if (activeTab === 'MISSING_IN' && e.exception_type !== 'MISSING_CHECK_IN') return false;
+      if (activeTab === 'UNMAPPED' && e.exception_type !== 'UNKNOWN_BIOMETRIC_ID') return false;
+      if (activeTab === 'RESOLVED' && e.status !== 'RESOLVED' && e.status !== 'IGNORED') return false;
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         return (
           e.employee_name.toLowerCase().includes(q) ||
           e.employee_code.toLowerCase().includes(q) ||
-          e.type.toLowerCase().includes(q) ||
-          e.diagnosis_reason.toLowerCase().includes(q)
+          e.exception_type.toLowerCase().includes(q) ||
+          e.description.toLowerCase().includes(q) ||
+          (e.vendor_name && e.vendor_name.toLowerCase().includes(q))
         );
       }
       return true;
     });
   }, [exceptions, activeTab, searchQuery]);
 
-  const handleOpenResolveModal = (exc: AttendanceExceptionItem) => {
+  const handleOpenResolveModal = (exc: AttendanceException) => {
     setSelectedException(exc);
-    setResolutionNotes(`Fixed technical fault for ${exc.type}. Roster and device mappings re-verified.`);
+    setResolutionMode(exc.exception_type === 'MISSING_CHECK_OUT' ? 'MANUAL_OUT' : 'APPROVE_INCOMPLETE');
+    setManualOutTime('18:00');
+    setResolutionReason(`Verified with ${exc.reporting_manager_name || 'reporting manager'}. Physical exit verified on secondary gate.`);
     setIsResolveModalOpen(true);
   };
 
-  const handleConfirmResolve = () => {
+  const handleConfirmResolve = async () => {
     if (!selectedException) return;
-    attendanceOperationsEngine.resolveException(
-      selectedException.id,
-      resolutionNotes,
-      user?.name || 'Attendance Admin'
-    );
-    showToast(`✓ Exception ${selectedException.id} resolved. System recalculated derived attendance.`);
-    setIsResolveModalOpen(false);
-    setSelectedException(null);
-    loadData();
-  };
+    setIsSubmittingResolve(true);
+    try {
+      if (resolutionMode === 'MANUAL_OUT') {
+        const dateStr = selectedException.work_date;
+        const outIso = new Date(`${dateStr}T${manualOutTime}:00`).toISOString();
+        attendanceExceptionEngineService.resolveWithManualCheckOut(
+          selectedException.id,
+          outIso,
+          resolutionReason,
+          user?.name || 'HR Administrator'
+        );
+        showToast(`✓ Resolved with manual check-out at ${manualOutTime}. Attendance recalculated.`);
+      } else if (resolutionMode === 'APPROVE_INCOMPLETE') {
+        attendanceExceptionEngineService.resolveAsApprovedIncomplete(
+          selectedException.id,
+          resolutionReason,
+          user?.name || 'HR Administrator'
+        );
+        showToast(`✓ Approved incomplete session with manager justification.`);
+      } else {
+        attendanceExceptionEngineService.ignoreException(
+          selectedException.id,
+          resolutionReason,
+          user?.name || 'HR Administrator'
+        );
+        showToast(`✓ Exception ignored with audit record.`);
+      }
 
-  const handleOpenRouteToRegModal = (exc: AttendanceExceptionItem) => {
-    setSelectedException(exc);
-    setReqIn('09:00 AM');
-    setReqOut('06:00 PM');
-    setRegReason(`Auto-routed from Exception ${exc.id}: ${exc.diagnosis_reason}`);
-    setIsRouteRegModalOpen(true);
-  };
-
-  const handleConfirmRouteToReg = () => {
-    if (!selectedException) return;
-    attendanceOperationsEngine.submitRegularizationFromException(selectedException.id, {
-      requested_in: reqIn,
-      requested_out: reqOut,
-      reason: regReason,
-      submitted_by: user?.name || 'HR Specialist',
-    });
-
-    showToast(`✓ Exception routed to Regularization Desk. Manager approval request created.`);
-    setIsRouteRegModalOpen(false);
-    setSelectedException(null);
-    loadData();
+      setIsResolveModalOpen(false);
+      setSelectedException(null);
+      setExceptions(attendanceExceptionEngineService.getExceptions());
+    } catch (err: any) {
+      showToast(err.message || 'Resolution failed', 'error');
+    } finally {
+      setIsSubmittingResolve(false);
+    }
   };
 
   // Metrics
   const totalCount = exceptions.length;
-  const criticalCount = exceptions.filter(e => e.severity === 'CRITICAL').length;
-  const newCount = exceptions.filter(e => e.status === 'NEW').length;
-  const investigatingCount = exceptions.filter(e => e.status === 'INVESTIGATING').length;
-  const resolvedCount = exceptions.filter(e => e.status === 'RESOLVED').length;
+  const criticalCount = exceptions.filter(e => e.severity === 'CRITICAL' || e.severity === 'HIGH').length;
+  const missingOutCount = exceptions.filter(e => e.exception_type === 'MISSING_CHECK_OUT').length;
+  const missingInCount = exceptions.filter(e => e.exception_type === 'MISSING_CHECK_IN').length;
+  const unmappedCount = exceptions.filter(e => e.exception_type === 'UNKNOWN_BIOMETRIC_ID').length;
+  const resolvedCount = exceptions.filter(e => e.status === 'RESOLVED' || e.status === 'IGNORED').length;
 
   return (
     <div className="space-y-5">
-      {/* 1. Header */}
+      {/* 1. Header with Automated Scanner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-200/80 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
             <span className="p-2 rounded-xl bg-rose-50 text-rose-700">
               <ShieldAlert className="w-5 h-5" />
             </span>
-            <h1 className="text-xl font-bold text-gray-900">Attendance Exceptions Queue</h1>
+            <h1 className="text-xl font-black text-gray-900">Attendance Exception & Escalation Engine</h1>
             <span className="px-2.5 py-0.5 text-xs font-bold bg-rose-100 text-rose-800 rounded-full">
-              Investigation Workspace
+              Automated Detector
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Investigate hardware errors, unassigned shifts, GPS violations, and biometric mismatches before they generate false lateness.
+            Detects missing check-outs, missing check-ins, unmapped biometric PINs, and vendor anomalies with automated escalation.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleRunScanner}
+            disabled={isScanning}
+            className="text-xs font-bold bg-[#07563D] hover:bg-[#064e37] text-white rounded-xl gap-1.5"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", isScanning && "animate-spin")} />
+            {isScanning ? 'Evaluating Punches...' : 'Run Automated Exception Scanner'}
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
             onClick={() => {
               if (onNavigateSubPath) onNavigateSubPath('late-early');
             }}
-            className="text-xs font-bold text-gray-700"
+            className="text-xs font-bold text-gray-700 rounded-xl"
           >
             <Clock className="w-3.5 h-3.5 mr-1" />
             Late / Early Tracking
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              if (onNavigateSubPath) onNavigateSubPath('regularization');
-            }}
-            className="text-xs font-bold text-gray-700"
-          >
-            <FileEdit className="w-3.5 h-3.5 mr-1" />
-            Regularization Desk
           </Button>
         </div>
       </div>
 
       {/* 2. Compact Metric Tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
         <button
           onClick={() => setActiveTab('ALL')}
           className={cn(
@@ -205,11 +230,11 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
           )}
         >
           <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
-            <span>Total Exceptions</span>
+            <span>Total</span>
             <Layers className="w-3.5 h-3.5 text-gray-600" />
           </div>
           <div className="text-xl font-black text-gray-900 mt-1">{totalCount}</div>
-          <span className="text-[10px] text-gray-500 font-semibold">All technical queues</span>
+          <span className="text-[10px] text-gray-500 font-semibold">All anomalies</span>
         </button>
 
         <button
@@ -220,41 +245,56 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
           )}
         >
           <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
-            <span>Critical Severity</span>
+            <span>Critical / High</span>
             <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{criticalCount}</div>
-          <span className="text-[10px] text-rose-700 font-semibold">Blocks shift evaluation</span>
+          <div className="text-xl font-black text-rose-900 mt-1">{criticalCount}</div>
+          <span className="text-[10px] text-rose-700 font-semibold">Urgent attention</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('NEW')}
+          onClick={() => setActiveTab('MISSING_OUT')}
           className={cn(
             "p-3.5 rounded-xl border text-left transition-all cursor-pointer",
-            activeTab === 'NEW' ? "bg-amber-50 border-amber-300 ring-2 ring-amber-500/20" : "bg-white border-gray-200 hover:border-amber-300"
+            activeTab === 'MISSING_OUT' ? "bg-amber-50 border-amber-300 ring-2 ring-amber-500/20" : "bg-white border-gray-200 hover:border-amber-300"
           )}
         >
           <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
-            <span>New Anomalies</span>
+            <span>Missing Check-Out</span>
             <Clock className="w-3.5 h-3.5 text-amber-600" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{newCount}</div>
-          <span className="text-[10px] text-amber-700 font-semibold">Unassigned triage</span>
+          <div className="text-xl font-black text-amber-900 mt-1">{missingOutCount}</div>
+          <span className="text-[10px] text-amber-700 font-semibold">Shift ended</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('INVESTIGATING')}
+          onClick={() => setActiveTab('MISSING_IN')}
           className={cn(
             "p-3.5 rounded-xl border text-left transition-all cursor-pointer",
-            activeTab === 'INVESTIGATING' ? "bg-blue-50 border-blue-300 ring-2 ring-blue-500/20" : "bg-white border-gray-200 hover:border-blue-300"
+            activeTab === 'MISSING_IN' ? "bg-blue-50 border-blue-300 ring-2 ring-blue-500/20" : "bg-white border-gray-200 hover:border-blue-300"
           )}
         >
           <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
-            <span>Investigating</span>
+            <span>Missing Check-In</span>
             <Activity className="w-3.5 h-3.5 text-blue-600" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{investigatingCount}</div>
-          <span className="text-[10px] text-blue-700 font-semibold">Under hardware test</span>
+          <div className="text-xl font-black text-blue-900 mt-1">{missingInCount}</div>
+          <span className="text-[10px] text-blue-700 font-semibold">Exit without entry</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('UNMAPPED')}
+          className={cn(
+            "p-3.5 rounded-xl border text-left transition-all cursor-pointer",
+            activeTab === 'UNMAPPED' ? "bg-purple-50 border-purple-300 ring-2 ring-purple-500/20" : "bg-white border-gray-200 hover:border-purple-300"
+          )}
+        >
+          <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
+            <span>Unmapped PINs</span>
+            <Cpu className="w-3.5 h-3.5 text-purple-600" />
+          </div>
+          <div className="text-xl font-black text-purple-900 mt-1">{unmappedCount}</div>
+          <span className="text-[10px] text-purple-700 font-semibold">Machine PINs</span>
         </button>
 
         <button
@@ -268,40 +308,40 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
             <span>Resolved</span>
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{resolvedCount}</div>
-          <span className="text-[10px] text-emerald-700 font-semibold">Calculations restored</span>
+          <div className="text-xl font-black text-emerald-900 mt-1">{resolvedCount}</div>
+          <span className="text-[10px] text-emerald-700 font-semibold">Audited adjustments</span>
         </button>
       </div>
 
-      {/* 3. Technical Investigation Workspace */}
+      {/* 3. Exception Queue Table */}
       <Card className="p-5 bg-white rounded-2xl border border-gray-200/80 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-extrabold text-gray-900">System & Data Diagnostics</h3>
-            <span className="text-xs text-gray-500">({filteredExceptions.length} active investigations)</span>
+            <h3 className="text-sm font-black text-gray-900">Attendance Exception Queue</h3>
+            <span className="text-xs text-gray-500 font-semibold">({filteredExceptions.length} items)</span>
           </div>
 
           <div className="relative text-xs">
             <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
             <input
               type="text"
-              placeholder="Search diagnosis or employee..."
+              placeholder="Search employee, exception, vendor..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#07563D]"
+              className="pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#07563D]"
             />
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-xl border border-gray-100">
           <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-200">
+            <thead className="bg-gray-50 text-gray-700 font-bold border-b border-gray-200">
               <tr>
-                <th className="p-3">Exception ID</th>
-                <th className="p-3">Type & Severity</th>
-                <th className="p-3">Affected Employee</th>
-                <th className="p-3">Date & Source</th>
-                <th className="p-3">System Diagnosis & Reason</th>
+                <th className="p-3">Exception Type</th>
+                <th className="p-3">Employee & Vendor</th>
+                <th className="p-3">Work Date & Device</th>
+                <th className="p-3">Escalation Routing</th>
+                <th className="p-3">System Description</th>
                 <th className="p-3">Suggested Action</th>
                 <th className="p-3">Status</th>
                 <th className="p-3 text-right">Actions</th>
@@ -312,22 +352,24 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
                 <tr>
                   <td colSpan={8} className="p-8 text-center text-gray-500">
                     <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-60" />
-                    <p className="font-semibold text-gray-800">Zero System Exceptions!</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">All hardware gateways, GPS boundaries, and shift mappings are 100% synchronized.</p>
+                    <p className="font-bold text-gray-800">Zero Open Exceptions</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      All biometric punches, check-ins, and check-outs are cleanly paired into completed attendance sessions.
+                    </p>
                   </td>
                 </tr>
               ) : (
                 filteredExceptions.map(exc => (
-                  <tr key={exc.id} className="hover:bg-gray-50/70">
-                    <td className="p-3 font-mono text-gray-500 whitespace-nowrap">{exc.id}</td>
+                  <tr key={exc.id} className="hover:bg-gray-50/70 transition-colors">
                     <td className="p-3 whitespace-nowrap">
-                      <div className="font-bold text-gray-900">{exc.type}</div>
-                      <span className={cn(
-                        "px-1.5 py-0.5 text-[10px] font-extrabold rounded",
-                        exc.severity === 'CRITICAL' ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"
-                      )}>
+                      <div className="font-bold text-gray-900">{exc.exception_type.replace(/_/g, ' ')}</div>
+                      <Badge
+                        variant={exc.severity === 'CRITICAL' || exc.severity === 'HIGH' ? 'rose' : 'amber'}
+                        size="sm"
+                        className="text-[10px] font-bold mt-0.5"
+                      >
                         {exc.severity}
-                      </span>
+                      </Badge>
                     </td>
                     <td className="p-3 font-bold text-gray-900">
                       <button
@@ -336,54 +378,62 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
                       >
                         {exc.employee_name}
                       </button>
-                      <div className="text-[10px] text-gray-400 font-mono">{exc.employee_code} • {exc.department}</div>
+                      <div className="text-[10px] text-gray-400 font-mono">
+                        {exc.employee_code} • {exc.department}
+                      </div>
+                      {exc.vendor_name && (
+                        <div className="text-[10px] text-purple-700 font-semibold flex items-center gap-1 mt-0.5">
+                          <Building className="w-3 h-3" /> Vendor: {exc.vendor_name}
+                        </div>
+                      )}
                     </td>
                     <td className="p-3 text-gray-600 whitespace-nowrap">
-                      <div className="font-mono">{exc.date}</div>
-                      <div className="text-[10px] text-gray-400">{exc.source}</div>
+                      <div className="font-mono font-bold text-gray-900">{exc.work_date}</div>
+                      <div className="text-[10px] text-gray-500">
+                        {exc.check_in_device_name ? `IN: ${exc.check_in_device_name}` : exc.check_out_device_name ? `OUT: ${exc.check_out_device_name}` : 'Biometric TCP'}
+                      </div>
+                    </td>
+                    <td className="p-3 whitespace-nowrap">
+                      <Badge variant={exc.employment_type === 'VENDOR' ? 'purple' : 'blue'} size="sm" className="text-[10px] gap-1 font-bold">
+                        <UserCheck className="w-3 h-3" />
+                        {exc.employment_type === 'VENDOR'
+                          ? `Vendor Mgr (${exc.vendor_manager_name || 'Lead'})`
+                          : `Manager (${exc.reporting_manager_name || 'Lead'})`}
+                      </Badge>
                     </td>
                     <td className="p-3 text-gray-700 max-w-sm">
-                      <p className="font-medium text-gray-900">{exc.diagnosis_reason}</p>
-                      <p className="text-[10px] text-gray-500 mt-0.5">Expected: {exc.diagnosis_expected} | Got: {exc.diagnosis_received}</p>
+                      <p className="font-medium text-gray-900 leading-snug">{exc.description}</p>
                     </td>
                     <td className="p-3 text-emerald-800 font-medium max-w-xs">{exc.suggested_action}</td>
                     <td className="p-3 whitespace-nowrap">
                       {exc.status === 'RESOLVED' ? (
-                        <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded">
-                          Resolved
-                        </span>
-                      ) : exc.status === 'INVESTIGATING' ? (
-                        <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-800 rounded">
-                          Investigating
-                        </span>
+                        <Badge variant="emerald" size="sm" className="text-[10px] font-bold">
+                          Resolved ({exc.resolution_type})
+                        </Badge>
+                      ) : exc.status === 'IGNORED' ? (
+                        <Badge variant="gray" size="sm" className="text-[10px] font-bold">
+                          Ignored
+                        </Badge>
                       ) : (
-                        <span className="px-2 py-0.5 text-[10px] font-bold bg-rose-100 text-rose-800 rounded">
-                          New
-                        </span>
+                        <Badge variant="rose" size="sm" className="text-[10px] font-bold animate-pulse">
+                          Open Exception
+                        </Badge>
                       )}
                     </td>
                     <td className="p-3 text-right whitespace-nowrap">
-                      {exc.status !== 'RESOLVED' ? (
-                        <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            size="xs"
-                            variant="primary"
-                            onClick={() => handleOpenResolveModal(exc)}
-                            className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs"
-                          >
-                            Resolve
-                          </Button>
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            onClick={() => handleOpenRouteToRegModal(exc)}
-                            className="text-purple-700 hover:bg-purple-50 border-purple-200 font-bold text-xs"
-                          >
-                            Route to Regularization
-                          </Button>
-                        </div>
+                      {exc.status === 'OPEN' ? (
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onClick={() => handleOpenResolveModal(exc)}
+                          className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs rounded-xl"
+                        >
+                          Resolve Exception
+                        </Button>
                       ) : (
-                        <span className="text-gray-400 text-xs font-semibold">Fixed & Recalculated</span>
+                        <span className="text-gray-400 text-xs font-semibold">
+                          Resolved by {exc.resolved_by_name}
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -394,97 +444,134 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
         </div>
       </Card>
 
-      {/* 4. RESOLUTION MODAL */}
+      {/* 4. INTERACTIVE RESOLUTION MODAL */}
       {isResolveModalOpen && selectedException && (
         <Modal
           isOpen={isResolveModalOpen}
-          onClose={() => setIsResolveModalOpen(false)}
-          title={`Resolve Technical Exception: ${selectedException.id}`}
-          size="md"
+          onClose={() => {
+            if (!isSubmittingResolve) setIsResolveModalOpen(false);
+          }}
+          title={`Resolve Attendance Exception: ${selectedException.id}`}
+          size="lg"
         >
           <div className="space-y-4 text-xs">
-            <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-1">
-              <span className="font-bold text-gray-900">{selectedException.type} • {selectedException.employee_name} ({selectedException.employee_code})</span>
-              <p className="text-gray-600">{selectedException.diagnosis_reason}</p>
+            {/* Raw Biometric Evidence Callout */}
+            <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-900 text-sm">
+                  {selectedException.employee_name} ({selectedException.employee_code})
+                </span>
+                <Badge variant="purple" size="sm">
+                  {selectedException.employment_type === 'VENDOR' ? 'Vendor Worker' : 'Regular Employee'}
+                </Badge>
+              </div>
+              <p className="text-gray-600 leading-relaxed">{selectedException.description}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 font-mono text-[11px] text-gray-700">
+                <div>
+                  <span className="text-gray-400 block text-[10px]">Work Date</span>
+                  <strong>{selectedException.work_date}</strong>
+                </div>
+                <div>
+                  <span className="text-gray-400 block text-[10px]">Check-In Time</span>
+                  <strong>{selectedException.check_in_time ? new Date(selectedException.check_in_time).toLocaleTimeString() : 'Missing'}</strong>
+                </div>
+                <div>
+                  <span className="text-gray-400 block text-[10px]">Check-In Terminal</span>
+                  <strong>{selectedException.check_in_device_name || 'N/A'}</strong>
+                </div>
+              </div>
             </div>
 
+            {/* Resolution Action Selector */}
+            <div className="space-y-2">
+              <label className="block text-gray-800 font-bold">Select Resolution Action *</label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setResolutionMode('MANUAL_OUT')}
+                  className={cn(
+                    "p-2.5 rounded-xl border text-left cursor-pointer transition-all",
+                    resolutionMode === 'MANUAL_OUT'
+                      ? "bg-emerald-50 border-emerald-400 ring-2 ring-emerald-200 font-bold text-emerald-950"
+                      : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                  )}
+                >
+                  <p className="font-bold text-xs">Add Manual Check-Out</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Closes session & recalculates hours</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setResolutionMode('APPROVE_INCOMPLETE')}
+                  className={cn(
+                    "p-2.5 rounded-xl border text-left cursor-pointer transition-all",
+                    resolutionMode === 'APPROVE_INCOMPLETE'
+                      ? "bg-blue-50 border-blue-400 ring-2 ring-blue-200 font-bold text-blue-950"
+                      : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                  )}
+                >
+                  <p className="font-bold text-xs">Approve Incomplete</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Waive missing punch with approval</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setResolutionMode('IGNORE')}
+                  className={cn(
+                    "p-2.5 rounded-xl border text-left cursor-pointer transition-all",
+                    resolutionMode === 'IGNORE'
+                      ? "bg-amber-50 border-amber-400 ring-2 ring-amber-200 font-bold text-amber-950"
+                      : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                  )}
+                >
+                  <p className="font-bold text-xs">Ignore Exception</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Keep session as-is with audit reason</p>
+                </button>
+              </div>
+            </div>
+
+            {resolutionMode === 'MANUAL_OUT' && (
+              <div>
+                <label className="block text-gray-700 font-bold mb-1">Exit / Check-Out Time (24h) *</label>
+                <input
+                  type="time"
+                  value={manualOutTime}
+                  onChange={e => setManualOutTime(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-[#07563D]"
+                />
+              </div>
+            )}
+
             <div>
-              <label className="block text-gray-700 font-bold mb-1">Resolution & Fix Notes *</label>
+              <label className="block text-gray-700 font-bold mb-1">Audit Justification & Context *</label>
               <textarea
                 rows={3}
-                value={resolutionNotes}
-                onChange={e => setResolutionNotes(e.target.value)}
-                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-[#07563D]"
+                value={resolutionReason}
+                onChange={e => setResolutionReason(e.target.value)}
+                placeholder="State why this correction is being recorded and who authorized it..."
+                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-[#07563D]"
               />
             </div>
 
             <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
-              <Button variant="outline" size="sm" onClick={() => setIsResolveModalOpen(false)}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isSubmittingResolve}
+                onClick={() => setIsResolveModalOpen(false)}
+                className="text-xs font-semibold rounded-xl"
+              >
                 Cancel
               </Button>
-              <Button size="sm" variant="primary" onClick={handleConfirmResolve} className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold">
-                Mark Resolved & Recalculate Attendance
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* 5. ROUTE TO REGULARIZATION MODAL */}
-      {isRouteRegModalOpen && selectedException && (
-        <Modal
-          isOpen={isRouteRegModalOpen}
-          onClose={() => setIsRouteRegModalOpen(false)}
-          title="Route Exception to Regularization Desk"
-          size="md"
-        >
-          <div className="space-y-4 text-xs">
-            <div className="p-3 bg-purple-50 rounded-xl border border-purple-200">
-              <p className="font-bold text-purple-900">
-                Exception $\rightarrow$ Regularization: {selectedException.employee_name} ({selectedException.employee_code})
-              </p>
-              <p className="text-purple-700 mt-1">
-                This exception requires employee/manager attendance signoff to confirm actual check-in/out times.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-gray-700 font-bold mb-1">Requested Check-In</label>
-                <input
-                  type="text"
-                  value={reqIn}
-                  onChange={e => setReqIn(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg font-mono text-xs font-semibold"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-700 font-bold mb-1">Requested Check-Out</label>
-                <input
-                  type="text"
-                  value={reqOut}
-                  onChange={e => setReqOut(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg font-mono text-xs font-semibold"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-gray-700 font-bold mb-1">Reason & Context</label>
-              <textarea
-                rows={3}
-                value={regReason}
-                onChange={e => setRegReason(e.target.value)}
-                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
-              <Button variant="outline" size="sm" onClick={() => setIsRouteRegModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button size="sm" variant="primary" onClick={handleConfirmRouteToReg} className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold">
-                Create Regularization Claim
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={isSubmittingResolve || !resolutionReason.trim()}
+                onClick={handleConfirmResolve}
+                className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs rounded-xl"
+              >
+                {isSubmittingResolve ? <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
+                Save Non-Destructive Adjustment
               </Button>
             </div>
           </div>

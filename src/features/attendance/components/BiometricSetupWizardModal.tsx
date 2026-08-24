@@ -4,7 +4,7 @@
 // Step 1: Connection Method → Step 2: Location → Step 3: Device Info → Step 4: Test Socket → Step 5: Complete
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -31,6 +31,7 @@ import {
   Plus,
   Network,
   Check,
+  Building2,
 } from 'lucide-react';
 import {
   biometricGatewayService,
@@ -38,6 +39,8 @@ import {
   DiscoveredDevice,
   BiometricDevice,
 } from '../../../services/attendance/biometricGatewayService';
+import { organizationStructureService } from '../../../services/organization/organizationStructureService';
+import { hrEventBus } from '../../../services/hrEventBus';
 import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
 import { cn } from '../../../lib/utils';
 
@@ -68,19 +71,93 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
   // Step 1: Method
   const [connectionMethod, setConnectionMethod] = useState<'GATEWAY' | 'MANUAL'>('GATEWAY');
 
-  // Step 2: Location
+  // Step 2: Location & Branch
+  const [availableBranches, setAvailableBranches] = useState<string[]>([
+    'Bengaluru Tech Park Campus',
+    'Coimbatore Plant & Manufacturing Unit',
+    'Mumbai Corporate Towers',
+    'Delhi NCR Logistics Hub',
+    'Chennai Manufacturing Plant',
+  ]);
   const [branch, setBranch] = useState('Bengaluru Tech Park Campus');
+  const [isAddingCustomBranch, setIsAddingCustomBranch] = useState(false);
+  const [newBranchName, setNewBranchName] = useState('');
+  const [newBranchCity, setNewBranchCity] = useState('');
+  const [isSavingBranch, setIsSavingBranch] = useState(false);
+
   const [locationDesc, setLocationDesc] = useState('Main Reception Turnstile');
   const [departmentArea, setDepartmentArea] = useState('Entrance Lobby / Ground Floor');
+  const [directionMode, setDirectionMode] = useState<'CHECK_IN' | 'CHECK_OUT' | 'BOTH'>('BOTH');
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchBranches = async () => {
+      try {
+        const list = await organizationStructureService.getBranches();
+        if (isMounted && list && list.length > 0) {
+          const names = Array.from(
+            new Set([
+              ...list.map(b => b.name),
+              'Bengaluru Tech Park Campus',
+              'Coimbatore Plant & Manufacturing Unit',
+              'Mumbai Corporate Towers',
+              'Delhi NCR Logistics Hub',
+              'Chennai Manufacturing Plant',
+            ])
+          ).filter(Boolean);
+          setAvailableBranches(names);
+          if (!branch || !names.includes(branch)) {
+            setBranch(names[0]);
+          }
+        }
+      } catch (_) {}
+    };
+
+    fetchBranches();
+    const unsub = hrEventBus.on('organization.branch_created', fetchBranches);
+    return () => {
+      isMounted = false;
+      unsub();
+    };
+  }, [isOpen]);
+
+  const handleSaveCustomBranch = async () => {
+    if (!newBranchName.trim()) {
+      showToast('Please enter a branch name', 'error');
+      return;
+    }
+    setIsSavingBranch(true);
+    try {
+      const name = newBranchName.trim();
+      const code = `BR-${name.slice(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+      await organizationStructureService.createBranch({
+        company_id: 'comp-joy-corp',
+        name,
+        code,
+        city: newBranchCity.trim() || 'Coimbatore',
+        state: 'Tamil Nadu',
+      });
+      setAvailableBranches(prev => Array.from(new Set([name, ...prev])));
+      setBranch(name);
+      setNewBranchName('');
+      setNewBranchCity('');
+      setIsAddingCustomBranch(false);
+      showToast(`✓ Custom Branch "${name}" created and selected!`);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to create branch', 'error');
+    } finally {
+      setIsSavingBranch(false);
+    }
+  };
 
   // Step 3: Device Information
   const [vendor, setVendor] = useState<'ZKTeco' | 'Mantra' | 'eSSL' | 'Suprema' | 'Matrix COSEC'>('ZKTeco');
-  const [model, setModel] = useState('K2000 (ZLM60_TFT)');
+  const [model, setModel] = useState('ZKTeco Time Attendance Terminal');
   const [deviceType, setDeviceType] = useState<'Facial Recognition' | 'Fingerprint' | 'Turnstile Gate' | 'RFID Card'>('Fingerprint');
-  const [ipAddress, setIpAddress] = useState('192.168.1.58');
+  const [ipAddress, setIpAddress] = useState('');
   const [port, setPort] = useState(4370);
-  const [deviceName, setDeviceName] = useState('ZKTeco K2000 - Main Reception');
-  const [serialNumber, setSerialNumber] = useState('CGKK223862906');
+  const [deviceName, setDeviceName] = useState('ZKTeco Time Attendance - Main Reception');
+  const [serialNumber, setSerialNumber] = useState('');
 
   // Auto-Discovery Mode
   const [isAutoDiscovering, setIsAutoDiscovering] = useState(false);
@@ -108,9 +185,13 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
   const handleAutoDiscoverSubnet = async () => {
     setIsAutoDiscovering(true);
     try {
-      // 1. First probe current entered IP directly
+      const registeredDevices = biometricGatewayService.getBiometricDevices();
+      const registeredIps = new Set(registeredDevices.map(d => d.ip_address));
+      const registeredSerials = new Set(registeredDevices.map(d => d.serial_number));
+
+      // 1. If user typed an IP, probe it directly
       let directFound: DiscoveredDevice | null = null;
-      if (ipAddress) {
+      if (ipAddress && !registeredIps.has(ipAddress)) {
         const directProbe = await biometricGatewayService.probeSingleDevice(ipAddress, port || 4370);
         if (directProbe.success && directProbe.device) {
           directFound = directProbe.device;
@@ -118,15 +199,16 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
       }
 
       // 2. Perform network sweep
-      const devices = await biometricGatewayService.scanLocalNetwork('agent-default', 'auto', ipAddress);
+      const devices = await biometricGatewayService.scanLocalNetwork('agent-default', 'auto', ipAddress || '192.168.1.13');
       
-      const allFound = directFound && !devices.some(d => d.ip_address === directFound!.ip_address)
-        ? [directFound, ...devices]
-        : devices.length > 0
-        ? devices
-        : directFound
-        ? [directFound]
-        : [];
+      // Filter out already registered/connected devices
+      const unassignedDevices = devices.filter(
+        d => !registeredIps.has(d.ip_address) && !registeredSerials.has(d.serial_number) && !d.is_already_registered
+      );
+
+      const allFound = directFound && !unassignedDevices.some(d => d.ip_address === directFound!.ip_address)
+        ? [directFound, ...unassignedDevices]
+        : unassignedDevices;
 
       setDiscoveredDevices(allFound);
 
@@ -138,9 +220,13 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
         setModel(found.model);
         setSerialNumber(found.serial_number);
         setDeviceName(`${found.vendor} ${found.model} - Main Reception`);
-        showToast(`✓ Terminal Found Online: ${found.ip_address}:${found.port} (${found.latency_ms || 4}ms)!`);
+        showToast(`✓ New Terminal Discovered: ${found.ip_address}:${found.port} (${found.latency_ms || 4}ms)!`);
       } else {
-        showToast(`No terminal responded on local subnet or ${ipAddress}:${port}. Please verify device is powered on and gateway agent is active.`, 'info');
+        if (registeredDevices.length > 0 && devices.some(d => registeredIps.has(d.ip_address))) {
+          showToast(`All active devices on your network are already registered in WorkForceOS.`, 'info');
+        } else {
+          showToast(`No new terminal responded on local subnet. Verify device IP (e.g. 192.168.1.13) and ensure gateway agent is running.`, 'info');
+        }
       }
     } catch (err: any) {
       showToast(err.message || 'Auto-discovery error', 'error');
@@ -190,6 +276,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
       port,
       branch,
       location_description: `${locationDesc} (${departmentArea})`,
+      direction_mode: directionMode,
       gateway_agent_id: 'agent-default',
       registered_users_count: 0,
       sync_frequency_mins: 1,
@@ -330,7 +417,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
               </p>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div>
                 <label className="text-xs font-bold text-gray-700 block mb-1">Organization / Tenant</label>
                 <input
@@ -341,20 +428,93 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                 />
               </div>
 
+              {/* Dynamic Branch Selection & Inline Creator */}
               <div>
-                <label className="text-xs font-bold text-gray-700 block mb-1">Branch / Campus</label>
-                <select
-                  value={branch}
-                  onChange={e => setBranch(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
-                >
-                  <option value="Bengaluru Tech Park Campus">Bengaluru Tech Park Campus</option>
-                  <option value="Mumbai Corporate Towers">Mumbai Corporate Towers</option>
-                  <option value="Delhi NCR Logistics Hub">Delhi NCR Logistics Hub</option>
-                  <option value="Chennai Manufacturing Plant">Chennai Manufacturing Plant</option>
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-gray-700">Branch / Campus</label>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingCustomBranch(!isAddingCustomBranch)}
+                    className="text-[11px] font-bold text-[#07563D] hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    {isAddingCustomBranch ? 'Select from list' : '+ Add Custom Branch'}
+                  </button>
+                </div>
+
+                {!isAddingCustomBranch ? (
+                  <select
+                    value={branch}
+                    onChange={e => setBranch(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D] bg-white font-semibold text-gray-800"
+                  >
+                    {availableBranches.map(bName => (
+                      <option key={bName} value={bName}>
+                        {bName}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-2.5">
+                    <p className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-[#07563D]" />
+                      Add New Campus / Branch
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        placeholder="e.g. Coimbatore Plant & Unit 2"
+                        value={newBranchName}
+                        onChange={e => setNewBranchName(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSaveCustomBranch();
+                          }
+                        }}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 bg-white focus:outline-none focus:border-[#07563D]"
+                        autoFocus
+                      />
+                      <input
+                        type="text"
+                        placeholder="City (e.g. Coimbatore, Mumbai)"
+                        value={newBranchCity}
+                        onChange={e => setNewBranchCity(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSaveCustomBranch();
+                          }
+                        }}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 bg-white focus:outline-none focus:border-[#07563D]"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="primary"
+                        onClick={handleSaveCustomBranch}
+                        disabled={isSavingBranch || !newBranchName.trim()}
+                        className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold rounded-xl"
+                      >
+                        {isSavingBranch ? 'Saving...' : 'Save & Use Branch'}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsAddingCustomBranch(false)}
+                        className="text-xs rounded-xl"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
 
+              {/* Physical Location with Quick Suggestions */}
               <div>
                 <label className="text-xs font-bold text-gray-700 block mb-1">Physical Location</label>
                 <input
@@ -364,17 +524,67 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                   onChange={e => setLocationDesc(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
                 />
+                <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                  <span className="text-[10px] text-gray-400 font-semibold">Quick Suggestions:</span>
+                  {[
+                    'Main Reception Turnstile',
+                    'North Entry Turnstiles',
+                    'Plant Ingress Gate 1',
+                    'Server Room Bio-Door',
+                    'Canteen Entry Turnstile',
+                    'R&D Lab Ingress',
+                  ].map(loc => (
+                    <button
+                      key={loc}
+                      type="button"
+                      onClick={() => setLocationDesc(loc)}
+                      className={cn(
+                        "text-[10px] px-2 py-0.5 rounded-lg border transition-all cursor-pointer",
+                        locationDesc === loc
+                          ? "bg-emerald-50 text-[#07563D] border-emerald-200 font-bold"
+                          : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                      )}
+                    >
+                      {loc}
+                    </button>
+                  ))}
+                </div>
               </div>
 
+              {/* Department / Area with Quick Suggestions */}
               <div>
                 <label className="text-xs font-bold text-gray-700 block mb-1">Department / Area</label>
                 <input
                   type="text"
-                  placeholder="e.g. Ingress Turnstiles, Canteen, R&D Lab"
+                  placeholder="e.g. Entrance Lobby / Ground Floor, Manufacturing Bay"
                   value={departmentArea}
                   onChange={e => setDepartmentArea(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
                 />
+                <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                  <span className="text-[10px] text-gray-400 font-semibold">Quick Suggestions:</span>
+                  {[
+                    'Entrance Lobby / Ground Floor',
+                    'Security Checkpoint',
+                    'Manufacturing Bay A',
+                    'Executive Floor',
+                    'Warehouse Ingress',
+                  ].map(area => (
+                    <button
+                      key={area}
+                      type="button"
+                      onClick={() => setDepartmentArea(area)}
+                      className={cn(
+                        "text-[10px] px-2 py-0.5 rounded-lg border transition-all cursor-pointer",
+                        departmentArea === area
+                          ? "bg-emerald-50 text-[#07563D] border-emerald-200 font-bold"
+                          : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                      )}
+                    >
+                      {area}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -515,6 +725,77 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                   onChange={e => setDeviceName(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
                 />
+              </div>
+
+              {/* Explicit Device Direction / Turnstile Mode */}
+              <div className="sm:col-span-2 space-y-1.5 pt-1">
+                <label className="text-xs font-bold text-gray-800 block">
+                  Punch Direction & Attendance Role
+                </label>
+                <p className="text-[11px] text-gray-500 mb-2">
+                  Configure whether this terminal records Check-In, Check-Out, or Bidirectional punches.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div
+                    onClick={() => setDirectionMode('BOTH')}
+                    className={cn(
+                      "p-3 rounded-2xl border text-xs cursor-pointer transition-all space-y-1",
+                      directionMode === 'BOTH'
+                        ? "bg-purple-50/80 border-purple-300 ring-2 ring-purple-200"
+                        : "bg-gray-50/60 border-gray-200 hover:border-gray-300"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-purple-900 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-purple-600" />
+                        Bidirectional (BOTH)
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-purple-700 leading-tight">
+                      Standard standalone machine supporting both Entry and Exit punches.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setDirectionMode('CHECK_IN')}
+                    className={cn(
+                      "p-3 rounded-2xl border text-xs cursor-pointer transition-all space-y-1",
+                      directionMode === 'CHECK_IN'
+                        ? "bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-200"
+                        : "bg-gray-50/60 border-gray-200 hover:border-gray-300"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-emerald-900 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-600" />
+                        Check-In Only (IN)
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-emerald-700 leading-tight">
+                      Entry turnstile / Ingress gate. All punches open new attendance sessions.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setDirectionMode('CHECK_OUT')}
+                    className={cn(
+                      "p-3 rounded-2xl border text-xs cursor-pointer transition-all space-y-1",
+                      directionMode === 'CHECK_OUT'
+                        ? "bg-blue-50/80 border-blue-300 ring-2 ring-blue-200"
+                        : "bg-gray-50/60 border-gray-200 hover:border-gray-300"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-blue-900 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-blue-600" />
+                        Check-Out Only (OUT)
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-blue-700 leading-tight">
+                      Exit turnstile / Egress gate. Punches automatically close open sessions.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
 

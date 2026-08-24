@@ -163,6 +163,11 @@ class HREventBusService {
     };
   }
 
+  // Alias for subscribe
+  on(eventType: HREventPattern, listener: HREventListener): () => void {
+    return this.subscribe(eventType, listener);
+  }
+
   // Alias for publish
   emit(type: HREventType | string, data?: any, options?: { organizationId?: string; companyId?: string; actorId?: string }): void {
     this.publish(type as HREventType, data, options);

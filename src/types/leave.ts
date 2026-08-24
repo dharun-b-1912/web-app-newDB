@@ -62,18 +62,31 @@ export interface LeaveType {
   is_paid: boolean;
   is_active: boolean;
   gender_applicability: 'All' | 'Male' | 'Female' | 'Other';
-  employment_types: string[]; // e.g. ["Full Time", "Probation"]
+  employment_types: string[]; // e.g. ["Full Time", "Probation", "Contract"]
   min_service_days: number;
   max_days_per_request: number;
   min_days_per_request: number;
+  max_consecutive_days?: number;
+  min_notice_days?: number;
   allow_half_day: boolean;
   allow_hourly: boolean;
   allow_negative_balance: boolean;
+  max_negative_balance_days?: number;
+  max_negative_balance?: number;
   allow_carry_forward: boolean;
+  max_carry_forward_days?: number;
+  carry_forward_expiry_months?: number;
   allow_encashment: boolean;
+  min_balance_for_encashment?: number;
+  max_encashment_days?: number;
+  max_encashment_days_per_year?: number;
+  encashment_salary_component?: 'Basic' | 'Gross' | 'Fixed';
+  encashment_calculation_basis?: 'BasicSalary' | 'GrossSalary' | 'FixedRate' | string;
   attachment_required: boolean;
   attachment_mandatory_days_threshold?: number;
+  reason_required?: boolean;
   approval_required: boolean;
+  approval_levels?: number;
   allow_backdated: boolean;
   max_backdated_days?: number;
   allow_future: boolean;
@@ -83,6 +96,9 @@ export interface LeaveType {
   applicable_locations: string[]; // ["All"] or location IDs
   applicable_departments: string[]; // ["All"] or dept IDs
   applicable_employee_groups: string[];
+  applicable_designations?: string[];
+  applicable_grades?: string[];
+  probation_rule?: 'Ineligible' | 'AccrueOnly' | 'FullAccess';
   created_at: string;
   updated_at: string;
 }
@@ -126,10 +142,12 @@ export interface LeavePolicy {
   departments: string[];
   locations: string[];
   grades: string[];
+  designations?: string[];
   effective_from: string;
   effective_to?: string;
   status: 'Active' | 'Draft' | 'Archived';
   priority: number; // 1 = highest
+  precedence_rule?: 'HighPriorityWins' | 'MostSpecificWins';
   rules: LeavePolicyRule[];
   version: number;
   created_at: string;
@@ -272,11 +290,13 @@ export interface HolidayCalendar {
 
 export interface Holiday {
   id: string;
-  calendar_id: string;
+  calendar_id?: string;
   name: string;
   date: string;
-  type: 'Public' | 'National' | 'Regional' | 'Company' | 'Optional' | 'Restricted' | 'WorkingHoliday';
-  is_optional: boolean;
+  type: string;
+  is_optional?: boolean;
+  day_of_week?: string;
+  half_day?: boolean;
   description?: string;
 }
 
@@ -284,34 +304,38 @@ export interface CompOffGrant {
   id: string;
   employee_id: string;
   employee_name: string;
-  earned_date: string;
-  source: 'OvertimeWork' | 'HolidayWork' | 'WeeklyOffWork' | 'HRGrant';
-  hours_worked: number;
-  comp_off_days_earned: number;
+  earned_date?: string;
+  worked_date?: string;
+  source?: 'OvertimeWork' | 'HolidayWork' | 'WeeklyOffWork' | 'HRGrant' | string;
+  hours_worked?: number;
+  comp_off_days_earned?: number;
+  credit_days?: number;
   expiry_date: string;
-  status: 'Available' | 'Used' | 'Expired' | 'PendingApproval';
-  approved_by_name: string;
+  status: 'Available' | 'Used' | 'Expired' | 'PendingApproval' | 'Approved' | 'Pending';
+  approved_by_name?: string;
   reason: string;
   used_in_request_id?: string;
 }
 
 export interface LeaveEncashmentRequest {
   id: string;
-  request_code: string;
+  request_code?: string;
   employee_id: string;
   employee_name: string;
-  department_name: string;
+  department_name?: string;
   leave_type_id: string;
   leave_type_name: string;
-  available_balance: number;
-  requested_days: number;
-  eligible_days: number;
-  calculation_basis: 'BasicSalary' | 'GrossSalary' | 'FixedRate';
+  available_balance?: number;
+  requested_days?: number;
+  days_to_encash?: number;
+  eligible_days?: number;
+  calculation_basis?: 'BasicSalary' | 'GrossSalary' | 'FixedRate' | string;
   estimated_amount: number;
-  payroll_period: string; // e.g. "August 2026"
-  status: 'Submitted' | 'Approved' | 'Rejected' | 'ProcessedInPayroll';
+  payroll_period?: string;
+  payroll_status?: 'Pending' | 'Processed' | string;
+  status: 'Submitted' | 'Approved' | 'Rejected' | 'ProcessedInPayroll' | 'Pending';
   approved_by_name?: string;
-  submitted_at: string;
+  submitted_at?: string;
   notes?: string;
 }
 
@@ -321,14 +345,16 @@ export interface LeaveAdjustment {
   employee_name: string;
   leave_type_id: string;
   leave_type_name: string;
-  adjustment_type: 'Add' | 'Deduct' | 'Transfer' | 'Correction' | 'CarryForwardGrant';
+  adjustment_type: 'Add' | 'Deduct' | 'Transfer' | 'Correction' | 'CarryForwardGrant' | 'Grant' | 'Deduction';
   amount: number;
   reason: string;
-  reference_no: string;
-  effective_date: string;
-  created_by_name: string;
-  status: 'PendingApproval' | 'Approved' | 'Rejected';
-  created_at: string;
+  reference_no?: string;
+  effective_date?: string;
+  created_by_name?: string;
+  actor_name?: string;
+  supporting_doc_url?: string;
+  status?: 'PendingApproval' | 'Approved' | 'Rejected' | 'Pending';
+  created_at?: string;
 }
 
 export interface LeaveDelegation {
@@ -352,7 +378,9 @@ export interface AccrualExecutionLog {
   run_timestamp: string;
   employees_processed: number;
   total_leave_days_credited: number;
-  status: 'Completed' | 'Failed' | 'Partial';
+  status: 'Completed' | 'Failed' | 'Partial' | 'Reversed' | 'Success';
+  reversed_at?: string;
+  reversed_by?: string;
 }
 
 export interface LeaveException {
@@ -361,10 +389,17 @@ export interface LeaveException {
   severity: 'High' | 'Medium' | 'Low';
   title: string;
   description: string;
+  employee_id?: string;
   employee_name: string;
   department_name: string;
+  rule_violated?: string;
+  current_state?: string;
+  recommended_action?: string;
   flagged_at: string;
   status: 'Open' | 'Resolved';
+  resolved_by?: string;
+  resolved_at?: string;
+  resolution_notes?: string;
 }
 
 export interface LeaveAuditLog {
@@ -373,7 +408,7 @@ export interface LeaveAuditLog {
   actor_id: string;
   actor_name: string;
   action: string;
-  entity_type: 'LeaveRequest' | 'LeavePolicy' | 'LeaveAdjustment' | 'Encashment' | 'HolidayCalendar';
+  entity_type: 'LeaveType' | 'LeaveRequest' | 'LeavePolicy' | 'LeaveAdjustment' | 'Encashment' | 'HolidayCalendar' | 'AccrualBatch';
   entity_id: string;
   old_value?: string;
   new_value?: string;

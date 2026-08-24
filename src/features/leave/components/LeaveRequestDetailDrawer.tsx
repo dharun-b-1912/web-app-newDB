@@ -70,11 +70,11 @@ export const LeaveRequestDetailDrawer: React.FC<LeaveRequestDetailDrawerProps> =
                   variant={
                     request.status === 'Approved'
                       ? 'emerald'
-                      : request.status === 'Pending'
+                      : request.status === 'Pending' || request.status === 'Submitted'
                       ? 'amber'
                       : request.status === 'Rejected'
                       ? 'rose'
-                      : 'gray'
+                      : 'neutral'
                   }
                   size="md"
                 >
