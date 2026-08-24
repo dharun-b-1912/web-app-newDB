@@ -204,7 +204,7 @@ const AppContent: React.FC = () => {
       case 'rbac':
       case 'users':
       case 'permissions':
-      case 'policies':
+      case 'admin-policies':
       case 'templates':
       case 'integrations':
       case 'security':
@@ -309,7 +309,7 @@ const AppContent: React.FC = () => {
       case 'calendar':
       case 'holidays':
       case 'manual':
-      case 'reports':
+      case 'attendance-reports':
         return (
           <AttendanceModuleMaster
             currentSubPath={currentRoute}

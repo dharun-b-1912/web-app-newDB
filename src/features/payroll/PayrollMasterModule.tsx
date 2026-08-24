@@ -61,17 +61,17 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
   }, [initialTab]);
 
   const tabs = [
-    { id: 'dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard },
-    { id: 'salary', label: 'Salary Management', icon: Building2 },
-    { id: 'processing', label: 'Payroll Processing', icon: Play },
-    { id: 'earnings', label: 'Earnings', icon: TrendingUp },
-    { id: 'deductions', label: 'Deductions & LOP', icon: Minus },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'salary', label: 'Salary Structures', icon: Building2 },
     { id: 'statutory', label: 'Statutory Compliance', icon: ShieldCheck },
-    { id: 'documents', label: 'Payslips & Tax Docs', icon: FileText },
+    { id: 'earnings', label: 'Earnings & Claims', icon: TrendingUp },
+    { id: 'deductions', label: 'Deductions & LOP', icon: Minus },
+    { id: 'processing', label: 'Payroll Processing', icon: Play },
     { id: 'disbursement', label: 'Bank Disbursement', icon: CreditCard },
+    { id: 'documents', label: 'Payslips & Docs', icon: FileText },
+    { id: 'reports', label: 'Reports & ECR', icon: FileSpreadsheet },
     { id: 'fnf', label: 'Full & Final (F&F)', icon: UserMinus },
-    { id: 'reports', label: 'Payroll Reports', icon: FileSpreadsheet },
-    { id: 'settings', label: 'Payroll Settings', icon: Settings },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   const handleOpenPayslip = (employeeId: string) => {
@@ -104,8 +104,8 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
         </div>
       </div>
 
-      {/* Top Module Subtabs Navigation */}
-      <div className="bg-white p-2 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center gap-1.5 overflow-x-auto">
+      {/* Top Module Subtabs Navigation — Sleek Capsule Bar */}
+      <div className="bg-white/95 backdrop-blur-sm p-1.5 rounded-2xl border border-gray-200/90 shadow-2xs flex items-center gap-1 overflow-x-auto scrollbar-none">
         {tabs.map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -114,11 +114,13 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                "px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer",
-                isActive ? "bg-[#07563D] text-white shadow-xs" : "text-gray-600 hover:bg-gray-100"
+                "px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer select-none",
+                isActive
+                  ? "bg-[#07563D] text-white shadow-xs"
+                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-100/80"
               )}
             >
-              <Icon className="w-3.5 h-3.5" />
+              <Icon className="w-3.5 h-3.5 shrink-0" />
               <span>{tab.label}</span>
             </button>
           );
@@ -134,14 +136,27 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
           />
         )}
         {activeTab === 'salary' && <SalaryManagementView onOpenPayslip={handleOpenPayslip} />}
-        {activeTab === 'processing' && <PayrollProcessingView onOpenPayslip={handleOpenPayslip} />}
+        {activeTab === 'processing' && (
+          <PayrollProcessingView
+            onOpenPayslip={handleOpenPayslip}
+            onNavigateTab={tabKey => setActiveTab(tabKey)}
+          />
+        )}
         {activeTab === 'earnings' && <EarningsView />}
         {activeTab === 'deductions' && <DeductionsView />}
         {activeTab === 'statutory' && <StatutoryView />}
         {activeTab === 'documents' && <EmployeeDocumentsView onOpenPayslip={handleOpenPayslip} />}
-        {activeTab === 'disbursement' && <BankDisbursementView />}
+        {activeTab === 'disbursement' && (
+          <BankDisbursementView
+            onNavigateTab={tabKey => setActiveTab(tabKey)}
+          />
+        )}
         {activeTab === 'fnf' && <FnFSettlementView />}
-        {activeTab === 'reports' && <PayrollReportsView />}
+        {activeTab === 'reports' && (
+          <PayrollReportsView
+            onNavigateTab={tabKey => setActiveTab(tabKey)}
+          />
+        )}
         {activeTab === 'settings' && <PayrollSettingsView />}
       </div>
 

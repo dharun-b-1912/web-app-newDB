@@ -58,7 +58,7 @@ class ZKTecoDriver {
   constructor(ip, port = 4370) {
     this.ip = ip;
     this.port = Number(port) || 4370;
-    this.zk = ZKLib ? new ZKLib(this.ip, this.port, 10000, 4000) : null;
+    this.zk = ZKLib ? new ZKLib(this.ip, this.port, 5000, 4000) : null;
     this.isConnected = false;
   }
 
@@ -69,7 +69,6 @@ class ZKTecoDriver {
       this.isConnected = true;
       return true;
     } catch (err) {
-      console.error(`[DRIVER] Failed to connect to device ${this.ip}:${this.port}:`, err.message);
       this.isConnected = false;
       return false;
     }
@@ -77,7 +76,7 @@ class ZKTecoDriver {
 
   async disconnect() {
     try {
-      if (this.isConnected && this.zk) {
+      if (this.zk) {
         await this.zk.disconnect();
         this.isConnected = false;
       }
@@ -269,6 +268,9 @@ function getDatPunches() {
 // In-memory active enrollment sessions registry
 const activeEnrollmentSessions = new Map();
 const enrolledUsersRegistry = {};
+let cachedLivePunches = [];
+let lastPunchesFetchTime = 0;
+let isFetchingPunches = false;
 
 // HTTP Bridge Server
 const server = http.createServer(async (req, res) => {
@@ -525,11 +527,57 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 4. FETCH PUNCHES
+  // 4. FETCH PUNCHES (LIVE TCP SOCKET FROM TERMINAL + ATTLOG)
   if (pathname === '/punches') {
-    const punches = getDatPunches();
+    const targetIp = parsedUrl.query.ip || '192.168.1.58';
+    const targetPort = Number(parsedUrl.query.port) || 4370;
+
+    const now = Date.now();
+    if (now - lastPunchesFetchTime > 4000 && !isFetchingPunches) {
+      isFetchingPunches = true;
+      lastPunchesFetchTime = now;
+      (async () => {
+        try {
+          const driver = new ZKTecoDriver(targetIp, targetPort);
+          const connected = await driver.connect();
+          if (connected) {
+            try {
+              const res = await driver.zk.getAttendances();
+              if (res && res.data && Array.isArray(res.data)) {
+                cachedLivePunches = res.data.map(p => ({
+                  pin: String(p.deviceUserId || p.userId || p.pin),
+                  timestamp: p.recordTime ? new Date(p.recordTime).toISOString() : new Date().toISOString(),
+                  verifyType: p.verifyType === 1 ? 'Fingerprint' : p.verifyType === 15 ? 'Face' : 'Fingerprint',
+                  punchState: p.punchState === 1 ? 'Check-Out' : 'Check-In',
+                  deviceSerial: 'CGKK223862906',
+                  source: 'TCP_SOCKET_LIVE',
+                }));
+              }
+            } catch (_) {}
+            await driver.disconnect();
+          }
+        } catch (_) {} finally {
+          isFetchingPunches = false;
+        }
+      })();
+    }
+
+    const datPunches = getDatPunches();
+    const allPunches = [...cachedLivePunches, ...datPunches];
+
+    // Deduplicate by pin + timestamp
+    const seen = new Set();
+    const uniquePunches = [];
+    for (const p of allPunches) {
+      const key = `${p.pin}_${p.timestamp}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniquePunches.push(p);
+      }
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true, count: punches.length, deviceSerial: 'CGKK223862906', punches }));
+    res.end(JSON.stringify({ success: true, count: uniquePunches.length, deviceSerial: 'CGKK223862906', punches: uniquePunches }));
     return;
   }
 

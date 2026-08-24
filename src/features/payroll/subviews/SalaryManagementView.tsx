@@ -933,9 +933,10 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
                   <label className="block text-gray-700 font-bold mb-1">Rate / Value</label>
                   <input
                     type="number"
-                    value={compDefaultVal}
-                    onChange={e => setCompDefaultVal(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-mono font-bold"
+                    placeholder="0"
+                    value={compDefaultVal === 0 ? '' : compDefaultVal}
+                    onChange={e => setCompDefaultVal(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-mono font-bold placeholder:text-gray-400"
                   />
                 </div>
               </div>
@@ -1047,12 +1048,14 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
                 <label className="block text-gray-700 font-bold mb-1">Benchmark Annual CTC (₹)</label>
                 <input
                   type="number"
-                  value={strCtc}
+                  placeholder="0"
+                  value={strCtc === 0 ? '' : strCtc}
                   onChange={e => {
-                    setStrCtc(Number(e.target.value));
-                    setSandboxCtc(Number(e.target.value));
+                    const val = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0;
+                    setStrCtc(val);
+                    setSandboxCtc(val);
                   }}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono font-bold"
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono font-bold placeholder:text-gray-400"
                 />
               </div>
             </div>
@@ -1300,9 +1303,10 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
               <label className="block text-gray-700 font-bold mb-1">New Annual CTC (INR) *</label>
               <input
                 type="number"
-                value={revNewCtc}
-                onChange={e => setRevNewCtc(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono font-bold text-gray-900"
+                placeholder="0"
+                value={revNewCtc === 0 ? '' : revNewCtc}
+                onChange={e => setRevNewCtc(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono font-bold text-gray-900 placeholder:text-gray-400"
               />
               <span className="text-[10px] text-gray-400 mt-1 block">
                 Calculated Monthly Gross: ₹{Math.round(revNewCtc / 12).toLocaleString('en-IN')}/mo

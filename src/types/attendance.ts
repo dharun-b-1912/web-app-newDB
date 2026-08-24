@@ -15,7 +15,7 @@ export type AttendanceStatus =
 
 export type EventType = 'CHECK_IN' | 'CHECK_OUT' | 'BREAK_START' | 'BREAK_END' | 'OTHER';
 
-export type PunchSource = 'BIOMETRIC' | 'GPS' | 'WEB' | 'MOBILE' | 'MANUAL' | 'API' | 'IMPORT' | 'SYSTEM';
+export type PunchSource = 'BIOMETRIC' | 'GPS' | 'WEB' | 'MOBILE' | 'MANUAL' | 'API' | 'IMPORT' | 'SYSTEM' | 'HYBRID';
 
 export type RegularizationStatus = 'Draft' | 'Submitted' | 'Pending Manager' | 'Pending HR' | 'Approved' | 'Rejected' | 'Cancelled';
 
@@ -73,6 +73,8 @@ export interface AttendanceDaily {
   overtime_minutes: number;
   regularization_status?: RegularizationStatus;
   source: PunchSource;
+  check_in_source?: PunchSource;
+  check_out_source?: PunchSource;
   is_locked?: boolean;
   lock_period?: string;
   created_at: string;

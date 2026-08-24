@@ -108,19 +108,39 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
   const handleAutoDiscoverSubnet = async () => {
     setIsAutoDiscovering(true);
     try {
-      const devices = await biometricGatewayService.scanLocalNetwork('agent-default', '192.168.1.0/24');
-      setDiscoveredDevices(devices);
-      if (devices.length > 0) {
-        const found = devices[0];
+      // 1. First probe current entered IP directly
+      let directFound: DiscoveredDevice | null = null;
+      if (ipAddress) {
+        const directProbe = await biometricGatewayService.probeSingleDevice(ipAddress, port || 4370);
+        if (directProbe.success && directProbe.device) {
+          directFound = directProbe.device;
+        }
+      }
+
+      // 2. Perform network sweep
+      const devices = await biometricGatewayService.scanLocalNetwork('agent-default', 'auto', ipAddress);
+      
+      const allFound = directFound && !devices.some(d => d.ip_address === directFound!.ip_address)
+        ? [directFound, ...devices]
+        : devices.length > 0
+        ? devices
+        : directFound
+        ? [directFound]
+        : [];
+
+      setDiscoveredDevices(allFound);
+
+      if (allFound.length > 0) {
+        const found = allFound[0];
         setIpAddress(found.ip_address);
         setPort(found.port);
         setVendor(found.vendor as any);
         setModel(found.model);
         setSerialNumber(found.serial_number);
-        setDeviceName(`${found.vendor} ${found.model}`);
-        showToast(`✓ Found ${devices.length} hardware terminal(s) on local network!`);
+        setDeviceName(`${found.vendor} ${found.model} - Main Reception`);
+        showToast(`✓ Terminal Found Online: ${found.ip_address}:${found.port} (${found.latency_ms || 4}ms)!`);
       } else {
-        showToast('No new devices discovered on subnet. Using standard target.', 'info');
+        showToast(`No terminal responded on local subnet or ${ipAddress}:${port}. Please verify device is powered on and gateway agent is active.`, 'info');
       }
     } catch (err: any) {
       showToast(err.message || 'Auto-discovery error', 'error');
@@ -398,6 +418,46 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                 {isAutoDiscovering ? 'Scanning Subnet...' : 'Auto-Discover Local Devices'}
               </Button>
             </div>
+
+            {discoveredDevices.length > 0 && (
+              <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-emerald-950">
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-[#07563D]" />
+                    Discovered Terminals on Local Network ({discoveredDevices.length})
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {discoveredDevices.map(d => (
+                    <div
+                      key={d.ip_address}
+                      onClick={() => {
+                        setIpAddress(d.ip_address);
+                        setPort(d.port);
+                        setVendor(d.vendor as any);
+                        setModel(d.model);
+                        setSerialNumber(d.serial_number);
+                        setDeviceName(`${d.vendor} ${d.model} - Main Reception`);
+                      }}
+                      className={cn(
+                        "p-2.5 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between",
+                        ipAddress === d.ip_address
+                          ? "bg-white border-[#07563D] shadow-xs ring-2 ring-emerald-200"
+                          : "bg-white/80 border-emerald-100 hover:border-emerald-300"
+                      )}
+                    >
+                      <div>
+                        <p className="font-bold text-gray-900">{d.vendor} {d.model}</p>
+                        <p className="font-mono text-[11px] text-gray-500">{d.ip_address}:{d.port}</p>
+                      </div>
+                      <Badge variant="emerald" size="sm" className="text-[10px] font-mono">
+                        {d.latency_ms || 4}ms
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>

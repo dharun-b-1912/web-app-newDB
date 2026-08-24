@@ -288,7 +288,7 @@ export const attendanceApi = {
     }
   },
 
-  checkOut: (employeeId: string): AttendanceDaily | null => {
+  checkOut: (employeeId: string, source: PunchSource = 'WEB'): AttendanceDaily | null => {
     const list = loadStorage<AttendanceDaily[]>(STORAGE_KEY_DAILY, SEED_DAILY);
     const today = new Date().toISOString().split('T')[0];
     const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -302,6 +302,10 @@ export const attendanceApi = {
 
     const calculation = processAttendanceStatus(checkInMins, checkOutMins);
 
+    const checkInSource = record.check_in_source || record.source || 'BIOMETRIC';
+    const checkOutSource = source;
+    const overallSource: PunchSource = checkInSource === checkOutSource ? checkInSource : 'HYBRID';
+
     const updated: AttendanceDaily = {
       ...record,
       last_check_out: nowStr,
@@ -311,6 +315,9 @@ export const attendanceApi = {
       late_minutes: calculation.lateMinutes,
       early_checkout_minutes: calculation.earlyMinutes,
       overtime_minutes: calculation.overtimeMinutes,
+      check_in_source: checkInSource,
+      check_out_source: checkOutSource,
+      source: overallSource,
       updated_at: new Date().toISOString(),
     };
 
@@ -329,6 +336,7 @@ export const attendanceApi = {
             late_minutes: updated.late_minutes,
             early_checkout_minutes: updated.early_checkout_minutes,
             overtime_minutes: updated.overtime_minutes,
+            source: updated.source,
             updated_at: updated.updated_at,
           })
           .eq('id', updated.id)

@@ -250,9 +250,10 @@ export const DeductionsView: React.FC<DeductionsViewProps> = ({ initialSubTab })
                 <label className="block text-gray-700 font-bold mb-1">Principal Amount (INR) *</label>
                 <input
                   type="number"
-                  value={loanPrincipal}
-                  onChange={e => setLoanPrincipal(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono font-bold"
+                  placeholder="0"
+                  value={loanPrincipal === 0 ? '' : loanPrincipal}
+                  onChange={e => setLoanPrincipal(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono font-bold placeholder:text-gray-400"
                 />
               </div>
             </div>
@@ -261,9 +262,10 @@ export const DeductionsView: React.FC<DeductionsViewProps> = ({ initialSubTab })
               <label className="block text-gray-700 font-bold mb-1">Tenure (Months)</label>
               <input
                 type="number"
-                value={loanTenure}
-                onChange={e => setLoanTenure(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono font-bold"
+                placeholder="0"
+                value={loanTenure === 0 ? '' : loanTenure}
+                onChange={e => setLoanTenure(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono font-bold placeholder:text-gray-400"
               />
               <span className="text-[10px] text-gray-400 mt-1 block">
                 Estimated Monthly Deduction: ₹{Math.round(loanPrincipal / Math.max(1, loanTenure)).toLocaleString('en-IN')}/mo

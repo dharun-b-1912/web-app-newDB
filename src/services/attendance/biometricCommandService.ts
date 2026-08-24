@@ -82,6 +82,10 @@ function saveCommands(commands: BiometricDeviceCommand[], orgId = getActiveOrgId
   try {
     const tenantKey = `${STORAGE_KEY_COMMANDS}_${orgId}`;
     localStorage.setItem(tenantKey, JSON.stringify(commands));
+    hrEventBus.emit('biometric.command_updated', { organizationId: orgId });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('biometric:updated', { detail: { eventType: 'biometric.command_updated', orgId } }));
+    }
   } catch (err) {
     console.error('[BiometricCommandService] storage error:', err);
   }

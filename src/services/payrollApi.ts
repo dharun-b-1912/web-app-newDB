@@ -896,11 +896,43 @@ getPayslipForEmployee(employeeId: string, payPeriod = 'August 2026', tenantId = 
 // ==========================================================================
 
 getStatutoryConfig(tenantId = getActiveOrgId()): StatutoryConfig {
-  return getStore<StatutoryConfig>(STORAGE_KEYS.STATUTORY, { ...DEFAULT_STATUTORY, tenant_id: tenantId }, tenantId);
+  const tenantConfig = getStore<StatutoryConfig | null>(STORAGE_KEYS.STATUTORY, null, tenantId);
+  if (tenantConfig && tenantConfig.pf_employee_percent !== undefined) {
+    return tenantConfig;
+  }
+
+  // Global storage fallback in case tenant ID changed or was unkeyed
+  try {
+    const rawGlobal = localStorage.getItem(STORAGE_KEYS.STATUTORY);
+    if (rawGlobal) {
+      const parsed = JSON.parse(rawGlobal);
+      if (parsed && parsed.pf_employee_percent !== undefined) {
+        return { ...parsed, tenant_id: tenantId };
+      }
+    }
+  } catch (_) {}
+
+  return { ...DEFAULT_STATUTORY, tenant_id: tenantId };
 }
 
 saveStatutoryConfig(config: StatutoryConfig, tenantId = getActiveOrgId()): StatutoryConfig {
   setStore(STORAGE_KEYS.STATUTORY, config, tenantId);
+  try {
+    localStorage.setItem(STORAGE_KEYS.STATUTORY, JSON.stringify(config));
+    localStorage.setItem('workforce_statutory_rules_active', JSON.stringify(config));
+  } catch (_) {}
+
+  this.logAudit({
+    tenant_id: tenantId,
+    actor_name: 'HR Head',
+    actor_role: 'HR Head',
+    action_type: 'UPDATED',
+    entity_id: `statutory-${tenantId}`,
+    summary: `Updated statutory rules: EPF ${config.pf_employee_percent}%, ESIC ${config.esi_employee_percent}%, Ceiling ₹${config.pf_wage_ceiling}, PT ₹${config.pt_monthly_slab}`,
+    timestamp: new Date().toISOString(),
+  });
+
+  hrEventBus.emit('payroll.statutory_updated', { config });
   return config;
 }
 

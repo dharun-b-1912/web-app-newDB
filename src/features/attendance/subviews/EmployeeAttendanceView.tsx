@@ -660,7 +660,9 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
                               {record.first_check_in}
                             </div>
-                            <div className="text-[9px] text-gray-400 font-medium">{record.source || 'BIOMETRIC'}</div>
+                            <div className="text-[9px] text-gray-400 font-medium">
+                              {record.check_in_source || record.source || 'BIOMETRIC'}
+                            </div>
                           </div>
                         ) : (
                           <span className="text-gray-400">—</span>
@@ -672,7 +674,9 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                         {record.last_check_out ? (
                           <div>
                             <div className="font-mono font-bold text-gray-800">{record.last_check_out}</div>
-                            <div className="text-[9px] text-gray-400 font-medium">{record.source || 'BIOMETRIC'}</div>
+                            <div className="text-[9px] text-gray-400 font-medium">
+                              {record.check_out_source || (record.source === 'WEB' ? 'WEB' : 'WEB')}
+                            </div>
                           </div>
                         ) : record.first_check_in ? (
                           <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-semibold">
@@ -741,8 +745,15 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
                       {/* Source */}
                       <TableCell>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-semibold border border-gray-200">
-                          {record.source || 'BIOMETRIC'}
+                        <span className={cn(
+                          "text-[10px] font-mono px-2 py-0.5 rounded font-semibold border",
+                          record.source === 'HYBRID'
+                            ? "bg-purple-50 text-purple-700 border-purple-200"
+                            : record.source === 'WEB'
+                            ? "bg-blue-50 text-blue-700 border-blue-200"
+                            : "bg-gray-100 text-gray-700 border-gray-200"
+                        )}>
+                          {record.source || (record.check_out_source && record.check_out_source !== (record.check_in_source || 'BIOMETRIC') ? 'HYBRID' : 'BIOMETRIC')}
                         </span>
                       </TableCell>
 

@@ -136,19 +136,44 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
     elapsedMs: number;
   } | null>(null);
 
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const loadData = async () => {
-    await biometricGatewayService.syncLocalAgentStatus();
-    setAgents(biometricGatewayService.getGatewayAgents());
-    setDevices(biometricGatewayService.getBiometricDevices());
-    setPunches(biometricGatewayService.getRawPunches(50));
-    setCommands(biometricCommandService.getCommands());
-    setDiagnosticLogs(biometricGatewayService.getDiagnosticLogs());
+    try {
+      await biometricGatewayService.syncLocalAgentStatus();
+      setAgents(biometricGatewayService.getGatewayAgents());
+      setDevices(biometricGatewayService.getBiometricDevices());
+      setPunches(biometricGatewayService.getRawPunches(50));
+      setCommands(biometricCommandService.getCommands());
+      setDiagnosticLogs(biometricGatewayService.getDiagnosticLogs());
+    } catch (err) {
+      console.error('[BiometricIntegrationView] Error loading data:', err);
+    }
+  };
+
+  const scheduleUpdate = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      loadData();
+    }, 50);
   };
 
   const isPollingRef = useRef(false);
 
   useEffect(() => {
     loadData();
+
+    // 1. Subscribe to hrEventBus real-time events
+    const unsubBiometric = hrEventBus.subscribe('biometric.*', () => scheduleUpdate());
+    const unsubDevice = hrEventBus.subscribe('device.*', () => scheduleUpdate());
+    const unsubAttendance = hrEventBus.subscribe('attendance.*', () => scheduleUpdate());
+
+    // 2. Subscribe to window custom events and cross-tab storage events
+    const handleCustomUpdate = () => scheduleUpdate();
+    window.addEventListener('biometric:updated', handleCustomUpdate);
+    window.addEventListener('storage', handleCustomUpdate);
 
     const runPulse = async () => {
       if (isPollingRef.current) return;
@@ -162,16 +187,8 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
         for (const d of currentDevs) {
           if (d.ip_address) {
             try {
-              let probe = await biometricGatewayService.probeSingleDevice(d.ip_address, d.port);
-              if (!probe.success && d.ip_address !== '192.168.1.58') {
-                const fallbackProbe = await biometricGatewayService.probeSingleDevice('192.168.1.58', d.port || 4370);
-                if (fallbackProbe.success) {
-                  d.ip_address = '192.168.1.58';
-                  d.status = 'Online';
-                }
-              } else if (probe.success) {
-                d.status = 'Online';
-              }
+              const probe = await biometricGatewayService.probeSingleDevice(d.ip_address, d.port);
+              d.status = probe.success ? 'Online' : 'Offline';
             } catch (_) {}
           }
         }
@@ -182,8 +199,38 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
     };
 
     const interval = setInterval(runPulse, 6000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      unsubBiometric();
+      unsubDevice();
+      unsubAttendance();
+      window.removeEventListener('biometric:updated', handleCustomUpdate);
+      window.removeEventListener('storage', handleCustomUpdate);
+    };
   }, []);
+
+  // Multi-Device Master Synchronizer
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+
+  const handleSyncAllDevices = async () => {
+    setIsSyncingAll(true);
+    try {
+      const res = await biometricGatewayService.syncAllDevices();
+      if (res.successfulDevices > 0) {
+        showToast(`✓ Synchronized ${res.successfulDevices}/${res.totalDevices} terminal(s) & ${res.totalSyncedUsers} employee profiles effortlessly!`);
+      } else if (res.totalDevices === 0) {
+        showToast('No biometric devices registered yet. Click + Add Device to connect your terminal.');
+      } else {
+        showToast('Multi-device sync completed with warnings. Check device connectivity.', 'error');
+      }
+      loadData();
+    } catch (err: any) {
+      showToast(err.message || 'Sync failed', 'error');
+    } finally {
+      setIsSyncingAll(false);
+    }
+  };
 
   // Quick Socket Test
   const handleTestSocket = async (device: BiometricDevice, e?: React.MouseEvent) => {
@@ -347,6 +394,17 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
           <Button
             variant="outline"
             size="md"
+            onClick={handleSyncAllDevices}
+            disabled={isSyncingAll}
+            className="gap-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50/90 border-emerald-200 hover:bg-emerald-100 h-10 px-4 shadow-2xs"
+          >
+            <RefreshCw className={cn("w-4 h-4 text-[#07563D]", isSyncingAll && "animate-spin")} />
+            {isSyncingAll ? 'Syncing All Terminals...' : 'Sync All Devices'}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="md"
             onClick={() => {
               handleGeneratePairing();
               setIsPairingModalOpen(true);
@@ -464,10 +522,10 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Connected Devices</p>
-              <p className="text-2xl font-black text-gray-900 mt-1">{onlineDevicesCount}</p>
-              <p className="text-xs text-emerald-700 font-semibold mt-1 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                {onlineDevicesCount === devices.length ? 'All Online' : `${onlineDevicesCount}/${devices.length} Online`}
+              <p className="text-2xl font-black text-gray-900 mt-1">{devices.length}</p>
+              <p className={cn("text-xs font-semibold mt-1 flex items-center gap-1", devices.length === 0 ? "text-gray-500" : onlineDevicesCount === devices.length ? "text-emerald-700" : "text-amber-700")}>
+                {devices.length > 0 && <span className={cn("w-1.5 h-1.5 rounded-full", onlineDevicesCount === devices.length ? "bg-emerald-500 animate-pulse" : "bg-amber-500")} />}
+                {devices.length === 0 ? 'None Registered' : onlineDevicesCount === devices.length ? 'All Online' : `${onlineDevicesCount}/${devices.length} Online`}
               </p>
             </div>
             <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center">
@@ -482,12 +540,12 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
             <div>
               <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Punches Today</p>
               <p className="text-2xl font-black text-gray-900 mt-1">{totalPunchesToday}</p>
-              <p className="text-xs text-emerald-700 font-semibold mt-1">
-                ↑ 12% vs yesterday
+              <p className="text-xs text-gray-500 font-semibold mt-1">
+                {totalPunchesToday === 0 ? 'Awaiting punch events' : 'Real-time telemetry'}
               </p>
             </div>
             <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center">
-              <Radio className="w-5 h-5 text-blue-700 animate-pulse" />
+              <Radio className={cn("w-5 h-5 text-blue-700", totalPunchesToday > 0 && "animate-pulse")} />
             </div>
           </div>
         </Card>
@@ -499,7 +557,7 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
               <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Devices With Issues</p>
               <p className="text-2xl font-black text-gray-900 mt-1">{offlineDevicesCount}</p>
               <p className={cn("text-xs font-semibold mt-1", offlineDevicesCount === 0 ? "text-emerald-700" : "text-rose-700")}>
-                {offlineDevicesCount === 0 ? 'All Healthy' : `${offlineDevicesCount} Offline`}
+                {devices.length === 0 ? 'No issues' : offlineDevicesCount === 0 ? 'All Healthy' : `${offlineDevicesCount} Offline`}
               </p>
             </div>
             <div className={cn("w-10 h-10 rounded-xl border flex items-center justify-center", offlineDevicesCount === 0 ? "bg-emerald-50 border-emerald-200" : "bg-rose-50 border-rose-200")}>
@@ -530,8 +588,8 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
             <div>
               <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">LAN Gateways</p>
               <p className="text-2xl font-black text-gray-900 mt-1">{onlineAgentsCount} / {agents.length}</p>
-              <p className="text-xs text-emerald-700 font-semibold mt-1">
-                Zero-Port Forwarding
+              <p className={cn("text-xs font-semibold mt-1", agents.length === 0 ? "text-gray-500" : "text-emerald-700")}>
+                {agents.length === 0 ? 'No Gateways Active' : 'Zero-Port Forwarding'}
               </p>
             </div>
             <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center">
@@ -542,7 +600,42 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
       </div>
 
       {/* 3. DEVICE HEALTH & ATTENTION BANNER */}
-      {offlineDevicesCount === 0 && totalUnmappedUsers === 0 ? (
+      {devices.length === 0 ? (
+        <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+              <Radio className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs font-black text-gray-900">No Biometric Hardware Connected</p>
+              <p className="text-[11px] text-gray-600 mt-0.5">
+                Register a biometric terminal or pair an on-premises LAN Gateway daemon on your office network to stream live attendance punches.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                handleGeneratePairing();
+                setIsPairingModalOpen(true);
+              }}
+              className="text-xs font-bold rounded-xl border-blue-300 text-blue-900 bg-white hover:bg-blue-100"
+            >
+              Pair LAN Gateway
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsAddDeviceWizardOpen(true)}
+              className="text-xs font-bold rounded-xl bg-[#07563D] hover:bg-[#064e37] text-white"
+            >
+              + Add Device
+            </Button>
+          </div>
+        </div>
+      ) : offlineDevicesCount === 0 && totalUnmappedUsers === 0 ? (
         <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-emerald-100 text-[#07563D] flex items-center justify-center shrink-0">
@@ -551,7 +644,7 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
             <div>
               <p className="text-xs font-black text-gray-900">✓ All biometric devices are operational</p>
               <p className="text-[11px] text-gray-600 mt-0.5">
-                {devices.length} terminal(s) connected • {onlineAgentsCount}/{agents.length} gateways online • {totalPunchesToday} punches received today • Last event 14 seconds ago.
+                {devices.length} terminal(s) connected • {onlineAgentsCount}/{agents.length} gateways online • {totalPunchesToday} punches received today.
               </p>
             </div>
           </div>
@@ -857,45 +950,66 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
               </Button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {agents.map(ag => (
-                <div key={ag.id} className="p-4 rounded-2xl border border-gray-200/80 bg-gray-50/50 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
-                        <Server className="w-4 h-4" />
+            {agents.length === 0 ? (
+              <div className="text-center py-10 border-2 border-dashed border-gray-200 rounded-2xl p-6 bg-gray-50/40">
+                <Server className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                <h4 className="text-xs font-bold text-gray-900">No on-premises LAN gateways paired</h4>
+                <p className="text-[11px] text-gray-500 mt-0.5 max-w-sm mx-auto">
+                  Pair a local gateway daemon on your office network to stream live biometric events and manage ZKTeco / Mantra terminals.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    handleGeneratePairing();
+                    setIsPairingModalOpen(true);
+                  }}
+                  className="mt-3 gap-1 text-xs font-bold text-emerald-800 bg-white border-emerald-300 hover:bg-emerald-50 rounded-xl"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Pair Gateway
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {agents.map(ag => (
+                  <div key={ag.id} className="p-4 rounded-2xl border border-gray-200/80 bg-gray-50/50 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
+                          <Server className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-black text-gray-900">{ag.agent_name}</h4>
+                          <p className="text-[11px] text-gray-500">{ag.branch_name}</p>
+                        </div>
+                      </div>
+                      <Badge variant={ag.status === 'ONLINE' ? 'emerald' : 'rose'} size="sm" className="text-[10px]">
+                        ● {ag.status}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-gray-200/60">
+                      <div>
+                        <span className="text-gray-400 block text-[10px]">Local Endpoint</span>
+                        <span className="font-mono text-gray-800">{ag.local_ip}:11108</span>
                       </div>
                       <div>
-                        <h4 className="text-xs font-black text-gray-900">{ag.agent_name}</h4>
-                        <p className="text-[11px] text-gray-500">{ag.branch_name}</p>
+                        <span className="text-gray-400 block text-[10px]">Last Heartbeat</span>
+                        <span className="font-mono text-gray-800">{new Date(ag.last_heartbeat).toLocaleTimeString()}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block text-[10px]">Connected Terminals</span>
+                        <span className="font-bold text-gray-800">{devices.length} hardware units</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block text-[10px]">Daemon Driver</span>
+                        <span className="font-bold text-emerald-800">node-zklib + TCP</span>
                       </div>
                     </div>
-                    <Badge variant={ag.status === 'ONLINE' ? 'emerald' : 'rose'} size="sm" className="text-[10px]">
-                      ● {ag.status}
-                    </Badge>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-gray-200/60">
-                    <div>
-                      <span className="text-gray-400 block text-[10px]">Local Endpoint</span>
-                      <span className="font-mono text-gray-800">{ag.local_ip}:11108</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-400 block text-[10px]">Last Heartbeat</span>
-                      <span className="font-mono text-gray-800">{new Date(ag.last_heartbeat).toLocaleTimeString()}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-400 block text-[10px]">Connected Terminals</span>
-                      <span className="font-bold text-gray-800">{devices.length} hardware units</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-400 block text-[10px]">Daemon Driver</span>
-                      <span className="font-bold text-emerald-800">node-zklib + TCP</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

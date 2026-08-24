@@ -4,12 +4,13 @@
 // Overview, Machine Users, Live Attendance, Remote Commands, Health, Sync History, Diagnostics
 // ============================================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
 import { useToast } from '../../../components/ui/Toast';
+import { hrEventBus } from '../../../services/hrEventBus';
 import {
   ArrowLeft,
   RefreshCw,
@@ -92,33 +93,66 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [userMappingFilter, setUserMappingFilter] = useState<'ALL' | 'MAPPED' | 'UNMAPPED'>('ALL');
 
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const loadWorkspaceData = async () => {
-    const allDevs = biometricGatewayService.getBiometricDevices();
-    const updatedDev = allDevs.find(d => d.id === device.id) || device;
-    setLiveDevice(updatedDev);
+    try {
+      const allDevs = biometricGatewayService.getBiometricDevices();
+      const updatedDev = allDevs.find(d => d.id === device.id) || device;
+      setLiveDevice(updatedDev);
 
-    const devUsers = biometricGatewayService.getDeviceUsers(device.id).users;
-    setUsers(devUsers);
+      const devUsers = biometricGatewayService.getDeviceUsers(device.id).users;
+      setUsers(devUsers);
 
-    const devPunches = biometricGatewayService.getRawPunches(100).filter(p => p.device_id === device.id || p.device_serial === device.serial_number);
-    setPunches(devPunches);
+      const devPunches = biometricGatewayService.getRawPunches(100).filter(p => p.device_id === device.id || p.device_serial === device.serial_number);
+      setPunches(devPunches);
 
-    const devCmds = biometricCommandService.getCommands().filter(c => c.device_id === device.id);
-    setCommands(devCmds);
+      const devCmds = biometricCommandService.getCommands().filter(c => c.device_id === device.id);
+      setCommands(devCmds);
 
-    const history = biometricGatewayService.getDeviceSyncHistory(device.id);
-    setSyncHistory(history);
+      const history = biometricGatewayService.getDeviceSyncHistory(device.id);
+      setSyncHistory(history);
 
-    const logs = biometricGatewayService.getDiagnosticLogs().filter(l => l.device_id === device.id || l.ip_address === device.ip_address);
-    setDiagnosticLogs(logs);
+      const logs = biometricGatewayService.getDiagnosticLogs().filter(l => l.device_id === device.id || l.ip_address === device.ip_address);
+      setDiagnosticLogs(logs);
 
-    setAgents(biometricGatewayService.getGatewayAgents());
+      setAgents(biometricGatewayService.getGatewayAgents());
+    } catch (err) {
+      console.error('[BiometricDeviceWorkspace] loadWorkspaceData error:', err);
+    }
+  };
+
+  const scheduleWorkspaceUpdate = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      loadWorkspaceData();
+    }, 50);
   };
 
   useEffect(() => {
     loadWorkspaceData();
+
+    // Real-time event subscriptions
+    const unsubBiometric = hrEventBus.subscribe('biometric.*', () => scheduleWorkspaceUpdate());
+    const unsubDevice = hrEventBus.subscribe('device.*', () => scheduleWorkspaceUpdate());
+    const unsubAttendance = hrEventBus.subscribe('attendance.*', () => scheduleWorkspaceUpdate());
+
+    const handleCustomUpdate = () => scheduleWorkspaceUpdate();
+    window.addEventListener('biometric:updated', handleCustomUpdate);
+    window.addEventListener('storage', handleCustomUpdate);
+
     const interval = setInterval(loadWorkspaceData, 5000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      unsubBiometric();
+      unsubDevice();
+      unsubAttendance();
+      window.removeEventListener('biometric:updated', handleCustomUpdate);
+      window.removeEventListener('storage', handleCustomUpdate);
+    };
   }, [device.id]);
 
   const handleTestSocket = async () => {
@@ -137,6 +171,22 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
       showToast(err.message || 'Probe error', 'error');
     } finally {
       setIsTestingSocket(false);
+    }
+  };
+
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+
+  const handleSyncAll = async () => {
+    setIsSyncingAll(true);
+    try {
+      const res = await biometricGatewayService.syncAllDevices();
+      showToast(`✓ Synchronized ${res.successfulDevices}/${res.totalDevices} devices & ${res.totalSyncedUsers} user profiles!`);
+      loadWorkspaceData();
+      onDeviceUpdated();
+    } catch (err: any) {
+      showToast(err.message || 'Multi-device sync failed', 'error');
+    } finally {
+      setIsSyncingAll(false);
     }
   };
 
@@ -240,6 +290,17 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
             >
               <RefreshCw className={cn("w-3.5 h-3.5 text-[#07563D]", isTestingSocket && "animate-spin")} />
               {isTestingSocket ? 'Testing...' : 'Test Socket'}
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncAll}
+              disabled={isSyncingAll}
+              className="gap-1.5 rounded-xl text-xs font-bold text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5 text-purple-600", isSyncingAll && "animate-spin")} />
+              {isSyncingAll ? 'Syncing...' : 'Sync All Devices'}
             </Button>
 
             <Button

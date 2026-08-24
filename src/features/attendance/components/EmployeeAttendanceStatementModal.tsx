@@ -575,56 +575,55 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
             </div>
           </div>
 
-          {/* Header Controls & Actions */}
-          <div className="flex items-center gap-2">
+          {/* Header Controls & Actions — Polished Capsule Bar */}
+          <div className="flex items-center gap-2.5">
             {/* Previous / Next Employee Navigation */}
-            <div className="flex items-center bg-black/20 rounded-xl p-0.5 border border-white/15">
+            <div className="flex items-center bg-white/10 rounded-full px-2 py-0.5 border border-white/25 shadow-xs">
               <button
                 onClick={handlePrevEmployee}
                 disabled={currentEmpIndex <= 0}
                 title="Previous Employee (Left Arrow)"
-                className="p-1.5 hover:bg-white/20 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+                className="p-1 hover:bg-white/20 rounded-full disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer text-white"
               >
-                <ChevronLeft className="w-4 h-4 text-white" />
+                <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="text-[11px] font-mono px-2 font-semibold text-emerald-100">
+              <span className="text-xs font-mono px-2 font-bold text-white tracking-wide">
                 {currentEmpIndex + 1} / {employees.length || 1}
               </span>
               <button
                 onClick={handleNextEmployee}
                 disabled={currentEmpIndex >= employees.length - 1}
                 title="Next Employee (Right Arrow)"
-                className="p-1.5 hover:bg-white/20 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+                className="p-1 hover:bg-white/20 rounded-full disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer text-white"
               >
-                <ChevronRight className="w-4 h-4 text-white" />
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Print & Export Actions */}
-            <Button
-              size="xs"
-              variant="outline"
+            {/* Print Action */}
+            <button
               onClick={() => window.print()}
-              className="bg-white/10 text-white border-white/20 hover:bg-white/20 rounded-xl font-semibold hidden sm:flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 border border-white/25 text-white rounded-full text-xs font-bold transition-all hidden sm:flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
-              <Printer className="w-3.5 h-3.5" /> Print
-            </Button>
+              <Printer className="w-3.5 h-3.5" />
+              <span>Print</span>
+            </button>
 
-            <Button
-              size="xs"
-              variant="outline"
+            {/* Export Action */}
+            <button
               onClick={() => {
                 showToast(`✓ Exported ${empName} attendance statement to CSV.`);
               }}
-              className="bg-white/10 text-white border-white/20 hover:bg-white/20 rounded-xl font-semibold hidden sm:flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 border border-white/25 text-white rounded-full text-xs font-bold transition-all hidden sm:flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
-              <Download className="w-3.5 h-3.5" /> Export
-            </Button>
+              <Download className="w-3.5 h-3.5" />
+              <span>Export</span>
+            </button>
 
             {/* Close Button */}
             <button
               onClick={onClose}
-              className="p-2 hover:bg-white/20 rounded-xl transition-all text-white/80 hover:text-white cursor-pointer ml-1"
+              className="p-1.5 hover:bg-white/20 rounded-full transition-all text-white/90 hover:text-white cursor-pointer ml-1"
             >
               <X className="w-5 h-5" />
             </button>

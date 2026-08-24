@@ -127,6 +127,8 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
   const monthName = new Date(currentYear, currentMonthIndex, 1).toLocaleString('en-US', { month: 'long' });
   const monthKey = `${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}`;
   const daysInMonth = new Date(currentYear, currentMonthIndex + 1, 0).getDate();
+  const isCurrentMonth = currentYear === new Date().getFullYear() && currentMonthIndex === new Date().getMonth();
+  const currentDayLimit = isCurrentMonth ? new Date().getDate() : daysInMonth;
 
   const daysArray = useMemo(() => {
     return Array.from({ length: daysInMonth }, (_, i) => {
@@ -258,9 +260,6 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
   // Compute day-by-day attendance for each employee across the entire month
   const matrixData = useMemo<MatrixEmployeeRow[]>(() => {
-    const isCurrentMonth = currentYear === new Date().getFullYear() && currentMonthIndex === new Date().getMonth();
-    const currentDayLimit = isCurrentMonth ? new Date().getDate() : daysInMonth;
-
     return scopedEmployees.map(emp => {
       const empName = emp.display_name || emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
       const empCode = emp.employee_code || `WF-${emp.id}`;
@@ -429,7 +428,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
         },
       };
     });
-  }, [scopedEmployees, dailyRecords, daysArray, currentYear, currentMonthIndex, daysInMonth]);
+  }, [scopedEmployees, dailyRecords, daysArray, currentYear, currentMonthIndex, daysInMonth, currentDayLimit]);
 
   // Group matrix rows by department
   const departmentGroups = useMemo<Record<string, MatrixEmployeeRow[]>>(() => {
@@ -454,18 +453,27 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
     const totalScheduledElapsed = matrixData.reduce((acc, m) => acc + (m.totals.scheduledWorkDaysElapsed || 1), 0);
     const attendanceRate = totalScheduledElapsed > 0 ? Math.min(100, Math.round((totalPresentDays / totalScheduledElapsed) * 100)) : 0;
 
+    const avgPresentDays = (totalPresentDays / (totalEmployees || 1)).toFixed(1);
+    const avgAbsentDays = (totalAbsentDays / (totalEmployees || 1)).toFixed(1);
+    const avgPaidDays = (totalPaidDays / (totalEmployees || 1)).toFixed(1);
+    const elapsedDays = currentDayLimit;
+
     return {
       totalEmployees,
       totalPresentDays,
+      avgPresentDays,
       totalAbsentDays,
+      avgAbsentDays,
       totalLeaveDays,
       totalMissingPunches,
       totalOtMins,
       totalOtHours: formatMinutesToHoursStr(totalOtMins),
       totalPaidDays,
+      avgPaidDays,
+      elapsedDays,
       attendanceRate,
     };
-  }, [scopedEmployees, matrixData]);
+  }, [scopedEmployees, matrixData, currentDayLimit]);
 
   const handleExport = () => {
     showToast(`✓ Exported ${scopedEmployees.length} employee attendance records for ${monthName} ${currentYear}.`);
@@ -730,44 +738,47 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 py-2 px-3 bg-gray-50/90 border border-gray-200/90 rounded-lg text-xs">
         {/* Metric Strip */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-600">
-          <span className="flex items-center gap-1">
-            <span className="text-[10px] uppercase font-bold text-gray-400">Workforce</span>
-            <strong className="text-gray-900 font-semibold">{monthStats.totalEmployees}</strong>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase font-bold text-gray-400">Workforce:</span>
+            <strong className="text-gray-900 font-bold">{monthStats.totalEmployees} Staff</strong>
           </span>
           <span className="text-gray-300">|</span>
-          <span className="flex items-center gap-1">
-            <span className="text-[10px] uppercase font-bold text-gray-400">Present</span>
-            <strong className="text-emerald-700 font-semibold">{monthStats.totalPresentDays}</strong>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase font-bold text-gray-400">Present:</span>
+            <strong className="text-emerald-700 font-bold">{monthStats.avgPresentDays}d avg</strong>
+            <span className="text-[11px] text-gray-400 font-mono">({monthStats.totalPresentDays.toLocaleString('en-IN')})</span>
           </span>
           <span className="text-gray-300">|</span>
-          <span className="flex items-center gap-1">
-            <span className="text-[10px] uppercase font-bold text-gray-400">LOP</span>
-            <strong className={cn("font-semibold", monthStats.totalAbsentDays > 0 ? "text-rose-700 font-bold" : "text-gray-900")}>
-              {monthStats.totalAbsentDays}
+          <span className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase font-bold text-gray-400">LOP:</span>
+            <strong className={cn("font-bold", monthStats.totalAbsentDays > 0 ? "text-rose-700" : "text-gray-900")}>
+              {monthStats.avgAbsentDays}d avg
             </strong>
+            <span className="text-[11px] text-gray-400 font-mono">({monthStats.totalAbsentDays.toLocaleString('en-IN')})</span>
           </span>
           <span className="text-gray-300">|</span>
-          <span className="flex items-center gap-1">
-            <span className="text-[10px] uppercase font-bold text-gray-400">Leave</span>
-            <strong className="text-purple-700 font-semibold">{monthStats.totalLeaveDays}</strong>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase font-bold text-gray-400">Leave:</span>
+            <strong className="text-purple-700 font-bold">{monthStats.totalLeaveDays}d</strong>
           </span>
           <span className="text-gray-300">|</span>
-          <span className="flex items-center gap-1">
-            <span className="text-[10px] uppercase font-bold text-gray-400">OT</span>
-            <strong className="text-indigo-700 font-semibold">{monthStats.totalOtHours}</strong>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase font-bold text-gray-400">OT:</span>
+            <strong className="text-indigo-700 font-bold">{monthStats.totalOtHours}</strong>
           </span>
           <span className="text-gray-300">|</span>
           <span
-            className="flex items-center gap-1 cursor-help"
-            title={`Month-to-Date Paid Days (${monthStats.totalPaidDays}) = Present Days (${monthStats.totalPresentDays}) + Approved Leaves (${monthStats.totalLeaveDays}) + Paid Weekly Offs (Sat/Sun) - LOP (${monthStats.totalAbsentDays})`}
+            className="flex items-center gap-1.5 cursor-help"
+            title={`Month-to-Date Average: ${monthStats.avgPaidDays} paid days per employee out of ${monthStats.elapsedDays} elapsed days (Total ${monthStats.totalPaidDays.toLocaleString('en-IN')} workforce man-days credited).`}
           >
-            <span className="text-[10px] uppercase font-bold text-gray-400">Paid Days</span>
-            <strong className="text-gray-900 font-bold">{monthStats.totalPaidDays}</strong>
+            <span className="text-[10px] uppercase font-bold text-gray-400">Paid:</span>
+            <strong className="text-gray-900 font-black text-xs text-[#07563D]">{monthStats.avgPaidDays} / {monthStats.elapsedDays}d avg</strong>
+            <span className="text-[11px] text-gray-400 font-mono">({monthStats.totalPaidDays.toLocaleString('en-IN')} total)</span>
           </span>
           <span className="text-gray-300">|</span>
-          <span className="flex items-center gap-1">
-            <span className="text-[10px] uppercase font-bold text-gray-400">Rate</span>
-            <strong className="text-gray-900 font-semibold">{monthStats.attendanceRate}%</strong>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase font-bold text-gray-400">Rate:</span>
+            <strong className="text-gray-900 font-bold">{monthStats.attendanceRate}%</strong>
           </span>
 
           {monthStats.totalMissingPunches > 0 && (

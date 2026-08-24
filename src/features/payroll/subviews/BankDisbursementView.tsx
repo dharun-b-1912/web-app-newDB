@@ -37,8 +37,15 @@ import { useAuth } from '../../../hooks/useAuth';
 import { CreateDisbursementWizardModal } from '../components/CreateDisbursementWizardModal';
 import { DisbursementBatchDetailModal } from '../components/DisbursementBatchDetailModal';
 import { RecordBankConfirmationModal } from '../components/RecordBankConfirmationModal';
+import { PayrollWorkflowStepper } from '../components/PayrollWorkflowStepper';
 
-export const BankDisbursementView: React.FC = () => {
+interface BankDisbursementViewProps {
+  onNavigateTab?: (tabKey: string) => void;
+}
+
+export const BankDisbursementView: React.FC<BankDisbursementViewProps> = ({
+  onNavigateTab,
+}) => {
   const { showToast } = useToast();
   const { user } = useAuth();
 
@@ -121,6 +128,13 @@ export const BankDisbursementView: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* 0. Automated Workflow Lifecycle Stepper */}
+      <PayrollWorkflowStepper
+        currentStage={batches.some(b => b.status === 'Settled' || b.status === 'Reconciled') ? 6 : 5}
+        onNavigateStage={stageKey => {
+          if (onNavigateTab) onNavigateTab(stageKey);
+        }}
+      />
       
       {/* ─── 1. REDESIGNED OPERATIONAL HEADER ──────────────────────────── */}
       <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-200/80 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">

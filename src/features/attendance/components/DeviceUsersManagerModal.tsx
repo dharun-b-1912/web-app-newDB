@@ -156,18 +156,21 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
       }
     });
 
-    // Realtime Mapping updates without page refresh
-    const unsubMapCreated = hrEventBus.subscribe('biometric.mapping.created', (evt: any) => {
-      if (evt.deviceId === device.id) {
-        loadUsers();
-      }
+    // Realtime Mapping & device updates without page refresh
+    const unsubMapCreated = hrEventBus.subscribe('biometric.mapping.created', () => {
+      loadUsers();
     });
 
-    const unsubMapRemoved = hrEventBus.subscribe('biometric.mapping.removed', (evt: any) => {
-      if (evt.deviceId === device.id) {
-        loadUsers();
-      }
+    const unsubMapRemoved = hrEventBus.subscribe('biometric.mapping.removed', () => {
+      loadUsers();
     });
+
+    const unsubBioUpdated = hrEventBus.subscribe('biometric.updated', () => {
+      loadUsers();
+    });
+
+    const handleWindowUpdate = () => loadUsers();
+    window.addEventListener('biometric:updated', handleWindowUpdate);
 
     return () => {
       unsubStarted();
@@ -175,6 +178,8 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
       unsubCompleted();
       unsubMapCreated();
       unsubMapRemoved();
+      unsubBioUpdated();
+      window.removeEventListener('biometric:updated', handleWindowUpdate);
     };
   }, [isOpen, device]);
 
@@ -234,6 +239,21 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
       }
     } catch (err: any) {
       showToast(err.message || 'Failed to unmap user', 'error');
+    }
+  };
+
+  const [isPropagating, setIsPropagating] = useState(false);
+
+  const handlePropagateAllMappings = async () => {
+    setIsPropagating(true);
+    try {
+      const res = await biometricGatewayService.propagateMappingsAcrossDevices();
+      showToast(`✓ Propagated employee mappings across ${res.deviceCount} hardware terminal(s)!`);
+      loadUsers();
+    } catch (err: any) {
+      showToast(err.message || 'Propagation failed', 'error');
+    } finally {
+      setIsPropagating(false);
     }
   };
 
@@ -312,6 +332,16 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
             >
               <History className="w-3.5 h-3.5 mr-1" />
               {activeView === 'users' ? 'Sync History' : 'View Users'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePropagateAllMappings}
+              disabled={isPropagating}
+              className="text-xs rounded-xl border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100"
+            >
+              <RefreshCw className={cn('w-3.5 h-3.5 mr-1.5 text-purple-600', isPropagating && 'animate-spin')} />
+              {isPropagating ? 'Syncing...' : 'Sync All Terminals'}
             </Button>
             <Button
               variant="outline"

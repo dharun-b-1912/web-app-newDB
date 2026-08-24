@@ -26,20 +26,25 @@ import {
   Check,
   Users,
   HelpCircle,
+  CreditCard,
 } from 'lucide-react';
 import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { useAuth } from '../../../hooks/useAuth';
 
+import { PayrollWorkflowStepper } from '../components/PayrollWorkflowStepper';
+
 interface PayrollProcessingViewProps {
   initialSubTab?: string;
   onOpenPayslip?: (employeeId: string) => void;
+  onNavigateTab?: (tabKey: string) => void;
 }
 
 export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
   initialSubTab,
   onOpenPayslip,
+  onNavigateTab,
 }) => {
   const { showToast } = useToast();
   const { user } = useAuth();
@@ -134,16 +139,36 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
     }
   };
 
+  const [isFinalizeSuccessModalOpen, setIsFinalizeSuccessModalOpen] = useState(false);
+  const [finalizedBatchInfo, setFinalizedBatchInfo] = useState<{ runNumber: string; payPeriod: string; totalEmployees: number; totalNet: number } | null>(null);
+
   const handleFinalizeAndLock = (runId: string) => {
     try {
       const updated = payrollApi.finalizeAndLockPayroll(runId, user?.name || 'HR Administrator');
       loadRuns();
       setSelectedRun(updated);
+      setFinalizedBatchInfo({
+        runNumber: updated.run_number,
+        payPeriod: updated.pay_period,
+        totalEmployees: updated.total_employees,
+        totalNet: updated.total_net_payout,
+      });
+      setIsFinalizeSuccessModalOpen(true);
       showToast(`✓ Finalized & locked ${updated.pay_period} payroll. Bank payout batch generated!`);
     } catch (err: any) {
       showToast(err.message || 'Finalization failed', 'error');
     }
   };
+
+  const currentWorkflowStage: 1 | 2 | 3 | 4 | 5 | 6 = !selectedRun
+    ? 2
+    : selectedRun.status === 'Finalized'
+    ? 5
+    : selectedRun.status === 'Approved'
+    ? 4
+    : selectedRun.status === 'SubmittedForApproval'
+    ? 3
+    : 2;
 
   const [employees, setEmployees] = useState<any[]>([]);
   const [workforceFilter, setWorkforceFilter] = useState<'ALL' | 'DIRECT' | 'VENDOR'>('ALL');
@@ -191,6 +216,14 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* 0. Automated Workflow Lifecycle Stepper */}
+      <PayrollWorkflowStepper
+        currentStage={currentWorkflowStage}
+        onNavigateStage={stageKey => {
+          if (onNavigateTab) onNavigateTab(stageKey);
+        }}
+      />
+
       {/* 1. Subnav Ribbon */}
       <div className="bg-white p-2.5 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-1.5 overflow-x-auto">
@@ -213,15 +246,29 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
           })}
         </div>
 
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={handleStartRunWizard}
-          className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs"
-        >
-          <Play className="w-3.5 h-3.5 mr-1" />
-          Run August 2026 Payroll
-        </Button>
+        <div className="flex items-center gap-2">
+          {selectedRun && selectedRun.status === 'Finalized' && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onNavigateTab && onNavigateTab('disbursement')}
+              className="border-emerald-200 text-[#07563D] hover:bg-emerald-50 font-bold text-xs"
+            >
+              <CreditCard className="w-3.5 h-3.5 mr-1" />
+              Open Bank Disbursement Batch →
+            </Button>
+          )}
+
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={handleStartRunWizard}
+            className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs"
+          >
+            <Play className="w-3.5 h-3.5 mr-1" />
+            Run August 2026 Payroll
+          </Button>
+        </div>
       </div>
 
       {/* 2. SUBTAB: RUNS & HISTORY */}
@@ -677,6 +724,60 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                   {isLoading ? 'Computing Payroll...' : 'Execute Calculation'}
                 </Button>
               )}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Finalize Success & Bank Disbursement Redirection Modal */}
+      {isFinalizeSuccessModalOpen && finalizedBatchInfo && (
+        <Modal
+          isOpen={isFinalizeSuccessModalOpen}
+          onClose={() => setIsFinalizeSuccessModalOpen(false)}
+          title="✓ Payroll Finalized & Bank Payout Batch Generated"
+        >
+          <div className="space-y-4 text-xs">
+            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 space-y-2">
+              <div className="flex items-center gap-2 text-emerald-950 font-bold text-sm">
+                <CheckCircle2 className="w-5 h-5 text-[#07563D]" />
+                <span>{finalizedBatchInfo.payPeriod} Payroll is Locked & Ready for Disbursement</span>
+              </div>
+              <p className="text-emerald-800 text-[11px] leading-relaxed">
+                The calculation snapshot for <strong>{finalizedBatchInfo.totalEmployees} employees</strong> (Total Net: <span className="font-mono font-bold">₹{finalizedBatchInfo.totalNet.toLocaleString('en-IN')}</span>) has been permanently sealed. A corresponding <strong>Bank Disbursement Batch</strong> has been created in <em>Pending Checker Approval</em> status.
+              </p>
+            </div>
+
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-1.5">
+              <span className="font-bold text-gray-800 uppercase tracking-wider text-[10px] block">Next Operational Steps:</span>
+              <ul className="list-disc pl-4 space-y-1 text-gray-600 text-[11px]">
+                <li><strong>Maker Review:</strong> Bank batch instructions prepared by HR Maker.</li>
+                <li><strong>Dual-Control Checker Approval:</strong> Finance Head / Checker verifies totals and grants release.</li>
+                <li><strong>Bank Dispatch:</strong> Direct transmission or encrypted NEFT/RTGS format download.</li>
+                <li><strong>Settlement & Reconciliation:</strong> Zero-variance matching after bank debit.</li>
+              </ul>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-3 border-t border-gray-100">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsFinalizeSuccessModalOpen(false)}
+                className="w-full sm:w-auto"
+              >
+                Stay on Register
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setIsFinalizeSuccessModalOpen(false);
+                  if (onNavigateTab) onNavigateTab('disbursement');
+                }}
+                className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold w-full sm:w-auto"
+              >
+                <CreditCard className="w-3.5 h-3.5 mr-1" />
+                Proceed to Bank Disbursement (Dual Control) →
+              </Button>
             </div>
           </div>
         </Modal>
