@@ -35,7 +35,7 @@ const initialRequests: EssRequestItem[] = [
 ];
 
 const initialGoals: EssGoalItem[] = [
-  { id: 'g-1', title: 'Complete WorkForceOS Microservices Migration to Cloud Run', target_metric: '100% Services Deployed', progress_pct: 85, weight_pct: 40, due_date: '2026-09-30', status: 'In Progress' },
+  { id: 'g-1', title: 'Complete Joy PeopleHR Microservices Migration to Cloud Run', target_metric: '100% Services Deployed', progress_pct: 85, weight_pct: 40, due_date: '2026-09-30', status: 'In Progress' },
   { id: 'g-2', title: 'Achieve 99.9% System Uptime and Zero High-Severity Defect SLA', target_metric: '99.9% Uptime', progress_pct: 100, weight_pct: 30, due_date: '2026-08-31', status: 'Completed' },
 ];
 
@@ -46,7 +46,7 @@ const initialCourses: EssCourseItem[] = [
 
 const initialDocuments: EssDocumentItem[] = [
   { id: 'doc-1', title: 'Enterprise Employment Appointment Letter', category: 'Employment', date_uploaded: '2025-01-15', requires_acknowledgement: false, acknowledged: true, download_url: '#' },
-  { id: 'doc-2', title: 'WorkForceOS Information Security Policy 2026', category: 'Policy', date_uploaded: '2026-01-01', requires_acknowledgement: true, acknowledged: true, download_url: '#' },
+  { id: 'doc-2', title: 'Joy PeopleHR Information Security Policy 2026', category: 'Policy', date_uploaded: '2026-01-01', requires_acknowledgement: true, acknowledged: true, download_url: '#' },
 ];
 
 import { api } from './api';

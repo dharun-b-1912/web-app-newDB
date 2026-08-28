@@ -10,6 +10,7 @@ import { BankDisbursementView } from './subviews/BankDisbursementView';
 import { FnFSettlementView } from './subviews/FnFSettlementView';
 import { PayrollReportsView } from './subviews/PayrollReportsView';
 import { PayrollSettingsView } from './subviews/PayrollSettingsView';
+import { ExpenseClaimsView } from './subviews/ExpenseClaimsView';
 import { PayslipModal } from './components/PayslipModal';
 import { payrollApi } from '../../services/payrollApi';
 import { Payslip } from '../../types/payroll';
@@ -27,6 +28,7 @@ import {
   FileSpreadsheet,
   Settings,
   CreditCard,
+  Receipt,
 } from 'lucide-react';
 
 interface PayrollMasterModuleProps {
@@ -36,9 +38,10 @@ interface PayrollMasterModuleProps {
 const resolveTabId = (route?: string): string => {
   if (!route || route === 'payroll') return 'dashboard';
   const clean = route.replace(/^payroll-/, '');
+  if (clean === 'claims' || clean === 'expense-claims' || clean === 'reimbursements') return 'claims';
   if (clean === 'salary' || clean === 'structures' || clean === 'components' || clean === 'employee-salary' || clean === 'revisions') return 'salary';
   if (clean === 'runs' || clean === 'processing' || clean === 'calendar' || clean === 'input' || clean === 'preview' || clean === 'approval' || clean === 'finalization') return 'processing';
-  if (clean === 'earnings' || clean === 'overtime' || clean === 'incentives' || clean === 'bonus' || clean === 'reimbursements') return 'earnings';
+  if (clean === 'earnings' || clean === 'overtime' || clean === 'incentives' || clean === 'bonus') return 'earnings';
   if (clean === 'deductions' || clean === 'lop' || clean === 'loans' || clean === 'advance') return 'deductions';
   if (clean === 'statutory' || clean === 'pf' || clean === 'esi' || clean === 'pt' || clean === 'tds' || clean === 'lwf' || clean === 'gratuity') return 'statutory';
   if (clean === 'documents' || clean === 'payslips' || clean === 'tax-docs' || clean === 'form16') return 'documents';
@@ -64,7 +67,8 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'salary', label: 'Salary Structures', icon: Building2 },
     { id: 'statutory', label: 'Statutory Compliance', icon: ShieldCheck },
-    { id: 'earnings', label: 'Earnings & Claims', icon: TrendingUp },
+    { id: 'claims', label: 'Expense Claims & Approvals', icon: Receipt },
+    { id: 'earnings', label: 'Earnings & Overtime', icon: TrendingUp },
     { id: 'deductions', label: 'Deductions & LOP', icon: Minus },
     { id: 'processing', label: 'Payroll Processing', icon: Play },
     { id: 'disbursement', label: 'Bank Disbursement', icon: CreditCard },
@@ -86,13 +90,13 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
       <div className="bg-gradient-to-r from-[#07563D] to-[#0a7352] p-6 rounded-3xl text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-emerald-200 text-xs font-bold uppercase tracking-wider">
-            <span>WorkForceOS Enterprise Suite</span>
+            <span>Joy PeopleHR Enterprise Suite</span>
             <span>•</span>
             <span>Payroll Engine v4.0</span>
           </div>
           <h1 className="text-2xl font-black tracking-tight mt-1">Payroll Master Module</h1>
           <p className="text-xs text-emerald-100/80 mt-1 max-w-2xl">
-            Centralized salary computation, statutory EPF/ESIC/TDS deductions, LOP calculations, digital payslips, Form 16, and F&F exit settlement engine.
+            Centralized salary computation, statutory EPF/ESIC/TDS deductions, LOP calculations, expense reimbursements, digital payslips, and F&F settlement.
           </p>
         </div>
 
@@ -136,6 +140,7 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
           />
         )}
         {activeTab === 'salary' && <SalaryManagementView onOpenPayslip={handleOpenPayslip} />}
+        {activeTab === 'claims' && <ExpenseClaimsView />}
         {activeTab === 'processing' && (
           <PayrollProcessingView
             onOpenPayslip={handleOpenPayslip}

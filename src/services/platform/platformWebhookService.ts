@@ -1,6 +1,6 @@
 // src/services/platform/platformWebhookService.ts
 // ============================================================
-// WorkForceOS — Outbound Webhooks & HMAC Delivery Service
+// Joy PeopleHR — Outbound Webhooks & HMAC Delivery Service
 // ============================================================
 
 import { WebhookEndpoint, WebhookDeliveryItem } from '../../types/platformAdmin';

@@ -1,6 +1,6 @@
 // src/lib/query/platformQueryClient.ts
 // ============================================================
-// WorkForceOS — Production Query Cache & Server State Engine
+// Joy PeopleHR — Production Query Cache & Server State Engine
 // ============================================================
 // Features: Stale-While-Revalidate, Request Cancellation, Race Condition Protection,
 // Zero Duplicate Fetches, Deterministic Keys, and Incremental Realtime Invalidation.

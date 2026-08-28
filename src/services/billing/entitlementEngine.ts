@@ -1,6 +1,6 @@
 // src/services/billing/entitlementEngine.ts
 // ============================================================
-// WorkForceOS — Centralized Dynamic Entitlement Resolution Engine
+// Joy PeopleHR — Centralized Dynamic Entitlement Resolution Engine
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';

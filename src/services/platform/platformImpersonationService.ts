@@ -1,6 +1,6 @@
 // src/services/platform/platformImpersonationService.ts
 // ============================================================
-// WorkForceOS — Controlled Impersonation Session Service
+// Joy PeopleHR — Controlled Impersonation Session Service
 // ============================================================
 
 import { ImpersonationSession, SupportAccessRequest } from '../../types/platformAdmin';

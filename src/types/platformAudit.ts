@@ -1,6 +1,6 @@
 // src/types/platformAudit.ts
 // ============================================================
-// WorkForceOS — Forensic Immutable Audit System Types
+// Joy PeopleHR — Forensic Immutable Audit System Types
 // ============================================================
 
 export type AuditEventCategory =

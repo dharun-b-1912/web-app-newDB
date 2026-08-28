@@ -39,11 +39,14 @@ export const PeopleView: React.FC = () => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   const loadData = async () => {
-    let data = await api.getEmployees({ companyId: activeCompany?.id });
-    if (!data || data.length === 0) {
-      data = await api.getEmployees();
+    try {
+      const data = await api.getEmployees();
+      if (data && data.length > 0) {
+        setEmployees(data);
+      }
+    } catch (err) {
+      console.warn('[PeopleView] Failed to load employees:', err);
     }
-    setEmployees(data);
   };
 
   useEffect(() => {
@@ -51,18 +54,40 @@ export const PeopleView: React.FC = () => {
   }, [activeCompany?.id]);
 
   useEffect(() => {
-    const unsub = hrEventBus.subscribe('employee.*', () => {
-      loadData();
+    const unsub = hrEventBus.subscribe('employee.*', (payload: any) => {
+      if (!payload) return;
+      const { type, data } = payload;
+
+      if (type === 'employee.created' && data && data.id) {
+        setEmployees((prev) => {
+          if (prev.some((e) => e.id === data.id)) {
+            return prev.map((e) => (e.id === data.id ? { ...e, ...data } : e));
+          }
+          return [data, ...prev];
+        });
+      } else if (type === 'employee.updated' && data && data.id) {
+        setEmployees((prev) => prev.map((e) => (e.id === data.id ? { ...e, ...data } : e)));
+        setSelectedEmployee((prev) => (prev?.id === data.id ? { ...prev, ...data } : prev));
+      } else if (type === 'employee.deleted' && data && data.id) {
+        setEmployees((prev) => prev.filter((e) => e.id !== data.id));
+      } else if (type === 'employee.synced' && Array.isArray(data) && data.length > 0) {
+        setEmployees(data);
+      } else {
+        loadData();
+      }
     });
     return () => unsub();
   }, [activeCompany?.id]);
 
   const handleEmployeeCreated = (newEmp: Employee) => {
-    setEmployees((prev) => [newEmp, ...prev]);
+    setEmployees((prev) => {
+      if (prev.some((e) => e.id === newEmp.id)) return prev;
+      return [newEmp, ...prev];
+    });
   };
 
   const handleEmployeeUpdated = (updatedEmp: Employee) => {
-    setEmployees((prev) => prev.map((e) => (e.id === updatedEmp.id ? updatedEmp : e)));
+    setEmployees((prev) => prev.map((e) => (e.id === updatedEmp.id ? { ...e, ...updatedEmp } : e)));
     setSelectedEmployee(updatedEmp);
   };
 

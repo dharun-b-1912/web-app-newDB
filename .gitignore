@@ -50,3 +50,10 @@ yarn-error.log*
 
 # Vite cache
 .vite/
+
+# Large Archives
+*.rar
+*.zip
+*.7z
+*.tar.gz
+

@@ -20,6 +20,8 @@ import {
   Send,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import { hrEventBus } from '../../../services/hrEventBus';
+import { useAuth } from '../../../hooks/useAuth';
 
 interface ApprovalCenterViewProps {
   onOpenRequestDetails?: (req: LeaveRequest) => void;
@@ -34,16 +36,26 @@ export const ApprovalCenterView: React.FC<ApprovalCenterViewProps> = ({ onOpenRe
   const [delegateToUser, setDelegateToUser] = useState('Priya Sundaram (Lead HRBP)');
   const [delegateUntil, setDelegateUntil] = useState('2026-08-30');
 
-  useEffect(() => {
+  const loadData = () => {
     setRequests(leaveApi.getLeaveRequests());
+  };
+
+  useEffect(() => {
+    loadData();
+    const unsub = hrEventBus.subscribe('leave.*', () => loadData());
+    return () => unsub();
   }, []);
 
   const pendingRequests = requests.filter(r => r.status === 'Pending' || r.status === 'Submitted');
   const approvedRequests = requests.filter(r => r.status === 'Approved');
   const rejectedRequests = requests.filter(r => r.status === 'Rejected');
 
-  // Simulated escalated requests (e.g., pending > 48 hours or flagged)
-  const escalatedRequests = pendingRequests.filter((_, idx) => idx % 2 === 0);
+  // Real escalated requests: Pending > 48 hours
+  const now = new Date().getTime();
+  const escalatedRequests = pendingRequests.filter(r => {
+    const subTime = new Date(r.submitted_at || r.created_at || '').getTime();
+    return subTime > 0 && (now - subTime) > 48 * 60 * 60 * 1000;
+  });
 
   const displayedRequests = (
     activeQueueTab === 'pending'
@@ -72,9 +84,14 @@ export const ApprovalCenterView: React.FC<ApprovalCenterViewProps> = ({ onOpenRe
     }
   };
 
+  const { user } = useAuth();
+  const approverDisplayName = user?.name || 'HR Manager';
+
   const handleInlineApprove = (reqId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    leaveApi.approveLeaveRequest(reqId, 'HR Approver', 'Approved via Approval Desk');
+    const req = requests.find(r => r.id === reqId);
+    const targetApprover = user?.name || req?.manager_name || 'Reporting Manager';
+    leaveApi.approveLeaveRequest(reqId, targetApprover, 'Approved via Approval Desk');
     setRequests(leaveApi.getLeaveRequests());
     setSelectedIds(prev => prev.filter(i => i !== reqId));
   };
@@ -83,7 +100,9 @@ export const ApprovalCenterView: React.FC<ApprovalCenterViewProps> = ({ onOpenRe
     e.stopPropagation();
     const reason = prompt('Please enter rejection reason:');
     if (reason) {
-      leaveApi.rejectLeaveRequest(reqId, 'HR Approver', reason);
+      const req = requests.find(r => r.id === reqId);
+      const targetApprover = user?.name || req?.manager_name || 'Reporting Manager';
+      leaveApi.rejectLeaveRequest(reqId, targetApprover, reason);
       setRequests(leaveApi.getLeaveRequests());
       setSelectedIds(prev => prev.filter(i => i !== reqId));
     }
@@ -93,7 +112,9 @@ export const ApprovalCenterView: React.FC<ApprovalCenterViewProps> = ({ onOpenRe
     if (selectedIds.length === 0) return;
     if (confirm(`Approve all ${selectedIds.length} selected requests?`)) {
       selectedIds.forEach(id => {
-        leaveApi.approveLeaveRequest(id, 'HR Admin (Bulk Action)', 'Bulk approved via work queue');
+        const req = requests.find(r => r.id === id);
+        const targetApprover = user?.name || req?.manager_name || 'Reporting Manager';
+        leaveApi.approveLeaveRequest(id, targetApprover, 'Bulk approved via work queue');
       });
       setRequests(leaveApi.getLeaveRequests());
       setSelectedIds([]);

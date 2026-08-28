@@ -1,6 +1,6 @@
 // src/features/platform/components/billing/CreateCreditNoteModal.tsx
 // ============================================================
-// WorkForceOS — Issue Credit Note Modal
+// Joy PeopleHR — Issue Credit Note Modal
 // ============================================================
 
 import React, { useState } from 'react';

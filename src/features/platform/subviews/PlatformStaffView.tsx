@@ -1,6 +1,6 @@
 // src/features/platform/subviews/PlatformStaffView.tsx
 // ============================================================
-// WorkForceOS — Platform Admin Assistant & Delegated IAM Console
+// Joy PeopleHR — Platform Admin Assistant & Delegated IAM Console
 // ============================================================
 
 import React, { useState, useEffect, useMemo } from 'react';

@@ -1,6 +1,6 @@
 // src/services/platform/platformSubscriptionService.ts
 // ============================================================
-// WorkForceOS — Tenant Subscription & Customer Contracts Lifecycle Service
+// Joy PeopleHR — Tenant Subscription & Customer Contracts Lifecycle Service
 // ============================================================
 
 import { platformAuditService } from './platformAuditService';

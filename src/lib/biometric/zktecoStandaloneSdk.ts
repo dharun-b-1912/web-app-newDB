@@ -1,6 +1,6 @@
 // src/lib/biometric/zktecoStandaloneSdk.ts
 // ============================================================================
-// WorkForceOS — ZKTeco Standalone SDK & Push Protocol Binary Engine
+// Joy PeopleHR — ZKTeco Standalone SDK & Push Protocol Binary Engine
 // Compliant with official ZKTeco Standalone SDK & Push/ADMS Communication Specs
 // ============================================================================
 

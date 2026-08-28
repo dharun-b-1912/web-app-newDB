@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Cpu,
   RefreshCw,
@@ -12,9 +12,15 @@ import {
   Server,
   Zap,
   Activity,
+  Search,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { useToast } from '../../../components/ui/Toast';
+import { biometricCommandService, getActiveOrgId } from '../../../services/attendance/biometricCommandService';
+import { biometricGatewayService } from '../../../services/attendance/biometricGatewayService';
+import { api } from '../../../services/api';
+import { Badge } from '../../../components/ui/Badge';
+import { Button } from '../../../components/ui/Button';
 
 export interface ClockingDevicesChannelViewProps {
   currentTab?: string;
@@ -40,19 +46,25 @@ export const ClockingDevicesChannelView: React.FC<ClockingDevicesChannelViewProp
       : 'devices'
   );
 
-  const devices = [
-    { id: 'dev-01', name: 'ZKTeco BioStation Pro 3', serial: 'ZKT-98210384', location: 'Coimbatore HQ · Main Entrance', ip: '192.168.1.102', port: 4370, protocol: 'ADMS / PUSH', status: 'ONLINE', registeredUsers: 142, lastSync: '10s ago', pendingPunches: 0 },
-    { id: 'dev-02', name: 'eSSL SilkBio 101TC', serial: 'SSL-77382910', location: 'Chennai Factory · Production Floor', ip: '10.20.1.55', port: 5005, protocol: 'PUSH HTTP', status: 'ONLINE', registeredUsers: 310, lastSync: '30s ago', pendingPunches: 0 },
-    { id: 'dev-03', name: 'Realtime T502 Multi-Biometric', serial: 'RTM-44910283', location: 'Hosur Plant · Warehouse Gate', ip: '10.30.1.80', port: 4370, protocol: 'ADMS / PUSH', status: 'ONLINE', registeredUsers: 84, lastSync: '1 min ago', pendingPunches: 0 },
-    { id: 'dev-04', name: 'Matrix COSEC VEGA Door Kiosk', serial: 'MTX-11928374', location: 'Bangalore Office · Server Room', ip: '12.97.2.14', port: 8080, protocol: 'API WEBHOOK', status: 'ONLINE', registeredUsers: 25, lastSync: 'Just now', pendingPunches: 0 },
-  ];
+  const [devices, setDevices] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [punches, setPunches] = useState<any[]>([]);
 
-  const rawLogs = [
-    { id: 'log-1', device_name: 'ZKTeco BioStation Pro 3', user_pin: '1001', employee_name: 'Hari Priya', raw_time: '2026-08-20 09:04:12', verify_mode: 'Fingerprint (Sensor 1)', in_out_mode: 'CHECK_IN', sync_status: 'NORMALIZED' },
-    { id: 'log-2', device_name: 'ZKTeco BioStation Pro 3', user_pin: '1000', employee_name: 'Dharun Joy', raw_time: '2026-08-20 08:58:30', verify_mode: 'Fingerprint (Sensor 1)', in_out_mode: 'CHECK_IN', sync_status: 'NORMALIZED' },
-    { id: 'log-3', device_name: 'eSSL SilkBio 101TC', user_pin: '1002', employee_name: 'Karthik Natarajan', raw_time: '2026-08-20 09:12:05', verify_mode: 'RFID Card (ID-8839)', in_out_mode: 'CHECK_IN', sync_status: 'NORMALIZED' },
-    { id: 'log-4', device_name: 'ZKTeco BioStation Pro 3', user_pin: '1003', employee_name: 'Deepa Subramanian', raw_time: '2026-08-20 09:15:40', verify_mode: 'Fingerprint (Sensor 2)', in_out_mode: 'CHECK_IN', sync_status: 'NORMALIZED' },
-  ];
+  const loadData = useCallback(() => {
+    const devs = biometricGatewayService.getBiometricDevices();
+    setDevices(devs);
+
+    api.getEmployees().then((emps) => {
+      setEmployees(emps);
+    }).catch(() => []);
+
+    const p = biometricGatewayService.getRawPunches(50);
+    setPunches(p);
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   return (
     <div className="space-y-4">
@@ -63,9 +75,9 @@ export const ClockingDevicesChannelView: React.FC<ClockingDevicesChannelViewProp
             <span className="p-1.5 bg-purple-50 text-purple-700 rounded-lg">
               <Cpu className="w-5 h-5" />
             </span>
-            <h1 className="text-xl font-bold text-gray-900">Clocking & Biometric Devices</h1>
-            <span className="px-2 py-0.5 text-[11px] font-semibold bg-purple-100 text-purple-800 rounded-full">
-              4 Gateways Online
+            <h1 className="text-xl font-bold text-gray-900">Clocking & Biometric Gateways</h1>
+            <span className="px-2 py-0.5 text-[11px] font-bold bg-purple-100 text-purple-800 rounded-full">
+              {devices.filter(d => d.status === 'ONLINE').length} / {devices.length} Online
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-1">
@@ -74,12 +86,12 @@ export const ClockingDevicesChannelView: React.FC<ClockingDevicesChannelViewProp
         </div>
 
         {/* Sub-tab segmented bar */}
-        <div className="flex items-center bg-gray-100 p-1 rounded-lg border border-gray-200 text-xs">
+        <div className="flex items-center bg-gray-100 p-1 rounded-lg border border-gray-200 text-xs flex-wrap gap-1">
           <button
             onClick={() => setActiveSubTab('devices')}
             className={cn(
-              'px-3 py-1.5 rounded-md font-semibold transition-all flex items-center gap-1.5',
-              activeSubTab === 'devices' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              'px-3 py-1.5 rounded-md font-semibold transition-all flex items-center gap-1.5 cursor-pointer',
+              activeSubTab === 'devices' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
             )}
           >
             <Cpu className="w-3.5 h-3.5" />
@@ -88,153 +100,97 @@ export const ClockingDevicesChannelView: React.FC<ClockingDevicesChannelViewProp
           <button
             onClick={() => setActiveSubTab('enrollment')}
             className={cn(
-              'px-3 py-1.5 rounded-md font-semibold transition-all flex items-center gap-1.5',
-              activeSubTab === 'enrollment' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              'px-3 py-1.5 rounded-md font-semibold transition-all flex items-center gap-1.5 cursor-pointer',
+              activeSubTab === 'enrollment' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
             )}
           >
             <UserCheck className="w-3.5 h-3.5" />
-            Device Enrollment
-          </button>
-          <button
-            onClick={() => setActiveSubTab('sync')}
-            className={cn(
-              'px-3 py-1.5 rounded-md font-semibold transition-all flex items-center gap-1.5',
-              activeSubTab === 'sync' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-            )}
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Sync & Health
-          </button>
-          <button
-            onClick={() => setActiveSubTab('mapping')}
-            className={cn(
-              'px-3 py-1.5 rounded-md font-semibold transition-all flex items-center gap-1.5',
-              activeSubTab === 'mapping' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-            )}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            Punch Mapping
+            Device Users ({employees.length})
           </button>
           <button
             onClick={() => setActiveSubTab('logs')}
             className={cn(
-              'px-3 py-1.5 rounded-md font-semibold transition-all flex items-center gap-1.5',
-              activeSubTab === 'logs' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              'px-3 py-1.5 rounded-md font-semibold transition-all flex items-center gap-1.5 cursor-pointer',
+              activeSubTab === 'logs' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
             )}
           >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Raw Device Logs
+            <Activity className="w-3.5 h-3.5" />
+            Device Raw Logs ({punches.length})
           </button>
         </div>
       </div>
 
-      {/* 2. DEVICE INVENTORY */}
+      {/* 2. DEVICES LIST */}
       {activeSubTab === 'devices' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs">
-            <div>
-              <h3 className="font-bold text-gray-900">Registered Biometric Gateway Controllers</h3>
-              <p className="text-gray-500">Live ADMS / ICMS TCP listener active on port 4370 & 5005.</p>
-            </div>
-            <button
-              onClick={() => showToast('Add Biometric Device modal opened.')}
-              className="px-3 py-1.5 bg-[#07563D] text-white rounded-lg font-semibold hover:bg-[#064e37] transition-all flex items-center gap-1.5"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Device Gateway
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {devices.map(dev => (
-              <div key={dev.id} className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm space-y-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h4 className="text-xs font-bold text-gray-900">{dev.name}</h4>
-                    <p className="text-[11px] text-gray-500 font-mono mt-0.5">SN: {dev.serial} · {dev.location}</p>
-                  </div>
-                  <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-full flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    {dev.status}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 p-2 bg-gray-50 rounded text-[11px] text-gray-600 font-mono">
-                  <div>
-                    <span className="text-[10px] text-gray-400 block">IP / PORT</span>
-                    {dev.ip}:{dev.port}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {devices.map((dev) => (
+            <div key={dev.id} className="p-5 bg-white border border-gray-200/80 rounded-2xl shadow-2xs space-y-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center font-bold">
+                    <Cpu className="w-5 h-5" />
                   </div>
                   <div>
-                    <span className="text-[10px] text-gray-400 block">PROTOCOL</span>
-                    {dev.protocol}
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-gray-400 block">ENROLLED USERS</span>
-                    <strong className="text-gray-900">{dev.registeredUsers}</strong>
+                    <h4 className="text-sm font-bold text-gray-900">{dev.device_name || dev.name}</h4>
+                    <span className="text-[11px] text-gray-400 font-mono block">{dev.serial_number || dev.serial} • {dev.model || 'BioGateway'}</span>
                   </div>
                 </div>
+                <Badge variant={dev.status === 'ONLINE' ? 'emerald' : 'amber'}>{dev.status}</Badge>
+              </div>
 
-                <div className="flex items-center justify-between text-xs pt-1 border-t border-gray-100">
-                  <span className="text-gray-400 text-[11px]">Synced: {dev.lastSync}</span>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => showToast(`Syncing punch logs from ${dev.name}...`)}
-                      className="px-2.5 py-1 text-[11px] font-semibold border border-gray-200 rounded hover:bg-gray-50"
-                    >
-                      Pull Punches
-                    </button>
-                    <button
-                      onClick={() => showToast(`Syncing employee registry to ${dev.name}...`)}
-                      className="px-2.5 py-1 text-[11px] font-semibold bg-[#07563D] text-white rounded hover:bg-[#064e37]"
-                    >
-                      Push Users
-                    </button>
-                  </div>
+              <div className="grid grid-cols-3 gap-2 p-3 bg-gray-50/80 rounded-xl text-xs border border-gray-100">
+                <div>
+                  <span className="text-[10px] text-gray-400 block font-semibold uppercase">IP Endpoint</span>
+                  <strong className="font-mono text-gray-800">{dev.ip_address || '192.168.1.100'}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-400 block font-semibold uppercase">Protocol</span>
+                  <strong className="font-mono text-gray-800">{dev.protocol || 'PUSH HTTP'}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-400 block font-semibold uppercase">Staff Synced</span>
+                  <strong className="font-mono text-[#07563D]">{employees.length} Users</strong>
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* 3. DEVICE LOGS */}
-      {activeSubTab === 'logs' && (
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden text-xs">
-          <div className="p-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="font-bold text-gray-900 uppercase tracking-wider">Raw Biometric Ingestion Log Stream</h3>
-            <span className="text-gray-500 font-mono text-[11px]">Real-time TCP Packet Sniffer Active</span>
+      {/* 3. ENROLLMENT TAB */}
+      {activeSubTab === 'enrollment' && (
+        <div className="bg-white border border-gray-200/80 rounded-2xl shadow-2xs p-5 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">Device User Mapping Registry</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Biometric PIN & template mapping for staff in current organization.</p>
+            </div>
           </div>
 
-          <table className="w-full text-left">
-            <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-200">
+          <table className="w-full text-xs text-left">
+            <thead className="bg-gray-50/80 text-gray-600 font-semibold border-b border-gray-100 uppercase text-[10px] tracking-wider">
               <tr>
-                <th className="p-3">Device</th>
-                <th className="p-3">Employee & PIN</th>
-                <th className="p-3">Verify Mode</th>
-                <th className="p-3">Raw Timestamp</th>
-                <th className="p-3">Punch Type</th>
-                <th className="p-3 text-right">Normalization</th>
+                <th className="p-3">Employee</th>
+                <th className="p-3">Department</th>
+                <th className="p-3">Biometric PIN</th>
+                <th className="p-3">Templates</th>
+                <th className="p-3 text-right">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rawLogs.map(log => (
-                <tr key={log.id} className="hover:bg-gray-50">
-                  <td className="p-3 font-medium text-gray-900">{log.device_name}</td>
+              {employees.map((emp, idx) => (
+                <tr key={emp.id} className="hover:bg-gray-50/50">
                   <td className="p-3">
-                    <div className="font-bold text-gray-900">{log.employee_name}</div>
-                    <div className="text-[11px] text-gray-500 font-mono">PIN: {log.user_pin}</div>
+                    <strong className="text-gray-900 block">{emp.display_name || emp.name}</strong>
+                    <span className="text-[11px] text-gray-400 font-mono">{emp.employee_code || 'WF-EMP'}</span>
                   </td>
-                  <td className="p-3 text-gray-600 font-mono">{log.verify_mode}</td>
-                  <td className="p-3 font-mono font-semibold text-gray-900">{log.raw_time}</td>
+                  <td className="p-3 text-gray-700">{emp.department_name || emp.department || 'Operations'}</td>
+                  <td className="p-3 font-mono font-bold text-gray-900">PIN-{1000 + idx}</td>
                   <td className="p-3">
-                    <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-800 rounded">
-                      {log.in_out_mode}
-                    </span>
+                    <Badge variant="blue" size="sm">Fingerprint + RFID</Badge>
                   </td>
                   <td className="p-3 text-right">
-                    <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-full">
-                      ✓ {log.sync_status}
-                    </span>
+                    <Badge variant="emerald" size="sm">Synchronized</Badge>
                   </td>
                 </tr>
               ))}
@@ -243,22 +199,40 @@ export const ClockingDevicesChannelView: React.FC<ClockingDevicesChannelViewProp
         </div>
       )}
 
-      {/* 4. PUNCH MAPPING RULES */}
-      {activeSubTab === 'mapping' && (
-        <div className="p-4 bg-white border border-gray-200 rounded-lg text-xs space-y-3">
-          <h3 className="font-bold text-gray-900">Multi-Punch Normalization Engine Rules</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="p-3 border border-gray-200 rounded-lg space-y-1">
-              <span className="font-bold text-gray-900 block">First In / Last Out (FILO)</span>
-              <p className="text-gray-500 text-[11px]">Consolidates multiple intermediate door swipes into one unified daily attendance record.</p>
-              <span className="text-[10px] font-bold text-emerald-700 block mt-1">ACTIVE RULE (DEFAULT)</span>
+      {/* 4. LOGS TAB */}
+      {activeSubTab === 'logs' && (
+        <div className="bg-white border border-gray-200/80 rounded-2xl shadow-2xs p-5 text-xs space-y-3">
+          <h3 className="text-sm font-bold text-gray-900">Live Hardware Raw Punch Ingestion</h3>
+          {punches.length > 0 ? (
+            <table className="w-full text-xs text-left">
+              <thead className="bg-gray-50/80 text-gray-600 font-semibold border-b border-gray-100 uppercase text-[10px] tracking-wider">
+                <tr>
+                  <th className="p-3">Device</th>
+                  <th className="p-3">User PIN</th>
+                  <th className="p-3">Mode</th>
+                  <th className="p-3">Timestamp</th>
+                  <th className="p-3 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {punches.map((p: any) => (
+                  <tr key={p.id} className="hover:bg-gray-50/50">
+                    <td className="p-3 font-bold text-gray-900">{p.device_name || 'Terminal'}</td>
+                    <td className="p-3 font-mono">{p.user_pin}</td>
+                    <td className="p-3">{p.verify_mode || 'Fingerprint'}</td>
+                    <td className="p-3 font-mono">{p.raw_time}</td>
+                    <td className="p-3 text-right">
+                      <Badge variant="emerald" size="sm">NORMALIZED</Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="p-10 text-center text-xs text-gray-500">
+              No hardware punches ingested yet. Turnstile and biometric terminal swipes will ingest here in real-time.
             </div>
-            <div className="p-3 border border-gray-200 rounded-lg space-y-1">
-              <span className="font-bold text-gray-900 block">De-duplication Threshold</span>
-              <p className="text-gray-500 text-[11px]">Ignores consecutive punches within 120 seconds on the same physical biometric sensor.</p>
-              <span className="text-[10px] font-bold text-emerald-700 block mt-1">ACTIVE (120 SECONDS)</span>
-            </div>
-          </div>
+          )}
         </div>
       )}
     </div>

@@ -19,7 +19,7 @@ const initialUsers: AdminUser[] = [
 ];
 
 const initialInvitations: UserInvitation[] = [
-  { id: 'inv-101', email: 'karthik@workforceos.com', employee_name: 'Karthik Raja', role_name: 'Manager', company_name: 'WorkForceOS India Pvt Ltd', expiration_date: '2026-08-18', status: 'Sent' },
+  { id: 'inv-101', email: 'karthik@workforceos.com', employee_name: 'Karthik Raja', role_name: 'Manager', company_name: 'Joy PeopleHR India Pvt Ltd', expiration_date: '2026-08-18', status: 'Sent' },
 ];
 
 const initialRoles: AdminRole[] = [
@@ -35,7 +35,7 @@ const initialAuditLogs: AuditLogEntry[] = [
 ];
 
 const initialApiKeys: ApiKeyItem[] = [
-  { id: 'key-101', client_name: 'WorkForceOS Mobile App iOS/Android', key_prefix: 'wfos_live_pk_881a...', scopes: ['employees.read', 'attendance.write', 'leave.write'], status: 'Active', created_at: '2026-01-10', last_used_at: '2026-08-12 10:14 AM' },
+  { id: 'key-101', client_name: 'Joy PeopleHR Mobile App iOS/Android', key_prefix: 'wfos_live_pk_881a...', scopes: ['employees.read', 'attendance.write', 'leave.write'], status: 'Active', created_at: '2026-01-10', last_used_at: '2026-08-12 10:14 AM' },
 ];
 
 const initialIntegrations: IntegrationItem[] = [
@@ -65,7 +65,7 @@ export const adminApi = {
   },
   getSubscription(): SubscriptionInfo {
     return {
-      plan_name: 'WorkForceOS Enterprise Tier',
+      plan_name: 'Joy PeopleHR Enterprise Tier',
       billing_cycle: 'Annual',
       employee_limit: 1000,
       active_employees: 416,

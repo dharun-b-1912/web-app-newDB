@@ -1,6 +1,6 @@
 // src/features/attendance/components/BulkMapModal.tsx
 // ============================================================================
-// WorkForceOS — Bulk Biometric Employee Mapping Review Modal
+// Joy PeopleHR — Bulk Biometric Employee Mapping Review Modal
 // Batch Review, High Confidence Approval & Safe Identity Linking
 // ============================================================================
 
@@ -196,7 +196,7 @@ export const BulkMapModal: React.FC<BulkMapModalProps> = ({
                 <TableRow className="bg-gray-50 text-[11px] font-bold text-gray-600">
                   <TableHead className="w-12 text-center">Approve</TableHead>
                   <TableHead>Machine User</TableHead>
-                  <TableHead>Suggested WorkForceOS Employee</TableHead>
+                  <TableHead>Suggested Joy PeopleHR Employee</TableHead>
                   <TableHead>Confidence & Reason</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>

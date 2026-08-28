@@ -1,6 +1,6 @@
 // src/types/ats.ts
 // ============================================================================
-// WorkForceOS — Recruitment & ATS 2.0 Domain Models
+// Joy PeopleHR — Recruitment & ATS 2.0 Domain Models
 // Enterprise State Machine, Requisitions, Jobs, Candidates, Interviews & Offers
 // ============================================================================
 

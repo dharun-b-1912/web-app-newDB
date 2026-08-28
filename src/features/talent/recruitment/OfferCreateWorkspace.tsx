@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/OfferCreateWorkspace.tsx
 // ============================================================================
-// WorkForceOS — Enterprise Offer Creation Workspace & AI Letter Generator
+// Joy PeopleHR — Enterprise Offer Creation Workspace & AI Letter Generator
 // 8-Stage Builder: Candidate, CTC Components, Terms, Benefits, AI Tone Draft & A4 Preview
 // ============================================================================
 

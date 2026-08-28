@@ -1,6 +1,6 @@
 // src/services/platform/platformSecurityService.ts
 // ============================================================
-// WorkForceOS — Platform Security & Session Management Service
+// Joy PeopleHR — Platform Security & Session Management Service
 // ============================================================
 
 import { SecuritySessionItem } from '../../types/platformAdmin';

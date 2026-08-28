@@ -1,8 +1,8 @@
 <div align="center">
-  <img width="1200" height="475" alt="WorkForceOS Banner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+  <img width="1200" height="475" alt="Joy PeopleHR Banner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
 </div>
 
-# WorkForceOS Enterprise HRMS
+# Joy PeopleHR Enterprise HRMS
 
 Enterprise HRMS platform providing full workforce, organization, RBAC, employee directory, leave & attendance tracking, ATS recruitment, and AI assistant foundation exported from **Google AI Studio**.
 

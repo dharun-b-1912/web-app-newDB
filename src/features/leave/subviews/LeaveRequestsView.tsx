@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 
+import { hrEventBus } from '../../../services/hrEventBus';
+
 interface LeaveRequestsViewProps {
   onOpenRequestDetails?: (req: LeaveRequest) => void;
   initialFilter?: string;
@@ -49,13 +51,19 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
   const [contactNumber, setContactNumber] = useState<string>('+91 98765 43210');
   const [attachmentName, setAttachmentName] = useState<string>('');
 
-  useEffect(() => {
+  const loadData = () => {
     setRequests(leaveApi.getLeaveRequests());
     const activeTypes = leaveApi.getLeaveTypes().filter(t => t.is_active);
     setLeaveTypes(activeTypes);
-    if (activeTypes.length > 0) {
+    if (activeTypes.length > 0 && !selectedLeaveTypeId) {
       setSelectedLeaveTypeId(activeTypes[0].id);
     }
+  };
+
+  useEffect(() => {
+    loadData();
+    const unsub = hrEventBus.subscribe('leave.*', () => loadData());
+    return () => unsub();
   }, []);
 
   useEffect(() => {
@@ -124,7 +132,7 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
       from_date: fromDate,
       to_date: toDate,
       is_half_day: isHalfDay,
-      half_day_session: isHalfDay ? 'Session1' : undefined,
+      half_day_session: isHalfDay ? 'FirstHalf' : undefined,
       total_calendar_days: durationResult.totalCalendarDays,
       leave_days_deducted: durationResult.leaveDaysDeducted,
       reason: reason,
@@ -287,8 +295,19 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
                       {req.status}
                     </Badge>
                   </td>
-                  <td className="p-4 text-gray-600 text-[11px]">
-                    {req.current_approver_name || 'System Auto'}
+                  <td className="p-4 text-gray-700 text-[11px]">
+                    <div className="font-semibold text-gray-900">
+                      {req.status === 'Approved' || req.status === 'Rejected'
+                        ? (req.current_approver_name || req.manager_name || 'HR Manager')
+                        : (req.manager_name || req.current_approver_name || 'Reporting Manager')}
+                    </div>
+                    <span className="block text-[10px] text-gray-400">
+                      {req.status === 'Pending' || req.status === 'Submitted'
+                        ? 'Reporting Manager'
+                        : req.status === 'Approved'
+                        ? 'Approved'
+                        : 'Reviewer'}
+                    </span>
                   </td>
                   <td className="p-4 text-right">
                     <button

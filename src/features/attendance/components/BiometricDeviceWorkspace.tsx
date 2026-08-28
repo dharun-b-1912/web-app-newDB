@@ -1,6 +1,6 @@
 // src/features/attendance/components/BiometricDeviceWorkspace.tsx
 // ============================================================================
-// WorkForceOS — Enterprise Biometric Device Dedicated Workspace
+// Joy PeopleHR — Enterprise Biometric Device Dedicated Workspace
 // Overview, Machine Users, Live Attendance, Remote Commands, Health, Sync History, Diagnostics
 // ============================================================================
 
@@ -292,11 +292,11 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
     setConfirmDialog({
       isOpen: true,
       title: 'Clear Cached Users & Test Logs?',
-      description: `This will reset the cached user profiles, biometric mappings, and test punches for ${liveDevice.device_name} (${liveDevice.ip_address}) in the WorkForceOS workspace.`,
+      description: `This will reset the cached user profiles, biometric mappings, and test punches for ${liveDevice.device_name} (${liveDevice.ip_address}) in the Joy PeopleHR workspace.`,
       impactList: [
         'Resets user count in SaaS workspace to 0.',
         'Clears the punch queue today to 0.',
-        'Allows re-pushing a clean directory from WorkForceOS.',
+        'Allows re-pushing a clean directory from Joy PeopleHR.',
       ],
       confirmLabel: 'Clear Cached Data',
       variant: 'danger',
@@ -845,7 +845,7 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
                 <p className="text-gray-600 text-[11px] mt-0.5">
                   <span className="font-bold text-indigo-900">1. Push Directory:</span> Uploads employee names & PINs to device → 
                   <span className="font-bold text-emerald-900"> 2. Biometric Scan:</span> Enroll fingerprints on the device menu for that employee → 
-                  <span className="font-bold text-purple-900"> 3. Sync:</span> Pulls templates to WorkForceOS.
+                  <span className="font-bold text-purple-900"> 3. Sync:</span> Pulls templates to Joy PeopleHR.
                 </p>
               </div>
             </div>

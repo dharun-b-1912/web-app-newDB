@@ -1,6 +1,6 @@
 // src/types/platformSettings.ts
 // ============================================================
-// WorkForceOS — Platform Settings & Integrations Type Contracts
+// Joy PeopleHR — Platform Settings & Integrations Type Contracts
 // ============================================================
 
 export type PlatformEnvironment = 'PRODUCTION' | 'STAGING' | 'DEVELOPMENT';

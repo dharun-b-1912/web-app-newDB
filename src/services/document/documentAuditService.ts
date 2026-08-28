@@ -44,7 +44,7 @@ class DocumentAuditService {
       action: params.action,
       subject_type: params.subjectType,
       subject_id: params.subjectId,
-      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'WorkforceOS Node Client',
+      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Joy PeopleHR Node Client',
       details: params.details,
       created_at: now,
     };

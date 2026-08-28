@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/CustomerIntegrationsTab.tsx
 // ============================================================
-// WorkForceOS — Customer Connected Integrations & Mesh Tab
+// Joy PeopleHR — Customer Connected Integrations & Mesh Tab
 // ============================================================
 
 import React, { useState } from 'react';

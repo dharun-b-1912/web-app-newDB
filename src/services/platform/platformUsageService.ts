@@ -1,6 +1,6 @@
 // src/services/platform/platformUsageService.ts
 // ============================================================
-// WorkForceOS — Dynamic Usage Metering & Quota Enforcement Service
+// Joy PeopleHR — Dynamic Usage Metering & Quota Enforcement Service
 // ============================================================
 
 import { platformTenantService } from './platformTenantService';

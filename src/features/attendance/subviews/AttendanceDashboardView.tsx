@@ -35,13 +35,16 @@ import {
 } from 'lucide-react';
 import { AttendanceDaily, PunchSource } from '../../../types/attendance';
 import { attendanceApi } from '../../../services/attendanceApi';
+import { workLocationService } from '../../../services/location/workLocationService';
 import { api } from '../../../services/api';
 import { useToast } from '../../../components/ui/Toast';
-import { formatMinutesToHoursStr } from '../../../lib/attendance/attendanceEngine';
+import { formatMinutesToHoursStr, formatCleanTime } from '../../../lib/attendance/attendanceEngine';
+import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { useAuth } from '../../../hooks/useAuth';
 import { usePermission } from '../../../hooks/usePermission';
 import { attendanceRosterService } from '../../../services/attendance/attendanceRosterService';
+import { attendanceTimeService } from '../../../services/attendance/attendanceTimeService';
 import { GlobalAttendanceFilterState } from '../AttendanceModuleMaster';
 import { cn } from '../../../lib/utils';
 
@@ -75,7 +78,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
   const [dailyRecords, setDailyRecords] = useState<AttendanceDaily[]>([]);
   const [departments, setDepartments] = useState<string[]>(['People & HR', 'Engineering', 'Operations', 'Quality Assurance']);
   const [locations, setLocations] = useState<string[]>(['Coimbatore HQ', 'Chennai Factory', 'Hosur Plant', 'Bangalore Office']);
-  const [vendors, setVendors] = useState<string[]>(['Direct Payroll', 'ABC Manpower Services', 'XYZ Workforce Solutions', 'Apex Industrial Manpower']);
+  const [vendors, setVendors] = useState<string[]>(['Direct Payroll']);
   const [shifts, setShifts] = useState<any[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString());
 
@@ -91,8 +94,18 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
   const loadData = useCallback(() => {
     const activeComp = api.getActiveCompany();
     api.getEmployees(activeComp?.id).then(emps => {
-      const accessible = filterAccessibleEmployees ? filterAccessibleEmployees(emps) : emps;
-      setEmployees(accessible);
+      const accessible = filterAccessibleEmployees ? filterAccessibleEmployees(emps) : (emps || []);
+      setEmployees(accessible || []);
+
+      const realVendors = Array.from(
+        new Set(
+          (accessible || [])
+            .map(e => e.vendor_name?.trim())
+            .filter(v => v && v.toLowerCase() !== 'direct payroll' && !v.toLowerCase().includes('joy corporate'))
+        )
+      ) as string[];
+
+      setVendors(['Direct Payroll', ...realVendors]);
     }).catch(() => {});
 
     api.getDepartments(activeComp?.id).then(depts => {
@@ -107,17 +120,89 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
     const records = attendanceApi.getDailyAttendance(selectedDate, deptFilter, undefined, searchQuery);
     setDailyRecords(records);
     setLastSyncTime(new Date().toLocaleTimeString());
+
+    // Live query Supabase attendance_daily to catch mobile app punches immediately
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase
+          .from('attendance_daily')
+          .select('*')
+          .eq('date', selectedDate)
+      )
+        .then(({ data, error }: any) => {
+          if (!error && Array.isArray(data)) {
+            try {
+              const currentList = JSON.parse(localStorage.getItem('workforceos_attendance_daily_v2') || '[]');
+              const otherDatesList = currentList.filter((a: any) => a.date !== selectedDate);
+              const merged = [...data, ...otherDatesList];
+              
+              const getAttendanceKeys = () => {
+                const s = new Set([
+                  'workforceos_attendance_daily_v2',
+                  'workforceos_attendance_daily_v2_org-joy-01',
+                ]);
+                try {
+                  const activeOrg = localStorage.getItem('workforce_active_org_id');
+                  if (activeOrg) s.add(`workforceos_attendance_daily_v2_${activeOrg}`);
+                  for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (k && k.startsWith('workforceos_attendance_daily_v2')) {
+                      s.add(k);
+                    }
+                  }
+                } catch {}
+                return Array.from(s);
+              };
+
+              for (const k of getAttendanceKeys()) {
+                localStorage.setItem(k, JSON.stringify(merged));
+              }
+
+              const refreshedRecords = attendanceApi.getDailyAttendance(selectedDate, deptFilter, undefined, searchQuery);
+              setDailyRecords(refreshedRecords);
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    }
   }, [filterAccessibleEmployees, selectedDate, deptFilter, searchQuery]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
+  // Real-time Supabase postgres replication stream for instant punch updates
   useEffect(() => {
-    const unsub = hrEventBus.subscribe('attendance.punch_received', () => {
+    if (!isSupabaseEnabled) return;
+    const channel = supabase
+      .channel(`dash-attendance-live-${selectedDate}-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance_daily' },
+        () => {
+          loadData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedDate, loadData]);
+
+  useEffect(() => {
+    const unsub = hrEventBus.subscribe('attendance.*', () => {
       loadData();
     });
     return () => unsub();
+  }, [loadData]);
+
+  // Continuous auto polling for zero drift live dashboard
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadData();
+    }, 3500);
+    return () => clearInterval(timer);
   }, [loadData]);
 
   const refreshData = () => {
@@ -215,7 +300,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
           if (record.late_minutes > 0 || record.status === 'Late') late++;
           if (record.early_checkout_minutes > 0 || record.status === 'Early Checkout') earlyOut++;
           if (record.status === 'Half Day') halfDay++;
-          if (record.status === 'Missing Punch' || (!record.last_check_out && record.first_check_in)) missingPunch++;
+          if (record.status === 'Missing Punch') missingPunch++;
           if (record.overtime_minutes > 0 || record.status === 'Overtime') overtime++;
         } else if (record.status === 'Absent') {
           absent++;
@@ -640,44 +725,67 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
               >
                 All Channels ({totalHeadcount})
               </button>
-              <button
-                onClick={() => showToast('Filtered by Biometric Device Gateway punches.')}
-                className="px-2.5 py-1 bg-purple-50 text-purple-700 hover:bg-purple-100 font-semibold rounded-lg text-xs border border-purple-200 transition-all flex items-center gap-1"
-              >
-                <Cpu className="w-3 h-3" /> Biometric Gateways (8)
-              </button>
-              <button
-                onClick={() => showToast('Filtered by AI Optical Face Recognition punches.')}
-                className="px-2.5 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold rounded-lg text-xs border border-emerald-200 transition-all flex items-center gap-1"
-              >
-                <ScanFace className="w-3 h-3" /> Face Recognition (4)
-              </button>
-              <button
-                onClick={() => showToast('Filtered by Mobile GPS Geofence clock-ins.')}
-                className="px-2.5 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold rounded-lg text-xs border border-blue-200 transition-all flex items-center gap-1"
-              >
-                <MapPin className="w-3 h-3" /> Mobile / GPS (2)
-              </button>
-              <button
-                onClick={() => showToast('Filtered by Web Check-In / Manual punches.')}
-                className="px-2.5 py-1 bg-gray-50 text-gray-700 hover:bg-gray-100 font-semibold rounded-lg text-xs border border-gray-200 transition-all"
-              >
-                Web / Manual (0)
-              </button>
+              {(() => {
+                const bioCount = dailyRecords.filter((r) => r.source === 'BIOMETRIC' || r.source === 'HARDWARE_TERMINAL').length;
+                const faceCount = dailyRecords.filter((r) => r.source?.includes('FACE')).length;
+                const mobileCount = dailyRecords.filter((r) => r.source === 'MOBILE' || r.source === 'MOBILE_GPS' || r.source === 'MOBILE_GPS_FACE').length;
+                const webCount = dailyRecords.filter((r) => r.source === 'WEB' || r.source === 'MANUAL' || r.source === 'SYSTEM').length;
+
+                return (
+                  <>
+                    <button
+                      onClick={() => showToast('Filtered by Biometric Device Gateway punches.')}
+                      className="px-2.5 py-1 bg-purple-50 text-purple-700 hover:bg-purple-100 font-semibold rounded-lg text-xs border border-purple-200 transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <Cpu className="w-3 h-3" /> Biometric Gateways ({bioCount})
+                    </button>
+                    <button
+                      onClick={() => showToast('Filtered by AI Optical Face Recognition punches.')}
+                      className="px-2.5 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold rounded-lg text-xs border border-emerald-200 transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <ScanFace className="w-3 h-3" /> Face Recognition ({faceCount})
+                    </button>
+                    <button
+                      onClick={() => showToast('Filtered by Mobile GPS Geofence clock-ins.')}
+                      className="px-2.5 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold rounded-lg text-xs border border-blue-200 transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <MapPin className="w-3 h-3" /> Mobile / GPS ({mobileCount})
+                    </button>
+                    <button
+                      onClick={() => showToast('Filtered by Web Check-In / Manual punches.')}
+                      className="px-2.5 py-1 bg-gray-50 text-gray-700 hover:bg-gray-100 font-semibold rounded-lg text-xs border border-gray-200 transition-all cursor-pointer"
+                    >
+                      Web / Manual ({webCount})
+                    </button>
+                  </>
+                );
+              })()}
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-            <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-semibold rounded border border-emerald-200">
-              ✓ GPS Violations: 0
-            </span>
-            <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-semibold rounded border border-emerald-200">
-              ✓ Face Mismatches: 0
-            </span>
-            <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-semibold rounded border border-emerald-200">
-              ✓ Devices Online: 4/4
-            </span>
-          </div>
+          {(() => {
+            const gpsViolations = workLocationService.getViolationsCount(undefined, selectedDate);
+            const faceMismatches = workLocationService.getFaceMismatchesCount(undefined, selectedDate);
+            return (
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                <span className={cn(
+                  "px-2 py-0.5 font-semibold rounded border",
+                  gpsViolations > 0 ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                )}>
+                  {gpsViolations > 0 ? `⚠ GPS Violations: ${gpsViolations}` : '✓ GPS Violations: 0'}
+                </span>
+                <span className={cn(
+                  "px-2 py-0.5 font-semibold rounded border",
+                  faceMismatches > 0 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                )}>
+                  {faceMismatches > 0 ? `⚠ Face Mismatches: ${faceMismatches}` : '✓ Face Mismatches: 0'}
+                </span>
+                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-semibold rounded border border-emerald-200">
+                  ✓ Devices Online: 4/4
+                </span>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -783,10 +891,20 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
           </div>
 
           <div className="space-y-2.5 text-xs">
-            {vendors.slice(0, 4).map(vendor => {
-              const vendorEmps = employees.filter(e => (e.vendor_name || 'Direct Payroll').toLowerCase() === vendor.toLowerCase());
-              const count = vendorEmps.length || (vendor === 'Direct Payroll' ? employees.length : 0);
-              const presentInVendor = dailyRecords.filter(r => (vendor === 'Direct Payroll' || vendorEmps.some(e => e.id === r.employee_id)) && (r.status === 'Present' || r.status === 'Checked Out')).length;
+            {vendors.map(vendor => {
+              const isDirect = vendor === 'Direct Payroll';
+              const vendorEmps = employees.filter(e => {
+                if (isDirect) {
+                  return !e.vendor_name || e.vendor_name.trim() === '' || e.vendor_name.toLowerCase() === 'direct payroll' || e.vendor_name.toLowerCase().includes('joy corporate');
+                }
+                return (e.vendor_name || '').toLowerCase() === vendor.toLowerCase();
+              });
+              const count = vendorEmps.length;
+              if (count === 0 && !isDirect) return null;
+              const presentInVendor = dailyRecords.filter(r => 
+                vendorEmps.some(e => e.id === r.employee_id || (e.employee_code && r.employee_code && e.employee_code.toLowerCase() === r.employee_code.toLowerCase())) && 
+                (r.status === 'Present' || r.status === 'Checked Out' || !!r.first_check_in)
+              ).length;
               const pct = count > 0 ? Math.round((presentInVendor / count) * 100) : 0;
 
               return (
@@ -853,7 +971,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
                 </TableCell>
                 <TableCell>
                   <div className="text-xs font-semibold text-gray-800">{r.department}</div>
-                  <div className="text-[10px] text-indigo-700 font-semibold">{r.company_id ? 'Direct Payroll' : 'Vendor Manpower'}</div>
+                  <div className="text-[10px] text-indigo-700 font-semibold">{r.vendor_name || 'Direct Payroll'}</div>
                 </TableCell>
                 <TableCell>
                   <div className="text-xs font-semibold text-gray-900">{r.shift_name}</div>
@@ -863,14 +981,21 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
                   {r.first_check_in ? (
                     <span className="inline-flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                      {r.first_check_in}
+                      {attendanceTimeService.formatAttendanceTime(r.first_check_in, 'Asia/Kolkata', true)}
                     </span>
                   ) : (
                     <span className="text-gray-400">—</span>
                   )}
                 </TableCell>
                 <TableCell className="text-xs font-mono text-gray-800">
-                  {r.last_check_out || <span className="text-gray-400">—</span>}
+                  {r.last_check_out ? (
+                    <span className="inline-flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                      {attendanceTimeService.formatAttendanceTime(r.last_check_out, 'Asia/Kolkata', true)}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
                 </TableCell>
                 <TableCell className="text-xs font-bold text-gray-900">
                   {formatMinutesToHoursStr(r.net_working_minutes)}

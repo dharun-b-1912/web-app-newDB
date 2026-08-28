@@ -1,6 +1,6 @@
 // src/services/platform/platformHealthService.ts
 // ============================================================
-// WorkForceOS — Platform Health & Observability Service (Dynamic Realtime)
+// Joy PeopleHR — Platform Health & Observability Service (Dynamic Realtime)
 // ============================================================
 
 import { SystemHealthStatus, SubsystemTelemetry, PlatformDashboardMetrics } from '../../types/platformAdmin';

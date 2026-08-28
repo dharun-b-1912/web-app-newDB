@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/RequisitionManager.tsx
 // ============================================================================
-// WorkForceOS — Requisition Master & Multi-Tier Approval Lifecycle
+// Joy PeopleHR — Requisition Master & Multi-Tier Approval Lifecycle
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';

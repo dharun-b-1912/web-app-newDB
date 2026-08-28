@@ -1,6 +1,6 @@
 // src/features/platform/subviews/SupportCenterView.tsx
 // ============================================================
-// WorkForceOS — Production Support Center & Case Management Console
+// Joy PeopleHR — Production Support Center & Case Management Console
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';

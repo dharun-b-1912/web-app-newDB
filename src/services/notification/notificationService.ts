@@ -1,6 +1,6 @@
 // src/services/notification/notificationService.ts
 // ============================================================
-// WorkForceOS — Canonical Realtime Notification Service
+// Joy PeopleHR — Canonical Realtime Notification Service
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';

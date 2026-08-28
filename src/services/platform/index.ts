@@ -1,6 +1,6 @@
 // src/services/platform/index.ts
 // ============================================================
-// WorkForceOS — Platform Control Plane 2.0 Unified Service Layer
+// Joy PeopleHR — Platform Control Plane 2.0 Unified Service Layer
 // ============================================================
 
 export * from './platformAuditService';
@@ -55,7 +55,7 @@ import { platformAnalyticsService } from './platformAnalyticsService';
 import { PlatformAnnouncementItem } from '../../types/platformAdmin';
 
 const initialAnnouncements: PlatformAnnouncementItem[] = [
-  { id: 'ann-101', title: 'WorkForceOS v5.0 Infrastructure Upgrade Notice', type: 'Maintenance', target_plans: ['All'], target_audience: 'All Customer Admins', publish_date: '2026-08-10', status: 'Published' },
+  { id: 'ann-101', title: 'Joy PeopleHR v5.0 Infrastructure Upgrade Notice', type: 'Maintenance', target_plans: ['All'], target_audience: 'All Customer Admins', publish_date: '2026-08-10', status: 'Published' },
   { id: 'ann-102', title: 'New AI Copilot Policy Resolver Feature Released', type: 'Product Launch', target_plans: ['Business', 'Enterprise'], target_audience: 'HR Heads & Admins', publish_date: '2026-08-08', status: 'Published' },
 ];
 

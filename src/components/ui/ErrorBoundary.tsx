@@ -1,6 +1,6 @@
 // src/components/ui/ErrorBoundary.tsx
 // ============================================================
-// WorkForceOS — Isolated Error Boundary (Widget & Route Level)
+// Joy PeopleHR — Isolated Error Boundary (Widget & Route Level)
 // ============================================================
 
 import React from 'react';
@@ -39,7 +39,7 @@ export class ErrorBoundary extends ComponentBase {
   }
 
   componentDidCatch(error: Error, errorInfo: any) {
-    console.error('WorkForceOS ErrorBoundary caught an unhandled error:', error, errorInfo);
+    console.error('Joy PeopleHR ErrorBoundary caught an unhandled error:', error, errorInfo);
   }
 
   handleReset = () => {

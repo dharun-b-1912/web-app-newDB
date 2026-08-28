@@ -1,6 +1,6 @@
 // src/services/attendance/biometricCommandService.ts
 // ============================================================================
-// WorkForceOS — Biometric Remote Command Bus & Hardware Dispatcher
+// Joy PeopleHR — Biometric Remote Command Bus & Hardware Dispatcher
 // Asynchronous Command Dispatch, Execution Audit & Lifecycle Tracking
 // ============================================================================
 
@@ -160,7 +160,7 @@ class BiometricCommandService {
           responsePayload = {
             synced_at: new Date().toISOString(),
             drift_ms: 14,
-            message: 'Device hardware clock synchronized with WorkForceOS NTP Cloud.',
+            message: 'Device hardware clock synchronized with Joy PeopleHR NTP Cloud.',
           };
           cmd.status = 'SUCCESS';
           break;

@@ -1,6 +1,6 @@
 // src/features/platform/components/PrivilegedActionModal.tsx
 // ============================================================
-// WorkForceOS — Privileged Action Confirmation Modal
+// Joy PeopleHR — Privileged Action Confirmation Modal
 // ============================================================
 
 import React, { useState } from 'react';

@@ -1,6 +1,6 @@
 // src/services/platform/platformRealtimeService.ts
 // ============================================================
-// WorkForceOS — Realtime Event Subscription & Telemetry Engine
+// Joy PeopleHR — Realtime Event Subscription & Telemetry Engine
 // ============================================================
 
 import React, { useEffect, useState, useRef } from 'react';

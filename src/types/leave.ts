@@ -99,6 +99,11 @@ export interface LeaveType {
   applicable_designations?: string[];
   applicable_grades?: string[];
   probation_rule?: 'Ineligible' | 'AccrueOnly' | 'FullAccess';
+  annual_quota?: number; // e.g. 12 for CL, 10 for SL, 15 for EL
+  accrual_frequency?: AccrualFrequency; // 'Monthly' | 'Quarterly' | 'Yearly'
+  monthly_accrual_rate?: number; // e.g. 1.0 day/month
+  accrual_credit_day?: number; // e.g. 1 (1st of each month)
+  prorate_first_year?: boolean; // Pro-rate for mid-year joiners
   created_at: string;
   updated_at: string;
 }
@@ -244,6 +249,7 @@ export interface LeaveRequest {
   reason: string;
   comments?: string;
   attachment_url?: string;
+  emergency_contact?: string;
   contact_number?: string;
   alternate_contact?: string;
   manager_id: string;
@@ -274,6 +280,22 @@ export interface LeaveApproval {
   delegated_from_name?: string;
 }
 
+export type HolidayType = 'Mandatory' | 'Restricted' | 'Optional' | 'Public' | 'National' | 'Regional' | 'HalfDay';
+
+export interface Holiday {
+  id: string;
+  calendar_id?: string;
+  name: string;
+  date: string; // YYYY-MM-DD
+  type: string; // 'Mandatory' | 'Restricted' | 'Optional' | 'Public' | 'National' | 'Regional'
+  is_optional?: boolean;
+  day_of_week?: string;
+  half_day?: boolean;
+  category?: 'National' | 'Regional' | 'Religious' | 'Gazetted' | 'Corporate' | 'Cultural';
+  description?: string;
+  notify_employees?: boolean;
+}
+
 export interface HolidayCalendar {
   id: string;
   code: string;
@@ -282,22 +304,14 @@ export interface HolidayCalendar {
   company_id: string;
   location_ids: string[]; // ["All"] or location IDs
   year: number;
-  status: 'Active' | 'Draft';
+  status: 'Active' | 'Draft' | 'Archived';
   holidays: Holiday[];
   weekly_offs: ('Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday')[];
+  alternate_saturdays?: 'All' | '2nd_4th' | '1st_3rd_5th' | 'None';
+  restricted_holiday_max_allowed?: number;
+  is_default?: boolean;
   created_at: string;
-}
-
-export interface Holiday {
-  id: string;
-  calendar_id?: string;
-  name: string;
-  date: string;
-  type: string;
-  is_optional?: boolean;
-  day_of_week?: string;
-  half_day?: boolean;
-  description?: string;
+  updated_at?: string;
 }
 
 export interface CompOffGrant {
@@ -379,6 +393,7 @@ export interface AccrualExecutionLog {
   employees_processed: number;
   total_leave_days_credited: number;
   status: 'Completed' | 'Failed' | 'Partial' | 'Reversed' | 'Success';
+  message?: string;
   reversed_at?: string;
   reversed_by?: string;
 }

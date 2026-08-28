@@ -1,6 +1,6 @@
 // src/services/notification/index.ts
 // ============================================================
-// WorkForceOS — Unified Realtime Notification Services Barrel
+// Joy PeopleHR — Unified Realtime Notification Services Barrel
 // ============================================================
 
 export * from '../../types/notification';

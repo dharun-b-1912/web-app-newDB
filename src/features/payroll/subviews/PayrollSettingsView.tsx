@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Button } from '../../../components/ui/Button';
-import { excelTestDataService, TestDataStatus } from '../../../services/excelTestDataService';
 import {
   Settings,
   ShieldCheck,
@@ -16,12 +15,6 @@ import {
   Globe,
   MapPin,
   Sparkles,
-  Database,
-  Trash2,
-  Play,
-  Users,
-  RefreshCw,
-  AlertTriangle,
 } from 'lucide-react';
 import { useToast } from '../../../components/ui/Toast';
 import { payrollApi } from '../../../services/payrollApi';
@@ -33,11 +26,7 @@ export const PayrollSettingsView: React.FC = () => {
   const [templateConfig, setTemplateConfig] = useState<PayslipTemplateConfig>(() =>
     payrollApi.getPayslipTemplateConfig()
   );
-  const [activeTab, setActiveTab] = useState<'payslip' | 'banking' | 'cycle' | 'test-data'>('payslip');
-  const [testDataStatus, setTestDataStatus] = useState<TestDataStatus>(() =>
-    excelTestDataService.getTestDataStatus()
-  );
-  const [isLoadingTestData, setIsLoadingTestData] = useState(false);
+  const [activeTab, setActiveTab] = useState<'payslip' | 'banking' | 'cycle'>('payslip');
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -59,25 +48,6 @@ export const PayrollSettingsView: React.FC = () => {
     showToast('✓ Payslip Template and Payroll Settings saved successfully.');
   };
 
-  const handleLoadExcelData = async () => {
-    setIsLoadingTestData(true);
-    try {
-      const res = await excelTestDataService.loadMasterExcelTestData();
-      setTestDataStatus(excelTestDataService.getTestDataStatus());
-      showToast(`✓ Onboarded ${res.onboarded_count} employees from Excel file. Run: ${res.payroll_run_number}`);
-    } catch (err: any) {
-      showToast(err?.message || 'Error loading Excel test data', 'error');
-    } finally {
-      setIsLoadingTestData(false);
-    }
-  };
-
-  const handlePurgeExcelData = () => {
-    const res = excelTestDataService.purgeMasterExcelTestData();
-    setTestDataStatus(excelTestDataService.getTestDataStatus());
-    showToast(`✓ Purged ${res.deleted_count} test employee records completely from backend.`);
-  };
-
   return (
     <div className="space-y-6">
       {/* Top Banner */}
@@ -92,7 +62,7 @@ export const PayrollSettingsView: React.FC = () => {
             </h2>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Customize tenant payslip branding, company contact info, logo upload, component visibility, corporate bank disbursement, and test datasets.
+            Customize tenant payslip branding, company contact info, logo upload, component visibility, and corporate bank disbursement.
           </p>
         </div>
 
@@ -137,16 +107,6 @@ export const PayrollSettingsView: React.FC = () => {
         >
           <Building2 className="w-4 h-4" />
           <span>Pay Cycle & Cutoff Rules</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('test-data')}
-          className={cn(
-            "px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap",
-            activeTab === 'test-data' ? "bg-[#07563D] text-white shadow-2xs" : "text-gray-600 hover:bg-gray-100"
-          )}
-        >
-          <Database className="w-4 h-4" />
-          <span>Excel Master Test Data (48 Staff)</span>
         </button>
       </div>
 
@@ -491,98 +451,6 @@ export const PayrollSettingsView: React.FC = () => {
               <label className="font-bold text-gray-700 block mb-1">Attendance Cutoff Date</label>
               <input type="text" defaultValue="25th of every month" className="w-full p-2.5 border border-gray-200 rounded-xl bg-gray-50/50" />
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* 4. EXCEL TEST DATA & INGESTION TAB */}
-      {activeTab === 'test-data' && (
-        <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs space-y-6 max-w-3xl">
-          <div className="flex items-start justify-between border-b border-gray-100 pb-4">
-            <div>
-              <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
-                <Database className="w-4 h-4 text-[#07563D]" />
-                <span>Excel Master Dataset Ingestion & Testing Engine</span>
-              </h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Source: <code className="font-mono text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded">Test Data/Master Data Final (4).xlsx</code> (48 Employee records with Real Bank, PF, ESI, VDA, and Gross details).
-              </p>
-            </div>
-            <span className={cn(
-              "px-3 py-1 rounded-full text-xs font-bold",
-              testDataStatus.is_loaded ? "bg-emerald-50 text-[#07563D] border border-emerald-200" : "bg-gray-100 text-gray-600"
-            )}>
-              {testDataStatus.is_loaded ? `● ${testDataStatus.total_test_employees} Active Test Staff` : 'No Test Data Loaded'}
-            </span>
-          </div>
-
-          {/* Test Status Stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center font-mono">
-            <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
-              <span className="text-[10px] text-gray-500 font-sans block">Total Excel Staff</span>
-              <span className="font-black text-sm text-gray-900">{testDataStatus.total_test_employees || 48}</span>
-            </div>
-            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
-              <span className="text-[10px] text-emerald-800 font-sans block">Direct Entities</span>
-              <span className="font-black text-sm text-emerald-900">{testDataStatus.direct_count || 32}</span>
-            </div>
-            <div className="p-3 rounded-xl bg-blue-50 border border-blue-200">
-              <span className="text-[10px] text-blue-800 font-sans block">Vendor Units</span>
-              <span className="font-black text-sm text-blue-900">{testDataStatus.vendor_count || 16}</span>
-            </div>
-            <div className="p-3 rounded-xl bg-purple-50 border border-purple-200">
-              <span className="text-[10px] text-purple-800 font-sans block">Locations Mapped</span>
-              <span className="font-black text-sm text-purple-900">5 Plants</span>
-            </div>
-          </div>
-
-          {/* Features Included in Test Batch */}
-          <div className="p-4 rounded-xl bg-gray-50/80 border border-gray-200 space-y-2 text-xs">
-            <span className="font-bold text-gray-900 block">Automatic Setup Provided by This Ingestion Engine:</span>
-            <ul className="space-y-1.5 text-gray-600 text-[11px] list-disc list-inside">
-              <li><strong className="text-gray-900">Direct vs Vendor Distribution:</strong> Automatically places staff into Joy Corporate Solutions (Direct) and 3 Vendor Contractors (Apex, Premier, Balaji) across Rasipalayam, Muthugoundapudur, Thottipalayam, and Sulur.</li>
-              <li><strong className="text-gray-900">Real Statutory & Banking:</strong> Configures real UAN, ESI, PAN, Aadhaar, Bank A/C, and KVB / SBI / Canara IFSC codes.</li>
-              <li><strong className="text-gray-900">August 2026 Daily Attendance:</strong> Generates 1,440 punch records with present days, approved leaves, and overtime hours.</li>
-              <li><strong className="text-gray-900">Complete Payroll & Digital Payslips:</strong> Automatically computes August 2026 payroll run with printable & downloadable payslips and HDFC/ICICI bank disbursement files.</li>
-            </ul>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={handleLoadExcelData}
-                disabled={isLoadingTestData}
-                className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs shadow-xs"
-              >
-                {isLoadingTestData ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Ingesting & Calculating...
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5 mr-1.5" /> Onboard Excel Test Data (48 Staff)
-                  </>
-                )}
-              </Button>
-
-              {testDataStatus.is_loaded && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handlePurgeExcelData}
-                  className="text-rose-700 hover:bg-rose-50 border-rose-200 font-bold text-xs"
-                >
-                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Purge Test Data Batch
-                </Button>
-              )}
-            </div>
-
-            <span className="text-[11px] text-gray-400 font-mono">
-              Safe test sandbox • 1-click clean purge
-            </span>
           </div>
         </div>
       )}

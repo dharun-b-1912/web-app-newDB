@@ -1,6 +1,6 @@
 // src/features/platform/components/billing/IssueRefundModal.tsx
 // ============================================================
-// WorkForceOS — Issue Financial Refund Modal
+// Joy PeopleHR — Issue Financial Refund Modal
 // ============================================================
 
 import React, { useState } from 'react';

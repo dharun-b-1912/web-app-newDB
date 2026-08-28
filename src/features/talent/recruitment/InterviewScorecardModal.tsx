@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/InterviewScorecardModal.tsx
 // ============================================================================
-// WorkForceOS — Interview Evaluation Scorecard Modal
+// Joy PeopleHR — Interview Evaluation Scorecard Modal
 // Structured 5-Point Competency Scoring with Hiring Recommendation & Feedback
 // ============================================================================
 

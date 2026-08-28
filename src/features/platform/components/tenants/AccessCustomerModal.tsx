@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/AccessCustomerModal.tsx
 // ============================================================
-// WorkForceOS — Temporary Support Access Confirmation Modal
+// Joy PeopleHR — Temporary Support Access Confirmation Modal
 // ============================================================
 
 import React, { useState } from 'react';

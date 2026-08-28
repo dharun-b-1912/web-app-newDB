@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/JobManager.tsx
 // ============================================================================
-// WorkForceOS — Job Openings Master & Multi-Channel Publishing Hub
+// Joy PeopleHR — Job Openings Master & Multi-Channel Publishing Hub
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';

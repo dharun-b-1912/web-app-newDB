@@ -1,6 +1,6 @@
 // src/services/platform/platformIamService.ts
 // ============================================================
-// WorkForceOS — Server-Authoritative Platform IAM & Access Matrix
+// Joy PeopleHR — Server-Authoritative Platform IAM & Access Matrix
 // ============================================================
 
 export interface PlatformPermissionModule {

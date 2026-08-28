@@ -1,6 +1,6 @@
 // src/types/platformSessions.ts
 // ============================================================
-// WorkForceOS — Active Sessions & Security Telemetry Types
+// Joy PeopleHR — Active Sessions & Security Telemetry Types
 // ============================================================
 
 export type SessionStatusType = 'Active' | 'Idle' | 'Expired' | 'Revoked' | 'Terminated' | 'Unknown';

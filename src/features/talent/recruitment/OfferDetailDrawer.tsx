@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/OfferDetailDrawer.tsx
 // ============================================================================
-// WorkForceOS — Offer Deep Inspector & Lifecycle Management Drawer
+// Joy PeopleHR — Offer Deep Inspector & Lifecycle Management Drawer
 // Overview, Compensation Breakdown, A4 Document, Approval Chain, E-Sign & Conversion
 // ============================================================================
 
@@ -369,7 +369,7 @@ export const OfferDetailDrawer: React.FC<Props> = ({
                     <Plug className="w-4 h-4" />
                   </div>
                   <div>
-                    <h5 className="text-xs font-bold text-gray-900">E-Signature Gateway ({offer.esign_provider || 'WorkForceOS E-Sign'})</h5>
+                    <h5 className="text-xs font-bold text-gray-900">E-Signature Gateway ({offer.esign_provider || 'Joy PeopleHR E-Sign'})</h5>
                     <p className="text-[10px] font-mono text-gray-400">Envelope: {offer.esign_envelope_id || 'Not Dispatched'}</p>
                   </div>
                 </div>

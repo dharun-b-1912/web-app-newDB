@@ -2,6 +2,11 @@ export type HREventType =
   | 'employee.created'
   | 'employee.updated'
   | 'employee.deleted'
+  | 'employee.synced'
+  | 'employee.archived'
+  | 'employee.restored'
+  | 'employee.status_changed'
+  | 'employee.session_revoked'
   | 'employee.transferred'
   | 'employee.exited'
   | 'vendor.created'
@@ -24,12 +29,26 @@ export type HREventType =
   | 'task.blocked'
   | 'document.verified'
   | 'document.rejected'
+  | 'document.deleted'
+  | 'document.expiring'
+  | 'document.expired'
   | 'manager.approved'
   | 'asset.assigned'
   | 'employee.activated'
+  | 'employee.profile_photo.updated'
+  | 'employee.profile_photo.deleted'
+  | 'employee.profile.updated'
   | 'attendance.recorded'
   | 'attendance.updated'
+  | 'attendance.deleted'
   | 'attendance.punch_received'
+  | 'attendance.location_event_created'
+  | 'location.created'
+  | 'location.updated'
+  | 'location.deleted'
+  | 'location.event_created'
+  | 'location.assignment_updated'
+  | 'location.policy_updated'
   | 'biometric.punch_received'
   | 'biometric.agent_heartbeat'
   | 'biometric.device_status_changed'
@@ -55,6 +74,14 @@ export type HREventType =
   | 'leave.submitted'
   | 'leave.approved'
   | 'leave.rejected'
+  | 'leave.cancelled'
+  | 'leave.type_updated'
+  | 'leave.type_deleted'
+  | 'leave.holiday_updated'
+  | 'leave.calendar_updated'
+  | 'leave.entitlement_updated'
+  | 'leave.ledger_updated'
+  | 'leave.requests_synced'
   | 'regularization.submitted'
   | 'regularization.approved'
   | 'regularization.rejected'
@@ -128,9 +155,19 @@ export type HREventType =
   | 'recruitment.candidate_converted'
   | 'attendance.punch_received'
   | 'attendance.regularization_requested'
+  | 'attendance.regularization_approved'
   | 'attendance.overtime_approved'
   | 'biometric.device_status_changed'
   | 'biometric.agent_heartbeat'
+  | 'location.created'
+  | 'location.updated'
+  | 'location.deleted'
+  | 'location.assignment_updated'
+  | 'location.event_created'
+  | 'roster.updated'
+  | 'roster.bulk_assigned'
+  | 'diagnostic.sync_verified'
+  | 'sync.reconcile_requested'
   | 'custom';
 
 export type HREventPattern = HREventType | `${string}.*` | '*';
@@ -142,6 +179,7 @@ export interface HREventPayload {
   organizationId?: string;
   companyId?: string;
   actorId?: string;
+  correlationId?: string;
   data?: any;
 }
 
@@ -169,12 +207,12 @@ class HREventBusService {
   }
 
   // Alias for publish
-  emit(type: HREventType | string, data?: any, options?: { organizationId?: string; companyId?: string; actorId?: string }): void {
+  emit(type: HREventType | string, data?: any, options?: { organizationId?: string; companyId?: string; actorId?: string; correlationId?: string }): void {
     this.publish(type as HREventType, data, options);
   }
 
   // Publish an HR domain event with idempotency protection
-  publish(type: HREventType, data?: any, options?: { organizationId?: string; companyId?: string; actorId?: string; eventId?: string }): void {
+  publish(type: HREventType, data?: any, options?: { organizationId?: string; companyId?: string; actorId?: string; eventId?: string; correlationId?: string }): void {
     const eventId = options?.eventId || `evt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
     // Idempotency: Skip if already processed in this runtime session
@@ -190,6 +228,7 @@ class HREventBusService {
       organizationId: options?.organizationId,
       companyId: options?.companyId,
       actorId: options?.actorId,
+      correlationId: options?.correlationId,
       data,
     };
 

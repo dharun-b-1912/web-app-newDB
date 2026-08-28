@@ -1,6 +1,6 @@
 // src/features/platform/components/billing/InvoicePreviewModal.tsx
 // ============================================================
-// WorkForceOS — Corporate Tax Invoice Document Renderer & Print View
+// Joy PeopleHR — Corporate Tax Invoice Document Renderer & Print View
 // ============================================================
 
 import React, { useState } from 'react';
@@ -67,7 +67,7 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>WorkForceOS_Tax_Invoice_${inv.invoice_number}</title>
+          <title>Joy PeopleHR_Tax_Invoice_${inv.invoice_number}</title>
           <style>
             @page {
               size: A4 portrait;
@@ -297,7 +297,7 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
             <!-- TOP BRANDED BANNER -->
             <div class="top-banner">
               <div>
-                <div class="brand-name">WorkForceOS Technologies Pvt Ltd</div>
+                <div class="brand-name">Joy PeopleHR Technologies Pvt Ltd</div>
                 <div class="brand-sub">Enterprise SaaS & Workforce Management Platform</div>
               </div>
               <div class="inv-badge-title">
@@ -310,7 +310,7 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
             <div class="meta-grid">
               <div>
                 <div class="section-label">Supplier (Issued By)</div>
-                <div class="entity-name">WorkForceOS Technologies Pvt Ltd</div>
+                <div class="entity-name">Joy PeopleHR Technologies Pvt Ltd</div>
                 <div class="meta-line">WorkForce Tech Park, OMR IT Corridor, Chennai, TN 600096, India</div>
                 <div class="meta-line"><strong>GSTIN:</strong> ${inv.platform_gstin || '33AAACW0000A1Z5'} • <strong>PAN:</strong> AAACW0000A</div>
                 <div class="meta-line"><strong>Email:</strong> billing@workforceos.in • <strong>Phone:</strong> +91 44 4800 9000</div>
@@ -436,11 +436,11 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
             <!-- FOOTER DISCLAIMER -->
             <div class="footer-section">
               <div>
-                <p>Thank you for choosing WorkForceOS. Computer-generated tax invoice under Indian GST Rules.</p>
+                <p>Thank you for choosing Joy PeopleHR. Computer-generated tax invoice under Indian GST Rules.</p>
                 <p>For billing queries: billing@workforceos.in • Support: +91 44 4800 9000</p>
               </div>
               <div class="seal-box">
-                <p style="font-weight: 700;">For WorkForceOS Technologies Pvt Ltd</p>
+                <p style="font-weight: 700;">For Joy PeopleHR Technologies Pvt Ltd</p>
                 <p style="font-size: 8.5px; color: #64748b; margin-top: 2px;">Authorized Signatory</p>
               </div>
             </div>
@@ -542,7 +542,7 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
             {/* BRANDED TOP BAR */}
             <div className="bg-gradient-to-r from-[#064e3b] to-[#047857] text-white p-5 flex justify-between items-center">
               <div>
-                <h2 className="text-lg font-bold tracking-tight">WorkForceOS Technologies Pvt Ltd</h2>
+                <h2 className="text-lg font-bold tracking-tight">Joy PeopleHR Technologies Pvt Ltd</h2>
                 <p className="text-[11px] text-emerald-100 mt-0.5">Enterprise SaaS & Workforce Management Platform</p>
               </div>
               <div className="text-right">
@@ -555,7 +555,7 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-5 bg-gray-50/70 border-b border-gray-200">
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-[#047857] uppercase tracking-wider block">Supplier (Issued By)</span>
-                <strong className="text-sm font-bold text-gray-900 block">WorkForceOS Technologies Pvt Ltd</strong>
+                <strong className="text-sm font-bold text-gray-900 block">Joy PeopleHR Technologies Pvt Ltd</strong>
                 <p className="text-gray-600">WorkForce Tech Park, OMR IT Corridor, Chennai, TN 600096, India</p>
                 <p className="font-mono text-gray-700"><strong>GSTIN:</strong> {inv.platform_gstin || '33AAACW0000A1Z5'} • <strong>PAN:</strong> AAACW0000A</p>
                 <p className="text-gray-500">Email: billing@workforceos.in • Phone: +91 44 4800 9000</p>
@@ -688,11 +688,11 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
             {/* DISCLAIMER FOOTER */}
             <div className="p-4 bg-gray-50 border-t border-gray-200 flex justify-between items-center text-[10px] text-gray-500">
               <div>
-                <p>Thank you for choosing WorkForceOS. Computer-generated tax invoice under Indian GST Rules.</p>
+                <p>Thank you for choosing Joy PeopleHR. Computer-generated tax invoice under Indian GST Rules.</p>
                 <p>Billing Support: billing@workforceos.in • +91 44 4800 9000</p>
               </div>
               <div className="text-right font-semibold text-gray-700">
-                <p>For WorkForceOS Technologies Pvt Ltd</p>
+                <p>For Joy PeopleHR Technologies Pvt Ltd</p>
                 <p className="text-[9px] text-gray-400">Authorized Signatory</p>
               </div>
             </div>

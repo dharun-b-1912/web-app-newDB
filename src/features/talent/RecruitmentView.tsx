@@ -1,6 +1,6 @@
 // src/features/talent/RecruitmentView.tsx
 // ============================================================================
-// WorkForceOS — Recruitment & ATS 2.0 Enterprise Operating System Workspace
+// Joy PeopleHR — Recruitment & ATS 2.0 Enterprise Operating System Workspace
 // 10 Standalone Business Modules with Zero-Mock Data & State Machine Lifecycle
 // ============================================================================
 

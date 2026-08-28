@@ -80,6 +80,7 @@ export type ModuleId =
   | 'gps'
   | 'gps-attendance'
   | 'geofences'
+  | 'staff-mapping'
   | 'mobile-clocking'
   | 'location-logs'
   | 'location-exceptions'
@@ -232,6 +233,8 @@ export type ModuleId =
   | 'admin-subscription'
   | 'admin-billing'
   | 'admin-settings'
+  | 'realtime-health'
+  | 'admin-realtime-health'
   // ESS (Employee Self-Service) modules
   | 'ess-dashboard'
   | 'ess-attendance'

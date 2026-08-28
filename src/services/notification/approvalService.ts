@@ -1,6 +1,6 @@
 // src/services/notification/approvalService.ts
 // ============================================================
-// WorkForceOS — Server-Authoritative Approval Execution Engine
+// Joy PeopleHR — Server-Authoritative Approval Execution Engine
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';

@@ -1,6 +1,6 @@
 // src/features/platform/subviews/WebhooksAndMeshView.tsx
 // ============================================================
-// WorkForceOS — Webhooks & Event Mesh Control Center
+// Joy PeopleHR — Webhooks & Event Mesh Control Center
 // ============================================================
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -334,7 +334,7 @@ export const WebhooksAndMeshView: React.FC = () => {
             </div>
           </div>
           <p className="text-[13.5px] text-[#64748B] mt-1 max-w-3xl">
-            Manage event routing, webhook integrations, delivery health, retries and event infrastructure across the WorkForceOS platform.
+            Manage event routing, webhook integrations, delivery health, retries and event infrastructure across the Joy PeopleHR platform.
           </p>
         </div>
 
@@ -655,7 +655,7 @@ export const WebhooksAndMeshView: React.FC = () => {
                 onClick={() =>
                   setSelectedMeshNode({
                     id: 'node-producers',
-                    title: 'WorkForceOS Event Sources (Producers)',
+                    title: 'Joy PeopleHR Event Sources (Producers)',
                     type: 'Producer Tier',
                     status: 'Operational',
                     throughput: `${metrics.events_per_min.toLocaleString()} events/min`,
@@ -677,7 +677,7 @@ export const WebhooksAndMeshView: React.FC = () => {
                     <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">1. Producers</span>
                     <span className="h-2 w-2 rounded-full bg-[#10B981] animate-pulse" />
                   </div>
-                  <h4 className="text-sm font-bold text-[#0F172B] group-hover:text-[#047857]">WorkForceOS Events</h4>
+                  <h4 className="text-sm font-bold text-[#0F172B] group-hover:text-[#047857]">Joy PeopleHR Events</h4>
                   <p className="text-xs text-[#64748B] mt-1">{metrics.producers_count || 14} Domain Services</p>
                 </div>
                 <div className="mt-4 pt-3 border-t border-[#E2E8F0] flex items-center justify-between text-xs text-[#334155]">
@@ -1536,7 +1536,7 @@ export const WebhooksAndMeshView: React.FC = () => {
       {activeTab === 'catalog' && (
         <div className="space-y-6">
           <div className="bg-white p-5 rounded-xl border border-[#E2E8F0] shadow-sm">
-            <h3 className="text-sm font-bold text-[#0F172B] mb-1">WorkForceOS Event Schema Catalog</h3>
+            <h3 className="text-sm font-bold text-[#0F172B] mb-1">Joy PeopleHR Event Schema Catalog</h3>
             <p className="text-xs text-[#64748B] mb-4">
               All platform events are strongly typed, versioned, and guaranteed immutable.
             </p>
@@ -1698,7 +1698,7 @@ export const WebhooksAndMeshView: React.FC = () => {
                   isOpen: true,
                   title: 'Queue Historical Event Replay Job',
                   description:
-                    'This will queue ~1,008 historical events for dispatch. The recipient endpoint will receive these with standard HMAC signatures and X-WorkForceOS-Replay: true header.',
+                    'This will queue ~1,008 historical events for dispatch. The recipient endpoint will receive these with standard HMAC signatures and X-Joy PeopleHR-Replay: true header.',
                   actionText: 'Queue Replay Batch',
                   onConfirm: async () => {
                     await platformWebhooksMeshService.executeReplay({ hours_back: 24 });
@@ -1727,11 +1727,11 @@ export const WebhooksAndMeshView: React.FC = () => {
               Webhook Security & HMAC-SHA256 Signatures
             </h3>
             <p className="text-xs text-[#64748B] max-w-2xl leading-relaxed">
-              Every outbound webhook from WorkForceOS is signed using a cryptographic HMAC-SHA256 hash computed over the HTTP request body and timestamp header.
+              Every outbound webhook from Joy PeopleHR is signed using a cryptographic HMAC-SHA256 hash computed over the HTTP request body and timestamp header.
             </p>
 
             <div className="p-4 rounded-xl bg-[#0F172B] text-white font-mono text-xs space-y-2 overflow-x-auto">
-              <div className="text-[#94A3B8]">// Standard WorkForceOS Inbound Verification (Node.js / Express)</div>
+              <div className="text-[#94A3B8]">// Standard Joy PeopleHR Inbound Verification (Node.js / Express)</div>
               <div className="text-[#38BDF8]">
                 const crypto = require('crypto');
                 <br />
@@ -2188,7 +2188,7 @@ const CreateEndpointWizardModal: React.FC<{
           {step === 4 && (
             <div className="space-y-3">
               <h4 className="font-bold text-[#0F172B] text-sm">Step 4 — Authentication & Security</h4>
-              <p className="text-[#64748B]">WorkForceOS signs all payloads using HMAC SHA-256 by default.</p>
+              <p className="text-[#64748B]">Joy PeopleHR signs all payloads using HMAC SHA-256 by default.</p>
               <div>
                 <label className="font-semibold text-[#334155]">Authentication Mode</label>
                 <select
@@ -2205,7 +2205,7 @@ const CreateEndpointWizardModal: React.FC<{
               </div>
               <div className="p-3 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
                 <span className="font-bold text-[#0F172B]">HMAC Signature Header:</span>
-                <p className="font-mono text-[11px] text-[#047857] mt-1">X-WorkForceOS-Signature: t=...,v1=...</p>
+                <p className="font-mono text-[11px] text-[#047857] mt-1">X-Joy PeopleHR-Signature: t=...,v1=...</p>
               </div>
             </div>
           )}

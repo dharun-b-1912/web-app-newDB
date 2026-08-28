@@ -1,6 +1,6 @@
 // src/features/assistant/AiAssistantDrawer.tsx
 // ============================================================
-// WorkForceOS — Intelligence Copilot Drawer (HR & Platform Super Admin)
+// Joy PeopleHR — Intelligence Copilot Drawer (HR & Platform Super Admin)
 // ============================================================
 
 import React, { useState } from 'react';
@@ -36,8 +36,8 @@ export const AiAssistantDrawer: React.FC<AiAssistantDrawerProps> = ({ isOpen, on
       id: '1',
       sender: 'ai',
       text: isSuperAdmin
-        ? `Hello Super Admin! I am your WorkForceOS SaaS Operations Copilot. I can analyze at-risk tenant organizations, revenue growth anomalies, infrastructure latency spikes, and incident post-mortems. How can I help you operate the platform today?`
-        : `Hello! I am your WorkForceOS Intelligence Copilot powered by Google Gemini. How can I assist you with HR policies, department headcount analysis, or multi-tenant configuration for ${activeCompany?.legal_name}?`,
+        ? `Hello Super Admin! I am your Joy PeopleHR SaaS Operations Copilot. I can analyze at-risk tenant organizations, revenue growth anomalies, infrastructure latency spikes, and incident post-mortems. How can I help you operate the platform today?`
+        : `Hello! I am your Joy PeopleHR Intelligence Copilot powered by Google Gemini. How can I assist you with HR policies, department headcount analysis, or multi-tenant configuration for ${activeCompany?.legal_name}?`,
       time: 'Just now',
     },
   ]);
@@ -84,7 +84,7 @@ export const AiAssistantDrawer: React.FC<AiAssistantDrawerProps> = ({ isOpen, on
     <Drawer
       isOpen={isOpen}
       onClose={onClose}
-      title={isSuperAdmin ? 'WorkForceOS SaaS Control Copilot' : 'WorkForce Copilot Intelligence'}
+      title={isSuperAdmin ? 'Joy PeopleHR SaaS Control Copilot' : 'WorkForce Copilot Intelligence'}
       size="md"
     >
       <div className="flex flex-col h-[calc(100vh-140px)] justify-between space-y-4">

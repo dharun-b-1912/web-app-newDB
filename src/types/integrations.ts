@@ -1,6 +1,6 @@
 // src/types/integrations.ts
 // ============================================================
-// WorkForceOS — Integration Control Center Type Definitions
+// Joy PeopleHR — Integration Control Center Type Definitions
 // ============================================================
 
 export type IntegrationEnvironment = 'Production' | 'Staging' | 'Development';

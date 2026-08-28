@@ -1,6 +1,6 @@
 // src/services/attendance/mantraAdapter.ts
 // ============================================================================
-// WorkForceOS — Mantra MFS100 RD Service Adapter
+// Joy PeopleHR — Mantra MFS100 RD Service Adapter
 // Connects to Mantra RD Service on 127.0.0.1:11100 over HTTP/REST & WebSocket
 // ============================================================================
 

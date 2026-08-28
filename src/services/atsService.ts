@@ -1,6 +1,6 @@
 // src/services/atsService.ts
 // ============================================================================
-// WorkForceOS — ATS Service Bridge
+// Joy PeopleHR — ATS Service Bridge
 // Direct delegation to Recruitment & ATS 2.0 Engine with Zero-Mock Data Policy
 // ============================================================================
 

@@ -1,6 +1,6 @@
 // src/services/payrollApi.ts
 // ============================================================================
-// WorkForceOS — Production-Grade Multi-Tenant Payroll Engine v4.0
+// Joy PeopleHR — Production-Grade Multi-Tenant Payroll Engine v4.0
 // 100% Real-Data Driven • Tenant Isolated • Attendance/Leave Integrated
 // ============================================================================
 
@@ -40,6 +40,7 @@ import { leaveApi } from './leaveApi';
 import { attendanceOperationsEngine } from './attendance/attendanceOperationsEngine';
 import { hrEventBus } from './hrEventBus';
 import { getActiveOrgId } from './attendance/biometricCommandService';
+import { supabase } from '../lib/supabase';
 
 const STORAGE_KEYS = {
   COMPONENTS: 'workforce_payroll_components_v2',
@@ -806,6 +807,59 @@ finalizeAndLockPayroll(runId: string, actorName = 'HR Administrator', tenantId =
     this.createDisbursementBatch({ payroll_run_id: run.id }, actorName, tenantId);
   } catch (e) {
     // Batch may already exist
+  }
+
+  // Sync to Supabase employee_payslips & send notification_events to Mobile/Flutter
+  try {
+    const monthStr = run.pay_period.split(' ')[0];
+    const yearVal = parseInt(run.pay_period.split(' ')[1] || '2026', 10);
+    const monthMap: Record<string, number> = {
+      January: 1, February: 2, March: 3, April: 4, May: 5, June: 6,
+      July: 7, August: 8, September: 9, October: 10, November: 11, December: 12
+    };
+    const monthNum = monthMap[monthStr] || (new Date().getMonth() + 1);
+
+    for (const rec of run.employee_records) {
+      const payslipPayload = {
+        employee_code: rec.employee_code || rec.employee_id,
+        tenant_id: tenantId,
+        month: monthNum,
+        year: yearVal,
+        total_deductions: rec.total_deductions,
+        net_salary: rec.net_pay,
+        created_at: new Date().toISOString()
+      };
+
+      Promise.resolve(supabase.from('employee_payslips').insert(payslipPayload)).catch(() => {});
+
+      Promise.resolve(supabase.from('notification_events').insert({
+        event_type: 'PAYSLIP_GENERATED',
+        category: 'PAYROLL',
+        severity: 'INFO',
+        title: `Payslip Generated — ${run.pay_period}`,
+        body: `Your ${run.pay_period} payslip of ₹${rec.net_pay.toLocaleString('en-IN')} has been generated and is ready to view & download.`,
+        resource_type: 'PAYSLIP',
+        resource_id: rec.employee_id,
+        actor_name: actorName,
+        metadata: {
+          employee_id: rec.employee_id,
+          employee_code: rec.employee_code || rec.employee_id,
+          pay_period: run.pay_period,
+          net_pay: rec.net_pay,
+          gross_earnings: rec.total_earnings,
+          basic: rec.basic,
+          hra: rec.hra,
+          special_allowance: rec.special_allowance,
+          epf: rec.epf_employee,
+          pt: rec.professional_tax,
+          tds: rec.tds_tax,
+          total_deductions: rec.total_deductions,
+          payslip_id: `payslip-${run.id}-${rec.employee_id}`,
+        },
+      })).catch(() => {});
+    }
+  } catch (syncErr) {
+    console.warn('[PayrollApi] Supabase payslips sync notice:', syncErr);
   }
 
   this.logAudit({
@@ -1841,6 +1895,35 @@ reconcileBatch(batchId: string, actorName = 'Finance Officer', tenantId = getAct
     summary: `Completed zero-variance bank reconciliation for batch ${batch.batch_number} (Settled ₹${(batch.successful_amount || batch.total_amount).toLocaleString('en-IN')})`,
     timestamp: new Date().toISOString(),
   });
+
+  // Publish real-time salary credit notifications to Mobile / Flutter
+  try {
+    const items = batch.items || [];
+    for (const item of items) {
+      if (item.bank_status === 'Settled' || item.bank_status === 'Success' || !item.bank_status) {
+        Promise.resolve(supabase.from('notification_events').insert({
+          event_type: 'SALARY_DISBURSED',
+          category: 'PAYROLL',
+          severity: 'INFO',
+          title: `Salary Credited — ${batch.pay_period}`,
+          body: `Your salary of ₹${item.amount.toLocaleString('en-IN')} for ${batch.pay_period} has been credited to your bank account (UTR: ${item.bank_reference_number || batch.bank_reference_id || 'UTR-SETTLED'}). Value Date: ${batch.reconciled_at ? new Date(batch.reconciled_at).toLocaleDateString('en-GB') : '31 Aug 2026'}.`,
+          resource_type: 'BANK_DISBURSEMENT',
+          resource_id: item.employee_id,
+          actor_name: actorName,
+          metadata: {
+            payroll_cycle: batch.pay_period,
+            amount: item.amount,
+            utr: item.bank_reference_number || batch.bank_reference_id,
+            value_date: batch.reconciled_at || new Date().toISOString(),
+            status: 'Settled',
+            batch_id: batch.id,
+          },
+        })).catch(() => {});
+      }
+    }
+  } catch (notifErr) {
+    console.warn('[PayrollApi] Disbursement notification error:', notifErr);
+  }
 
   return batch;
 }

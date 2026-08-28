@@ -1,6 +1,6 @@
 // src/types/payroll.ts
 // ============================================================================
-// WorkForceOS — Production Multi-Tenant Payroll & Compensation Types
+// Joy PeopleHR — Production Multi-Tenant Payroll & Compensation Types
 // ============================================================================
 
 export type ComponentType =

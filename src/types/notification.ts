@@ -1,6 +1,6 @@
 // src/types/notification.ts
 // ============================================================
-// WorkForceOS — Unified Realtime Notification & Event Contracts
+// Joy PeopleHR — Unified Realtime Notification & Event Contracts
 // ============================================================
 
 export type NotificationCategory =

@@ -1,6 +1,6 @@
 // src/lib/biometric/deviceAdapterInterface.ts
 // ============================================================================
-// WorkForceOS — Universal Biometric Device Adapter Interface
+// Joy PeopleHR — Universal Biometric Device Adapter Interface
 // Pluggable Contract for ZKTeco, Mantra, eSSL, Suprema, Matrix, Hikvision
 // ============================================================================
 

@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/CustomerWorkspaceHeader.tsx
 // ============================================================
-// WorkForceOS — Customer Organization Executive Header & Actions
+// Joy PeopleHR — Customer Organization Executive Header & Actions
 // ============================================================
 
 import React, { useState } from 'react';

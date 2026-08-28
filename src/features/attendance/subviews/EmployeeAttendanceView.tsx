@@ -33,10 +33,13 @@ import { AttendanceDaily, PunchSource } from '../../../types/attendance';
 import { attendanceApi } from '../../../services/attendanceApi';
 import { api } from '../../../services/api';
 import { useToast } from '../../../components/ui/Toast';
-import { formatMinutesToHoursStr } from '../../../lib/attendance/attendanceEngine';
+import { formatMinutesToHoursStr, formatCleanTime, timeStringToMinutes, processAttendanceStatus } from '../../../lib/attendance/attendanceEngine';
 import { attendanceRosterService } from '../../../services/attendance/attendanceRosterService';
+import { attendanceTimeService } from '../../../services/attendance/attendanceTimeService';
 import { GlobalAttendanceFilterState } from '../AttendanceModuleMaster';
 import { cn } from '../../../lib/utils';
+import { hrEventBus } from '../../../services/hrEventBus';
+import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
 
 interface EmployeeAttendanceViewProps {
   filterState?: GlobalAttendanceFilterState;
@@ -74,7 +77,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   const [dailyRecords, setDailyRecords] = useState<AttendanceDaily[]>([]);
   const [departments, setDepartments] = useState<string[]>(['People & HR', 'Engineering', 'Operations', 'Quality Assurance']);
   const [locations, setLocations] = useState<string[]>(['Coimbatore HQ', 'Chennai Factory', 'Hosur Plant', 'Bangalore Office']);
-  const [vendors, setVendors] = useState<string[]>(['Direct Payroll', 'ABC Manpower Services', 'XYZ Workforce Solutions', 'Apex Industrial Manpower']);
+  const [vendors, setVendors] = useState<string[]>(['Direct Payroll']);
   const [shifts, setShifts] = useState<any[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -82,8 +85,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     const source = emp.employment_source || emp.employment?.employment_source;
     if (source === 'VENDOR' || source === 'MANPOWER_PROVIDER') return true;
     if (source === 'DIRECT') return false;
-    if (emp.vendor_name && emp.vendor_name.trim() !== '') return true;
-    if (emp.employment?.vendor_name && emp.employment.vendor_name.trim() !== '') return true;
+    if (emp.vendor_name && emp.vendor_name.trim() !== '' && !emp.vendor_name.toLowerCase().includes('joy corporate') && emp.vendor_name.toLowerCase() !== 'direct payroll') return true;
+    if (emp.employment?.vendor_name && emp.employment.vendor_name.trim() !== '' && !emp.employment.vendor_name.toLowerCase().includes('joy corporate')) return true;
     if (emp.company_name && emp.company_name.toLowerCase().includes('vendor')) return true;
     return false;
   };
@@ -92,7 +95,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     if (checkIsVendor(emp)) {
       return emp.vendor_name || emp.employment?.vendor_name || 'Contract Agency';
     }
-    return 'Joy Corporate Solutions Pvt Ltd';
+    return 'Direct Payroll';
   };
 
   const loadData = () => {
@@ -102,12 +105,13 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       setEmployees(realEmps);
 
       const uniqueVendors = Array.from(
-        new Set(
-          realEmps
+        new Set([
+          'Direct Payroll',
+          ...realEmps
             .filter(e => checkIsVendor(e))
             .map(e => getVendorName(e))
             .filter(Boolean)
-        )
+        ])
       ) as string[];
       setVendors(uniqueVendors);
     }).catch(() => {});
@@ -123,10 +127,89 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
     const records = attendanceApi.getDailyAttendance(selectedDate);
     setDailyRecords(records);
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase
+          .from('attendance_daily')
+          .select('*')
+          .eq('date', selectedDate)
+      )
+        .then(({ data, error }: any) => {
+          if (!error && Array.isArray(data)) {
+            try {
+              const currentList = JSON.parse(localStorage.getItem('workforceos_attendance_daily_v2') || '[]');
+              const otherDatesList = currentList.filter((a: any) => a.date !== selectedDate);
+              const merged = [...data, ...otherDatesList];
+              
+              const getAttendanceKeys = () => {
+                const s = new Set([
+                  'workforceos_attendance_daily_v2',
+                  'workforceos_attendance_daily_v2_org-joy-01',
+                ]);
+                try {
+                  const activeOrg = localStorage.getItem('workforce_active_org_id');
+                  if (activeOrg) s.add(`workforceos_attendance_daily_v2_${activeOrg}`);
+                  for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (k && k.startsWith('workforceos_attendance_daily_v2')) {
+                      s.add(k);
+                    }
+                  }
+                } catch {}
+                return Array.from(s);
+              };
+
+              for (const k of getAttendanceKeys()) {
+                localStorage.setItem(k, JSON.stringify(merged));
+              }
+
+              const refreshedRecords = attendanceApi.getDailyAttendance(selectedDate);
+              setDailyRecords(refreshedRecords);
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    }
   };
 
   useEffect(() => {
     loadData();
+  }, [selectedDate]);
+
+  // Real-time Supabase postgres replication stream for instant punch updates
+  useEffect(() => {
+    if (!isSupabaseEnabled) return;
+    const channel = supabase
+      .channel(`emp-attendance-live-${selectedDate}-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance_daily' },
+        () => {
+          loadData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedDate]);
+
+  // HR Event Bus listener
+  useEffect(() => {
+    const unsub = hrEventBus.subscribe('attendance.*', () => {
+      loadData();
+    });
+    return () => unsub();
+  }, [selectedDate]);
+
+  // Quiet continuous background synchronization
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadData();
+    }, 3500);
+    return () => clearInterval(timer);
   }, [selectedDate]);
 
   // Scoped and filtered employees & attendance records
@@ -193,11 +276,27 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       };
 
       const isOff = roster.is_weekly_off;
-      const status = record?.status || (isOff ? 'Weekly Off' : 'Not Checked In');
+      let resolvedRecord = record;
+      if (record && record.first_check_in && (!record.net_working_minutes || record.net_working_minutes === 0)) {
+        const inMins = timeStringToMinutes(record.first_check_in);
+        const outMins = timeStringToMinutes(record.last_check_out);
+        const expIn = timeStringToMinutes(shift.start_time) || 540;
+        const expOut = timeStringToMinutes(shift.end_time) || 1080;
+        const calc = processAttendanceStatus(inMins, outMins, expIn, expOut);
+        resolvedRecord = {
+          ...record,
+          gross_working_minutes: calc.grossMinutes,
+          net_working_minutes: calc.netMinutes,
+          late_minutes: record.late_minutes ?? calc.lateMinutes,
+          status: record.status || calc.status,
+        };
+      }
+
+      const status = resolvedRecord?.status || (isOff ? 'Weekly Off' : 'Not Checked In');
 
       return {
         emp,
-        record: record || {
+        record: resolvedRecord || {
           id: `att-dyn-${emp.id}-${selectedDate}`,
           employee_id: emp.id,
           employee_code: emp.employee_code || `WF-${emp.id}`,
@@ -658,7 +757,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                           <div>
                             <div className="font-mono font-bold text-emerald-800 flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                              {record.first_check_in}
+                              {attendanceTimeService.formatAttendanceTime(record.first_check_in, 'Asia/Kolkata', true)}
                             </div>
                             <div className="text-[9px] text-gray-400 font-medium">
                               {record.check_in_source || record.source || 'BIOMETRIC'}
@@ -673,15 +772,14 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                       <TableCell>
                         {record.last_check_out ? (
                           <div>
-                            <div className="font-mono font-bold text-gray-800">{record.last_check_out}</div>
+                            <div className="font-mono font-bold text-rose-800 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                              {attendanceTimeService.formatAttendanceTime(record.last_check_out, 'Asia/Kolkata', true)}
+                            </div>
                             <div className="text-[9px] text-gray-400 font-medium">
-                              {record.check_out_source || (record.source === 'WEB' ? 'WEB' : 'WEB')}
+                              {record.check_out_source || record.source || 'MOBILE'}
                             </div>
                           </div>
-                        ) : record.first_check_in ? (
-                          <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-semibold">
-                            Pending Out
-                          </span>
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}

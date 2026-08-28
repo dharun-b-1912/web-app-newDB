@@ -1,6 +1,6 @@
 // src/services/organization/organizationStructureService.ts
 // ============================================================================
-// WorkForceOS — Organization Structure & Entities Service 2.0
+// Joy PeopleHR — Organization Structure & Entities Service 2.0
 // Database-Backed Engine for Legal Entities, Branches, Departments & Teams
 // ============================================================================
 
@@ -64,15 +64,15 @@ class OrganizationStructureService {
           { count: workerCount },
           { count: deployCount },
         ] = await Promise.all([
-          supabase.from('companies').select('*', { count: 'exact', head: true }).eq('organization_id', organizationId),
-          supabase.from('branches').select('*, companies!inner(organization_id)', { count: 'exact', head: true }).eq('companies.organization_id', organizationId),
-          supabase.from('departments').select('*, companies!inner(organization_id)', { count: 'exact', head: true }).eq('companies.organization_id', organizationId),
-          supabase.from('teams').select('*', { count: 'exact', head: true }).eq('organization_id', organizationId),
-          supabase.from('employees').select('*', { count: 'exact', head: true }).eq('organization_id', organizationId).neq('status', 'Exited'),
-          supabase.from('vendors').select('*', { count: 'exact', head: true }).eq('organization_id', organizationId),
-          supabase.from('vendors').select('*', { count: 'exact', head: true }).eq('organization_id', organizationId).eq('vendor_type', 'MANPOWER_PROVIDER'),
-          supabase.from('vendor_workers').select('*', { count: 'exact', head: true }).eq('organization_id', organizationId).neq('status', 'OFFBOARDED'),
-          supabase.from('vendor_deployments').select('*', { count: 'exact', head: true }).eq('organization_id', organizationId).eq('status', 'ACTIVE'),
+          supabase.from('companies').select('id', { count: 'exact' }).eq('organization_id', organizationId).limit(1),
+          supabase.from('branches').select('id, companies!inner(organization_id)', { count: 'exact' }).eq('companies.organization_id', organizationId).limit(1),
+          supabase.from('departments').select('id, companies!inner(organization_id)', { count: 'exact' }).eq('companies.organization_id', organizationId).limit(1),
+          supabase.from('teams').select('id', { count: 'exact' }).eq('organization_id', organizationId).limit(1),
+          supabase.from('employees').select('id', { count: 'exact' }).eq('organization_id', organizationId).neq('status', 'Exited').limit(1),
+          supabase.from('vendors').select('id', { count: 'exact' }).eq('organization_id', organizationId).limit(1),
+          supabase.from('vendors').select('id', { count: 'exact' }).eq('organization_id', organizationId).eq('vendor_type', 'MANPOWER_PROVIDER').limit(1),
+          supabase.from('vendor_workers').select('id', { count: 'exact' }).eq('organization_id', organizationId).neq('status', 'OFFBOARDED').limit(1),
+          supabase.from('vendor_deployments').select('id', { count: 'exact' }).eq('organization_id', organizationId).eq('status', 'ACTIVE').limit(1),
         ]);
 
         if (

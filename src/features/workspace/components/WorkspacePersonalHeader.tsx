@@ -34,7 +34,7 @@ export const WorkspacePersonalHeader: React.FC<Props> = ({
   const fullName = employee.display_name || user.name || 'Team Member';
   const designation = employee.designation_title || (user.roles?.[0]?.name) || 'Team Member';
   const department = employee.department_name || 'Enterprise Operations';
-  const managerName = employee.employment?.reporting_manager_name || 'Dharun Joy (Company Admin)';
+  const managerName = employee.employment?.reporting_manager_name || 'Dharun B (Company Admin)';
   const location = employee.branch_name || 'Coimbatore HQ';
 
   const isCheckedIn = attendanceState === 'CheckedIn';
@@ -55,7 +55,7 @@ export const WorkspacePersonalHeader: React.FC<Props> = ({
 
         <div className="space-y-1.5 min-w-0">
           <div className="text-[10px] font-bold tracking-wider text-emerald-800 uppercase flex items-center gap-2">
-            <span>WorkForceOS ESS Portal</span>
+            <span>Joy PeopleHR ESS Portal</span>
             <span>•</span>
             <span>Asia/Kolkata (IST)</span>
           </div>

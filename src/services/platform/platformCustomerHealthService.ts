@@ -1,6 +1,6 @@
 // src/services/platform/platformCustomerHealthService.ts
 // ============================================================
-// WorkForceOS — Tenant Health, Churn Risk & Customer Intervention Engine
+// Joy PeopleHR — Tenant Health, Churn Risk & Customer Intervention Engine
 // ============================================================
 
 import { platformAuditService } from './platformAuditService';

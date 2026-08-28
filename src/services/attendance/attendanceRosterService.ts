@@ -1,6 +1,6 @@
 // src/services/attendance/attendanceRosterService.ts
 // ============================================================================
-// WorkForceOS — Enterprise Multi-Tenant Shift, Roster & Attendance Calculation Engine
+// Joy PeopleHR — Enterprise Multi-Tenant Shift, Roster & Attendance Calculation Engine
 // Versioned Policies, Effective-Dated Rosters, Multi-Layer Punch Normalization, 9-State Lifecycle
 // ============================================================================
 
@@ -575,6 +575,32 @@ class AttendanceRosterService {
 
     const finalList = Array.from(updatedMap.values());
     setStore(STORAGE_KEYS.ROSTERS, finalList, tenantId);
+
+    // Persist to Supabase Database
+    const newAssignedEntries = Array.from(updatedMap.values()).filter(r => payload.employeeIds.includes(r.employee_id));
+    this.syncRosterEntriesToDb(newAssignedEntries);
+
+    // Broadcast domain event to Realtime Outbox for Flutter
+    if (isSupabaseEnabled && supabase) {
+        Promise.resolve(
+          supabase.from('realtime_outbox').insert({
+            tenant_id: tenantId,
+            organization_id: tenantId,
+            event_type: 'roster.bulk_assigned',
+            entity_type: 'ROSTER',
+            entity_id: shift.shift_code,
+            payload: {
+              shift_code: shift.shift_code,
+              shift_name: shift.shift_name,
+              employee_ids: payload.employeeIds,
+              start_date: payload.startDate,
+              end_date: payload.endDate,
+              count: assignedCount,
+              updated_at: new Date().toISOString(),
+            }
+          })
+        ).catch(() => {});
+    }
 
     hrEventBus.emit('roster.bulk_assigned', {
       shiftCode: shift.shift_code,
@@ -1515,29 +1541,84 @@ class AttendanceRosterService {
   private async syncRosterEntriesToDb(entries: EmployeeRosterEntry[]): Promise<void> {
     if (!isSupabaseEnabled || !supabase || entries.length === 0) return;
     try {
-      const records = entries.map(r => ({
-        id: r.id,
-        organization_id: r.tenant_id,
-        employee_id: r.employee_id,
-        employee_code: r.employee_code,
-        employee_name: r.employee_name,
-        department_name: r.department_name,
-        location_name: r.location_name,
-        date: r.date,
-        shift_id: r.shift_id,
-        shift_code: r.shift_code,
-        shift_name: r.shift_name,
-        shift_type: r.shift_type,
-        is_weekly_off: r.is_weekly_off,
-        is_holiday: r.is_holiday,
-        is_override: r.is_override,
-        override_reason: r.override_reason,
-        assigned_by: r.assigned_by,
-        updated_at: r.updated_at,
-      }));
-      await supabase.from('attendance_roster_entries').upsert(records);
+      const allShifts = this.getShifts();
+      const shiftMap = new Map(allShifts.map(s => [s.id, s]));
+
+      for (const entry of entries) {
+        const shift = shiftMap.get(entry.shift_id) || allShifts.find(s => s.shift_code === entry.shift_code) || allShifts[0];
+        const isOff = entry.is_weekly_off || entry.shift_code === 'OFF';
+        const isNight = entry.shift_code.includes('NGT') || shift?.cross_midnight;
+
+        const startTime = shift?.start_time || '09:00';
+        const endTime = shift?.end_time || '18:00';
+        const startDisplay = isNight ? '10:00 PM' : (startTime.startsWith('14') ? '02:00 PM' : (startTime.startsWith('06') ? '06:00 AM' : '09:00 AM'));
+        const endDisplay = isNight ? '06:00 AM' : (endTime.startsWith('22') ? '10:30 PM' : (endTime.startsWith('14') ? '02:30 PM' : '06:00 PM'));
+
+        const todayStr = '2026-08-26';
+        const d = new Date(entry.date);
+        const dateDisplay = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        const isToday = entry.date === todayStr;
+        const isTomorrow = entry.date === '2026-08-27';
+
+        const title = entry.is_override
+          ? (isToday ? 'Today — Shift Updated' : `Shift Updated — ${dateDisplay}`)
+          : (isToday ? 'Today — Shift Assigned' : (isTomorrow ? 'Tomorrow — Shift Assigned' : `Upcoming Shift Assignment — ${dateDisplay}`));
+
+        const body = isOff
+          ? `Your roster for ${dateDisplay} is set to Weekly Off (Rest Day).`
+          : `Your shift for ${dateDisplay} has been assigned: ${shift?.shift_name || entry.shift_name} (${entry.shift_code}, ${startDisplay} – ${endDisplay}) at Joy Corporate Solutions Private Limited (HQ). Assigned by ${entry.assigned_by || 'HR Administrator'}.`;
+
+        // 1. Try sync to attendance_roster_entries
+        Promise.resolve(
+          supabase.from('attendance_roster_entries').upsert({
+            id: entry.id,
+            employee_id: entry.employee_id,
+            employee_code: entry.employee_code,
+            date: entry.date,
+            shift_id: entry.shift_id,
+            shift_code: entry.shift_code,
+            shift_name: entry.shift_name,
+            is_weekly_off: isOff,
+            is_override: entry.is_override,
+            start_time: startTime,
+            end_time: endTime,
+            updated_at: new Date().toISOString()
+          })
+        ).catch(() => {});
+
+        // 2. Publish real-time notification_events for Mobile / Flutter
+        Promise.resolve(
+          supabase.from('notification_events').insert({
+            event_type: entry.is_override ? 'SHIFT_UPDATED' : 'SHIFT_ASSIGNED',
+            category: 'ATTENDANCE',
+            severity: 'INFO',
+            title,
+            body,
+            resource_type: 'SHIFT_ASSIGNMENT',
+            resource_id: entry.employee_id,
+            actor_name: entry.assigned_by || 'HR Administrator',
+            metadata: {
+              employee_id: entry.employee_id,
+              employee_code: entry.employee_code,
+              effective_date: entry.date,
+              shift_id: entry.shift_id,
+              shift_code: entry.shift_code,
+              shift_name: shift?.shift_name || entry.shift_name,
+              start_time: startTime,
+              end_time: endTime,
+              start_time_display: startDisplay,
+              end_time_display: endDisplay,
+              location: 'Joy Corporate Solutions Private Limited (HQ)',
+              assigned_by: entry.assigned_by || 'HR Administrator',
+              is_night_shift: isNight,
+              is_weekly_off: isOff,
+              source: 'WEB_HR_ROSTER'
+            }
+          })
+        ).catch(() => {});
+      }
     } catch (e) {
-      console.warn('[attendanceRosterService] syncRosterEntriesToDb fallback:', e);
+      console.warn('[attendanceRosterService] syncRosterEntriesToDb error:', e);
     }
   }
 

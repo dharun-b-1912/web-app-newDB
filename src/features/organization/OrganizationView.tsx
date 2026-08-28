@@ -1,6 +1,6 @@
 // src/features/organization/OrganizationView.tsx
 // ============================================================================
-// WorkForceOS — Organization Architecture & Workforce Structure Engine 2.0
+// Joy PeopleHR — Organization Architecture & Workforce Structure Engine 2.0
 // Unified Master View for Entities, Locations, Org Chart, Departments, Teams & Vendors
 // ============================================================================
 

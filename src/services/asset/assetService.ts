@@ -361,7 +361,7 @@ class AssetService {
     const assetCount = assets.length + 1;
     const assetCode = `AST-${assetCount.toString().padStart(4, '0')}`;
     const assetId = `ast-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-    const qrCode = `QR-WORKFORCEOS-${assetCode}-${Date.now()}`;
+    const qrCode = `QR-JOY PEOPLEHR-${assetCode}-${Date.now()}`;
 
     const typeDef = this.getAssetTypes().find(t => t.code === params.assetTypeCode);
 

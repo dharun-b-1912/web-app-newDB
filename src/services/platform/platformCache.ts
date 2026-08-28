@@ -1,6 +1,6 @@
 // src/services/platform/platformCache.ts
 // ============================================================
-// WorkForceOS — Zero-Latency In-Memory SWR Cache Engine
+// Joy PeopleHR — Zero-Latency In-Memory SWR Cache Engine
 // ============================================================
 
 interface CacheEntry<T> {

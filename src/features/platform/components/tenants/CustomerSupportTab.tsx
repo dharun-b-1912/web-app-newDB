@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/CustomerSupportTab.tsx
 // ============================================================
-// WorkForceOS — Customer Support Tickets & Cases Tab
+// Joy PeopleHR — Customer Support Tickets & Cases Tab
 // ============================================================
 
 import React, { useState } from 'react';

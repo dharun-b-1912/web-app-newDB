@@ -237,7 +237,7 @@ export const OnboardingView: React.FC = () => {
     // Segment filters
     let matchesSegment = true;
     if (activeSegment === 'NEW_JOINERS_MONTH') {
-      matchesSegment = o.joining_date.startsWith(new Date().toISOString().slice(0, 7));
+      matchesSegment = Boolean(o.joining_date?.startsWith(new Date().toISOString().slice(0, 7)));
     } else if (activeSegment === 'OVERDUE') {
       matchesSegment = (o.overdue_tasks_count || 0) > 0;
     } else if (activeSegment === 'BLOCKED') {
@@ -517,7 +517,7 @@ export const OnboardingView: React.FC = () => {
 
                     <TableCell>
                       <Badge variant="emerald" className="text-xs font-bold">
-                        {onb.status.replace(/_/g, ' ')}
+                        {(onb.status || 'INITIATED').replace(/_/g, ' ')}
                       </Badge>
                     </TableCell>
 
@@ -836,10 +836,10 @@ export const OnboardingView: React.FC = () => {
                 {onboardingAuditLogs.map((log) => (
                   <div key={log.id} className="p-3 rounded-xl border border-gray-100 bg-gray-50 space-y-1">
                     <div className="flex items-center justify-between text-gray-900 font-bold">
-                      <span>{log.action.replace(/_/g, ' ')}</span>
-                      <span className="text-[10px] text-gray-400 font-mono">{log.created_at.split('T')[0]}</span>
+                      <span>{(log.action || '').replace(/_/g, ' ')}</span>
+                      <span className="text-[10px] text-gray-400 font-mono">{(log.created_at || '').split('T')[0]}</span>
                     </div>
-                    <p className="text-[11px] text-gray-500">Performed by: {log.actor_name}</p>
+                    <p className="text-[11px] text-gray-500">Performed by: {log.actor_name || 'System'}</p>
                   </div>
                 ))}
               </div>

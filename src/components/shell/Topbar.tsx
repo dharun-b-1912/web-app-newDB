@@ -1,6 +1,6 @@
 // src/components/shell/Topbar.tsx
 // ============================================================
-// WorkForceOS — Top Command Header Bar
+// Joy PeopleHR — Top Command Header Bar
 // ============================================================
 
 import React from 'react';
@@ -100,7 +100,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-[#07563D] border border-emerald-200/80 rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <span>{isSuperAdmin ? 'WorkForceOS Copilot' : 'HR Assistant'}</span>
+            <span>{isSuperAdmin ? 'Joy PeopleHR Copilot' : 'HR Assistant'}</span>
           </button>
         )}
 

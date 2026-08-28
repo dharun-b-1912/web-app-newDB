@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/CustomerActivityTab.tsx
 // ============================================================
-// WorkForceOS — Customer Human-Readable Activity & Audit Feed Tab
+// Joy PeopleHR — Customer Human-Readable Activity & Audit Feed Tab
 // ============================================================
 
 import React, { useState } from 'react';

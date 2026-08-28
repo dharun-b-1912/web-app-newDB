@@ -1,6 +1,6 @@
 // src/services/billing/billingCalculationEngine.ts
 // ============================================================
-// WorkForceOS — SaaS Financial & Dynamic Indian GST Calculation Engine
+// Joy PeopleHR — SaaS Financial & Dynamic Indian GST Calculation Engine
 // ============================================================
 
 export type SupplyType = 'INTRASTATE' | 'INTERSTATE' | 'EXPORT' | 'SEZ';

@@ -1,6 +1,6 @@
 // src/features/attendance/subviews/BiometricIntegrationView.tsx
 // ============================================================================
-// WorkForceOS — Enterprise Biometric Management Console (UX/UI 2.0)
+// Joy PeopleHR — Enterprise Biometric Management Console (UX/UI 2.0)
 // Spacing, Clean Hierarchy, Guided Wizards, Dedicated Device Workspaces & Infrastructure
 // ============================================================================
 
@@ -1223,7 +1223,7 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
         <div className="space-y-5">
           <div>
             <p className="text-xs text-gray-500">
-              Run this lightweight daemon inside your office or factory network to bridge biometric terminals to WorkForceOS.
+              Run this lightweight daemon inside your office or factory network to bridge biometric terminals to Joy PeopleHR.
             </p>
           </div>
 

@@ -327,7 +327,7 @@ export const workspaceService = {
       {
         id: 'notif-03',
         title: 'New Device Sign-in Verified',
-        message: 'WorkForceOS session active on Windows PC (Chrome 126) from Coimbatore HQ.',
+        message: 'Joy PeopleHR session active on Windows PC (Chrome 126) from Coimbatore HQ.',
         timestamp: 'Today 09:12 AM',
         type: 'security',
         isRead: true,

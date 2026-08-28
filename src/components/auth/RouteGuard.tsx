@@ -1,6 +1,6 @@
 // src/components/auth/RouteGuard.tsx
 // ============================================================
-// WorkForceOS — Authorization & Route Boundary Guard
+// Joy PeopleHR — Authorization & Route Boundary Guard
 // ============================================================
 
 import React from 'react';

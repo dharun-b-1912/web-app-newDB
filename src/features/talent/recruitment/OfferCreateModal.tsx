@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/OfferCreateModal.tsx
 // ============================================================================
-// WorkForceOS — Employment Offer & CTC Generator Modal
+// Joy PeopleHR — Employment Offer & CTC Generator Modal
 // ============================================================================
 
 import React, { useState } from 'react';

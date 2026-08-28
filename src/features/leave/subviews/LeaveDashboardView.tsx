@@ -20,6 +20,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import { hrEventBus } from '../../../services/hrEventBus';
 
 interface LeaveDashboardViewProps {
   onSelectKpiFilter?: (filterKey: string) => void;
@@ -35,11 +36,17 @@ export const LeaveDashboardView: React.FC<LeaveDashboardViewProps> = ({
   const [entitlements, setEntitlements] = useState<LeaveEntitlement[]>([]);
   const [exceptions, setExceptions] = useState<LeaveException[]>([]);
 
-  useEffect(() => {
+  const loadData = () => {
     setRequests(leaveApi.getLeaveRequests());
     setCalendars(leaveApi.getHolidayCalendars());
     setEntitlements(leaveApi.getEntitlements());
     setExceptions(leaveApi.getExceptions());
+  };
+
+  useEffect(() => {
+    loadData();
+    const unsub = hrEventBus.subscribe('leave.*', () => loadData());
+    return () => unsub();
   }, []);
 
   const todayStr = new Date().toISOString().split('T')[0];

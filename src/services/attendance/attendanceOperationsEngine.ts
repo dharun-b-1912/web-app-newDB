@@ -1,6 +1,6 @@
 // src/services/attendance/attendanceOperationsEngine.ts
 // ============================================================================
-// WorkForceOS — Unified Attendance Operations Domain Engine
+// Joy PeopleHR — Unified Attendance Operations Domain Engine
 // Single Source of Truth for:
 // 1. Late / Early Tracking (DETECT)
 // 2. Regularization Desk (CORRECT / APPROVE)

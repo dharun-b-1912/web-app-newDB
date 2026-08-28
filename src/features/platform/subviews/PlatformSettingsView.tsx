@@ -1,6 +1,6 @@
 // src/features/platform/subviews/PlatformSettingsView.tsx
 // ============================================================
-// WorkForceOS — Platform Settings & Integrations Master Console
+// Joy PeopleHR — Platform Settings & Integrations Master Console
 // ============================================================
 // Complete 25-Domain Production-Grade Configuration Center
 // Zero mock data. Versioned audit rollbacks, live API keys, & emergency killswitches.
@@ -571,7 +571,7 @@ export const PlatformSettingsView: React.FC = () => {
               </div>
               <h4 className="text-sm font-bold text-white">Three-Tier Inheritance Model</h4>
               <p className="text-xs text-slate-300 leading-relaxed">
-                WorkForceOS enforces strict configuration inheritance. Settings flow from Platform Defaults ➔ Environment Overrides ➔ Tenant Overrides.
+                Joy PeopleHR enforces strict configuration inheritance. Settings flow from Platform Defaults ➔ Environment Overrides ➔ Tenant Overrides.
               </p>
               <div className="space-y-2 pt-2 border-t border-slate-700 text-xs">
                 <div className="flex items-center justify-between text-slate-300">

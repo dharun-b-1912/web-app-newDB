@@ -1,6 +1,6 @@
 // src/services/geminiService.ts
 // ============================================================
-// WorkForceOS — Gemini AI Copilot & Platform Operations Intelligence
+// Joy PeopleHR — Gemini AI Copilot & Platform Operations Intelligence
 // ============================================================
 
 import { GoogleGenAI } from '@google/genai';
@@ -54,7 +54,7 @@ export async function askWorkForceCopilot(
   const genAI = getGenAI();
 
   const isSuperAdmin = context?.isPlatformSuperAdmin ?? (context?.userRole === 'SUPER_ADMIN' || context?.userRole === 'PLATFORM_ADMIN');
-  const company = context?.companyName || 'WorkForceOS Enterprise';
+  const company = context?.companyName || 'Joy PeopleHR Enterprise';
   const org = context?.organizationName || 'Global Enterprise HRMS';
 
   if (!genAI) {
@@ -66,7 +66,7 @@ export async function askWorkForceCopilot(
 
   try {
     const systemInstruction = isSuperAdmin
-      ? `You are WorkForceOS Copilot, the AI Operations Assistant for the multi-tenant SaaS Super Admin Control Plane.
+      ? `You are Joy PeopleHR Copilot, the AI Operations Assistant for the multi-tenant SaaS Super Admin Control Plane.
 Current Platform Metrics:
 - Total Organizations: 428 (385 Active, 37 Trials, 6 At-Risk)
 - MRR: ₹18.4 Lakhs (+8.7% MoM), ARR: ₹2.21 Crores
@@ -76,7 +76,7 @@ Current Platform Metrics:
 - Expiring Trials: ByteForge Systems (Aug 25), CyberSoft Global Tech (Aug 25)
 
 Answer operational questions concisely, accurately, and with actionable steps.`
-      : `You are WorkForceOS Copilot, an AI assistant for an enterprise HRMS platform.
+      : `You are Joy PeopleHR Copilot, an AI assistant for an enterprise HRMS platform.
 Current Tenant Context:
 - Active Company: ${company}
 - Parent Organization: ${org}
@@ -149,7 +149,7 @@ Recommendation: Trigger automated conversion discount email coupon \`STARTUP25\`
 - **3h ago:** Auto-debit retry executed for Zenith Logistics.`;
   }
 
-  return `🤖 **WorkForceOS Control Plane Intelligence:**
+  return `🤖 **Joy PeopleHR Control Plane Intelligence:**
 I monitor all 428 tenant organizations, real-time MRR, 12 microservices telemetry, BullMQ background jobs, and SOC2 audit streams.
 You can ask me:
 - *"Which tenants are at risk?"*
@@ -170,7 +170,7 @@ function generateTenantHRResponse(prompt: string, company: string, org: string):
   }
 
   if (lower.includes('rbac') || lower.includes('role') || lower.includes('permission')) {
-    return `WorkForceOS RBAC enforces granular scopes (Global Admin, HR Manager, Department Head, Employee). Cross-tenant query boundaries are active for ${company}.`;
+    return `Joy PeopleHR RBAC enforces granular scopes (Global Admin, HR Manager, Department Head, Employee). Cross-tenant query boundaries are active for ${company}.`;
   }
 
   if (lower.includes('attendance') || lower.includes('shift') || lower.includes('time')) {

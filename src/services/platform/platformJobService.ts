@@ -1,6 +1,6 @@
 // src/services/platform/platformJobService.ts
 // ============================================================
-// WorkForceOS — Background Worker Queue & Job Monitoring Service
+// Joy PeopleHR — Background Worker Queue & Job Monitoring Service
 // ============================================================
 
 import { PlatformBackgroundJob, JobType } from '../../types/platformAdmin';

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldAlert, Plus, Trash2, Heart, Users, User } from 'lucide-react';
+import { ShieldAlert, Plus, Trash2, Heart, Building2, CreditCard, ShieldCheck } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 
 export interface FamilyMemberItem {
@@ -18,6 +18,23 @@ export interface Step5FormData {
   emergency_email: string;
   emergency_address: string;
   family_members: FamilyMemberItem[];
+
+  // Bank Mapping
+  bank_name?: string;
+  account_number?: string;
+  ifsc?: string;
+  account_holder_name?: string;
+  account_type?: 'SAVINGS' | 'CURRENT' | 'SALARY';
+
+  // Statutory Identifiers
+  pan?: string;
+  uan?: string;
+  pf_number?: string;
+  esi_number?: string;
+  pf_applicable?: boolean;
+  esi_applicable?: boolean;
+  pt_applicable?: boolean;
+  tax_regime?: 'NEW' | 'OLD';
 }
 
 interface Props {
@@ -59,14 +76,14 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
     <div className="space-y-6">
       <div>
         <h3 className="text-base font-black text-gray-900 tracking-tight">
-          Emergency Contacts & Family Details
+          Emergency Contacts, Bank Account & Statutory Profile
         </h3>
         <p className="text-xs text-gray-500">
-          Designate primary point of contact during health/safety emergencies and optional dependents.
+          Configure safety contacts, bank disbursement account, and Indian statutory tax profiles (PF, ESI, PAN).
         </p>
       </div>
 
-      {/* Primary Emergency Contact */}
+      {/* 1. Primary Emergency Contact */}
       <div className="p-5 rounded-2xl bg-white border border-gray-200 shadow-2xs space-y-4">
         <div className="flex items-center gap-2 text-xs font-black text-rose-700 uppercase tracking-wider">
           <ShieldAlert className="w-4 h-4 text-rose-600" />
@@ -150,7 +167,180 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
         </div>
       </div>
 
-      {/* Optional Family & Dependents */}
+      {/* 2. Primary Salary Disbursement Bank Account */}
+      <div className="p-5 rounded-2xl bg-white border border-gray-200 shadow-2xs space-y-4">
+        <div className="flex items-center gap-2 text-xs font-black text-emerald-800 uppercase tracking-wider">
+          <CreditCard className="w-4 h-4 text-[#07563D]" />
+          Primary Salary Disbursement Bank Account
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">
+              Bank Name <span className="text-gray-400 font-normal">(e.g. HDFC Bank)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="HDFC Bank / ICICI / SBI"
+              value={formData.bank_name || ''}
+              onChange={(e) => onChange({ bank_name: e.target.value })}
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">
+              Bank Account Number
+            </label>
+            <input
+              type="text"
+              placeholder="50100239481923"
+              value={formData.account_number || ''}
+              onChange={(e) => onChange({ account_number: e.target.value })}
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">
+              IFSC Code
+            </label>
+            <input
+              type="text"
+              placeholder="HDFC0001234"
+              value={formData.ifsc || ''}
+              onChange={(e) => onChange({ ifsc: e.target.value.toUpperCase() })}
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold uppercase"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">
+              Account Holder Name
+            </label>
+            <input
+              type="text"
+              placeholder="As per bank passbook"
+              value={formData.account_holder_name || ''}
+              onChange={(e) => onChange({ account_holder_name: e.target.value })}
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">
+              Account Type
+            </label>
+            <select
+              value={formData.account_type || 'SALARY'}
+              onChange={(e) => onChange({ account_type: e.target.value as any })}
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium"
+            >
+              <option value="SALARY">Corporate Salary Account</option>
+              <option value="SAVINGS">Savings Account</option>
+              <option value="CURRENT">Current Account</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Statutory Profile & Tax Configuration */}
+      <div className="p-5 rounded-2xl bg-white border border-gray-200 shadow-2xs space-y-4">
+        <div className="flex items-center gap-2 text-xs font-black text-indigo-900 uppercase tracking-wider">
+          <ShieldCheck className="w-4 h-4 text-indigo-600" />
+          Statutory Identity & Compliance (PF, ESI, PAN)
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">
+              PAN Number <span className="text-gray-400 font-normal">(Income Tax)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="ABCDE1234F"
+              maxLength={10}
+              value={formData.pan || ''}
+              onChange={(e) => onChange({ pan: e.target.value.toUpperCase() })}
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold uppercase"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">
+              UAN (Universal Account Number)
+            </label>
+            <input
+              type="text"
+              placeholder="101234567890"
+              maxLength={12}
+              value={formData.uan || ''}
+              onChange={(e) => onChange({ uan: e.target.value })}
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">
+              Income Tax Regime
+            </label>
+            <select
+              value={formData.tax_regime || 'NEW'}
+              onChange={(e) => onChange({ tax_regime: e.target.value as 'NEW' | 'OLD' })}
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold text-gray-900"
+            >
+              <option value="NEW">New Tax Regime (Default / Lower Slabs)</option>
+              <option value="OLD">Old Tax Regime (With 80C/80D Exemptions)</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Toggles for PF / ESI / PT */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-gray-100">
+          <label className="flex items-center gap-2.5 p-3 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.pf_applicable !== false}
+              onChange={(e) => onChange({ pf_applicable: e.target.checked })}
+              className="w-4 h-4 rounded text-[#07563D] focus:ring-0"
+            />
+            <div>
+              <p className="text-xs font-bold text-gray-900">EPF Applicable</p>
+              <p className="text-[10px] text-gray-500">12% Employee & Employer Contribution</p>
+            </div>
+          </label>
+
+          <label className="flex items-center gap-2.5 p-3 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.esi_applicable === true}
+              onChange={(e) => onChange({ esi_applicable: e.target.checked })}
+              className="w-4 h-4 rounded text-[#07563D] focus:ring-0"
+            />
+            <div>
+              <p className="text-xs font-bold text-gray-900">ESIC Applicable</p>
+              <p className="text-[10px] text-gray-500">Medical cover for wages ≤ ₹21,000</p>
+            </div>
+          </label>
+
+          <label className="flex items-center gap-2.5 p-3 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.pt_applicable !== false}
+              onChange={(e) => onChange({ pt_applicable: e.target.checked })}
+              className="w-4 h-4 rounded text-[#07563D] focus:ring-0"
+            />
+            <div>
+              <p className="text-xs font-bold text-gray-900">Professional Tax (PT)</p>
+              <p className="text-[10px] text-gray-500">State statutory half-yearly slab</p>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* 4. Optional Family & Dependents */}
       <div className="p-5 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

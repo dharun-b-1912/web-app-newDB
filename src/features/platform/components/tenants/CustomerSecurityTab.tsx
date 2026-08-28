@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/CustomerSecurityTab.tsx
 // ============================================================
-// WorkForceOS — Customer Security, Auth & Session Controls Tab
+// Joy PeopleHR — Customer Security, Auth & Session Controls Tab
 // ============================================================
 
 import React, { useState } from 'react';

@@ -1,6 +1,6 @@
 // src/features/platform/components/billing/RecordPaymentModal.tsx
 // ============================================================
-// WorkForceOS — Record Settlement Payment Modal
+// Joy PeopleHR — Record Settlement Payment Modal
 // ============================================================
 
 import React, { useState } from 'react';

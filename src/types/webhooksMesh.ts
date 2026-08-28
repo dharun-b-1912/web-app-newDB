@@ -1,6 +1,6 @@
 // src/types/webhooksMesh.ts
 // ============================================================
-// WorkForceOS — Webhooks & Event Mesh Type Definitions
+// Joy PeopleHR — Webhooks & Event Mesh Type Definitions
 // ============================================================
 
 export type WebhookEnvironment = 'Production' | 'Staging' | 'Development';

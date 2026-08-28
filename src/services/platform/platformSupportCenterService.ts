@@ -1,6 +1,6 @@
 // src/services/platform/platformSupportCenterService.ts
 // ============================================================
-// WorkForceOS — Production Support Center & Case Lifecycle Service
+// Joy PeopleHR — Production Support Center & Case Lifecycle Service
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
@@ -95,8 +95,9 @@ export const platformSupportCenterService = {
 
           const { count: accessReqCount } = await supabase
             .from('support_access_requests')
-            .select('*', { count: 'exact', head: true })
-            .eq('status', 'Pending');
+            .select('id', { count: 'exact' })
+            .eq('status', 'Pending')
+            .limit(1);
 
           cachedMetrics = {
             open_cases_count: openCases.length,

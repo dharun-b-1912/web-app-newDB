@@ -1,6 +1,6 @@
 // src/features/platform/subviews/IncidentsView.tsx
 // ============================================================
-// WorkForceOS — Platform Incidents & Operations Command Center
+// Joy PeopleHR — Platform Incidents & Operations Command Center
 // ============================================================
 
 import React, { useState, useMemo, useEffect } from 'react';

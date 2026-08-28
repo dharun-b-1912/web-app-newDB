@@ -1,6 +1,6 @@
 // src/features/platform/subviews/AuditLogView.tsx
 // ============================================================
-// WorkForceOS — Forensic Audit Log (Immutable Activity System)
+// Joy PeopleHR — Forensic Audit Log (Immutable Activity System)
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';

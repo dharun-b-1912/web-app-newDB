@@ -1,6 +1,6 @@
 // src/services/attendance/biometricGatewayService.ts
 // ============================================================================
-// WorkForceOS — Biometric LAN Gateway Ingestion Service
+// Joy PeopleHR — Biometric LAN Gateway Ingestion Service
 // Zero-Port Forwarding Outbound Tunnel, ZKTeco TCP Listener, Mantra RD & Time Engine
 // ============================================================================
 
@@ -173,7 +173,7 @@ export interface BiometricDeviceUser {
   last_seen_at: string;
   last_synced_at: string;
   sync_status: 'SYNCED' | 'PENDING_PUSH' | 'NOT_PRESENT_ON_DEVICE' | 'ERROR' | 'ARCHIVED';
-  // Explicit mapping to WorkForceOS canonical employee
+  // Explicit mapping to Joy PeopleHR canonical employee
   is_mapped: boolean;
   mapped_employee_id?: string;
   mapped_employee_name?: string;
@@ -1743,7 +1743,7 @@ class BiometricGatewayService {
           }
         }
 
-        // Detect removed users (Present in WorkForceOS but missing on physical terminal)
+        // Detect removed users (Present in Joy PeopleHR but missing on physical terminal)
         for (const oldUser of currentDeviceUsers) {
           if (!incomingPins.has(oldUser.device_user_id)) {
             removedCount++;
@@ -2004,7 +2004,7 @@ class BiometricGatewayService {
   }
 
   // ==========================================================================
-  // EMPLOYEE BIOMETRIC MAPPINGS 2.0 (Identity Bridge: Machine User → WorkForceOS Employee)
+  // EMPLOYEE BIOMETRIC MAPPINGS 2.0 (Identity Bridge: Machine User → Joy PeopleHR Employee)
   // ==========================================================================
 
   getEmployeeBiometricMappings(deviceId?: string, employeeId?: string): EmployeeBiometricMapping[] {

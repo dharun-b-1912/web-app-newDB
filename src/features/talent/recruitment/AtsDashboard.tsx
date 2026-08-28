@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/AtsDashboard.tsx
 // ============================================================================
-// WorkForceOS — Recruitment & ATS 2.0 Command Center & Executive Overview
+// Joy PeopleHR — Recruitment & ATS 2.0 Command Center & Executive Overview
 // Realtime Live Database Aggregations, Clickable Funnel & Aging Positions SLA
 // ============================================================================
 

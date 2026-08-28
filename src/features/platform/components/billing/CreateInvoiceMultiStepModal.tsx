@@ -1,6 +1,6 @@
 // src/features/platform/components/billing/CreateInvoiceMultiStepModal.tsx
 // ============================================================
-// WorkForceOS — Multi-Step Tax Invoice Creation Wizard
+// Joy PeopleHR — Multi-Step Tax Invoice Creation Wizard
 // ============================================================
 
 import React, { useState } from 'react';
@@ -51,7 +51,7 @@ export const CreateInvoiceMultiStepModal: React.FC<CreateInvoiceMultiStepModalPr
   // Invoice Header State
   const [issueDate, setIssueDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState<string>(new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0]);
-  const [notes, setNotes] = useState<string>('Thank you for choosing WorkForceOS Enterprise.');
+  const [notes, setNotes] = useState<string>('Thank you for choosing Joy PeopleHR Enterprise.');
 
   // Line Items State
   const [lineItems, setLineItems] = useState([

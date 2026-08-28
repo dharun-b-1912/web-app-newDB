@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 // ============================================================
-// WorkforceOS — Supabase Client
+// Joy PeopleHR — Supabase Client
 // ============================================================
 // Single shared client for the entire app.
 // Import { supabase, db, auth, storage, isSupabaseEnabled }
@@ -12,18 +12,16 @@ import { createClient } from '@supabase/supabase-js';
 // ============================================================
 
 const meta = import.meta as any;
-const supabaseUrl     = meta.env?.VITE_SUPABASE_URL     || 'https://placeholder.supabase.co';
-const supabaseAnonKey = meta.env?.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key';
+const supabaseUrl =
+  meta.env?.VITE_SUPABASE_URL || 'https://wmqjmyzzamgxyeuotbki.supabase.co';
+const supabaseAnonKey =
+  meta.env?.VITE_SUPABASE_ANON_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndtcWpteXp6YW1neHlldW90YmtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2NzU0NjcsImV4cCI6MjEwMjI1MTQ2N30.mRHhiRs7r7q9J3mphaRVyavL4_THkCAzdhD2dqgvnKA';
 
 /**
- * True when a real Supabase project is wired up in .env.local.
- * False when using placeholder values → mock/localStorage mode.
+ * True when a real Supabase project is wired up.
  */
-export const isSupabaseEnabled: boolean =
-  !!supabaseUrl &&
-  supabaseUrl !== 'https://placeholder.supabase.co' &&
-  !!supabaseAnonKey &&
-  supabaseAnonKey !== 'placeholder-anon-key';
+export const isSupabaseEnabled: boolean = true;
 
 /** @deprecated Use isSupabaseEnabled (constant) instead */
 export const isSupabaseConfigured = () => isSupabaseEnabled;

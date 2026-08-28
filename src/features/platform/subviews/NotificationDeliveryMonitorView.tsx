@@ -1,6 +1,6 @@
 // src/features/platform/subviews/NotificationDeliveryMonitorView.tsx
 // ============================================================
-// WorkForceOS — Platform Event Bus & DLQ Command Center
+// Joy PeopleHR — Platform Event Bus & DLQ Command Center
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -733,7 +733,7 @@ export const NotificationDeliveryMonitorView: React.FC = () => {
               Interactive Event Bus Sandbox Dispatcher
             </h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              Simulate and dispatch synthetic events across the live WorkForceOS event mesh to test real-time notification arrival, outbox persistence, and audio alert chimes.
+              Simulate and dispatch synthetic events across the live Joy PeopleHR event mesh to test real-time notification arrival, outbox persistence, and audio alert chimes.
             </p>
           </div>
 

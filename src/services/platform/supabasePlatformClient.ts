@@ -1,6 +1,6 @@
 // src/services/platform/supabasePlatformClient.ts
 // ============================================================
-// WorkForceOS — Supabase & PostgreSQL Platform Client Adapter
+// Joy PeopleHR — Supabase & PostgreSQL Platform Client Adapter
 // ============================================================
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';

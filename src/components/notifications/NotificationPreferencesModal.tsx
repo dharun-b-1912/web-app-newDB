@@ -1,6 +1,6 @@
 // src/components/notifications/NotificationPreferencesModal.tsx
 // ============================================================
-// WorkForceOS — Multi-Channel Notification Preferences Modal
+// Joy PeopleHR — Multi-Channel Notification Preferences Modal
 // ============================================================
 
 import React, { useState, useEffect } from 'react';
@@ -131,7 +131,7 @@ export const NotificationPreferencesModal: React.FC<NotificationPreferencesModal
               Notification Settings & Channels
             </h3>
             <p className="text-xs text-gray-500">
-              Customize delivery channels and configure quiet hours across all WorkForceOS domains.
+              Customize delivery channels and configure quiet hours across all Joy PeopleHR domains.
             </p>
           </div>
           <button
@@ -152,7 +152,7 @@ export const NotificationPreferencesModal: React.FC<NotificationPreferencesModal
                 <div>
                   <span className="font-bold text-gray-900">Enable Desktop Push Notifications</span>
                   <p className="text-[11px] text-gray-600">
-                    Receive urgent approvals and critical security alerts even when WorkForceOS is closed.
+                    Receive urgent approvals and critical security alerts even when Joy PeopleHR is closed.
                   </p>
                 </div>
               </div>

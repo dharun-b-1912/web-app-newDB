@@ -1,6 +1,6 @@
 // src/services/notification/notificationRealtimeEngine.ts
 // ============================================================
-// WorkForceOS — Multi-Tenant Notification Realtime Engine
+// Joy PeopleHR — Multi-Tenant Notification Realtime Engine
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';

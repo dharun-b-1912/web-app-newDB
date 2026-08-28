@@ -1,6 +1,6 @@
 // src/services/recruitment/offerManagementService.ts
 // ============================================================================
-// WorkForceOS — Offer Management 2.0 & AI Offer Letter Engine
+// Joy PeopleHR — Offer Management 2.0 & AI Offer Letter Engine
 // Structured Compensation, Template Rendering, Multi-Tier Approvals, E-Sign & Conversion
 // ============================================================================
 
@@ -545,7 +545,7 @@ ${org}`,
       approvals: initialApprovals,
       versions: [initialVersion],
       activity_logs: initialLogs,
-      esign_provider: 'WorkForceOS E-Sign',
+      esign_provider: 'Joy PeopleHR E-Sign',
       esign_status: 'Ready to Send',
       background_check_status: 'Pending',
       preboarding_status: 'Pending',

@@ -24,6 +24,8 @@ import { attendanceRosterService } from '../../../services/attendance/attendance
 import { AttendanceDaily } from '../../../types/attendance';
 import { cn } from '../../../lib/utils';
 import { EmployeeAttendanceStatementModal } from '../components/EmployeeAttendanceStatementModal';
+import { hrEventBus } from '../../../services/hrEventBus';
+import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
 
 interface AttendanceHistoryViewProps {
   onOpenEmployeeProfile?: (employeeId: string, date?: string) => void;
@@ -184,10 +186,50 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
     const records = attendanceApi.getDailyAttendance();
     setDailyRecords(records);
+
+    if (isSupabaseEnabled) {
+      const startDate = `${monthKey}-01`;
+      const endDate = `${monthKey}-${String(daysInMonth).padStart(2, '0')}`;
+      Promise.resolve(
+        supabase
+          .from('attendance_daily')
+          .select('*')
+          .gte('date', startDate)
+          .lte('date', endDate)
+      )
+        .then(({ data, error }: any) => {
+          if (!error && data && data.length > 0) {
+            try {
+              const currentList = JSON.parse(localStorage.getItem('workforceos_attendance_daily_v2') || '[]');
+              const merged = [...currentList];
+              for (const row of data) {
+                const idx = merged.findIndex((a: any) => a.id === row.id || (a.employee_id === row.employee_id && a.date === row.date));
+                if (idx >= 0) {
+                  merged[idx] = { ...merged[idx], ...row };
+                } else {
+                  merged.unshift(row);
+                }
+              }
+              localStorage.setItem('workforceos_attendance_daily_v2', JSON.stringify(merged));
+              localStorage.setItem('workforceos_attendance_daily_v2_org-joy-01', JSON.stringify(merged));
+              const refreshedRecords = attendanceApi.getDailyAttendance();
+              setDailyRecords(refreshedRecords);
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    }
   };
 
   useEffect(() => {
     loadData();
+  }, [monthKey]);
+
+  useEffect(() => {
+    const unsub = hrEventBus.subscribe('attendance.*', () => {
+      loadData();
+    });
+    return () => unsub();
   }, [monthKey]);
 
   // Navigate months
@@ -317,7 +359,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
             statusLabel = 'Half Day';
             totalHalfDay++;
             totalPresent++;
-          } else if (record.status === 'Missing Punch' || (record.first_check_in && !record.last_check_out)) {
+          } else if (record.status === 'Missing Punch' || (!d.isToday && record.first_check_in && !record.last_check_out)) {
             statusCode = 'MP';
             statusLabel = 'Missing Punch';
             totalMissingPunch++;
@@ -331,7 +373,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
             statusLabel = 'Late Present';
             totalLate++;
             totalPresent++;
-          } else if (record.status === 'Present' || record.status === 'Checked Out' || record.first_check_in) {
+          } else if (record.status === 'Present' || record.status === 'Checked Out' || (d.isToday && record.first_check_in)) {
             statusCode = 'P';
             statusLabel = 'Present';
             totalPresent++;

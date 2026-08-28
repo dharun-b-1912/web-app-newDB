@@ -1,6 +1,6 @@
 // src/features/platform/subviews/SecurityCenterView.tsx
 // ============================================================
-// WorkForceOS — Platform Security Center (Enterprise Control Console)
+// Joy PeopleHR — Platform Security Center (Enterprise Control Console)
 // ============================================================
 
 import React, { useState, useMemo } from 'react';

@@ -1,6 +1,6 @@
 // src/services/attendance/edgeAgentEngine.ts
 // ============================================================================
-// WorkForceOS — On-Premises Edge Gateway Daemon Engine
+// Joy PeopleHR — On-Premises Edge Gateway Daemon Engine
 // Outbound TLS/WSS Tunnel, Local SQLite Offline Queue & Batch Synchronization
 // ============================================================================
 
@@ -102,7 +102,7 @@ export class EdgeAgentEngine {
   }
 
   /**
-   * Transmits batch of buffered events to WorkForceOS Cloud Ingestion Gateway
+   * Transmits batch of buffered events to Joy PeopleHR Cloud Ingestion Gateway
    */
   async flushOfflineBuffer(): Promise<{ syncedCount: number }> {
     if (!this.isConnectedToCloud) return { syncedCount: 0 };

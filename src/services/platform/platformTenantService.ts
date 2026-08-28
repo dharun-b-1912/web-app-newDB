@@ -1,6 +1,6 @@
 // src/services/platform/platformTenantService.ts
 // ============================================================
-// WorkForceOS — Platform Organizations & Tenant Directory Service
+// Joy PeopleHR — Platform Organizations & Tenant Directory Service
 // ============================================================
 
 import { platformAuditService } from './platformAuditService';

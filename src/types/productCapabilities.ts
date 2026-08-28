@@ -1,6 +1,6 @@
 // src/types/productCapabilities.ts
 // ============================================================
-// WorkForceOS — Product Capabilities & Feature Flags Type Definitions
+// Joy PeopleHR — Product Capabilities & Feature Flags Type Definitions
 // ============================================================
 
 export type LifecycleStage =

@@ -1,6 +1,6 @@
 // src/features/attendance/subviews/AttendanceCalculationAuditView.tsx
 // ============================================================================
-// WorkForceOS — Enterprise Attendance Calculation Audit & Explainability Console
+// Joy PeopleHR — Enterprise Attendance Calculation Audit & Explainability Console
 // 9-State Lifecycle Ledger, "Explain Calculation" Drawer, Batch Recalculation & Immutable Audit Logs
 // ============================================================================
 

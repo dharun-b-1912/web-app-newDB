@@ -1,6 +1,6 @@
 // src/features/platform/subviews/FeatureFlagsView.tsx
 // ============================================================
-// WorkForceOS — Feature Flags & Product Capabilities Control Center
+// Joy PeopleHR — Feature Flags & Product Capabilities Control Center
 // ============================================================
 
 import React, { useState, useMemo } from 'react';
@@ -1259,7 +1259,7 @@ export const FeatureFlagsView: React.FC = () => {
 
 /**
  * ============================================================
- * WORKFORCEOS — ENTERPRISE FEATURE CAPABILITY CREATION WIZARD
+ * JOY PEOPLEHR — ENTERPRISE FEATURE CAPABILITY CREATION WIZARD
  * Progressive 4-Step Guided Flow with Full Safety & Entitlements
  * ============================================================
  */
@@ -2436,7 +2436,7 @@ const CompareCapabilitiesModal: React.FC<{
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', 'WorkForceOS_Capability_Release_Matrix.csv');
+    link.setAttribute('download', 'Joy PeopleHR_Capability_Release_Matrix.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -2459,7 +2459,7 @@ const CompareCapabilitiesModal: React.FC<{
                 </span>
               </div>
               <p className="text-[12px] text-[#64748B] mt-0.5">
-                Cross-tier technical entitlement matrix and release lifecycle coverage across WorkForceOS subscription tiers.
+                Cross-tier technical entitlement matrix and release lifecycle coverage across Joy PeopleHR subscription tiers.
               </p>
             </div>
           </div>

@@ -1,6 +1,6 @@
 // src/services/billing/paymentAdapter.ts
 // ============================================================
-// WorkForceOS — Payment Provider Adapter & Sandbox Engine
+// Joy PeopleHR — Payment Provider Adapter & Sandbox Engine
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';

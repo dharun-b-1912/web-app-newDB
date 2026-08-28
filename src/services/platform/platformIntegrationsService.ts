@@ -1,6 +1,6 @@
 // src/services/platform/platformIntegrationsService.ts
 // ============================================================
-// WorkForceOS — Integration Control Center Unified Service
+// Joy PeopleHR — Integration Control Center Unified Service
 // ============================================================
 // Production Architecture: Common Integration Adapter Framework
 // COMMON PLATFORM ➔ INTEGRATION ADAPTER ➔ PROVIDER
@@ -200,7 +200,7 @@ export const INTEGRATION_PROVIDERS_META: IntegrationProviderMeta[] = [
     name: 'Workday Core HR Sync',
     provider_key: 'workday_core',
     category: 'HR',
-    description: 'Enterprise integration gateway bridging WorkForceOS attendance and field tracking into Workday.',
+    description: 'Enterprise integration gateway bridging Joy PeopleHR attendance and field tracking into Workday.',
     icon_name: 'Briefcase',
     supported_auth: ['OAuth 2.0', 'Client ID + Secret'],
     required_permissions: ['Human_Resources:Read', 'Staffing:Write'],
@@ -230,7 +230,7 @@ export const INTEGRATION_PROVIDERS_META: IntegrationProviderMeta[] = [
   },
   {
     id: 'prov-rest-api',
-    name: 'WorkForceOS REST Developer API',
+    name: 'Joy PeopleHR REST Developer API',
     provider_key: 'rest_api_gateway',
     category: 'Developer',
     description: 'OpenAPI 3.1 RESTful platform gateway for third-party developer integrations and custom apps.',
@@ -270,7 +270,7 @@ export const COMMON_ADAPTERS_REGISTRY: Record<string, IntegrationAdapter> = {
         success: true,
         latency_ms: 114,
         message: 'Connected to Meta Graph API v19.0 endpoint. Webhook subscription verified.',
-        details: { quality_rating: 'GREEN (High)', verified_name: 'WorkForceOS Verified' },
+        details: { quality_rating: 'GREEN (High)', verified_name: 'Joy PeopleHR Verified' },
       };
     },
     async sync(_config) {
@@ -1041,7 +1041,7 @@ export const platformIntegrationsService = {
         }
       : {
           status: 'success',
-          platform: 'WorkForceOS Integration Gateway v2.4',
+          platform: 'Joy PeopleHR Integration Gateway v2.4',
           authenticated: true,
           timestamp: new Date().toISOString(),
         };

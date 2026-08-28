@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/ReferralsManager.tsx
 // ============================================================================
-// WorkForceOS — Employee Referral Program & Rewards Hub
+// Joy PeopleHR — Employee Referral Program & Rewards Hub
 // Track referred talent, referral pipeline stages, and reward eligibility
 // ============================================================================
 

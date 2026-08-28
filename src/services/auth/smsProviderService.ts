@@ -1,6 +1,6 @@
 // src/services/auth/smsProviderService.ts
 // ============================================================================
-// WorkForceOS — SMS Provider Interface & Normalization Framework
+// Joy PeopleHR — SMS Provider Interface & Normalization Framework
 // Supports India TRAI/DLT compliance (Msg91, Fast2SMS) & Global Adapters (Twilio)
 // With a non-blocking secure Developer Console mock adapter for offline dev.
 // ============================================================================
@@ -69,7 +69,7 @@ export class ConsoleMockSMSAdapter implements ISMSProvider {
 
   async sendOtp(payload: SendOtpPayload): Promise<{ success: boolean; messageId?: string }> {
     const messageId = `msg-dev-${Date.now()}`;
-    console.group('%c[WorkForceOS SMS Service] OTP Dispatch', 'color: #07563D; font-weight: bold;');
+    console.group('%c[Joy PeopleHR SMS Service] OTP Dispatch', 'color: #07563D; font-weight: bold;');
     console.log(`📱 Recipient : %c${payload.to}`, 'color: #0d9488; font-weight: bold;');
     console.log(`🔑 Secure OTP: %c${payload.otp}`, 'color: #ea580c; font-size: 14px; font-weight: bold;');
     console.log(`⏳ Expiry    : ${payload.expiryMinutes || 5} minutes`);
@@ -93,7 +93,7 @@ export class ConsoleMockSMSAdapter implements ISMSProvider {
   }
 
   async sendActivationNotification(to: string, name: string): Promise<{ success: boolean }> {
-    console.log(`[WorkForceOS SMS Service] Activation Instructions sent to ${to} for employee "${name}"`);
+    console.log(`[Joy PeopleHR SMS Service] Activation Instructions sent to ${to} for employee "${name}"`);
     return { success: true };
   }
 }

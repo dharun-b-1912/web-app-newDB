@@ -1,6 +1,6 @@
 // src/services/notification/notificationPreferencesService.ts
 // ============================================================
-// WorkForceOS — Notification Preferences & Quiet Hours Service
+// Joy PeopleHR — Notification Preferences & Quiet Hours Service
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';

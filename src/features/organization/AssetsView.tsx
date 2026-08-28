@@ -201,7 +201,7 @@ export const AssetsView: React.FC = () => {
       {/* Top Header & Breadcrumb */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <Breadcrumb items={[{ label: 'WorkForceOS', href: '/' }, { label: 'Asset & Inventory Management' }]} />
+          <Breadcrumb items={[{ label: 'Joy PeopleHR', href: '/' }, { label: 'Asset & Inventory Management' }]} />
           <h1 className="text-2xl font-black tracking-tight text-gray-900 mt-1 flex items-center gap-2.5">
             <Package className="w-6 h-6 text-[#07563D]" />
             Universal Asset & Inventory Management Engine

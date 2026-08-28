@@ -1,6 +1,6 @@
 // src/features/attendance/components/MapEmployeeModal.tsx
 // ============================================================================
-// WorkForceOS — Biometric Employee Mapping 2.0 Drawer / Dialog
+// Joy PeopleHR — Biometric Employee Mapping 2.0 Drawer / Dialog
 // Machine User → Employee Mapping → Identity Bridge & Punch Reprocessing
 // ============================================================================
 
@@ -162,7 +162,7 @@ export const MapEmployeeModal: React.FC<MapEmployeeModalProps> = ({
               <Link className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-gray-900">Map Machine User to WorkForceOS Employee</h3>
+              <h3 className="text-sm font-bold text-gray-900">Map Machine User to Joy PeopleHR Employee</h3>
               <p className="text-[11px] text-gray-500">
                 Establish canonical identity link for real-time punch resolution & shift attendance
               </p>
@@ -380,7 +380,7 @@ export const MapEmployeeModal: React.FC<MapEmployeeModalProps> = ({
               </Card>
 
               <Card className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl space-y-1.5">
-                <span className="text-[10px] font-bold text-[#07563D] uppercase">2. WorkForceOS HR Master Profile</span>
+                <span className="text-[10px] font-bold text-[#07563D] uppercase">2. Joy PeopleHR HR Master Profile</span>
                 <div className="text-sm font-bold text-gray-900">
                   {selectedEmployee.display_name || `${selectedEmployee.first_name || ''} ${selectedEmployee.last_name || ''}`.trim() || selectedEmployee.name}
                 </div>

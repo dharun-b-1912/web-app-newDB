@@ -135,7 +135,7 @@ export const otherModulesApi = {
   },
   getKnowledgeArticles(): KnowledgeArticle[] {
     return getItem(STORAGE_KEYS.ARTICLES, [
-      { id: 'kb-101', title: 'How to Download Form 16 Part A & B from WorkForceOS', category: 'Payroll & Tax', content: 'Step-by-step guide to generating verified digital Form 16 PDFs...', views_count: 340, helpful_count: 312, status: 'Published' },
+      { id: 'kb-101', title: 'How to Download Form 16 Part A & B from Joy PeopleHR', category: 'Payroll & Tax', content: 'Step-by-step guide to generating verified digital Form 16 PDFs...', views_count: 340, helpful_count: 312, status: 'Published' },
       { id: 'kb-102', title: 'Applying for Leave Encashment & Policy Rules', category: 'Leave Management', content: 'Guidelines on eligible earned leave balance encashment...', views_count: 280, helpful_count: 265, status: 'Published' },
     ]);
   },

@@ -1,6 +1,6 @@
 // src/features/platform/components/SubsystemHealthDrawer.tsx
 // ============================================================
-// WorkForceOS — Subsystem Telemetry & Health Detail Drawer
+// Joy PeopleHR — Subsystem Telemetry & Health Detail Drawer
 // ============================================================
 
 import React from 'react';

@@ -1,6 +1,6 @@
 // src/services/notification/webPushService.ts
 // ============================================================
-// WorkForceOS — Browser Web Push API Subscription Service
+// Joy PeopleHR — Browser Web Push API Subscription Service
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';

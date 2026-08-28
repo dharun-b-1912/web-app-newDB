@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/CandidateManager.tsx
 // ============================================================================
-// WorkForceOS — Candidate Master & Kanban Pipeline Management
+// Joy PeopleHR — Candidate Master & Kanban Pipeline Management
 // Table View, Kanban Stage Pipeline, Profile Drawer & 1-Click Employee Conversion
 // ============================================================================
 

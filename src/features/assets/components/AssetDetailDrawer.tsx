@@ -226,7 +226,7 @@ export const AssetDetailDrawer: React.FC<AssetDetailDrawerProps> = ({
                     Asset Mobile QR Code
                   </div>
                   <p className="text-[11px] font-mono text-emerald-800">{asset.qr_code}</p>
-                  <p className="text-[10px] text-emerald-600">Scan via WorkforceOS mobile client for quick check-in / check-out.</p>
+                  <p className="text-[10px] text-emerald-600">Scan via Joy PeopleHR mobile client for quick check-in / check-out.</p>
                 </div>
               </div>
             </div>

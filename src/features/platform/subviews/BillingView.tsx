@@ -1,6 +1,6 @@
 // src/features/platform/subviews/BillingView.tsx
 // ============================================================
-// WorkForceOS — SaaS Financial Billing, GST Invoicing & FinOps Console
+// Joy PeopleHR — SaaS Financial Billing, GST Invoicing & FinOps Console
 // ============================================================
 
 import React, { useState, useMemo } from 'react';
@@ -136,7 +136,7 @@ export const BillingView: React.FC<BillingViewProps> = ({ onNavigateTab }) => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `WorkForceOS_Invoices_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Joy PeopleHR_Invoices_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

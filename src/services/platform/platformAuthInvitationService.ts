@@ -1,6 +1,6 @@
 // src/services/platform/platformAuthInvitationService.ts
 // ============================================================
-// WorkForceOS — Supabase Dedicated User & Admin Auth Invitation Service
+// Joy PeopleHR — Supabase Dedicated User & Admin Auth Invitation Service
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';

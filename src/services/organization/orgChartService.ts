@@ -1,6 +1,6 @@
 // src/services/organization/orgChartService.ts
 // ============================================================================
-// WorkForceOS — Dynamic Database-Backed Interactive Org Chart Service
+// Joy PeopleHR — Dynamic Database-Backed Interactive Org Chart Service
 // Generates Tree Graph from Normalized SQL Relationships & Detects Cycles
 // ============================================================================
 

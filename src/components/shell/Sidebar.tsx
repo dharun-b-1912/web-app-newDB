@@ -84,6 +84,7 @@ import {
   FileEdit,
   Terminal,
   DollarSign,
+  Receipt,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { usePermission } from '../../hooks/usePermission';
@@ -97,6 +98,7 @@ import {
 import { api } from '../../services/api';
 import { onboardingService } from '../../services/onboardingService';
 import { hrEventBus } from '../../services/hrEventBus';
+import { supabase } from '../../lib/supabase';
 
 export interface SidebarProps {
   activeNav: string;
@@ -161,17 +163,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
 
   const [employeeCount, setEmployeeCount] = useState<number>(0);
   const [onboardingCount, setOnboardingCount] = useState<number>(0);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
 
-  const refreshCounts = useCallback(() => {
+  const refreshCounts = useCallback(async () => {
     if (!isPlatformAdmin) {
-      const activeComp = api.getActiveCompany();
-      api.getEmployees(activeComp?.id).then((emps) => {
+      try {
+        const activeComp = api.getActiveCompany();
+        const emps = await api.getEmployees(activeComp?.id);
         const accessible = filterAccessibleEmployees(emps);
         setEmployeeCount(accessible.length);
-      }).catch(() => { });
-      onboardingService.getMetrics().then((m) => {
+      } catch {}
+
+      try {
+        const m = await onboardingService.getMetrics();
         setOnboardingCount(m.active_onboardings);
-      }).catch(() => { });
+      } catch {}
+
+      try {
+        const leaveRes = await supabase.from('leave_requests').select('id', { count: 'exact' }).eq('status', 'PENDING').limit(1);
+        const docRes = await supabase.from('document_requirements').select('id', { count: 'exact' }).eq('status', 'SUBMITTED').limit(1);
+        const totalPending = (leaveRes.count || 0) + (docRes.count || 0);
+        setPendingApprovalsCount(totalPending);
+      } catch {}
     }
   }, [isPlatformAdmin, filterAccessibleEmployees]);
 
@@ -303,20 +316,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'LEAVE',
       items: [
-        { id: 'leave-dashboard', label: 'Dashboard', icon: LayoutDashboard, sectionHeader: 'Overview' },
-        { id: 'leave-calendar', label: 'Calendar', icon: Calendar },
-        { id: 'leave-balance', label: 'Balance', icon: Layers },
-        { id: 'leave-requests', label: 'Requests', icon: FileText, sectionHeader: 'Operations' },
-        { id: 'leave-approval', label: 'Approvals', icon: CheckCircle },
-        { id: 'leave-compoff', label: 'Comp-Off', icon: Gift },
-        { id: 'leave-adjustments', label: 'Adjustments', icon: History },
-        { id: 'leave-exceptions', label: 'Exceptions', icon: ShieldAlert },
-        { id: 'leave-types', label: 'Leave Types', icon: SlidersHorizontal, sectionHeader: 'Configuration' },
-        { id: 'leave-policies', label: 'Policies', icon: BookOpen },
-        { id: 'leave-accrual', label: 'Accrual', icon: Timer },
-        { id: 'leave-holidays', label: 'Holidays', icon: CalendarDays },
-        { id: 'leave-encashment', label: 'Encashment', icon: Coins },
-        { id: 'leave-reports', label: 'Reports', icon: BarChart3, sectionHeader: 'Insights' },
+        { id: 'leave', label: 'Leave Management', icon: CalendarDays },
       ],
     },
     {
@@ -341,6 +341,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'CLOCKING & DEVICES',
       items: [
         { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
+        { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
+        { id: 'face-attendance', label: 'Face Recognition', icon: ScanFace },
+        { id: 'geofences', label: 'Geofence Boundaries', icon: Crosshair },
       ],
     },
     {
@@ -358,7 +361,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'payroll-dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard },
         { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
         { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
-        { id: 'payroll-earnings', label: 'Earnings & Claims', icon: TrendingUp },
+        { id: 'payroll-claims', label: 'Expense Claims & Approvals', icon: Receipt },
+        { id: 'payroll-earnings', label: 'Earnings & Overtime', icon: TrendingUp },
         { id: 'payroll-deductions', label: 'Deductions, Loans & LOP', icon: Minus },
         { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
         { id: 'payroll-disbursement', label: 'Bank Disbursement', icon: CreditCard },
@@ -366,12 +370,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
         { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
         { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
-      ],
-    },
-    {
-      groupName: 'WORKFORCE PLANNING',
-      items: [
-        { id: 'workforce-planning', label: 'Headcount & Capacity Planning', icon: LineChart },
       ],
     },
     {
@@ -428,9 +426,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'COMMUNICATION & HELP',
       items: [
-        { id: 'helpdesk', label: 'HR Helpdesk Tickets', icon: HelpCircle },
-        { id: 'other-communication', label: 'Communication Hub', icon: Megaphone },
-        { id: 'requests', label: 'Employee Service Requests', icon: Send },
+        { id: 'other-communication', label: 'HR Communications', icon: Megaphone },
+        { id: 'helpdesk', label: 'Help Desk', icon: HelpCircle },
+        { id: 'knowledge', label: 'Knowledge Centre', icon: BookOpen },
       ],
     },
     {
@@ -456,25 +454,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'AUTOMATION & ADMIN',
       items: [
-        { id: 'workflows', label: 'Workflow Engine', icon: Workflow },
-        { id: 'approvals', label: 'Unified Approval Hub', icon: CheckSquare, badge: 27 },
-        { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
-        { id: 'scheduled-jobs', label: 'Scheduled Cron Jobs', icon: Timer },
-        { id: 'admin-dashboard', label: 'Admin Dashboard', icon: LayoutDashboard },
-        { id: 'admin-users', label: 'User Management', icon: UserCheck },
         { id: 'admin-roles', label: 'Role Management', icon: KeyRound },
-        { id: 'admin-permissions', label: 'Permissions & Scope', icon: SlidersHorizontal },
-        { id: 'admin-workflows', label: 'Workflow Builder', icon: Workflow },
-        { id: 'admin-approvals', label: 'Approval Config', icon: CheckCircle },
-        { id: 'admin-notifications', label: 'Notification Settings', icon: Bell },
-        { id: 'admin-audit', label: 'Audit Logs', icon: History },
-        { id: 'admin-security', label: 'Security & MFA', icon: Lock },
-        { id: 'admin-api', label: 'API & Webhooks', icon: Cpu },
-        { id: 'admin-integrations', label: 'Integrations', icon: GitFork },
-        { id: 'organization-vendors', label: 'Vendors & Agreements', icon: HeartHandshake },
-        { id: 'admin-subscription', label: 'Subscription Plan', icon: Cpu },
-        { id: 'admin-billing', label: 'Billing & Invoices', icon: CreditCard },
-        { id: 'admin-settings', label: 'System Settings', icon: Settings },
+        { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
+        { id: 'admin-notifications', label: 'Notification Settings', icon: SlidersHorizontal },
       ],
     },
   ];
@@ -523,20 +505,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'LEAVE',
       items: [
-        { id: 'leave-dashboard', label: 'Dashboard', icon: LayoutDashboard, sectionHeader: 'Overview' },
-        { id: 'leave-calendar', label: 'Calendar', icon: Calendar },
-        { id: 'leave-balance', label: 'Balance', icon: Layers },
-        { id: 'leave-requests', label: 'Requests', icon: FileText, sectionHeader: 'Operations' },
-        { id: 'leave-approval', label: 'Approvals', icon: CheckCircle },
-        { id: 'leave-compoff', label: 'Comp-Off', icon: Gift },
-        { id: 'leave-adjustments', label: 'Adjustments', icon: History },
-        { id: 'leave-exceptions', label: 'Exceptions', icon: ShieldAlert },
-        { id: 'leave-types', label: 'Leave Types', icon: SlidersHorizontal, sectionHeader: 'Configuration' },
-        { id: 'leave-policies', label: 'Policies', icon: BookOpen },
-        { id: 'leave-accrual', label: 'Accrual', icon: Timer },
-        { id: 'leave-holidays', label: 'Holidays', icon: CalendarDays },
-        { id: 'leave-encashment', label: 'Encashment', icon: Coins },
-        { id: 'leave-reports', label: 'Reports', icon: BarChart3, sectionHeader: 'Insights' },
+        { id: 'leave', label: 'Leave Management', icon: CalendarDays },
       ],
     },
     {
@@ -570,6 +539,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'attendance-corrections', label: 'Attendance Corrections', icon: FileEdit },
         { id: 'approval-history', label: 'Approval History', icon: History },
         { id: 'attendance-activity-logs', label: 'System Activity Logs', icon: Terminal },
+        { id: 'realtime-health', label: 'Realtime Sync Health', icon: Activity },
       ],
     },
     {
@@ -578,7 +548,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'payroll-dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard },
         { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
         { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
-        { id: 'payroll-earnings', label: 'Earnings & Claims', icon: TrendingUp },
+        { id: 'payroll-claims', label: 'Expense Claims & Approvals', icon: Receipt },
+        { id: 'payroll-earnings', label: 'Earnings & Overtime', icon: TrendingUp },
         { id: 'payroll-deductions', label: 'Deductions, Loans & LOP', icon: Minus },
         { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
         { id: 'payroll-disbursement', label: 'Bank Disbursement', icon: CreditCard },
@@ -586,12 +557,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
         { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
         { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
-      ],
-    },
-    {
-      groupName: 'WORKFORCE PLANNING',
-      items: [
-        { id: 'workforce-planning', label: 'Headcount & Capacity Planning', icon: LineChart },
       ],
     },
     {
@@ -648,9 +613,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'COMMUNICATION & HELP',
       items: [
-        { id: 'helpdesk', label: 'HR Helpdesk Tickets', icon: HelpCircle },
-        { id: 'other-communication', label: 'Communication Hub', icon: Megaphone },
-        { id: 'requests', label: 'Employee Service Requests', icon: Send },
+        { id: 'other-communication', label: 'HR Communications', icon: Megaphone },
+        { id: 'helpdesk', label: 'Help Desk', icon: HelpCircle },
+        { id: 'knowledge', label: 'Knowledge Centre', icon: BookOpen },
       ],
     },
     {
@@ -675,14 +640,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'AUTOMATION & ADMIN',
       items: [
-        // HR Head: workflow-level ops only — NOT user/role/system/billing management
-        { id: 'workflows', label: 'Workflow Engine', icon: Workflow },
-        { id: 'approvals', label: 'Unified Approval Hub', icon: CheckSquare, badge: 27 },
+        { id: 'admin-roles', label: 'Role Management', icon: KeyRound },
         { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
-        { id: 'admin-audit', label: 'Audit Logs', icon: History },
-        { id: 'admin-workflows', label: 'Workflow Builder', icon: Workflow },
-        { id: 'admin-approvals', label: 'Approval Config', icon: CheckCircle },
-        { id: 'admin-notifications', label: 'Notification Settings', icon: Bell },
+        { id: 'admin-notifications', label: 'Notification Settings', icon: SlidersHorizontal },
       ],
     },
   ];
@@ -710,11 +670,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'LEAVE',
       items: [
-        { id: 'leave-dashboard', label: 'Leave Dashboard', icon: LayoutDashboard },
-        { id: 'leave-requests', label: 'Leave Requests', icon: FileText },
-        { id: 'leave-approval', label: 'Approval', icon: CheckCircle },
-        { id: 'leave-balance', label: 'Leave Balance', icon: Layers },
-        { id: 'leave-calendar', label: 'Leave Calendar', icon: Calendar },
+        { id: 'leave', label: 'Leave Management', icon: CalendarDays },
       ],
     },
     {
@@ -743,7 +699,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'APPROVALS',
       items: [
-        { id: 'approvals', label: 'Unified Approval Hub', icon: CheckSquare, badge: 27 },
+        { id: 'approvals', label: 'Unified Approval Hub', icon: CheckSquare, badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined },
       ],
     },
     {
@@ -901,35 +857,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       )}
     >
       {/* Brand Header */}
-      <div className="h-16 px-4 flex items-center justify-between border-b border-gray-100 shrink-0">
+      <div className="h-[72px] px-3.5 flex items-center justify-between border-b border-gray-100 shrink-0 bg-white">
         {!isCollapsed ? (
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#07563D] text-white flex items-center justify-center font-black text-base shadow-sm shrink-0">
-              W
-            </div>
-            <div className="min-w-0">
-              <div className="font-extrabold text-sm tracking-tight text-gray-900 leading-tight truncate">
-                WorkForce<span className="text-[#07563D]">OS</span>
-              </div>
-              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider truncate">
-                {isPlatformAdmin
-                  ? 'Platform Control Plane'
-                  : primaryRole.includes('HR Head')
-                    ? 'HR Head Master Console'
-                    : 'Enterprise HRMS'}
-              </div>
-            </div>
+          <div className="flex items-center min-w-0 flex-1">
+            <img
+              src="/joy-people-hr-logo.png"
+              alt="Joy PeopleHR"
+              className="h-12 w-auto max-w-[200px] object-contain shrink-0"
+            />
           </div>
         ) : (
-          <div className="w-8 h-8 rounded-xl bg-[#07563D] text-white flex items-center justify-center font-black text-base mx-auto shadow-sm">
-            W
+          <div className="w-10 h-10 rounded-xl bg-white border border-gray-200/80 p-1.5 shadow-xs mx-auto flex items-center justify-center overflow-hidden">
+            <img src="/logo-icon.png" alt="Joy PeopleHR" className="w-full h-full object-contain" />
           </div>
         )}
 
         {/* Toggle Collapse Button */}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer hidden md:block shrink-0"
+          className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer hidden md:block shrink-0 ml-1"
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -939,7 +885,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       {/* Navigation Group Items */}
       <div className="flex-1 overflow-y-auto py-3 px-2 space-y-3">
         {filteredNavGroups.map((group, idx) => {
-          const isGroupCollapsed = collapsedGroups[group.groupName] ?? false;
+          const hasActiveItem = group.items.some(
+            item => activeNav === item.id || (item.id === 'leave' && (activeNav === 'leave' || activeNav.startsWith('leave-')))
+          );
+          const isGroupCollapsed = hasActiveItem ? false : (collapsedGroups[group.groupName] ?? false);
 
           return (
             <div key={idx} className="space-y-1">
@@ -962,7 +911,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
                 <div className="space-y-0.5">
                   {group.items.map(item => {
                     const Icon = item.icon;
-                    const isActive = activeNav === item.id;
+                    const isActive =
+                      activeNav === item.id ||
+                      (item.id === 'leave' && (activeNav === 'leave' || activeNav.startsWith('leave-')));
 
                     return (
                       <React.Fragment key={item.id}>

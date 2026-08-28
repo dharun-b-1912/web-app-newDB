@@ -1,6 +1,6 @@
 // src/features/platform/subviews/TierEntitlementsView.tsx
 // ============================================================
-// WorkForceOS — SaaS Plans & Tier Entitlements Management Console
+// Joy PeopleHR — SaaS Plans & Tier Entitlements Management Console
 // ============================================================
 
 import React, { useState, useMemo } from 'react';
@@ -1496,7 +1496,7 @@ const ComparePlansModal: React.FC<{
           <div>
             <div className="flex items-center gap-2.5">
               <h2 className="text-xl font-extrabold text-[#0F172B] tracking-tight">
-                Compare WorkForceOS Subscription Plans & Entitlements
+                Compare Joy PeopleHR Subscription Plans & Entitlements
               </h2>
               <span className="px-2.5 py-0.5 text-[10px] font-bold rounded-full bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0]">
                 4 Tier Plans Active
@@ -1754,7 +1754,7 @@ const ComparePlansModal: React.FC<{
 
 /**
  * ============================================================
- * WORKFORCEOS — 5-STEP GUIDED SUBSCRIPTION PLAN CREATION WIZARD
+ * JOY PEOPLEHR — 5-STEP GUIDED SUBSCRIPTION PLAN CREATION WIZARD
  * Full-Stack Plan Creation with Pricing, Entitlements, & Quotas
  * ============================================================
  */
@@ -1990,7 +1990,7 @@ const CreatePlanWizardModal: React.FC<CreatePlanWizardModalProps> = ({
           <div>
             <h3 className="text-lg font-bold text-[#0F172B]">Create Subscription Plan</h3>
             <p className="text-xs text-[#64748B] mt-0.5">
-              Define pricing, capacity, features, and usage rules for a new WorkForceOS subscription tier.
+              Define pricing, capacity, features, and usage rules for a new Joy PeopleHR subscription tier.
             </p>
           </div>
           <button
@@ -2973,7 +2973,7 @@ const CreateFeatureDrawer: React.FC<{
               <h3 className="text-base font-bold text-[#0F172B]">Create Feature Capability</h3>
             </div>
             <p className="text-[11px] text-[#64748B] mt-0.5">
-              Define a canonical WorkForceOS capability for plan entitlements and rollout controls.
+              Define a canonical Joy PeopleHR capability for plan entitlements and rollout controls.
             </p>
           </div>
 

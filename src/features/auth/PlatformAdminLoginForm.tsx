@@ -1,6 +1,6 @@
 // src/features/auth/PlatformAdminLoginForm.tsx
 // ============================================================
-// WorkForceOS — Dedicated Platform Control Plane Staff Authentication Portal
+// Joy PeopleHR — Dedicated Platform Control Plane Staff Authentication Portal
 // ============================================================
 
 import React, { useState } from 'react';
@@ -155,7 +155,7 @@ export const PlatformAdminLoginForm: React.FC<PlatformAdminLoginFormProps> = ({
         actor_name: user.name,
         actor_role: matchedAccount.role,
         organization_id: 'org-platform',
-        organization_name: 'WorkForceOS Control Plane',
+        organization_name: 'Joy PeopleHR Control Plane',
         action: 'PLATFORM_STAFF_LOGIN_SUCCESS',
         resource_type: 'AuthSession',
         resource_id: `session-${Date.now()}`,

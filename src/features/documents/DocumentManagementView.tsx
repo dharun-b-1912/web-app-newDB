@@ -44,6 +44,7 @@ import { esignService } from '../../services/document/esignService';
 import { documentAuditService } from '../../services/document/documentAuditService';
 import { documentVerificationService } from '../../services/document/documentVerificationService';
 import { hrEventBus } from '../../services/hrEventBus';
+import { supabase } from '../../lib/supabase';
 import {
   DocumentMaster,
   DocumentCategory,
@@ -53,6 +54,7 @@ import {
   DocumentSubjectType,
   DocumentVerificationStatus,
   DocumentClassification,
+  DocumentRequirement,
   EsignRequest,
   DocumentShare,
   DocumentAuditLog,
@@ -63,6 +65,9 @@ import { DocumentPreviewModal } from './components/DocumentPreviewModal';
 import { DocumentDetailDrawer } from './components/DocumentDetailDrawer';
 import { CreateEsignModal } from './components/CreateEsignModal';
 import { ShareDocumentModal } from './components/ShareDocumentModal';
+import { RequestDocumentModal } from './components/RequestDocumentModal';
+import { IssueLetterModal } from './components/IssueLetterModal';
+import { digitalLetterService, DigitalLetter } from '../../services/letters/digitalLetterService';
 
 export const DocumentManagementView: React.FC = () => {
   const { showToast } = useToast();
@@ -72,7 +77,9 @@ export const DocumentManagementView: React.FC = () => {
     | 'all_documents'
     | 'my_documents'
     | 'employee_documents'
+    | 'digital_letters'
     | 'vendor_documents'
+    | 'mobile_requests'
     | 'verification_queue'
     | 'esign'
     | 'expiring'
@@ -89,6 +96,7 @@ export const DocumentManagementView: React.FC = () => {
 
   // Data states
   const [documents, setDocuments] = useState<DocumentMaster[]>([]);
+  const [requirements, setRequirements] = useState<DocumentRequirement[]>([]);
   const [totalDocsCount, setTotalDocsCount] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [metrics, setMetrics] = useState<DocumentSummaryMetrics | null>(null);
@@ -97,20 +105,25 @@ export const DocumentManagementView: React.FC = () => {
   const [esignRequests, setEsignRequests] = useState<EsignRequest[]>([]);
   const [sharedLinks, setSharedLinks] = useState<DocumentShare[]>([]);
   const [auditLogs, setAuditLogs] = useState<DocumentAuditLog[]>([]);
+  const [digitalLetters, setDigitalLetters] = useState<DigitalLetter[]>([]);
 
   // Modals and Drawers
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState<boolean>(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState<boolean>(false);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState<boolean>(false);
   const [isEsignModalOpen, setIsEsignModalOpen] = useState<boolean>(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
+  const [isIssueLetterModalOpen, setIsIssueLetterModalOpen] = useState<boolean>(false);
 
   const [activeDocument, setActiveDocument] = useState<DocumentMaster | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   // Load Data
-  const loadData = () => {
+  const loadData = async () => {
     try {
+      await documentService.syncWithDatabase();
+
       const summary = documentService.getSummaryMetrics();
       setMetrics(summary);
 
@@ -119,6 +132,9 @@ export const DocumentManagementView: React.FC = () => {
 
       const cats = documentService.getCategories();
       setCategories(cats);
+
+      const reqs = documentService.getDocumentRequirements();
+      setRequirements(reqs);
 
       const esigns = esignService.getEsignRequests();
       setEsignRequests(esigns);
@@ -129,8 +145,11 @@ export const DocumentManagementView: React.FC = () => {
       const logs = documentAuditService.getLogs(undefined, 50);
       setAuditLogs(logs);
 
+      const letters = await digitalLetterService.fetchLetters();
+      setDigitalLetters(letters);
+
       // Fetch primary paginated list based on active tab
-      const tabFilter = activeTab === 'all_documents' ? undefined : activeTab;
+      const tabFilter = activeTab === 'all_documents' ? undefined : (activeTab as any);
       const res = documentService.getDocuments({
         search: searchQuery,
         categoryCode: categoryFilter,
@@ -153,26 +172,49 @@ export const DocumentManagementView: React.FC = () => {
     loadData();
   }, [activeTab, searchQuery, categoryFilter, verifFilter, classFilter, currentPage]);
 
-  // Realtime Event Bus Subscription
+  // Realtime Event Bus & Supabase Realtime Subscription
   useEffect(() => {
     const unsubDoc = hrEventBus.subscribe('document.*', () => loadData());
     const unsubEsign = hrEventBus.subscribe('esign.*', () => loadData());
     const unsubShare = hrEventBus.subscribe('share.*', () => loadData());
 
+    // Live subscription to Supabase document tables
+    const reqChannel = supabase
+      .channel('hr-web-documents-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'document_requirements' }, () => {
+        loadData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_documents' }, () => {
+        loadData();
+      })
+      .subscribe();
+
     return () => {
       unsubDoc();
       unsubEsign();
       unsubShare();
+      supabase.removeChannel(reqChannel);
     };
   }, []);
 
-  const handleManualRefresh = () => {
+  const handleManualRefresh = async () => {
     setIsRefreshing(true);
-    loadData();
-    setTimeout(() => {
-      setIsRefreshing(false);
-      showToast('Document repository synchronized.', 'success');
-    }, 400);
+    await loadData();
+    setIsRefreshing(false);
+    showToast('Document repository synchronized.', 'success');
+  };
+
+  const handleDeleteDocument = async (id: string, title?: string) => {
+    if (!window.confirm(`Are you sure you want to permanently delete "${title || 'this document'}" and purge it from backend storage & databases?`)) {
+      return;
+    }
+    try {
+      await documentService.deleteDocument(id);
+      showToast(`✓ "${title || 'Document'}" permanently removed.`, 'success');
+      await loadData();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete document.', 'error');
+    }
   };
 
   const getVerificationBadge = (status: DocumentVerificationStatus) => {
@@ -215,7 +257,7 @@ export const DocumentManagementView: React.FC = () => {
         <div>
           <Breadcrumb
             items={[
-              { label: 'WorkForceOS', href: '/' },
+              { label: 'Joy PeopleHR', href: '/' },
               { label: 'Documents & E-Signature' },
             ]}
           />
@@ -246,6 +288,16 @@ export const DocumentManagementView: React.FC = () => {
             className="text-xs font-bold border-gray-300 hover:bg-gray-100"
           >
             Create E-Sign
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsRequestModalOpen(true)}
+            leftIcon={<Send className="w-3.5 h-3.5 text-blue-600" />}
+            className="text-xs font-bold border-blue-200 hover:bg-blue-50 text-blue-700"
+          >
+            Request from Mobile
           </Button>
 
           <Button
@@ -320,13 +372,13 @@ export const DocumentManagementView: React.FC = () => {
       <div className="p-3.5 bg-gradient-to-r from-gray-900 to-gray-800 text-white rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-4 text-xs">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-5 h-5 text-emerald-400" />
-          <span className="font-bold tracking-wide">Document Security Status Center:</span>
+          <span className="font-bold tracking-wide">Document Security & Storage Node:</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-4 text-[11px]">
           <span className="flex items-center gap-1.5 text-gray-300">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            Private Storage Key
+            Private Storage (RLS)
           </span>
           <span className="flex items-center gap-1.5 text-gray-300">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
@@ -338,7 +390,7 @@ export const DocumentManagementView: React.FC = () => {
           </span>
           <span className="flex items-center gap-1.5 text-gray-300">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            Malware Scan Verified
+            Resumable TUS & SHA-256
           </span>
           <span className="flex items-center gap-1.5 text-gray-300">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
@@ -346,7 +398,7 @@ export const DocumentManagementView: React.FC = () => {
           </span>
           <span className="flex items-center gap-1.5 text-gray-300">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            Realtime Sync Active
+            Realtime Outbox Mesh
           </span>
         </div>
       </div>
@@ -359,6 +411,8 @@ export const DocumentManagementView: React.FC = () => {
               { id: 'all_documents', label: 'All Documents' },
               { id: 'my_documents', label: 'My Documents' },
               { id: 'employee_documents', label: 'Employee Files' },
+              { id: 'digital_letters', label: `Digital Letters (${digitalLetters.length})` },
+              { id: 'mobile_requests', label: `Mobile Requests (${requirements.length})` },
               { id: 'vendor_documents', label: 'Vendor & Worker Files' },
               { id: 'verification_queue', label: `Verification Queue (${metrics?.pending_verification ?? 0})` },
               { id: 'esign', label: `E-Signature (${esignRequests.length})` },
@@ -585,6 +639,15 @@ export const DocumentManagementView: React.FC = () => {
                           >
                             <Share2 className="w-3.5 h-3.5" />
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleDeleteDocument(doc.id, doc.title)}
+                            className="h-7 px-2 text-xs text-red-600 hover:bg-red-50 hover:border-red-300"
+                            title="Delete document permanently"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -623,6 +686,281 @@ export const DocumentManagementView: React.FC = () => {
               </div>
             </div>
           </Card>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB: DIGITAL LETTERS & HR ISSUANCE */}
+        {/* ========================================================================= */}
+        {activeTab === 'digital_letters' && (
+          <div className="space-y-4">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-emerald-950">
+              <div className="flex items-center gap-3">
+                <FileText className="w-5 h-5 text-emerald-700 shrink-0" />
+                <div>
+                  <span className="font-extrabold text-sm block">
+                    {digitalLetters.length} Digital Letters Issued & Managed
+                  </span>
+                  <p className="text-xs text-emerald-800 mt-0.5">
+                    Issue increment letters, offer letters, appointment letters, and promotion certificates with real-time delivery to the employee mobile app.
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => setIsIssueLetterModalOpen(true)}
+                leftIcon={<Plus className="w-4 h-4" />}
+                className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold shrink-0 shadow-xs"
+              >
+                + Issue & Upload Digital Letter
+              </Button>
+            </div>
+
+            <Card className="border border-gray-200/80 shadow-xs overflow-hidden bg-white">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50/70">
+                    <TableHead className="w-32">Letter Ref</TableHead>
+                    <TableHead>Employee</TableHead>
+                    <TableHead>Letter Type & Title</TableHead>
+                    <TableHead>Issued Date</TableHead>
+                    <TableHead>E-Sign Requirement</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {digitalLetters.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-12 text-gray-500">
+                        <FileText className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+                        <p className="font-bold text-gray-700">No Digital Letters Issued Yet</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Click "+ Issue & Upload Digital Letter" to send an official letter to an employee.
+                        </p>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    digitalLetters.map(letter => (
+                      <TableRow key={letter.id} className="hover:bg-gray-50/60">
+                        <TableCell className="font-mono font-bold text-xs text-gray-900">
+                          {letter.letter_number}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-bold text-gray-900 text-xs">{letter.employee_name}</div>
+                          <span className="text-[11px] text-gray-400">{letter.employee_code}</span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-bold text-gray-900 text-xs">{letter.title}</div>
+                          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded">
+                            {letter.letter_type}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-xs text-gray-600 font-medium">
+                          {letter.issued_date}
+                        </TableCell>
+                        <TableCell>
+                          {letter.requires_signature ? (
+                            <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                              Requires E-Sign
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-gray-400 font-medium">Informational</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {letter.status === 'SIGNED' ? (
+                            <Badge variant="emerald">Signed Digitally</Badge>
+                          ) : letter.status === 'ACKNOWLEDGED' ? (
+                            <Badge variant="blue">Acknowledged</Badge>
+                          ) : (
+                            <Badge variant="amber">Published</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {letter.document_url && (
+                            <a
+                              href={letter.document_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-[#07563D] bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+                            >
+                              <Eye className="w-3 h-3" />
+                              <span>View Letter</span>
+                            </a>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </Card>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB: MOBILE DOCUMENT REQUESTS (Requested from Mobile) */}
+        {/* ========================================================================= */}
+        {activeTab === 'mobile_requests' && (
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-blue-950">
+              <div className="flex items-center gap-3">
+                <Send className="w-5 h-5 text-blue-700 shrink-0" />
+                <div>
+                  <span className="font-extrabold text-sm block">
+                    {requirements.length} Mobile Document Requests Active
+                  </span>
+                  <p className="text-xs text-blue-800 mt-0.5">
+                    Track requests dispatched to employees' Flutter mobile apps and review uploaded document submissions.
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => setIsRequestModalOpen(true)}
+                leftIcon={<Plus className="w-4 h-4" />}
+                className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold shrink-0"
+              >
+                + Request from Mobile
+              </Button>
+            </div>
+
+            <Card className="border border-gray-200/80 shadow-xs overflow-hidden bg-white">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50/70">
+                    <TableHead className="font-bold text-gray-900 text-xs">Request Title & Type</TableHead>
+                    <TableHead className="font-bold text-gray-900 text-xs">Target Employee</TableHead>
+                    <TableHead className="font-bold text-gray-900 text-xs">Requested By</TableHead>
+                    <TableHead className="font-bold text-gray-900 text-xs">Due Date</TableHead>
+                    <TableHead className="font-bold text-gray-900 text-xs">Status</TableHead>
+                    <TableHead className="font-bold text-gray-900 text-xs">Uploaded File</TableHead>
+                    <TableHead className="font-bold text-gray-900 text-xs text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {requirements.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-12 text-gray-400">
+                        <FileText className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                        <p className="text-xs font-bold text-gray-700">No active document requests</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                          Click '+ Request from Mobile' to dispatch a new document request to an employee.
+                        </p>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    requirements.map(req => {
+                      const matchedDoc = documents.find(d => d.id === req.id || d.id === req.document_id || (d.subject_id === req.employee_id && d.document_type_code === req.document_type));
+
+                      return (
+                        <TableRow key={req.id} className="hover:bg-gray-50/70 transition-colors">
+                          {/* Title & Type */}
+                          <TableCell>
+                            <div>
+                              <span className="text-xs font-bold text-gray-900 block">{req.title}</span>
+                              <span className="text-[10px] text-gray-400 font-mono uppercase">{req.document_type}</span>
+                            </div>
+                          </TableCell>
+
+                          {/* Target Employee */}
+                          <TableCell>
+                            <div>
+                              <span className="text-xs font-bold text-gray-900 block">
+                                {req.employee_name || req.employee_id}
+                              </span>
+                              <span className="text-[10px] text-gray-500">{req.employee_id}</span>
+                            </div>
+                          </TableCell>
+
+                          {/* Requested By */}
+                          <TableCell>
+                            <span className="text-xs text-gray-700 font-medium">
+                              {req.requested_by || 'HR Head'}
+                            </span>
+                          </TableCell>
+
+                          {/* Due Date */}
+                          <TableCell>
+                            <span className="text-xs font-bold text-red-600">
+                              {req.due_date ? new Date(req.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No Due Date'}
+                            </span>
+                          </TableCell>
+
+                          {/* Status */}
+                          <TableCell>
+                            {req.status === 'VERIFIED' ? (
+                              <Badge variant="emerald">VERIFIED</Badge>
+                            ) : req.status === 'SUBMITTED' ? (
+                              <Badge variant="blue">SUBMITTED (AWAITING REVIEW)</Badge>
+                            ) : req.status === 'REJECTED' ? (
+                              <Badge variant="danger">REJECTED</Badge>
+                            ) : (
+                              <Badge variant="amber">REQUIRED (PENDING UPLOAD)</Badge>
+                            )}
+                          </TableCell>
+
+                          {/* Uploaded File */}
+                          <TableCell>
+                            {matchedDoc && matchedDoc.current_version?.file_name ? (
+                              <span className="text-xs text-emerald-700 font-mono font-medium block">
+                                {matchedDoc.current_version.file_name}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400 italic">No file uploaded yet</span>
+                            )}
+                          </TableCell>
+
+                          {/* Actions */}
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {matchedDoc && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setActiveDocument(matchedDoc);
+                                    setIsPreviewModalOpen(true);
+                                  }}
+                                  className="h-7 px-2 text-xs"
+                                >
+                                  <Eye className="w-3.5 h-3.5 mr-1" /> View
+                                </Button>
+                              )}
+
+                              {(req.status === 'SUBMITTED' || (matchedDoc && matchedDoc.verification_status !== 'VERIFIED')) && (
+                                <Button
+                                  size="sm"
+                                  onClick={async () => {
+                                    await documentVerificationService.verifyDocument(req.id, 'Approved via Mobile Requests.');
+                                    showToast(`✓ Document approved for ${req.employee_name || req.employee_id}.`, 'success');
+                                    await loadData();
+                                  }}
+                                  className="h-7 px-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve
+                                </Button>
+                              )}
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleDeleteDocument(req.id, req.title)}
+                                className="h-7 px-2 text-xs text-red-600 hover:bg-red-50 hover:border-red-300"
+                                title="Cancel and delete request permanently"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </Card>
+          </div>
         )}
 
         {/* ========================================================================= */}
@@ -906,6 +1244,13 @@ export const DocumentManagementView: React.FC = () => {
         onSuccess={loadData}
       />
 
+      {/* Request Document Modal */}
+      <RequestDocumentModal
+        isOpen={isRequestModalOpen}
+        onClose={() => setIsRequestModalOpen(false)}
+        onSuccess={loadData}
+      />
+
       {/* Secure Preview Modal */}
       <DocumentPreviewModal
         isOpen={isPreviewModalOpen}
@@ -944,6 +1289,13 @@ export const DocumentManagementView: React.FC = () => {
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         document={activeDocument}
+      />
+
+      {/* Issue & Upload Digital Letter Modal */}
+      <IssueLetterModal
+        isOpen={isIssueLetterModalOpen}
+        onClose={() => setIsIssueLetterModalOpen(false)}
+        onSuccess={loadData}
       />
     </div>
   );

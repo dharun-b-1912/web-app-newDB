@@ -1,6 +1,6 @@
 // src/features/platform/components/WorkForceCopilotDrawer.tsx
 // ============================================================
-// WorkForceOS — Super Admin Copilot AI Operations Assistant
+// Joy PeopleHR — Super Admin Copilot AI Operations Assistant
 // ============================================================
 
 import React, { useState } from 'react';
@@ -47,7 +47,7 @@ const INITIAL_MESSAGES: CopilotMessage[] = [
   {
     id: 'msg-1',
     sender: 'copilot',
-    text: 'Hello Super Admin. I am WorkForceOS Copilot. I analyze real-time platform telemetry, MRR expansions, tenant quota breaches, and system health. How can I assist you today?',
+    text: 'Hello Super Admin. I am Joy PeopleHR Copilot. I analyze real-time platform telemetry, MRR expansions, tenant quota breaches, and system health. How can I assist you today?',
     timestamp: 'Just now',
   },
 ];
@@ -130,7 +130,7 @@ export const WorkForceCopilotDrawer: React.FC<WorkForceCopilotDrawerProps> = ({
             </span>
             <StatusBadge status="Autonomous Ops AI" size="xs" />
           </div>
-          <SheetTitle>WorkForceOS Copilot</SheetTitle>
+          <SheetTitle>Joy PeopleHR Copilot</SheetTitle>
           <SheetDescription>
             AI-powered intelligence for SaaS metrics, risk telemetry, and rapid navigation.
           </SheetDescription>

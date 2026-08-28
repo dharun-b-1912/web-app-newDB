@@ -1,6 +1,6 @@
 // src/features/platform/subviews/SaasBusinessView.tsx
 // ============================================================
-// WorkForceOS — SaaS Business & Revenue Analytics Executive Console
+// Joy PeopleHR — SaaS Business & Revenue Analytics Executive Console
 // ============================================================
 
 import React, { useState, useMemo } from 'react';

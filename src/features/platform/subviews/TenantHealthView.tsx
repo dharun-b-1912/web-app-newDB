@@ -1,6 +1,6 @@
 // src/features/platform/subviews/TenantHealthView.tsx
 // ============================================================
-// WorkForceOS — Tenant Health, Churn Risk & Customer Intervention Control Center
+// Joy PeopleHR — Tenant Health, Churn Risk & Customer Intervention Control Center
 // ============================================================
 
 import React, { useState, useMemo } from 'react';

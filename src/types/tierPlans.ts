@@ -1,6 +1,6 @@
 // src/types/tierPlans.ts
 // ============================================================
-// WorkForceOS — SaaS Plans & Tier Entitlements Type Definitions
+// Joy PeopleHR — SaaS Plans & Tier Entitlements Type Definitions
 // ============================================================
 
 export type PlanStatus = 'Active' | 'Draft' | 'Archived';

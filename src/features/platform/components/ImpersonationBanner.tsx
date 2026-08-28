@@ -1,6 +1,6 @@
 // src/features/platform/components/ImpersonationBanner.tsx
 // ============================================================
-// WorkForceOS — Active Impersonation Session Banner
+// Joy PeopleHR — Active Impersonation Session Banner
 // ============================================================
 
 import React, { useState, useEffect } from 'react';

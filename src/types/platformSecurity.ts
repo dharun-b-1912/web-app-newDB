@@ -1,6 +1,6 @@
 // src/types/platformSecurity.ts
 // ============================================================
-// WorkForceOS — Platform Security Control Center Types
+// Joy PeopleHR — Platform Security Control Center Types
 // ============================================================
 
 export type SecuritySeverity = 'Critical' | 'High' | 'Medium' | 'Low';

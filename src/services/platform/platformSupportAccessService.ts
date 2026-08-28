@@ -1,6 +1,6 @@
 // src/services/platform/platformSupportAccessService.ts
 // ============================================================
-// WorkForceOS — Temporary Platform Support Access Session Engine
+// Joy PeopleHR — Temporary Platform Support Access Session Engine
 // ============================================================
 
 import { platformAuditService } from './platformAuditService';

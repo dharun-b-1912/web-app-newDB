@@ -1,6 +1,6 @@
 // src/types/supportCenter.ts
 // ============================================================
-// WorkForceOS — Support Center Case & Operations Type Definitions
+// Joy PeopleHR — Support Center Case & Operations Type Definitions
 // ============================================================
 
 export type SupportPriority = 'Critical' | 'High' | 'Medium' | 'Low';

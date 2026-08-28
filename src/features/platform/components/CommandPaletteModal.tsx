@@ -1,6 +1,6 @@
 // src/features/platform/components/CommandPaletteModal.tsx
 // ============================================================
-// WorkForceOS — Global Command Palette (Ctrl + K)
+// Joy PeopleHR — Global Command Palette (Ctrl + K)
 // ============================================================
 
 import React, { useState, useEffect } from 'react';
@@ -148,7 +148,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         {/* Footer */}
         <div className="p-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between text-[11px] text-gray-500">
           <span>Navigate with arrow keys • Press Enter to select</span>
-          <span className="font-mono text-[10px]">WorkForceOS v5.0 Control Plane</span>
+          <span className="font-mono text-[10px]">Joy PeopleHR v5.0 Control Plane</span>
         </div>
       </div>
     </div>

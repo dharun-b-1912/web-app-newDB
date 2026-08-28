@@ -1,6 +1,6 @@
 // src/services/platform/platformIncidentService.ts
 // ============================================================
-// WorkForceOS — Platform Incidents & Operations Command Service
+// Joy PeopleHR — Platform Incidents & Operations Command Service
 // ============================================================
 
 import { platformAuditService } from './platformAuditService';

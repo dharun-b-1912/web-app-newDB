@@ -1,6 +1,6 @@
 // src/features/attendance/components/RemoteBiometricEnrollmentModal.tsx
 // ============================================================================
-// WorkForceOS — Real Remote Biometric Enrollment Modal 2.0
+// Joy PeopleHR — Real Remote Biometric Enrollment Modal 2.0
 // Web Application → Cloud Command Bus → Gateway Daemon → ZKTeco TCP Sensor
 // ============================================================================
 
@@ -236,7 +236,7 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
   // Start Remote Enrollment Trigger
   const handleStartEnrollment = async () => {
     if (!selectedEmployee) {
-      showToast('Please select a WorkForceOS employee to enroll', 'error');
+      showToast('Please select a Joy PeopleHR employee to enroll', 'error');
       return;
     }
 
@@ -363,10 +363,10 @@ export const RemoteBiometricEnrollmentModal: React.FC<RemoteBiometricEnrollmentM
               </div>
             )}
 
-            {/* Step 1: Select WorkForceOS Employee (Required) */}
+            {/* Step 1: Select Joy PeopleHR Employee (Required) */}
             <div className="space-y-2">
               <label className="block text-xs font-bold text-gray-900">
-                Select WorkForceOS Employee *
+                Select Joy PeopleHR Employee *
               </label>
 
               {!selectedEmployee ? (

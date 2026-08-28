@@ -17,6 +17,7 @@ import {
 } from '../../types';
 import { api } from '../../services/api';
 import { onboardingService } from '../../services/onboardingService';
+import { hrEventBus } from '../../services/hrEventBus';
 
 // Wizard Subcomponents
 import { WizardProgressHeader, WIZARD_STEPS } from './wizard/WizardProgressHeader';
@@ -33,19 +34,25 @@ import { ArrowLeft, ArrowRight, CheckCircle2, Save, X } from 'lucide-react';
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onCreated: (emp: Employee) => void;
+  onCreated?: (emp: Employee) => void;
+  onUpdated?: (emp: Employee) => void;
+  employeeToEdit?: Employee | null;
 }
 
-const STORAGE_KEY_DRAFT = 'workforce_employee_wizard_draft_v1';
+const STORAGE_KEY_DRAFT = 'workforce_employee_wizard_draft_v2';
 
 export const EmployeeCreateWizardModal: React.FC<Props> = ({
   isOpen,
   onClose,
   onCreated,
+  onUpdated,
+  employeeToEdit,
 }) => {
   const { showToast } = useToast();
   const { activeCompany, organization } = useTenant();
   const { user } = useAuth();
+
+  const isEditMode = Boolean(employeeToEdit);
 
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [createdEmployee, setCreatedEmployee] = useState<Employee | null>(null);
@@ -66,7 +73,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
   const getInitialFormData = () => ({
     // Step 1: Identity
     photo_url: '',
-    employee_code: `EMP-${Math.floor(100000 + Math.random() * 900000)}`,
+    employee_code: `JCS-${Math.floor(100 + Math.random() * 900)}`,
     first_name: '',
     middle_name: '',
     last_name: '',
@@ -97,8 +104,9 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     perm_country: activeCompany?.country || 'India',
     perm_postal: '641001',
 
-    // Step 3: Employment
+    // Step 3: Employment & Compensation
     doj: new Date().toISOString().split('T')[0],
+    confirmation_date: '',
     employment_type: 'Full Time' as EmploymentType,
     employment_source: 'DIRECT' as EmploymentSource,
     vendor_id: '',
@@ -120,7 +128,27 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     probation_months: 6,
     notice_period_days: 60,
 
-    // Step 4: Organization
+    // Work Assignment
+    shift_id: 'shift-general-01',
+    shift_name: 'General Shift (09:30 AM – 06:30 PM)',
+    attendance_policy_id: 'pol-standard-office',
+    leave_policy_id: 'leave-pol-std-2026',
+    leave_policy_name: 'Standard Full-Time Leave Policy',
+
+    // Compensation & CTC
+    salary_structure_code: 'CORP_STD_01',
+    salary_structure_name: 'Corporate Standard CTC Structure',
+    annual_ctc: 1200000,
+    monthly_ctc: 100000,
+    currency: 'INR',
+    pay_frequency: 'MONTHLY',
+    payroll_group_id: 'pg-monthly-main',
+    salary_effective_from: new Date().toISOString().split('T')[0],
+    pf_applicable: true,
+    esi_applicable: false,
+    pt_applicable: true,
+
+    // Step 4: Organization & Reporting
     reporting_manager_id: '',
     reporting_manager_name: '',
     team_lead_id: '',
@@ -129,7 +157,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     business_unit: 'Enterprise Software',
     cost_center: 'CC-ENG-101',
 
-    // Step 5: Emergency
+    // Step 5: Emergency, Bank & Statutory
     emergency_name: '',
     emergency_relation: 'Spouse',
     emergency_phone: '',
@@ -137,12 +165,155 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     emergency_email: '',
     emergency_address: '',
     family_members: [] as FamilyMemberItem[],
+    bank_name: 'HDFC Bank',
+    account_number: '',
+    ifsc: 'HDFC0001234',
+    account_holder_name: '',
+    account_type: 'SALARY' as 'SALARY' | 'SAVINGS' | 'CURRENT',
+    pan: '',
+    uan: '',
+    pf_number: '',
+    esi_number: '',
+    tax_regime: 'NEW' as 'NEW' | 'OLD',
 
     // Step 6: Documents
     documents: [] as UploadedDocumentItem[],
   });
 
-  const [formData, setFormData] = useState(getInitialFormData);
+  const getEmployeeFormData = useCallback((emp: Employee | null) => {
+    if (!emp) return getInitialFormData();
+
+    const p: any = emp.profile || {};
+    const e: any = emp.employment || {};
+    const currAddr = typeof p.current_address === 'object' && p.current_address !== null ? (p.current_address as any) : {};
+    const permAddr = typeof p.permanent_address === 'object' && p.permanent_address !== null ? (p.permanent_address as any) : {};
+    const primaryEmergency = (p.emergency_contacts && p.emergency_contacts[0]) || {};
+
+    return {
+      // Step 1: Identity
+      photo_url: emp.avatar_url || '',
+      employee_code: emp.employee_code || '',
+      first_name: emp.first_name || '',
+      middle_name: (p as any).middle_name || (emp as any).middle_name || '',
+      last_name: emp.last_name || '',
+      preferred_name: (p as any).display_name || emp.display_name || '',
+      work_email: emp.work_email || '',
+      personal_email: p.personal_email || '',
+      phone: p.phone || (p as any).primary_mobile || '',
+      dob: p.date_of_birth || '',
+      gender: p.gender || 'Male',
+
+      // Step 2: Contact
+      alternate_phone: p.alternate_phone || '',
+      marital_status: p.marital_status || 'Single',
+      nationality: p.nationality || 'Indian',
+      blood_group: p.blood_group || 'O+',
+      preferred_language: p.preferred_language || 'English',
+      current_line1: currAddr.line1 || (typeof p.current_address === 'string' ? p.current_address : ''),
+      current_line2: currAddr.line2 || '',
+      current_city: currAddr.city || activeCompany?.city || 'Coimbatore',
+      current_state: currAddr.state || 'Tamil Nadu',
+      current_country: currAddr.country || activeCompany?.country || 'India',
+      current_postal: currAddr.postal_code || '641001',
+      same_as_permanent: !permAddr.line1 || permAddr.line1 === currAddr.line1,
+      perm_line1: permAddr.line1 || (typeof p.permanent_address === 'string' ? p.permanent_address : ''),
+      perm_line2: permAddr.line2 || '',
+      perm_city: permAddr.city || activeCompany?.city || 'Coimbatore',
+      perm_state: permAddr.state || 'Tamil Nadu',
+      perm_country: permAddr.country || activeCompany?.country || 'India',
+      perm_postal: permAddr.postal_code || '641001',
+
+      // Step 3: Employment & Compensation
+      doj: e.doj || emp.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+      confirmation_date: (e as any).confirmation_date || '',
+      employment_type: (emp.employment_type || e.employment_type || 'Full Time') as EmploymentType,
+      employment_source: (emp.employment_source || e.employment_source || 'DIRECT') as EmploymentSource,
+      vendor_id: emp.vendor_id || e.vendor_id || '',
+      vendor_name: emp.vendor_name || e.vendor_name || '',
+      vendor_employee_code: emp.vendor_employee_code || e.vendor_employee_code || '',
+      vendor_contract_id: e.vendor_contract_id || '',
+      vendor_start_date: e.vendor_start_date || '',
+      vendor_end_date: e.vendor_end_date || '',
+      status: (emp.status || 'Active') as EmployeeStatus,
+      department_id: emp.department_id || '',
+      department_name: emp.department_name || '',
+      designation_id: emp.designation_id || '',
+      designation_title: emp.designation_title || '',
+      branch_id: emp.branch_id || '',
+      location_id: (emp as any).location_id || '',
+      work_mode: (e.work_mode || 'Hybrid') as WorkMode,
+      job_level: e.job_level || 'Mid Level',
+      grade: e.grade || 'G3',
+      probation_months: e.probation_period_months || 6,
+      notice_period_days: e.notice_period_days || 60,
+
+      // Work Assignment
+      shift_id: (e as any).shift_id || 'shift-general-01',
+      shift_name: (e as any).shift_name || 'General Shift (09:30 AM – 06:30 PM)',
+      attendance_policy_id: (e as any).attendance_policy_id || 'pol-standard-office',
+      leave_policy_id: (e as any).leave_policy_id || 'leave-pol-std-2026',
+      leave_policy_name: (e as any).leave_policy_name || 'Standard Full-Time Leave Policy',
+
+      // Compensation & CTC
+      salary_structure_code: (e as any).salary_structure_code || 'CORP_STD_01',
+      salary_structure_name: (e as any).salary_structure_name || 'Corporate Standard CTC Structure',
+      annual_ctc: (e as any).annual_ctc || 1200000,
+      monthly_ctc: (e as any).monthly_ctc || 100000,
+      currency: 'INR',
+      pay_frequency: 'MONTHLY',
+      payroll_group_id: (e as any).payroll_group_id || 'pg-monthly-main',
+      salary_effective_from: (e as any).salary_effective_from || new Date().toISOString().split('T')[0],
+      pf_applicable: (e as any).pf_applicable !== false,
+      esi_applicable: (e as any).esi_applicable === true,
+      pt_applicable: (e as any).pt_applicable !== false,
+
+      // Step 4: Organization & Reporting
+      reporting_manager_id: e.reporting_manager_id || '',
+      reporting_manager_name: e.reporting_manager_name || '',
+      team_lead_id: e.team_lead_id || '',
+      team_lead_name: e.team_lead_name || '',
+      hr_owner_id: (e as any).hr_owner_id || '',
+      business_unit: (e as any).business_unit || 'Enterprise Software',
+      cost_center: e.cost_center_code || 'CC-ENG-101',
+
+      // Step 5: Emergency, Bank & Statutory
+      emergency_name: primaryEmergency.name || '',
+      emergency_relation: primaryEmergency.relationship || 'Spouse',
+      emergency_phone: primaryEmergency.phone || '',
+      emergency_alt_phone: primaryEmergency.alt_phone || '',
+      emergency_email: primaryEmergency.email || '',
+      emergency_address: '',
+      family_members: p.family_members || [],
+      bank_name: (emp as any).bank?.bank_name || (p as any)?.bank_account?.bank_name || 'HDFC Bank',
+      account_number: (emp as any).bank?.account_number || (p as any)?.bank_account?.account_number || '',
+      ifsc: (emp as any).bank?.ifsc || (emp as any).bank?.ifsc_code || (p as any)?.bank_account?.ifsc || 'HDFC0001234',
+      account_holder_name: (emp as any).bank?.account_holder_name || (p as any)?.bank_account?.account_holder_name || `${emp.first_name} ${emp.last_name}`.trim(),
+      account_type: ((emp as any).bank?.account_type || (p as any)?.bank_account?.account_type || 'SALARY') as 'SALARY' | 'SAVINGS' | 'CURRENT',
+      pan: (emp as any).statutory?.pan || (emp as any).statutory?.pan_number || (p as any)?.statutory?.pan || '',
+      uan: (emp as any).statutory?.uan || (emp as any).statutory?.uan_number || (p as any)?.statutory?.uan || '',
+      pf_number: (emp as any).statutory?.pf_number || (p as any)?.statutory?.pf_number || '',
+      esi_number: (emp as any).statutory?.esi_number || (p as any)?.statutory?.esi_number || '',
+      tax_regime: ((emp as any).statutory?.tax_regime || (p as any)?.statutory?.tax_regime || 'NEW') as 'NEW' | 'OLD',
+
+      // Step 6: Documents
+      documents: (emp as any).documents || [],
+    };
+  }, [activeCompany?.city]);
+
+  const [formData, setFormData] = useState(() => getEmployeeFormData(employeeToEdit || null));
+
+  // Reset form data when employeeToEdit or isOpen changes
+  useEffect(() => {
+    if (isOpen) {
+      if (employeeToEdit) {
+        setFormData(getEmployeeFormData(employeeToEdit));
+      } else {
+        setFormData(getInitialFormData());
+      }
+      setCurrentStep(1);
+      setCreatedEmployee(null);
+    }
+  }, [isOpen, employeeToEdit, getEmployeeFormData]);
 
   // Load Master Data & Restore Draft
   useEffect(() => {
@@ -162,21 +333,22 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       setLocations(locs);
       setExistingEmployees(emps);
 
-      // Restore saved draft if available
-      try {
-        const savedRaw = localStorage.getItem(STORAGE_KEY_DRAFT);
-        if (savedRaw) {
-          const parsed = JSON.parse(savedRaw);
-          if (parsed && parsed.first_name) {
-            setFormData((prev) => ({ ...prev, ...parsed }));
-            setDraftLastSavedText('Draft restored');
+      // Restore saved draft only when creating new employee
+      if (!employeeToEdit) {
+        try {
+          const savedRaw = localStorage.getItem(STORAGE_KEY_DRAFT);
+          if (savedRaw) {
+            const parsed = JSON.parse(savedRaw);
+            if (parsed && parsed.data) {
+              setFormData((prev) => ({ ...prev, ...parsed.data }));
+              if (parsed.step) setCurrentStep(parsed.step);
+              setDraftLastSavedText('Restored unsaved draft');
+            }
           }
-        }
-      } catch (err) {
-        console.warn('Failed to load employee draft:', err);
+        } catch (_) { }
       }
     });
-  }, [isOpen, activeCompany?.id]);
+  }, [isOpen, activeCompany?.id, employeeToEdit]);
 
   const updateFormData = (fields: Partial<typeof formData>) => {
     setFormData((prev) => ({ ...prev, ...fields }));
@@ -215,10 +387,6 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         showToast('Please enter the primary Mobile Number.', 'error');
         return false;
       }
-      if (!formData.employee_code.trim()) {
-        showToast('Please specify an Employee ID code.', 'error');
-        return false;
-      }
     } else if (currentStep === 3) {
       if (!formData.doj) {
         showToast('Please select the Date of Joining.', 'error');
@@ -230,6 +398,10 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       }
       if (!formData.designation_id) {
         showToast('Please assign an official Designation.', 'error');
+        return false;
+      }
+      if (!formData.annual_ctc || formData.annual_ctc <= 0) {
+        showToast('Please specify a valid Annual CTC.', 'error');
         return false;
       }
     } else if (currentStep === 4) {
@@ -259,7 +431,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     }
   };
 
-  // Final Employee Creation
+  // Final Master Employee Creation & Finalization
   const handleCreateEmployee = async () => {
     if (!validateCurrentStep()) return;
     setIsSubmitting(true);
@@ -268,82 +440,48 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       const selectedDept = departments.find((d) => d.id === formData.department_id);
       const selectedDesig = designations.find((d) => d.id === formData.designation_id);
       const selectedBranch = branches.find((b) => b.id === formData.branch_id);
+      const selectedLocation = locations.find((l) => l.id === formData.location_id);
 
-      const payload: Partial<Employee> = {
+      const payload = {
+        tenant_id: organization?.id || 'org-joy-01',
         organization_id: organization?.id || 'org-joy-01',
         company_id: activeCompany?.id || 'comp-joy-01',
-        company_name: activeCompany?.legal_name || 'Joy Corporate Solutions Pvt Ltd',
-        branch_id: formData.branch_id || branches[0]?.id,
-        branch_name: selectedBranch?.name || 'Headquarters',
-        department_id: formData.department_id,
-        department_name: selectedDept?.name || 'Engineering',
-        designation_id: formData.designation_id,
-        designation_title: selectedDesig?.title || 'Software Engineer',
-        employee_code: formData.employee_code,
-        first_name: formData.first_name.trim(),
-        middle_name: formData.middle_name.trim(),
-        last_name: formData.last_name.trim(),
-        display_name: formData.preferred_name || `${formData.first_name} ${formData.last_name}`.trim(),
-        work_email: formData.work_email.trim(),
-        avatar_url: formData.photo_url || '',
-        status: formData.status,
-        employment_type: formData.employment_type,
-        employment_source: formData.employment_source || 'DIRECT',
-        vendor_id: formData.vendor_id || undefined,
-        vendor_name: formData.vendor_name || undefined,
-        vendor_employee_code: formData.vendor_employee_code || undefined,
-        profile: {
-          first_name: formData.first_name,
-          middle_name: formData.middle_name,
-          last_name: formData.last_name,
-          display_name: formData.preferred_name,
-          personal_email: formData.personal_email,
-          phone: formData.phone,
-          alternate_phone: formData.alternate_phone,
-          date_of_birth: formData.dob,
+        identity: {
+          photo_url: formData.photo_url,
+          employee_code: formData.employee_code,
+          first_name: formData.first_name.trim(),
+          middle_name: formData.middle_name.trim(),
+          last_name: formData.last_name.trim(),
+          preferred_name: formData.preferred_name || `${formData.first_name} ${formData.last_name}`.trim(),
+          work_email: formData.work_email.trim(),
+          phone: formData.phone.trim(),
+          dob: formData.dob,
           gender: formData.gender,
+        },
+        contact: {
+          personal_email: formData.personal_email,
+          alternate_phone: formData.alternate_phone,
           marital_status: formData.marital_status,
           nationality: formData.nationality,
           blood_group: formData.blood_group,
           preferred_language: formData.preferred_language,
-          current_address: {
-            line1: formData.current_line1,
-            line2: formData.current_line2,
-            city: formData.current_city,
-            state: formData.current_state,
-            country: formData.current_country,
-            postal_code: formData.current_postal,
-          },
-          permanent_address: {
-            line1: formData.same_as_permanent ? formData.current_line1 : formData.perm_line1,
-            line2: formData.same_as_permanent ? formData.current_line2 : formData.perm_line2,
-            city: formData.same_as_permanent ? formData.current_city : formData.perm_city,
-            state: formData.same_as_permanent ? formData.current_state : formData.perm_state,
-            country: formData.same_as_permanent ? formData.current_country : formData.perm_country,
-            postal_code: formData.same_as_permanent ? formData.current_postal : formData.perm_postal,
-          },
+          current_line1: formData.current_line1,
+          current_line2: formData.current_line2,
+          current_city: formData.current_city,
+          current_state: formData.current_state,
+          current_country: formData.current_country,
+          current_postal: formData.current_postal,
           same_as_permanent: formData.same_as_permanent,
-          emergency_contacts: [
-            {
-              name: formData.emergency_name,
-              relationship: formData.emergency_relation,
-              phone: formData.emergency_phone,
-              alt_phone: formData.emergency_alt_phone,
-              email: formData.emergency_email,
-              is_primary: true,
-              priority: 1,
-            },
-          ],
-          family_members: formData.family_members.map((f) => ({
-            name: f.name,
-            relationship: f.relationship,
-            phone: f.phone,
-            is_dependent: f.is_dependent,
-            is_nominee: false,
-          })),
+          perm_line1: formData.perm_line1,
+          perm_line2: formData.perm_line2,
+          perm_city: formData.perm_city,
+          perm_state: formData.perm_state,
+          perm_country: formData.perm_country,
+          perm_postal: formData.perm_postal,
         },
         employment: {
           doj: formData.doj,
+          confirmation_date: formData.confirmation_date,
           employment_type: formData.employment_type,
           employment_source: formData.employment_source || 'DIRECT',
           vendor_id: formData.vendor_id || undefined,
@@ -352,56 +490,304 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           vendor_contract_id: formData.vendor_contract_id || undefined,
           vendor_start_date: formData.vendor_start_date || undefined,
           vendor_end_date: formData.vendor_end_date || undefined,
+          status: formData.status,
+          department_id: formData.department_id,
+          department_name: selectedDept?.name || 'Engineering',
+          designation_id: formData.designation_id,
+          designation_title: selectedDesig?.title || 'Software Engineer',
+          branch_id: formData.branch_id || branches[0]?.id,
+          branch_name: selectedBranch?.name || 'Headquarters',
+          location_id: formData.location_id || locations[0]?.id,
+          work_location_name: selectedLocation?.name || 'Joy Corporate Solutions Private Limited (HQ)',
           work_mode: formData.work_mode,
           job_level: formData.job_level,
           grade: formData.grade,
-          cost_center_code: formData.cost_center,
+          probation_months: formData.probation_months,
+          notice_period_days: formData.notice_period_days,
+        },
+        work_assignment: {
+          shift_id: formData.shift_id || 'shift-general-01',
+          shift_name: formData.shift_name || 'General Shift (09:30 AM – 06:30 PM)',
+          attendance_policy_id: formData.attendance_policy_id || 'pol-standard-office',
+          leave_policy_id: formData.leave_policy_id || 'leave-pol-std-2026',
+          leave_policy_name: formData.leave_policy_name || 'Standard Full-Time Leave Policy',
+        },
+        compensation: {
+          salary_structure_code: formData.salary_structure_code || 'CORP_STD_01',
+          salary_structure_name: formData.salary_structure_name || 'Corporate Standard CTC Structure',
+          annual_ctc: formData.annual_ctc || 1200000,
+          monthly_ctc: formData.monthly_ctc || Math.round((formData.annual_ctc || 1200000) / 12),
+          currency: formData.currency || 'INR',
+          pay_frequency: formData.pay_frequency || 'MONTHLY',
+          payroll_group_id: formData.payroll_group_id || 'pg-monthly-main',
+          salary_effective_from: formData.salary_effective_from || formData.doj,
+        },
+        reporting: {
           reporting_manager_id: formData.reporting_manager_id,
           reporting_manager_name: formData.reporting_manager_name,
           team_lead_id: formData.team_lead_id,
           team_lead_name: formData.team_lead_name,
-          probation_period_months: formData.probation_months,
-          notice_period_days: formData.notice_period_days,
+          business_unit: formData.business_unit,
+          cost_center: formData.cost_center,
         },
+        emergency: {
+          emergency_name: formData.emergency_name,
+          emergency_relation: formData.emergency_relation,
+          emergency_phone: formData.emergency_phone,
+          emergency_alt_phone: formData.emergency_alt_phone,
+          emergency_email: formData.emergency_email,
+          emergency_address: formData.emergency_address,
+          family_members: formData.family_members,
+        },
+        bank: {
+          bank_name: formData.bank_name || 'HDFC Bank',
+          account_number: formData.account_number || '50100239481923',
+          ifsc: formData.ifsc || 'HDFC0001234',
+          account_holder_name: formData.account_holder_name || `${formData.first_name} ${formData.last_name}`.trim(),
+          account_type: formData.account_type || 'SALARY',
+          payment_mode: 'BANK_TRANSFER',
+        },
+        statutory: {
+          pan: formData.pan || 'ABCDE1234F',
+          uan: formData.uan || '101234567890',
+          pf_number: formData.pf_number,
+          esi_number: formData.esi_number,
+          pf_applicable: formData.pf_applicable !== false,
+          esi_applicable: formData.esi_applicable === true,
+          pt_applicable: formData.pt_applicable !== false,
+          tax_regime: formData.tax_regime || 'NEW',
+        },
+        performance: {
+          performance_template_id: 'tmpl-corp-annual-2026',
+          performance_cycle_id: 'cycle-fy26-27',
+          review_frequency: 'ANNUAL',
+        },
+        documents: formData.documents || [],
       };
 
-      const newEmployee = await api.createEmployee(payload);
+      if (isEditMode && employeeToEdit) {
+        const updatePayload: Partial<Employee> = {
+          organization_id: payload.organization_id,
+          company_id: payload.company_id,
+          company_name: activeCompany?.legal_name || 'Joy Corporate Solutions Pvt Ltd',
+          first_name: payload.identity.first_name,
+          middle_name: payload.identity.middle_name,
+          last_name: payload.identity.last_name,
+          display_name: payload.identity.preferred_name || `${payload.identity.first_name} ${payload.identity.last_name}`.trim(),
+          work_email: payload.identity.work_email,
+          avatar_url: payload.identity.photo_url,
+          status: payload.employment.status,
+          employment_type: payload.employment.employment_type,
+          employment_source: payload.employment.employment_source,
+          department_id: payload.employment.department_id,
+          department_name: payload.employment.department_name,
+          designation_id: payload.employment.designation_id,
+          designation_title: payload.employment.designation_title,
+          branch_id: payload.employment.branch_id,
+          branch_name: payload.employment.branch_name,
+          profile: {
+            ...payload.contact,
+            first_name: payload.identity.first_name,
+            middle_name: payload.identity.middle_name,
+            last_name: payload.identity.last_name,
+            display_name: payload.identity.preferred_name,
+            phone: payload.identity.phone,
+            date_of_birth: payload.identity.dob,
+            gender: payload.identity.gender,
+            current_address: {
+              line1: payload.contact.current_line1,
+              line2: payload.contact.current_line2,
+              city: payload.contact.current_city,
+              state: payload.contact.current_state,
+              country: payload.contact.current_country,
+              postal_code: payload.contact.current_postal,
+            },
+            permanent_address: {
+              line1: payload.contact.same_as_permanent ? payload.contact.current_line1 : payload.contact.perm_line1,
+              line2: payload.contact.same_as_permanent ? payload.contact.current_line2 : payload.contact.perm_line2,
+              city: payload.contact.same_as_permanent ? payload.contact.current_city : payload.contact.perm_city,
+              state: payload.contact.same_as_permanent ? payload.contact.current_state : payload.contact.perm_state,
+              country: payload.contact.same_as_permanent ? payload.contact.current_country : payload.contact.perm_country,
+              postal_code: payload.contact.same_as_permanent ? payload.contact.current_postal : payload.contact.perm_postal,
+            },
+            emergency_contacts: [
+              {
+                name: payload.emergency.emergency_name,
+                relationship: payload.emergency.emergency_relation,
+                phone: payload.emergency.emergency_phone,
+                alt_phone: payload.emergency.emergency_alt_phone,
+                email: payload.emergency.emergency_email,
+                is_primary: true,
+                priority: 1,
+              },
+            ],
+            family_members: payload.emergency.family_members,
+          },
+          employment: {
+            doj: payload.employment.doj,
+            employment_type: payload.employment.employment_type,
+            employment_source: payload.employment.employment_source,
+            work_mode: payload.employment.work_mode,
+            job_level: payload.employment.job_level,
+            grade: payload.employment.grade,
+            cost_center_code: payload.reporting.cost_center,
+            reporting_manager_id: payload.reporting.reporting_manager_id,
+            reporting_manager_name: payload.reporting.reporting_manager_name,
+            team_lead_id: payload.reporting.team_lead_id,
+            team_lead_name: payload.reporting.team_lead_name,
+            probation_period_months: payload.employment.probation_months,
+            notice_period_days: payload.employment.notice_period_days,
+          },
+          bank: {
+            bank_name: formData.bank_name || 'HDFC Bank Ltd',
+            account_number: formData.account_number || '',
+            ifsc: formData.ifsc || 'HDFC0001234',
+            account_holder_name: formData.account_holder_name || `${payload.identity.first_name} ${payload.identity.last_name}`.trim(),
+            account_type: formData.account_type || 'SALARY',
+          },
+          statutory: {
+            pan: formData.pan || '',
+            uan: formData.uan || '',
+            pf_number: formData.pf_number || '',
+            esi_number: formData.esi_number || '',
+            tax_regime: formData.tax_regime || 'NEW',
+          },
+          updated_at: new Date().toISOString(),
+        };
 
-      // Auto-create Onboarding Workflow Transactionally
-      try {
-        await onboardingService.createOnboarding({
-          employee_id: newEmployee.id,
-          organization_id: newEmployee.organization_id,
-          legal_entity_id: newEmployee.company_id,
-          vendor_id: newEmployee.vendor_id,
-          employment_source: (newEmployee.employment_source === 'VENDOR' ? 'VENDOR' : 'DIRECT'),
-          joining_date: formData.doj || new Date().toISOString().split('T')[0],
-        });
-      } catch (onbErr) {
-        console.warn('[EmployeeCreateWizardModal] Auto-spawn onboarding failed:', onbErr);
+        const updatedResult = await api.updateEmployee(employeeToEdit.id, updatePayload);
+
+        // Emit global event
+        window.dispatchEvent(new CustomEvent('employee:updated', { detail: updatedResult }));
+        hrEventBus.publish('employee.updated', updatedResult);
+
+        if (onUpdated) {
+          onUpdated(updatedResult);
+        }
+        showToast(`Employee ${updatedResult.first_name} ${updatedResult.last_name} (${updatedResult.employee_code}) updated successfully!`, 'success');
+        handleResetAndClose();
+        return;
       }
+
+      const finalResult = await onboardingService.finalizeOnboarding(payload);
 
       // Clean up saved draft
       localStorage.removeItem(STORAGE_KEY_DRAFT);
 
-      // Emit global realtime event for dashboard & people directory
-      window.dispatchEvent(new CustomEvent('employee:created', { detail: newEmployee }));
+      // Construct complete Employee representation for callbacks
+      const constructedEmployee: Employee = {
+        id: finalResult.employee_id,
+        employee_code: finalResult.employee_code,
+        organization_id: payload.organization_id,
+        company_id: payload.company_id,
+        company_name: activeCompany?.legal_name || 'Joy Corporate Solutions Pvt Ltd',
+        first_name: payload.identity.first_name,
+        middle_name: payload.identity.middle_name,
+        last_name: payload.identity.last_name,
+        display_name: payload.identity.preferred_name,
+        work_email: payload.identity.work_email,
+        avatar_url: payload.identity.photo_url,
+        status: payload.employment.status,
+        employment_type: payload.employment.employment_type,
+        employment_source: payload.employment.employment_source,
+        department_id: payload.employment.department_id,
+        department_name: payload.employment.department_name,
+        designation_id: payload.employment.designation_id,
+        designation_title: payload.employment.designation_title,
+        branch_id: payload.employment.branch_id,
+        branch_name: payload.employment.branch_name,
+        profile: {
+          ...payload.contact,
+          first_name: payload.identity.first_name,
+          middle_name: payload.identity.middle_name,
+          last_name: payload.identity.last_name,
+          display_name: payload.identity.preferred_name,
+          phone: payload.identity.phone,
+          date_of_birth: payload.identity.dob,
+          gender: payload.identity.gender,
+          current_address: {
+            line1: payload.contact.current_line1,
+            line2: payload.contact.current_line2,
+            city: payload.contact.current_city,
+            state: payload.contact.current_state,
+            country: payload.contact.current_country,
+            postal_code: payload.contact.current_postal,
+          },
+          permanent_address: {
+            line1: payload.contact.same_as_permanent ? payload.contact.current_line1 : payload.contact.perm_line1,
+            line2: payload.contact.same_as_permanent ? payload.contact.current_line2 : payload.contact.perm_line2,
+            city: payload.contact.same_as_permanent ? payload.contact.current_city : payload.contact.perm_city,
+            state: payload.contact.same_as_permanent ? payload.contact.current_state : payload.contact.perm_state,
+            country: payload.contact.same_as_permanent ? payload.contact.current_country : payload.contact.perm_country,
+            postal_code: payload.contact.same_as_permanent ? payload.contact.current_postal : payload.contact.perm_postal,
+          },
+          emergency_contacts: [
+            {
+              name: payload.emergency.emergency_name,
+              relationship: payload.emergency.emergency_relation,
+              phone: payload.emergency.emergency_phone,
+              alt_phone: payload.emergency.emergency_alt_phone,
+              email: payload.emergency.emergency_email,
+              is_primary: true,
+              priority: 1,
+            },
+          ],
+          family_members: payload.emergency.family_members,
+        },
+        employment: {
+          doj: payload.employment.doj,
+          employment_type: payload.employment.employment_type,
+          employment_source: payload.employment.employment_source,
+          work_mode: payload.employment.work_mode,
+          job_level: payload.employment.job_level,
+          grade: payload.employment.grade,
+          cost_center_code: payload.reporting.cost_center,
+          reporting_manager_id: payload.reporting.reporting_manager_id,
+          reporting_manager_name: payload.reporting.reporting_manager_name,
+          team_lead_id: payload.reporting.team_lead_id,
+          team_lead_name: payload.reporting.team_lead_name,
+          probation_period_months: payload.employment.probation_months,
+          notice_period_days: payload.employment.notice_period_days,
+        },
+        bank: {
+          bank_name: formData.bank_name || 'HDFC Bank Ltd',
+          account_number: formData.account_number || '',
+          ifsc: formData.ifsc || 'HDFC0001234',
+          account_holder_name: formData.account_holder_name || `${payload.identity.first_name} ${payload.identity.last_name}`.trim(),
+          account_type: formData.account_type || 'SALARY',
+        },
+        statutory: {
+          pan: formData.pan || '',
+          uan: formData.uan || '',
+          pf_number: formData.pf_number || '',
+          esi_number: formData.esi_number || '',
+          tax_regime: formData.tax_regime || 'NEW',
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
 
-      setCreatedEmployee(newEmployee);
-      onCreated(newEmployee);
-      showToast(`Employee ${newEmployee.first_name} ${newEmployee.last_name} created & onboarding initiated!`, 'success');
+      // Emit global realtime event for dashboard & people directory
+      window.dispatchEvent(new CustomEvent('employee:created', { detail: constructedEmployee }));
+
+      setCreatedEmployee(constructedEmployee);
+      if (onCreated) {
+        onCreated(constructedEmployee);
+      }
+      showToast(`Master Employee ${constructedEmployee.first_name} ${constructedEmployee.last_name} (${constructedEmployee.employee_code}) created & all sub-domain assignments linked!`, 'success');
     } catch (err: any) {
-      console.error('Failed to create employee:', err);
-      showToast(err.message || 'We could not create this employee. Please verify required fields and try again.', 'error');
+      console.error('Failed to save master employee record:', err);
+      showToast(err.message || 'We could not complete operation. Please verify required fields and try again.', 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleResetAndAddAnother = () => {
-    setCreatedEmployee(null);
-    setCurrentStep(1);
+  const handleResetAndClose = () => {
     setFormData(getInitialFormData());
+    setCurrentStep(1);
+    setCreatedEmployee(null);
+    onClose();
   };
 
   if (!isOpen) return null;
@@ -409,42 +795,91 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
-      title=""
-      maxWidth="4xl"
+      onClose={handleResetAndClose}
+      title={isEditMode ? 'Edit Employee' : 'Add New Employee'}
+      maxWidth="5xl"
+      hideHeader={true}
     >
-      <div className="p-6 space-y-6">
+      <div className="flex flex-col h-full max-h-[88vh]">
+        {/* Success Screen Overlay when finalized */}
         {createdEmployee ? (
-          <WizardSuccessScreen
-            employee={createdEmployee}
-            onOpenProfile={() => {
-              onClose();
-            }}
-            onStartOnboarding={() => {
-              onClose();
-            }}
-            onAddAnother={handleResetAndAddAnother}
-          />
+          <div className="p-6">
+            <WizardSuccessScreen
+              employee={createdEmployee}
+              onClose={handleResetAndClose}
+            />
+          </div>
         ) : (
           <>
-            {/* Header & Step Stepper */}
-            <WizardProgressHeader
-              currentStep={currentStep}
-              onStepClick={(s) => {
-                if (s < currentStep) setCurrentStep(s);
-              }}
-              draftLastSavedText={draftLastSavedText}
-              isSavingDraft={isSavingDraft}
-              onSaveDraft={handleSaveDraft}
-            />
+            {/* Modal Header & Navigation Bar */}
+            <div className="px-6 py-4 border-b border-gray-100 bg-white flex items-center justify-between sticky top-0 z-20">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-black text-gray-900 tracking-tight">
+                    {isEditMode
+                      ? `Edit Employee — ${formData.first_name || ''} ${formData.last_name || ''} (${formData.employee_code || ''})`
+                      : 'Add New Employee — 7-Step Enterprise Onboarding'}
+                  </h2>
+                  <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-[#07563D] border border-emerald-200">
+                    Step {currentStep} of 7
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  {isEditMode
+                    ? `Update profile, organization hierarchy, compensation and work assignments.`
+                    : WIZARD_STEPS[currentStep - 1]?.subtitle || 'Complete required details'}
+                </p>
+              </div>
 
-            {/* Current Step Body */}
-            <div className="min-h-[380px] py-2">
+              <div className="flex items-center gap-2">
+                {!isEditMode && draftLastSavedText && (
+                  <span className="text-[11px] text-gray-400 italic hidden sm:inline">
+                    {draftLastSavedText}
+                  </span>
+                )}
+                {!isEditMode && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={handleSaveDraft}
+                    disabled={isSavingDraft}
+                    className="text-xs h-8 px-3 border-gray-200 font-bold text-gray-700"
+                  >
+                    <Save className="w-3.5 h-3.5 mr-1" />
+                    Save Draft
+                  </Button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleResetAndClose}
+                  className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Stepper Progress Bar */}
+            <div className="px-6 pt-3 pb-3 bg-gray-50/70 border-b border-gray-100">
+              <WizardProgressHeader
+                currentStep={currentStep}
+                onStepClick={(step) => {
+                  if (step < currentStep || validateCurrentStep()) {
+                    setCurrentStep(step);
+                  }
+                }}
+              />
+            </div>
+
+            {/* Step Body Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-5 bg-white">
               {currentStep === 1 && (
                 <Step1Identity
                   formData={formData}
                   onChange={updateFormData}
                   existingEmployees={existingEmployees}
+                  editingEmployeeId={employeeToEdit?.id}
                 />
               )}
 
@@ -452,6 +887,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
                 <Step2Contact
                   formData={formData}
                   onChange={updateFormData}
+                  activeCompany={activeCompany}
                 />
               )}
 
@@ -495,61 +931,56 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
                   formData={formData}
                   departments={departments}
                   designations={designations}
-                  onJumpToStep={(s) => setCurrentStep(s)}
+                  onJumpToStep={(step) => setCurrentStep(step)}
                 />
               )}
             </div>
 
-            {/* Sticky Bottom Action Navigation Bar */}
-            <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-              <div>
-                {currentStep > 1 ? (
-                  <Button
-                    type="button"
-                    size="md"
-                    variant="secondary"
-                    onClick={handleBack}
-                    className="text-xs font-bold text-gray-700 bg-white hover:bg-gray-50 border-gray-200"
-                  >
-                    <ArrowLeft className="w-4 h-4 mr-1.5" />
-                    Back
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    size="md"
-                    variant="ghost"
-                    onClick={onClose}
-                    className="text-xs font-bold text-gray-400 hover:text-gray-700"
-                  >
-                    Cancel
-                  </Button>
-                )}
-              </div>
+            {/* Modal Footer Controls */}
+            <div className="px-6 py-3.5 bg-gray-50 border-t border-gray-100 flex items-center justify-between sticky bottom-0 z-20">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleBack}
+                disabled={currentStep === 1 || isSubmitting}
+                className="text-xs h-9 px-4 font-bold border-gray-200"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Previous Step
+              </Button>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 {currentStep < 7 ? (
                   <Button
                     type="button"
-                    size="md"
                     variant="primary"
                     onClick={handleNext}
-                    className="text-xs font-bold bg-[#07563D] hover:bg-[#064e37] text-white shadow-sm px-5"
+                    className="text-xs h-9 px-5 font-bold bg-[#07563D] hover:bg-[#054430] text-white shadow-xs"
                   >
-                    Continue
-                    <ArrowRight className="w-4 h-4 ml-1.5" />
+                    Next Step
+                    <ArrowRight className="w-4 h-4 ml-1" />
+                  </Button>
+                ) : isEditMode ? (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={handleCreateEmployee}
+                    disabled={isSubmitting}
+                    className="text-xs h-9 px-6 font-black bg-[#07563D] hover:bg-[#054430] text-white shadow-md flex items-center gap-1.5"
+                  >
+                    <Save className="w-4 h-4" />
+                    {isSubmitting ? 'Saving Updates...' : 'Save & Update Employee Profile'}
                   </Button>
                 ) : (
                   <Button
                     type="button"
-                    size="md"
                     variant="primary"
-                    disabled={isSubmitting}
                     onClick={handleCreateEmployee}
-                    className="text-xs font-black bg-[#07563D] hover:bg-[#064e37] text-white shadow-md px-6 py-2.5"
+                    disabled={isSubmitting}
+                    className="text-xs h-9 px-6 font-black bg-[#07563D] hover:bg-[#054430] text-white shadow-md flex items-center gap-1.5"
                   >
-                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                    {isSubmitting ? 'Creating Employee...' : 'Create Employee'}
+                    <CheckCircle2 className="w-4 h-4" />
+                    {isSubmitting ? 'Finalizing Master Onboarding...' : 'Complete Onboarding & Activate Employee'}
                   </Button>
                 )}
               </div>

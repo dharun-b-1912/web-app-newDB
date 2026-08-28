@@ -1,5 +1,5 @@
 // ============================================================
-// WorkForceOS — Platform Control Plane 2.0 TypeScript Domain Models
+// Joy PeopleHR — Platform Control Plane 2.0 TypeScript Domain Models
 // ============================================================
 
 export type EnvironmentType = 'Production' | 'Staging' | 'Development' | 'All';

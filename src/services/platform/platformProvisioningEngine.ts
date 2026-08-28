@@ -1,6 +1,6 @@
 // src/services/platform/platformProvisioningEngine.ts
 // ============================================================
-// WorkForceOS — SaaS Customer Provisioning Engine & State Machine
+// Joy PeopleHR — SaaS Customer Provisioning Engine & State Machine
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';

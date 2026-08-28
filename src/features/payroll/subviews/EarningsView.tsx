@@ -7,6 +7,7 @@ import { TrendingUp, Gift, Coins, Receipt, Plus, Search, Check, Clock } from 'lu
 import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
+import { ExpenseClaimsView } from './ExpenseClaimsView';
 
 interface EarningsViewProps {
   initialSubTab?: string;
@@ -94,52 +95,7 @@ export const EarningsView: React.FC<EarningsViewProps> = ({ initialSubTab }) => 
       )}
 
       {/* 3. Reimbursements */}
-      {subTab === 'reimbursements' && (
-        <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
-          <div>
-            <h3 className="text-sm font-bold text-gray-900">Approved Expense Claims & Reimbursements</h3>
-            <p className="text-xs text-gray-500">Reimbursements verified by finance for inclusion in active payroll</p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-100">
-                <tr>
-                  <th className="p-3">Employee</th>
-                  <th className="p-3">Category</th>
-                  <th className="p-3 font-mono">Claimed Amount</th>
-                  <th className="p-3 font-mono">Approved Amount</th>
-                  <th className="p-3">Receipt / Ref</th>
-                  <th className="p-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {reimbursements.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="p-8 text-center text-gray-400">
-                      <Receipt className="w-8 h-8 mx-auto text-gray-300 mb-2" />
-                      <p className="font-semibold text-gray-700">No reimbursement claims submitted</p>
-                    </td>
-                  </tr>
-                ) : (
-                  reimbursements.map(claim => (
-                    <tr key={claim.id} className="hover:bg-gray-50/70">
-                      <td className="p-3 font-bold text-gray-900">{claim.employee_name}</td>
-                      <td className="p-3 text-gray-700">{claim.category}</td>
-                      <td className="p-3 font-mono text-gray-600">₹ {claim.amount.toLocaleString('en-IN')}</td>
-                      <td className="p-3 font-mono font-bold text-[#07563D]">₹ {claim.approved_amount.toLocaleString('en-IN')}</td>
-                      <td className="p-3 font-mono text-gray-500">{claim.receipt_number}</td>
-                      <td className="p-3">
-                        <Badge variant="emerald">{claim.status}</Badge>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {subTab === 'reimbursements' && <ExpenseClaimsView />}
     </div>
   );
 };

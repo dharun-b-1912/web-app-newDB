@@ -1,6 +1,6 @@
 // src/services/platform/platformAnalyticsService.ts
 // ============================================================
-// WorkForceOS — SaaS Business BI & Cohort Analytics Service
+// Joy PeopleHR — SaaS Business BI & Cohort Analytics Service
 // ============================================================
 
 export interface MrrTrendPoint {

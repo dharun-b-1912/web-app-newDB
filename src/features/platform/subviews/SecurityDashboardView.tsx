@@ -1,6 +1,6 @@
 // src/features/platform/subviews/SecurityDashboardView.tsx
 // ============================================================
-// WorkForceOS — Platform Security & Session Operations Console
+// Joy PeopleHR — Platform Security & Session Operations Console
 // ============================================================
 
 import React, { useState } from 'react';

@@ -1,6 +1,6 @@
 // src/features/platform/subviews/SubscriptionsView.tsx
 // ============================================================
-// WorkForceOS — Tenant Subscriptions & Customer Contracts Management Console
+// Joy PeopleHR — Tenant Subscriptions & Customer Contracts Management Console
 // ============================================================
 
 import React, { useState, useMemo } from 'react';

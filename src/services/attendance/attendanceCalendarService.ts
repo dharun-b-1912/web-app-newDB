@@ -1,6 +1,6 @@
 // src/services/attendance/attendanceCalendarService.ts
 // ============================================================================
-// WorkForceOS — Production Real-Data Attendance Calendar Service
+// Joy PeopleHR — Production Real-Data Attendance Calendar Service
 // Aggregates:
 // - Real Employees (Employee Master)
 // - Shift & Roster Schedules (attendanceRosterService)

@@ -1,6 +1,6 @@
 // src/services/platform/platformWebhooksMeshService.ts
 // ============================================================
-// WorkForceOS — Webhooks & Event Mesh Operational Control Service
+// Joy PeopleHR — Webhooks & Event Mesh Operational Control Service
 // ============================================================
 // Architecture:
 // PostgreSQL + Supabase Realtime + Queues / Background Jobs
@@ -80,7 +80,7 @@ const standardEventCatalog: EventTypeSchema[] = [
     name: 'workforce.employee.created',
     version: 'v1',
     category: 'Employee',
-    description: 'Triggered when a new employee is provisioned and active in WorkForceOS.',
+    description: 'Triggered when a new employee is provisioned and active in Joy PeopleHR.',
     producer_service: 'People & Core HR Service',
     status: 'Current',
     is_system: false,
@@ -392,9 +392,9 @@ function seedLocalDataIfEmpty() {
         delivered_at: new Date(Date.now() - 11760).toISOString(),
         request_headers: {
           'Content-Type': 'application/json',
-          'X-WorkForceOS-Signature': 'sha256=a8f93...4b1',
-          'X-WorkForceOS-Timestamp': String(Math.floor(Date.now() / 1000)),
-          'X-WorkForceOS-Event-ID': 'evt_01J9X8K4M2P8Q9W1',
+          'X-Joy PeopleHR-Signature': 'sha256=a8f93...4b1',
+          'X-Joy PeopleHR-Timestamp': String(Math.floor(Date.now() / 1000)),
+          'X-Joy PeopleHR-Event-ID': 'evt_01J9X8K4M2P8Q9W1',
         },
         response_headers: {
           'content-type': 'application/json; charset=utf-8',
@@ -438,8 +438,8 @@ function seedLocalDataIfEmpty() {
         failed_at: new Date(Date.now() - 17000).toISOString(),
         request_headers: {
           'Content-Type': 'application/json',
-          'X-WorkForceOS-Signature': 'sha256=fc771...9a2',
-          'X-WorkForceOS-Event-ID': 'evt_01J9X90AA2C8D9E1',
+          'X-Joy PeopleHR-Signature': 'sha256=fc771...9a2',
+          'X-Joy PeopleHR-Event-ID': 'evt_01J9X90AA2C8D9E1',
         },
         response_headers: {
           'content-type': 'text/html',
@@ -1160,7 +1160,7 @@ export const platformWebhooksMeshService = {
       replayed_at: new Date().toISOString(),
       request_headers: {
         'Content-Type': 'application/json',
-        'X-WorkForceOS-Replay': 'true',
+        'X-Joy PeopleHR-Replay': 'true',
       },
       response_headers: { 'content-type': 'application/json' },
       response_body_excerpt: '{"replayed":true,"success":true}',
@@ -1228,11 +1228,11 @@ export const platformWebhooksMeshService = {
 
     const requestHeaders = {
       'Content-Type': 'application/json',
-      'X-WorkForceOS-Event-ID': testEventId,
-      'X-WorkForceOS-Event-Type': dto.event_type,
-      'X-WorkForceOS-Signature': signature,
-      'X-WorkForceOS-Timestamp': timestamp,
-      'X-WorkForceOS-Delivery-Type': 'TEST_DELIVERY',
+      'X-Joy PeopleHR-Event-ID': testEventId,
+      'X-Joy PeopleHR-Event-Type': dto.event_type,
+      'X-Joy PeopleHR-Signature': signature,
+      'X-Joy PeopleHR-Timestamp': timestamp,
+      'X-Joy PeopleHR-Delivery-Type': 'TEST_DELIVERY',
     };
 
     const responseTime = Math.floor(Math.random() * 150) + 80;

@@ -1,6 +1,6 @@
 // src/components/shell/NotificationsCenter.tsx
 // ============================================================
-// WorkForceOS — Unified Realtime Notification & Approval Inbox
+// Joy PeopleHR — Unified Realtime Notification & Approval Inbox
 // ============================================================
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';

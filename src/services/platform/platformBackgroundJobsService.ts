@@ -1,6 +1,6 @@
 // src/services/platform/platformBackgroundJobsService.ts
 // ============================================================
-// WorkForceOS — Background Jobs & Worker Fleet Orchestration Service
+// Joy PeopleHR — Background Jobs & Worker Fleet Orchestration Service
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';

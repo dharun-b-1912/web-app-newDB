@@ -1,6 +1,6 @@
 // src/features/platform/subviews/PlatformAccountMasterView.tsx
 // ============================================================
-// WorkForceOS — Platform Admin Dedicated Account Center
+// Joy PeopleHR — Platform Admin Dedicated Account Center
 // ============================================================
 
 import React, { useState, useEffect, useRef } from 'react';

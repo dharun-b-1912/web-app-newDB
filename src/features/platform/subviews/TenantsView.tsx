@@ -1,6 +1,6 @@
 // src/features/platform/subviews/TenantsView.tsx
 // ============================================================
-// WorkForceOS — Organizations & Customer Workspace Control Center
+// Joy PeopleHR — Organizations & Customer Workspace Control Center
 // ============================================================
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -281,7 +281,7 @@ export const TenantsView: React.FC = () => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `WorkForceOS_Customers_Export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Joy PeopleHR_Customers_Export_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

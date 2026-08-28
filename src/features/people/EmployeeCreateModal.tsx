@@ -62,7 +62,7 @@ export const EmployeeCreateModal: React.FC<EmployeeCreateModalProps> = ({
         },
         employment: {
           doj: data.doj || new Date().toISOString().split('T')[0],
-          work_location: data.work_location || 'Coimbatore HQ Campus',
+          work_location: data.work_location || 'Joy Corporate Solutions Private Limited (HQ)',
           ctc: data.ctc || 1800000,
         },
       });

@@ -1,6 +1,6 @@
 // src/services/platform/platformTierPlansService.ts
 // ============================================================
-// WorkForceOS — SaaS Plans, Features & Entitlements Engine
+// Joy PeopleHR — SaaS Plans, Features & Entitlements Engine
 // ============================================================
 
 import {

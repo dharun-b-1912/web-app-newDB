@@ -1,6 +1,6 @@
 // src/services/platform/platformBillingService.ts
 // ============================================================
-// WorkForceOS — SaaS Financial Billing, GST Invoicing & FinOps Engine
+// Joy PeopleHR — SaaS Financial Billing, GST Invoicing & FinOps Engine
 // ============================================================
 
 import { PlatformBillingInvoice } from '../../types/platformAdmin';
@@ -155,7 +155,7 @@ const defaultJoyInvoice: DetailedInvoice = {
   line_items: [
     {
       id: 'li-1',
-      description: 'WorkForceOS Professional Plan Subscription (100 Active Seats)',
+      description: 'Joy PeopleHR Professional Plan Subscription (100 Active Seats)',
       hsn_sac: '998313',
       qty: 1,
       unit_price: 45000,

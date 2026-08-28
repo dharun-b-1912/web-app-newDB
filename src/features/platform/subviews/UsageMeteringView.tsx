@@ -1,6 +1,6 @@
 // src/features/platform/subviews/UsageMeteringView.tsx
 // ============================================================
-// WorkForceOS — Tenant Resource Consumption & Quotas Console
+// Joy PeopleHR — Tenant Resource Consumption & Quotas Console
 // ============================================================
 
 import React, { useState } from 'react';

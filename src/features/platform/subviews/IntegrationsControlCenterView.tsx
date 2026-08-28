@@ -1,6 +1,6 @@
 // src/features/platform/subviews/IntegrationsControlCenterView.tsx
 // ============================================================
-// WorkForceOS — Integration Control Center (Super Admin Console)
+// Joy PeopleHR — Integration Control Center (Super Admin Console)
 // ============================================================
 
 import React, { useState, useMemo } from 'react';
@@ -374,7 +374,7 @@ export const IntegrationsControlCenterView: React.FC = () => {
             </div>
           </div>
           <p className="text-[13.5px] text-[#64748B] mt-1 max-w-3xl">
-            Connect WorkForceOS with external services, devices, communication channels, APIs, and tenant applications.
+            Connect Joy PeopleHR with external services, devices, communication channels, APIs, and tenant applications.
           </p>
         </div>
 
@@ -1142,7 +1142,7 @@ export const IntegrationsControlCenterView: React.FC = () => {
             <div>
               <h3 className="text-sm font-bold text-[#0F172B] flex items-center gap-2">
                 <Send className="h-4 w-4 text-[#047857]" />
-                WorkForceOS Outbound Webhook Subsystem
+                Joy PeopleHR Outbound Webhook Subsystem
               </h3>
               <p className="text-xs text-[#64748B] mt-0.5">
                 For complete deep-mesh routing, dead-letter recovery, and replay timelines, visit the dedicated Webhooks & Mesh console.
@@ -2344,7 +2344,7 @@ const DeveloperToolsSection: React.FC = () => {
           Platform API Explorer & Sandbox
         </h3>
         <p className="text-xs text-[#64748B]">
-          Directly execute live authenticated requests against the WorkForceOS OpenAPI Gateway.
+          Directly execute live authenticated requests against the Joy PeopleHR OpenAPI Gateway.
         </p>
       </div>
 

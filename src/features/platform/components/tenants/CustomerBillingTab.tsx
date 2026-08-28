@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/CustomerBillingTab.tsx
 // ============================================================
-// WorkForceOS — Customer Billing, Invoices & Settlement Tab
+// Joy PeopleHR — Customer Billing, Invoices & Settlement Tab
 // ============================================================
 
 import React, { useState } from 'react';

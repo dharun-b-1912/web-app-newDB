@@ -1,6 +1,6 @@
 // src/features/organization/OrgChart.tsx
 // ============================================================================
-// WorkForceOS — Production-Grade Realtime Interactive Org Chart 2.0
+// Joy PeopleHR — Production-Grade Realtime Interactive Org Chart 2.0
 // Database-Driven Tree Graph, Cycle Guard, Search Ancestors, Node Inspector
 // ============================================================================
 
@@ -654,7 +654,7 @@ export const OrgChart: React.FC<OrgChartProps> = ({
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>
-                WorkforceOS will enforce server-side validation to ensure this reporting change does not introduce any circular hierarchy loops.
+                Joy PeopleHR will enforce server-side validation to ensure this reporting change does not introduce any circular hierarchy loops.
               </span>
             </div>
 

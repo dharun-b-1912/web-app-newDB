@@ -20,13 +20,15 @@ export interface Step1FormData {
 interface Props {
   formData: Step1FormData;
   onChange: (fields: Partial<Step1FormData>) => void;
-  existingEmployees: Employee[];
+  existingEmployees?: Employee[];
+  editingEmployeeId?: string;
 }
 
 export const Step1Identity: React.FC<Props> = ({
   formData,
   onChange,
-  existingEmployees,
+  existingEmployees = [],
+  editingEmployeeId,
 }) => {
   const [emailError, setEmailError] = useState<string>('');
   const [codeError, setCodeError] = useState<string>('');
@@ -36,6 +38,10 @@ export const Step1Identity: React.FC<Props> = ({
     const newCode = `EMP-${randomNum}`;
     onChange({ employee_code: newCode });
   };
+
+  const otherEmployees = editingEmployeeId
+    ? (existingEmployees || []).filter((e) => e.id !== editingEmployeeId)
+    : (existingEmployees || []);
 
   // Real Duplicate Check for Work Email
   useEffect(() => {
@@ -50,7 +56,7 @@ export const Step1Identity: React.FC<Props> = ({
       return;
     }
 
-    const isDuplicate = existingEmployees.some(
+    const isDuplicate = otherEmployees.some(
       (e) => e.work_email?.toLowerCase() === formData.work_email.trim().toLowerCase()
     );
 
@@ -59,7 +65,7 @@ export const Step1Identity: React.FC<Props> = ({
     } else {
       setEmailError('');
     }
-  }, [formData.work_email, existingEmployees]);
+  }, [formData.work_email, otherEmployees]);
 
   // Real Duplicate Check for Employee ID
   useEffect(() => {
@@ -67,7 +73,7 @@ export const Step1Identity: React.FC<Props> = ({
       setCodeError('Employee ID is required.');
       return;
     }
-    const isDuplicate = existingEmployees.some(
+    const isDuplicate = otherEmployees.some(
       (e) => e.employee_code?.toLowerCase() === formData.employee_code.trim().toLowerCase()
     );
     if (isDuplicate) {
@@ -75,7 +81,9 @@ export const Step1Identity: React.FC<Props> = ({
     } else {
       setCodeError('');
     }
-  }, [formData.employee_code, existingEmployees]);
+  }, [formData.employee_code, otherEmployees]);
+
+  const initials = `${formData.first_name?.[0] || 'D'}${formData.last_name?.[0] || 'B'}`.toUpperCase();
 
   return (
     <div className="space-y-6">
@@ -94,6 +102,8 @@ export const Step1Identity: React.FC<Props> = ({
           <PhotoUploadCard
             photoUrl={formData.photo_url}
             onPhotoChange={(url) => onChange({ photo_url: url })}
+            initials={initials}
+            employeeName={`${formData.first_name} ${formData.last_name}`.trim()}
           />
         </div>
 

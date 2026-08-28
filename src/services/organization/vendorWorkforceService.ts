@@ -1,6 +1,6 @@
 // src/services/organization/vendorWorkforceService.ts
 // ============================================================================
-// WorkForceOS — Vendor & External Workforce Management Service 2.0
+// Joy PeopleHR — Vendor & External Workforce Management Service 2.0
 // Database-Backed Engine for Vendors, Manpower Workers, Site Deployments & Compliance
 // ============================================================================
 

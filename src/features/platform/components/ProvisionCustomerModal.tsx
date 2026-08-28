@@ -1,6 +1,6 @@
 // src/features/platform/components/ProvisionCustomerModal.tsx
 // ============================================================
-// WorkForceOS — Enterprise Customer Organization Provisioning Workspace
+// Joy PeopleHR — Enterprise Customer Organization Provisioning Workspace
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -229,7 +229,7 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
       { code: 'EXPENSE_REIMBURSEMENTS', name: 'Expense Claims & OCR Travel Desk', category: 'Payroll', minPlan: 'Business', desc: 'Multi-currency expense approvals with receipt OCR.' },
       { code: 'WHATSAPP_PAYSLIPS', name: 'WhatsApp Payslips & Leave Actions', category: 'Messaging', minPlan: 'Business', desc: 'Direct WhatsApp Cloud API notification bot.' },
       { code: 'ATS_RECRUITMENT', name: 'ATS Recruitment Pipeline & Job Board', category: 'Recruitment', minPlan: 'Business', desc: 'Candidate Kanban boards and resume parsing.' },
-      { code: 'AI_COPILOT', name: 'WorkForceOS AI Copilot & Search', category: 'AI & Copilot', minPlan: 'Enterprise', desc: 'Natural language HR assistant for company policies.' },
+      { code: 'AI_COPILOT', name: 'Joy PeopleHR AI Copilot & Search', category: 'AI & Copilot', minPlan: 'Enterprise', desc: 'Natural language HR assistant for company policies.' },
       { code: 'FORENSIC_AUDIT_LOGS', name: '7-Year Tamper-Evident Forensic Audit', category: 'Security', minPlan: 'Enterprise', desc: 'SOC 2 compliant immutable audit trail.' },
     ];
   }, []);
@@ -328,7 +328,7 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
               )}
             </div>
             <p className="text-xs text-gray-500 mt-0.5 ml-10">
-              Set up a new WorkForceOS tenant, administrator, subscription and feature access.
+              Set up a new Joy PeopleHR tenant, administrator, subscription and feature access.
             </p>
           </div>
 
@@ -547,7 +547,7 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block font-bold text-gray-700 mb-1">WorkForceOS Tenant Identifier</label>
+                    <label className="block font-bold text-gray-700 mb-1">Joy PeopleHR Tenant Identifier</label>
                     <div className="px-3.5 py-2.5 rounded-xl bg-emerald-50/50 border border-emerald-200 text-[#047857] font-mono font-bold flex items-center justify-between">
                       <span>{formData.slug || 'tenant-slug'}</span>
                       <span className="text-[10px] bg-emerald-100 text-[#047857] px-2 py-0.5 rounded font-sans">Auto-Generated</span>

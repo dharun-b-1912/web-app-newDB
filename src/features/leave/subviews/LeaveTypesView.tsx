@@ -24,6 +24,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import { hrEventBus } from '../../../services/hrEventBus';
 
 export const LeaveTypesView: React.FC = () => {
   const [types, setTypes] = useState<LeaveType[]>([]);
@@ -38,8 +39,16 @@ export const LeaveTypesView: React.FC = () => {
     'general' | 'eligibility' | 'rules' | 'accrual' | 'carryForward' | 'encashment' | 'documents' | 'approval' | 'audit'
   >('general');
 
-  useEffect(() => {
+  const loadLeaveTypes = () => {
     setTypes(leaveApi.getLeaveTypes());
+  };
+
+  useEffect(() => {
+    loadLeaveTypes();
+    const unsub = hrEventBus.subscribe('leave.*', () => {
+      loadLeaveTypes();
+    });
+    return () => unsub();
   }, []);
 
   const handleOpenNew = () => {
@@ -255,7 +264,7 @@ export const LeaveTypesView: React.FC = () => {
                   <td className="p-4 text-gray-700">
                     <span className="font-bold">{t.gender_applicability} Genders</span>
                     <span className="block text-[11px] text-gray-400">
-                      {t.employment_types.join(', ')}
+                      {(t.employment_types || []).join(', ')}
                     </span>
                   </td>
 
@@ -603,15 +612,143 @@ export const LeaveTypesView: React.FC = () => {
               {/* Tab 4: Accrual */}
               {activeModalTab === 'accrual' && (
                 <div className="space-y-4">
-                  <p className="text-xs text-gray-500">
-                    Accrual frequencies, proration algorithms, and automated scheduled calculations are managed at the Policy layer or default settings below.
-                  </p>
-                  <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200 text-xs text-emerald-900 space-y-1">
-                    <strong className="block font-black">Automated Accrual Engine Connected</strong>
-                    <span>
-                      Leave balance calculations are computed continuously via the idempotent Accrual Engine with proration based on joining date.
-                    </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Annual Quota (Days / Year) *</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={editingType.annual_quota ?? 12}
+                        onChange={e => {
+                          const quota = Number(e.target.value);
+                          const freq = editingType.accrual_frequency || 'Monthly';
+                          const monthlyRate = freq === 'Monthly' ? Number((quota / 12).toFixed(2)) : quota;
+                          setEditingType({
+                            ...editingType,
+                            annual_quota: quota,
+                            monthly_accrual_rate: monthlyRate,
+                          });
+                        }}
+                        className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-mono font-bold text-gray-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Accrual Frequency</label>
+                      <select
+                        value={editingType.accrual_frequency || 'Monthly'}
+                        onChange={e => {
+                          const freq = e.target.value as any;
+                          const quota = editingType.annual_quota ?? 12;
+                          const monthlyRate = freq === 'Monthly' ? Number((quota / 12).toFixed(2)) : quota;
+                          setEditingType({
+                            ...editingType,
+                            accrual_frequency: freq,
+                            monthly_accrual_rate: monthlyRate,
+                          });
+                        }}
+                        className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-bold"
+                      >
+                        <option value="Monthly">Monthly (Accrued 1st of every month)</option>
+                        <option value="Quarterly">Quarterly (Accrued each quarter)</option>
+                        <option value="Yearly">Yearly Upfront (Accrued Jan 1st)</option>
+                        <option value="JoiningDateBased">Joining Date Anniversary</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Credit Schedule Day</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="28"
+                        value={editingType.accrual_credit_day ?? 1}
+                        onChange={e => setEditingType({ ...editingType, accrual_credit_day: Number(e.target.value) })}
+                        placeholder="e.g. 1st of month"
+                        className="w-full p-2.5 border border-gray-300 rounded-xl text-xs bg-white font-mono"
+                      />
+                    </div>
                   </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-800">
+                      <input
+                        type="checkbox"
+                        checked={editingType.prorate_first_year ?? true}
+                        onChange={e => setEditingType({ ...editingType, prorate_first_year: e.target.checked })}
+                        className="rounded text-[#07563D] focus:ring-[#07563D] w-4 h-4"
+                      />
+                      <span>Pro-rate annual quota for new employees based on joining month</span>
+                    </label>
+                  </div>
+
+                  {/* Dynamic Calculation Banner */}
+                  {(() => {
+                    const quota = editingType.annual_quota ?? 12;
+                    const freq = editingType.accrual_frequency || 'Monthly';
+                    const monthlyRate = freq === 'Monthly' ? (quota / 12) : freq === 'Quarterly' ? (quota / 4) : quota;
+                    const curMonth = new Date().getMonth() + 1; // 1-12
+                    const accruedToCurrentMonth = (monthlyRate * curMonth).toFixed(1);
+
+                    const months = [
+                      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+                    ];
+
+                    return (
+                      <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200/60 pb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                            <span className="font-bold text-emerald-950">
+                              Auto-Accrual Math: {quota} Annual Days ÷ 12 Months = <span className="text-emerald-700 font-extrabold">{monthlyRate.toFixed(2)} Day(s)</span> credited per month
+                            </span>
+                          </div>
+                          <span className="px-2.5 py-0.5 rounded-full bg-emerald-200/70 text-emerald-900 font-bold text-[11px]">
+                            Current (Month {curMonth}): ~{accruedToCurrentMonth} Days Accrued
+                          </span>
+                        </div>
+
+                        {/* 12-Month Pro-rated Accrual Schedule Matrix */}
+                        <div>
+                          <div className="text-[11px] font-bold text-emerald-900 mb-2">
+                            12-Month Automated Accrual Schedule & Cumulative Progression:
+                          </div>
+                          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                            {months.map((m, idx) => {
+                              const monthNum = idx + 1;
+                              const isCurrent = monthNum === curMonth;
+                              const isPassed = monthNum <= curMonth;
+                              const cumulative = (monthlyRate * monthNum).toFixed(1);
+
+                              return (
+                                <div
+                                  key={m}
+                                  className={cn(
+                                    'p-2 rounded-xl border text-center transition-all',
+                                    isCurrent
+                                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm ring-2 ring-emerald-300'
+                                      : isPassed
+                                      ? 'bg-emerald-100/60 border-emerald-300 text-emerald-950'
+                                      : 'bg-white/80 border-gray-200 text-gray-600'
+                                  )}
+                                >
+                                  <div className="text-[10px] font-extrabold uppercase tracking-wider">{m}</div>
+                                  <div className={cn('text-xs font-black my-0.5', isCurrent ? 'text-white' : 'text-emerald-900')}>
+                                    +{monthlyRate.toFixed(2)}d
+                                  </div>
+                                  <div className={cn('text-[9px]', isCurrent ? 'text-emerald-100' : 'text-gray-500')}>
+                                    Cumul: {cumulative}d
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

@@ -1,6 +1,6 @@
 // src/features/organization/DepartmentsAndTeamsView.tsx
 // ============================================================================
-// WorkForceOS — Departments & Teams Operational Management & Detail Inspector
+// Joy PeopleHR — Departments & Teams Operational Management & Detail Inspector
 // Realtime Database-Backed Structure with Live Member Queries & Head Assignment
 // ============================================================================
 

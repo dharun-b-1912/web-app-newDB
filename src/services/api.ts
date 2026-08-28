@@ -8,528 +8,20 @@ import {
   Role,
   User,
   Employee,
+  EmployeeStatus,
+  EmploymentDetails,
+  EmployeeProfile,
   ApprovalItem,
   ActivityItem,
   DashboardMetrics,
   Asset,
 } from '../types';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
-import {
-  defaultBranches,
-  defaultLocations,
-  defaultDepartments,
-  defaultDesignations,
-} from './employeeSeedData';
 import { hrEventBus } from './hrEventBus';
+import { logger } from './diagnostics/loggerService';
+import { CorrelationService } from './diagnostics/correlationService';
 
-// Standard Default Types & Records
-const defaultOrganization: Organization = {
-  id: 'org-joy-01',
-  name: 'Joy Corporate Solutions',
-  industry: 'Software & Technology Services',
-  default_currency: 'INR',
-  timezone: 'Asia/Kolkata',
-  created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2026-08-17T00:00:00Z',
-};
-
-const defaultCompany: Company = {
-  id: 'comp-joy-01',
-  organization_id: 'org-joy-01',
-  legal_name: 'Joy Corporate Solutions Pvt Ltd',
-  trade_name: 'JoyHRMS India',
-  statutory_registration_no: 'CIN-U72200TZ2020PTC034120',
-  tax_id: 'PAN-AAACJ9988F',
-  country: 'India',
-  city: 'Coimbatore',
-  created_at: '2024-01-15T00:00:00Z',
-};
-
-const defaultCompanies: Company[] = [
-  defaultCompany,
-  {
-    id: 'comp-joy-02',
-    organization_id: 'org-joy-01',
-    legal_name: 'Joy Global Technologies Inc',
-    trade_name: 'Joy Tech International',
-    statutory_registration_no: 'DE-EIN-987654321',
-    tax_id: 'TAX-US9876543',
-    country: 'United States',
-    city: 'San Francisco',
-    created_at: '2024-06-01T00:00:00Z',
-  },
-];
-
-const defaultRoles: Role[] = [
-  { id: 'role-001', organization_id: 'org-joy-01', name: 'Super Admin', description: 'Root Platform Administrator with global access', permissions: [] },
-  { id: 'role-001b', organization_id: 'org-joy-01', name: 'Assistant Admin', description: 'Assistant Platform Administrator with delegated operations & customer support access', permissions: [] },
-  { id: 'role-001c', organization_id: 'org-joy-01', name: 'Billing Admin', description: 'FinOps & SaaS Invoicing Administrator', permissions: [] },
-  { id: 'role-001d', organization_id: 'org-joy-01', name: 'Security Officer', description: 'Compliance, Session Security & Audit Officer', permissions: [] },
-  { id: 'role-002', organization_id: 'org-joy-01', name: 'Company Admin', description: 'Enterprise Organization Admin', permissions: [] },
-  { id: 'role-003', organization_id: 'org-joy-01', name: 'HR Head', description: 'Head of Human Resources & People Operations', permissions: [] },
-  { id: 'role-004', organization_id: 'org-joy-01', name: 'Team Lead', description: 'Department Supervisor / Team Lead', permissions: [] },
-  { id: 'role-005', organization_id: 'org-joy-01', name: 'Employee', description: 'Standard Employee with Employee Self Service access', permissions: [] },
-];
-
-const defaultEnterpriseUser: User = {
-  id: 'user-hr-01',
-  organization_id: 'org-joy-01',
-  email: 'haripriya@joycorporate.com',
-  name: 'Hari priya',
-  avatar_url: '',
-  employee_id: 'emp-hr-001',
-  status: 'Active',
-  roles: [defaultRoles[5]], // HR Head
-  created_at: '2024-01-01T00:00:00Z',
-};
-
-const defaultCorporateUsers: User[] = [
-  defaultEnterpriseUser,
-  {
-    id: 'user-admin-01',
-    organization_id: 'org-joy-01',
-    email: 'admin@joycorporate.com',
-    name: 'Dharun Joy',
-    avatar_url: '',
-    employee_id: 'emp-admin-001',
-    status: 'Active',
-    roles: [defaultRoles[4]], // Company Admin
-    created_at: '2024-01-01T00:00:00Z',
-  },
-  {
-    id: 'user-mgr-01',
-    organization_id: 'org-joy-01',
-    email: 'karthik.n@joycorporate.com',
-    name: 'Karthik N.',
-    avatar_url: '',
-    employee_id: 'emp-mgr-001',
-    status: 'Active',
-    roles: [defaultRoles[6]], // Team Lead / Manager
-    created_at: '2024-01-01T00:00:00Z',
-  },
-  {
-    id: 'user-tl-01',
-    organization_id: 'org-joy-01',
-    email: 'deepa.s@joycorporate.com',
-    name: 'Deepa S.',
-    avatar_url: '',
-    employee_id: 'emp-tl-001',
-    status: 'Active',
-    roles: [defaultRoles[6]], // Team Lead
-    created_at: '2024-01-01T00:00:00Z',
-  },
-  {
-    id: 'user-emp-01',
-    organization_id: 'org-joy-01',
-    email: 'priya.sharma@joycorporate.com',
-    name: 'Priya Sharma',
-    avatar_url: '',
-    employee_id: 'emp-001',
-    status: 'Active',
-    roles: [defaultRoles[7]], // Employee
-    created_at: '2024-01-01T00:00:00Z',
-  },
-];
-
-const defaultPlatformUsers: User[] = [
-  {
-    id: 'user-super-01',
-    organization_id: 'org-platform',
-    email: 'superadmin@workforceos.com',
-    name: 'THIRUMALAI R K',
-    avatar_url: '',
-    employee_id: 'emp-root-001',
-    status: 'Active',
-    roles: [defaultRoles[0]], // Super Admin
-    created_at: '2024-01-01T00:00:00Z',
-  },
-  {
-    id: 'user-asst-02',
-    organization_id: 'org-platform',
-    email: 'assistant.admin@workforceos.com',
-    name: 'Karthik Natarajan',
-    avatar_url: '',
-    employee_id: 'emp-asst-002',
-    status: 'Active',
-    roles: [defaultRoles[1]], // Assistant Admin
-    created_at: '2024-02-01T00:00:00Z',
-  },
-  {
-    id: 'user-fin-03',
-    organization_id: 'org-platform',
-    email: 'finance@workforceos.com',
-    name: 'Pooja Agarwal',
-    avatar_url: '',
-    employee_id: 'emp-fin-003',
-    status: 'Active',
-    roles: [defaultRoles[2]], // Billing Admin
-    created_at: '2024-03-01T00:00:00Z',
-  },
-  {
-    id: 'user-sec-04',
-    organization_id: 'org-platform',
-    email: 'security@workforceos.com',
-    name: 'Vikram Sethi',
-    avatar_url: '',
-    employee_id: 'emp-sec-004',
-    status: 'Active',
-    roles: [defaultRoles[3]], // Security Officer
-    created_at: '2024-04-01T00:00:00Z',
-  },
-];
-
-const defaultAllUsers: User[] = [...defaultCorporateUsers, ...defaultPlatformUsers];
-
-const defaultCanonicalEmployees: Employee[] = [
-  {
-    id: 'emp-hr-001',
-    organization_id: 'org-joy-01',
-    company_id: 'comp-joy-01',
-    company_name: 'Joy Corporate Solutions Pvt Ltd',
-    department_id: 'dept-hr',
-    department_name: 'People & HR',
-    designation_id: 'desig-hr-head',
-    designation_title: 'HR Head',
-    user_id: 'user-hr-01',
-    employee_code: 'WF-1001',
-    first_name: 'Hari',
-    last_name: 'Priya',
-    display_name: 'Hari Priya',
-    work_email: 'haripriya@joycorporate.com',
-    status: 'Active',
-    employment_type: 'Full Time',
-    employment_source: 'DIRECT',
-    profile: {
-      first_name: 'Hari',
-      last_name: 'Priya',
-      display_name: 'Hari Priya',
-      gender: 'Female',
-      date_of_birth: '1992-06-18',
-      blood_group: 'O+',
-      nationality: 'Indian',
-      phone: '+91 98401 22334',
-      personal_email: 'haripriya.personal@gmail.com',
-      current_address: {
-        line1: '42 Orchid Villa, Race Course Road',
-        city: 'Coimbatore',
-        state: 'Tamil Nadu',
-        postal_code: '641018',
-        country: 'India',
-      },
-    },
-    employment: {
-      doj: '2025-01-15',
-      employment_type: 'Full Time',
-      employment_source: 'DIRECT',
-      work_location: 'Coimbatore HQ',
-      reporting_manager_id: 'emp-admin-001',
-      reporting_manager_name: 'Dharun Joy (Company Admin)',
-      probation_period_months: 6,
-      confirmation_status: 'Confirmed',
-    },
-    created_at: '2025-01-15T00:00:00Z',
-    updated_at: '2026-08-17T00:00:00Z',
-  },
-  {
-    id: 'emp-admin-001',
-    organization_id: 'org-joy-01',
-    company_id: 'comp-joy-01',
-    company_name: 'Joy Corporate Solutions Pvt Ltd',
-    department_id: 'dept-exec',
-    department_name: 'Executive Management',
-    designation_id: 'desig-vp-ops',
-    designation_title: 'Managing Director & VP Operations',
-    user_id: 'user-admin-01',
-    employee_code: 'WF-1000',
-    first_name: 'Dharun',
-    last_name: 'Joy',
-    display_name: 'Dharun Joy',
-    work_email: 'admin@joycorporate.com',
-    status: 'Active',
-    employment_type: 'Full Time',
-    employment_source: 'DIRECT',
-    profile: {
-      first_name: 'Dharun',
-      last_name: 'Joy',
-      display_name: 'Dharun Joy',
-      gender: 'Male',
-      phone: '+91 98400 99000',
-    },
-    employment: {
-      doj: '2024-01-01',
-      employment_type: 'Full Time',
-      employment_source: 'DIRECT',
-      work_location: 'Coimbatore HQ',
-      confirmation_status: 'Confirmed',
-    },
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2026-08-17T00:00:00Z',
-  },
-  {
-    id: 'emp-mgr-001',
-    organization_id: 'org-joy-01',
-    company_id: 'comp-joy-01',
-    company_name: 'Joy Corporate Solutions Pvt Ltd',
-    department_id: 'dept-eng',
-    department_name: 'Engineering & DevOps',
-    designation_id: 'desig-eng-mgr',
-    designation_title: 'Engineering Manager',
-    user_id: 'user-mgr-01',
-    employee_code: 'WF-1002',
-    first_name: 'Karthik',
-    last_name: 'Natarajan',
-    display_name: 'Karthik N.',
-    work_email: 'karthik.n@joycorporate.com',
-    status: 'Active',
-    employment_type: 'Full Time',
-    employment_source: 'DIRECT',
-    profile: {
-      first_name: 'Karthik',
-      last_name: 'Natarajan',
-      display_name: 'Karthik N.',
-      phone: '+91 98402 33445',
-    },
-    employment: {
-      doj: '2025-02-01',
-      employment_type: 'Full Time',
-      employment_source: 'DIRECT',
-      work_location: 'Coimbatore HQ',
-      reporting_manager_id: 'emp-admin-001',
-      reporting_manager_name: 'Dharun Joy (Company Admin)',
-      confirmation_status: 'Confirmed',
-    },
-    created_at: '2025-02-01T00:00:00Z',
-    updated_at: '2026-08-17T00:00:00Z',
-  },
-  {
-    id: 'emp-tl-001',
-    organization_id: 'org-joy-01',
-    company_id: 'comp-joy-01',
-    company_name: 'Joy Corporate Solutions Pvt Ltd',
-    department_id: 'dept-eng',
-    department_name: 'Engineering & DevOps',
-    designation_id: 'desig-lead-eng',
-    designation_title: 'Senior Lead Engineer',
-    user_id: 'user-tl-01',
-    employee_code: 'WF-1003',
-    first_name: 'Deepa',
-    last_name: 'Subramanian',
-    display_name: 'Deepa S.',
-    work_email: 'deepa.s@joycorporate.com',
-    status: 'Active',
-    employment_type: 'Full Time',
-    employment_source: 'DIRECT',
-    profile: {
-      first_name: 'Deepa',
-      last_name: 'Subramanian',
-      display_name: 'Deepa S.',
-      phone: '+91 98403 44556',
-    },
-    employment: {
-      doj: '2025-03-01',
-      employment_type: 'Full Time',
-      employment_source: 'DIRECT',
-      work_location: 'Coimbatore HQ',
-      reporting_manager_id: 'emp-mgr-001',
-      reporting_manager_name: 'Karthik N.',
-      confirmation_status: 'Confirmed',
-    },
-    created_at: '2025-03-01T00:00:00Z',
-    updated_at: '2026-08-17T00:00:00Z',
-  },
-  {
-    id: 'emp-001',
-    organization_id: 'org-joy-01',
-    company_id: 'comp-joy-01',
-    company_name: 'Joy Corporate Solutions Pvt Ltd',
-    department_id: 'dept-eng',
-    department_name: 'Engineering & DevOps',
-    designation_id: 'desig-sr-eng',
-    designation_title: 'Senior Software Engineer',
-    user_id: 'user-emp-01',
-    employee_code: 'WF-1004',
-    first_name: 'Priya',
-    last_name: 'Sharma',
-    display_name: 'Priya Sharma',
-    work_email: 'priya.sharma@joycorporate.com',
-    status: 'Active',
-    employment_type: 'Full Time',
-    employment_source: 'DIRECT',
-    profile: {
-      first_name: 'Priya',
-      last_name: 'Sharma',
-      display_name: 'Priya Sharma',
-      phone: '+91 98404 55667',
-    },
-    employment: {
-      doj: '2025-04-15',
-      employment_type: 'Full Time',
-      employment_source: 'DIRECT',
-      work_location: 'Coimbatore HQ',
-      reporting_manager_id: 'emp-tl-001',
-      reporting_manager_name: 'Deepa S.',
-      confirmation_status: 'Confirmed',
-    },
-    created_at: '2025-04-15T00:00:00Z',
-    updated_at: '2026-08-17T00:00:00Z',
-  },
-  {
-    id: 'emp-vnd-001',
-    organization_id: 'org-joy-01',
-    company_id: 'comp-joy-01',
-    company_name: 'Joy Corporate Solutions Pvt Ltd',
-    department_id: 'dept-admin',
-    department_name: 'Administration & Facilities',
-    designation_id: 'desig-fac-exec',
-    designation_title: 'Facilities & Operations Specialist',
-    employee_code: 'WF-1005',
-    first_name: 'Senthil',
-    last_name: 'Nathan',
-    display_name: 'Senthil Nathan',
-    work_email: 'senthil.n@joycorporate.com',
-    status: 'Active',
-    employment_type: 'Contract',
-    employment_source: 'VENDOR',
-    vendor_id: 'e2000000-0000-0000-0000-000000000001',
-    vendor_name: 'ABC Workforce Solutions Pvt Ltd',
-    vendor_employee_code: 'ABC-TN-8821',
-    profile: {
-      first_name: 'Senthil',
-      last_name: 'Nathan',
-      display_name: 'Senthil Nathan',
-      phone: '+91 98405 66778',
-    },
-    employment: {
-      doj: '2025-05-01',
-      employment_type: 'Contract',
-      employment_source: 'VENDOR',
-      vendor_id: 'e2000000-0000-0000-0000-000000000001',
-      vendor_name: 'ABC Workforce Solutions Pvt Ltd',
-      vendor_employee_code: 'ABC-TN-8821',
-      vendor_start_date: '2025-05-01',
-      vendor_end_date: '2026-12-31',
-      work_location: 'Coimbatore HQ',
-      reporting_manager_id: 'emp-hr-001',
-      reporting_manager_name: 'Hari Priya (HR Head)',
-      confirmation_status: 'Confirmed',
-    },
-    created_at: '2025-05-01T00:00:00Z',
-    updated_at: '2026-08-17T00:00:00Z',
-  },
-  {
-    id: 'emp-vnd-002',
-    organization_id: 'org-joy-01',
-    company_id: 'comp-joy-01',
-    company_name: 'Joy Corporate Solutions Pvt Ltd',
-    department_id: 'dept-cs',
-    department_name: 'Customer Support',
-    designation_id: 'desig-tech-sup',
-    designation_title: 'Technical Support Specialist',
-    employee_code: 'WF-1006',
-    first_name: 'Meera',
-    last_name: 'Krishnan',
-    display_name: 'Meera Krishnan',
-    work_email: 'meera.k@joycorporate.com',
-    status: 'Active',
-    employment_type: 'Contract',
-    employment_source: 'VENDOR',
-    vendor_id: 'e2000000-0000-0000-0000-000000000001',
-    vendor_name: 'ABC Workforce Solutions Pvt Ltd',
-    vendor_employee_code: 'ABC-TN-8829',
-    profile: {
-      first_name: 'Meera',
-      last_name: 'Krishnan',
-      display_name: 'Meera Krishnan',
-      phone: '+91 98406 77889',
-    },
-    employment: {
-      doj: '2025-06-01',
-      employment_type: 'Contract',
-      employment_source: 'VENDOR',
-      vendor_id: 'e2000000-0000-0000-0000-000000000001',
-      vendor_name: 'ABC Workforce Solutions Pvt Ltd',
-      vendor_employee_code: 'ABC-TN-8829',
-      vendor_start_date: '2025-06-01',
-      vendor_end_date: '2026-12-31',
-      work_location: 'Coimbatore HQ',
-      reporting_manager_id: 'emp-hr-001',
-      reporting_manager_name: 'Hari Priya (HR Head)',
-      confirmation_status: 'Confirmed',
-    },
-    created_at: '2025-06-01T00:00:00Z',
-    updated_at: '2026-08-17T00:00:00Z',
-  },
-  {
-    id: 'emp-1040',
-    organization_id: 'org-joy-01',
-    company_id: 'comp-joy-01',
-    company_name: 'Joy Corporate Solutions Pvt Ltd',
-    department_id: 'dept-eng',
-    department_name: 'Engineering & DevOps',
-    designation_id: 'desig-sr-eng',
-    designation_title: 'Senior Staff Frontend Architect',
-    user_id: 'user-emp-1040',
-    employee_code: 'EMP-1040',
-    first_name: 'Priya',
-    last_name: 'Sundaram',
-    display_name: 'Priya Sundaram',
-    work_email: 'priya.sundaram@joycorporate.com',
-    status: 'Onboarding',
-    employment_type: 'Full Time',
-    employment_source: 'DIRECT',
-    profile: {
-      first_name: 'Priya',
-      last_name: 'Sundaram',
-      display_name: 'Priya Sundaram',
-      phone: '+91 98405 88990',
-      gender: 'Female',
-      date_of_birth: '1994-06-18',
-      blood_group: 'O+',
-      nationality: 'Indian',
-      current_address: {
-        line1: '42, Brookefields Residency, Avinashi Road',
-        city: 'Coimbatore',
-        state: 'Tamil Nadu',
-        country: 'India',
-        postal_code: '641001',
-      },
-      permanent_address: {
-        line1: '42, Brookefields Residency, Avinashi Road',
-        city: 'Coimbatore',
-        state: 'Tamil Nadu',
-        country: 'India',
-        postal_code: '641001',
-      },
-      same_as_permanent: true,
-      emergency_contacts: [
-        {
-          name: 'Sundaram Natarajan',
-          relationship: 'Father',
-          phone: '+91 98401 11223',
-          is_primary: true,
-          priority: 1,
-        },
-      ],
-    },
-    employment: {
-      doj: '2026-08-20',
-      employment_type: 'Full Time',
-      employment_source: 'DIRECT',
-      work_location: 'Coimbatore HQ',
-      reporting_manager_id: 'emp-mgr-001',
-      reporting_manager_name: 'Karthik Natarajan (Engineering Manager)',
-      team_lead_id: 'emp-tl-001',
-      team_lead_name: 'Deepa Subramanian (Senior Lead Engineer)',
-      confirmation_status: 'Pending',
-      probation_period_months: 3,
-      notice_period_days: 60,
-    },
-    created_at: '2026-08-15T09:00:00Z',
-    updated_at: '2026-08-17T11:00:00Z',
-  },
-];
-
-// Local Storage Keys
+// Storage Keys for temporary offline cache only
 const KEYS = {
   ORG: 'workforce_organization',
   COMPANIES: 'workforce_companies',
@@ -564,23 +56,186 @@ function setStorage<T>(key: string, value: T): void {
   }
 }
 
+export function sanitizeEmployeeForSupabase(emp: any): Record<string, any> {
+  if (!emp || typeof emp !== 'object') return {};
+  const allowedKeys = new Set([
+    'id',
+    'tenant_id',
+    'organization_id',
+    'company_id',
+    'company_name',
+    'branch_id',
+    'branch_name',
+    'department_id',
+    'department_name',
+    'designation_id',
+    'designation_title',
+    'user_id',
+    'employee_code',
+    'first_name',
+    'last_name',
+    'middle_name',
+    'display_name',
+    'work_email',
+    'avatar_url',
+    'avatar_asset_id',
+    'avatar_version',
+    'status',
+    'employment_type',
+    'employment_source',
+    'vendor_id',
+    'vendor_name',
+    'vendor_employee_code',
+    'profile',
+    'employment',
+    'shift_name',
+    'shift_start_time',
+    'shift_end_time',
+    'current_profile_media_id',
+    'media_version',
+    'record_version',
+    'updated_by',
+    'created_at',
+    'updated_at',
+    'deleted_at',
+  ]);
+
+  const clean: Record<string, any> = {};
+  for (const [k, v] of Object.entries(emp)) {
+    if (allowedKeys.has(k) && v !== undefined) {
+      clean[k] = v;
+    }
+  }
+  return clean;
+}
+
+const DEFAULT_LEGAL_ENTITIES: Company[] = [
+  {
+    id: 'comp-joy-01',
+    organization_id: 'org-joy-01',
+    legal_name: 'Joy Corporate Solutions Pvt Ltd',
+    trade_name: 'Joy Corporate India',
+    statutory_registration_no: 'U72200TZ2020PTC034567',
+    tax_id: '33AABCJ1234F1Z5',
+    country: 'India',
+    city: 'Coimbatore',
+    currency: 'INR',
+    timezone: 'Asia/Kolkata',
+    address: 'Joy Tech Park, Avinashi Road, Coimbatore, Tamil Nadu 641014',
+    created_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+export const DEFAULT_EMPLOYEES: Employee[] = [
+  {
+    id: 'emp-hr-001',
+    organization_id: 'org-joy-01',
+    company_id: 'comp-joy-01',
+    branch_id: null,
+    department_id: 'dept-hr-01',
+    designation_id: 'desig-hr-01',
+    user_id: null,
+    employee_code: 'JCS-HR-001',
+    first_name: 'Haripriya',
+    last_name: '',
+    middle_name: null,
+    display_name: 'Haripriya',
+    work_email: 'haripriya@joycorporate.com',
+    avatar_url: null,
+    status: 'Active',
+    employment_type: 'Full Time',
+    profile: {
+      phone: '+919840122334',
+      gender: 'Female',
+      nationality: 'Indian',
+    },
+    employment: {
+      doj: '2024-01-15',
+      work_location: 'Joy Corporate Solutions Private Limited (HQ)',
+      employment_type: 'Full Time',
+      confirmation_status: 'Confirmed',
+      reporting_manager_name: 'Dharun B',
+    },
+    company_name: 'Joy Corporate Solutions Pvt Ltd',
+    branch_name: 'Joy Corporate Solutions Private Limited (HQ)',
+    department_name: 'Human Resources',
+    designation_title: 'HR Head & People Operations',
+    created_at: '2026-08-17T10:46:22.749284+00:00',
+    updated_at: '2026-08-25T05:05:33.855+00:00',
+    employment_source: 'DIRECT',
+    vendor_id: null,
+    vendor_name: null,
+    vendor_employee_code: null,
+  },
+  {
+    id: 'emp-admin-001',
+    organization_id: 'org-joy-01',
+    company_id: 'comp-joy-01',
+    branch_id: 'br-cbe-01',
+    department_id: 'dept-eng',
+    designation_id: 'desig-sr-eng',
+    user_id: null,
+    employee_code: 'JCS-017',
+    first_name: 'Dharun',
+    last_name: 'B',
+    middle_name: null,
+    display_name: 'Dharun B',
+    work_email: 'dharunjoysolutions@gmail.com',
+    avatar_url: null,
+    status: 'Active',
+    employment_type: 'Full Time',
+    profile: {
+      phone: '+919791817437',
+      gender: 'Male',
+      nationality: 'Indian',
+    },
+    employment: {
+      doj: '2024-01-01',
+      work_location: 'Joy Corporate Solutions Private Limited (HQ)',
+      employment_type: 'Full Time',
+      confirmation_status: 'Confirmed',
+      reporting_manager_name: 'Haripriya',
+    },
+    company_name: 'Joy Corporate Solutions Pvt Ltd',
+    branch_name: 'Joy Corporate Solutions Private Limited (HQ)',
+    department_name: 'Engineering & Management',
+    designation_title: 'Software Engineer & Administrator',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2026-08-25T05:05:34.246+00:00',
+    employment_source: 'DIRECT',
+    vendor_id: null,
+    vendor_name: null,
+    vendor_employee_code: null,
+  },
+];
+
 export const api = {
+  // ==========================================
   // Organization API
+  // ==========================================
   async getOrganization(): Promise<Organization> {
     if (isSupabaseEnabled) {
       try {
-        const { data, error } = await supabase.from('organizations').select('*').limit(1).maybeSingle();
-        if (data && !error) return data;
+        const { data, error } = await supabase.from('organizations').select('*').limit(1).single();
+        if (!error && data) {
+          setStorage(KEYS.ORG, data);
+          return data;
+        }
       } catch (err) {
-        console.warn('[API] Failed to fetch organization from Supabase:', err);
+        console.error('[API] Failed to fetch organization from Supabase:', err);
       }
     }
-    const stored = getStorage<Organization | null>(KEYS.ORG, null);
-    if (!stored || stored.name?.includes('Acme') || stored.id === 'org-acme-01') {
-      setStorage(KEYS.ORG, defaultOrganization);
-      return defaultOrganization;
-    }
-    return stored;
+    return {
+      id: 'org-joy-01',
+      name: 'Joy Corporate Solutions',
+      slug: 'joy-corporate-solutions',
+      status: 'Active',
+      plan: 'Enterprise',
+      default_currency: 'INR',
+      timezone: 'Asia/Kolkata',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    };
   },
 
   async updateOrganization(data: Partial<Organization>): Promise<Organization> {
@@ -588,31 +243,35 @@ export const api = {
     const updated = { ...current, ...data, updated_at: new Date().toISOString() };
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('organizations').upsert(updated);
+        const { error } = await supabase.from('organizations').upsert(updated);
+        if (error) throw error;
       } catch (err) {
-        console.warn('[API] Failed to update organization on Supabase:', err);
+        console.error('[API] Failed to update organization on Supabase:', err);
+        throw err;
       }
     }
     setStorage(KEYS.ORG, updated);
     return updated;
   },
 
+  // ==========================================
   // Company API
+  // ==========================================
   async getCompanies(): Promise<Company[]> {
     if (isSupabaseEnabled) {
       try {
         const { data, error } = await supabase.from('companies').select('*');
-        if (data && !error && data.length > 0) return data;
+        if (!error && data && data.length > 0) {
+          setStorage(KEYS.COMPANIES, data);
+          return data;
+        }
       } catch (err) {
-        console.warn('[API] Failed to fetch companies from Supabase:', err);
+        console.error('[API] Failed to fetch companies from Supabase:', err);
       }
     }
-    const stored = getStorage<Company[] | null>(KEYS.COMPANIES, null);
-    if (!stored || stored.length === 0 || stored.some(c => c.legal_name?.includes('Acme') || c.id === 'comp-01')) {
-      setStorage(KEYS.COMPANIES, defaultCompanies);
-      return defaultCompanies;
-    }
-    return stored;
+    const list = getStorage<Company[]>(KEYS.COMPANIES, []);
+    if (list.length > 0) return list;
+    return DEFAULT_LEGAL_ENTITIES;
   },
 
   async createCompany(input: Omit<Company, 'id' | 'created_at'>): Promise<Company> {
@@ -623,36 +282,51 @@ export const api = {
     };
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('companies').insert(newCompany);
+        const { error } = await supabase.from('companies').insert(newCompany);
+        if (error) throw error;
       } catch (err) {
-        console.warn('[API] Failed to insert company into Supabase:', err);
+        console.error('[API] Failed to insert company into Supabase:', err);
+        throw err;
       }
     }
-    const list = getStorage(KEYS.COMPANIES, [defaultCompany]);
+    const list = getStorage<Company[]>(KEYS.COMPANIES, []);
     setStorage(KEYS.COMPANIES, [newCompany, ...list]);
     return newCompany;
   },
 
+  // ==========================================
   // Branch API
+  // ==========================================
   async getBranches(companyId?: string): Promise<Branch[]> {
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('branches').select('*');
         if (companyId) q = q.eq('company_id', companyId);
         const { data, error } = await q;
-        if (!error && data) return data;
+        if (!error && data && data.length > 0) {
+          setStorage(KEYS.BRANCHES, data);
+          return data;
+        }
       } catch (err) {
-        console.warn('[API] Failed to fetch branches from Supabase:', err);
+        console.error('[API] Failed to fetch branches from Supabase:', err);
       }
     }
-    let list = getStorage<Branch[]>(KEYS.BRANCHES, []);
-    // Purge legacy mock branches if present
-    if (list && list.some(b => b.name === 'Chennai Tech Park' || b.name === 'Remote Distributed Hub')) {
-      list = list.filter(b => b.name !== 'Chennai Tech Park' && b.name !== 'Bengaluru Innovation Center' && b.name !== 'Remote Distributed Hub');
-      setStorage(KEYS.BRANCHES, list);
+    const list = getStorage<Branch[]>(KEYS.BRANCHES, []);
+    if (list.length > 0) {
+      return companyId ? list.filter((b) => b.company_id === companyId) : list;
     }
-    if (companyId) return list.filter((b) => b.company_id === companyId);
-    return list;
+    return [
+      {
+        id: 'br-cbe-01',
+        company_id: 'comp-joy-01',
+        name: 'Joy Corporate Solutions Private Limited (HQ)',
+        code: 'HQ-CBE',
+        city: 'Coimbatore',
+        state: 'Tamil Nadu',
+        timezone: 'Asia/Kolkata',
+        created_at: '2024-01-01T00:00:00Z',
+      },
+    ];
   },
 
   async createBranch(input: Omit<Branch, 'id' | 'created_at'>): Promise<Branch> {
@@ -664,9 +338,11 @@ export const api = {
     if (isSupabaseEnabled) {
       try {
         const { data, error } = await supabase.from('branches').insert(newBranch).select().single();
-        if (!error && data) return data;
+        if (error) throw error;
+        if (data) return data;
       } catch (err) {
-        console.warn('[API] Failed to insert branch into Supabase:', err);
+        console.error('[API] Failed to insert branch into Supabase:', err);
+        throw err;
       }
     }
     const list = getStorage<Branch[]>(KEYS.BRANCHES, []);
@@ -674,112 +350,146 @@ export const api = {
     return newBranch;
   },
 
+  // ==========================================
   // Location API
+  // ==========================================
   async getLocations(branchId?: string): Promise<Location[]> {
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('locations').select('*');
         if (branchId) q = q.eq('branch_id', branchId);
         const { data, error } = await q;
-        if (data && !error && data.length > 0) return data;
+        if (!error && data && data.length > 0) {
+          setStorage(KEYS.LOCATIONS, data);
+          return data;
+        }
       } catch (err) {
-        console.warn('[API] Failed to fetch locations from Supabase:', err);
+        console.error('[API] Failed to fetch locations from Supabase:', err);
       }
     }
-    let list = getStorage<Location[]>(KEYS.LOCATIONS, []);
-    if (!list || list.length === 0) {
-      list = defaultLocations;
-      setStorage(KEYS.LOCATIONS, list);
+    const list = getStorage<Location[]>(KEYS.LOCATIONS, []);
+    if (list.length > 0) {
+      return branchId ? list.filter((l) => l.branch_id === branchId) : list;
     }
-    if (branchId) return list.filter((l) => l.branch_id === branchId);
-    return list;
+    return [
+      {
+        id: 'loc-cbe-01',
+        branch_id: 'br-cbe-01',
+        name: 'Joy Tech Park, Avinashi Road',
+        building: 'Tower A, 4th Floor',
+        address: 'Coimbatore, Tamil Nadu 641014',
+        code: 'LOC-CBE-01',
+        created_at: '2024-01-01T00:00:00Z',
+      },
+    ];
   },
 
   async createLocation(input: Omit<Location, 'id'>): Promise<Location> {
     const newLoc: Location = { ...input, id: `loc-${Date.now().toString(36)}` };
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('locations').insert(newLoc);
+        const { error } = await supabase.from('locations').insert(newLoc);
+        if (error) throw error;
       } catch (err) {
-        console.warn('[API] Failed to insert location into Supabase:', err);
+        console.error('[API] Failed to insert location into Supabase:', err);
+        throw err;
       }
     }
-    const list = getStorage<Location[]>(KEYS.LOCATIONS, defaultLocations);
+    const list = getStorage<Location[]>(KEYS.LOCATIONS, []);
     setStorage(KEYS.LOCATIONS, [newLoc, ...list]);
     return newLoc;
   },
 
+  // ==========================================
   // Department API
+  // ==========================================
   async getDepartments(companyId?: string): Promise<Department[]> {
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('departments').select('*');
         if (companyId) q = q.eq('company_id', companyId);
         const { data, error } = await q;
-        if (data && !error && data.length > 0) return data;
+        if (!error && data && data.length > 0) {
+          setStorage(KEYS.DEPARTMENTS, data);
+          return data;
+        }
       } catch (err) {
-        console.warn('[API] Failed to fetch departments from Supabase:', err);
+        console.error('[API] Failed to fetch departments from Supabase:', err);
       }
     }
-    let list = getStorage<Department[]>(KEYS.DEPARTMENTS, []);
-    if (!list || list.length === 0) {
-      list = defaultDepartments;
-      setStorage(KEYS.DEPARTMENTS, list);
+    const list = getStorage<Department[]>(KEYS.DEPARTMENTS, []);
+    if (list.length > 0) {
+      return companyId ? list.filter((d) => d.company_id === companyId) : list;
     }
-    if (companyId) return list.filter((d) => d.company_id === companyId);
-    return list;
+    // Dynamic fallback matching active employees
+    return [
+      { id: 'dept-hr-01', company_id: 'comp-joy-01', name: 'Human Resources', code: 'HR', employee_count: 1 },
+      { id: 'dept-eng', company_id: 'comp-joy-01', name: 'Engineering & Management', code: 'ENG-MGMT', employee_count: 1 },
+    ];
   },
 
   async createDepartment(input: Omit<Department, 'id'>): Promise<Department> {
     const newDept: Department = { ...input, id: `dept-${Date.now().toString(36)}`, employee_count: 0 };
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('departments').insert(newDept);
+        const { error } = await supabase.from('departments').insert(newDept);
+        if (error) throw error;
       } catch (err) {
-        console.warn('[API] Failed to insert department into Supabase:', err);
+        console.error('[API] Failed to insert department into Supabase:', err);
+        throw err;
       }
     }
-    const list = getStorage<Department[]>(KEYS.DEPARTMENTS, defaultDepartments);
+    const list = getStorage<Department[]>(KEYS.DEPARTMENTS, []);
     setStorage(KEYS.DEPARTMENTS, [newDept, ...list]);
     return newDept;
   },
 
+  // ==========================================
   // Designation API
+  // ==========================================
   async getDesignations(companyId?: string): Promise<Designation[]> {
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('designations').select('*');
         if (companyId) q = q.eq('company_id', companyId);
         const { data, error } = await q;
-        if (data && !error && data.length > 0) return data;
+        if (!error && data && data.length > 0) {
+          setStorage(KEYS.DESIGNATIONS, data);
+          return data;
+        }
       } catch (err) {
-        console.warn('[API] Failed to fetch designations from Supabase:', err);
+        console.error('[API] Failed to fetch designations from Supabase:', err);
       }
     }
-    let list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
-    if (!list || list.length === 0) {
-      list = defaultDesignations;
-      setStorage(KEYS.DESIGNATIONS, list);
+    const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
+    if (list.length > 0) {
+      return companyId ? list.filter((d) => d.company_id === companyId) : list;
     }
-    if (companyId) return list.filter((d) => d.company_id === companyId);
-    return list;
+    return [
+      { id: 'desig-hr-01', company_id: 'comp-joy-01', title: 'HR Head & People Operations', code: 'HR-HEAD', grade: 'L6' },
+      { id: 'desig-sr-eng', company_id: 'comp-joy-01', title: 'Software Engineer & Administrator', code: 'SWE-ADMIN', grade: 'L4' },
+    ];
   },
 
   async createDesignation(input: Omit<Designation, 'id'>): Promise<Designation> {
     const newDesig: Designation = { ...input, id: `desig-${Date.now().toString(36)}` };
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('designations').insert(newDesig);
+        const { error } = await supabase.from('designations').insert(newDesig);
+        if (error) throw error;
       } catch (err) {
-        console.warn('[API] Failed to insert designation into Supabase:', err);
+        console.error('[API] Failed to insert designation into Supabase:', err);
+        throw err;
       }
     }
-    const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, defaultDesignations);
+    const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
     setStorage(KEYS.DESIGNATIONS, [newDesig, ...list]);
     return newDesig;
   },
 
-  // Employees API
+  // ==========================================
+  // Employees API (Direct Realtime Supabase)
+  // ==========================================
   async getEmployees(params?: {
     search?: string;
     departmentId?: string;
@@ -792,8 +502,6 @@ export const api = {
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('employees').select('*');
-        // Exclude legacy mock acme.com records
-        q = q.not('work_email', 'ilike', '%acme.com%');
         const filterObj = typeof params === 'string' ? { companyId: params } : params;
         if (filterObj?.companyId) q = q.eq('company_id', filterObj.companyId);
         if (filterObj?.departmentId && filterObj.departmentId !== 'all') q = q.eq('department_id', filterObj.departmentId);
@@ -801,17 +509,30 @@ export const api = {
         if (filterObj?.source && filterObj.source !== 'all') q = q.eq('employment_source', filterObj.source);
         if (filterObj?.vendorId && filterObj.vendorId !== 'all') q = q.eq('vendor_id', filterObj.vendorId);
         const { data, error } = await q;
-        if (data && !error && data.length > 0) return data;
+        if (!error && data !== null && data.length > 0) {
+          setStorage(KEYS.EMPLOYEES, data);
+          return data;
+        }
+        // If 0 returned with companyId filter, fallback to query all active employees from Supabase
+        if (!error && data !== null && data.length === 0 && filterObj?.companyId) {
+          const fallback = await supabase.from('employees').select('*');
+          if (fallback.data && fallback.data.length > 0) {
+            setStorage(KEYS.EMPLOYEES, fallback.data);
+            return fallback.data;
+          }
+        }
+        if (error) {
+          console.error('[API] Supabase getEmployees error:', error);
+        }
       } catch (err) {
-        console.warn('[API] Failed to fetch employees from Supabase:', err);
+        console.error('[API] Failed to fetch employees from Supabase:', err);
       }
     }
+
     let list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
-    if (!list || list.length === 0 || list.some(e => e.first_name === 'Alex' && e.last_name === 'Rivera') || list.some(e => e.work_email?.includes('acme.com'))) {
-      list = defaultCanonicalEmployees;
-      setStorage(KEYS.EMPLOYEES, list);
+    if (!list || list.length === 0) {
+      list = [...DEFAULT_EMPLOYEES];
     }
-    list = list.filter(e => !e.work_email?.includes('acme.com'));
     if (!params) return list;
 
     const filterObj = typeof params === 'string' ? { companyId: params } : params;
@@ -847,12 +568,20 @@ export const api = {
   },
 
   async getEmployeeById(id: string): Promise<Employee | undefined> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase.from('employees').select('*').eq('id', id).maybeSingle();
+        if (data && !error) return data;
+      } catch (err) {
+        console.error('[API] Supabase getEmployeeById error:', err);
+      }
+    }
     const list = await this.getEmployees();
     return list.find((e) => e.id === id);
   },
 
   async createEmployee(input: any): Promise<Employee> {
-    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, defaultCanonicalEmployees);
+    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
     
     // Auto-generate unique code WF-100X if not supplied
     let generatedCode = input.employee_code;
@@ -869,8 +598,8 @@ export const api = {
 
     const newEmp: Employee = {
       id: input.id || `emp-${Date.now().toString(36)}`,
-      organization_id: input.organization_id || 'a0000000-0000-0000-0000-000000000001',
-      company_id: input.company_id || 'c1000000-0000-0000-0000-000000000001',
+      organization_id: input.organization_id || 'org-joy-01',
+      company_id: input.company_id || 'comp-joy-01',
       company_name: input.company_name || 'Joy Corporate Solutions Pvt Ltd',
       department_id: input.department_id || 'dept-eng',
       department_name: input.department_name || 'Engineering & DevOps',
@@ -879,7 +608,7 @@ export const api = {
       employee_code: generatedCode,
       first_name: input.first_name || 'New',
       last_name: input.last_name || 'Employee',
-      display_name: `${input.first_name || 'New'} ${input.last_name || 'Employee'}`,
+      display_name: `${input.first_name || 'New'} ${input.last_name || 'Employee'}`.trim(),
       work_email: input.work_email || `emp.${Date.now()}@joycorporate.com`,
       avatar_url: input.avatar_url || '',
       status: input.status || 'Active',
@@ -928,18 +657,87 @@ export const api = {
 
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('employees').insert(newEmp);
+        const cleanEmp = sanitizeEmployeeForSupabase(newEmp);
+        const { error } = await supabase.from('employees').insert(cleanEmp);
+        if (error) {
+          console.error('[API] Supabase employee insert error:', error);
+          throw error;
+        }
+
+        // Automatically Provision Supabase Auth & Identity Mapping on Supabase
+        const phoneNum = newEmp.profile?.phone || input.primary_mobile || input.phone || '+919791817437';
+        const role = newEmp.designation_title?.toLowerCase().includes('manager') ? 'Manager' :
+                     newEmp.designation_title?.toLowerCase().includes('lead') ? 'Team Lead' :
+                     newEmp.designation_title?.toLowerCase().includes('hr') ? 'HR Head' : 'Employee';
+
+        const { data: authResult, error: authRpcErr } = await supabase.rpc('fn_provision_employee_auth', {
+          p_tenant_id: newEmp.organization_id || 'org-joy-01',
+          p_employee_id: newEmp.id,
+          p_email: newEmp.work_email,
+          p_phone: phoneNum,
+          p_first_name: newEmp.first_name,
+          p_last_name: newEmp.last_name,
+          p_role: role,
+          p_verification_mode: 'TEST_AUTO_VERIFY',
+          p_initial_password: 'Joy@2026!'
+        });
+
+        if (authRpcErr) {
+          console.warn('[API] Auth Provisioning RPC warning:', authRpcErr);
+        } else {
+          console.log('[API] Auto-provisioned Auth identity successfully:', authResult);
+        }
+
+        // 3. Upsert Bank Details
+        if (input.bank || input.bank_name || input.account_number) {
+          const b = input.bank || input;
+          try {
+            await supabase.from('employee_bank_accounts').upsert({
+              id: `bank-${newEmp.id}`,
+              employee_id: newEmp.id,
+              bank_name: b.bank_name || 'HDFC Bank',
+              account_number: b.account_number || '',
+              ifsc_code: b.ifsc || b.ifsc_code || 'HDFC0001234',
+              account_type: b.account_type || 'SALARY',
+              account_holder_name: b.account_holder_name || `${newEmp.first_name} ${newEmp.last_name}`.trim(),
+              is_primary: true,
+              updated_at: new Date().toISOString(),
+            });
+          } catch (e) {
+            console.warn('[API] Bank upsert warning:', e);
+          }
+        }
+
+        // 4. Upsert Statutory Details
+        if (input.statutory || input.pan || input.uan) {
+          const s = input.statutory || input;
+          try {
+            await supabase.from('employee_statutory_details').upsert({
+              id: `stat-${newEmp.id}`,
+              employee_id: newEmp.id,
+              pan_number: s.pan || s.pan_number || '',
+              uan_number: s.uan || s.uan_number || '',
+              pf_number: s.pf_number || '',
+              esi_number: s.esi_number || '',
+              tax_regime: s.tax_regime || 'NEW',
+              updated_at: new Date().toISOString(),
+            });
+          } catch (e) {
+            console.warn('[API] Statutory upsert warning:', e);
+          }
+        }
       } catch (err) {
-        console.warn('[API] Failed to insert employee into Supabase:', err);
+        console.error('[API] Failed to insert/provision employee into Supabase:', err);
+        throw err;
       }
     }
 
     setStorage(KEYS.EMPLOYEES, [newEmp, ...list]);
 
-    // Provision Authenticated Employee Identity
+    // Provision Authenticated Employee Identity in local cache / fallback service
     try {
       const { employeeAuthService } = await import('./auth/employeeAuthService');
-      const phoneNum = newEmp.profile?.phone || input.primary_mobile || input.phone || '+919840999999';
+      const phoneNum = newEmp.profile?.phone || input.primary_mobile || input.phone || '+919791817437';
       await employeeAuthService.provisionEmployeeAuth({
         tenantId: newEmp.organization_id || 'org-joy-01',
         employeeId: newEmp.id,
@@ -950,7 +748,7 @@ export const api = {
         role: newEmp.designation_title?.toLowerCase().includes('manager') ? 'Manager' :
               newEmp.designation_title?.toLowerCase().includes('lead') ? 'Team Lead' :
               newEmp.designation_title?.toLowerCase().includes('hr') ? 'HR Head' : 'Employee',
-        sendSms: true,
+        sendSms: false,
       });
     } catch (authErr) {
       console.warn('[API] Auto-provisioning employee auth identity warning:', authErr);
@@ -960,27 +758,311 @@ export const api = {
     return newEmp;
   },
 
-  async updateEmployee(id: string, data: Partial<Employee>): Promise<Employee> {
-    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, defaultCanonicalEmployees);
+  async updateEmployee(id: string, data: Partial<Employee>, expectedUpdatedAt?: string, expectedVersion?: number): Promise<Employee> {
+    const correlationId = CorrelationService.generate('WF');
+    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
     const idx = list.findIndex((e) => e.id === id);
-    if (idx === -1) throw new Error('Employee not found');
+    const existing = idx !== -1 ? list[idx] : ({} as Employee);
 
-    const updated = { ...list[idx], ...data, updated_at: new Date().toISOString() };
+    logger.web('EMPLOYEE_UPDATE_STARTED', {
+      correlationId,
+      employeeId: id,
+      tenantId: existing.organization_id || 'org-joy-01',
+      operation: 'UPDATE',
+      status: 'STARTED',
+      metadata: { fields: Object.keys(data) },
+    });
+
+    // Concurrency Protection: Detect dirty writes if expectedUpdatedAt provided
+    if (expectedUpdatedAt && existing.updated_at && existing.updated_at !== expectedUpdatedAt) {
+      const err: any = new Error('This employee was updated by another administrator. Please reload latest changes before saving.');
+      err.status = 409;
+      err.code = 'CONCURRENCY_CONFLICT';
+      logger.error('WEB', 'CONCURRENCY_CONFLICT', err, { correlationId, employeeId: id });
+      throw err;
+    }
+
+    let canonicalRecord: Employee | null = null;
+
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('employees').update(updated).eq('id', id);
-      } catch (err) {
-        console.warn('[API] Failed to update employee on Supabase:', err);
+        logger.db('EMPLOYEE_UPDATE_SENT', {
+          correlationId,
+          table: 'employees',
+          employeeId: id,
+          operation: 'UPDATE',
+        });
+
+        const cleanPatch = sanitizeEmployeeForSupabase(data);
+
+        // 1. Try atomic canonical mutation RPC with optimistic concurrency
+        const { data: rpcData, error: rpcErr } = await supabase.rpc('fn_mutate_employee', {
+          p_employee_id: id,
+          p_patch: cleanPatch,
+          p_expected_version: expectedVersion || (existing as any).record_version || null,
+          p_actor_id: 'current-admin'
+        });
+
+        if (!rpcErr && rpcData) {
+          canonicalRecord = rpcData as Employee;
+          logger.db('EMPLOYEE_UPDATE_SUCCESS', {
+            correlationId,
+            table: 'employees',
+            employeeId: id,
+            operation: 'RPC_MUTATE',
+            status: 'SUCCESS',
+            rows: 1,
+          });
+        } else if (rpcErr) {
+          if (rpcErr.code === '40001' || rpcErr.message?.includes('CONCURRENCY_CONFLICT')) {
+            const conflictErr: any = new Error('Record was modified by another administrator. Please reload latest changes.');
+            conflictErr.status = 409;
+            conflictErr.code = 'CONCURRENCY_CONFLICT';
+            logger.error('DB', 'CONCURRENCY_CONFLICT', conflictErr, { correlationId, employeeId: id });
+            throw conflictErr;
+          }
+          
+          // Fallback to direct table update with .select() to get authoritative server record
+          const firstName = data.first_name !== undefined ? data.first_name : (existing.first_name || '');
+          const lastName = data.last_name !== undefined ? data.last_name : (existing.last_name || '');
+          const displayName = data.display_name || `${firstName} ${lastName}`.trim();
+
+          const fallbackUpdated: any = { 
+            ...existing, 
+            ...data, 
+            first_name: firstName,
+            last_name: lastName,
+            display_name: displayName,
+            profile: { ...(existing.profile || {}), ...(data.profile || {}) } as EmployeeProfile,
+            employment: { ...(existing.employment || {}), ...(data.employment || {}) } as EmploymentDetails,
+            updated_at: new Date().toISOString() 
+          };
+
+          const cleanFallback = sanitizeEmployeeForSupabase(fallbackUpdated);
+
+          const { data: selectData, error: directErr } = await supabase
+            .from('employees')
+            .update(cleanFallback)
+            .eq('id', id)
+            .select('*')
+            .single();
+
+          if (directErr) {
+            logger.error('DB', 'EMPLOYEE_UPDATE_FAILED', directErr, { correlationId, employeeId: id, table: 'employees' });
+            throw directErr;
+          } else if (selectData) {
+            canonicalRecord = selectData as Employee;
+            logger.db('EMPLOYEE_UPDATE_SUCCESS', {
+              correlationId,
+              table: 'employees',
+              employeeId: id,
+              operation: 'UPDATE',
+              status: 'SUCCESS',
+              rows: 1,
+            });
+          }
+        }
+
+        // Upsert Bank Details if provided
+        if ((data as any).bank || (data as any).bank_name || (data as any).account_number) {
+          const b = (data as any).bank || data;
+          try {
+            await supabase.from('employee_bank_accounts').upsert({
+              id: `bank-${id}`,
+              employee_id: id,
+              bank_name: b.bank_name || 'HDFC Bank',
+              account_number: b.account_number || '',
+              ifsc_code: b.ifsc || b.ifsc_code || 'HDFC0001234',
+              account_type: b.account_type || 'SALARY',
+              account_holder_name: b.account_holder_name || `${existing.first_name} ${existing.last_name}`.trim(),
+              is_primary: true,
+              updated_at: new Date().toISOString(),
+            });
+          } catch (e) {
+            console.warn('[API] Bank update warning:', e);
+          }
+        }
+
+        // Upsert Statutory Details if provided
+        if ((data as any).statutory || (data as any).pan || (data as any).uan) {
+          const s = (data as any).statutory || data;
+          try {
+            await supabase.from('employee_statutory_details').upsert({
+              id: `stat-${id}`,
+              employee_id: id,
+              pan_number: s.pan || s.pan_number || '',
+              uan_number: s.uan || s.uan_number || '',
+              pf_number: s.pf_number || '',
+              esi_number: s.esi_number || '',
+              tax_regime: s.tax_regime || 'NEW',
+              updated_at: new Date().toISOString(),
+            });
+          } catch (e) {
+            console.warn('[API] Statutory update warning:', e);
+          }
+        }
+      } catch (err: any) {
+        if (err?.code === 'CONCURRENCY_CONFLICT' || err?.status === 409) {
+          throw err;
+        }
+        logger.error('DB', 'SUPABASE_EXCEPTION', err, { correlationId, employeeId: id });
+        throw err;
       }
     }
-    list[idx] = updated;
+
+    // 2. Resolve final updated record
+    const firstName = data.first_name !== undefined ? data.first_name : (existing.first_name || '');
+    const lastName = data.last_name !== undefined ? data.last_name : (existing.last_name || '');
+    const displayName = data.display_name || `${firstName} ${lastName}`.trim();
+
+    const updated: Employee = canonicalRecord || { 
+      ...existing, 
+      ...data, 
+      first_name: firstName,
+      last_name: lastName,
+      display_name: displayName,
+      profile: { ...(existing.profile || {}), ...(data.profile || {}) } as EmployeeProfile,
+      employment: { ...(existing.employment || {}), ...(data.employment || {}) } as EmploymentDetails,
+      updated_at: new Date().toISOString() 
+    };
+
+    if (idx !== -1) {
+      list[idx] = updated;
+    } else {
+      list.unshift(updated);
+    }
     setStorage(KEYS.EMPLOYEES, list);
-    hrEventBus.publish('employee.updated', updated);
+
+    // Record audit event
+    try {
+      const { employeeAuthService } = await import('./auth/employeeAuthService');
+      const changedKeys = Object.keys(data).join(', ');
+      employeeAuthService.logAuthEvent({
+        employee_id: id,
+        tenant_id: updated.organization_id || 'org-joy-01',
+        event_type: 'PROFILE_UPDATED',
+        actor_id: 'current-admin',
+        actor_name: 'Authorized Administrator',
+        actor_type: 'ADMIN',
+        status: 'SUCCESS',
+        ip_address: '127.0.0.1',
+        details: { changed_fields: changedKeys, correlation_id: correlationId }
+      });
+    } catch (_) {}
+
+    logger.sync('EMPLOYEE_SYNC_COMPLETE', {
+      correlationId,
+      employeeId: id,
+      status: 'SYNC_COMPLETE',
+      message: 'Employee updated in database and local cache invalidated',
+    });
+
+    hrEventBus.publish('employee.updated', updated, { actorId: 'api-service', correlationId });
+    if (data.status && data.status !== existing.status) {
+      hrEventBus.publish('employee.status_changed', { employee_id: id, old_status: existing.status, new_status: data.status, employee: updated }, { actorId: 'api-service', correlationId });
+    }
+    return updated;
+  },
+
+  async archiveEmployee(id: string, reason: string, actorName = 'Authorized Administrator'): Promise<Employee> {
+    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+    const idx = list.findIndex((e) => e.id === id);
+    const existing = idx !== -1 ? list[idx] : ({} as Employee);
+
+    const updated: Employee = {
+      ...existing,
+      status: 'Archived',
+      employment: {
+        ...(existing.employment || {}),
+        exit_reason: reason,
+        resignation_date: (existing.employment as any)?.resignation_date || new Date().toISOString().split('T')[0],
+      } as EmploymentDetails,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (isSupabaseEnabled) {
+      try {
+        const cleanArchive = sanitizeEmployeeForSupabase(updated);
+        await supabase.from('employees').update(cleanArchive).eq('id', id);
+      } catch (err) {
+        console.error('[API] Supabase archive exception:', err);
+      }
+    }
+
+    if (idx !== -1) {
+      list[idx] = updated;
+      setStorage(KEYS.EMPLOYEES, list);
+    }
+
+    // Revoke active sessions upon archival
+    try {
+      const { employeeAuthService } = await import('./auth/employeeAuthService');
+      employeeAuthService.revokeAllSessions(id);
+      employeeAuthService.logAuthEvent({
+        employee_id: id,
+        tenant_id: updated.organization_id || 'org-joy-01',
+        event_type: 'ACCOUNT_SUSPENDED',
+        actor_id: 'current-admin',
+        actor_name: actorName,
+        actor_type: 'ADMIN',
+        status: 'SUCCESS',
+        ip_address: '127.0.0.1',
+        details: { reason }
+      });
+    } catch (_) {}
+
+    hrEventBus.publish('employee.archived', { employee_id: id, reason, employee: updated });
+    hrEventBus.publish('employee.status_changed', { employee_id: id, old_status: existing.status, new_status: 'Archived', employee: updated });
+    return updated;
+  },
+
+  async restoreEmployee(id: string, targetStatus: EmployeeStatus = 'Active', actorName = 'Authorized Administrator'): Promise<Employee> {
+    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+    const idx = list.findIndex((e) => e.id === id);
+    const existing = idx !== -1 ? list[idx] : ({} as Employee);
+
+    const updated: Employee = {
+      ...existing,
+      status: targetStatus,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (isSupabaseEnabled) {
+      try {
+        const cleanRestore = sanitizeEmployeeForSupabase(updated);
+        await supabase.from('employees').update(cleanRestore).eq('id', id);
+      } catch (err) {
+        console.error('[API] Supabase restore exception:', err);
+      }
+    }
+
+    if (idx !== -1) {
+      list[idx] = updated;
+      setStorage(KEYS.EMPLOYEES, list);
+    }
+
+    try {
+      const { employeeAuthService } = await import('./auth/employeeAuthService');
+      employeeAuthService.logAuthEvent({
+        employee_id: id,
+        tenant_id: updated.organization_id || 'org-joy-01',
+        event_type: 'ACCOUNT_REACTIVATED',
+        actor_id: 'current-admin',
+        actor_name: actorName,
+        actor_type: 'ADMIN',
+        status: 'SUCCESS',
+        ip_address: '127.0.0.1',
+        details: { target_status: targetStatus }
+      });
+    } catch (_) {}
+
+    hrEventBus.publish('employee.restored', { employee_id: id, employee: updated });
+    hrEventBus.publish('employee.status_changed', { employee_id: id, old_status: 'Archived', new_status: targetStatus, employee: updated });
     return updated;
   },
 
   async deleteEmployee(id: string): Promise<boolean> {
-    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, defaultCanonicalEmployees);
+    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
     const target = list.find((e) => e.id === id);
     const updated = list.filter((e) => e.id !== id);
     setStorage(KEYS.EMPLOYEES, updated);
@@ -988,9 +1070,14 @@ export const api = {
     if (isSupabaseEnabled) {
       try {
         await supabase.from('employee_onboardings').delete().eq('employee_id', id);
-        await supabase.from('employees').delete().eq('id', id);
+        const { error } = await supabase.from('employees').delete().eq('id', id);
+        if (error) {
+          console.error('[API] Failed to delete employee from Supabase:', error);
+          throw error;
+        }
       } catch (err) {
-        console.warn('[API] Failed to delete employee from Supabase:', err);
+        console.error('[API] Supabase employee delete exception:', err);
+        throw err;
       }
     }
 
@@ -998,30 +1085,49 @@ export const api = {
     return true;
   },
 
+  async getEmployeeAuditLogs(employeeId: string, orgId = 'org-joy-01'): Promise<any[]> {
+    try {
+      const { employeeAuthService } = await import('./auth/employeeAuthService');
+      return employeeAuthService.getAuthAuditLogs(employeeId, orgId);
+    } catch {
+      return [];
+    }
+  },
+
+  // ==========================================
   // Roles API
+  // ==========================================
   async getRoles(): Promise<Role[]> {
     if (isSupabaseEnabled) {
       try {
         const { data, error } = await supabase.from('roles').select('*');
-        if (data && !error && data.length > 0) return data;
+        if (!error && data) {
+          setStorage(KEYS.ROLES, data);
+          return data;
+        }
       } catch (err) {
-        console.warn('[API] Failed to fetch roles from Supabase:', err);
+        console.error('[API] Failed to fetch roles from Supabase:', err);
       }
     }
-    return getStorage<Role[]>(KEYS.ROLES, defaultRoles);
+    return getStorage<Role[]>(KEYS.ROLES, []);
   },
 
+  // ==========================================
   // Users API
+  // ==========================================
   async getUsers(): Promise<User[]> {
     if (isSupabaseEnabled) {
       try {
         const { data, error } = await supabase.from('users').select('*');
-        if (data && !error && data.length > 0) return data;
+        if (!error && data) {
+          setStorage(KEYS.USERS, data);
+          return data;
+        }
       } catch (err) {
-        console.warn('[API] Failed to fetch users from Supabase:', err);
+        console.error('[API] Failed to fetch users from Supabase:', err);
       }
     }
-    return getStorage<User[]>(KEYS.USERS, defaultAllUsers);
+    return getStorage<User[]>(KEYS.USERS, []);
   },
 
   async assignUserRole(userId: string, roleId: string): Promise<User> {
@@ -1055,7 +1161,9 @@ export const api = {
     return this.updateEmployee(id, { status });
   },
 
+  // ==========================================
   // Approvals API
+  // ==========================================
   async getApprovals(): Promise<ApprovalItem[]> {
     return getStorage<ApprovalItem[]>(KEYS.APPROVALS, []);
   },
@@ -1090,7 +1198,9 @@ export const api = {
     return list[idx];
   },
 
+  // ==========================================
   // Dashboard API
+  // ==========================================
   async getDashboardMetrics(): Promise<DashboardMetrics> {
     const employees = await this.getEmployees();
     const approvals = await this.getApprovals();
@@ -1129,91 +1239,36 @@ export const api = {
     return assetService.getAssets({ limit: 1000 }).items;
   },
 
-  // Active Company & Current User Session
-  getActiveCompany(): Company {
-    const stored = getStorage<Company | null>(KEYS.ACTIVE_COMPANY, null);
-    if (!stored || stored.legal_name?.includes('Acme') || stored.id === 'comp-01') {
-      setStorage(KEYS.ACTIVE_COMPANY, defaultCompany);
-      return defaultCompany;
-    }
-    return stored;
+  // ==========================================
+  // Active Company Session
+  // ==========================================
+  getActiveCompany(): Company | null {
+    const comp = getStorage<Company | null>(KEYS.ACTIVE_COMPANY, null);
+    if (comp) return comp;
+    return DEFAULT_LEGAL_ENTITIES[0];
   },
 
   setActiveCompany(company: Company): void {
     setStorage(KEYS.ACTIVE_COMPANY, company);
   },
 
-  getCurrentUser(): User {
-    return getStorage(KEYS.CURRENT_USER, defaultEnterpriseUser);
+  getCurrentUser(): User | null {
+    const u = getStorage<User | null>(KEYS.CURRENT_USER, null);
+    if (u) return u;
+    return {
+      id: 'user-hr-01',
+      organization_id: 'org-joy-01',
+      email: 'haripriya@joycorporate.com',
+      name: 'Haripriya',
+      avatar_url: '',
+      employee_id: 'emp-hr-001',
+      status: 'Active',
+      roles: [{ id: 'role-003', organization_id: 'org-joy-01', name: 'HR Head', description: 'HR Head', permissions: [] }],
+      created_at: '2024-01-01T00:00:00Z',
+    };
   },
 
   setCurrentUser(user: User): void {
     setStorage(KEYS.CURRENT_USER, user);
   },
-
-  async purgeMockDataAndSyncLive(): Promise<void> {
-    // 1. Purge all localStorage mock remnants
-    const keysToClean = [
-      KEYS.ORG, KEYS.COMPANIES, KEYS.BRANCHES, KEYS.LOCATIONS,
-      KEYS.DEPARTMENTS, KEYS.DESIGNATIONS, KEYS.ROLES, KEYS.USERS,
-      KEYS.EMPLOYEES, KEYS.ACTIVE_COMPANY, KEYS.CURRENT_USER,
-      'workforce_active_legal_entity_id', 'workforce_active_org_id'
-    ];
-    keysToClean.forEach(k => {
-      try {
-        const val = localStorage.getItem(k);
-        if (val && (val.includes('acme') || val.includes('Acme') || val.includes('c1000000') || val.includes('Alex Rivera') || val.includes('cmp-joy'))) {
-          localStorage.removeItem(k);
-        }
-      } catch (e) {}
-    });
-
-    // Reset clean canonical data
-    setStorage(KEYS.ORG, defaultOrganization);
-    setStorage(KEYS.COMPANIES, defaultCompanies);
-    setStorage(KEYS.BRANCHES, defaultBranches);
-    setStorage(KEYS.LOCATIONS, defaultLocations);
-    setStorage(KEYS.DEPARTMENTS, defaultDepartments);
-    setStorage(KEYS.DESIGNATIONS, defaultDesignations);
-    setStorage(KEYS.ROLES, defaultRoles);
-    setStorage(KEYS.USERS, defaultAllUsers);
-    setStorage(KEYS.EMPLOYEES, defaultCanonicalEmployees);
-    setStorage(KEYS.ACTIVE_COMPANY, defaultCompany);
-    setStorage(KEYS.CURRENT_USER, defaultEnterpriseUser);
-    localStorage.setItem('workforce_active_legal_entity_id', 'comp-joy-01');
-    localStorage.setItem('workforce_active_org_id', 'org-joy-01');
-
-    // 2. If Supabase is active, clean out legacy acme demo rows and sync clean live records
-    if (isSupabaseEnabled) {
-      try {
-        await supabase.from('employees').delete().ilike('work_email', '%acme.com%');
-        await supabase.from('employees').delete().in('company_id', ['comp-01', 'comp-02']);
-        await supabase.from('app_users').delete().ilike('email', '%acme.com%');
-
-        // Upsert canonical organization & companies
-        await supabase.from('organizations').upsert(defaultOrganization);
-        await supabase.from('companies').upsert(defaultCompanies);
-        
-        // Upsert canonical live employees
-        for (const emp of defaultCanonicalEmployees) {
-          await supabase.from('employees').upsert(emp);
-        }
-      } catch (err) {
-        console.warn('[API] Live DB sync completed with local fallback:', err);
-      }
-    }
-
-    hrEventBus.publish('employee.created', defaultCanonicalEmployees[0]);
-  },
 };
-
-// Auto-run once in browser to ensure fresh live data
-if (typeof window !== 'undefined') {
-  const LIVE_DATA_VERSION = 'workforce_live_v2.1_norm';
-  if (localStorage.getItem('wf_live_synced') !== LIVE_DATA_VERSION) {
-    api.purgeMockDataAndSyncLive().then(() => {
-      localStorage.setItem('wf_live_synced', LIVE_DATA_VERSION);
-    });
-  }
-}
-

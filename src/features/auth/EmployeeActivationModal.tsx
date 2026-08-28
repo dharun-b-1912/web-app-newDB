@@ -1,6 +1,6 @@
 // src/features/auth/EmployeeActivationModal.tsx
 // ============================================================================
-// WorkForceOS — Employee First-Time Account Activation Wizard
+// Joy PeopleHR — Employee First-Time Account Activation Wizard
 // Flow: Phone Number -> Verify OTP -> Create Personal Password -> Account Activated
 // ============================================================================
 
@@ -186,7 +186,7 @@ export const EmployeeActivationModal: React.FC<Props> = ({ isOpen, onClose, onAc
             <div className="space-y-1">
               <h3 className="text-base font-extrabold text-gray-900">Enter your registered mobile number</h3>
               <p className="text-xs text-gray-500">
-                WorkForceOS will send a secure one-time verification code to verify your identity.
+                Joy PeopleHR will send a secure one-time verification code to verify your identity.
               </p>
             </div>
 
@@ -360,7 +360,7 @@ export const EmployeeActivationModal: React.FC<Props> = ({ isOpen, onClose, onAc
             </div>
 
             <div className="space-y-1">
-              <h3 className="text-lg font-black text-gray-900">Welcome to WorkForceOS!</h3>
+              <h3 className="text-lg font-black text-gray-900">Welcome to Joy PeopleHR!</h3>
               <p className="text-xs text-gray-500 max-w-sm mx-auto">
                 Your employee login account has been activated. You are now securely authenticated into your organization workspace.
               </p>

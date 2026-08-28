@@ -21,232 +21,9 @@ const ONBOARDING_POLICIES_KEY = 'workforce_onboarding_policies';
 const ONBOARDING_OVERRIDES_KEY = 'workforce_onboarding_overrides';
 const ONBOARDING_AUDIT_KEY = 'workforce_onboarding_audit';
 
-// Canonical Initial Seed Onboardings linked to canonical employees
-const INITIAL_ONBOARDINGS: EmployeeOnboarding[] = [
-  {
-    id: 'onb-001',
-    organization_id: 'a0000000-0000-0000-0000-000000000001',
-    legal_entity_id: 'c1000000-0000-0000-0000-000000000001',
-    employee_id: 'emp-1040', // Priya Sundaram (Senior Staff Frontend Architect)
-    employment_source: 'DIRECT',
-    status: 'HR_VERIFICATION',
-    joining_date: '2026-08-20',
-    expected_completion_date: '2026-08-22',
-    started_at: '2026-08-15T09:00:00Z',
-    created_at: '2026-08-15T09:00:00Z',
-    updated_at: '2026-08-17T10:00:00Z',
-  },
-  {
-    id: 'onb-002',
-    organization_id: 'a0000000-0000-0000-0000-000000000001',
-    legal_entity_id: 'c1000000-0000-0000-0000-000000000001',
-    employee_id: 'emp-vnd-001', // Senthil Nathan (Vendor Worker)
-    vendor_id: 'e2000000-0000-0000-0000-000000000001',
-    vendor_name: 'ABC Workforce Solutions Pvt Ltd',
-    employment_source: 'VENDOR',
-    status: 'READY_TO_ACTIVATE',
-    joining_date: '2026-08-18',
-    expected_completion_date: '2026-08-19',
-    started_at: '2026-08-12T09:00:00Z',
-    created_at: '2026-08-12T09:00:00Z',
-    updated_at: '2026-08-17T11:00:00Z',
-  },
-];
-
-const INITIAL_TASKS: OnboardingTask[] = [
-  // Tasks for onb-001 (Rajesh Kumar - Direct)
-  {
-    id: 'task-001-1',
-    onboarding_id: 'onb-001',
-    task_type: 'HR_DOC_VERIFICATION',
-    title: 'Verify government identity & statutory documents (PAN / Aadhaar / Degree)',
-    description: 'Verify statutory PAN, degree certificates and previous employment proof.',
-    assigned_to_role: 'HR',
-    status: 'COMPLETED',
-    priority: 'CRITICAL',
-    due_date: '2026-08-18',
-    completed_at: '2026-08-16T14:30:00Z',
-    completed_by: 'user-admin-01',
-    created_at: '2026-08-15T09:00:00Z',
-    updated_at: '2026-08-16T14:30:00Z',
-  },
-  {
-    id: 'task-001-2',
-    onboarding_id: 'onb-001',
-    task_type: 'EMPLOYEE_INFO_UPLOAD',
-    title: 'Complete emergency contact & bank account details',
-    description: 'Employee must submit emergency contact number and bank cancelled cheque.',
-    assigned_to_role: 'EMPLOYEE',
-    status: 'COMPLETED',
-    priority: 'HIGH',
-    due_date: '2026-08-18',
-    completed_at: '2026-08-16T16:00:00Z',
-    completed_by: '00000000-0000-0000-0000-000000000002',
-    created_at: '2026-08-15T09:00:00Z',
-    updated_at: '2026-08-16T16:00:00Z',
-  },
-  {
-    id: 'task-001-3',
-    onboarding_id: 'onb-001',
-    task_type: 'POLICY_ACKNOWLEDGEMENT',
-    title: 'Review & acknowledge company code of conduct & POSH policy',
-    description: 'Read and accept the WorkForceOS Information Security & POSH Policy v1.2.',
-    assigned_to_role: 'EMPLOYEE',
-    status: 'COMPLETED',
-    priority: 'HIGH',
-    due_date: '2026-08-19',
-    completed_at: '2026-08-17T09:15:00Z',
-    completed_by: '00000000-0000-0000-0000-000000000002',
-    created_at: '2026-08-15T09:00:00Z',
-    updated_at: '2026-08-17T09:15:00Z',
-  },
-  {
-    id: 'task-001-4',
-    onboarding_id: 'onb-001',
-    task_type: 'MANAGER_REVIEW',
-    title: 'Reporting manager joining readiness confirmation',
-    description: 'Manager confirms workspace seating, reporting team, and project scope.',
-    assigned_to_role: 'MANAGER',
-    status: 'IN_PROGRESS',
-    priority: 'HIGH',
-    due_date: '2026-08-19',
-    dependency_task_id: 'task-001-1',
-    dependency_task_title: 'Verify government identity & statutory documents',
-    created_at: '2026-08-15T09:00:00Z',
-    updated_at: '2026-08-17T10:00:00Z',
-  },
-  {
-    id: 'task-001-5',
-    onboarding_id: 'onb-001',
-    task_type: 'IT_ASSET_ALLOCATION',
-    title: 'Provision MacBook Pro & VPN engineering credentials',
-    description: 'IT Operations allocates laptop hardware and generates corporate SSO/VPN access.',
-    assigned_to_role: 'IT',
-    status: 'NOT_STARTED',
-    priority: 'MEDIUM',
-    due_date: '2026-08-20',
-    dependency_task_id: 'task-001-4',
-    dependency_task_title: 'Reporting manager joining readiness confirmation',
-    created_at: '2026-08-15T09:00:00Z',
-    updated_at: '2026-08-15T09:00:00Z',
-  },
-  {
-    id: 'task-001-6',
-    onboarding_id: 'onb-001',
-    task_type: 'PAYROLL_SETUP',
-    title: 'Verify salary structure, PF UAN and tax slab election',
-    description: 'Payroll Admin configures CTC compensation component breakdown and statutory declarations.',
-    assigned_to_role: 'PAYROLL',
-    status: 'NOT_STARTED',
-    priority: 'HIGH',
-    due_date: '2026-08-20',
-    created_at: '2026-08-15T09:00:00Z',
-    updated_at: '2026-08-15T09:00:00Z',
-  },
-  {
-    id: 'task-001-7',
-    onboarding_id: 'onb-001',
-    task_type: 'ATTENDANCE_SETUP',
-    title: 'Assign biometric shift policy & Coimbatore location geofence',
-    description: 'Assign General Day Shift (09:00 - 18:00) and office geofence clocking.',
-    assigned_to_role: 'HR',
-    status: 'NOT_STARTED',
-    priority: 'MEDIUM',
-    due_date: '2026-08-20',
-    created_at: '2026-08-15T09:00:00Z',
-    updated_at: '2026-08-15T09:00:00Z',
-  },
-  {
-    id: 'task-001-8',
-    onboarding_id: 'onb-001',
-    task_type: 'FINAL_HR_ACTIVATION',
-    title: 'Final HR readiness audit & account activation',
-    description: 'HR Head reviews readiness checklist and activates employee status to ACTIVE.',
-    assigned_to_role: 'HR_HEAD',
-    status: 'NOT_STARTED',
-    priority: 'CRITICAL',
-    due_date: '2026-08-20',
-    dependency_task_id: 'task-001-5',
-    dependency_task_title: 'Provision MacBook Pro & VPN engineering credentials',
-    created_at: '2026-08-15T09:00:00Z',
-    updated_at: '2026-08-15T09:00:00Z',
-  },
-
-  // Tasks for onb-002 (Senthil Nathan - Vendor Worker)
-  {
-    id: 'task-002-1',
-    onboarding_id: 'onb-002',
-    task_type: 'VENDOR_DOC_VERIFICATION',
-    title: 'Verify vendor deployment order & Form VI Labour License',
-    description: 'Check ABC Workforce MSA compliance and site deployment schedule.',
-    assigned_to_role: 'HR',
-    status: 'COMPLETED',
-    priority: 'CRITICAL',
-    due_date: '2026-08-15',
-    completed_at: '2026-08-13T10:00:00Z',
-    completed_by: 'user-admin-01',
-    created_at: '2026-08-12T09:00:00Z',
-    updated_at: '2026-08-13T10:00:00Z',
-  },
-  {
-    id: 'task-002-2',
-    onboarding_id: 'onb-002',
-    task_type: 'EMPLOYEE_INFO_UPLOAD',
-    title: 'Collect site access ID and emergency contact',
-    description: 'Collect contractor badge photo and emergency contact.',
-    assigned_to_role: 'HR',
-    status: 'COMPLETED',
-    priority: 'HIGH',
-    due_date: '2026-08-16',
-    completed_at: '2026-08-14T11:00:00Z',
-    completed_by: 'user-admin-01',
-    created_at: '2026-08-12T09:00:00Z',
-    updated_at: '2026-08-14T11:00:00Z',
-  },
-  {
-    id: 'task-002-3',
-    onboarding_id: 'onb-002',
-    task_type: 'MANAGER_REVIEW',
-    title: 'Facility Lead confirms contractor site deployment',
-    description: 'Confirm facilities deployment role and reporting supervisor.',
-    assigned_to_role: 'MANAGER',
-    status: 'COMPLETED',
-    priority: 'HIGH',
-    due_date: '2026-08-17',
-    completed_at: '2026-08-15T15:00:00Z',
-    completed_by: 'mgr-001',
-    created_at: '2026-08-12T09:00:00Z',
-    updated_at: '2026-08-15T15:00:00Z',
-  },
-  {
-    id: 'task-002-4',
-    onboarding_id: 'onb-002',
-    task_type: 'ATTENDANCE_SETUP',
-    title: 'Assign contractor shift & biometric terminal access',
-    description: 'Grant facility biometric turnstile access.',
-    assigned_to_role: 'HR',
-    status: 'COMPLETED',
-    priority: 'HIGH',
-    due_date: '2026-08-17',
-    completed_at: '2026-08-16T12:00:00Z',
-    completed_by: 'user-admin-01',
-    created_at: '2026-08-12T09:00:00Z',
-    updated_at: '2026-08-16T12:00:00Z',
-  },
-  {
-    id: 'task-002-5',
-    onboarding_id: 'onb-002',
-    task_type: 'FINAL_HR_ACTIVATION',
-    title: 'Final HR readiness check & activation',
-    description: 'All vendor compliance verified. Ready to activate contractor.',
-    assigned_to_role: 'HR_HEAD',
-    status: 'IN_PROGRESS',
-    priority: 'CRITICAL',
-    due_date: '2026-08-18',
-    created_at: '2026-08-12T09:00:00Z',
-    updated_at: '2026-08-17T11:00:00Z',
-  },
-];
+// Pure Realtime Definitions - No hardcoded mock seeds
+const INITIAL_ONBOARDINGS: EmployeeOnboarding[] = [];
+const INITIAL_TASKS: OnboardingTask[] = [];
 
 function getStorage<T>(key: string, defaultValue: T): T {
   try {
@@ -615,7 +392,7 @@ export const onboardingService = {
           onboarding_id: newOnbId,
           task_type: 'FINAL_HR_ACTIVATION',
           title: 'Final HR contractor readiness audit & activation',
-          description: 'Activate contractor profile in WorkForceOS.',
+          description: 'Activate contractor profile in Joy PeopleHR.',
           assigned_to_role: 'HR_HEAD',
           status: 'NOT_STARTED',
           priority: 'CRITICAL',
@@ -909,5 +686,158 @@ export const onboardingService = {
   async getAuditLogs(onboardingId: string): Promise<OnboardingAuditLog[]> {
     const logs = getStorage<OnboardingAuditLog[]>(ONBOARDING_AUDIT_KEY, []);
     return logs.filter((l) => l.onboarding_id === onboardingId);
+  },
+
+  // 13. Canonical Master Onboarding Finalization (Atomic Transaction)
+  async finalizeOnboarding(payload: any): Promise<{
+    success: boolean;
+    employee_id: string;
+    employee_code: string;
+    salary_assignment_id?: string;
+    annual_ctc?: number;
+    monthly_ctc?: number;
+  }> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase.rpc('fn_finalize_employee_onboarding', {
+          p_payload: payload,
+        });
+        if (error) {
+          console.warn('[OnboardingService] Supabase RPC error during finalizeOnboarding:', error);
+          throw error;
+        }
+        if (data && data.success) {
+          hrEventBus.publish('employee.created', data);
+          return data;
+        }
+      } catch (err: any) {
+        console.warn('[OnboardingService] Falling back to local finalize flow:', err);
+      }
+    }
+
+    // Local / Offline Fallback Finalization
+    const employeeId = `EMP-${Math.floor(100000 + Math.random() * 900000)}`;
+    const employeeCode = payload.identity?.employee_code || `JCS-${Math.floor(100 + Math.random() * 900)}`;
+    const annualCtc = Number(payload.compensation?.annual_ctc) || 1200000;
+    const monthlyCtc = Math.round(annualCtc / 12);
+
+    const newEmp: Employee = {
+      id: employeeId,
+      employee_code: employeeCode,
+      organization_id: payload.organization_id || 'org-joy-01',
+      company_id: payload.company_id || 'comp-joy-01',
+      company_name: 'Joy Corporate Solutions Pvt Ltd',
+      first_name: payload.identity?.first_name || '',
+      middle_name: payload.identity?.middle_name || '',
+      last_name: payload.identity?.last_name || '',
+      display_name: payload.identity?.preferred_name || `${payload.identity?.first_name} ${payload.identity?.last_name}`.trim(),
+      work_email: payload.identity?.work_email || '',
+      avatar_url: payload.identity?.photo_url || '',
+      status: payload.employment?.status || 'Active',
+      employment_type: payload.employment?.employment_type || 'Full Time',
+      employment_source: payload.employment?.employment_source || 'DIRECT',
+      department_id: payload.employment?.department_id || 'dept-eng',
+      department_name: payload.employment?.department_name || 'Engineering',
+      designation_id: payload.employment?.designation_id || 'desig-se',
+      designation_title: payload.employment?.designation_title || 'Software Engineer',
+      branch_id: payload.employment?.branch_id || 'br-hq',
+      branch_name: payload.employment?.branch_name || 'Headquarters',
+      profile: {
+        first_name: payload.identity?.first_name || '',
+        middle_name: payload.identity?.middle_name || '',
+        last_name: payload.identity?.last_name || '',
+        display_name: payload.identity?.preferred_name,
+        personal_email: payload.contact?.personal_email,
+        phone: payload.identity?.phone || '+919791817437',
+        alternate_phone: payload.contact?.alternate_phone,
+        date_of_birth: payload.identity?.dob,
+        gender: payload.identity?.gender || 'Male',
+        marital_status: payload.contact?.marital_status || 'Single',
+        nationality: payload.contact?.nationality || 'Indian',
+        blood_group: payload.contact?.blood_group || 'O+',
+        preferred_language: payload.contact?.preferred_language || 'English',
+        current_address: {
+          line1: payload.contact?.current_line1 || '',
+          line2: payload.contact?.current_line2 || '',
+          city: payload.contact?.current_city || 'Coimbatore',
+          state: payload.contact?.current_state || 'Tamil Nadu',
+          country: payload.contact?.current_country || 'India',
+          postal_code: payload.contact?.current_postal || '641001',
+        },
+        permanent_address: {
+          line1: payload.contact?.same_as_permanent ? payload.contact?.current_line1 : payload.contact?.perm_line1,
+          line2: payload.contact?.same_as_permanent ? payload.contact?.current_line2 : payload.contact?.perm_line2,
+          city: payload.contact?.same_as_permanent ? payload.contact?.current_city : payload.contact?.perm_city,
+          state: payload.contact?.same_as_permanent ? payload.contact?.current_state : payload.contact?.perm_state,
+          country: payload.contact?.same_as_permanent ? payload.contact?.current_country : payload.contact?.perm_country,
+          postal_code: payload.contact?.same_as_permanent ? payload.contact?.current_postal : payload.contact?.perm_postal,
+        },
+        emergency_contacts: [
+          {
+            name: payload.emergency?.emergency_name || 'Family Contact',
+            relationship: payload.emergency?.emergency_relation || 'Spouse',
+            phone: payload.emergency?.emergency_phone || '+919876543210',
+            alt_phone: payload.emergency?.emergency_alt_phone,
+            email: payload.emergency?.emergency_email,
+            is_primary: true,
+            priority: 1,
+          },
+        ],
+        family_members: payload.emergency?.family_members || [],
+      },
+      employment: {
+        doj: payload.employment?.doj || new Date().toISOString().split('T')[0],
+        employment_type: payload.employment?.employment_type || 'Full Time',
+        employment_source: payload.employment?.employment_source || 'DIRECT',
+        work_mode: payload.employment?.work_mode || 'Hybrid',
+        job_level: payload.employment?.job_level || 'Mid Level',
+        grade: payload.employment?.grade || 'G3',
+        cost_center_code: payload.reporting?.cost_center || 'CC-ENG-101',
+        reporting_manager_id: payload.reporting?.reporting_manager_id,
+        reporting_manager_name: payload.reporting?.reporting_manager_name,
+        team_lead_id: payload.reporting?.team_lead_id,
+        team_lead_name: payload.reporting?.team_lead_name,
+        probation_period_months: payload.employment?.probation_months || 6,
+        notice_period_days: payload.employment?.notice_period_days || 60,
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // Save to employees list
+    await api.createEmployee(newEmp);
+
+    hrEventBus.publish('employee.created', {
+      employee_id: employeeId,
+      employee_code: employeeCode,
+      annual_ctc: annualCtc,
+      monthly_ctc: monthlyCtc,
+    });
+
+    return {
+      success: true,
+      employee_id: employeeId,
+      employee_code: employeeCode,
+      salary_assignment_id: `sal-asg-${Date.now()}`,
+      annual_ctc: annualCtc,
+      monthly_ctc: monthlyCtc,
+    };
+  },
+
+  // 14. Effective Configuration Snapshot Query
+  async getEmployeeEffectiveConfiguration(employeeId: string): Promise<any> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase
+          .from('v_employee_effective_configuration')
+          .select('*')
+          .eq('employee_id', employeeId)
+          .single();
+        if (!error && data) return data;
+      } catch (err) {
+        console.warn('[OnboardingService] Error fetching effective configuration view:', err);
+      }
+    }
+    return null;
   },
 };

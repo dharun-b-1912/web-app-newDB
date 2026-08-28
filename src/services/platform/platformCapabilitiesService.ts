@@ -1,6 +1,6 @@
 // src/services/platform/platformCapabilitiesService.ts
 // ============================================================
-// WorkForceOS — Product Capabilities & Feature Flags Control Service
+// Joy PeopleHR — Product Capabilities & Feature Flags Control Service
 // ============================================================
 
 import {

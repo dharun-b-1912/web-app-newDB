@@ -1,6 +1,6 @@
 // src/features/platform/subviews/PlatformDashboardView.tsx
 // ============================================================
-// WorkForceOS — Platform Control Center 2.0 (Master Command Cockpit)
+// Joy PeopleHR — Platform Control Center 2.0 (Master Command Cockpit)
 // ============================================================
 
 import React, { useState, useMemo } from 'react';
@@ -217,7 +217,7 @@ export const PlatformDashboardView: React.FC<PlatformDashboardViewProps> = ({
         onNavigateTab={(tab) => onNavigateTab(tab)}
       />
 
-      {/* WorkForceOS Copilot Assistant Drawer */}
+      {/* Joy PeopleHR Copilot Assistant Drawer */}
       <WorkForceCopilotDrawer
         isOpen={isCopilotOpen}
         onClose={() => setIsCopilotOpen(false)}
@@ -269,7 +269,7 @@ export const PlatformDashboardView: React.FC<PlatformDashboardViewProps> = ({
             className="text-[#047857] hover:bg-[#ECFDF5] border-[#A7F3D0] text-xs font-semibold"
           >
             <Sparkles className="w-3.5 h-3.5 mr-1.5 text-[#047857]" />
-            WorkForceOS Copilot
+            Joy PeopleHR Copilot
           </Button>
 
           <Button

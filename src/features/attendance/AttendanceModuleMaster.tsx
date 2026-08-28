@@ -5,8 +5,7 @@ import { AttendanceHistoryView } from './subviews/AttendanceHistoryView';
 import { AttendanceCalendarView } from './subviews/AttendanceCalendarView';
 import { RegularizationView } from './subviews/RegularizationView';
 import { LateEarlyTrackingView } from './subviews/LateEarlyTrackingView';
-import { OvertimeView } from './subviews/OvertimeView';
-import { WfhView } from './subviews/WfhView';
+import { WorkOvertimeMasterModule } from '../work/WorkOvertimeMasterModule';
 import { ShiftMasterView } from './subviews/ShiftMasterView';
 import { ShiftRosterCalendarView } from './subviews/ShiftRosterCalendarView';
 import { AttendancePolicyConfigView } from './subviews/AttendancePolicyConfigView';
@@ -159,6 +158,8 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     { id: 'shifts', label: 'Shift Master', icon: Clock },
     { id: 'roster', label: 'Shift Roster', icon: CalendarDays },
     { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
+    { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
+    { id: 'face-attendance', label: 'Face Recognition', icon: ScanFace },
     { id: 'late-early', label: 'Late / Early Tracking', icon: Clock },
     { id: 'regularization', label: 'Regularization Desk', icon: FileCheck },
     { id: 'exceptions', label: 'Exceptions Queue', icon: AlertTriangle },
@@ -288,6 +289,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       case 'gps':
       case 'gps-attendance':
       case 'geofences':
+      case 'staff-mapping':
       case 'mobile-clocking':
       case 'location-logs':
       case 'location-exceptions':
@@ -300,11 +302,10 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
         );
       case 'overtime':
       case 'overtime-requests':
-        return <OvertimeView />;
       case 'wfh':
-        return <WfhView />;
-      case 'late-early':
       case 'breaks-workhours':
+        return <WorkOvertimeMasterModule initialTab={activeTab} />;
+      case 'late-early':
         return (
           <LateEarlyTrackingView
             onNavigateSubPath={sub => handleSelectTab(sub)}
@@ -380,7 +381,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
               </span>
               <h1 className="text-2xl font-black text-gray-900 tracking-tight">ATTENDANCE MASTER MODULE</h1>
               <span className="bg-[#07563D] text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full">
-                WorkforceOS Time Engine
+                Joy PeopleHR Time Engine
               </span>
             </div>
             <p className="text-xs text-gray-500 mt-1">
@@ -390,7 +391,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
         </div>
 
         {/* Sub-navigation tabs scrollable strip */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none border-t border-gray-100 pt-3">
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-3 border-t border-gray-100 scrollbar-thin">
           {subTabs.map(tab => {
             const Icon = tab.icon;
             const isActive =
@@ -403,10 +404,10 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
               <button
                 key={tab.id}
                 onClick={() => handleSelectTab(tab.id)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex-shrink-0 cursor-pointer ${
                   isActive
                     ? 'bg-[#07563D] text-white shadow-xs'
-                    : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200/60'
+                    : 'bg-gray-50 text-gray-700 hover:bg-gray-100 hover:text-gray-900 border border-gray-200/80'
                 }`}
               >
                 <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-[#07563D]'}`} />

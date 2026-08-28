@@ -15,7 +15,8 @@ export type EmployeeStatus =
   | 'Absconded'
   | 'Retired'
   | 'Exited'
-  | 'On Leave';
+  | 'On Leave'
+  | 'Archived';
 
 export type EmploymentSource =
   | 'DIRECT'
@@ -404,7 +405,7 @@ export interface Designation {
   company_id: string;
   title: string;
   code: string;
-  grade: string;
+  grade?: string;
 }
 
 export interface Permission {
@@ -514,10 +515,30 @@ export interface EmploymentDetails {
   retirement_date?: string;
   last_working_date?: string;
   resignation_date?: string;
+  exit_reason?: string;
   work_location?: string;
   shift_name?: string;
   ctc?: number;
   history?: LifecycleHistoryItem[];
+}
+
+export interface EmployeeBankAccount {
+  bank_name?: string;
+  account_number?: string;
+  ifsc?: string;
+  ifsc_code?: string;
+  account_holder_name?: string;
+  account_type?: 'SALARY' | 'SAVINGS' | 'CURRENT';
+}
+
+export interface EmployeeStatutory {
+  pan?: string;
+  pan_number?: string;
+  uan?: string;
+  uan_number?: string;
+  pf_number?: string;
+  esi_number?: string;
+  tax_regime?: 'NEW' | 'OLD';
 }
 
 export interface Employee {
@@ -539,6 +560,8 @@ export interface Employee {
   display_name?: string;
   work_email: string;
   avatar_url?: string;
+  avatar_asset_id?: string | null;
+  avatar_version?: number;
   status: EmployeeStatus;
   employment_type: EmploymentType;
   employment_source?: EmploymentSource;
@@ -547,8 +570,13 @@ export interface Employee {
   vendor_employee_code?: string;
   profile: EmployeeProfile;
   employment: EmploymentDetails;
+  bank?: EmployeeBankAccount;
+  statutory?: EmployeeStatutory;
   created_at: string;
   updated_at: string;
+  updated_by?: string;
+  record_version?: number;
+  deleted_at?: string | null;
 }
 
 // Additional Core HR Entities
@@ -978,6 +1006,7 @@ export interface DocumentVersion {
   file_name: string;
   file_size_bytes: number;
   mime_type: string;
+  file_url?: string;
   content_hash: string; // SHA-256
   encryption_algorithm: string;
   encryption_key_id?: string;
@@ -1007,6 +1036,50 @@ export interface DocumentShare {
   revoked_at?: string;
   revoked_by?: string;
   created_at: string;
+}
+
+export interface StoragePool {
+  id: string;
+  name: string;
+  provider: 'SUPABASE_STORAGE' | 'AWS_S3' | 'GCS' | 'AZURE_BLOB';
+  region?: string;
+  status: 'HEALTHY' | 'DEGRADED' | 'FULL' | 'MAINTENANCE';
+  capacity_bytes: number;
+  used_bytes: number;
+}
+
+export interface StorageNode {
+  id: string;
+  tenant_id: string;
+  organization_id?: string;
+  storage_pool_id?: string;
+  name: string;
+  status: 'ACTIVE' | 'READ_ONLY' | 'SUSPENDED' | 'MAINTENANCE';
+  storage_quota_bytes: number;
+  used_bytes: number;
+  original_bytes: number;
+  compressed_bytes: number;
+  document_count: number;
+  encryption_policy?: string;
+  retention_policy?: string;
+}
+
+export interface DocumentRequirement {
+  id: string;
+  tenant_id: string;
+  organization_id?: string;
+  employee_id: string;
+  document_type: string;
+  title: string;
+  description?: string;
+  required: boolean;
+  due_date?: string;
+  status: 'REQUIRED' | 'UPLOADING' | 'PROCESSING' | 'SUBMITTED' | 'UNDER_REVIEW' | 'VERIFIED' | 'REJECTED' | 'REUPLOAD_REQUIRED';
+  rejection_reason?: string;
+  requested_by?: string;
+  document_id?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface DocumentLegalHold {
@@ -1139,6 +1212,7 @@ export interface DocumentMaster {
   employee_name?: string;
   file_name?: string;
   file_url?: string;
+  storage_path?: string;
   file_size?: string;
   version?: number;
   uploaded_at?: string;

@@ -1,6 +1,6 @@
 // src/services/platform/platformMfaService.ts
 // ============================================================
-// WorkForceOS — Supabase MFA & Assurance Level Service
+// Joy PeopleHR — Supabase MFA & Assurance Level Service
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
@@ -86,7 +86,7 @@ export const platformMfaService = {
   async enrollTotp(friendlyName: string = 'Authenticator App'): Promise<TotpEnrollmentData> {
     const factorId = `factor-totp-${Date.now()}`;
     const totpSecret = Array.from({ length: 32 }, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'[Math.floor(Math.random() * 32)]).join('');
-    const issuer = 'WorkForceOS';
+    const issuer = 'Joy PeopleHR';
     const account = 'superadmin@workforceos.com';
     const otpUri = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${totpSecret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpUri)}`;

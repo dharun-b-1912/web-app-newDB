@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/EditOrganizationModal.tsx
 // ============================================================
-// WorkForceOS — Edit Customer Organization Side Panel & Modal
+// Joy PeopleHR — Edit Customer Organization Side Panel & Modal
 // ============================================================
 
 import React, { useState, useMemo } from 'react';

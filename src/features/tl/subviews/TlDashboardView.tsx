@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../../../hooks/useAuth';
+import { useToast } from '../../../components/ui/Toast';
 
 interface TlDashboardViewProps {
   onNavigateTab?: (tabKey: string) => void;
@@ -45,7 +46,7 @@ export const TlDashboardView: React.FC<TlDashboardViewProps> = ({ onNavigateTab 
       <div className="bg-gradient-to-r from-[#07563D] to-[#0a7352] p-6 rounded-3xl text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-emerald-200 text-xs font-bold uppercase tracking-wider">
-            <span>WorkForceOS Team Operations</span>
+            <span>Joy PeopleHR Team Operations</span>
             <span>•</span>
             <span>{summary.team_name}</span>
           </div>

@@ -11,10 +11,10 @@ import {
   RegularizationRequest,
   WfhRequest,
 } from '../types/attendance';
-import { DEFAULT_ATTENDANCE_POLICY, minutesToTimeString, processAttendanceStatus, timeStringToMinutes } from '../lib/attendance/attendanceEngine';
+import { DEFAULT_ATTENDANCE_POLICY, minutesToTimeString, processAttendanceStatus, timeStringToMinutes, formatCleanTime } from '../lib/attendance/attendanceEngine';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
-
+import { attendanceTimeService } from './attendance/attendanceTimeService';
 import { getActiveOrgId } from './attendance/biometricCommandService';
 
 const STORAGE_KEY_DAILY = 'workforceos_attendance_daily_v2';
@@ -88,12 +88,15 @@ export const attendanceApi = {
         const targetDate = date || new Date().toISOString().split('T')[0];
 
         for (const item of list) {
-          // Find matching real employee strictly by ID or (exact Code AND Name)
+          // Robust matching across ID, Code, Name, and Composite Keys
           const matchedEmp = realEmployees.find(e =>
             (e.id && item.employee_id && e.id.toLowerCase() === item.employee_id.toLowerCase()) ||
-            (e.employee_code && item.employee_code &&
-             e.employee_code.toLowerCase() === item.employee_code.toLowerCase() &&
-             (e.display_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || e.name || '').toLowerCase() === (item.employee_name || '').toLowerCase())
+            (e.employee_code && item.employee_code && e.employee_code.toLowerCase() === item.employee_code.toLowerCase()) ||
+            (e.employee_code && item.employee_id && e.employee_code.toLowerCase() === item.employee_id.toLowerCase()) ||
+            (e.id && item.employee_code && e.id.toLowerCase() === item.employee_code.toLowerCase()) ||
+            (item.id && e.id && item.id.includes(e.id)) ||
+            (item.id && e.employee_code && item.id.includes(e.employee_code)) ||
+            (e.display_name && item.employee_name && e.display_name.toLowerCase() === item.employee_name.toLowerCase())
           );
 
           if (matchedEmp) {
@@ -103,6 +106,17 @@ export const attendanceApi = {
               const roster = attendanceRosterService.getRosterForEmployeeOnDate(matchedEmp.id, item.date || targetDate);
               const shiftStart = roster.shift_code.includes('NGT') ? '10:00 PM' : roster.shift_code.includes('MOR') ? '06:00 AM' : '09:00 AM';
               const shiftEnd = roster.shift_code.includes('NGT') ? '06:00 AM' : roster.shift_code.includes('MOR') ? '02:30 PM' : '06:00 PM';
+
+              const rawIn = item.first_check_in || (item as any).in_time || (item as any).check_in;
+              const rawOut = item.last_check_out || (item as any).out_time || (item as any).check_out;
+
+              const hasPunch = !!rawIn || !!rawOut;
+              const inMins = rawIn ? timeStringToMinutes(rawIn) : null;
+              const outMins = rawOut ? timeStringToMinutes(rawOut) : null;
+              const expectedInMins = timeStringToMinutes(shiftStart) || 540;
+              const expectedOutMins = timeStringToMinutes(shiftEnd) || 1080;
+              const calc = processAttendanceStatus(inMins, outMins, expectedInMins, expectedOutMins);
+              const resolvedStatus = hasPunch ? (item.status || calc.status || 'Present') : (roster.is_weekly_off ? 'Weekly Off' : item.status || 'Not Checked In');
 
               cleaned.push({
                 ...item,
@@ -115,7 +129,15 @@ export const attendanceApi = {
                 shift_name: `${roster.shift_name} (${roster.shift_code})`,
                 expected_check_in: shiftStart,
                 expected_check_out: shiftEnd,
-                status: roster.is_weekly_off ? 'Weekly Off' : item.status || 'Present',
+                first_check_in: rawIn ? formatCleanTime(rawIn) : undefined,
+                last_check_out: rawOut ? formatCleanTime(rawOut) : undefined,
+                gross_working_minutes: (item.gross_working_minutes && item.gross_working_minutes > 0) ? item.gross_working_minutes : calc.grossMinutes,
+                net_working_minutes: (item.net_working_minutes && item.net_working_minutes > 0) ? item.net_working_minutes : calc.netMinutes,
+                late_minutes: item.late_minutes ?? calc.lateMinutes,
+                early_checkout_minutes: item.early_checkout_minutes ?? calc.earlyMinutes,
+                overtime_minutes: item.overtime_minutes ?? calc.overtimeMinutes,
+                status: resolvedStatus,
+                source: (item.source || item.check_in_source || (hasPunch ? 'MOBILE_GPS' : 'WEB')) as any,
               });
             }
           }
@@ -189,21 +211,19 @@ export const attendanceApi = {
 
   checkIn: (employeeId: string, employeeName: string, source: PunchSource = 'WEB', locationName: string = 'HQ Office Web Check-in'): AttendanceDaily => {
     const list = loadStorage<AttendanceDaily[]>(STORAGE_KEY_DAILY, SEED_DAILY);
-    const today = new Date().toISOString().split('T')[0];
-    const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const today = attendanceTimeService.getOrganizationBusinessDate();
+    const nowIso = new Date().toISOString();
 
     const existingIdx = list.findIndex(e => e.employee_id === employeeId && e.date === today);
-    const checkInMins = timeStringToMinutes(nowStr);
-
-    const calculation = processAttendanceStatus(checkInMins, null);
+    const calculation = attendanceTimeService.calculateWorkingMinutes(nowIso);
 
     if (existingIdx >= 0) {
       const updated: AttendanceDaily = {
         ...list[existingIdx],
         status: 'Present',
-        first_check_in: nowStr,
+        first_check_in: nowIso,
         source,
-        updated_at: new Date().toISOString(),
+        updated_at: nowIso,
       };
       list[existingIdx] = updated;
       saveStorage(STORAGE_KEY_DAILY, list);
@@ -247,7 +267,7 @@ export const attendanceApi = {
         expected_check_in: '09:30 AM',
         expected_check_out: '06:30 PM',
         status: 'Present',
-        first_check_in: nowStr,
+        first_check_in: nowIso,
         gross_working_minutes: 0,
         total_break_minutes: 0,
         net_working_minutes: 0,
@@ -255,8 +275,8 @@ export const attendanceApi = {
         early_checkout_minutes: 0,
         overtime_minutes: 0,
         source,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: nowIso,
+        updated_at: nowIso,
       };
       list.unshift(newItem);
       saveStorage(STORAGE_KEY_DAILY, list);
@@ -290,17 +310,14 @@ export const attendanceApi = {
 
   checkOut: (employeeId: string, source: PunchSource = 'WEB'): AttendanceDaily | null => {
     const list = loadStorage<AttendanceDaily[]>(STORAGE_KEY_DAILY, SEED_DAILY);
-    const today = new Date().toISOString().split('T')[0];
-    const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const today = attendanceTimeService.getOrganizationBusinessDate();
+    const nowIso = new Date().toISOString();
 
     const idx = list.findIndex(e => e.employee_id === employeeId && e.date === today);
     if (idx < 0) return null;
 
     const record = list[idx];
-    const checkInMins = timeStringToMinutes(record.first_check_in);
-    const checkOutMins = timeStringToMinutes(nowStr);
-
-    const calculation = processAttendanceStatus(checkInMins, checkOutMins);
+    const calculation = attendanceTimeService.calculateWorkingMinutes(record.first_check_in, nowIso);
 
     const checkInSource = record.check_in_source || record.source || 'BIOMETRIC';
     const checkOutSource = source;
@@ -308,8 +325,8 @@ export const attendanceApi = {
 
     const updated: AttendanceDaily = {
       ...record,
-      last_check_out: nowStr,
-      status: calculation.status,
+      last_check_out: nowIso,
+      status: 'Present',
       gross_working_minutes: calculation.grossMinutes,
       net_working_minutes: calculation.netMinutes,
       late_minutes: calculation.lateMinutes,
@@ -318,7 +335,7 @@ export const attendanceApi = {
       check_in_source: checkInSource,
       check_out_source: checkOutSource,
       source: overallSource,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     };
 
     list[idx] = updated;

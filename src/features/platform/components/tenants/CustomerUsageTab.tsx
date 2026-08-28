@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/CustomerUsageTab.tsx
 // ============================================================
-// WorkForceOS — Customer Capacity, Metered Usage & Quotas Tab
+// Joy PeopleHR — Customer Capacity, Metered Usage & Quotas Tab
 // ============================================================
 
 import React from 'react';

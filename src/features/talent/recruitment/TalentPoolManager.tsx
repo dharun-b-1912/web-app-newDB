@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/TalentPoolManager.tsx
 // ============================================================================
-// WorkForceOS — Talent Pools & Sourced Candidate Repository
+// Joy PeopleHR — Talent Pools & Sourced Candidate Repository
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';

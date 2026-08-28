@@ -1,6 +1,6 @@
 // src/services/platform/platformProfileService.ts
 // ============================================================
-// WorkForceOS — Platform Admin Profile & Identity Service
+// Joy PeopleHR — Platform Admin Profile & Identity Service
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';

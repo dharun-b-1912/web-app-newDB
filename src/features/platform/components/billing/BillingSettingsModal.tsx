@@ -1,6 +1,6 @@
 // src/features/platform/components/billing/BillingSettingsModal.tsx
 // ============================================================
-// WorkForceOS — Billing Settings & Supplier Tax Profile Modal
+// Joy PeopleHR — Billing Settings & Supplier Tax Profile Modal
 // ============================================================
 
 import React, { useState } from 'react';

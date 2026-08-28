@@ -18,6 +18,8 @@ import {
   Send,
 } from 'lucide-react';
 
+import { useAuth } from '../../../hooks/useAuth';
+
 interface LeaveRequestDetailDrawerProps {
   request: LeaveRequest | null;
   onClose: () => void;
@@ -29,10 +31,13 @@ export const LeaveRequestDetailDrawer: React.FC<LeaveRequestDetailDrawerProps> =
   onClose,
   onActionComplete,
 }) => {
+  const { user } = useAuth();
   if (!request) return null;
 
+  const approverName = user?.name || request.manager_name || 'Reporting Manager';
+
   const handleApprove = () => {
-    leaveApi.approveLeaveRequest(request.id, 'Anand Viswanathan (HR Head)', 'Approved per policy.');
+    leaveApi.approveLeaveRequest(request.id, approverName, 'Approved per policy.');
     onActionComplete();
     onClose();
   };
@@ -40,7 +45,7 @@ export const LeaveRequestDetailDrawer: React.FC<LeaveRequestDetailDrawerProps> =
   const handleReject = () => {
     const reason = prompt('Please enter rejection reason:');
     if (reason) {
-      leaveApi.rejectLeaveRequest(request.id, 'Anand Viswanathan (HR Head)', reason);
+      leaveApi.rejectLeaveRequest(request.id, approverName, reason);
       onActionComplete();
       onClose();
     }

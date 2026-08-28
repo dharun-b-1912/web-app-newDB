@@ -16,9 +16,7 @@ import { LocationView } from './features/organization/LocationView';
 import { VendorsView } from './features/organization/VendorsView';
 import { RbacView } from './features/rbac/RbacView';
 import { MyWorkspaceView } from './features/workspace/MyWorkspaceView';
-import { SettingsView } from './features/settings/SettingsView';
 import { RecruitmentView } from './features/talent/RecruitmentView';
-import { TimeAndPayView } from './features/time/TimeAndPayView';
 import { ComplianceView } from './features/compliance/ComplianceView';
 import { DocumentManagementView } from './features/documents/DocumentManagementView';
 import { OnboardingView } from './features/onboarding/OnboardingView';
@@ -36,39 +34,59 @@ import { AutomationView } from './features/automation/AutomationView';
 import { AdministrationView } from './features/admin/AdministrationView';
 
 import { AttendanceModuleMaster } from './features/attendance/AttendanceModuleMaster';
+import { WorkOvertimeMasterModule } from './features/work/WorkOvertimeMasterModule';
 import { LeaveManagementModule } from './features/leave/LeaveManagementModule';
 import { PayrollMasterModule } from './features/payroll/PayrollMasterModule';
 import { PerformanceMasterModule } from './features/performance/PerformanceMasterModule';
 import { LmsMasterModule } from './features/lms/LmsMasterModule';
 import { OtherMasterModule } from './features/other/OtherMasterModule';
+import { EmployeeRelationsMasterModule } from './features/er/EmployeeRelationsMasterModule';
 import { AnalyticsMasterModule } from './features/analytics/AnalyticsMasterModule';
 import { AdminMasterModule } from './features/admin/AdminMasterModule';
 import { EssMasterModule } from './features/ess/EssMasterModule';
 import { TlMasterModule } from './features/tl/TlMasterModule';
 import { PlatformAdminMasterModule } from './features/platform/PlatformAdminMasterModule';
 import { MyProfileView } from './features/profile/MyProfileView';
+import { RealtimeHealthView } from './features/diagnostics/RealtimeHealthView';
 import { parseRouteFromUrl, syncUrlWithRoute } from './lib/router/urlRouter';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { realtimeSyncEngine } from './services/realtimeSyncEngine';
-import { excelTestDataService } from './services/excelTestDataService';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
 
-  // Initialize Realtime Sync Engine for live automatic data replication
+  // Initialize Realtime Sync Engine for live automatic data replication and purge old legacy mock remnants
   useEffect(() => {
+    // One-time cleanup of old mock / test datasets from localStorage
+    const PURGE_VERSION = 'wf_purge_v3_clean_realtime';
+    if (localStorage.getItem('wf_storage_version') !== PURGE_VERSION) {
+      const keysToPurge = [
+        'workforce_employee_onboardings',
+        'workforce_onboarding_tasks',
+        'workforce_onboarding_policies',
+        'workforce_onboarding_overrides',
+        'workforce_vendor_docs',
+        'workforce_vendor_payments',
+        'workforce_vendor_assignments',
+        'workforce_vendor_saved_views',
+        'workforce_excel_test_data',
+        'workforce_employees',
+        'workforce_companies',
+        'workforce_departments',
+        'workforce_designations',
+        'workforce_branches',
+        'workforce_locations',
+      ];
+      keysToPurge.forEach((k) => {
+        try {
+          localStorage.removeItem(k);
+        } catch (_) {}
+      });
+      localStorage.setItem('wf_storage_version', PURGE_VERSION);
+    }
+
     realtimeSyncEngine.initialize();
     return () => realtimeSyncEngine.destroy();
-  }, []);
-
-  // Auto-initialize Excel test dataset on startup if not yet loaded
-  useEffect(() => {
-    const status = excelTestDataService.getTestDataStatus();
-    if (!status.is_loaded) {
-      excelTestDataService.loadMasterExcelTestData().catch(err => {
-        console.warn('[App] Auto-loading Excel test data failed:', err);
-      });
-    }
   }, []);
 
   // Compute the correct starting route URL-FIRST from the browser location
@@ -152,7 +170,7 @@ const AppContent: React.FC = () => {
           W
         </div>
         <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-          Initializing WorkForceOS Tenant Engine...
+          Initializing Joy PeopleHR Tenant Engine...
         </div>
       </div>
     );
@@ -290,13 +308,10 @@ const AppContent: React.FC = () => {
       case 'gps':
       case 'gps-attendance':
       case 'geofences':
+      case 'staff-mapping':
       case 'mobile-clocking':
       case 'location-logs':
       case 'location-exceptions':
-      case 'overtime':
-      case 'overtime-requests':
-      case 'wfh':
-      case 'breaks-workhours':
       case 'payroll-inputs':
       case 'payable-days':
       case 'lop-desk':
@@ -316,6 +331,13 @@ const AppContent: React.FC = () => {
             onNavigateSubPath={sub => setCurrentRoute(sub)}
           />
         );
+      case 'work-overtime':
+      case 'overtime':
+      case 'overtime-requests':
+      case 'wfh':
+      case 'breaks-workhours':
+      case 'breaks':
+        return <WorkOvertimeMasterModule initialTab={currentRoute} />;
       case 'leave':
       case 'leave-dashboard':
       case 'leave-types':
@@ -332,12 +354,13 @@ const AppContent: React.FC = () => {
       case 'leave-exceptions':
       case 'leave-reports':
         return <LeaveManagementModule initialTab={currentRoute} />;
-      case 'time-tracking':
-      case 'workforce-planning':
-        return <TimeAndPayView />;
       case 'payroll':
       case 'payroll-dashboard':
       case 'payroll-salary':
+      case 'payroll-claims':
+      case 'payroll-expenses':
+      case 'expense-desk':
+      case 'claims':
       case 'payroll-processing':
       case 'payroll-earnings':
       case 'payroll-deductions':
@@ -353,23 +376,35 @@ const AppContent: React.FC = () => {
       case 'other':
       case 'other-dashboard':
       case 'other-travel':
+      case 'travel':
+        return <OtherMasterModule initialTab={currentRoute} />;
       case 'other-posh':
       case 'other-grievances':
       case 'other-engagement':
       case 'other-helpdesk':
       case 'other-communication':
-      case 'travel':
       case 'posh':
+      case 'posh-committee':
+      case 'grievance':
       case 'grievances':
+      case 'grievance-desk':
       case 'discipline':
+      case 'disciplinary':
+      case 'disciplinary-actions':
       case 'engagement':
-      case 'helpdesk':
-      case 'communication':
-        return <OtherMasterModule initialTab={currentRoute} />;
+      case 'surveys':
+      case 'engagement-surveys':
       case 'compliance':
-        return <EmployeeRelationsView initialTab={currentRoute} />;
+      case 'statutory-compliance':
+      case 'communication':
+      case 'communications':
+      case 'hr-communications':
+      case 'helpdesk':
+      case 'help-desk':
       case 'requests':
-        return <HrServicesView initialTab={currentRoute} />;
+      case 'knowledge':
+      case 'knowledge-centre':
+        return <EmployeeRelationsMasterModule initialTab={currentRoute} />;
       case 'analytics':
       case 'analytics-overview':
       case 'analytics-hr':
@@ -480,6 +515,9 @@ const AppContent: React.FC = () => {
       case 'my-profile':
       case 'profile':
         return <MyProfileView />;
+      case 'realtime-health':
+      case 'admin-realtime-health':
+        return <RealtimeHealthView />;
       case 'settings':
         return <AdminMasterModule initialTab="settings" />;
       default:
@@ -494,7 +532,9 @@ const AppContent: React.FC = () => {
       onOpenCopilot={() => setIsCopilotOpen(true)}
     >
       <RouteGuard module={currentRoute} onNavigate={setCurrentRoute}>
-        {renderViewContent()}
+        <ErrorBoundary>
+          {renderViewContent()}
+        </ErrorBoundary>
       </RouteGuard>
 
       <AiAssistantDrawer isOpen={isCopilotOpen} onClose={() => setIsCopilotOpen(false)} />

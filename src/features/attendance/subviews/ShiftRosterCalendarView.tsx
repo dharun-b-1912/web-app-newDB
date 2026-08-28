@@ -1,10 +1,10 @@
 // src/features/attendance/subviews/ShiftRosterCalendarView.tsx
 // ============================================================================
-// WorkForceOS — Enterprise Shift Roster & Workforce Scheduling Matrix
+// Joy PeopleHR — Enterprise Shift Roster & Workforce Scheduling Matrix
 // Clean Architecture, Compact KPI Strip, Unified Sticky Filters, Right-Side Slide-Over Drawers
 // ============================================================================
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
@@ -49,7 +49,7 @@ export const ShiftRosterCalendarView: React.FC = () => {
 
   // Navigation & View Mode State
   const [viewMode, setViewMode] = useState<'MATRIX' | 'LIST' | 'CALENDAR' | 'DEPARTMENT'>('MATRIX');
-  const [currentWeekStart, setCurrentWeekStart] = useState('2026-08-17'); // Monday
+  const [currentWeekStart, setCurrentWeekStart] = useState('2026-08-24'); // Monday 24 Aug 2026
 
   // Multi-Dimension Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,8 +70,8 @@ export const ShiftRosterCalendarView: React.FC = () => {
   // Bulk Assign Drawer State (Slide-Over)
   const [isBulkDrawerOpen, setIsBulkDrawerOpen] = useState(false);
   const [bulkShiftId, setBulkShiftId] = useState('');
-  const [bulkStartDate, setBulkStartDate] = useState('2026-08-17');
-  const [bulkEndDate, setBulkEndDate] = useState('2026-08-23');
+  const [bulkStartDate, setBulkStartDate] = useState('2026-08-24');
+  const [bulkEndDate, setBulkEndDate] = useState('2026-08-30');
   const [includeSatOff, setIncludeSatOff] = useState(true);
   const [includeSunOff, setIncludeSunOff] = useState(true);
 
@@ -94,9 +94,9 @@ export const ShiftRosterCalendarView: React.FC = () => {
 
   // Copy Schedule Modal State
   const [isCopyScheduleOpen, setIsCopyScheduleOpen] = useState(false);
-  const [copySourceStart, setCopySourceStart] = useState('2026-08-17');
-  const [copySourceEnd, setCopySourceEnd] = useState('2026-08-23');
-  const [copyTargetStart, setCopyTargetStart] = useState('2026-08-24');
+  const [copySourceStart, setCopySourceStart] = useState('2026-08-24');
+  const [copySourceEnd, setCopySourceEnd] = useState('2026-08-30');
+  const [copyTargetStart, setCopyTargetStart] = useState('2026-08-31');
 
   // Import / Export Modal State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -134,6 +134,38 @@ export const ShiftRosterCalendarView: React.FC = () => {
     return days;
   }, [currentWeekStart]);
 
+  // Dynamic Week Label & Week Number Calculation
+  const weekInfo = useMemo(() => {
+    if (!activeDays || activeDays.length < 7) {
+      return { label: 'Aug 24 – Aug 30, 2026', weekNum: 35 };
+    }
+    const startD = new Date(activeDays[0]);
+    const endD = new Date(activeDays[6]);
+
+    const startMonth = startD.toLocaleDateString('en-US', { month: 'short' });
+    const endMonth = endD.toLocaleDateString('en-US', { month: 'short' });
+    const startDay = startD.getDate();
+    const endDay = endD.getDate();
+    const year = endD.getFullYear();
+
+    const label = startMonth === endMonth
+      ? `${startMonth} ${startDay} – ${endMonth} ${endDay}, ${year}`
+      : `${startMonth} ${startDay} – ${endMonth} ${endDay}, ${year}`;
+
+    // ISO week number calculation
+    const target = new Date(startD.valueOf());
+    const dayNr = (startD.getDay() + 6) % 7;
+    target.setDate(target.getDate() - dayNr + 3);
+    const firstThursday = target.valueOf();
+    target.setMonth(0, 1);
+    if (target.getDay() !== 4) {
+      target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
+    }
+    const weekNum = 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
+
+    return { label, weekNum };
+  }, [activeDays]);
+
   useEffect(() => {
     if (activeDays.length > 0) {
       const detectedConflicts = attendanceRosterService.detectRosterConflicts(
@@ -152,8 +184,63 @@ export const ShiftRosterCalendarView: React.FC = () => {
   };
 
   const handleGoToToday = () => {
-    setCurrentWeekStart('2026-08-17');
+    setCurrentWeekStart('2026-08-24');
   };
+
+  // Helper to resolve precise timing, duration, and policy for any shift/roster entry
+  const getShiftDisplayInfo = useCallback((rosterEntry?: EmployeeRosterEntry | null, shiftCodeOrId?: string) => {
+    if (rosterEntry?.is_weekly_off || shiftCodeOrId === 'OFF' || rosterEntry?.shift_code === 'OFF') {
+      return {
+        timeRange: 'Weekly Rest',
+        timeRangeAMPM: 'Weekly Rest',
+        workingHours: '0h working',
+        graceMinutes: '0m grace',
+        policyName: 'Weekly Rest Policy',
+      };
+    }
+
+    const shift = shifts.find(
+      s => s.id === shiftCodeOrId ||
+           s.shift_code === shiftCodeOrId ||
+           s.id === rosterEntry?.shift_id ||
+           s.shift_code === rosterEntry?.shift_code
+    ) || shifts.find(
+      s => rosterEntry?.shift_code && s.shift_code.toUpperCase().includes(rosterEntry.shift_code.toUpperCase())
+    ) || shifts[0];
+
+    if (!shift) {
+      return {
+        timeRange: '09:00–18:00',
+        timeRangeAMPM: '09:00 AM — 06:00 PM',
+        workingHours: '8h working',
+        graceMinutes: '15m grace',
+        policyName: 'Corporate Attendance v1',
+      };
+    }
+
+    const formatAMPM = (timeStr: string) => {
+      if (!timeStr) return '';
+      const [hStr, mStr] = timeStr.split(':');
+      const h = parseInt(hStr || '0', 10);
+      const m = parseInt(mStr || '0', 10);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      return `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
+    };
+
+    const startAMPM = formatAMPM(shift.start_time);
+    const endAMPM = formatAMPM(shift.end_time);
+
+    return {
+      timeRange: `${startAMPM} – ${endAMPM}`,
+      timeRangeAMPM: `${startAMPM} — ${endAMPM}`,
+      workingHours: `${Math.round((shift.net_working_minutes || 480) / 60)}h working`,
+      graceMinutes: `${shift.grace_in_minutes || 15}m grace`,
+      policyName: shift.shift_name.toLowerCase().includes('factory') || shift.shift_name.toLowerCase().includes('plant')
+        ? 'Plant Attendance v2'
+        : 'Corporate Attendance v1',
+    };
+  }, [shifts]);
 
   // Filtered Employees calculation
   const filteredEmployees = useMemo(() => {
@@ -467,16 +554,16 @@ export const ShiftRosterCalendarView: React.FC = () => {
         {/* Quick Shift Legend Inline */}
         <div className="hidden lg:flex items-center gap-3 text-[11px] text-gray-500">
           <span className="flex items-center gap-1 font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-600" /> GEN 09:00–18:00
+            <span className="w-2 h-2 rounded-full bg-emerald-600" /> GEN 09:00 AM–06:00 PM
           </span>
           <span className="flex items-center gap-1 font-medium">
-            <span className="w-2 h-2 rounded-full bg-sky-600" /> MOR 06:00–14:30
+            <span className="w-2 h-2 rounded-full bg-sky-600" /> MOR 06:00 AM–02:30 PM
           </span>
           <span className="flex items-center gap-1 font-medium">
-            <span className="w-2 h-2 rounded-full bg-amber-500" /> EVE 14:00–22:30
+            <span className="w-2 h-2 rounded-full bg-amber-500" /> EVE 02:00 PM–10:30 PM
           </span>
           <span className="flex items-center gap-1 font-medium">
-            <span className="w-2 h-2 rounded-full bg-indigo-600" /> NGT 22:00–06:00
+            <span className="w-2 h-2 rounded-full bg-indigo-600" /> NGT 10:00 PM–06:30 AM
           </span>
           <span className="flex items-center gap-1 text-gray-400 font-medium">
             <span className="w-2 h-2 rounded-full bg-gray-300" /> OFF Weekly Rest
@@ -694,10 +781,10 @@ export const ShiftRosterCalendarView: React.FC = () => {
           </div>
 
           <span className="font-bold text-gray-900 text-xs font-mono ml-2">
-            Aug 17 – Aug 23, 2026
+            {weekInfo.label}
           </span>
           <Badge variant="gray" size="sm" className="text-[10px] font-medium">
-            Week 34
+            Week {weekInfo.weekNum}
           </Badge>
         </div>
 
@@ -856,6 +943,7 @@ export const ShiftRosterCalendarView: React.FC = () => {
                                 const isNight = roster.shift_code.includes('NGT');
                                 const isMorning = roster.shift_code.includes('MOR');
                                 const isEvening = roster.shift_code.includes('EVE');
+                                const timing = getShiftDisplayInfo(roster);
 
                                 return (
                                   <td
@@ -888,7 +976,7 @@ export const ShiftRosterCalendarView: React.FC = () => {
                                         )}
                                       </div>
                                       <div className="text-[10px] text-gray-500 font-mono mt-0.5">
-                                        {isOff ? 'Weekly Rest' : isNight ? '22:00–06:00' : '09:00–18:00'}
+                                        {isOff ? 'Weekly Rest' : timing.timeRange}
                                       </div>
                                     </div>
                                   </td>
@@ -921,35 +1009,40 @@ export const ShiftRosterCalendarView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredEmployees.map(emp => (
-                <tr key={emp.id} className="hover:bg-gray-50/60">
-                  <td className="py-2.5 px-3 font-semibold text-gray-900">
-                    {emp.name || `${emp.first_name} ${emp.last_name}`}
-                    <div className="text-[10px] text-gray-400 font-mono">{emp.employee_code || `EMP-${emp.id}`}</div>
-                  </td>
-                  <td className="py-2.5 px-3 text-gray-600">{emp.department_name || emp.department || 'Production'}</td>
-                  <td className="py-2.5 px-3 text-gray-500">{emp.location || 'Chennai Factory'}</td>
-                  <td className="py-2.5 px-3">
-                    <Badge variant="emerald" size="sm">GEN-09 (09:00–18:00)</Badge>
-                  </td>
-                  <td className="py-2.5 px-3">
-                    <Badge variant="emerald" size="sm">ASSIGNED</Badge>
-                  </td>
-                  <td className="py-2.5 px-3 text-right">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const r = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, activeDays[0]);
-                        setActiveCellDrawer({ emp, date: activeDays[0], roster: r });
-                      }}
-                      className="text-xs font-semibold rounded-md h-7"
-                    >
-                      Inspect Schedule
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {filteredEmployees.map(emp => {
+                const firstDayRoster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, activeDays[0]);
+                const timing = getShiftDisplayInfo(firstDayRoster);
+                return (
+                  <tr key={emp.id} className="hover:bg-gray-50/60">
+                    <td className="py-2.5 px-3 font-semibold text-gray-900">
+                      {emp.name || `${emp.first_name} ${emp.last_name}`}
+                      <div className="text-[10px] text-gray-400 font-mono">{emp.employee_code || `EMP-${emp.id}`}</div>
+                    </td>
+                    <td className="py-2.5 px-3 text-gray-600">{emp.department_name || emp.department || 'Production'}</td>
+                    <td className="py-2.5 px-3 text-gray-500">{emp.location || 'Chennai Factory'}</td>
+                    <td className="py-2.5 px-3">
+                      <Badge variant="emerald" size="sm">
+                        {firstDayRoster.is_weekly_off ? 'Weekly Rest' : `${firstDayRoster.shift_code} (${timing.timeRange})`}
+                      </Badge>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <Badge variant="emerald" size="sm">ASSIGNED</Badge>
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setActiveCellDrawer({ emp, date: activeDays[0], roster: firstDayRoster });
+                        }}
+                        className="text-xs font-semibold rounded-md h-7"
+                      >
+                        Inspect Schedule
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -993,19 +1086,24 @@ export const ShiftRosterCalendarView: React.FC = () => {
                 </div>
 
                 {/* Current Shift Rule Details */}
-                <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-1 text-emerald-950">
-                  <span className="text-[10px] uppercase font-bold text-emerald-800 block">Current Assignment</span>
-                  <div className="font-bold text-sm">{activeCellDrawer.roster.shift_name} ({activeCellDrawer.roster.shift_code})</div>
-                  <div className="text-[11px] text-emerald-800">
-                    Timing: <strong>09:00 AM → 06:00 PM</strong> (8h working • 15m grace)
-                  </div>
-                  <div className="text-[11px] text-emerald-800">
-                    Policy: <strong>Corporate Attendance v1</strong>
-                  </div>
-                  <div className="text-[11px] text-emerald-800">
-                    Source: <strong>{activeCellDrawer.roster.assigned_by || 'Department Roster'}</strong>
-                  </div>
-                </div>
+                {(() => {
+                  const currentTiming = getShiftDisplayInfo(activeCellDrawer.roster);
+                  return (
+                    <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-1 text-emerald-950">
+                      <span className="text-[10px] uppercase font-bold text-emerald-800 block">Current Assignment</span>
+                      <div className="font-bold text-sm">{activeCellDrawer.roster.shift_name} ({activeCellDrawer.roster.shift_code})</div>
+                      <div className="text-[11px] text-emerald-800">
+                        Timing: <strong>{currentTiming.timeRangeAMPM}</strong> ({currentTiming.workingHours} • {currentTiming.graceMinutes})
+                      </div>
+                      <div className="text-[11px] text-emerald-800">
+                        Policy: <strong>{currentTiming.policyName}</strong>
+                      </div>
+                      <div className="text-[11px] text-emerald-800">
+                        Source: <strong>{activeCellDrawer.roster.assigned_by || 'Department Roster'}</strong>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Change / Override Form */}
                 <div className="space-y-3 pt-2">
@@ -1018,11 +1116,14 @@ export const ShiftRosterCalendarView: React.FC = () => {
                       onChange={e => setOverrideShiftId(e.target.value)}
                       className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 focus:outline-none focus:border-[#07563D]"
                     >
-                      {shifts.map(s => (
-                        <option key={s.id} value={s.id}>
-                          {s.shift_name} ({s.shift_code} • {s.start_time} - {s.end_time})
-                        </option>
-                      ))}
+                      {shifts.map(s => {
+                        const sTiming = getShiftDisplayInfo(null, s.id);
+                        return (
+                          <option key={s.id} value={s.id}>
+                            {s.shift_name} ({s.shift_code} • {sTiming.timeRangeAMPM})
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
 
@@ -1100,11 +1201,14 @@ export const ShiftRosterCalendarView: React.FC = () => {
                     onChange={e => setBulkShiftId(e.target.value)}
                     className="w-full px-2.5 py-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:border-[#07563D]"
                   >
-                    {shifts.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.shift_name} ({s.shift_code} • {s.start_time} - {s.end_time})
-                      </option>
-                    ))}
+                    {shifts.map(s => {
+                      const sTiming = getShiftDisplayInfo(null, s.id);
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.shift_name} ({s.shift_code} • {sTiming.timeRangeAMPM})
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 

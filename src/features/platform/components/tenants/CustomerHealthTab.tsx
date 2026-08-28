@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/CustomerHealthTab.tsx
 // ============================================================
-// WorkForceOS — Customer Health, Risk Signals & Diagnostics Tab
+// Joy PeopleHR — Customer Health, Risk Signals & Diagnostics Tab
 // ============================================================
 
 import React, { useState } from 'react';

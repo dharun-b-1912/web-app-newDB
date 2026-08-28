@@ -1,6 +1,6 @@
 // src/types/shiftRoster.ts
 // ============================================================================
-// WorkForceOS — Tenant-Aware Shift, Roster, Policy & Multi-Layer Attendance Types
+// Joy PeopleHR — Tenant-Aware Shift, Roster, Policy & Multi-Layer Attendance Types
 // Enterprise Grade: Versioned Policies, Effective Dates, 9-State Lifecycle, Immutable Audit
 // ============================================================================
 

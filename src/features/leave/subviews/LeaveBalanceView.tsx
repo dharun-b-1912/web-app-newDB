@@ -20,6 +20,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import { hrEventBus } from '../../../services/hrEventBus';
 
 export const LeaveBalanceView: React.FC = () => {
   const [entitlements, setEntitlements] = useState<LeaveEntitlement[]>([]);
@@ -28,9 +29,15 @@ export const LeaveBalanceView: React.FC = () => {
   const [deptFilter, setDeptFilter] = useState<string>('All');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadData = () => {
     setEntitlements(leaveApi.getEntitlements());
     setLedger(leaveApi.getLedger());
+  };
+
+  useEffect(() => {
+    loadData();
+    const unsub = hrEventBus.subscribe('leave.*', () => loadData());
+    return () => unsub();
   }, []);
 
   const departments = Array.from(new Set(entitlements.map(e => e.department_name)));

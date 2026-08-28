@@ -1,6 +1,6 @@
 // src/services/auth/employeeAuthService.ts
 // ============================================================================
-// WorkForceOS — Production Employee Authentication & Identity Lifecycle Service
+// Joy PeopleHR — Production Employee Authentication & Identity Lifecycle Service
 // ============================================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
@@ -51,6 +51,7 @@ export interface EmployeeAuthIdentity {
 export interface AuthAuditEvent {
   id: string;
   tenant_id: string;
+  employee_id?: string;
   actor_id: string;
   actor_name: string;
   actor_type: 'EMPLOYEE' | 'ADMIN' | 'SYSTEM' | 'DEVICE';
@@ -65,10 +66,13 @@ export interface AuthAuditEvent {
     | 'SESSION_REVOKED'
     | 'ACCOUNT_SUSPENDED'
     | 'ACCOUNT_ACTIVATED'
+    | 'ACCOUNT_REACTIVATED'
     | 'EMPLOYEE_TERMINATED'
     | 'PROVISIONING_STARTED'
     | 'PROVISIONING_SUCCESS'
-    | 'PROVISIONING_FAILED';
+    | 'PROVISIONING_FAILED'
+    | 'PROFILE_UPDATED'
+    | (string & {});
   status: 'SUCCESS' | 'FAILURE' | 'WARNING' | 'BLOCKED';
   details?: Record<string, any>;
   ip_address?: string;
@@ -103,8 +107,8 @@ const defaultCanonicalIdentities: EmployeeAuthIdentity[] = [
     id: 'ident-admin-01',
     tenant_id: 'org-joy-01',
     employee_id: 'emp-admin-001',
-    phone: '+919840000001',
-    email: 'admin@joycorporate.com',
+    phone: '+919791817437',
+    email: 'dharunjoysolutions@gmail.com',
     role: 'Company Admin',
     status: 'ACTIVE',
     activation_status: 'ACTIVE',
@@ -943,12 +947,16 @@ class EmployeeAuthService {
     } catch {}
   }
 
+  logAuthEvent(event: Omit<AuthAuditEvent, 'id' | 'created_at'>): void {
+    this.recordAuditLog(event);
+  }
+
   getAuthAuditLogs(employeeId?: string, tenantId: string = 'org-joy-01'): AuthAuditEvent[] {
     try {
       const logs: AuthAuditEvent[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS) || '[]');
       return logs.filter((l) => {
         if (l.tenant_id !== tenantId && tenantId !== 'ALL') return false;
-        if (employeeId && l.actor_id !== employeeId) return false;
+        if (employeeId && l.actor_id !== employeeId && l.employee_id !== employeeId) return false;
         return true;
       });
     } catch {
@@ -973,7 +981,7 @@ class EmployeeAuthService {
       id: existingUser?.id || (emp ? `usr-${emp.id}` : `usr-${identity.id}`),
       organization_id: identity.tenant_id,
       email: identity.email || emp?.work_email || `${identity.phone.replace('+', '')}@workforceos.in`,
-      name: emp?.display_name || (emp ? `${emp.first_name} ${emp.last_name}` : 'WorkForceOS User'),
+      name: emp?.display_name || (emp ? `${emp.first_name} ${emp.last_name}` : 'Joy PeopleHR User'),
       avatar_url: emp?.avatar_url || '',
       employee_id: identity.employee_id,
       employee_code: emp?.employee_code,

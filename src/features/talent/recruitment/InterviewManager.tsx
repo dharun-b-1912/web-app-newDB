@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/InterviewManager.tsx
 // ============================================================================
-// WorkForceOS — Interview Management & Panel Scorecards
+// Joy PeopleHR — Interview Management & Panel Scorecards
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';

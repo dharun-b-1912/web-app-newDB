@@ -1,5 +1,6 @@
 import {
   CompOffGrant,
+  Holiday,
   HolidayCalendar,
   LeaveAdjustment,
   LeaveApproval,
@@ -11,25 +12,47 @@ import {
   LeavePolicy,
   LeaveRequest,
   LeaveType,
+  AccrualExecutionLog,
+  LeaveException,
 } from '../types/leave';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { hrEventBus } from './hrEventBus';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
 
 const STORAGE_KEYS = {
-  LEAVE_TYPES: 'workforce_leave_types_v1',
-  LEAVE_POLICIES: 'workforce_leave_policies_v1',
-  HOLIDAY_CALENDARS: 'workforce_holiday_calendars_v1',
-  ENTITLEMENTS: 'workforce_leave_entitlements_v1',
-  LEDGER: 'workforce_leave_ledger_v1',
-  REQUESTS: 'workforce_leave_requests_v1',
-  APPROVALS: 'workforce_leave_approvals_v1',
-  COMP_OFFS: 'workforce_comp_offs_v1',
-  ENCASHMENTS: 'workforce_leave_encashments_v1',
-  ADJUSTMENTS: 'workforce_leave_adjustments_v1',
-  DELEGATIONS: 'workforce_leave_delegations_v1',
-  AUDIT_LOGS: 'workforce_leave_audit_logs_v1',
+  LEAVE_TYPES: 'workforce_leave_types_v2',
+  LEAVE_POLICIES: 'workforce_leave_policies_v2',
+  HOLIDAY_CALENDARS: 'workforce_holiday_calendars_v2',
+  ENTITLEMENTS: 'workforce_leave_entitlements_v2',
+  LEDGER: 'workforce_leave_ledger_v2',
+  REQUESTS: 'workforce_leave_requests_v2',
+  APPROVALS: 'workforce_leave_approvals_v2',
+  COMP_OFFS: 'workforce_comp_offs_v2',
+  ENCASHMENTS: 'workforce_leave_encashments_v2',
+  ADJUSTMENTS: 'workforce_leave_adjustments_v2',
+  DELEGATIONS: 'workforce_leave_delegations_v2',
+  AUDIT_LOGS: 'workforce_leave_audit_logs_v2',
+  ACCRUAL_LOGS: 'workforce_accrual_logs_v2',
+  EXCEPTIONS: 'workforce_leave_exceptions_v2',
 };
+
+// Purge legacy mock data from browser localStorage once
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const legacyKeys = [
+      'workforce_leave_exceptions_v1',
+      'workforce_accrual_logs_v1',
+      'workforce_comp_offs_v1',
+      'workforce_leave_encashments_v1',
+      'workforce_leave_adjustments_v1',
+      'workforce_leave_entitlements_v1',
+      'workforce_leave_ledger_v1',
+      'workforce_leave_requests_v1',
+      'workforce_leave_approvals_v1',
+    ];
+    legacyKeys.forEach(k => window.localStorage.removeItem(k));
+  }
+} catch (_) {}
 
 // Default seed data
 const initialLeaveTypes: LeaveType[] = [
@@ -46,6 +69,11 @@ const initialLeaveTypes: LeaveType[] = [
     min_service_days: 0,
     max_days_per_request: 3,
     min_days_per_request: 0.5,
+    annual_quota: 12,
+    accrual_frequency: 'Monthly',
+    monthly_accrual_rate: 1.0,
+    accrual_credit_day: 1,
+    prorate_first_year: true,
     allow_half_day: true,
     allow_hourly: false,
     allow_negative_balance: false,
@@ -78,6 +106,11 @@ const initialLeaveTypes: LeaveType[] = [
     min_service_days: 0,
     max_days_per_request: 14,
     min_days_per_request: 0.5,
+    annual_quota: 10,
+    accrual_frequency: 'Monthly',
+    monthly_accrual_rate: 0.83,
+    accrual_credit_day: 1,
+    prorate_first_year: true,
     allow_half_day: true,
     allow_hourly: true,
     allow_negative_balance: true,
@@ -111,6 +144,11 @@ const initialLeaveTypes: LeaveType[] = [
     min_service_days: 90,
     max_days_per_request: 30,
     min_days_per_request: 1,
+    annual_quota: 15,
+    accrual_frequency: 'Monthly',
+    monthly_accrual_rate: 1.25,
+    accrual_credit_day: 1,
+    prorate_first_year: true,
     allow_half_day: false,
     allow_hourly: false,
     allow_negative_balance: false,
@@ -232,151 +270,125 @@ const initialHolidayCalendars: HolidayCalendar[] = [
     id: 'hol-tn-2026',
     code: 'TN-2026',
     name: 'Tamil Nadu India Holidays 2026',
-    description: 'Official statutory and regional holiday list for Coimbatore & TN branches.',
+    description: 'Official statutory and regional holiday list for Coimbatore & Chennai branches.',
     company_id: 'comp-01',
-    location_ids: ['loc-cbe-01'],
+    location_ids: ['loc-cbe-01', 'loc-che-01'],
     year: 2026,
     status: 'Active',
     weekly_offs: ['Saturday', 'Sunday'],
+    alternate_saturdays: 'None',
+    restricted_holiday_max_allowed: 2,
+    is_default: true,
     created_at: '2026-01-01T00:00:00Z',
     holidays: [
-      { id: 'h1', calendar_id: 'hol-tn-2026', name: 'New Year Day', date: '2026-01-01', type: 'Public', is_optional: false },
-      { id: 'h2', calendar_id: 'hol-tn-2026', name: 'Pongal / Makar Sankranti', date: '2026-01-14', type: 'Regional', is_optional: false },
-      { id: 'h3', calendar_id: 'hol-tn-2026', name: 'Thiruvalluvar Day', date: '2026-01-15', type: 'Regional', is_optional: false },
-      { id: 'h4', calendar_id: 'hol-tn-2026', name: 'Republic Day', date: '2026-01-26', type: 'National', is_optional: false },
-      { id: 'h5', calendar_id: 'hol-tn-2026', name: 'Good Friday', date: '2026-04-03', type: 'Public', is_optional: false },
-      { id: 'h6', calendar_id: 'hol-tn-2026', name: 'May Day / Labor Day', date: '2026-05-01', type: 'National', is_optional: false },
-      { id: 'h7', calendar_id: 'hol-tn-2026', name: 'Independence Day', date: '2026-08-15', type: 'National', is_optional: false },
-      { id: 'h8', calendar_id: 'hol-tn-2026', name: 'Vinayakar Chathurthi', date: '2026-09-14', type: 'Regional', is_optional: true },
-      { id: 'h9', calendar_id: 'hol-tn-2026', name: 'Gandhi Jayanthi', date: '2026-10-02', type: 'National', is_optional: false },
-      { id: 'h10', calendar_id: 'hol-tn-2026', name: 'Deepavali', date: '2026-11-08', type: 'Public', is_optional: false },
-      { id: 'h11', calendar_id: 'hol-tn-2026', name: 'Christmas Day', date: '2026-12-25', type: 'Public', is_optional: false },
+      { id: 'tn-h1', calendar_id: 'hol-tn-2026', name: 'New Year Day', date: '2026-01-01', type: 'Restricted', is_optional: true, day_of_week: 'Thu', category: 'Cultural', description: 'Celebration of Gregorian New Year' },
+      { id: 'tn-h2', calendar_id: 'hol-tn-2026', name: 'Pongal / Makar Sankranti', date: '2026-01-14', type: 'Mandatory', is_optional: false, day_of_week: 'Wed', category: 'Regional', description: 'Tamil Harvest Festival' },
+      { id: 'tn-h3', calendar_id: 'hol-tn-2026', name: 'Thiruvalluvar Day', date: '2026-01-15', type: 'Mandatory', is_optional: false, day_of_week: 'Thu', category: 'Regional', description: 'Honoring saint-philosopher Thiruvalluvar' },
+      { id: 'tn-h4', calendar_id: 'hol-tn-2026', name: 'Uzhavar Thirunal', date: '2026-01-16', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'Regional', description: 'Farmers festival and celebration' },
+      { id: 'tn-h5', calendar_id: 'hol-tn-2026', name: 'Republic Day', date: '2026-01-26', type: 'Mandatory', is_optional: false, day_of_week: 'Mon', category: 'National', description: 'National Republic Day celebration' },
+      { id: 'tn-h6', calendar_id: 'hol-tn-2026', name: 'Telugu / Tamil New Year (Ugadi / Puthandu)', date: '2026-03-20', type: 'Restricted', is_optional: true, day_of_week: 'Fri', category: 'Religious', description: 'Vernal equinox new year celebration' },
+      { id: 'tn-h7', calendar_id: 'hol-tn-2026', name: 'Good Friday', date: '2026-04-03', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'Religious', description: 'Christian remembrance of Good Friday' },
+      { id: 'tn-h8', calendar_id: 'hol-tn-2026', name: 'Dr. B.R. Ambedkar Jayanti', date: '2026-04-14', type: 'Mandatory', is_optional: false, day_of_week: 'Tue', category: 'National', description: 'Commemoration of the father of the Constitution' },
+      { id: 'tn-h9', calendar_id: 'hol-tn-2026', name: 'May Day / International Workers Day', date: '2026-05-01', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'National', description: 'Statutory holiday honoring workers' },
+      { id: 'tn-h10', calendar_id: 'hol-tn-2026', name: 'Bakrid / Eid al-Adha', date: '2026-05-27', type: 'Mandatory', is_optional: false, day_of_week: 'Wed', category: 'Religious', description: 'Islamic Feast of the Sacrifice' },
+      { id: 'tn-h11', calendar_id: 'hol-tn-2026', name: 'Independence Day', date: '2026-08-15', type: 'Mandatory', is_optional: false, day_of_week: 'Sat', category: 'National', description: '79th Indian Independence Day' },
+      { id: 'tn-h12', calendar_id: 'hol-tn-2026', name: 'Vinayakar Chathurthi', date: '2026-09-14', type: 'Restricted', is_optional: true, day_of_week: 'Mon', category: 'Religious', description: 'Ganesh Chaturthi festival' },
+      { id: 'tn-h13', calendar_id: 'hol-tn-2026', name: 'Gandhi Jayanthi', date: '2026-10-02', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'National', description: 'Mahatma Gandhi birthday commemoration' },
+      { id: 'tn-h14', calendar_id: 'hol-tn-2026', name: 'Ayutha Pooja / Vijaya Dasami', date: '2026-10-20', type: 'Mandatory', is_optional: false, day_of_week: 'Tue', category: 'Regional', description: 'Dussehra and Saraswati/Ayudha Puja' },
+      { id: 'tn-h15', calendar_id: 'hol-tn-2026', name: 'Deepavali Festival of Lights', date: '2026-11-08', type: 'Mandatory', is_optional: false, day_of_week: 'Sun', category: 'Religious', description: 'Major cultural festival of lights' },
+      { id: 'tn-h16', calendar_id: 'hol-tn-2026', name: 'Christmas Day', date: '2026-12-25', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'Religious', description: 'Christmas celebration' },
+    ],
+  },
+  {
+    id: 'hol-ka-2026',
+    code: 'KA-2026',
+    name: 'Karnataka Tech Hub Holidays 2026',
+    description: 'Official statutory and regional holiday list for Bengaluru Electronic City & Koramangala tech offices.',
+    company_id: 'comp-01',
+    location_ids: ['loc-blr-01'],
+    year: 2026,
+    status: 'Active',
+    weekly_offs: ['Saturday', 'Sunday'],
+    alternate_saturdays: 'None',
+    restricted_holiday_max_allowed: 2,
+    created_at: '2026-01-01T00:00:00Z',
+    holidays: [
+      { id: 'ka-h1', calendar_id: 'hol-ka-2026', name: 'New Year Day', date: '2026-01-01', type: 'Restricted', is_optional: true, day_of_week: 'Thu', category: 'Cultural', description: 'New Year celebration' },
+      { id: 'ka-h2', calendar_id: 'hol-ka-2026', name: 'Makara Sankranti', date: '2026-01-14', type: 'Mandatory', is_optional: false, day_of_week: 'Wed', category: 'Regional', description: 'Harvest festival in Karnataka' },
+      { id: 'ka-h3', calendar_id: 'hol-ka-2026', name: 'Republic Day', date: '2026-01-26', type: 'Mandatory', is_optional: false, day_of_week: 'Mon', category: 'National', description: 'National Republic Day' },
+      { id: 'ka-h4', calendar_id: 'hol-ka-2026', name: 'Maha Shivaratri', date: '2026-02-16', type: 'Restricted', is_optional: true, day_of_week: 'Mon', category: 'Religious', description: 'Great night of Shiva' },
+      { id: 'ka-h5', calendar_id: 'hol-ka-2026', name: 'Chandramana Ugadi', date: '2026-03-20', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'Regional', description: 'Kannada New Year' },
+      { id: 'ka-h6', calendar_id: 'hol-ka-2026', name: 'Good Friday', date: '2026-04-03', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'Religious', description: 'Good Friday' },
+      { id: 'ka-h7', calendar_id: 'hol-ka-2026', name: 'Dr. B.R. Ambedkar Jayanti', date: '2026-04-14', type: 'Mandatory', is_optional: false, day_of_week: 'Tue', category: 'National', description: 'Ambedkar Jayanti' },
+      { id: 'ka-h8', calendar_id: 'hol-ka-2026', name: 'May Day', date: '2026-05-01', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'National', description: 'Labour Day' },
+      { id: 'ka-h9', calendar_id: 'hol-ka-2026', name: 'Independence Day', date: '2026-08-15', type: 'Mandatory', is_optional: false, day_of_week: 'Sat', category: 'National', description: 'Indian Independence Day' },
+      { id: 'ka-h10', calendar_id: 'hol-ka-2026', name: 'Ganesh Chaturthi', date: '2026-09-14', type: 'Mandatory', is_optional: false, day_of_week: 'Mon', category: 'Religious', description: 'Ganesh Festival' },
+      { id: 'ka-h11', calendar_id: 'hol-ka-2026', name: 'Gandhi Jayanthi', date: '2026-10-02', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'National', description: 'Gandhi Jayanthi' },
+      { id: 'ka-h12', calendar_id: 'hol-ka-2026', name: 'Kannada Rajyotsava', date: '2026-11-01', type: 'Mandatory', is_optional: false, day_of_week: 'Sun', category: 'Regional', description: 'Karnataka State Formation Day' },
+      { id: 'ka-h13', calendar_id: 'hol-ka-2026', name: 'Deepavali / Balipadyami', date: '2026-11-09', type: 'Mandatory', is_optional: false, day_of_week: 'Mon', category: 'Religious', description: 'Diwali Balipadyami' },
+      { id: 'ka-h14', calendar_id: 'hol-ka-2026', name: 'Christmas Day', date: '2026-12-25', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'Religious', description: 'Christmas' },
+    ],
+  },
+  {
+    id: 'hol-mh-2026',
+    code: 'MH-2026',
+    name: 'Maharashtra / Mumbai Office 2026',
+    description: 'Statutory and state holiday calendar for Mumbai BKC & Pune development centers.',
+    company_id: 'comp-01',
+    location_ids: ['loc-mum-01', 'loc-pun-01'],
+    year: 2026,
+    status: 'Active',
+    weekly_offs: ['Saturday', 'Sunday'],
+    alternate_saturdays: 'None',
+    restricted_holiday_max_allowed: 2,
+    created_at: '2026-01-01T00:00:00Z',
+    holidays: [
+      { id: 'mh-h1', calendar_id: 'hol-mh-2026', name: 'Republic Day', date: '2026-01-26', type: 'Mandatory', is_optional: false, day_of_week: 'Mon', category: 'National', description: 'Republic Day' },
+      { id: 'mh-h2', calendar_id: 'hol-mh-2026', name: 'Chhatrapati Shivaji Maharaj Jayanti', date: '2026-02-19', type: 'Mandatory', is_optional: false, day_of_week: 'Thu', category: 'Regional', description: 'Shiv Jayanti' },
+      { id: 'mh-h3', calendar_id: 'hol-mh-2026', name: 'Holi (Second Day - Dhulivandan)', date: '2026-03-04', type: 'Mandatory', is_optional: false, day_of_week: 'Wed', category: 'Religious', description: 'Festival of Colors' },
+      { id: 'mh-h4', calendar_id: 'hol-mh-2026', name: 'Gudi Padwa', date: '2026-03-20', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'Regional', description: 'Marathi New Year' },
+      { id: 'mh-h5', calendar_id: 'hol-mh-2026', name: 'Maharashtra Din / May Day', date: '2026-05-01', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'Regional', description: 'Maharashtra State Formation Day' },
+      { id: 'mh-h6', calendar_id: 'hol-mh-2026', name: 'Independence Day', date: '2026-08-15', type: 'Mandatory', is_optional: false, day_of_week: 'Sat', category: 'National', description: 'Independence Day' },
+      { id: 'mh-h7', calendar_id: 'hol-mh-2026', name: 'Ganesh Chaturthi', date: '2026-09-14', type: 'Mandatory', is_optional: false, day_of_week: 'Mon', category: 'Regional', description: 'Ganesh Chaturthi' },
+      { id: 'mh-h8', calendar_id: 'hol-mh-2026', name: 'Gandhi Jayanthi', date: '2026-10-02', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'National', description: 'Gandhi Jayanthi' },
+      { id: 'mh-h9', calendar_id: 'hol-mh-2026', name: 'Dussehra (Vijayadashami)', date: '2026-10-20', type: 'Mandatory', is_optional: false, day_of_week: 'Tue', category: 'Religious', description: 'Dussehra festival' },
+      { id: 'mh-h10', calendar_id: 'hol-mh-2026', name: 'Diwali (Laxmi Pujan)', date: '2026-11-08', type: 'Mandatory', is_optional: false, day_of_week: 'Sun', category: 'Religious', description: 'Diwali Laxmi Pujan' },
+      { id: 'mh-h11', calendar_id: 'hol-mh-2026', name: 'Diwali (Bhaubeej / Balipratipada)', date: '2026-11-10', type: 'Mandatory', is_optional: false, day_of_week: 'Tue', category: 'Religious', description: 'Bhaubeej' },
+      { id: 'mh-h12', calendar_id: 'hol-mh-2026', name: 'Christmas Day', date: '2026-12-25', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'Religious', description: 'Christmas' },
+    ],
+  },
+  {
+    id: 'hol-us-2026',
+    code: 'US-2026',
+    name: 'US Global Branch Holidays 2026',
+    description: 'Federal and corporate holiday calendar for US-based remote & Austin branch personnel.',
+    company_id: 'comp-01',
+    location_ids: ['loc-us-01', 'loc-us-austin'],
+    year: 2026,
+    status: 'Active',
+    weekly_offs: ['Saturday', 'Sunday'],
+    alternate_saturdays: 'None',
+    restricted_holiday_max_allowed: 3,
+    created_at: '2026-01-01T00:00:00Z',
+    holidays: [
+      { id: 'us-h1', calendar_id: 'hol-us-2026', name: "New Year's Day", date: '2026-01-01', type: 'Mandatory', is_optional: false, day_of_week: 'Thu', category: 'National', description: 'Federal New Year Holiday' },
+      { id: 'us-h2', calendar_id: 'hol-us-2026', name: 'Martin Luther King Jr. Day', date: '2026-01-19', type: 'Mandatory', is_optional: false, day_of_week: 'Mon', category: 'National', description: 'MLK Jr. Birthday remembrance' },
+      { id: 'us-h3', calendar_id: 'hol-us-2026', name: "Presidents' Day", date: '2026-02-16', type: 'Restricted', is_optional: true, day_of_week: 'Mon', category: 'National', description: "Washington's Birthday" },
+      { id: 'us-h4', calendar_id: 'hol-us-2026', name: 'Memorial Day', date: '2026-05-25', type: 'Mandatory', is_optional: false, day_of_week: 'Mon', category: 'National', description: 'Honoring US Military Personnel' },
+      { id: 'us-h5', calendar_id: 'hol-us-2026', name: 'Juneteenth National Independence Day', date: '2026-06-19', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'National', description: 'Emancipation commemoration' },
+      { id: 'us-h6', calendar_id: 'hol-us-2026', name: 'Independence Day (Observed)', date: '2026-07-03', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'National', description: '4th of July celebration' },
+      { id: 'us-h7', calendar_id: 'hol-us-2026', name: 'Labor Day', date: '2026-09-07', type: 'Mandatory', is_optional: false, day_of_week: 'Mon', category: 'National', description: 'Federal Labor Day' },
+      { id: 'us-h8', calendar_id: 'hol-us-2026', name: 'Veterans Day', date: '2026-11-11', type: 'Restricted', is_optional: true, day_of_week: 'Wed', category: 'National', description: 'Honoring military veterans' },
+      { id: 'us-h9', calendar_id: 'hol-us-2026', name: 'Thanksgiving Day', date: '2026-11-26', type: 'Mandatory', is_optional: false, day_of_week: 'Thu', category: 'National', description: 'National Thanksgiving' },
+      { id: 'us-h10', calendar_id: 'hol-us-2026', name: 'Day After Thanksgiving (Black Friday)', date: '2026-11-27', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'Corporate', description: 'Corporate floating holiday' },
+      { id: 'us-h11', calendar_id: 'hol-us-2026', name: 'Christmas Day', date: '2026-12-25', type: 'Mandatory', is_optional: false, day_of_week: 'Fri', category: 'Religious', description: 'Federal Christmas Day' },
     ],
   },
 ];
 
 const initialLeaveRequests: LeaveRequest[] = [];
-
-const initialEntitlements: LeaveEntitlement[] = [
-  {
-    id: 'ent-101-pl',
-    employee_id: 'emp-101',
-    employee_name: 'Rajesh Kumar',
-    department_name: 'Engineering',
-    leave_type_id: 'lt-pl',
-    leave_type_name: 'Privilege / Earned Leave',
-    policy_id: 'pol-ind-01',
-    policy_name: 'Acme India Standard Policy 2026',
-    period: '2026',
-    opening_balance: 10,
-    granted: 12,
-    accrued: 14,
-    carried_forward: 5,
-    adjustments: 0,
-    used: 4,
-    pending: 4,
-    encashed: 0,
-    expired: 0,
-    closing_balance: 25,
-    available_balance: 21,
-    updated_at: '2026-08-01T00:00:00Z',
-  },
-  {
-    id: 'ent-101-cl',
-    employee_id: 'emp-101',
-    employee_name: 'Rajesh Kumar',
-    department_name: 'Engineering',
-    leave_type_id: 'lt-cl',
-    leave_type_name: 'Casual Leave',
-    policy_id: 'pol-ind-01',
-    policy_name: 'Acme India Standard Policy 2026',
-    period: '2026',
-    opening_balance: 0,
-    granted: 12,
-    accrued: 8,
-    carried_forward: 0,
-    adjustments: 1,
-    used: 3,
-    pending: 0,
-    encashed: 0,
-    expired: 0,
-    closing_balance: 6,
-    available_balance: 6,
-    updated_at: '2026-08-01T00:00:00Z',
-  },
-  {
-    id: 'ent-102-cl',
-    employee_id: 'emp-102',
-    employee_name: 'Sarah Jenkins',
-    department_name: 'Product Management',
-    leave_type_id: 'lt-cl',
-    leave_type_name: 'Casual Leave',
-    policy_id: 'pol-ind-01',
-    policy_name: 'Acme India Standard Policy 2026',
-    period: '2026',
-    opening_balance: 0,
-    granted: 12,
-    accrued: 8,
-    carried_forward: 0,
-    adjustments: 0,
-    used: 4,
-    pending: 0,
-    encashed: 0,
-    expired: 0,
-    closing_balance: 4,
-    available_balance: 4,
-    updated_at: '2026-08-01T00:00:00Z',
-  },
-];
-
-const initialLedger: LeaveLedgerTransaction[] = [
-  {
-    id: 'led-1',
-    employee_id: 'emp-101',
-    employee_name: 'Rajesh Kumar',
-    leave_type_id: 'lt-pl',
-    leave_type_name: 'Privilege / Earned Leave',
-    date: '2026-01-01',
-    transaction_type: 'Opening',
-    amount: 5,
-    balance_after: 5,
-    actor_id: 'sys',
-    actor_name: 'Yearly Carry Forward Job',
-    reason: 'Carry forward balance from 2025',
-    created_at: '2026-01-01T00:00:00Z',
-  },
-  {
-    id: 'led-2',
-    employee_id: 'emp-101',
-    employee_name: 'Rajesh Kumar',
-    leave_type_id: 'lt-pl',
-    leave_type_name: 'Privilege / Earned Leave',
-    date: '2026-01-01',
-    transaction_type: 'Accrual',
-    amount: 14,
-    balance_after: 19,
-    actor_id: 'sys',
-    actor_name: 'Monthly Accrual Job',
-    reason: 'Monthly accrual grant',
-    created_at: '2026-01-01T00:00:00Z',
-  },
-  {
-    id: 'led-3',
-    employee_id: 'emp-101',
-    employee_name: 'Rajesh Kumar',
-    leave_type_id: 'lt-pl',
-    leave_type_name: 'Privilege / Earned Leave',
-    date: '2026-05-10',
-    transaction_type: 'Consumption',
-    amount: -4,
-    balance_after: 15,
-    reference_id: 'lr-099',
-    actor_id: 'emp-100',
-    actor_name: 'Anand Viswanathan',
-    reason: 'Approved Leave Request LR-2026-055',
-    created_at: '2026-05-10T14:00:00Z',
-  },
-];
+const initialEntitlements: LeaveEntitlement[] = [];
+const initialLedger: LeaveLedgerTransaction[] = [];
 
 const initialLeavePolicies: LeavePolicy[] = [
   {
@@ -617,6 +629,22 @@ export const leaveApi = {
       new_value: `Leave Type ${type.name} (${type.code}) saved.`,
     });
 
+    hrEventBus.publish('leave.type_updated', type, { actorId: 'admin' });
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.from('realtime_outbox').insert({
+          tenant_id: 'org-joy-01',
+          organization_id: 'org-joy-01',
+          entity_type: 'leave_types',
+          entity_id: type.id,
+          event_type: 'leave.type_updated',
+          actor_id: 'admin',
+          payload: type,
+        })
+      ).catch(() => {});
+    }
+
     return type;
   },
 
@@ -649,6 +677,8 @@ export const leaveApi = {
         entity_id: target.id,
         new_value: `Deactivated ${target.name} due to existing transaction history.`,
       });
+
+      hrEventBus.publish('leave.type_updated', target, { actorId: 'admin' });
       return { success: true, deactivated: true, message: 'This leave type has historical ledger transactions. It has been deactivated instead of permanently deleted to preserve audit integrity.' };
     }
 
@@ -659,6 +689,18 @@ export const leaveApi = {
       Promise.resolve(
         supabase.from('leave_types').delete().eq('id', typeId)
       ).catch((e: any) => console.warn('[Supabase Leave] delete leave_type failed:', e));
+
+      Promise.resolve(
+        supabase.from('realtime_outbox').insert({
+          tenant_id: 'org-joy-01',
+          organization_id: 'org-joy-01',
+          entity_type: 'leave_types',
+          entity_id: typeId,
+          event_type: 'leave.type_deleted',
+          actor_id: 'admin',
+          payload: { id: typeId, code: target.code, name: target.name },
+        })
+      ).catch(() => {});
     }
 
     leaveApi.addAuditLog({
@@ -669,6 +711,8 @@ export const leaveApi = {
       entity_id: typeId,
       new_value: `Deleted ${target.name}.`,
     });
+
+    hrEventBus.publish('leave.type_deleted', { id: typeId, code: target.code, name: target.name }, { actorId: 'admin' });
     return { success: true, deactivated: false, message: 'Leave type permanently deleted.' };
   },
 
@@ -743,12 +787,8 @@ export const leaveApi = {
     const policies = leaveApi.getLeavePolicies().filter(p => p.status === 'Active');
     const conflicts: { employee_id: string; employee_name: string; matching_policies: string[]; winning_policy: string; rule: string }[] = [];
 
-    // Check test population sample
-    const sampleEmployees = [
-      { id: 'emp-101', name: 'Rajesh Kumar', dept: 'Engineering', employment_type: 'Full Time', location: 'loc-cbe-01' },
-      { id: 'emp-102', name: 'Ananya Sen', dept: 'Operations', employment_type: 'Full Time', location: 'loc-cbe-01' },
-      { id: 'emp-103', name: 'Vikramaditya Rao', dept: 'Manufacturing', employment_type: 'Contract', location: 'loc-blr-01' },
-    ];
+    // Check actual employee population or empty
+    const sampleEmployees: any[] = [];
 
     sampleEmployees.forEach(emp => {
       const matches = policies.filter(pol => {
@@ -781,13 +821,204 @@ export const leaveApi = {
   saveHolidayCalendar: (calendar: HolidayCalendar): HolidayCalendar => {
     const cals = leaveApi.getHolidayCalendars();
     const idx = cals.findIndex(c => c.id === calendar.id);
+    const updatedCal: HolidayCalendar = {
+      ...calendar,
+      updated_at: new Date().toISOString(),
+    };
     if (idx >= 0) {
-      cals[idx] = calendar;
+      cals[idx] = updatedCal;
     } else {
-      cals.push(calendar);
+      cals.push(updatedCal);
     }
     setStored(STORAGE_KEYS.HOLIDAY_CALENDARS, cals);
-    return calendar;
+
+    leaveApi.addAuditLog({
+      actor_id: 'admin',
+      actor_name: 'HR Admin',
+      action: idx >= 0 ? 'UPDATE_HOLIDAY_CALENDAR' : 'CREATE_HOLIDAY_CALENDAR',
+      entity_type: 'HolidayCalendar',
+      entity_id: calendar.id,
+      new_value: `Saved holiday calendar: ${calendar.name} (${calendar.year}) with ${calendar.holidays?.length || 0} holidays`,
+    });
+
+    hrEventBus.publish('leave.holiday_updated', { calendar: updatedCal });
+    hrEventBus.publish('leave.calendar_updated', { calendarId: updatedCal.id });
+    return updatedCal;
+  },
+
+  deleteHolidayCalendar: (calendarId: string): { success: boolean; message: string } => {
+    const cals = leaveApi.getHolidayCalendars();
+    const target = cals.find(c => c.id === calendarId);
+    if (!target) throw new Error('Holiday calendar not found');
+
+    const filtered = cals.filter(c => c.id !== calendarId);
+    setStored(STORAGE_KEYS.HOLIDAY_CALENDARS, filtered);
+
+    leaveApi.addAuditLog({
+      actor_id: 'admin',
+      actor_name: 'HR Admin',
+      action: 'DELETE_HOLIDAY_CALENDAR',
+      entity_type: 'HolidayCalendar',
+      entity_id: calendarId,
+      new_value: `Deleted holiday calendar: ${target.name} (${target.year})`,
+    });
+
+    hrEventBus.publish('leave.holiday_updated', { deletedCalendarId: calendarId });
+    hrEventBus.publish('leave.calendar_updated', { calendarId });
+    return { success: true, message: `Holiday calendar "${target.name}" deleted.` };
+  },
+
+  addHoliday: (calendarId: string, holiday: Omit<Holiday, 'id'>): Holiday => {
+    const cals = leaveApi.getHolidayCalendars();
+    const calIdx = cals.findIndex(c => c.id === calendarId);
+    if (calIdx < 0) throw new Error('Holiday calendar not found');
+
+    const newHoliday: Holiday = {
+      ...holiday,
+      id: `hol-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      calendar_id: calendarId,
+    };
+
+    const currentHolidays = cals[calIdx].holidays || [];
+    const updatedHolidays = [...currentHolidays, newHoliday].sort((a, b) => a.date.localeCompare(b.date));
+    cals[calIdx] = {
+      ...cals[calIdx],
+      holidays: updatedHolidays,
+      updated_at: new Date().toISOString(),
+    };
+
+    setStored(STORAGE_KEYS.HOLIDAY_CALENDARS, cals);
+
+    leaveApi.addAuditLog({
+      actor_id: 'admin',
+      actor_name: 'HR Admin',
+      action: 'ADD_HOLIDAY',
+      entity_type: 'HolidayCalendar',
+      entity_id: calendarId,
+      new_value: `Added holiday "${newHoliday.name}" on ${newHoliday.date} (${newHoliday.type}) to ${cals[calIdx].name}`,
+    });
+
+    hrEventBus.publish('leave.holiday_updated', { calendarId, holiday: newHoliday });
+    hrEventBus.publish('leave.calendar_updated', { calendarId });
+    return newHoliday;
+  },
+
+  updateHoliday: (calendarId: string, holiday: Holiday): Holiday => {
+    const cals = leaveApi.getHolidayCalendars();
+    const calIdx = cals.findIndex(c => c.id === calendarId);
+    if (calIdx < 0) throw new Error('Holiday calendar not found');
+
+    const currentHolidays = cals[calIdx].holidays || [];
+    const hIdx = currentHolidays.findIndex(h => h.id === holiday.id);
+    if (hIdx < 0) throw new Error('Holiday not found');
+
+    currentHolidays[hIdx] = holiday;
+    currentHolidays.sort((a, b) => a.date.localeCompare(b.date));
+
+    cals[calIdx] = {
+      ...cals[calIdx],
+      holidays: currentHolidays,
+      updated_at: new Date().toISOString(),
+    };
+
+    setStored(STORAGE_KEYS.HOLIDAY_CALENDARS, cals);
+
+    leaveApi.addAuditLog({
+      actor_id: 'admin',
+      actor_name: 'HR Admin',
+      action: 'UPDATE_HOLIDAY',
+      entity_type: 'HolidayCalendar',
+      entity_id: calendarId,
+      new_value: `Updated holiday "${holiday.name}" on ${holiday.date}`,
+    });
+
+    hrEventBus.publish('leave.holiday_updated', { calendarId, holiday });
+    hrEventBus.publish('leave.calendar_updated', { calendarId });
+    return holiday;
+  },
+
+  deleteHoliday: (calendarId: string, holidayId: string): void => {
+    const cals = leaveApi.getHolidayCalendars();
+    const calIdx = cals.findIndex(c => c.id === calendarId);
+    if (calIdx < 0) throw new Error('Holiday calendar not found');
+
+    const currentHolidays = cals[calIdx].holidays || [];
+    const targetH = currentHolidays.find(h => h.id === holidayId);
+    const updatedHolidays = currentHolidays.filter(h => h.id !== holidayId);
+
+    cals[calIdx] = {
+      ...cals[calIdx],
+      holidays: updatedHolidays,
+      updated_at: new Date().toISOString(),
+    };
+
+    setStored(STORAGE_KEYS.HOLIDAY_CALENDARS, cals);
+
+    leaveApi.addAuditLog({
+      actor_id: 'admin',
+      actor_name: 'HR Admin',
+      action: 'DELETE_HOLIDAY',
+      entity_type: 'HolidayCalendar',
+      entity_id: calendarId,
+      new_value: `Removed holiday "${targetH?.name || holidayId}" from ${cals[calIdx].name}`,
+    });
+
+    hrEventBus.publish('leave.holiday_updated', { calendarId, deletedHolidayId: holidayId });
+    hrEventBus.publish('leave.calendar_updated', { calendarId });
+  },
+
+  duplicateHolidayCalendar: (sourceCalId: string, targetYear: number, newName: string): HolidayCalendar => {
+    const cals = leaveApi.getHolidayCalendars();
+    const source = cals.find(c => c.id === sourceCalId);
+    if (!source) throw new Error('Source holiday calendar not found');
+
+    const yearDiff = targetYear - source.year;
+    const newId = `hol-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+    const clonedHolidays: Holiday[] = (source.holidays || []).map((h, i) => {
+      const parts = h.date.split('-');
+      const month = parts[1];
+      const day = parts[2];
+      const newDate = `${targetYear}-${month}-${day}`;
+      const dt = new Date(`${newDate}T00:00:00`);
+      const dayOfWeek = isNaN(dt.getTime()) ? h.day_of_week : dt.toLocaleDateString('en-US', { weekday: 'short' });
+
+      return {
+        ...h,
+        id: `${newId}-h${i + 1}`,
+        calendar_id: newId,
+        date: newDate,
+        day_of_week: dayOfWeek,
+      };
+    });
+
+    const newCalendar: HolidayCalendar = {
+      ...source,
+      id: newId,
+      code: `${source.code.replace(/\d{4}$/, '')}${targetYear}`,
+      name: newName || `${source.name.replace(/\d{4}$/, '')} ${targetYear}`,
+      year: targetYear,
+      holidays: clonedHolidays,
+      is_default: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    cals.push(newCalendar);
+    setStored(STORAGE_KEYS.HOLIDAY_CALENDARS, cals);
+
+    leaveApi.addAuditLog({
+      actor_id: 'admin',
+      actor_name: 'HR Admin',
+      action: 'DUPLICATE_HOLIDAY_CALENDAR',
+      entity_type: 'HolidayCalendar',
+      entity_id: newId,
+      new_value: `Cloned calendar "${source.name}" (${source.year}) into "${newCalendar.name}" (${targetYear}) with ${clonedHolidays.length} holidays.`,
+    });
+
+    hrEventBus.publish('leave.holiday_updated', { calendar: newCalendar });
+    hrEventBus.publish('leave.calendar_updated', { calendarId: newId });
+    return newCalendar;
   },
 
   // --- Leave Requests ---
@@ -895,15 +1126,57 @@ export const leaveApi = {
     setStored(STORAGE_KEYS.REQUESTS, requests);
 
     if (isSupabaseEnabled) {
-      Promise.resolve(
-        supabase
-          .from('leave_requests')
-          .update({
-            status: 'Approved',
-            approved_at: req.approved_at,
-          })
-          .eq('id', req.id)
-      ).catch((e: any) => console.warn('[Supabase Leave] approve failed:', e));
+      (async () => {
+        try {
+          // Ensure request exists in Supabase before approving
+          await supabase
+            .from('leave_requests')
+            .upsert({
+              id: req.id,
+              organization_id: 'org-joy-01',
+              company_id: req.company_id || 'comp-01',
+              employee_id: req.employee_id,
+              request_code: req.request_code,
+              employee_name: req.employee_name,
+              department_name: req.department_name,
+              leave_type_id: req.leave_type_id,
+              leave_type_name: req.leave_type_name,
+              leave_type_code: req.leave_type_code || 'CL',
+              from_date: req.from_date,
+              to_date: req.to_date,
+              total_calendar_days: req.total_calendar_days || 1,
+              working_days: req.working_days || 1,
+              leave_days_deducted: req.leave_days_deducted || 1,
+              reason: req.reason || 'Leave request',
+              manager_id: req.manager_id,
+              manager_name: req.manager_name,
+              status: 'Pending',
+              submitted_at: req.submitted_at || new Date().toISOString(),
+              created_at: req.created_at || new Date().toISOString(),
+            }, { onConflict: 'id', ignoreDuplicates: true });
+
+          const { error: rpcErr } = await supabase.rpc('fn_approve_leave_request', {
+            p_request_id: req.id,
+            p_approver_id: 'hr-admin',
+            p_approver_name: approverName,
+            p_comments: comments || null,
+          });
+
+          if (rpcErr) {
+            console.warn('[Supabase Leave] RPC approve notice:', rpcErr);
+            await supabase
+              .from('leave_requests')
+              .update({
+                status: 'Approved',
+                approved_at: req.approved_at,
+                current_approver_name: approverName,
+              })
+              .eq('id', req.id);
+          }
+        } catch (e: any) {
+          console.warn('[Supabase Leave] approve sync failed:', e);
+        }
+      })();
     }
 
     // 1. Post consumption transaction to Ledger
@@ -937,35 +1210,23 @@ export const leaveApi = {
       const rawAtt = localStorage.getItem(storedAttendanceKey);
       const attLogs = rawAtt ? JSON.parse(rawAtt) : [];
 
-      req.daily_breakdown.forEach(day => {
-        if (day.is_working_day) {
-          const status = day.is_half_day ? 'Half Day' : 'On Leave';
-          const roster = attendanceRosterService.getRosterForEmployeeOnDate(req.employee_id, day.date, req.company_id);
-          const shift = attendanceRosterService.getShiftById(roster.shift_id, req.company_id);
-
-          attLogs.unshift({
-            id: `att-leave-${Date.now()}-${day.date}`,
-            employee_id: req.employee_id,
-            employee_name: req.employee_name,
-            department: req.department_name,
-            date: day.date,
-            shift_name: `${roster.shift_name} (${roster.shift_code})`,
-            scheduled_start: shift?.start_time || '09:00',
-            scheduled_end: shift?.end_time || '18:00',
-            first_check_in: '-',
-            last_check_out: '-',
-            gross_hours: 0,
-            break_hours: 0,
-            net_hours: day.is_half_day ? 4 : 0,
-            status: status,
-            punch_source: 'Manual / System',
-            is_late_arrival: false,
-            is_early_checkout: false,
-            regularization_status: 'Approved',
-            overtime_hours: 0,
-          });
-        }
-      });
+      if (Array.isArray(req.daily_breakdown) && req.daily_breakdown.length > 0) {
+        req.daily_breakdown.forEach((day: any) => {
+          if (day.is_working_day) {
+            attLogs.unshift({
+              id: `att-leave-${Date.now()}-${day.date}`,
+              employee_id: req.employee_id,
+              employee_name: req.employee_name,
+              department: req.department_name,
+              date: day.date,
+              status: day.is_half_day ? 'Half Day' : 'On Leave',
+              is_approved_leave: true,
+              leave_type_code: req.leave_type_code || 'CL',
+              created_at: new Date().toISOString(),
+            });
+          }
+        });
+      }
       localStorage.setItem(storedAttendanceKey, JSON.stringify(attLogs));
     } catch (e) {
       console.warn('Attendance sync exception:', e);
@@ -1000,13 +1261,22 @@ export const leaveApi = {
 
     if (isSupabaseEnabled) {
       Promise.resolve(
+        supabase.rpc('fn_reject_leave_request', {
+          p_request_id: req.id,
+          p_rejector_id: 'hr-admin',
+          p_rejector_name: rejectorName,
+          p_rejection_reason: reason,
+        })
+      ).catch((e: any) => {
+        console.warn('[Supabase Leave] RPC reject failed, fallback to direct update:', e);
         supabase
           .from('leave_requests')
           .update({
             status: 'Rejected',
+            rejection_reason: reason,
           })
-          .eq('id', req.id)
-      ).catch((e: any) => console.warn('[Supabase Leave] reject failed:', e));
+          .eq('id', req.id);
+      });
     }
 
     leaveApi.addAuditLog({
@@ -1034,6 +1304,26 @@ export const leaveApi = {
     req.cancellation_reason = reason;
 
     setStored(STORAGE_KEYS.REQUESTS, requests);
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.rpc('fn_cancel_leave_request', {
+          p_request_id: req.id,
+          p_actor_id: 'hr-admin',
+          p_actor_name: actorName,
+          p_cancellation_reason: reason,
+        })
+      ).catch((e: any) => {
+        console.warn('[Supabase Leave] RPC cancel failed, fallback to direct update:', e);
+        supabase
+          .from('leave_requests')
+          .update({
+            status: 'Cancelled',
+            rejection_reason: reason,
+          })
+          .eq('id', req.id);
+      });
+    }
 
     // If request was previously approved, issue a reversal transaction to restore balance
     if (wasApproved) {
@@ -1097,23 +1387,7 @@ export const leaveApi = {
 
   // --- Compensatory Off (Comp-Off) ---
   getCompOffGrants: (): CompOffGrant[] => {
-    return getStored(STORAGE_KEYS.COMP_OFFS, [
-      {
-        id: 'cog-101',
-        employee_id: 'emp-101',
-        employee_name: 'Rajesh Kumar',
-        earned_date: '2026-07-12',
-        worked_date: '2026-07-12',
-        source: 'WeekendDeployment',
-        hours_worked: 8,
-        comp_off_days_earned: 1.0,
-        credit_days: 1.0,
-        expiry_date: '2026-09-10',
-        status: 'Approved',
-        approved_by_name: 'Anand Viswanathan (HR Head)',
-        reason: 'Worked on Sunday deployment shift for Cloud release v4.2',
-      },
-    ]);
+    return getStored(STORAGE_KEYS.COMP_OFFS, []);
   },
 
   claimCompOffCredit: (grant: Omit<CompOffGrant, 'id' | 'status' | 'comp_off_days_earned'>): CompOffGrant => {
@@ -1201,28 +1475,7 @@ export const leaveApi = {
 
   // --- Leave Encashment ---
   getEncashments: (): LeaveEncashmentRequest[] => {
-    return getStored(STORAGE_KEYS.ENCASHMENTS, [
-      {
-        id: 'enc-101',
-        request_code: 'ENC-2026-01',
-        employee_id: 'emp-101',
-        employee_name: 'Rajesh Kumar',
-        department_name: 'Engineering',
-        leave_type_id: 'lt-pl',
-        leave_type_name: 'Privilege / Earned Leave',
-        available_balance: 21,
-        requested_days: 5,
-        days_to_encash: 5,
-        eligible_days: 10,
-        calculation_basis: 'BasicSalary',
-        estimated_amount: 18500,
-        payroll_period: 'August 2026',
-        payroll_status: 'Pending',
-        status: 'Submitted',
-        submitted_at: '2026-08-01T10:00:00Z',
-        notes: 'Mid-year leave encashment request per company policy.',
-      },
-    ]);
+    return getStored(STORAGE_KEYS.ENCASHMENTS, []);
   },
 
   submitEncashmentRequest: (req: Omit<LeaveEncashmentRequest, 'id' | 'request_code' | 'submitted_at' | 'status'>): LeaveEncashmentRequest => {
@@ -1314,24 +1567,7 @@ export const leaveApi = {
 
   // --- Leave Adjustments ---
   getAdjustments: (): LeaveAdjustment[] => {
-    return getStored(STORAGE_KEYS.ADJUSTMENTS, [
-      {
-        id: 'adj-101',
-        employee_id: 'emp-101',
-        employee_name: 'Rajesh Kumar',
-        leave_type_id: 'lt-cl',
-        leave_type_name: 'Casual Leave',
-        adjustment_type: 'Add',
-        amount: 1,
-        reason: 'Correction for unrecorded compensatory credit',
-        reference_no: 'HR-ADJ-2026-044',
-        effective_date: '2026-07-15',
-        created_by_name: 'Anand Viswanathan (HR Head)',
-        actor_name: 'Anand Viswanathan (HR Head)',
-        status: 'Approved',
-        created_at: '2026-07-15T10:00:00Z',
-      },
-    ]);
+    return getStored(STORAGE_KEYS.ADJUSTMENTS, []);
   },
 
   createAdjustment: (adj: Omit<LeaveAdjustment, 'id' | 'created_at'>): LeaveAdjustment => {
@@ -1385,7 +1621,7 @@ export const leaveApi = {
       const entitlements = leaveApi.getEntitlements();
       const ent = entitlements.find(e => e.employee_id === adj.employee_id && e.leave_type_id === adj.leave_type_id);
       if (ent) {
-        ent.adjusted = (ent.adjusted || 0) + netAmount;
+        ent.adjustments = (ent.adjustments || 0) + netAmount;
         ent.available_balance = (ent.available_balance || 0) + netAmount;
         setStored(STORAGE_KEYS.ENTITLEMENTS, entitlements);
       }
@@ -1405,24 +1641,7 @@ export const leaveApi = {
 
   // --- Accrual Engine Logs & Batch Processing ---
   getAccrualLogs: (): AccrualExecutionLog[] => {
-    return getStored('workforce_accrual_logs_v1', [
-      {
-        id: 'acc-2026-07',
-        period: '2026-07',
-        run_timestamp: '2026-07-01T00:05:00Z',
-        employees_processed: 428,
-        total_leave_days_credited: 856,
-        status: 'Completed',
-      },
-      {
-        id: 'acc-2026-06',
-        period: '2026-06',
-        run_timestamp: '2026-06-01T00:05:00Z',
-        employees_processed: 425,
-        total_leave_days_credited: 850,
-        status: 'Completed',
-      },
-    ]);
+    return getStored(STORAGE_KEYS.ACCRUAL_LOGS, []);
   },
 
   runMonthlyAccrualJob: (period: string): AccrualExecutionLog => {
@@ -1436,13 +1655,13 @@ export const leaveApi = {
       id: `acc-${Date.now()}`,
       period: period,
       run_timestamp: new Date().toISOString(),
-      employees_processed: 428,
-      total_leave_days_credited: 856,
+      employees_processed: 0,
+      total_leave_days_credited: 0,
       status: 'Completed',
     };
 
     logs.unshift(newLog);
-    setStored('workforce_accrual_logs_v1', logs);
+    setStored(STORAGE_KEYS.ACCRUAL_LOGS, logs);
 
     leaveApi.addAuditLog({
       actor_id: 'system',
@@ -1463,7 +1682,7 @@ export const leaveApi = {
     target.status = 'Reversed';
     target.reversed_at = new Date().toISOString();
     target.reversed_by = actorName;
-    setStored('workforce_accrual_logs_v1', logs);
+    setStored(STORAGE_KEYS.ACCRUAL_LOGS, logs);
 
     leaveApi.addAuditLog({
       actor_id: 'admin',
@@ -1479,50 +1698,7 @@ export const leaveApi = {
 
   // --- Leave Exceptions ---
   getExceptions: (): LeaveException[] => {
-    return getStored('workforce_leave_exceptions_v1', [
-      {
-        id: 'exc-01',
-        type: 'Staffing Capacity Threshold Warning',
-        severity: 'High',
-        title: 'Engineering Team Availability Under 80%',
-        description: '4 members in Engineering requested leave on August 18–21.',
-        employee_name: 'Rajesh Kumar & 3 Others',
-        department_name: 'Engineering',
-        rule_violated: 'Min 80% department attendance required',
-        current_state: '4 concurrent leave requests pending',
-        recommended_action: 'Review department holiday roster before approval',
-        flagged_at: '2026-08-10T12:00:00Z',
-        status: 'Open',
-      },
-      {
-        id: 'exc-02',
-        type: 'Missing Attachment Flag',
-        severity: 'Medium',
-        title: 'Sick Leave > 2 Days Without Medical Certificate',
-        description: 'Vikramaditya Rao applied for 3 days Sick Leave without mandatory attachment.',
-        employee_name: 'Vikramaditya Rao',
-        department_name: 'DevOps & Cloud',
-        rule_violated: 'Sick Leave policy requires medical certificate for >= 2 days',
-        current_state: 'Uploaded document missing',
-        recommended_action: 'Request medical proof or convert excess to Loss of Pay',
-        flagged_at: '2026-08-11T08:00:00Z',
-        status: 'Open',
-      },
-      {
-        id: 'exc-03',
-        type: 'Negative Balance Risk',
-        severity: 'Low',
-        title: 'Negative CL Balance Requested',
-        description: 'Priya Sharma applied for 2 days Casual Leave with 0 remaining balance.',
-        employee_name: 'Priya Sharma',
-        department_name: 'Product Design',
-        rule_violated: 'Casual Leave does not permit negative balance',
-        current_state: 'Balance 0, Requested 2',
-        recommended_action: 'Approve as Loss of Pay (LOP) or advance next quarter accrual',
-        flagged_at: '2026-08-12T09:30:00Z',
-        status: 'Open',
-      },
-    ]);
+    return getStored(STORAGE_KEYS.EXCEPTIONS, []);
   },
 
   resolveException: (exceptionId: string, resolvedBy: string, resolutionNotes?: string): void => {
@@ -1535,7 +1711,7 @@ export const leaveApi = {
       if (resolutionNotes) {
         target.resolution_notes = resolutionNotes;
       }
-      setStored('workforce_leave_exceptions_v1', exceptions);
+      setStored(STORAGE_KEYS.EXCEPTIONS, exceptions);
 
       leaveApi.addAuditLog({
         actor_id: 'admin',
@@ -1563,4 +1739,65 @@ export const leaveApi = {
     logs.unshift(newLog);
     setStored(STORAGE_KEYS.AUDIT_LOGS, logs);
   },
+
+  // --- Realtime Supabase Sync Engine ---
+  syncWithSupabase: async (): Promise<void> => {
+    if (!isSupabaseEnabled) return;
+    try {
+      // 1. Fetch Leave Requests
+      const { data: remoteRequests, error: reqErr } = await supabase
+        .from('leave_requests')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!reqErr && Array.isArray(remoteRequests)) {
+        setStored(STORAGE_KEYS.REQUESTS, remoteRequests);
+      }
+
+      // 2. Fetch Leave Entitlements
+      const { data: remoteEntitlements, error: entErr } = await supabase
+        .from('leave_entitlements')
+        .select('*');
+
+      if (!entErr && Array.isArray(remoteEntitlements) && remoteEntitlements.length > 0) {
+        setStored(STORAGE_KEYS.ENTITLEMENTS, remoteEntitlements);
+      }
+
+      // 3. Fetch Leave Types
+      const { data: remoteTypes, error: typeErr } = await supabase
+        .from('leave_types')
+        .select('*')
+        .order('name');
+
+      if (!typeErr && Array.isArray(remoteTypes) && remoteTypes.length > 0) {
+        setStored(STORAGE_KEYS.LEAVE_TYPES, remoteTypes);
+      }
+
+      // 4. Fetch Ledger
+      const { data: remoteLedger, error: ledErr } = await supabase
+        .from('leave_ledger_transactions')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!ledErr && Array.isArray(remoteLedger) && remoteLedger.length > 0) {
+        setStored(STORAGE_KEYS.LEDGER, remoteLedger);
+      }
+    } catch (e) {
+      console.warn('[leaveApi] syncWithSupabase notice:', e);
+    }
+  },
 };
+
+// Initial background hydration from Supabase
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    leaveApi.syncWithSupabase().catch(() => {});
+  }, 100);
+
+  // Auto-sync when leave events occur
+  hrEventBus.subscribe('leave.*', () => {
+    setTimeout(() => {
+      leaveApi.syncWithSupabase().catch(() => {});
+    }, 200);
+  });
+}

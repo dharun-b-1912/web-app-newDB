@@ -955,7 +955,7 @@ export const MyProfileView: React.FC = () => {
                 <div className="flex items-center justify-between pb-4 border-b border-gray-100">
                   <div>
                     <h2 className="text-base font-black text-gray-900">Active Login Sessions</h2>
-                    <p className="text-xs text-gray-500">Devices currently authenticated to your WorkForceOS account.</p>
+                    <p className="text-xs text-gray-500">Devices currently authenticated to your Joy PeopleHR account.</p>
                   </div>
                 </div>
 

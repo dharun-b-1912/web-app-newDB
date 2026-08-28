@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/RecruitmentAnalyticsView.tsx
 // ============================================================================
-// WorkForceOS — Recruitment & Hiring Velocity Analytics Engine
+// Joy PeopleHR — Recruitment & Hiring Velocity Analytics Engine
 // Pure SQL Realtime Aggregations, Funnel Drop-off, Stage Aging & Source ROI
 // ============================================================================
 

@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/CandidateProfileDrawer.tsx
 // ============================================================================
-// WorkForceOS — Comprehensive Candidate Profile & Lifecycle Inspector
+// Joy PeopleHR — Comprehensive Candidate Profile & Lifecycle Inspector
 // Timeline, Scorecards, E-Sign Offer, Notes, and Candidate-to-Employee Conversion
 // ============================================================================
 

@@ -1,6 +1,6 @@
 // src/features/platform/subviews/BackgroundJobsView.tsx
 // ============================================================
-// WorkForceOS — Background Jobs & Distributed Worker Fleet Control Console
+// Joy PeopleHR — Background Jobs & Distributed Worker Fleet Control Console
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';

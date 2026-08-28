@@ -1,6 +1,6 @@
 // src/features/attendance/subviews/ShiftMasterView.tsx
 // ============================================================================
-// WorkForceOS — Enterprise Shift Management Master Console
+// Joy PeopleHR — Enterprise Shift Management Master Console
 // Multi-Tenant Shift Catalog, Visual Timelines, 5-Step Stepper Wizard & Scope Applicability
 // ============================================================================
 

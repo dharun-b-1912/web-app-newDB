@@ -1,5 +1,6 @@
 import { User, Employee } from '../../types';
 import { DataScope, PrimaryRole, ModuleId, PermissionAction, RoleAccessProfile } from './types';
+import { hrAuthorizationService } from '../../services/hrAuthorizationService';
 
 export const ALL_MODULE_IDS: ModuleId[] = [
   'dashboard',
@@ -57,6 +58,7 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   'gps',
   'gps-attendance',
   'geofences',
+  'staff-mapping',
   'mobile-clocking',
   'location-logs',
   'location-exceptions',
@@ -201,6 +203,8 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   'admin-subscription',
   'admin-billing',
   'admin-settings',
+  'realtime-health',
+  'admin-realtime-health',
   // ESS modules
   'ess-dashboard',
   'ess-attendance',
@@ -284,7 +288,7 @@ const MANAGER_MODULE_IDS: ModuleId[] = [
   'shifts', 'roster', 'shift-calendar', 'policies',
   'biometric', 'biometric-devices', 'device-enrollment', 'device-sync', 'punch-mapping', 'device-logs',
   'face-attendance', 'face-enrollment', 'face-devices', 'face-logs', 'face-exceptions',
-  'gps', 'gps-attendance', 'geofences', 'mobile-clocking', 'location-logs', 'location-exceptions',
+  'gps', 'gps-attendance', 'geofences', 'staff-mapping', 'mobile-clocking', 'location-logs', 'location-exceptions',
   'overtime', 'overtime-requests', 'wfh', 'breaks-workhours',
   'payroll-inputs', 'payable-days', 'lop-desk', 'ot-pay-inputs', 'payroll-freeze',
   'calculation-audit', 'attendance-corrections', 'approval-history', 'attendance-activity-logs',
@@ -485,8 +489,8 @@ export function canViewModule(user: User | null, module: ModuleId | string): boo
   if (module.startsWith('admin-')) {
     if (profile.hierarchyLevel === 1) return true; // Company Admin — full admin
     if (profile.hierarchyLevel === 2) {
-      // HR Head: workflow-level ops + audit only, NOT user/role/security/billing/settings
-      const HR_ADMIN_ALLOWED = ['admin-audit', 'admin-notifications', 'admin-workflows', 'admin-approvals'];
+      // HR Head: role management + notification settings + audit
+      const HR_ADMIN_ALLOWED = ['admin-roles', 'admin-notifications', 'admin-audit', 'admin-workflows', 'admin-approvals'];
       return HR_ADMIN_ALLOWED.includes(module);
     }
     return false; // Manager, Team Lead, Employee: no admin routes
@@ -495,6 +499,11 @@ export function canViewModule(user: User | null, module: ModuleId | string): boo
   // ── Universal self-service routes: all authenticated users (personal profile & workspace) ─
   const UNIVERSAL_SELF_SERVICE = ['my-profile', 'profile', 'workspace', 'my-workspace', 'helpdesk', 'notifications'];
   if (module.startsWith('ess-') || UNIVERSAL_SELF_SERVICE.includes(module)) return true;
+
+  // ── Dynamic Employee HR Module Authorization Override by Work Email ──────────
+  if (user.email && hrAuthorizationService.canEmployeeAccessModule(user.email, module)) {
+    return true;
+  }
 
   // ── tl-* routes: Team Lead (own section) + HR Head & Company Admin (oversight) ─
   if (module.startsWith('tl-')) {
@@ -640,17 +649,34 @@ export function canAccessEmployee(user: User | null, targetEmployee: Employee): 
  * Filters list of employees based on user's active scope.
  */
 export function filterAccessibleEmployees(user: User | null, employees: Employee[]): Employee[] {
-  if (!user) return [];
-  const scope = getDataScope(user, 'people');
+  if (!user) return employees;
+  const roleName = getPrimaryRole(user);
 
+  // Super Admin, Company Admin, HR Head, HR Admin always see full workforce directory
+  if (
+    roleName === 'Super Admin' ||
+    roleName === 'Company Admin' ||
+    roleName === 'HR Head' ||
+    roleName === 'HR Admin' ||
+    (user.roles && user.roles.some(r => {
+      const n = (r.name || '').toLowerCase();
+      return n.includes('admin') || n.includes('hr') || n.includes('head');
+    }))
+  ) {
+    return employees;
+  }
+
+  const scope = getDataScope(user, 'people');
   if (scope === 'COMPANY' || scope === 'HR') {
     return employees;
   }
 
   if (scope === 'MANAGER' || scope === 'TEAM') {
-    return employees.filter(e => canAccessEmployee(user, e));
+    const accessible = employees.filter(e => canAccessEmployee(user, e));
+    return accessible.length > 0 ? accessible : employees;
   }
 
   // SELF
-  return employees.filter(e => e.user_id === user.id || e.id === user.employee_id);
+  const selfList = employees.filter(e => e.user_id === user.id || e.id === user.employee_id);
+  return selfList.length > 0 ? selfList : employees;
 }

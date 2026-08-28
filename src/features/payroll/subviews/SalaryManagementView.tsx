@@ -1248,7 +1248,7 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
         >
           <div className="space-y-4 text-xs">
             <p className="text-gray-600 text-xs">
-              WorkForceOS resolved the winning compensation package using the tenant's hierarchical priority chain:
+              Joy PeopleHR resolved the winning compensation package using the tenant's hierarchical priority chain:
             </p>
 
             <div className="space-y-2 border-l-2 border-[#07563D] pl-4 ml-2">

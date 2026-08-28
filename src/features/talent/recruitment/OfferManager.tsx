@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/OfferManager.tsx
 // ============================================================================
-// WorkForceOS — Employment Offers & Candidate-to-Employee Conversion Hub
+// Joy PeopleHR — Employment Offers & Candidate-to-Employee Conversion Hub
 // Structured CTC Breakdown, AI Letter Generator, E-Signature & Conversion Engine
 // ============================================================================
 

@@ -1,6 +1,6 @@
 // src/features/platform/components/TenantDetailDrawer.tsx
 // ============================================================
-// WorkForceOS — Tenant Command Center & 360° Detail Drawer
+// Joy PeopleHR — Tenant Command Center & 360° Detail Drawer
 // ============================================================
 
 import React, { useState } from 'react';

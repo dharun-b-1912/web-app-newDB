@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/CustomerOverviewTab.tsx
 // ============================================================
-// WorkForceOS — Customer Overview Executive Summary Tab
+// Joy PeopleHR — Customer Overview Executive Summary Tab
 // ============================================================
 
 import React from 'react';

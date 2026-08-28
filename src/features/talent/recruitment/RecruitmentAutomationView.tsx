@@ -1,6 +1,6 @@
 // src/features/talent/recruitment/RecruitmentAutomationView.tsx
 // ============================================================================
-// WorkForceOS — Recruitment Automation & Workflow SLA Engine
+// Joy PeopleHR — Recruitment Automation & Workflow SLA Engine
 // Trigger -> Conditions -> Actions: SLA Escalations, Preboarding, Notifications
 // ============================================================================
 

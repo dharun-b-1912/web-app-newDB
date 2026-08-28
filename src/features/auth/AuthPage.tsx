@@ -1,6 +1,6 @@
 // src/features/auth/AuthPage.tsx
 // ============================================================
-// WorkForceOS — Multi-Tenant Customer & Dedicated Platform Control Plane Auth
+// Joy PeopleHR — Multi-Tenant Customer & Dedicated Platform Control Plane Auth
 // ============================================================
 
 import React, { useState } from 'react';
@@ -164,7 +164,7 @@ export const AuthPage: React.FC = () => {
           </div>
 
           <div className="relative z-10 pt-8 border-t border-white/10 text-[11px] text-gray-300 flex items-center justify-between">
-            <span>© 2026 WorkForceOS</span>
+            <span>© 2026 Joy PeopleHR</span>
             <span className="flex items-center gap-1 text-gray-200">
               <Sparkles className="w-3 h-3 text-amber-300" /> Enterprise v3.2
             </span>

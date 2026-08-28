@@ -3,6 +3,7 @@ import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { api } from './api';
 import { organizationContextService } from './organizationContextService';
 import { hrEventBus } from './hrEventBus';
+import { profileMediaService } from './profile/profileMediaService';
 
 export interface PersonalDetails {
   legalFirstName: string;
@@ -584,19 +585,48 @@ class ProfileService {
    */
   async updateProfilePhoto(user: User, avatarDataUrl: string): Promise<FullProfileContext> {
     const current = await this.getProfileContext(user);
-    const updatedUser = { ...user, avatar_url: avatarDataUrl };
+    const employeeId = current.employee?.id || user.employee_id || user.id;
+
+    // Convert data URL to Blob for canonical profileMediaService upload
+    let finalAvatarUrl = avatarDataUrl;
+    try {
+      if (avatarDataUrl.startsWith('data:')) {
+        const parts = avatarDataUrl.split(',');
+        const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const bstr = atob(parts[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        const blob = new Blob([u8arr], { type: mime });
+        const res = await profileMediaService.uploadProfilePhoto({
+          employeeId,
+          file: blob,
+          actorId: user.id,
+          actorName: user.name,
+        });
+        if (res.signedUrl) {
+          finalAvatarUrl = res.signedUrl;
+        }
+      }
+    } catch (err) {
+      console.warn('[ProfileService] ProfileMediaService photo upload warning:', err);
+    }
+
+    const updatedUser = { ...user, avatar_url: finalAvatarUrl };
     api.setCurrentUser(updatedUser);
 
     const updated: FullProfileContext = {
       ...current,
       user: updatedUser,
-      employee: { ...current.employee, avatar_url: avatarDataUrl },
+      employee: { ...current.employee, avatar_url: finalAvatarUrl },
       recentActivity: [
         {
           id: `act-${Date.now()}`,
           action: 'PROFILE_PHOTO_UPDATED',
           timestamp: new Date().toISOString(),
-          details: 'Updated profile display photo',
+          details: 'Updated profile display photo (WebP 512x512 with SHA-256)',
           actorName: user.name,
         },
         ...current.recentActivity,

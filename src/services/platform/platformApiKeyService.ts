@@ -1,6 +1,6 @@
 // src/services/platform/platformApiKeyService.ts
 // ============================================================
-// WorkForceOS — REST API Key Management Service
+// Joy PeopleHR — REST API Key Management Service
 // ============================================================
 
 import { PlatformApiKey } from '../../types/platformAdmin';

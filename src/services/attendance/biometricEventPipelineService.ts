@@ -1,6 +1,6 @@
 // src/services/attendance/biometricEventPipelineService.ts
 // ============================================================================
-// JCS WorkforceOS — Multi-Biometric Device Ingestion Pipeline & Session Ledger
+// JCS Joy PeopleHR — Multi-Biometric Device Ingestion Pipeline & Session Ledger
 // Strict Separation: Biometric Devices produce Evidence -> Engine produces Meaning
 // ============================================================================
 

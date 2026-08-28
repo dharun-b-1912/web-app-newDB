@@ -1,6 +1,6 @@
 // src/features/auth/ForgotPasswordModal.tsx
 // ============================================================================
-// WorkForceOS — Production Employee Password Recovery (Phone OTP Flow)
+// Joy PeopleHR — Production Employee Password Recovery (Phone OTP Flow)
 // Flow: Enter Registered Phone -> OTP -> Create New Password -> Sessions Revoked
 // ============================================================================
 
@@ -122,7 +122,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
             <div className="space-y-1">
               <h3 className="text-base font-extrabold text-gray-900">Enter Registered Mobile Number</h3>
               <p className="text-xs text-gray-500">
-                WorkForceOS will send a secure password reset OTP code to your registered mobile number.
+                Joy PeopleHR will send a secure password reset OTP code to your registered mobile number.
               </p>
             </div>
 

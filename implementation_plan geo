@@ -1,0 +1,150 @@
+# Implementation Plan: GPS & Mobile Attendance Channel (Production Engine)
+
+Convert the **GPS & Mobile Attendance Channel** into a fully production-grade, authoritative attendance channel connecting **HR Web Portal**, **Supabase PostgreSQL & Realtime**, and **Flutter Mobile App**. All operations will use real database tables and real device GPS without any simulation or hardcoded mock coordinates.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> - **Real Device GPS**: The Flutter mobile app will use the `geolocator` package to acquire live device GPS (`latitude`, `longitude`, `accuracy`). If location permissions are denied or GPS is turned off, clear actionable prompts will guide the user to system settings.
+> - **Server-Authoritative Validation**: The client device sends GPS coordinates to Supabase RPC (`fn_validate_and_record_gps_attendance`), where the server calculates geospatial Haversine distance against authorized work location geofences, validates accuracy thresholds, checks shift rules, creates atomic attendance punches with source `MOBILE_GPS`, and writes audit/violation logs.
+> - **Bidirectional Realtime Sync**: HR changes to geofences, radiuses, or employee assignments broadcast via Supabase Realtime to Flutter instantly. Mobile punches broadcast live to the HR Web dashboard without any page refresh.
+
+---
+
+## Proposed Architecture & Data Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Employee as Flutter Mobile App
+    participant Backend as Supabase (PostgreSQL & RPC)
+    participant DB as Postgres Database
+    participant Realtime as Supabase Realtime Engine
+    actor HRAdmin as HR Web Portal
+
+    Note over HRAdmin,DB: 1. Geofence & Assignment Configuration
+    HRAdmin->>Backend: Save Work Location (Lat, Lng, Radius: 150m) & Assign Employee
+    Backend->>DB: Upsert work_locations & employee_work_locations
+    DB->>Realtime: Broadcast location/assignment update
+    Realtime-->>Employee: Live Update: Location & Geofence Policy
+
+    Note over Employee,Backend: 2. Authoritative Check-In Flow
+    Employee->>Employee: Acquire Device GPS (Geolocator)
+    Employee->>Backend: Call fn_validate_and_record_gps_attendance(lat, lng, accuracy, emp_id)
+    Backend->>Backend: Calculate Haversine distance to nearest assigned location
+    alt Inside Geofence (Distance <= Radius & Accuracy OK)
+        Backend->>DB: Insert attendance_punches (Source: MOBILE_GPS)
+        Backend->>DB: Upsert attendance_daily & log attendance_location_events
+        Backend-->>Employee: Success: { inside: true, distance: 42m, location: "Coimbatore HQ" }
+        DB->>Realtime: Broadcast attendance_punches & attendance_daily
+        Realtime-->>HRAdmin: Live Feed: Check-in Present at 10:09 AM (MOBILE_GPS)
+        Realtime-->>Employee: Live Home Screen: Checked In + Working Timer
+    else Outside Geofence / Low Accuracy
+        Backend->>DB: Log GPS Violation in attendance_location_events
+        Backend-->>Employee: Rejected: { inside: false, distance: 184m, radius: 100m, reason: "OUTSIDE_GEOFENCE" }
+        DB->>Realtime: Broadcast GPS violation event
+        Realtime-->>HRAdmin: KPI update: GPS Violations Blocked +1
+    end
+```
+
+---
+
+## Proposed Changes
+
+### 1. Database & Supabase Migrations (`supabase/migrations/`)
+
+#### [NEW] [20260826_production_gps_mobile_attendance_channel.sql](file:///j:/workforceos-enterprise-hrms/supabase/migrations/20260826_production_gps_mobile_attendance_channel.sql)
+- Ensure tables: `work_locations`, `employee_work_locations`, `attendance_location_policy`, `attendance_location_events`.
+- RPC `public.fn_get_employee_authorized_locations(p_tenant_id, p_employee_id)`: Dynamically resolves active, authorized work locations for an employee.
+- RPC `public.fn_validate_and_record_gps_attendance(...)`:
+  - Evaluates device GPS against authorized geofences (supports multiple assigned locations by picking the nearest).
+  - Validates GPS accuracy against `accuracy_requirement_meters` / `max_accuracy_meters`.
+  - Anti-spoof mock location check.
+  - Inserts atomic punch record in `attendance_punches` with `source = 'MOBILE_GPS'`.
+  - Updates `attendance_daily` with proper shift context (supports night shifts across midnight).
+  - Logs audit event in `attendance_location_events` (with `PUNCH_CHECK_IN`, `PUNCH_CHECK_OUT`, `OUTSIDE_GEOFENCE`, `LOW_ACCURACY`, `MOCK_LOCATION`).
+- Configures `REPLICA IDENTITY FULL` and adds tables to `supabase_realtime` publication.
+- Sets up Row Level Security (RLS) policies for tenant and employee isolation.
+
+---
+
+### 2. Flutter Mobile Application (`1.FlutterApp/flutter_app/`)
+
+#### [MODIFY] [pubspec.yaml](file:///j:/workforceos-enterprise-hrms/1.FlutterApp/flutter_app/pubspec.yaml)
+- Add `geolocator: ^13.0.2`.
+
+#### [MODIFY] [location_service.dart](file:///j:/workforceos-enterprise-hrms/1.FlutterApp/flutter_app/lib/core/services/location_service.dart)
+- Remove `_forceInsideMode`, simulated 42m/128m coordinates, and test toggles.
+- Implement live hardware GPS acquisition using `Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high)`.
+- Handle permission lifecycle: `checkPermission()`, `requestPermission()`, `isLocationServiceEnabled()`.
+- Add handlers for `openAppSettings()` and `openLocationSettings()`.
+- Dynamically fetch authorized locations from Supabase for the authenticated employee (`UserService.instance.currentUser`).
+- Compute local distance preview using `Geolocator.distanceBetween()`, identifying the nearest authorized location.
+
+#### [MODIFY] [attendance_service.dart](file:///j:/workforceos-enterprise-hrms/1.FlutterApp/flutter_app/lib/core/services/attendance_service.dart)
+- Update `performCheckIn()` and `performCheckOut()` to call authoritative Supabase RPC `fn_validate_and_record_gps_attendance` with real GPS evidence (`latitude`, `longitude`, `accuracy`, `deviceTimestamp`, `mockLocationDetected`).
+- Prevent double punches with in-flight debouncing and atomic backend execution.
+- Maintain live working duration timer computed strictly from the authoritative server check-in timestamp (`dailyRow['first_check_in']`).
+
+#### [MODIFY] [supabase_attendance_repository.dart](file:///j:/workforceos-enterprise-hrms/1.FlutterApp/flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart)
+- Implement `getAuthorizedWorkLocations(employeeId)`.
+- Implement `recordGpsAttendancePunch(...)` calling `fn_validate_and_record_gps_attendance`.
+- Realtime subscriptions to `work_locations`, `employee_work_locations`, and `attendance_location_policy` to receive live geofence updates from HR Web without app restart.
+
+#### [MODIFY] [employee_home_screen.dart](file:///j:/workforceos-enterprise-hrms/1.FlutterApp/flutter_app/lib/features/employee/home/screens/employee_home_screen.dart)
+- Update Current Location Card to display real nearest work location, live distance in meters, allowed radius, GPS accuracy, and inside/outside badge.
+- Remove all fake toggles ("GPS: In" / "GPS: Out").
+- Add GPS refresh button and permission guidance banners when location services are disabled or denied.
+
+---
+
+### 3. HR Web Portal (`src/features/attendance/subviews/GpsMobileChannelView.tsx` & services)
+
+#### [MODIFY] [workLocationService.ts](file:///j:/workforceos-enterprise-hrms/src/services/location/workLocationService.ts)
+- Connect all CRUD methods directly to Supabase (`work_locations`, `employee_work_locations`, `attendance_location_events`, `attendance_location_policy`).
+- Realtime table subscriptions via `realtimeChannelManager` with tenant-isolated caching.
+
+#### [MODIFY] [mobileAttendanceClientService.ts](file:///j:/workforceos-enterprise-hrms/src/services/attendance/mobileAttendanceClientService.ts)
+- Connect web live clocking tester directly to Supabase RPC `fn_validate_and_record_gps_attendance`.
+
+#### [MODIFY] [GpsMobileChannelView.tsx](file:///j:/workforceos-enterprise-hrms/src/features/attendance/subviews/GpsMobileChannelView.tsx)
+- **KPI Metrics Header**: Real counts derived from database (`Mobile GPS Punches today`, `Active Work Locations`, `Staff Geofence Mapped`, `GPS Violations Blocked`).
+- **GPS Live Clocking Subtab**:
+  - Rename panel from "Hardware GPS Attendance Clock" to "Mobile GPS Attendance Clock".
+  - Real employee selector and dynamic assigned location selector.
+  - Live coordinates and Google Maps Geofence radar view.
+  - Check-in / Check-out button calling live Supabase RPC with immediate realtime log feed.
+- **Geofence Zones Subtab**:
+  - Full CRUD for work locations (Name, Code, Location Type [Office, Factory, Branch, Warehouse, Remote/Client Site], Address, Lat, Lng, Radius [50m, 75m, 100m, 150m, 250m, 500m, 1000m], Accuracy Requirement, Map preview).
+- **Staff Mapping Subtab**:
+  - Map employees to one or multiple locations, designate primary location, toggle attendance permission, effective dates.
+- **Mobile Policy Subtab**:
+  - Tenant mobile attendance policy editor (`require_gps`, `max_accuracy_meters`, `outside_geofence_action`, `location_max_age_seconds`, `allow_multiple_locations`).
+- **Location Logs Subtab**:
+  - Realtime log table displaying all location events (`PUNCH_CHECK_IN`, `PUNCH_CHECK_OUT`, `OUTSIDE_GEOFENCE`, `LOW_ACCURACY`), employee info, timestamps, distance, coordinates, device info.
+- **GPS Violations Subtab**:
+  - Filtered table of blocked attempts (`OUTSIDE_GEOFENCE`, `LOW_ACCURACY`, `MOCK_LOCATION`, `UNAUTHORIZED_WORK_LOCATION`) with resolve action.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+1. **Flutter Analyzer**:
+   - `dart analyze` across Flutter models, repositories, services, and screens.
+2. **TypeScript Compilation & Production Build**:
+   - `npx tsc --noEmit`
+   - `npm run build`
+
+### Manual & Integration Verification
+1. **Flutter Device Location Acquisition**:
+   - Verify permission request, GPS reading acquisition, accuracy measurement.
+   - Verify handling when location services are disabled or permissions permanently denied.
+2. **Authoritative Geofence Calculation**:
+   - Inside radius ($\le 150\text{m}$): Check-in accepted $\rightarrow$ Punch recorded with `source = 'MOBILE_GPS'`.
+   - Outside radius ($> 150\text{m}$): Check-in rejected with distance message $\rightarrow$ Violation logged in database.
+3. **Live Bidirectional Realtime Sync**:
+   - Change radius from 100m $\rightarrow$ 200m in HR Web $\rightarrow$ verify Flutter receives updated radius without restart.
+   - Punch check-in on Flutter $\rightarrow$ verify HR Web Live Clocking feed and Employee Attendance table update instantly with zero page reload.

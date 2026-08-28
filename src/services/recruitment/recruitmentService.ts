@@ -1,6 +1,6 @@
 // src/services/recruitment/recruitmentService.ts
 // ============================================================================
-// WorkForceOS — Recruitment & ATS 2.0 Enterprise Service
+// Joy PeopleHR — Recruitment & ATS 2.0 Enterprise Service
 // Pure SQL Database CRUD, State Machine, Scorecards, E-Sign & Employee Conversion
 // ============================================================================
 

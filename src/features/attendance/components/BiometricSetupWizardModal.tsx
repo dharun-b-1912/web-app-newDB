@@ -1,6 +1,6 @@
 // src/features/attendance/components/BiometricSetupWizardModal.tsx
 // ============================================================================
-// WorkForceOS — Enterprise 5-Step Guided Biometric Add Device Wizard
+// Joy PeopleHR — Enterprise 5-Step Guided Biometric Add Device Wizard
 // Step 1: Connection Method → Step 2: Location → Step 3: Device Info → Step 4: Test Socket → Step 5: Complete
 // ============================================================================
 
@@ -223,7 +223,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
         showToast(`✓ New Terminal Discovered: ${found.ip_address}:${found.port} (${found.latency_ms || 4}ms)!`);
       } else {
         if (registeredDevices.length > 0 && devices.some(d => registeredIps.has(d.ip_address))) {
-          showToast(`All active devices on your network are already registered in WorkForceOS.`, 'info');
+          showToast(`All active devices on your network are already registered in Joy PeopleHR.`, 'info');
         } else {
           showToast(`No new terminal responded on local subnet. Verify device IP (e.g. 192.168.1.13) and ensure gateway agent is running.`, 'info');
         }
@@ -339,7 +339,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
             <div>
               <h3 className="text-base font-black text-gray-900">Choose Connection Method</h3>
               <p className="text-xs text-gray-500 mt-1">
-                Select how WorkForceOS communicates with the physical biometric machine.
+                Select how Joy PeopleHR communicates with the physical biometric machine.
               </p>
             </div>
 

@@ -1,6 +1,6 @@
 // src/services/platform/platformSettingsService.ts
 // ============================================================
-// WorkForceOS — Platform Settings & Integrations Service
+// Joy PeopleHR — Platform Settings & Integrations Service
 // ============================================================
 // Production Architecture: PostgreSQL + Supabase Realtime
 // Zero mock data. Dynamic synchronization & versioned rollbacks.
@@ -370,7 +370,7 @@ let cachedIntegrations: PlatformIntegrationItem[] = [];
 let cachedMaintenance: PlatformMaintenanceSchedule = {
   id: 'maint-active-01',
   title: 'Platform Operational State',
-  operator_message: 'All WorkForceOS cloud systems, APIs, and background job fleets are operating normally.',
+  operator_message: 'All Joy PeopleHR cloud systems, APIs, and background job fleets are operating normally.',
   environment: 'PRODUCTION',
   is_active: false,
   read_only_mode: false,

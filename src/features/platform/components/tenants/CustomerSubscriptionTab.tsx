@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/CustomerSubscriptionTab.tsx
 // ============================================================
-// WorkForceOS — Customer Subscription & Change Plan Workflow Tab
+// Joy PeopleHR — Customer Subscription & Change Plan Workflow Tab
 // ============================================================
 
 import React, { useState, useMemo } from 'react';

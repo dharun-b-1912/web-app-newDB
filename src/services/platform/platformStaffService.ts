@@ -1,6 +1,6 @@
 // src/services/platform/platformStaffService.ts
 // ============================================================
-// WorkForceOS — Platform Admin Assistant & Delegated IAM Service
+// Joy PeopleHR — Platform Admin Assistant & Delegated IAM Service
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';

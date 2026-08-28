@@ -24,6 +24,7 @@ import {
   User,
   Plus,
   Eye,
+  Trash2,
 } from 'lucide-react';
 
 interface DocumentDetailDrawerProps {
@@ -77,6 +78,20 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
     }
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm(`Are you sure you want to permanently delete "${document.title}" from the system and clean it completely from backend storage & databases?`)) {
+      return;
+    }
+    try {
+      await documentService.deleteDocument(document.id);
+      showToast(`✓ "${document.title}" permanently deleted.`, 'success');
+      onRefresh();
+      onClose();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete document.', 'error');
+    }
+  };
+
   const handleVersionUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -98,36 +113,34 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-black/40 backdrop-blur-xs flex justify-end">
       <div className="bg-white w-full max-w-2xl h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-200">
-        {/* Top Header */}
-        <div className="p-6 border-b border-gray-100 flex items-start justify-between bg-gradient-to-r from-gray-50 to-white">
-          <div className="flex items-start gap-3">
-            <div className="p-3 bg-[#07563D]/10 text-[#07563D] rounded-2xl">
-              <FileText className="w-6 h-6" />
+        {/* Drawer Header */}
+        <div className="p-6 border-b border-gray-200 flex items-start justify-between bg-gray-50/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#07563D]">
+              <FileText className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-extrabold text-gray-900 line-clamp-1">{document.title}</h2>
-                <Badge variant={document.verification_status === 'VERIFIED' ? 'emerald' : 'amber'} className="text-[10px]">
+                <h2 className="text-base font-extrabold text-gray-900">{document.title}</h2>
+                <Badge variant={document.verification_status === 'VERIFIED' ? 'emerald' : 'amber'}>
                   {document.verification_status}
                 </Badge>
               </div>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Subject: <strong className="text-gray-900">{document.subject_name || document.subject_id}</strong> (
-                {document.subject_type})
-              </p>
+              <span className="text-xs text-gray-500 mt-0.5 block">
+                Subject: <strong>{document.subject_name || document.subject_id}</strong> ({document.subject_type})
+              </span>
             </div>
           </div>
-
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-700 p-2 rounded-xl hover:bg-gray-100 transition-colors"
+            className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Action Toolbar */}
-        <div className="px-6 py-3 bg-gray-50/70 border-b border-gray-200 flex items-center justify-between gap-3 text-xs">
+        {/* Operational Action Strip */}
+        <div className="px-6 py-3 bg-gray-50/80 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -170,6 +183,17 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
                 </Button>
               </>
             )}
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleDelete}
+              leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+              className="text-xs h-7 text-red-600 hover:bg-red-50 hover:border-red-300"
+              title="Delete completely from backend"
+            >
+              Delete
+            </Button>
           </div>
         </div>
 
@@ -225,13 +249,13 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
                   <span className="font-extrabold text-gray-900 mt-0.5 block">{document.category_code}</span>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                  <span className="text-gray-400 block font-medium">Uploaded By</span>
-                  <span className="font-extrabold text-gray-900 mt-0.5 block">{document.created_by}</span>
+                  <span className="text-gray-400 block font-medium">Requested By</span>
+                  <span className="font-extrabold text-gray-900 mt-0.5 block">{document.created_by || 'HR Admin'}</span>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                  <span className="text-gray-400 block font-medium">Uploaded On</span>
+                  <span className="text-gray-400 block font-medium">Target Employee</span>
                   <span className="font-extrabold text-gray-900 mt-0.5 block">
-                    {new Date(document.created_at).toLocaleDateString()}
+                    {document.subject_name || document.subject_id}
                   </span>
                 </div>
               </div>

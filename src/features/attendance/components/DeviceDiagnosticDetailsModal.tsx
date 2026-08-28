@@ -1,6 +1,6 @@
 // src/features/attendance/components/DeviceDiagnosticDetailsModal.tsx
 // ============================================================================
-// WorkForceOS — Biometric Terminal Power & Network Health Diagnostic Console
+// Joy PeopleHR — Biometric Terminal Power & Network Health Diagnostic Console
 // Diagnoses No Power, LAN / Internet Disconnection, Port Closure & Hardware Crashes
 // ============================================================================
 

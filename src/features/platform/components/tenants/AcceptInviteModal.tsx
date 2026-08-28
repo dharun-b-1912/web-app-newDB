@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/AcceptInviteModal.tsx
 // ============================================================
-// WorkForceOS — Supabase Customer Admin Onboarding & Set Password Flow
+// Joy PeopleHR — Supabase Customer Admin Onboarding & Set Password Flow
 // ============================================================
 
 import React, { useState } from 'react';

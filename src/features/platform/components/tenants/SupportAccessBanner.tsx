@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/SupportAccessBanner.tsx
 // ============================================================
-// WorkForceOS — Persistent Support Access Session Banner
+// Joy PeopleHR — Persistent Support Access Session Banner
 // ============================================================
 
 import React, { useState, useEffect } from 'react';

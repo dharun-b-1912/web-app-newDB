@@ -15,6 +15,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import { hrEventBus } from '../../../services/hrEventBus';
 
 export const LeaveExceptionsView: React.FC = () => {
   const [exceptions, setExceptions] = useState<LeaveException[]>([]);
@@ -22,8 +23,14 @@ export const LeaveExceptionsView: React.FC = () => {
   const [severityFilter, setSeverityFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
+  const loadData = () => {
     setExceptions(leaveApi.getExceptions());
+  };
+
+  useEffect(() => {
+    loadData();
+    const unsub = hrEventBus.subscribe('leave.*', () => loadData());
+    return () => unsub();
   }, []);
 
   const handleResolve = (exc: LeaveException) => {

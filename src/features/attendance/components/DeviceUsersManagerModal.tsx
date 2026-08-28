@@ -1,6 +1,6 @@
 // src/features/attendance/components/DeviceUsersManagerModal.tsx
 // ============================================================================
-// WorkForceOS — Complete Biometric Machine User Management Console
+// Joy PeopleHR — Complete Biometric Machine User Management Console
 // Real TCP User Fetch → LAN Agent → Cloud → DB → Web App with Machine Details
 // ============================================================================
 
@@ -586,7 +586,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                         <TableHead>Machine User ID</TableHead>
                         <TableHead>UID</TableHead>
                         <TableHead>Machine Name</TableHead>
-                        <TableHead>WorkForceOS Mapping</TableHead>
+                        <TableHead>Joy PeopleHR Mapping</TableHead>
                         <TableHead>Privilege</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Card</TableHead>
@@ -942,10 +942,10 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                 <div><span className="text-gray-500">Iris:</span> <span className="text-gray-400">Not supported</span></div>
               </div>
 
-              {/* Card 4: WorkForceOS Employee Mapping */}
+              {/* Card 4: Joy PeopleHR Employee Mapping */}
               <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1.5">
                 <div className="font-bold text-gray-900 border-b border-gray-100 pb-1 flex items-center gap-1.5">
-                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" /> WorkForceOS Mapping
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" /> Joy PeopleHR Mapping
                 </div>
                 {selectedUserDetail.is_mapped ? (
                   <>

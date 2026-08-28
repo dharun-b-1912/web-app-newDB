@@ -1,6 +1,6 @@
 // src/features/platform/subviews/ActiveSessionsView.tsx
 // ============================================================
-// WorkForceOS — Active Sessions (Live Session Monitoring & Control Center)
+// Joy PeopleHR — Active Sessions (Live Session Monitoring & Control Center)
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -311,7 +311,7 @@ export const ActiveSessionsView: React.FC<ActiveSessionsViewProps> = ({ onNaviga
             </span>
           </div>
           <p className="text-[13.5px] text-[#64748B] mt-1 max-w-3xl">
-            Monitor authenticated users and administrators currently connected to WorkForceOS.
+            Monitor authenticated users and administrators currently connected to Joy PeopleHR.
           </p>
         </div>
 

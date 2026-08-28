@@ -2,8 +2,10 @@ import { DocumentMaster, DocumentVerificationStatus } from '../../types';
 import { api } from '../api';
 import { hrEventBus } from '../hrEventBus';
 import { documentAuditService } from './documentAuditService';
+import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 
 const DOCUMENTS_STORAGE_KEY = 'workforce_document_master_v2';
+const REQUIREMENTS_STORAGE_KEY = 'workforce_document_requirements_v2';
 
 class DocumentVerificationService {
   private getDocuments(): DocumentMaster[] {
@@ -25,7 +27,7 @@ class DocumentVerificationService {
   }
 
   // Verify / Approve a document
-  verifyDocument(documentId: string, comments?: string): DocumentMaster {
+  async verifyDocument(documentId: string, comments?: string): Promise<DocumentMaster> {
     const docs = this.getDocuments();
     const idx = docs.findIndex(d => d.id === documentId);
     if (idx === -1) throw new Error('Document not found.');
@@ -33,15 +35,49 @@ class DocumentVerificationService {
     const currentUser = api.getCurrentUser();
     const now = new Date().toISOString();
     const prevStatus = docs[idx].verification_status;
+    const adminName = currentUser.name || 'Hari priya (HR Head)';
 
     docs[idx].verification_status = 'VERIFIED';
-    docs[idx].verified_by = currentUser.name || 'Dharun Joy (HR Head)';
+    docs[idx].verified_by = adminName;
     docs[idx].verified_at = now;
     docs[idx].rejection_reason = undefined;
     if (comments) docs[idx].notes = comments;
     docs[idx].updated_at = now;
 
     this.setDocuments(docs);
+
+    // Persist to Supabase
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('employee_documents').update({
+          verification_status: 'VERIFIED',
+          updated_at: now,
+        }).eq('id', documentId);
+
+        await supabase.from('document_requirements').update({
+          status: 'VERIFIED',
+          updated_at: now,
+        }).or(`id.eq.${documentId},document_id.eq.${documentId}`);
+
+        // Notify Flutter App
+        await supabase.from('notification_events').insert({
+          event_type: 'DOCUMENT_VERIFIED',
+          category: 'APPROVAL',
+          severity: 'INFO',
+          title: `Document Verified: ${docs[idx].title}`,
+          body: `Your submitted ${docs[idx].title} has been verified and approved by HR.`,
+          resource_type: 'DOCUMENT_REQUIREMENT',
+          resource_id: docs[idx].subject_id,
+          actor_name: adminName,
+          metadata: {
+            requirement_id: documentId,
+            status: 'VERIFIED',
+          },
+        });
+      } catch (err) {
+        console.warn('[DocumentVerificationService] Supabase verify error:', err);
+      }
+    }
 
     documentAuditService.recordLog({
       documentId,
@@ -66,7 +102,7 @@ class DocumentVerificationService {
   }
 
   // Reject a document with mandatory reason
-  rejectDocument(documentId: string, reason: string): DocumentMaster {
+  async rejectDocument(documentId: string, reason: string): Promise<DocumentMaster> {
     if (!reason || !reason.trim()) {
       throw new Error('A formal rejection reason is mandatory.');
     }
@@ -78,14 +114,50 @@ class DocumentVerificationService {
     const currentUser = api.getCurrentUser();
     const now = new Date().toISOString();
     const prevStatus = docs[idx].verification_status;
+    const adminName = currentUser.name || 'Hari priya (HR Head)';
 
     docs[idx].verification_status = 'REJECTED';
-    docs[idx].verified_by = currentUser.name || 'Dharun Joy (HR Head)';
+    docs[idx].verified_by = adminName;
     docs[idx].verified_at = now;
     docs[idx].rejection_reason = reason;
     docs[idx].updated_at = now;
 
     this.setDocuments(docs);
+
+    // Persist to Supabase
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('employee_documents').update({
+          verification_status: 'REJECTED',
+          updated_at: now,
+        }).eq('id', documentId);
+
+        await supabase.from('document_requirements').update({
+          status: 'REJECTED',
+          rejection_reason: reason,
+          updated_at: now,
+        }).or(`id.eq.${documentId},document_id.eq.${documentId}`);
+
+        // Notify Flutter App
+        await supabase.from('notification_events').insert({
+          event_type: 'DOCUMENT_REJECTED',
+          category: 'APPROVAL',
+          severity: 'CRITICAL',
+          title: `Document Rejected: ${docs[idx].title}`,
+          body: `HR has rejected your ${docs[idx].title}. Reason: ${reason}. Please re-upload via the mobile app.`,
+          resource_type: 'DOCUMENT_REQUIREMENT',
+          resource_id: docs[idx].subject_id,
+          actor_name: adminName,
+          metadata: {
+            requirement_id: documentId,
+            status: 'REJECTED',
+            rejection_reason: reason,
+          },
+        });
+      } catch (err) {
+        console.warn('[DocumentVerificationService] Supabase reject error:', err);
+      }
+    }
 
     documentAuditService.recordLog({
       documentId,

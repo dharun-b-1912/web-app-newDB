@@ -1,6 +1,6 @@
 // src/services/copilot/copilotNotificationTools.ts
 // ============================================================
-// WorkForceOS Copilot — Notification & Approval Tools
+// Joy PeopleHR Copilot — Notification & Approval Tools
 // ============================================================
 
 import { notificationService } from '../notification/notificationService';

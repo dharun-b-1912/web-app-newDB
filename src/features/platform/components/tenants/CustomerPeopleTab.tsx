@@ -1,6 +1,6 @@
 // src/features/platform/components/tenants/CustomerPeopleTab.tsx
 // ============================================================
-// WorkForceOS — Customer Staff, Admins & Supabase Auth Invitations Tab
+// Joy PeopleHR — Customer Staff, Admins & Supabase Auth Invitations Tab
 // ============================================================
 
 import React, { useState } from 'react';

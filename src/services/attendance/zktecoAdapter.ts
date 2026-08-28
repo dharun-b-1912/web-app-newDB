@@ -1,6 +1,6 @@
 // src/services/attendance/zktecoAdapter.ts
 // ============================================================================
-// WorkForceOS — ZKTeco Hardware Adapter & Live Daemon Driver
+// Joy PeopleHR — ZKTeco Hardware Adapter & Live Daemon Driver
 // Standalone TCP Port 4370 & ADMS Push Protocol Support
 // ============================================================================
 
@@ -118,7 +118,7 @@ export class ZkTecoAdapter implements IDeviceAdapter {
   }
 
   /**
-   * Synchronizes Device Clock with WorkForceOS Cloud Time (CMD_SET_TIME = 202)
+   * Synchronizes Device Clock with Joy PeopleHR Cloud Time (CMD_SET_TIME = 202)
    */
   async syncTime(targetDate = new Date()): Promise<{ success: boolean; syncedIso: string }> {
     const encoded = ZkTecoStandaloneProtocol.encodeZkTime(targetDate);
@@ -178,7 +178,7 @@ export class ZkTecoAdapter implements IDeviceAdapter {
   }
 
   /**
-   * Ingests real-time punch event into WorkForceOS Attendance Engine
+   * Ingests real-time punch event into Joy PeopleHR Attendance Engine
    */
   async handleRealtimePunchEvent(record: ZkAttendanceRecord, deviceId: string): Promise<RawBiometricPunch> {
     const result = await biometricGatewayService.ingestRawPunch({

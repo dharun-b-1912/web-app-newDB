@@ -1,6 +1,6 @@
 // src/services/platform/platformSecurityControlService.ts
 // ============================================================
-// WorkForceOS — Platform Security Control Service (100% Realtime Supabase)
+// Joy PeopleHR — Platform Security Control Service (100% Realtime Supabase)
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
@@ -725,6 +725,6 @@ export const platformSecurityControlService = {
       reason: `Exported forensic audit stream in ${format} format`,
     });
 
-    return `WorkForceOS_Audit_Export_${new Date().toISOString().slice(0, 10)}.${format.toLowerCase()}`;
+    return `Joy PeopleHR_Audit_Export_${new Date().toISOString().slice(0, 10)}.${format.toLowerCase()}`;
   },
 };

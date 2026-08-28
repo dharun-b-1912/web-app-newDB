@@ -1,6 +1,6 @@
 // src/services/platform/platformProvisioningService.ts
 // ============================================================
-// WorkForceOS — Tenant Provisioning Engine (Idempotent 10-Stage State Machine)
+// Joy PeopleHR — Tenant Provisioning Engine (Idempotent 10-Stage State Machine)
 // ============================================================
 
 import { TenantProvisioningRun, ProvisioningStepDetail } from '../../types/platformAdmin';

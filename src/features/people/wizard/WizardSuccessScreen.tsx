@@ -1,6 +1,6 @@
 // src/features/people/wizard/WizardSuccessScreen.tsx
 // ============================================================================
-// WorkForceOS — Employee Creation Success with Auth Provisioning Badge
+// Joy PeopleHR — Employee Creation Success with Auth Provisioning Badge
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -66,7 +66,7 @@ export const WizardSuccessScreen: React.FC<Props> = ({
           Employee Created Successfully!
         </h2>
         <p className="text-xs text-gray-500 max-w-sm">
-          The master employee record and authentication identity are now active across WorkForceOS.
+          The master employee record and authentication identity are now active across Joy PeopleHR.
         </p>
       </div>
 

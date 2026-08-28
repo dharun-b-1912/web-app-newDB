@@ -24,7 +24,7 @@ interface Props {
 export const Step4Organization: React.FC<Props> = ({
   formData,
   onChange,
-  employees,
+  employees = [],
   activeCompany,
   currentEmployeeCode,
 }) => {

@@ -1,6 +1,6 @@
 // src/lib/attendance/timeEngine.ts
 // ============================================================================
-// WorkForceOS — Multi-Shift Time Engine & Night Shift Auto-Roll
+// Joy PeopleHR — Multi-Shift Time Engine & Night Shift Auto-Roll
 // Sub-second punch consolidation, 15-min grace, break deduction & OT calculation
 // ============================================================================
 

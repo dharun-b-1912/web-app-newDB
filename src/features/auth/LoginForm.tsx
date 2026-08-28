@@ -1,6 +1,6 @@
 // src/features/auth/LoginForm.tsx
 // ============================================================================
-// WorkForceOS — Production Employee Authentication
+// Joy PeopleHR — Production Employee Authentication
 // Supports Phone + Password & Phone + OTP with First-Time Account Activation
 // ============================================================================
 
@@ -137,7 +137,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleSignup, onForgotPa
   return (
     <div className="space-y-5">
       <div className="text-center sm:text-left">
-        <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Sign in to WorkForceOS</h2>
+        <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Sign in to Joy PeopleHR</h2>
         <p className="text-xs text-gray-500 mt-1">
           Enter your employee credentials to access your tenant workspace.
         </p>

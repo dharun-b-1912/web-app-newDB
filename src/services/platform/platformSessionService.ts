@@ -1,6 +1,6 @@
 // src/services/platform/platformSessionService.ts
 // ============================================================
-// WorkForceOS — Platform Sessions & Device Security Service
+// Joy PeopleHR — Platform Sessions & Device Security Service
 // (Unified: Personal Account Session Center & Platform Control Plane Console)
 // ============================================================
 

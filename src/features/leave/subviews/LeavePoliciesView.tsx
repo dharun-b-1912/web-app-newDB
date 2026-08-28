@@ -260,15 +260,15 @@ export const LeavePoliciesView: React.FC = () => {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                 <div className="p-3 rounded-xl bg-gray-50/70 border border-gray-100">
                   <span className="text-[10px] font-bold text-gray-400 uppercase block">Locations</span>
-                  <strong className="text-gray-900">{activePol.locations.join(', ')}</strong>
+                  <strong className="text-gray-900">{(activePol.locations || []).join(', ')}</strong>
                 </div>
                 <div className="p-3 rounded-xl bg-gray-50/70 border border-gray-100">
                   <span className="text-[10px] font-bold text-gray-400 uppercase block">Departments</span>
-                  <strong className="text-gray-900">{activePol.departments.join(', ')}</strong>
+                  <strong className="text-gray-900">{(activePol.departments || []).join(', ')}</strong>
                 </div>
                 <div className="p-3 rounded-xl bg-gray-50/70 border border-gray-100">
                   <span className="text-[10px] font-bold text-gray-400 uppercase block">Employment</span>
-                  <strong className="text-gray-900">{activePol.employment_types.join(', ')}</strong>
+                  <strong className="text-gray-900">{(activePol.employment_types || []).join(', ')}</strong>
                 </div>
                 <div className="p-3 rounded-xl bg-gray-50/70 border border-gray-100">
                   <span className="text-[10px] font-bold text-gray-400 uppercase block">Effective From</span>
@@ -421,7 +421,7 @@ export const LeavePoliciesView: React.FC = () => {
                     Staff Assigned to {activePol.name}
                   </h3>
                   <p className="text-[11px] text-gray-500">
-                    Matches: {activePol.employment_types.join(', ')} • {activePol.locations.join(', ')}
+                    Matches: {(activePol.employment_types || []).join(', ')} • {(activePol.locations || []).join(', ')}
                   </p>
                 </div>
               </div>

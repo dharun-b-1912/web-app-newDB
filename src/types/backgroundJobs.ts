@@ -1,6 +1,6 @@
 // src/types/backgroundJobs.ts
 // ============================================================
-// WorkForceOS — Background Jobs & Worker Fleet Type Definitions
+// Joy PeopleHR — Background Jobs & Worker Fleet Type Definitions
 // ============================================================
 
 export type JobStatus =

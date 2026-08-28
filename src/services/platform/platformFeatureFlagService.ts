@@ -1,6 +1,6 @@
 // src/services/platform/platformFeatureFlagService.ts
 // ============================================================
-// WorkForceOS — Enterprise Feature Flag & Rollout Service
+// Joy PeopleHR — Enterprise Feature Flag & Rollout Service
 // ============================================================
 
 import { FeatureFlagItem } from '../../types/platformAdmin';

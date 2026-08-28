@@ -1,6 +1,6 @@
 // src/services/platform/platformAuditService.ts
 // ============================================================
-// WorkForceOS — Forensic Immutable Audit Service (100% Realtime Supabase)
+// Joy PeopleHR — Forensic Immutable Audit Service (100% Realtime Supabase)
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
@@ -330,7 +330,7 @@ export const platformAuditService = {
     const { events } = await this.fetchAuditEvents({ ...filters, limit: 1000, page: 1 });
 
     const dateStr = new Date().toISOString().slice(0, 10);
-    const filename = `WorkForceOS_Forensic_Audit_${dateStr}.${format.toLowerCase()}`;
+    const filename = `Joy PeopleHR_Forensic_Audit_${dateStr}.${format.toLowerCase()}`;
 
     let content: string;
     let mimeType: string;

@@ -1,6 +1,6 @@
 // src/lib/router/urlRouter.ts
 // ============================================================
-// WorkForceOS — URL-First Routing Engine & History Synchronizer
+// Joy PeopleHR — URL-First Routing Engine & History Synchronizer
 // ============================================================
 
 export interface RouteState {
