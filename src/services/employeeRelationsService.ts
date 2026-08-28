@@ -3,14 +3,11 @@ import {
   ErCase,
   CaseType,
   CaseStatus,
-  PriorityLevel,
-  ConfidentialityLevel,
   SurveyModel,
-  DisciplinaryCase,
-  PoshCase,
   PoshCommitteeMember,
   ComplianceRecord,
   HrCommunication,
+  CommunicationUrgency,
   KnowledgeArticle,
   CaseTimelineEvent,
   CaseInternalNote,
@@ -26,96 +23,7 @@ class EmployeeRelationsService {
   private STORAGE_KEY_KNOWLEDGE = 'workforce_er_knowledge_v2';
 
   constructor() {
-    this.initDefaultRecordsIfEmpty();
-  }
-
-  private initDefaultRecordsIfEmpty() {
-    if (!localStorage.getItem(this.STORAGE_KEY_POSH_MEMBERS)) {
-      const defaultMembers: PoshCommitteeMember[] = [
-        {
-          id: 'posh-mem-01',
-          name: 'Adv. Meenakshi Sundaram',
-          role: 'PRESIDING_OFFICER',
-          email: 'meenakshi.legal@lawfirm.in',
-          is_external: true,
-          effective_from: '2025-01-01',
-          effective_to: '2027-12-31',
-          status: 'ACTIVE',
-        },
-        {
-          id: 'posh-mem-02',
-          name: 'Haripriya',
-          role: 'MEMBER_SECRETARY',
-          email: 'haripriya@joycorporate.com',
-          is_external: false,
-          effective_from: '2024-01-01',
-          effective_to: '2026-12-31',
-          status: 'ACTIVE',
-        },
-        {
-          id: 'posh-mem-03',
-          name: 'Kavitha Ramachandran',
-          role: 'INTERNAL_MEMBER',
-          email: 'kavitha.r@joycorporate.com',
-          is_external: false,
-          effective_from: '2024-01-01',
-          effective_to: '2026-12-31',
-          status: 'ACTIVE',
-        },
-      ];
-      localStorage.setItem(this.STORAGE_KEY_POSH_MEMBERS, JSON.stringify(defaultMembers));
-    }
-
-    if (!localStorage.getItem(this.STORAGE_KEY_KNOWLEDGE)) {
-      const defaultArticles: KnowledgeArticle[] = [
-        {
-          id: 'kb-001',
-          title: 'Leave Accrual & Encashment Policy 2026',
-          category: 'LEAVE',
-          summary: 'Guidelines on earned leave accruals, casual leave limits, and year-end encashment ceilings.',
-          content: 'Employees accrue 1.5 earned leaves per month of active service. Up to 15 unused earned leaves can be encashed during the December payroll freeze cycle or carried forward up to a maximum accumulation ceiling of 45 days.',
-          author_name: 'Haripriya (HR Head)',
-          version: 2,
-          status: 'PUBLISHED',
-          effective_date: '2026-01-01',
-          helpful_votes: 38,
-          unhelpful_votes: 1,
-          view_count: 312,
-          tags: ['leave', 'encashment', 'accrual', 'annual-leave'],
-        },
-        {
-          id: 'kb-002',
-          title: 'Biometric Clock-in & Regularization Window',
-          category: 'ATTENDANCE',
-          summary: 'Standard operating procedure for biometric punch reconciliation and same-month regularization rules.',
-          content: 'Biometric logs sync in real-time. In case of missed punches due to external client visits, regularization requests must be submitted within 3 business days and approved by the reporting manager before the 25th of the month.',
-          author_name: 'Haripriya (HR Head)',
-          version: 1,
-          status: 'PUBLISHED',
-          effective_date: '2026-01-15',
-          helpful_votes: 52,
-          unhelpful_votes: 2,
-          view_count: 480,
-          tags: ['attendance', 'biometric', 'regularization', 'punches'],
-        },
-        {
-          id: 'kb-003',
-          title: 'Expense Claim Submission & Proof Guidelines',
-          category: 'PAYROLL',
-          summary: 'Allowable travel, client entertainment, and local conveyance reimbursement criteria.',
-          content: 'All expense claims above ₹500 require a digital GST invoice receipt. Claims must be submitted via the Employee Portal before the 20th of the month for payout in the same month’s salary credit.',
-          author_name: 'Finance & HR Operations',
-          version: 3,
-          status: 'PUBLISHED',
-          effective_date: '2026-02-01',
-          helpful_votes: 27,
-          unhelpful_votes: 0,
-          view_count: 245,
-          tags: ['reimbursement', 'expenses', 'travel', 'claims'],
-        },
-      ];
-      localStorage.setItem(this.STORAGE_KEY_KNOWLEDGE, JSON.stringify(defaultArticles));
-    }
+    this.syncWithDatabase();
   }
 
   // ─── Case Management Engine ────────────────────────────────────────────────
@@ -341,13 +249,94 @@ class EmployeeRelationsService {
     }
   }
 
+  async syncWithDatabase(): Promise<void> {
+    if (!isSupabaseEnabled) return;
+    try {
+      // 1. Sync announcements from company_announcements and communications
+      const [annRes, commRes] = await Promise.all([
+        supabase.from('company_announcements').select('*').order('published_at', { ascending: false }),
+        supabase.from('communications').select('*').order('publish_at', { ascending: false }),
+      ]);
+
+      const localComms = this.getCommunications();
+      const mergedMap = new Map<string, HrCommunication>();
+
+      for (const item of localComms) {
+        mergedMap.set(item.id, item);
+      }
+
+      if (annRes.data && annRes.data.length > 0) {
+        for (const ann of annRes.data) {
+          const mappedUrgency: CommunicationUrgency =
+            ann.priority === 'URGENT' ? 'EMERGENCY' : ann.priority === 'HIGH' ? 'IMPORTANT' : 'NORMAL';
+
+          mergedMap.set(ann.id, {
+            id: ann.id,
+            title: ann.title,
+            category: (ann.category as any) || 'ANNOUNCEMENT',
+            urgency: mappedUrgency,
+            content: ann.body || ann.summary || '',
+            target_audience: ann.target_scope === 'ALL' ? 'All Employees' : (ann.target_department || 'Department'),
+            published_by: ann.published_by_name || 'HR Head',
+            published_at: ann.published_at || ann.created_at || new Date().toISOString(),
+            requires_acknowledgement: false,
+            version: 1,
+            stats: {
+              target_count: ann.target_count || 0,
+              delivered_count: ann.delivered_count || 0,
+              read_count: ann.read_count || 0,
+              acknowledged_count: ann.acknowledged_count || 0,
+            },
+            attachments: [],
+          });
+        }
+      }
+
+      if (commRes.data && commRes.data.length > 0) {
+        for (const comm of commRes.data) {
+          const mappedUrgency: CommunicationUrgency =
+            comm.priority === 'URGENT' ? 'EMERGENCY' : comm.priority === 'IMPORTANT' ? 'IMPORTANT' : 'NORMAL';
+
+          mergedMap.set(comm.id, {
+            id: comm.id,
+            title: comm.title,
+            category: (comm.communication_type as any) || 'ANNOUNCEMENT',
+            urgency: mappedUrgency,
+            content: comm.body || '',
+            target_audience: comm.audience_type === 'ALL' ? 'All Employees' : 'Targeted Group',
+            published_by: comm.author_name || comm.published_by || 'HR Head',
+            published_at: comm.publish_at || comm.created_at || new Date().toISOString(),
+            requires_acknowledgement: comm.requires_acknowledgement || false,
+            version: 1,
+            stats: {
+              target_count: comm.target_count || 0,
+              delivered_count: comm.delivered_count || 0,
+              read_count: comm.read_count || 0,
+              acknowledged_count: comm.acknowledged_count || 0,
+            },
+            attachments: [],
+          });
+        }
+      }
+
+      const mergedList = Array.from(mergedMap.values()).sort(
+        (a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
+      );
+      localStorage.setItem(this.STORAGE_KEY_COMMUNICATIONS, JSON.stringify(mergedList));
+      window.dispatchEvent(new CustomEvent('er:communications_updated'));
+    } catch (err) {
+      console.warn('[EmployeeRelationsService] Database sync notice:', err);
+    }
+  }
+
   publishCommunication(comm: Omit<HrCommunication, 'id' | 'published_at'> & { id?: string }): HrCommunication {
     const all = this.getCommunications();
     const id = comm.id || `comm-${Date.now()}`;
+    const publishedAt = new Date().toISOString();
     const item: HrCommunication = {
       ...comm,
       id,
-      published_at: new Date().toISOString(),
+      published_at: publishedAt,
     };
 
     const idx = all.findIndex(c => c.id === id);
@@ -359,7 +348,115 @@ class EmployeeRelationsService {
 
     localStorage.setItem(this.STORAGE_KEY_COMMUNICATIONS, JSON.stringify(all));
     window.dispatchEvent(new CustomEvent('er:communications_updated'));
+
+    // Persist to Supabase so Flutter Mobile App receives it immediately
+    if (isSupabaseEnabled) {
+      // 1. Insert into company_announcements (read by Flutter announcements tab)
+      try {
+        supabase.from('company_announcements').insert([
+          {
+            title: item.title,
+            summary: item.content.substring(0, 150),
+            body: item.content,
+            category: item.category || 'COMPANY_NEWS',
+            priority: (item.urgency === 'EMERGENCY' || item.urgency === 'URGENT') ? 'URGENT' : (item.urgency === 'IMPORTANT' ? 'HIGH' : 'NORMAL'),
+            target_scope: item.target_audience === 'All Employees' ? 'ALL' : 'DEPARTMENT',
+            published_by_name: item.published_by || 'Haripriya (HR Head)',
+            is_pinned: item.urgency === 'EMERGENCY' || item.urgency === 'URGENT' || item.urgency === 'IMPORTANT',
+            published_at: publishedAt,
+            status: 'PUBLISHED',
+          },
+        ]).then(() => {});
+      } catch (_) {}
+
+      // 2. Insert into communications table
+      try {
+        supabase.from('communications').insert([
+          {
+            title: item.title,
+            body: item.content,
+            communication_type: item.category || 'ANNOUNCEMENT',
+            priority: (item.urgency === 'EMERGENCY' || item.urgency === 'URGENT') ? 'URGENT' : (item.urgency === 'IMPORTANT' ? 'IMPORTANT' : 'NORMAL'),
+            status: 'PUBLISHED',
+            author_name: item.published_by || 'Haripriya (HR Head)',
+            published_by: item.published_by || 'Haripriya (HR Head)',
+            publish_at: publishedAt,
+            requires_acknowledgement: item.requires_acknowledgement ?? false,
+          },
+        ]).then(() => {});
+      } catch (_) {}
+
+      // 3. Dispatch to notification_events for Flutter mobile app realtime banner
+      try {
+        supabase.from('notification_events').insert([
+          {
+            event_type: 'COMPANY_ANNOUNCEMENT',
+            category: 'BROADCAST',
+            severity: item.urgency === 'EMERGENCY' ? 'CRITICAL' : 'INFO',
+            title: `Announcement: ${item.title}`,
+            body: item.content.substring(0, 120),
+            actor_name: item.published_by || 'HR Head',
+            metadata: {
+              communication_id: item.id,
+              category: item.category,
+              urgency: item.urgency,
+            },
+          },
+        ]).then(() => {});
+      } catch (_) {}
+    }
+
     return item;
+  }
+
+  async deleteCommunication(id: string, title?: string): Promise<boolean> {
+    const all = this.getCommunications();
+    const itemToDelete = all.find(c => c.id === id);
+    const resolvedTitle = title || itemToDelete?.title;
+
+    const updated = all.filter(c => c.id !== id);
+    localStorage.setItem(this.STORAGE_KEY_COMMUNICATIONS, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('er:communications_updated'));
+
+    if (isSupabaseEnabled) {
+      try {
+        const promises: PromiseLike<any>[] = [
+          supabase.from('company_announcements').delete().eq('id', id),
+          supabase.from('communications').delete().eq('id', id),
+        ];
+
+        if (resolvedTitle) {
+          promises.push(
+            supabase.from('company_announcements').delete().eq('title', resolvedTitle),
+            supabase.from('communications').delete().eq('title', resolvedTitle),
+            supabase.from('notification_events').delete().ilike('title', `%${resolvedTitle}%`)
+          );
+        }
+
+        await Promise.allSettled(promises);
+      } catch (err) {
+        console.warn('[EmployeeRelationsService] Delete notice:', err);
+      }
+    }
+    return true;
+  }
+
+  async clearAllCommunications(): Promise<boolean> {
+    localStorage.setItem(this.STORAGE_KEY_COMMUNICATIONS, JSON.stringify([]));
+    window.dispatchEvent(new CustomEvent('er:communications_updated'));
+
+    if (isSupabaseEnabled) {
+      try {
+        await Promise.allSettled([
+          supabase.from('company_announcements').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+          supabase.from('communications').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+          supabase.from('notification_events').delete().eq('event_type', 'COMPANY_ANNOUNCEMENT'),
+        ]);
+      } catch (err) {
+        console.warn('[EmployeeRelationsService] Clear all notice:', err);
+      }
+    }
+    return true;
   }
 
   // ─── Knowledge Centre ─────────────────────────────────────────────────────
