@@ -306,12 +306,25 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     await loadData();
   };
 
-  // Reverse Geocoding Helper
+  // Reverse Geocoding Helper (Fetches real structured physical address dynamically)
   const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`);
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`
+      );
       if (res.ok) {
         const data = await res.json();
+        if (data && data.address) {
+          const a = data.address;
+          const poi = a.building || a.office || a.industrial || a.commercial || a.amenity;
+          const road = a.road || a.street || a.pedestrian;
+          const area = a.suburb || a.neighbourhood || a.village;
+          const city = a.city || a.town || a.county || a.district;
+          const state = a.state;
+          const postcode = a.postcode;
+          const parts = [poi, road, area, city, state, postcode].filter(Boolean);
+          if (parts.length >= 2) return parts.join(', ');
+        }
         if (data && data.display_name) {
           return data.display_name;
         }
@@ -322,7 +335,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     return '';
   };
 
-  // Auto-Detect Current GPS Coordinates inside Modal + Reverse Geocode
+  // Auto-Detect Current GPS Coordinates inside Modal + Dynamic Reverse Geocode
   const handleDetectModalCoordinates = async () => {
     setIsDetectingModalGps(true);
     try {
@@ -339,8 +352,8 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
         ...prev,
         latitude: cleanLat,
         longitude: cleanLon,
-        address: resolvedAddress || prev?.address || 'Peelamedu - Pudur Main Rd, Coimbatore',
-        name: prev?.name && prev.name !== 'e.g. Coimbatore HQ Campus' ? prev.name : 'Joy Corporate Solutions HQ',
+        address: resolvedAddress || prev?.address || '',
+        name: prev?.name || 'Main Office',
         accuracy_requirement_meters: Math.max(50, Math.round(pos.accuracyMeters * 1.5)),
       }));
 
@@ -352,34 +365,13 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     }
   };
 
-  // Parse Google Maps Link / DMS Coordinates
+  // Parse Google Maps Link / DMS Coordinates Completely Dynamically
   const handleProcessGoogleMapsLink = async () => {
     if (!googleMapsUrlInput.trim()) return;
     setIsProcessingGmapsLink(true);
 
     try {
       const input = googleMapsUrlInput.trim();
-
-      // Check Joy Corporate Solutions shortlink or keywords
-      if (
-        input.includes('cyya5UiZ1Brnbirz5') ||
-        input.toLowerCase().includes('joy corporate solutions') ||
-        input.toLowerCase().includes('joy head office') ||
-        input.toLowerCase().includes('arasur')
-      ) {
-        setSelectedLocation((prev) => ({
-          ...prev,
-          name: 'Joy Corporate Solutions Private Limited (HQ)',
-          latitude: 11.0844364,
-          longitude: 77.1262627,
-          address: 'D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur, Coimbatore, Tamil Nadu 641407',
-          geofence_radius_meters: prev?.geofence_radius_meters || 100,
-          accuracy_requirement_meters: 50,
-        }));
-        showToast('✓ Resolved Joy Corporate Solutions Private Limited (11.0844364°, 77.1262627°)', 'success');
-        setIsProcessingGmapsLink(false);
-        return;
-      }
 
       const parsed = parseGoogleMapsInput(input);
       if (parsed && parsed.latitude !== undefined && parsed.longitude !== undefined) {
@@ -392,7 +384,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
           ...prev,
           latitude: parsed.latitude,
           longitude: parsed.longitude,
-          address: addr || prev?.address || 'Verified Facility Coordinates',
+          address: addr || prev?.address || '',
           name: parsed.name || prev?.name || 'Work Facility',
         }));
 
@@ -401,7 +393,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
         return;
       }
 
-      // If not parsed directly as coordinates/url, attempt address search
+      // If not parsed directly as coordinates/url, attempt search
       const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(input)}&limit=1&addressdetails=1`);
       if (res.ok) {
         const data = await res.json();
@@ -409,28 +401,31 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
           const match = data[0];
           const cleanLat = Number(parseFloat(match.lat).toFixed(7));
           const cleanLon = Number(parseFloat(match.lon).toFixed(7));
+          const cleanAddr = await reverseGeocode(cleanLat, cleanLon) || match.display_name;
           setSelectedLocation((prev) => ({
             ...prev,
             latitude: cleanLat,
             longitude: cleanLon,
-            address: match.display_name,
+            address: cleanAddr,
             name: prev?.name || match.name || input,
           }));
-          showToast(`Found: ${match.display_name.split(',').slice(0, 3).join(',')}`, 'success');
+          showToast(`✓ Found location coordinates: ${cleanLat}, ${cleanLon}`, 'success');
         } else {
           // If search yielded no direct match, check if input has lat/lon numbers anywhere
           const anyCoords = input.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
           if (anyCoords) {
             const cleanLat = Number(parseFloat(anyCoords[1]).toFixed(7));
             const cleanLon = Number(parseFloat(anyCoords[2]).toFixed(7));
+            const cleanAddr = await reverseGeocode(cleanLat, cleanLon);
             setSelectedLocation((prev) => ({
               ...prev,
               latitude: cleanLat,
               longitude: cleanLon,
+              address: cleanAddr || prev?.address || '',
             }));
             showToast(`✓ Extracted coordinates: ${cleanLat}, ${cleanLon}`, 'success');
           } else {
-            showToast('Could not resolve link. Please enter Latitude/Longitude or click Joy HQ preset.', 'warning');
+            showToast('Could not resolve link. Please paste a full Google Maps link or enter Latitude, Longitude.', 'warning');
           }
         }
       }
@@ -1303,50 +1298,8 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                       Apply
                     </Button>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
-                    <span className="text-blue-700 font-semibold">Quick Presets:</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setGoogleMapsUrlInput('https://maps.app.goo.gl/cyya5UiZ1Brnbirz5');
-                        setSelectedLocation((prev) => ({
-                          ...prev,
-                          name: 'Joy Corporate Solutions Private Limited (HQ)',
-                          code: prev?.code || 'HQ-CBE',
-                          location_type: 'OFFICE',
-                          latitude: 11.0844364,
-                          longitude: 77.1262627,
-                          address: 'D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur, Coimbatore, Tamil Nadu 641407',
-                          geofence_radius_meters: 100,
-                          accuracy_requirement_meters: 50,
-                        }));
-                        showToast('✓ Set Joy Corporate Solutions Private Limited HQ (11.0844364°, 77.1262627°)', 'success');
-                      }}
-                      className="px-2 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-900 font-bold rounded-md cursor-pointer transition-all"
-                    >
-                      📍 Joy HQ (Arasur)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setGoogleMapsUrlInput('https://maps.app.goo.gl/oJDgaJTNBwzXw9mC7');
-                        setSelectedLocation((prev) => ({
-                          ...prev,
-                          name: 'Watertec (India) - Unit 3',
-                          code: prev?.code || 'WT-U3',
-                          location_type: 'FACTORY',
-                          latitude: 11.0655197,
-                          longitude: 77.1519614,
-                          address: 'Watertec (India) Unit 3, Arasur Industrial Area, Coimbatore, Tamil Nadu 641407',
-                          geofence_radius_meters: 100,
-                          accuracy_requirement_meters: 50,
-                        }));
-                        showToast('✓ Set Watertec (India) Unit 3 (11.0655197°, 77.1519614° | Radius: 100m)', 'success');
-                      }}
-                      className="px-2 py-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold rounded-md cursor-pointer transition-all"
-                    >
-                      🏭 Watertec Unit 3
-                    </button>
+                  <div className="flex items-center justify-between pt-1 text-[11px] text-blue-700">
+                    <span>💡 <strong>Supported:</strong> Google Maps links, Place URLs, DMS (11°03'55"N), or Lat, Long</span>
                   </div>
                 </div>
 

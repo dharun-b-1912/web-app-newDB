@@ -862,6 +862,7 @@ class WorkLocationService {
 
 /**
  * Parses Google Maps links, Place URLs, DMS coordinates, Plus codes, or raw Lat/Lon inputs.
+ * Completely dynamic - extracts exact pin coordinates, place names, and decimal coordinates for any location worldwide.
  */
 export function parseGoogleMapsInput(input: string): {
   latitude?: number;
@@ -872,32 +873,17 @@ export function parseGoogleMapsInput(input: string): {
   if (!input || typeof input !== 'string') return null;
   const raw = input.trim();
 
-  // 1. Check known shortlink for Joy Corporate Solutions & Watertec
-  if (raw.includes('cyya5UiZ1Brnbirz5') || raw.toLowerCase().includes('joy corporate solutions')) {
-    return {
-      latitude: 11.0844364,
-      longitude: 77.1262627,
-      name: 'Joy Corporate Solutions Private Limited (HQ)',
-      address: 'D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur, Coimbatore, Tamil Nadu 641407',
-    };
-  }
-
-  if (raw.includes('oJDgaJTNBwzXw9mC7') || raw.toLowerCase().includes('watertec') || raw.toLowerCase().includes('water tec')) {
-    return {
-      latitude: 11.0655197,
-      longitude: 77.1519614,
-      name: 'Watertec (India) - Unit 3',
-      address: 'Watertec (India) Unit 3, Arasur Industrial Area, Coimbatore, Tamil Nadu 641407',
-    };
-  }
-
-  // 2. Google Maps exact place pin: !3d(lat)!4d(lon)
+  // 1. Google Maps exact place pin: !3d(lat)!4d(lon)
   const pinMatch = raw.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
   if (pinMatch) {
     let placeName: string | undefined;
-    const placeMatch = raw.match(/place\/([^/@]+)/);
+    const placeMatch = raw.match(/place\/([^/@?]+)/);
     if (placeMatch) {
-      placeName = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+      try {
+        placeName = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+      } catch {
+        placeName = placeMatch[1].replace(/\+/g, ' ');
+      }
     }
     return {
       latitude: Number(parseFloat(pinMatch[1]).toFixed(7)),
@@ -906,13 +892,17 @@ export function parseGoogleMapsInput(input: string): {
     };
   }
 
-  // 3. Google Maps URL containing /@lat,lon,
+  // 2. Google Maps URL containing /@lat,lon,
   const atMatch = raw.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
   if (atMatch) {
     let placeName: string | undefined;
-    const placeMatch = raw.match(/place\/([^/@]+)/);
+    const placeMatch = raw.match(/place\/([^/@?]+)/);
     if (placeMatch) {
-      placeName = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+      try {
+        placeName = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+      } catch {
+        placeName = placeMatch[1].replace(/\+/g, ' ');
+      }
     }
     return {
       latitude: Number(parseFloat(atMatch[1]).toFixed(7)),
