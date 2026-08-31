@@ -5,7 +5,7 @@
 -- Dynamic Organization & Tenant Isolation (Clean Schema, No Static Mock Seeds)
 -- ============================================================================
 
--- 1. Create work_locations table
+-- 1. Create work_locations table (if not exists)
 CREATE TABLE IF NOT EXISTS public.work_locations (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS public.employee_work_location_assignments (
   tenant_id TEXT NOT NULL,
   organization_id TEXT NOT NULL,
   employee_id TEXT NOT NULL,
-  work_location_id TEXT NOT NULL REFERENCES public.work_locations(id) ON DELETE CASCADE,
+  work_location_id TEXT NOT NULL,
   is_primary BOOLEAN NOT NULL DEFAULT true,
   attendance_allowed BOOLEAN NOT NULL DEFAULT true,
   effective_from DATE NOT NULL DEFAULT CURRENT_DATE,
