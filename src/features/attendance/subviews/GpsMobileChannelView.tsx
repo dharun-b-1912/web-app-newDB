@@ -907,7 +907,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                   const isMapped = empAssignments.length > 0;
                   const assignedLocations = isMapped
                     ? locations.filter((l) => empAssignments.some((a) => a.work_location_id === l.id))
-                    : locations; // default to all if unrestricted
+                    : [];
 
                   return (
                     <tr key={emp.id} className="hover:bg-gray-50/50">
@@ -917,33 +917,43 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                       </td>
                       <td className="p-3.5 text-gray-700 font-medium">{emp.department_name || emp.department || 'Operations'}</td>
                       <td className="p-3.5">
-                        <div className="flex flex-wrap gap-1.5">
-                          {assignedLocations.map((loc) => {
-                            const isPrim = empAssignments.find((a) => a.work_location_id === loc.id)?.is_primary;
-                            return (
-                              <span
-                                key={loc.id}
-                                className={cn(
-                                  "px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1",
-                                  isPrim
-                                    ? "bg-emerald-100 text-emerald-900 border border-emerald-300"
-                                    : "bg-gray-100 text-gray-700 border border-gray-200"
-                                )}
-                              >
-                                {isPrim && <CheckCircle className="w-3 h-3 text-emerald-700" />}
-                                {loc.name} {isPrim ? '(Primary)' : ''}
-                              </span>
-                            );
-                          })}
-                        </div>
+                        {isMapped && assignedLocations.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {assignedLocations.map((loc) => {
+                              const isPrim = empAssignments.find((a) => a.work_location_id === loc.id)?.is_primary;
+                              return (
+                                <span
+                                  key={loc.id}
+                                  className={cn(
+                                    "px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1",
+                                    isPrim
+                                      ? "bg-blue-100 text-blue-950 border border-blue-300 font-bold"
+                                      : "bg-gray-100 text-gray-700 border border-gray-200"
+                                  )}
+                                >
+                                  {isPrim && <span className="text-blue-700 font-bold">★</span>}
+                                  {loc.name} {isPrim ? '(Primary)' : ''}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md font-semibold">
+                            ⚠️ Not Mapped (All Locations Allowed)
+                          </span>
+                        )}
                       </td>
                       <td className="p-3.5">
-                        <Badge variant="emerald" size="sm">Strict Geofence</Badge>
+                        {isMapped ? (
+                          <Badge variant="emerald" size="sm">Mapped ({assignedLocations.length} Sites)</Badge>
+                        ) : (
+                          <Badge variant="gray" size="sm">Unrestricted</Badge>
+                        )}
                       </td>
                       <td className="p-3.5 text-right">
                         <button
                           onClick={() => handleOpenEmployeeMapping(emp)}
-                          className="px-3 py-1.5 bg-gray-100 hover:bg-[#07563D] hover:text-white text-gray-800 font-bold rounded-xl text-xs transition-all cursor-pointer"
+                          className="px-3 py-1.5 bg-blue-50 hover:bg-blue-700 hover:text-white text-blue-800 font-bold rounded-xl text-xs transition-all cursor-pointer border border-blue-200"
                         >
                           Map Locations
                         </button>

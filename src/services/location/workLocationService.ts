@@ -443,7 +443,7 @@ class WorkLocationService {
     }
     try {
       const { data, error } = await supabase
-        .from('employee_work_locations')
+        .from('employee_work_location_assignments')
         .select('*')
         .eq('is_active', true);
 
@@ -502,8 +502,9 @@ class WorkLocationService {
     const newRows: any[] = [];
     locationIds.forEach((locId, idx) => {
       const isPrim = primaryLocationId ? primaryLocationId === locId : idx === 0;
+      const rowId = `assign-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
       const row: EmployeeWorkLocationAssignment = {
-        id: `assign-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        id: rowId,
         tenant_id: tenantId,
         organization_id: tenantId,
         employee_id: employeeId,
@@ -517,6 +518,7 @@ class WorkLocationService {
       };
       assignments.push(row);
       newRows.push({
+        id: rowId,
         tenant_id: tenantId,
         organization_id: tenantId,
         employee_id: employeeId,
@@ -529,7 +531,9 @@ class WorkLocationService {
 
       // If employeeCode is provided and distinct from employeeId, also create assignment record
       if (employeeCode && employeeCode !== employeeId) {
+        const codeRowId = `assign-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
         newRows.push({
+          id: codeRowId,
           tenant_id: tenantId,
           organization_id: tenantId,
           employee_id: employeeCode,
@@ -548,13 +552,13 @@ class WorkLocationService {
       try {
         // 1. Delete prior mappings for employee
         await supabase
-          .from('employee_work_locations')
+          .from('employee_work_location_assignments')
           .delete()
           .in('employee_id', employeeCode ? [employeeId, employeeCode] : [employeeId]);
 
         // 2. Insert new mappings
         if (newRows.length > 0) {
-          await supabase.from('employee_work_locations').insert(newRows);
+          await supabase.from('employee_work_location_assignments').insert(newRows);
         }
 
         // 3. Update employee record location name & branch to primary work location
@@ -569,14 +573,14 @@ class WorkLocationService {
         await supabase.from('realtime_outbox').insert({
           tenant_id: tenantId,
           organization_id: tenantId,
-          entity_type: 'employee_work_locations',
+          entity_type: 'employee_work_location_assignments',
           entity_id: employeeId,
           event_type: 'location.assignment_updated',
           actor_id: 'admin',
           payload: { employeeId, employeeCode, locationIds, primaryLocationId, primaryLocation: primaryLoc },
         });
       } catch (e: any) {
-        console.warn('[Supabase EmployeeWorkLocation] sync notice:', e);
+        console.warn('[Supabase EmployeeWorkLocationAssignment] sync notice:', e);
       }
     }
 
