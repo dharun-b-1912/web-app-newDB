@@ -1254,9 +1254,10 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
 
       {/* GEOFENCE ZONE MODAL WITH GOOGLE MAPS URL PARSER & SATELLITE PREVIEW */}
       {isEditingLocation && selectedLocation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in overflow-y-auto">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-gray-200 overflow-hidden my-6">
-            <div className="p-4 bg-gradient-to-r from-[#07563D] to-[#0a7a57] text-white flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white w-full max-w-xl max-h-[90vh] rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden animate-in zoom-in-95">
+            {/* Sticky Header */}
+            <div className="p-4 bg-gradient-to-r from-[#07563D] to-[#0a7a57] text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <MapIcon className="w-4 h-4 text-emerald-300" />
                 <h3 className="font-bold text-sm">
@@ -1271,226 +1272,230 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveLocation} className="p-5 space-y-3.5 text-xs">
-              {/* 1. Paste Google Maps Link / DMS Coordinates / Search Input */}
-              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-blue-900 font-bold flex items-center gap-1 text-xs">
-                    <LinkIcon className="w-3.5 h-3.5 text-blue-700" /> Paste Google Maps Link / DMS Coordinates
-                  </label>
-                  <span className="text-[10px] text-blue-600 font-mono">11°05'05.0"N 77°07'34.0"E</span>
+            {/* Scrollable Body & Sticky Footer */}
+            <form onSubmit={handleSaveLocation} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-5 space-y-3.5 text-xs overflow-y-auto flex-1">
+                {/* 1. Paste Google Maps Link / DMS Coordinates / Search Input */}
+                <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-blue-900 font-bold flex items-center gap-1 text-xs">
+                      <LinkIcon className="w-3.5 h-3.5 text-blue-700" /> Paste Google Maps Link / DMS Coordinates
+                    </label>
+                    <span className="text-[10px] text-blue-600 font-mono">11°05'05.0"N 77°07'34.0"E</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={googleMapsUrlInput}
+                      onChange={(e) => setGoogleMapsUrlInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleProcessGoogleMapsLink(); } }}
+                      placeholder="Paste link (https://maps.app.goo.gl/...) or 11.0844364, 77.1262627"
+                      className="flex-1 px-3 py-2 bg-white border border-blue-300 rounded-xl focus:ring-1 focus:ring-blue-600 focus:outline-none text-xs font-mono"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleProcessGoogleMapsLink}
+                      disabled={isProcessingGmapsLink || !googleMapsUrlInput.trim()}
+                      className="bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold px-3 py-2 rounded-xl cursor-pointer"
+                    >
+                      <Sparkles className={cn("w-3.5 h-3.5 mr-1", isProcessingGmapsLink && "animate-spin")} />
+                      Apply
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-1.5 pt-1 text-[11px]">
+                    <span className="text-blue-700 font-semibold">Quick Preset:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGoogleMapsUrlInput('https://maps.app.goo.gl/cyya5UiZ1Brnbirz5');
+                        setSelectedLocation((prev) => ({
+                          ...prev,
+                          name: 'Joy Corporate Solutions Private Limited (HQ)',
+                          latitude: 11.0844364,
+                          longitude: 77.1262627,
+                          address: 'D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur, Coimbatore, Tamil Nadu 641407',
+                          geofence_radius_meters: 100,
+                          accuracy_requirement_meters: 50,
+                        }));
+                        showToast('✓ Set Joy Corporate Solutions Private Limited HQ (11.0844364°, 77.1262627°)', 'success');
+                      }}
+                      className="px-2 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-900 font-bold rounded-md cursor-pointer transition-all"
+                    >
+                      📍 Joy HQ (Arasur Campus)
+                    </button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={googleMapsUrlInput}
-                    onChange={(e) => setGoogleMapsUrlInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleProcessGoogleMapsLink(); } }}
-                    placeholder="Paste link (https://maps.app.goo.gl/...) or 11.0844364, 77.1262627"
-                    className="flex-1 px-3 py-2 bg-white border border-blue-300 rounded-xl focus:ring-1 focus:ring-blue-600 focus:outline-none text-xs font-mono"
-                  />
+
+                {/* 2. Device Sensor GPS Button */}
+                <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-between">
+                  <div>
+                    <strong className="text-gray-800 block font-semibold text-xs">Live Device GPS Sensor</strong>
+                    <span className="text-[11px] text-gray-500">Detect your current position directly</span>
+                  </div>
                   <Button
                     type="button"
                     size="sm"
-                    onClick={handleProcessGoogleMapsLink}
-                    disabled={isProcessingGmapsLink || !googleMapsUrlInput.trim()}
-                    className="bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold px-3 py-2 rounded-xl cursor-pointer"
+                    variant="outline"
+                    onClick={handleDetectModalCoordinates}
+                    disabled={isDetectingModalGps}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg border-gray-300 cursor-pointer"
                   >
-                    <Sparkles className={cn("w-3.5 h-3.5 mr-1", isProcessingGmapsLink && "animate-spin")} />
-                    Apply
+                    <Locate className={cn("w-3.5 h-3.5 mr-1", isDetectingModalGps && "animate-spin")} />
+                    {isDetectingModalGps ? 'Locating...' : 'Use Device GPS'}
                   </Button>
                 </div>
-                <div className="flex items-center gap-1.5 pt-1 text-[11px]">
-                  <span className="text-blue-700 font-semibold">Quick Preset:</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGoogleMapsUrlInput('https://maps.app.goo.gl/cyya5UiZ1Brnbirz5');
-                      setSelectedLocation((prev) => ({
-                        ...prev,
-                        name: 'Joy Corporate Solutions Private Limited (HQ)',
-                        latitude: 11.0844364,
-                        longitude: 77.1262627,
-                        address: 'D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur, Coimbatore, Tamil Nadu 641407',
-                        geofence_radius_meters: 100,
-                        accuracy_requirement_meters: 50,
-                      }));
-                      showToast('✓ Set Joy Corporate Solutions Private Limited HQ (11.0844364°, 77.1262627°)', 'success');
-                    }}
-                    className="px-2 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-900 font-bold rounded-md cursor-pointer transition-all"
-                  >
-                    📍 Joy HQ (Arasur Campus)
-                  </button>
-                </div>
-              </div>
 
-              {/* 2. Device Sensor GPS Button */}
-              <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-between">
+                {/* 3. Facility Name & Code */}
                 <div>
-                  <strong className="text-gray-800 block font-semibold text-xs">Live Device GPS Sensor</strong>
-                  <span className="text-[11px] text-gray-500">Detect your current position directly</span>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={handleDetectModalCoordinates}
-                  disabled={isDetectingModalGps}
-                  className="text-xs font-semibold px-3 py-1.5 rounded-lg border-gray-300 cursor-pointer"
-                >
-                  <Locate className={cn("w-3.5 h-3.5 mr-1", isDetectingModalGps && "animate-spin")} />
-                  {isDetectingModalGps ? 'Locating...' : 'Use Device GPS'}
-                </Button>
-              </div>
-
-              {/* 3. Facility Name & Code */}
-              <div>
-                <label className="block text-gray-700 font-semibold mb-1">Facility / Location Name:</label>
-                <input
-                  type="text"
-                  required
-                  value={selectedLocation.name || ''}
-                  onChange={(e) => setSelectedLocation({ ...selectedLocation, name: e.target.value })}
-                  placeholder="e.g. Joy Corporate Solutions Private Limited (HQ)"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-[#07563D] focus:outline-none font-semibold"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-gray-700 font-semibold mb-1">Location Code:</label>
+                  <label className="block text-gray-700 font-semibold mb-1">Facility / Location Name:</label>
                   <input
                     type="text"
                     required
-                    value={selectedLocation.code || ''}
-                    onChange={(e) => setSelectedLocation({ ...selectedLocation, code: e.target.value })}
-                    placeholder="LOC-JOY-HQ"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-[#07563D] focus:outline-none uppercase font-mono"
+                    value={selectedLocation.name || ''}
+                    onChange={(e) => setSelectedLocation({ ...selectedLocation, name: e.target.value })}
+                    placeholder="e.g. Joy Corporate Solutions Private Limited (HQ)"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-[#07563D] focus:outline-none font-semibold"
                   />
                 </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-gray-700 font-semibold mb-1">Location Code:</label>
+                    <input
+                      type="text"
+                      required
+                      value={selectedLocation.code || ''}
+                      onChange={(e) => setSelectedLocation({ ...selectedLocation, code: e.target.value })}
+                      placeholder="LOC-JOY-HQ"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-[#07563D] focus:outline-none uppercase font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 font-semibold mb-1">Location Type:</label>
+                    <select
+                      value={selectedLocation.location_type || 'OFFICE'}
+                      onChange={(e) => setSelectedLocation({ ...selectedLocation, location_type: e.target.value as any })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-[#07563D] focus:outline-none"
+                    >
+                      <option value="OFFICE">Office / HQ</option>
+                      <option value="FACTORY">Factory / Production</option>
+                      <option value="BRANCH">Branch Office</option>
+                      <option value="WAREHOUSE">Warehouse</option>
+                      <option value="PROJECT_SITE">Project Site</option>
+                      <option value="CLIENT_SITE">Client Site</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 4. Exact Coordinates */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-gray-700 font-semibold mb-1">Latitude:</label>
+                    <input
+                      type="number"
+                      step="any"
+                      required
+                      value={selectedLocation.latitude !== undefined ? selectedLocation.latitude : ''}
+                      onChange={(e) => setSelectedLocation({ ...selectedLocation, latitude: parseFloat(e.target.value) || 0 })}
+                      placeholder="11.0844364"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-[#07563D] focus:outline-none font-mono font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 font-semibold mb-1">Longitude:</label>
+                    <input
+                      type="number"
+                      step="any"
+                      required
+                      value={selectedLocation.longitude !== undefined ? selectedLocation.longitude : ''}
+                      onChange={(e) => setSelectedLocation({ ...selectedLocation, longitude: parseFloat(e.target.value) || 0 })}
+                      placeholder="77.1262627"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-[#07563D] focus:outline-none font-mono font-bold"
+                    />
+                  </div>
+                </div>
+
+                {/* 5. Google Maps Satellite/Map Live Preview */}
+                {selectedLocation.latitude !== undefined && selectedLocation.longitude !== undefined && (
+                  <div className="rounded-xl overflow-hidden border border-gray-200 h-44 bg-slate-900 relative">
+                    <iframe
+                      title="Modal Google Maps Preview"
+                      width="100%"
+                      height="100%"
+                      frameBorder="0"
+                      loading="lazy"
+                      src={`https://maps.google.com/maps?q=${selectedLocation.latitude},${selectedLocation.longitude}&hl=en&z=17&t=${modalMapType}&output=embed`}
+                      className="w-full h-full"
+                    />
+
+                    {/* Satellite / Map toggle in modal */}
+                    <div className="absolute top-2 right-2 flex gap-1 bg-slate-900/90 p-1 rounded-lg border border-slate-700 backdrop-blur-xs">
+                      <button
+                        type="button"
+                        onClick={() => setModalMapType('m')}
+                        className={cn("px-2 py-0.5 text-[10px] rounded font-semibold cursor-pointer", modalMapType === 'm' ? "bg-white text-gray-900" : "text-white/80")}
+                      >
+                        Map
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModalMapType('k')}
+                        className={cn("px-2 py-0.5 text-[10px] rounded font-semibold cursor-pointer", modalMapType === 'k' ? "bg-white text-gray-900" : "text-white/80")}
+                      >
+                        Satellite
+                      </button>
+                    </div>
+
+                    <div className="absolute bottom-2 left-2 bg-slate-900/90 border border-slate-700 px-2 py-1 rounded-lg text-[10px] text-slate-200 backdrop-blur-xs flex items-center gap-1.5 font-mono">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      {Number(selectedLocation.latitude).toFixed(6)}°, {Number(selectedLocation.longitude).toFixed(6)}°
+                    </div>
+                  </div>
+                )}
+
+                {/* 6. Radius Slider */}
+                <div className="space-y-1">
+                  <div className="flex justify-between">
+                    <label className="text-gray-700 font-semibold">Geofence Radius (Meters):</label>
+                    <strong className="text-[#07563D] font-mono">{selectedLocation.geofence_radius_meters || 100}m</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min="25"
+                    max="1000"
+                    step="25"
+                    value={selectedLocation.geofence_radius_meters || 100}
+                    onChange={(e) => setSelectedLocation({ ...selectedLocation, geofence_radius_meters: parseInt(e.target.value, 10) })}
+                    className="w-full accent-[#07563D] cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-gray-400 font-mono">
+                    <span>50m (Office)</span>
+                    <span>100m (HQ)</span>
+                    <span>300m (Factory)</span>
+                    <span>1000m (Plant)</span>
+                  </div>
+                </div>
+
+                {/* 7. Resolved Physical Address */}
                 <div>
-                  <label className="block text-gray-700 font-semibold mb-1">Location Type:</label>
-                  <select
-                    value={selectedLocation.location_type || 'OFFICE'}
-                    onChange={(e) => setSelectedLocation({ ...selectedLocation, location_type: e.target.value as any })}
+                  <label className="block text-gray-700 font-semibold mb-1">Physical Address / Street / Plus Code:</label>
+                  <input
+                    type="text"
+                    value={selectedLocation.address || ''}
+                    onChange={(e) => setSelectedLocation({ ...selectedLocation, address: e.target.value })}
+                    placeholder="D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur, Coimbatore"
                     className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-[#07563D] focus:outline-none"
-                  >
-                    <option value="OFFICE">Office / HQ</option>
-                    <option value="FACTORY">Factory / Production</option>
-                    <option value="BRANCH">Branch Office</option>
-                    <option value="WAREHOUSE">Warehouse</option>
-                    <option value="PROJECT_SITE">Project Site</option>
-                    <option value="CLIENT_SITE">Client Site</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* 4. Exact Coordinates */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-gray-700 font-semibold mb-1">Latitude:</label>
-                  <input
-                    type="number"
-                    step="any"
-                    required
-                    value={selectedLocation.latitude !== undefined ? selectedLocation.latitude : ''}
-                    onChange={(e) => setSelectedLocation({ ...selectedLocation, latitude: parseFloat(e.target.value) || 0 })}
-                    placeholder="11.0844364"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-[#07563D] focus:outline-none font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-700 font-semibold mb-1">Longitude:</label>
-                  <input
-                    type="number"
-                    step="any"
-                    required
-                    value={selectedLocation.longitude !== undefined ? selectedLocation.longitude : ''}
-                    onChange={(e) => setSelectedLocation({ ...selectedLocation, longitude: parseFloat(e.target.value) || 0 })}
-                    placeholder="77.1262627"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-[#07563D] focus:outline-none font-mono font-bold"
                   />
                 </div>
               </div>
 
-              {/* 5. Google Maps Satellite/Map Live Preview */}
-              {selectedLocation.latitude !== undefined && selectedLocation.longitude !== undefined && (
-                <div className="rounded-xl overflow-hidden border border-gray-200 h-44 bg-slate-900 relative">
-                  <iframe
-                    title="Modal Google Maps Preview"
-                    width="100%"
-                    height="100%"
-                    frameBorder="0"
-                    loading="lazy"
-                    src={`https://maps.google.com/maps?q=${selectedLocation.latitude},${selectedLocation.longitude}&hl=en&z=17&t=${modalMapType}&output=embed`}
-                    className="w-full h-full"
-                  />
-
-                  {/* Satellite / Map toggle in modal */}
-                  <div className="absolute top-2 right-2 flex gap-1 bg-slate-900/90 p-1 rounded-lg border border-slate-700 backdrop-blur-xs">
-                    <button
-                      type="button"
-                      onClick={() => setModalMapType('m')}
-                      className={cn("px-2 py-0.5 text-[10px] rounded font-semibold cursor-pointer", modalMapType === 'm' ? "bg-white text-gray-900" : "text-white/80")}
-                    >
-                      Map
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModalMapType('k')}
-                      className={cn("px-2 py-0.5 text-[10px] rounded font-semibold cursor-pointer", modalMapType === 'k' ? "bg-white text-gray-900" : "text-white/80")}
-                    >
-                      Satellite
-                    </button>
-                  </div>
-
-                  <div className="absolute bottom-2 left-2 bg-slate-900/90 border border-slate-700 px-2 py-1 rounded-lg text-[10px] text-slate-200 backdrop-blur-xs flex items-center gap-1.5 font-mono">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                    {selectedLocation.latitude.toFixed(6)}°, {selectedLocation.longitude.toFixed(6)}°
-                  </div>
-                </div>
-              )}
-
-              {/* 6. Radius Slider */}
-              <div className="space-y-1">
-                <div className="flex justify-between">
-                  <label className="text-gray-700 font-semibold">Geofence Radius (Meters):</label>
-                  <strong className="text-[#07563D] font-mono">{selectedLocation.geofence_radius_meters || 100}m</strong>
-                </div>
-                <input
-                  type="range"
-                  min="25"
-                  max="1000"
-                  step="25"
-                  value={selectedLocation.geofence_radius_meters || 100}
-                  onChange={(e) => setSelectedLocation({ ...selectedLocation, geofence_radius_meters: parseInt(e.target.value, 10) })}
-                  className="w-full accent-[#07563D] cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-gray-400 font-mono">
-                  <span>50m (Office)</span>
-                  <span>100m (HQ)</span>
-                  <span>300m (Factory)</span>
-                  <span>1000m (Plant)</span>
-                </div>
-              </div>
-
-              {/* 7. Resolved Physical Address */}
-              <div>
-                <label className="block text-gray-700 font-semibold mb-1">Physical Address / Street / Plus Code:</label>
-                <input
-                  type="text"
-                  value={selectedLocation.address || ''}
-                  onChange={(e) => setSelectedLocation({ ...selectedLocation, address: e.target.value })}
-                  placeholder="D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur, Coimbatore"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-[#07563D] focus:outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+              {/* Sticky Footer */}
+              <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsEditingLocation(false)}
-                  className="px-4 py-2 border border-gray-200 rounded-xl text-gray-600 font-semibold hover:bg-gray-50 cursor-pointer"
+                  className="px-4 py-2 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-100 cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -1508,9 +1513,10 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
 
       {/* EMPLOYEE WORK LOCATION ASSIGNMENT MODAL */}
       {isMappingEmployee && selectedEmpForMapping && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
-            <div className="p-4 bg-gradient-to-r from-blue-700 to-indigo-800 text-white flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white w-full max-w-lg max-h-[90vh] rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden animate-in zoom-in-95">
+            {/* Sticky Header */}
+            <div className="p-4 bg-gradient-to-r from-blue-700 to-indigo-800 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-blue-200" />
                 <h3 className="font-bold text-sm">
@@ -1525,87 +1531,93 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveEmployeeMapping} className="p-5 space-y-4 text-xs">
-              <div className="p-3 bg-blue-50/80 border border-blue-100 rounded-xl">
-                <span className="text-[11px] text-gray-500 block">Configuring Staff Member:</span>
-                <strong className="text-gray-900 text-sm block">{selectedEmpForMapping.display_name || selectedEmpForMapping.name}</strong>
-                <span className="text-xs text-blue-800 font-mono">
-                  {selectedEmpForMapping.employee_code || 'WF-EMP'} • {selectedEmpForMapping.department_name || selectedEmpForMapping.department || 'Operations'}
-                </span>
-              </div>
+            <form onSubmit={handleSaveEmployeeMapping} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
+                <div className="p-3 bg-blue-50/80 border border-blue-100 rounded-xl">
+                  <span className="text-[11px] text-gray-500 block">Configuring Staff Member:</span>
+                  <strong className="text-blue-950 text-sm font-bold block">
+                    {selectedEmpForMapping.display_name || selectedEmpForMapping.name}
+                  </strong>
+                  <span className="text-[11px] text-blue-700 font-mono">
+                    {selectedEmpForMapping.employee_code || selectedEmpForMapping.id} • {selectedEmpForMapping.department_name || 'Operations'}
+                  </span>
+                </div>
 
-              <div>
-                <label className="block text-gray-700 font-bold mb-2">Authorized Geofence Work Locations:</label>
-                <div className="space-y-2 max-h-52 overflow-y-auto">
-                  {locations.map((loc) => {
-                    const isChecked = mappedLocationIds.includes(loc.id);
-                    const isPrimary = primaryLocationId === loc.id;
-                    return (
-                      <div
-                        key={loc.id}
-                        className={cn(
-                          "p-3 rounded-xl border flex items-center justify-between gap-3 transition-all",
-                          isChecked ? "bg-blue-50/50 border-blue-200" : "bg-gray-50 border-gray-200 opacity-60"
-                        )}
-                      >
-                        <label className="flex items-center gap-2.5 flex-1 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setMappedLocationIds([...mappedLocationIds, loc.id]);
-                                if (!primaryLocationId) setPrimaryLocationId(loc.id);
-                              } else {
-                                setMappedLocationIds(mappedLocationIds.filter((id) => id !== loc.id));
-                                if (primaryLocationId === loc.id) {
-                                  const remaining = mappedLocationIds.filter((id) => id !== loc.id);
-                                  setPrimaryLocationId(remaining[0] || '');
+                <div>
+                  <label className="block text-gray-800 font-bold mb-1.5">
+                    Authorized Work Locations (Multiple Allowed):
+                  </label>
+                  <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-xl p-2.5">
+                    {locations.map((loc) => {
+                      const isChecked = mappedLocationIds.includes(loc.id);
+                      return (
+                        <label
+                          key={loc.id}
+                          className={cn(
+                            "flex items-center justify-between p-2 rounded-lg border transition-all cursor-pointer",
+                            isChecked ? "bg-blue-50/80 border-blue-300 text-blue-950 font-semibold" : "bg-white border-gray-100 hover:bg-gray-50 text-gray-700"
+                          )}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setMappedLocationIds([...mappedLocationIds, loc.id]);
+                                  if (!primaryLocationId) setPrimaryLocationId(loc.id);
+                                } else {
+                                  const updated = mappedLocationIds.filter((id) => id !== loc.id);
+                                  setMappedLocationIds(updated);
+                                  if (primaryLocationId === loc.id) {
+                                    setPrimaryLocationId(updated[0] || '');
+                                  }
                                 }
-                              }
-                            }}
-                            className="w-4 h-4 rounded text-blue-600 accent-[#07563D] cursor-pointer"
-                          />
-                          <div>
-                            <strong className="text-gray-900 block">{loc.name}</strong>
-                            <span className="text-[11px] text-gray-500 font-mono">Radius: {loc.geofence_radius_meters}m • {loc.location_type}</span>
+                              }}
+                              className="rounded-sm text-blue-600 focus:ring-blue-500 accent-blue-600"
+                            />
+                            <div>
+                              <span className="block text-xs font-semibold">{loc.name}</span>
+                              <span className="text-[10px] text-gray-400 font-mono">Radius: {loc.geofence_radius_meters}m • {loc.code}</span>
+                            </div>
                           </div>
-                        </label>
 
-                        {isChecked && (
-                          <button
-                            type="button"
-                            onClick={() => setPrimaryLocationId(loc.id)}
-                            className={cn(
-                              "px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer",
-                              isPrimary ? "bg-emerald-600 text-white shadow-xs" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                            )}
-                          >
-                            {isPrimary ? '★ Primary HQ' : 'Set as Primary'}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                          {isChecked && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPrimaryLocationId(loc.id);
+                              }}
+                              className={cn(
+                                "px-2 py-0.5 text-[10px] rounded-md font-bold transition-all cursor-pointer",
+                                primaryLocationId === loc.id
+                                  ? "bg-blue-700 text-white shadow-2xs"
+                                  : "bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-800"
+                              )}
+                            >
+                              {primaryLocationId === loc.id ? '★ Primary HQ' : 'Set Primary'}
+                            </button>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
-              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-[11px] text-emerald-900 flex items-center gap-2">
-                <Shield className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>When mapped, this employee can only clock in from these authorized geofence perimeters.</span>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+              {/* Sticky Footer */}
+              <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsMappingEmployee(false)}
-                  className="px-4 py-2 border border-gray-200 rounded-xl text-gray-600 font-semibold hover:bg-gray-50 cursor-pointer"
+                  className="px-4 py-2 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-100 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#07563D] hover:bg-[#064e37] text-white font-bold rounded-xl shadow-xs cursor-pointer"
+                  className="px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl shadow-xs cursor-pointer"
                 >
                   Save Mapping
                 </button>
