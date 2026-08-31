@@ -257,14 +257,13 @@ class OrganizationContextService {
     if (normalized.includes('vendor') || normalized.includes('contractor')) return 'Vendor Operations Admin';
     if (normalized.includes('super') || normalized.includes('platform')) return 'Platform Super Admin';
     if (normalized.includes('assistant')) return 'Assistant Admin (Delegated Ops)';
-    if (normalized.includes('owner') || normalized.includes('organization owner')) return 'Organization Owner (Company)';
     if (normalized.includes('company admin')) return 'Company Admin (Company)';
     if (normalized.includes('hr head')) return 'HR Head (Company)';
-    if (normalized.includes('hr admin') || normalized.includes('hr')) return 'HR Admin (Company)';
+    if (normalized.includes('hr admin') || normalized === 'hr') return 'HR Admin (Company)';
     if (normalized.includes('manager')) return 'Manager (Department)';
     if (normalized.includes('lead')) return 'Team Lead (Team)';
-    if (normalized.includes('employee')) return 'Employee (Self)';
-    return rawRole || 'Company Admin (Company)';
+    if (normalized.includes('employee') || !rawRole) return 'Employee (Self)';
+    return 'Employee (Self)';
   }
 
   /**

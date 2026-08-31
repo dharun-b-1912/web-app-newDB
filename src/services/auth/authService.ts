@@ -215,7 +215,7 @@ export const authService = {
               options: {
                 data: {
                   full_name: cleanId.split('@')[0],
-                  role: 'Organization Owner',
+                  role: 'Employee',
                   account_status: 'ACTIVE',
                 },
               },
@@ -301,55 +301,76 @@ export const authService = {
         let accountStatus: AccountStatus = 'ACTIVE';
 
         let orgId = userMeta.organization_id || userMeta.tenant_id;
+        let empRow: any = null;
 
-        if (context === 'tenant' && orgId) {
+        if (context === 'tenant') {
           // Check Organization Status in Supabase
-          const { data: orgRow } = await supabase
-            .from('organizations')
-            .select('*')
-            .eq('id', orgId)
-            .maybeSingle();
+          if (orgId) {
+            const { data: orgRow } = await supabase
+              .from('organizations')
+              .select('*')
+              .eq('id', orgId)
+              .maybeSingle();
 
-          if (orgRow) {
-            tenantRecord = orgRow;
-            if (orgRow.status === 'Suspended') {
-              await supabase.auth.signOut();
-              return {
-                success: false,
-                errorMessage: 'Your organization’s workspace is currently unavailable. Please contact support.',
-                errorCode: 'TENANT_SUSPENDED',
-              };
+            if (orgRow) {
+              tenantRecord = orgRow;
+              if (orgRow.status === 'Suspended') {
+                await supabase.auth.signOut();
+                return {
+                  success: false,
+                  errorMessage: 'Your organization’s workspace is currently unavailable. Please contact support.',
+                  errorCode: 'TENANT_SUSPENDED',
+                };
+              }
             }
           }
 
           // Check Employee Status in Supabase
-          const { data: empRow } = await supabase
-            .from('employees')
-            .select('*')
-            .or(`work_email.eq.${authUser.email},user_id.eq.${authUser.id}`)
-            .maybeSingle();
+          try {
+            const { data: foundEmp } = await supabase
+              .from('employees')
+              .select('*')
+              .or(`work_email.eq.${authUser.email?.toLowerCase()},personal_email.eq.${authUser.email?.toLowerCase()},user_id.eq.${authUser.id}`)
+              .maybeSingle();
 
-          if (empRow) {
-            if (empRow.status === 'Terminated' || empRow.status === 'Inactive') {
-              await supabase.auth.signOut();
-              return {
-                success: false,
-                errorMessage: 'Your account is currently inactive. Contact your organization administrator.',
-                errorCode: 'ACCOUNT_INACTIVE',
-              };
+            if (foundEmp) {
+              empRow = foundEmp;
+              if (foundEmp.status === 'Terminated' || foundEmp.status === 'Inactive') {
+                await supabase.auth.signOut();
+                return {
+                  success: false,
+                  errorMessage: 'Your account is currently inactive. Contact your organization administrator.',
+                  errorCode: 'ACCOUNT_INACTIVE',
+                };
+              }
+              if (foundEmp.designation_title) {
+                roleTitle = foundEmp.designation_title;
+              }
+              if (!orgId && (foundEmp.organization_id || foundEmp.tenant_id)) {
+                orgId = foundEmp.organization_id || foundEmp.tenant_id;
+              }
             }
-            if (empRow.designation_title) {
-              roleTitle = empRow.designation_title;
-            }
-          }
+          } catch (_) {}
         }
 
         // Resolve Assigned Role Name
-        let resolvedRole = isPlatformStaff
-          ? (staffProfile?.role_display_name || staffProfile?.role_key || userMeta.platform_role || 'Super Admin')
-          : (userMeta.role || roleTitle || 'Employee');
+        let resolvedRole = 'Employee';
+        if (isPlatformStaff) {
+          resolvedRole = staffProfile?.role_display_name || staffProfile?.role_key || userMeta.platform_role || 'Super Admin';
+        } else if (empRow) {
+          const sysRole = empRow.system_role || empRow.role;
+          if (sysRole && !['Organization Owner', 'owner'].includes(sysRole)) {
+            resolvedRole = sysRole;
+          } else {
+            resolvedRole = 'Employee';
+          }
+        } else if (userMeta.role && userMeta.role !== 'Organization Owner' && userMeta.role !== 'owner') {
+          resolvedRole = userMeta.role;
+        } else {
+          resolvedRole = 'Employee';
+        }
 
-        if (!isPlatformStaff) {
+        if (!isPlatformStaff && !empRow) {
           // Check local stored invitations for exact invited role
           try {
             const localInvs = JSON.parse(localStorage.getItem('workforce_organization_invitations') || '[]');

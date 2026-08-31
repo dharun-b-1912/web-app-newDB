@@ -116,7 +116,7 @@ const AppContent: React.FC = () => {
     if (primaryRole === 'Manager') return 'dashboard';
     if (primaryRole === 'Team Lead') return 'tl-dashboard';
     if (primaryRole === 'Employee') return 'ess-dashboard';
-    return 'executive-overview';
+    return 'ess-dashboard';
   };
 
   // Compute the correct starting route: URL first -> localStorage saved route -> role default
