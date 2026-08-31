@@ -2,14 +2,14 @@
 -- ============================================================================
 -- Joy PeopleHR Enterprise — Multi-Tenant Work Locations & Branch Geofences
 -- Creates work_locations, employee_work_location_assignments, and attendance_location_events
--- with strict tenant isolation, foreign keys, and RLS policies.
+-- Dynamic Organization & Tenant Isolation (No static hardcoded IDs)
 -- ============================================================================
 
 -- 1. Create work_locations table
 CREATE TABLE IF NOT EXISTS public.work_locations (
   id TEXT PRIMARY KEY,
-  tenant_id TEXT NOT NULL DEFAULT 'org-joy-01',
-  organization_id TEXT NOT NULL DEFAULT 'org-joy-01',
+  tenant_id TEXT NOT NULL,
+  organization_id TEXT NOT NULL,
   branch_id TEXT,
   name TEXT NOT NULL,
   code TEXT NOT NULL,
@@ -38,8 +38,8 @@ CREATE TABLE IF NOT EXISTS public.work_locations (
 -- 2. Create employee_work_location_assignments table
 CREATE TABLE IF NOT EXISTS public.employee_work_location_assignments (
   id TEXT PRIMARY KEY,
-  tenant_id TEXT NOT NULL DEFAULT 'org-joy-01',
-  organization_id TEXT NOT NULL DEFAULT 'org-joy-01',
+  tenant_id TEXT NOT NULL,
+  organization_id TEXT NOT NULL,
   employee_id TEXT NOT NULL,
   work_location_id TEXT NOT NULL REFERENCES public.work_locations(id) ON DELETE CASCADE,
   is_primary BOOLEAN NOT NULL DEFAULT true,
@@ -54,8 +54,8 @@ CREATE TABLE IF NOT EXISTS public.employee_work_location_assignments (
 -- 3. Create attendance_location_events table (Audit & Geo logs)
 CREATE TABLE IF NOT EXISTS public.attendance_location_events (
   id TEXT PRIMARY KEY,
-  tenant_id TEXT NOT NULL DEFAULT 'org-joy-01',
-  organization_id TEXT NOT NULL DEFAULT 'org-joy-01',
+  tenant_id TEXT NOT NULL,
+  organization_id TEXT NOT NULL,
   employee_id TEXT NOT NULL,
   employee_name TEXT,
   employee_code TEXT,
@@ -124,17 +124,28 @@ CREATE POLICY "Tenant location events insert" ON public.attendance_location_even
   FOR INSERT TO authenticated
   WITH CHECK (auth.uid() IS NOT NULL);
 
--- 8. Seed Default Geofence Work Locations matching active branches
-INSERT INTO public.work_locations (
-  id, tenant_id, organization_id, branch_id, name, code, location_type, address, city, state, country, postal_code, latitude, longitude, geofence_radius_meters, accuracy_requirement_meters, timezone, is_active
-) VALUES 
-  ('loc-hq-01', 'org-joy-01', 'org-joy-01', 'br-hq-01', 'Joy Corporate Solutions (HQ)', 'HQ-CBE', 'OFFICE', 'D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur', 'Coimbatore', 'Tamil Nadu', 'India', '641014', 11.0844364, 77.1262627, 100, 50, 'Asia/Kolkata', true),
-  ('loc-wt-u3', 'org-joy-01', 'org-joy-01', 'br-wt-u3', 'Water Tec Unit 3', 'WT-U3', 'FACTORY', 'Industrial Estate, Pollachi Road', 'Coimbatore', 'Tamil Nadu', 'India', '641021', 10.9844364, 77.0162627, 250, 60, 'Asia/Kolkata', true),
-  ('loc-cn-hq', 'org-joy-01', 'org-joy-01', 'br-cn-hq', 'CareNow Project Site', 'CN-HQ', 'PROJECT_SITE', 'Avinashi Main Road, Peelamedu', 'Coimbatore', 'Tamil Nadu', 'India', '641004', 11.0244364, 77.0062627, 150, 50, 'Asia/Kolkata', true)
-ON CONFLICT (id) DO UPDATE SET
-  name = EXCLUDED.name,
-  code = EXCLUDED.code,
-  latitude = EXCLUDED.latitude,
-  longitude = EXCLUDED.longitude,
-  geofence_radius_meters = EXCLUDED.geofence_radius_meters,
-  is_active = true;
+-- 8. Dynamically Link Work Locations to the Actual Registered Primary Organization
+DO $$
+DECLARE
+  v_org_id TEXT;
+BEGIN
+  SELECT id INTO v_org_id FROM public.organizations ORDER BY created_at ASC LIMIT 1;
+  
+  IF v_org_id IS NOT NULL THEN
+    INSERT INTO public.work_locations (
+      id, tenant_id, organization_id, branch_id, name, code, location_type, address, city, state, country, postal_code, latitude, longitude, geofence_radius_meters, accuracy_requirement_meters, timezone, is_active
+    ) VALUES 
+      ('loc-hq-01', v_org_id, v_org_id, 'br-hq-01', 'Joy Corporate Solutions (HQ)', 'HQ-CBE', 'OFFICE', 'D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur', 'Coimbatore', 'Tamil Nadu', 'India', '641014', 11.0844364, 77.1262627, 100, 50, 'Asia/Kolkata', true),
+      ('loc-wt-u3', v_org_id, v_org_id, 'br-wt-u3', 'Water Tec Unit 3', 'WT-U3', 'FACTORY', 'Industrial Estate, Pollachi Road', 'Coimbatore', 'Tamil Nadu', 'India', '641021', 10.9844364, 77.0162627, 250, 60, 'Asia/Kolkata', true),
+      ('loc-cn-hq', v_org_id, v_org_id, 'br-cn-hq', 'CareNow Project Site', 'CN-HQ', 'PROJECT_SITE', 'Avinashi Main Road, Peelamedu', 'Coimbatore', 'Tamil Nadu', 'India', '641004', 11.0244364, 77.0062627, 150, 50, 'Asia/Kolkata', true)
+    ON CONFLICT (id) DO UPDATE SET
+      tenant_id = v_org_id,
+      organization_id = v_org_id,
+      name = EXCLUDED.name,
+      code = EXCLUDED.code,
+      latitude = EXCLUDED.latitude,
+      longitude = EXCLUDED.longitude,
+      geofence_radius_meters = EXCLUDED.geofence_radius_meters,
+      is_active = true;
+  END IF;
+END $$;
