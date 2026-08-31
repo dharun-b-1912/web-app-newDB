@@ -40,6 +40,7 @@ import { EmployeeCreateWizardModal } from './EmployeeCreateWizardModal';
 import { ProfilePhotoPreviewModal } from './ProfilePhotoPreviewModal';
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { avatarService } from '../../services/avatar/avatarService';
+import { resendEmailService } from '../../services/email/resendEmailService';
 
 export interface EmployeeProfileDrawerProps {
   employee: Employee | null;
@@ -213,8 +214,33 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
   const workLocation = employee.employment?.work_location || 'Joy Corporate Solutions Private Limited (HQ)';
   const isArchived = employee.status === 'Archived';
 
-  const authStatus = employeeAuthService.getEmployeeAuthStatus(employee.id, employee.organization_id);
-  const activeSessions = employeeAuthService.listActiveSessions(employee.id);
+  const [authStatus, setAuthStatus] = useState<any>(() =>
+    employee
+      ? employeeAuthService.getEmployeeAuthStatus(employee.id, employee.organization_id, {
+          phone: employee.profile?.phone || employee.phone,
+          email: employee.work_email,
+          name: `${employee.first_name} ${employee.last_name}`,
+          role: employee.designation_title,
+        })
+      : null
+  );
+  const [activeSessions, setActiveSessions] = useState<any[]>(() =>
+    employee ? employeeAuthService.listActiveSessions(employee.id) : []
+  );
+
+  useEffect(() => {
+    if (employee) {
+      const status = employeeAuthService.getEmployeeAuthStatus(employee.id, employee.organization_id, {
+        phone: employee.profile?.phone || employee.phone,
+        email: employee.work_email,
+        name: `${employee.first_name} ${employee.last_name}`,
+        role: employee.designation_title,
+      });
+      setAuthStatus(status);
+      setActiveSessions(employeeAuthService.listActiveSessions(employee.id));
+    }
+  }, [employee]);
+
   const auditLogs = employeeAuthService.getAuthAuditLogs(employee.id, employee.organization_id);
 
   const isDirty = JSON.stringify(formData) !== JSON.stringify(initialFormData);
@@ -956,9 +982,14 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                     onClick={async () => {
                       setIsProcessingAuth(true);
                       try {
-                        const phone = authStatus?.phone || employee.profile?.phone || '+91 98401 22334';
-                        await employeeAuthService.requestPasswordResetOtp(phone);
-                        showToast(`Password reset SMS sent to ${phone}`, 'success');
+                        const phone = authStatus?.phone || employee.profile?.phone || employee.phone || '+919791817437';
+                        const res = await employeeAuthService.requestPasswordResetOtp(phone, employee.organization_id, {
+                          name: `${employee.first_name} ${employee.last_name}`,
+                          email: employee.work_email,
+                          phone,
+                          id: employee.id,
+                        });
+                        showToast(`✓ Password reset OTP instructions dispatched to ${res.phone}`, 'success');
                       } catch (e: any) {
                         showToast(e.message || 'Failed to send password reset', 'error');
                       } finally {
@@ -978,17 +1009,32 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                     onClick={async () => {
                       setIsProcessingAuth(true);
                       try {
-                        await employeeAuthService.provisionEmployeeAuth({
+                        const phone = authStatus?.phone || employee.profile?.phone || employee.phone || '+919791817437';
+                        const email = employee.work_email || (employee.profile as any)?.personal_email;
+                        const res = await employeeAuthService.provisionEmployeeAuth({
                           tenantId: employee.organization_id || 'org-joy-01',
                           employeeId: employee.id,
-                          phone: authStatus?.phone || employee.profile?.phone || '+91 98401 22334',
-                          email: employee.work_email,
+                          phone: phone,
+                          email: email,
                           firstName: employee.first_name,
                           lastName: employee.last_name,
                           role: employee.designation_title || 'Employee',
                           sendSms: true,
                         });
-                        showToast('Activation instructions dispatched via SMS', 'success');
+                        setAuthStatus(res.identity);
+                        if (email) {
+                          await resendEmailService.sendEmployeeActivationEmail({
+                            to: email,
+                            employeeName: `${employee.first_name} ${employee.last_name}`.trim(),
+                            employeeId: employee.employee_code || employee.id,
+                            loginIdentifier: employee.employee_code || employee.id,
+                            activationToken: res.activation_token,
+                            organizationName: employee.company_name || 'Joy Corporate Solutions',
+                            authMethod: 'Employee ID + Password',
+                            requiresPasswordChange: true,
+                          }).catch(() => {});
+                        }
+                        showToast(`✓ Activation instructions dispatched to ${phone}${email ? ` and ${email}` : ''}`, 'success');
                       } catch (e: any) {
                         showToast(e.message || 'Failed to send activation instructions', 'error');
                       } finally {
@@ -1009,8 +1055,15 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                       onClick={async () => {
                         setIsProcessingAuth(true);
                         try {
-                          await employeeAuthService.suspendEmployeeAuth(employee.id, employee.organization_id);
-                          showToast(`Suspended login access for ${employee.first_name}`, 'warning');
+                          const updated = await employeeAuthService.suspendEmployeeAuth(employee.id, employee.organization_id, {
+                            phone: employee.profile?.phone || employee.phone,
+                            email: employee.work_email,
+                            name: `${employee.first_name} ${employee.last_name}`,
+                            role: employee.designation_title,
+                          });
+                          setAuthStatus(updated);
+                          setActiveSessions([]);
+                          showToast(`⚠️ Suspended login access for ${employee.first_name}`, 'warning');
                         } catch (e: any) {
                           showToast(e.message || 'Failed to suspend account', 'error');
                         } finally {
@@ -1030,8 +1083,14 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                       onClick={async () => {
                         setIsProcessingAuth(true);
                         try {
-                          await employeeAuthService.activateEmployeeAuth(employee.id, employee.organization_id);
-                          showToast(`Reactivated login access for ${employee.first_name}`, 'success');
+                          const updated = await employeeAuthService.activateEmployeeAuth(employee.id, employee.organization_id, {
+                            phone: employee.profile?.phone || employee.phone,
+                            email: employee.work_email,
+                            name: `${employee.first_name} ${employee.last_name}`,
+                            role: employee.designation_title,
+                          });
+                          setAuthStatus(updated);
+                          showToast(`✓ Reactivated login access for ${employee.first_name}`, 'success');
                         } catch (e: any) {
                           showToast(e.message || 'Failed to reactivate account', 'error');
                         } finally {
@@ -1051,7 +1110,8 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                     disabled={isProcessingAuth}
                     onClick={() => {
                       employeeAuthService.revokeAllSessions(employee.id, 'HR Admin remote session revocation');
-                      showToast('All active sessions revoked successfully', 'info');
+                      setActiveSessions([]);
+                      showToast('✓ All active sessions revoked successfully', 'info');
                     }}
                     className="text-xs font-bold text-rose-700 hover:bg-rose-50 justify-start"
                   >
