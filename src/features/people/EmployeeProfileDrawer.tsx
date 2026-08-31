@@ -206,14 +206,6 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
     }
   }, [employee]);
 
-  if (!employee) return null;
-
-  const isVendor = employee.employment_source === 'VENDOR' || employee.employment?.employment_source === 'VENDOR';
-  const joinDate = employee.employment?.doj || employee.created_at?.split('T')[0] || '2025-01-15';
-  const managerName = employee.employment?.reporting_manager_name || 'Not assigned';
-  const workLocation = employee.employment?.work_location || 'Joy Corporate Solutions Private Limited (HQ)';
-  const isArchived = employee.status === 'Archived';
-
   const [authStatus, setAuthStatus] = useState<any>(() =>
     employee
       ? employeeAuthService.getEmployeeAuthStatus(employee.id, employee.organization_id, {
@@ -238,8 +230,19 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
       });
       setAuthStatus(status);
       setActiveSessions(employeeAuthService.listActiveSessions(employee.id));
+    } else {
+      setAuthStatus(null);
+      setActiveSessions([]);
     }
   }, [employee]);
+
+  if (!employee) return null;
+
+  const isVendor = employee.employment_source === 'VENDOR' || employee.employment?.employment_source === 'VENDOR';
+  const joinDate = employee.employment?.doj || employee.created_at?.split('T')[0] || '2025-01-15';
+  const managerName = employee.employment?.reporting_manager_name || 'Not assigned';
+  const workLocation = employee.employment?.work_location || 'Joy Corporate Solutions Private Limited (HQ)';
+  const isArchived = employee.status === 'Archived';
 
   const auditLogs = employeeAuthService.getAuthAuditLogs(employee.id, employee.organization_id);
 
