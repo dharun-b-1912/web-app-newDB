@@ -37,7 +37,20 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
       ? 'dashboard'
       : 'my-workspace');
 
-  if (isAllowed) {
+  // Gracefully bypass internal auth/accept-invite routes that might linger during redirection
+  const isAuthOrUtilityRoute =
+    !module ||
+    module === 'login' ||
+    module === 'activate' ||
+    module.includes('accept-invite') ||
+    module.includes('auth') ||
+    module.includes('invitation');
+
+  // Vendor Admin has explicit authorization over all vendor modules
+  const isVendorAllowed =
+    primaryRole === 'Vendor Admin' && (module.startsWith('vendor') || module.includes('vendor'));
+
+  if (isAllowed || isAuthOrUtilityRoute || isVendorAllowed) {
     return <>{children}</>;
   }
 

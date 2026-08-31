@@ -3,14 +3,14 @@ import {
   ErCase,
   CaseType,
   CaseStatus,
+  CaseInternalNote,
+  CommunicationUrgency,
   SurveyModel,
   PoshCommitteeMember,
   ComplianceRecord,
   HrCommunication,
-  CommunicationUrgency,
   KnowledgeArticle,
   CaseTimelineEvent,
-  CaseInternalNote,
   SlaConfig,
 } from '../types/employeeRelations';
 
@@ -252,10 +252,10 @@ class EmployeeRelationsService {
   async syncWithDatabase(): Promise<void> {
     if (!isSupabaseEnabled) return;
     try {
-      // 1. Sync announcements from company_announcements and communications
+      // 1. Sync announcements from company_announcements and communications safely
       const [annRes, commRes] = await Promise.all([
-        supabase.from('company_announcements').select('*').order('published_at', { ascending: false }),
-        supabase.from('communications').select('*').order('publish_at', { ascending: false }),
+        Promise.resolve(supabase.from('company_announcements').select('*')).catch((err) => ({ data: null, error: err })),
+        Promise.resolve(supabase.from('communications').select('*')).catch((err) => ({ data: null, error: err })),
       ]);
 
       const localComms = this.getCommunications();

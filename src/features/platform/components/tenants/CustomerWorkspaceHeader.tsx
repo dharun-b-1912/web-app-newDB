@@ -28,6 +28,7 @@ import {
   MoreHorizontal,
   FileText,
   Lock,
+  Trash2,
 } from 'lucide-react';
 import { OrganizationRecord } from '../../../../services/platform/platformTenantService';
 import { SupportAccessSession } from '../../../../services/platform/platformSupportAccessService';
@@ -42,6 +43,7 @@ export interface CustomerWorkspaceHeaderProps {
   onSuspendCustomer: (reason: string) => Promise<void>;
   onReactivateCustomer: (reason: string) => Promise<void>;
   onAccessAccount: () => void;
+  onDeleteCustomer?: () => Promise<void>;
   activeSupportSession?: SupportAccessSession | null;
   onExitSupportSession?: () => void;
 }
@@ -54,6 +56,7 @@ export const CustomerWorkspaceHeader: React.FC<CustomerWorkspaceHeaderProps> = (
   onSuspendCustomer,
   onReactivateCustomer,
   onAccessAccount,
+  onDeleteCustomer,
   activeSupportSession,
   onExitSupportSession,
 }) => {
@@ -150,17 +153,31 @@ export const CustomerWorkspaceHeader: React.FC<CustomerWorkspaceHeaderProps> = (
                 </Button>
 
                 {showMoreMenu && (
-                  <div className="absolute right-0 top-full mt-1.5 w-48 bg-white rounded-2xl shadow-xl border border-gray-100 p-1.5 z-40 text-xs animate-in fade-in">
+                  <div className="absolute right-0 top-full mt-1.5 w-52 bg-white rounded-2xl shadow-xl border border-gray-100 p-1.5 z-40 text-xs animate-in fade-in space-y-1">
                     <button
                       onClick={() => {
                         setShowMoreMenu(false);
                         setShowSuspendModal(true);
                       }}
-                      className="w-full text-left px-3 py-2 text-rose-600 hover:bg-rose-50 rounded-xl font-bold flex items-center gap-2 cursor-pointer"
+                      className="w-full text-left px-3 py-2 text-amber-700 hover:bg-amber-50 rounded-xl font-bold flex items-center gap-2 cursor-pointer transition"
                     >
                       <AlertTriangle className="w-3.5 h-3.5" />
                       <span>Suspend Customer</span>
                     </button>
+                    {onDeleteCustomer && (
+                      <button
+                        onClick={() => {
+                          setShowMoreMenu(false);
+                          if (window.confirm(`Are you sure you want to permanently delete "${org.legal_name}" (${org.id}) from the platform and Supabase?`)) {
+                            onDeleteCustomer();
+                          }
+                        }}
+                        className="w-full text-left px-3 py-2 text-rose-600 hover:bg-rose-50 rounded-xl font-bold flex items-center gap-2 cursor-pointer transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete Organization</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </>
@@ -207,7 +224,13 @@ export const CustomerWorkspaceHeader: React.FC<CustomerWorkspaceHeaderProps> = (
                   {org.city}, {org.country}
                 </span>
                 <span>•</span>
-                <span>Owner: <strong className="text-gray-700">{org.account_owner_name}</strong></span>
+                <span>Primary Admin: <strong className="text-gray-900">{org.primary_admin_name || 'Admin'}</strong></span>
+                {org.primary_admin_email && (
+                  <>
+                    <span>•</span>
+                    <span className="font-mono text-gray-600">{org.primary_admin_email}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>

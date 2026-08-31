@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { useToast } from '../../../components/ui/Toast';
@@ -45,46 +45,62 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
   onOpenShare,
 }) => {
   const { showToast } = useToast();
+  const [currentDoc, setCurrentDoc] = useState<DocumentMaster | null>(document);
   const [activeTab, setActiveTab] = useState<'overview' | 'versions' | 'audit' | 'verification'>('overview');
   const [rejectionReason, setRejectionReason] = useState<string>('');
   const [isRejectModalOpen, setIsRejectModalOpen] = useState<boolean>(false);
   const [isUploadingVersion, setIsUploadingVersion] = useState<boolean>(false);
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
 
-  if (!isOpen || !document) return null;
+  useEffect(() => {
+    setCurrentDoc(document);
+  }, [document]);
 
-  const handleVerify = () => {
+  if (!isOpen || !currentDoc) return null;
+
+  const handleVerify = async () => {
+    if (!currentDoc) return;
+    setIsVerifying(true);
     try {
-      documentVerificationService.verifyDocument(document.id, 'Verified by HR compliance reviewer.');
+      await documentVerificationService.verifyDocument(currentDoc.id, 'Verified by HR compliance reviewer.');
+      setCurrentDoc(prev => (prev ? { ...prev, verification_status: 'VERIFIED' } : null));
       showToast('Document verified successfully.', 'success');
       onRefresh();
     } catch (err: any) {
       showToast(err.message || 'Failed to verify document.', 'error');
+    } finally {
+      setIsVerifying(false);
     }
   };
 
-  const handleReject = () => {
+  const handleReject = async () => {
+    if (!currentDoc) return;
     if (!rejectionReason.trim()) {
       showToast('Please provide a formal rejection reason.', 'error');
       return;
     }
+    setIsVerifying(true);
     try {
-      documentVerificationService.rejectDocument(document.id, rejectionReason);
+      await documentVerificationService.rejectDocument(currentDoc.id, rejectionReason);
+      setCurrentDoc(prev => (prev ? { ...prev, verification_status: 'REJECTED' } : null));
       showToast('Document marked as rejected.', 'success');
       setIsRejectModalOpen(false);
       setRejectionReason('');
       onRefresh();
     } catch (err: any) {
       showToast(err.message || 'Failed to reject document.', 'error');
+    } finally {
+      setIsVerifying(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!window.confirm(`Are you sure you want to permanently delete "${document.title}" from the system and clean it completely from backend storage & databases?`)) {
+    if (!window.confirm(`Are you sure you want to permanently delete "${currentDoc.title}" from the system and clean it completely from backend storage & databases?`)) {
       return;
     }
     try {
-      await documentService.deleteDocument(document.id);
-      showToast(`✓ "${document.title}" permanently deleted.`, 'success');
+      await documentService.deleteDocument(currentDoc.id);
+      showToast(`✓ "${currentDoc.title}" permanently deleted.`, 'success');
       onRefresh();
       onClose();
     } catch (err: any) {
@@ -97,7 +113,7 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
       const file = e.target.files[0];
       setIsUploadingVersion(true);
       try {
-        await documentService.uploadNewVersion(document.id, file, 'Updated version via document drawer');
+        await documentService.uploadNewVersion(currentDoc.id, file, 'Updated version via document drawer');
         showToast('New document version uploaded successfully.', 'success');
         onRefresh();
       } catch (err: any) {
@@ -108,7 +124,7 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
     }
   };
 
-  const auditLogs = documentAuditService.getLogs(document.id);
+  const auditLogs = documentAuditService.getLogs(currentDoc.id);
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-black/40 backdrop-blur-xs flex justify-end">
@@ -121,13 +137,13 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-extrabold text-gray-900">{document.title}</h2>
-                <Badge variant={document.verification_status === 'VERIFIED' ? 'emerald' : 'amber'}>
-                  {document.verification_status}
+                <h2 className="text-base font-extrabold text-gray-900">{currentDoc.title}</h2>
+                <Badge variant={currentDoc.verification_status === 'VERIFIED' ? 'emerald' : (currentDoc.verification_status === 'REJECTED' ? 'danger' : 'amber')}>
+                  {currentDoc.verification_status}
                 </Badge>
               </div>
               <span className="text-xs text-gray-500 mt-0.5 block">
-                Subject: <strong>{document.subject_name || document.subject_id}</strong> ({document.subject_type})
+                Subject: <strong>{currentDoc.subject_name || currentDoc.subject_id}</strong> ({currentDoc.subject_type})
               </span>
             </div>
           </div>
@@ -144,7 +160,7 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
           <div className="flex items-center gap-2">
             <Button
               size="sm"
-              onClick={() => onOpenPreview(document)}
+              onClick={() => onOpenPreview(currentDoc)}
               leftIcon={<Eye className="w-3.5 h-3.5" />}
               className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs h-7"
             >
@@ -153,7 +169,7 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => onOpenShare(document)}
+              onClick={() => onOpenShare(currentDoc)}
               leftIcon={<Share2 className="w-3.5 h-3.5" />}
               className="text-xs h-7"
             >
@@ -162,19 +178,21 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {document.verification_status !== 'VERIFIED' && (
+            {currentDoc.verification_status !== 'VERIFIED' && (
               <>
                 <Button
                   size="sm"
                   onClick={handleVerify}
+                  disabled={isVerifying}
                   leftIcon={<CheckCircle2 className="w-3.5 h-3.5" />}
                   className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs h-7"
                 >
-                  Verify
+                  {isVerifying ? 'Verifying...' : 'Verify'}
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
+                  disabled={isVerifying}
                   onClick={() => setIsRejectModalOpen(true)}
                   leftIcon={<XCircle className="w-3.5 h-3.5" />}
                   className="text-xs h-7 text-red-600 hover:bg-red-50"
@@ -217,7 +235,7 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
                 : 'border-transparent text-gray-500 hover:text-gray-900'
             }`}
           >
-            Version History ({document.version_count || 1})
+            Version History ({currentDoc.version_count || 1})
           </button>
           <button
             onClick={() => setActiveTab('audit')}
@@ -241,34 +259,34 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
                 <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
                   <span className="text-gray-400 block font-medium">Classification</span>
                   <span className="font-extrabold text-gray-900 mt-0.5 block uppercase">
-                    {document.classification}
+                    {currentDoc.classification}
                   </span>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
                   <span className="text-gray-400 block font-medium">Category</span>
-                  <span className="font-extrabold text-gray-900 mt-0.5 block">{document.category_code}</span>
+                  <span className="font-extrabold text-gray-900 mt-0.5 block">{currentDoc.category_code}</span>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
                   <span className="text-gray-400 block font-medium">Requested By</span>
-                  <span className="font-extrabold text-gray-900 mt-0.5 block">{document.created_by || 'HR Admin'}</span>
+                  <span className="font-extrabold text-gray-900 mt-0.5 block">{currentDoc.created_by || 'HR Admin'}</span>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
                   <span className="text-gray-400 block font-medium">Target Employee</span>
                   <span className="font-extrabold text-gray-900 mt-0.5 block">
-                    {document.subject_name || document.subject_id}
+                    {currentDoc.subject_name || currentDoc.subject_id}
                   </span>
                 </div>
               </div>
 
               {/* Expiry / Verification Banner */}
-              {document.expires_at && (
+              {currentDoc.expires_at && (
                 <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-900">
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4 text-amber-700" />
-                    <span>Expires on <strong>{document.expires_at}</strong></span>
+                    <span>Expires on <strong>{currentDoc.expires_at}</strong></span>
                   </div>
                   <Badge variant="amber" className="text-[10px]">
-                    {document.days_until_expiry !== undefined ? `${document.days_until_expiry} days left` : 'Expiring Soon'}
+                    {currentDoc.days_until_expiry !== undefined ? `${currentDoc.days_until_expiry} days left` : 'Expiring Soon'}
                   </Badge>
                 </div>
               )}
@@ -282,11 +300,11 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
                 <div className="space-y-1.5 font-mono text-[11px] text-gray-600">
                   <div>
                     <span className="text-gray-400">File Name: </span>
-                    {document.current_version?.file_name || 'document.pdf'}
+                    {currentDoc.current_version?.file_name || 'document.pdf'}
                   </div>
                   <div>
                     <span className="text-gray-400">File Size: </span>
-                    {document.current_version ? `${(document.current_version.file_size_bytes / 1024 / 1024).toFixed(2)} MB` : '1.5 MB'}
+                    {currentDoc.current_version ? `${(currentDoc.current_version.file_size_bytes / 1024 / 1024).toFixed(2)} MB` : '1.5 MB'}
                   </div>
                   <div>
                     <span className="text-gray-400">Algorithm: </span>
@@ -294,11 +312,11 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
                   </div>
                   <div className="break-all">
                     <span className="text-gray-400">SHA-256 Hash: </span>
-                    {document.current_version?.content_hash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}
+                    {currentDoc.current_version?.content_hash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}
                   </div>
                   <div className="break-all">
                     <span className="text-gray-400">Storage Key: </span>
-                    {document.current_version?.storage_path || 'tenant/org-joy-01/documents/...'}
+                    {currentDoc.current_version?.storage_path || 'tenant/org-joy-01/documents/...'}
                   </div>
                 </div>
               </div>
@@ -325,19 +343,19 @@ export const DocumentDetailDrawer: React.FC<DocumentDetailDrawerProps> = ({
               </div>
 
               <div className="space-y-2">
-                {(document.versions || []).map(v => (
+                {(currentDoc.versions || []).map(v => (
                   <div
                     key={v.id}
                     className={`p-3.5 rounded-xl border text-xs space-y-1 ${
-                      v.id === document.current_version_id
+                      v.id === currentDoc.current_version_id
                         ? 'bg-emerald-50/60 border-emerald-200'
                         : 'bg-white border-gray-200'
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Badge variant={v.id === document.current_version_id ? 'emerald' : 'neutral'} className="text-[10px]">
-                          V{v.version_number} {v.id === document.current_version_id ? '(Current)' : ''}
+                        <Badge variant={v.id === currentDoc.current_version_id ? 'emerald' : 'neutral'} className="text-[10px]">
+                          V{v.version_number} {v.id === currentDoc.current_version_id ? '(Current)' : ''}
                         </Badge>
                         <span className="font-bold text-gray-900">{v.file_name}</span>
                       </div>

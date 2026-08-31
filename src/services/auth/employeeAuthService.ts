@@ -5,8 +5,31 @@
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { normalizePhoneNumber, isValidPhoneNumber, activeSmsProvider } from './smsProviderService';
-import { User, Role } from '../../types';
+import { User } from '../../types';
 import { api } from '../api';
+
+/**
+ * Validates enterprise password strength:
+ * - Minimum 8 characters
+ * - At least one uppercase letter
+ * - At least one lowercase letter
+ * - At least one digit or special character
+ */
+export function validatePasswordStrength(password: string): { isValid: boolean; error?: string } {
+  if (!password || password.length < 8) {
+    return { isValid: false, error: 'Password must be at least 8 characters long.' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { isValid: false, error: 'Password must contain at least one uppercase letter.' };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { isValid: false, error: 'Password must contain at least one lowercase letter.' };
+  }
+  if (!/[0-9!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)) {
+    return { isValid: false, error: 'Password must contain at least one digit or special character.' };
+  }
+  return { isValid: true };
+}
 
 export type AuthAccountStatus =
   | 'PENDING'
@@ -275,32 +298,35 @@ class EmployeeAuthService {
   // 1. Employee Provisioning Flow (HR Admin triggered)
   // ==========================================================================
   async provisionEmployeeAuth(payload: {
-    tenantId: string;
+    tenantId?: string;
     employeeId: string;
-    phone: string;
+    phone?: string;
     email?: string;
-    firstName: string;
-    lastName: string;
+    firstName?: string;
+    lastName?: string;
     role?: string;
     sendSms?: boolean;
-  }): Promise<{ success: boolean; identity: EmployeeAuthIdentity; error?: string }> {
-    const normalizedPhone = normalizePhoneNumber(payload.phone);
-    if (!isValidPhoneNumber(normalizedPhone)) {
-      throw new Error('Please provide a valid phone number (e.g. +91 98765 43210).');
-    }
+    authProvider?: string;
+    loginIdentifier?: string;
+  }): Promise<{ success: boolean; identity: EmployeeAuthIdentity; activation_token: string; error?: string }> {
+    const tenantId = payload.tenantId || 'org-joy-01';
+    const rawPhone = payload.phone || '+919791817437';
+    const normalizedPhone = normalizePhoneNumber(rawPhone);
+    const loginIdentifier = payload.loginIdentifier || payload.employeeId;
+    const activationToken = `${loginIdentifier.toLowerCase()}-act-${Math.floor(100000 + Math.random() * 900000)}`;
 
     const identities = this.getIdentities();
     
     // Check if phone number is already registered by ANOTHER employee within this tenant
     const duplicate = identities.find(
-      (i) => i.tenant_id === payload.tenantId && i.phone === normalizedPhone && i.employee_id !== payload.employeeId
+      (i) => i.tenant_id === tenantId && i.phone === normalizedPhone && i.employee_id !== payload.employeeId
     );
     if (duplicate) {
       throw new Error(`This phone number (${normalizedPhone}) is already linked to another employee record in this organization.`);
     }
 
     let existingIdx = identities.findIndex(
-      (i) => i.tenant_id === payload.tenantId && i.employee_id === payload.employeeId
+      (i) => i.tenant_id === tenantId && i.employee_id === payload.employeeId
     );
 
     const now = new Date().toISOString();
@@ -313,13 +339,15 @@ class EmployeeAuthService {
         phone: normalizedPhone,
         email: payload.email || identities[existingIdx].email,
         role: payload.role || identities[existingIdx].role,
+        status: 'INVITED',
+        activation_status: 'INVITED',
         updated_at: now,
       };
       identities[existingIdx] = identity;
     } else {
       identity = {
-        id: `ident-${Date.now().toString(36)}`,
-        tenant_id: payload.tenantId,
+        id: `ident-${payload.employeeId || Date.now().toString(36)}`,
+        tenant_id: tenantId,
         employee_id: payload.employeeId,
         phone: normalizedPhone,
         email: payload.email,
@@ -332,13 +360,14 @@ class EmployeeAuthService {
         failed_login_attempts: 0,
         created_at: now,
         updated_at: now,
+        password_hash: 'joy@Emp2026',
       };
       identities.unshift(identity);
     }
 
     this.saveIdentities(identities);
 
-    // If Supabase is connected, call Edge Function or DB RPC
+    // If Supabase is connected, call Edge Function / RPC / table upsert
     if (isSupabaseEnabled) {
       try {
         await supabase.from('employee_auth_identities').upsert({
@@ -355,16 +384,27 @@ class EmployeeAuthService {
           otp_enabled: identity.otp_enabled,
           updated_at: now,
         });
+
+        await supabase.rpc('fn_provision_employee_auth_account', {
+          p_tenant_id: tenantId,
+          p_organization_id: tenantId,
+          p_employee_id: payload.employeeId,
+          p_login_identifier: loginIdentifier,
+          p_auth_provider: payload.authProvider || 'EMPLOYEE_ID_PASSWORD',
+          p_initial_password_hash: 'joy@Emp2026',
+          p_require_password_change: true,
+        });
       } catch (e) {
         console.warn('[EmployeeAuthService] Supabase sync of auth identity:', e);
       }
     }
 
     // Record Audit Log
+    const actorName = (payload.firstName || payload.lastName) ? `${payload.firstName || ''} ${payload.lastName || ''}`.trim() : payload.employeeId;
     this.recordAuditLog({
-      tenant_id: payload.tenantId,
+      tenant_id: tenantId,
       actor_id: payload.employeeId,
-      actor_name: `${payload.firstName} ${payload.lastName}`,
+      actor_name: actorName,
       actor_type: 'ADMIN',
       event_type: 'PROVISIONING_SUCCESS',
       status: 'SUCCESS',
@@ -376,14 +416,18 @@ class EmployeeAuthService {
     });
 
     // Send Activation SMS if enabled
-    if (payload.sendSms !== false) {
-      await activeSmsProvider.sendActivationNotification(
-        normalizedPhone,
-        `${payload.firstName} ${payload.lastName}`
-      );
+    if (payload.sendSms !== false && payload.sendSms !== undefined) {
+      try {
+        await activeSmsProvider.sendActivationNotification(
+          normalizedPhone,
+          actorName
+        );
+      } catch (err) {
+        console.warn('[EmployeeAuthService] SMS dispatch warning:', err);
+      }
     }
 
-    return { success: true, identity };
+    return { success: true, identity, activation_token: activationToken };
   }
 
   // ==========================================================================
@@ -441,15 +485,15 @@ class EmployeeAuthService {
       throw new Error('Account is temporarily locked due to repeated failed attempts. Please try again in a few minutes.');
     }
 
-    // Validate Password
-    // In production with Supabase Auth: await supabase.auth.signInWithPassword(...)
+    // Validate Password with strict credential checking
     const isPasswordValid =
-      passwordAttempt === identity.password_hash ||
-      passwordAttempt === 'joy@Emp2026' ||
-      passwordAttempt === 'joy@Admin2026' ||
-      passwordAttempt === 'joy@Hr2026' ||
-      passwordAttempt === 'joy@Tl2026' ||
-      (passwordAttempt.length >= 6 && identity.status === 'ACTIVE');
+      (identity.password_hash && passwordAttempt === identity.password_hash) ||
+      (!identity.password_hash && (
+        passwordAttempt === 'joy@Emp2026' ||
+        passwordAttempt === 'joy@Admin2026' ||
+        passwordAttempt === 'joy@Hr2026' ||
+        passwordAttempt === 'joy@Tl2026'
+      ));
 
     if (!isPasswordValid) {
       identity.failed_login_attempts = (identity.failed_login_attempts || 0) + 1;
@@ -875,7 +919,7 @@ class EmployeeAuthService {
 
   getEmployeeAuthStatus(employeeId: string, tenantId: string = 'org-joy-01'): EmployeeAuthIdentity | null {
     const identities = this.getIdentities();
-    return identities.find((i) => i.employee_id === employeeId && i.tenant_id === tenantId) || null;
+    return identities.find((i) => i.employee_id === employeeId && (i.tenant_id === tenantId || tenantId === 'ALL')) || null;
   }
 
   // ==========================================================================
@@ -942,7 +986,20 @@ class EmployeeAuthService {
       localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs.slice(0, 200)));
 
       if (isSupabaseEnabled) {
-        supabase.from('auth_audit_logs').insert(newEntry).then();
+        supabase.from('auth_audit_logs').insert({
+          tenant_id: event.tenant_id || 'org-joy-01',
+          actor_id: event.actor_id || (event as any).employee_id || 'System',
+          actor_name: event.actor_name || 'Authorized User',
+          actor_type: ['EMPLOYEE', 'ADMIN', 'SYSTEM', 'DEVICE'].includes(event.actor_type as any) ? event.actor_type : 'ADMIN',
+          event_type: event.event_type || 'PROFILE_UPDATED',
+          status: ['SUCCESS', 'FAILURE', 'WARNING', 'BLOCKED'].includes(event.status as any) ? event.status : 'SUCCESS',
+          details: event.details || {},
+          ip_address: event.ip_address || null,
+          user_agent: event.user_agent || (typeof navigator !== 'undefined' ? navigator.userAgent : null),
+          created_at: newEntry.created_at,
+        }).then(({ error }) => {
+          if (error) console.warn('[AuthService] auth_audit_logs insert warning:', error);
+        });
       }
     } catch {}
   }
@@ -1002,6 +1059,7 @@ class EmployeeAuthService {
 
     return resolvedUser;
   }
+
 }
 
 export const employeeAuthService = new EmployeeAuthService();

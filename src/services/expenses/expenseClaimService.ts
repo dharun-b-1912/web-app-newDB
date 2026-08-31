@@ -61,7 +61,7 @@ class ExpenseClaimService {
           .select('*')
           .order('submitted_at', { ascending: false });
 
-        if (data && data.length > 0) {
+        if (!error && data !== null) {
           this.memoryCache = data;
           this.saveLocalStore(data, tenantId);
           return data;

@@ -313,7 +313,7 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
                 <div class="entity-name">Joy PeopleHR Technologies Pvt Ltd</div>
                 <div class="meta-line">WorkForce Tech Park, OMR IT Corridor, Chennai, TN 600096, India</div>
                 <div class="meta-line"><strong>GSTIN:</strong> ${inv.platform_gstin || '33AAACW0000A1Z5'} • <strong>PAN:</strong> AAACW0000A</div>
-                <div class="meta-line"><strong>Email:</strong> billing@workforceos.in • <strong>Phone:</strong> +91 44 4800 9000</div>
+                <div class="meta-line"><strong>Email:</strong> billing@joypeoplehr.com • <strong>Phone:</strong> +91 44 4800 9000</div>
               </div>
 
               <div>
@@ -437,7 +437,7 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
             <div class="footer-section">
               <div>
                 <p>Thank you for choosing Joy PeopleHR. Computer-generated tax invoice under Indian GST Rules.</p>
-                <p>For billing queries: billing@workforceos.in • Support: +91 44 4800 9000</p>
+                <p>For billing queries: billing@joypeoplehr.com • Support: +91 44 4800 9000</p>
               </div>
               <div class="seal-box">
                 <p style="font-weight: 700;">For Joy PeopleHR Technologies Pvt Ltd</p>
@@ -558,7 +558,7 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
                 <strong className="text-sm font-bold text-gray-900 block">Joy PeopleHR Technologies Pvt Ltd</strong>
                 <p className="text-gray-600">WorkForce Tech Park, OMR IT Corridor, Chennai, TN 600096, India</p>
                 <p className="font-mono text-gray-700"><strong>GSTIN:</strong> {inv.platform_gstin || '33AAACW0000A1Z5'} • <strong>PAN:</strong> AAACW0000A</p>
-                <p className="text-gray-500">Email: billing@workforceos.in • Phone: +91 44 4800 9000</p>
+                <p className="text-gray-500">Email: billing@joypeoplehr.com • Phone: +91 44 4800 9000</p>
               </div>
 
               <div className="space-y-1">
@@ -689,7 +689,7 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
             <div className="p-4 bg-gray-50 border-t border-gray-200 flex justify-between items-center text-[10px] text-gray-500">
               <div>
                 <p>Thank you for choosing Joy PeopleHR. Computer-generated tax invoice under Indian GST Rules.</p>
-                <p>Billing Support: billing@workforceos.in • +91 44 4800 9000</p>
+                <p>Billing Support: billing@joypeoplehr.com • +91 44 4800 9000</p>
               </div>
               <div className="text-right font-semibold text-gray-700">
                 <p>For Joy PeopleHR Technologies Pvt Ltd</p>

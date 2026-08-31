@@ -29,24 +29,7 @@ export interface SupportAccessSession {
 }
 
 const activeSessions: Map<string, SupportAccessSession> = new Map();
-const sessionHistory: SupportAccessSession[] = [
-  {
-    id: 'sess-prev-001',
-    organization_id: 'org-joy-corp',
-    organization_name: 'Joy Corporate Solutions Pvt Ltd',
-    platform_actor_id: 'user-thirumalai',
-    platform_actor_name: 'Thirumalai R K',
-    platform_actor_role: 'Platform Admin',
-    access_mode: 'SUPPORT ACCESS',
-    reason: 'Investigating biometric hardware push daemon credentials',
-    support_case_id: 'SUP-10482',
-    duration_minutes: 15,
-    started_at: new Date(Date.now() - 86400000).toLocaleString(),
-    expires_at: new Date(Date.now() - 86400000 + 15 * 60000).toLocaleString(),
-    ended_at: new Date(Date.now() - 86400000 + 14 * 60000).toLocaleString(),
-    status: 'ENDED',
-  },
-];
+const sessionHistory: SupportAccessSession[] = [];
 
 export const platformSupportAccessService = {
   /**

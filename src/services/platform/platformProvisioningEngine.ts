@@ -52,6 +52,10 @@ export interface ProvisioningFormData {
   // Step 4: Feature Overrides
   enabled_features: string[];
   feature_overrides: Record<string, boolean>; // custom admin overrides
+
+  // Account Owner Assignment
+  account_owner_name?: string;
+  account_owner_team?: 'Customer Success' | 'Sales' | 'Finance' | 'Support' | 'Platform Admin';
 }
 
 export interface ProvisioningDraft {
@@ -88,13 +92,92 @@ export const platformProvisioningEngine = {
    * Auto-generate a clean, URL-safe tenant slug from organization name.
    */
   generateTenantSlug(name: string): string {
+    if (!name) return '';
     return name
       .toLowerCase()
       .trim()
+      .replace(/\b(private\s+limited|pvt\s+ltd|pvt|ltd|limited|inc|incorporated|llc)\b/gi, '')
       .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '')
       .slice(0, 32);
+  },
+
+  /**
+   * Check if company name (legal or display) is already registered.
+   */
+  async checkCompanyNameAvailability(name: string): Promise<{ available: boolean; message: string }> {
+    const cleanName = name.toLowerCase().trim();
+    if (!cleanName || cleanName.length < 2) {
+      return { available: false, message: 'Company name too short' };
+    }
+
+    if (isSupabaseEnabled) {
+      try {
+        const { data } = await supabase
+          .from('organizations')
+          .select('id, legal_name, display_name')
+          .or(`legal_name.ilike.${cleanName},display_name.ilike.${cleanName}`)
+          .maybeSingle();
+
+        if (data) {
+          return {
+            available: false,
+            message: `An organization with company name "${data.legal_name || data.display_name}" is already registered (Tenant ID: ${data.id})`,
+          };
+        }
+      } catch (err) {
+        console.warn('[ProvisioningEngine] Company check fallback:', err);
+      }
+    }
+
+    // Local check
+    const orgs = platformTenantService.getOrganizations().items;
+    const match = orgs.find(
+      (o) => o.legal_name.toLowerCase().trim() === cleanName || o.display_name.toLowerCase().trim() === cleanName
+    );
+    if (match) {
+      return { available: false, message: `Company "${match.legal_name}" already exists with Tenant ID "${match.id}"` };
+    }
+
+    return { available: true, message: 'Company name is available' };
+  },
+
+  /**
+   * Check if tenant slug / ID is available.
+   */
+  async checkTenantSlugAvailability(slug: string): Promise<{ available: boolean; message: string }> {
+    const cleanSlug = slug.toLowerCase().trim();
+    const fullOrgId = `org-${cleanSlug}`;
+    if (!cleanSlug || cleanSlug.length < 2) {
+      return { available: false, message: 'Slug too short' };
+    }
+
+    if (isSupabaseEnabled) {
+      try {
+        const { data } = await supabase
+          .from('organizations')
+          .select('id, legal_name')
+          .or(`id.eq.${fullOrgId},id.eq.${cleanSlug},tenant_id.eq.${fullOrgId},tenant_id.eq.${cleanSlug}`)
+          .maybeSingle();
+
+        if (data) {
+          return { available: false, message: `Tenant identifier is already used by ${data.legal_name}` };
+        }
+      } catch (err) {
+        console.warn('[ProvisioningEngine] Slug check fallback:', err);
+      }
+    }
+
+    const orgs = platformTenantService.getOrganizations().items;
+    const match = orgs.find((o) => o.id === fullOrgId || o.id === cleanSlug || o.tenant_id === fullOrgId || o.tenant_id === cleanSlug);
+    if (match) {
+      return { available: false, message: `Tenant identifier is already in use by ${match.legal_name}` };
+    }
+
+    return { available: true, message: 'Tenant identifier is available' };
   },
 
   /**
@@ -218,10 +301,11 @@ export const platformProvisioningEngine = {
       { stepIndex: 5, stepName: 'Provision Primary Admin & Audit Ledger', status: 'PENDING' },
     ];
 
-    const orgId = `org-${formData.slug || this.generateTenantSlug(formData.legal_name)}`;
-    const subId = `sub-${formData.slug}-01`;
+    const slug = formData.slug || this.generateTenantSlug(formData.legal_name);
+    const orgId = `org-${slug}`;
+    const subId = `sub-${slug}-01`;
     const invNumber = `INV-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-    const invId = `inv-${formData.slug}-01`;
+    const invId = `inv-${slug}-01`;
     const adminFullName = `${formData.admin_first_name} ${formData.admin_last_name}`.trim();
     const provisionedAt = new Date().toISOString();
 
@@ -250,10 +334,25 @@ export const platformProvisioningEngine = {
     });
 
     try {
-      // Step 1: Validate
+      // Step 1: Validate Organization & Domain & Uniqueness
       steps[0].status = 'IN_PROGRESS';
       onProgress?.(steps[0]);
-      await new Promise((r) => setTimeout(r, 400));
+
+      const companyCheck = await this.checkCompanyNameAvailability(formData.legal_name);
+      if (!companyCheck.available) {
+        throw new Error(companyCheck.message);
+      }
+
+      const slugCheck = await this.checkTenantSlugAvailability(slug);
+      if (!slugCheck.available) {
+        throw new Error(slugCheck.message);
+      }
+
+      const domainCheck = await this.checkDomainAvailability(formData.domain);
+      if (!domainCheck.available) {
+        throw new Error(domainCheck.message);
+      }
+
       steps[0].status = 'COMPLETED';
       onProgress?.(steps[0]);
 
@@ -279,9 +378,9 @@ export const platformProvisioningEngine = {
         primary_admin_id: `user-${Date.now()}`,
         primary_admin_name: adminFullName,
         primary_admin_email: formData.admin_email,
-        primary_admin_phone: formData.admin_phone || '+91 90000 00000',
-        account_owner_name: 'WorkForce Super Admin',
-        account_owner_team: 'Platform Admin',
+        primary_admin_phone: formData.admin_phone || '',
+        account_owner_name: formData.account_owner_name || '',
+        account_owner_team: formData.account_owner_team || 'Customer Success',
         status: 'Active',
         lifecycle_state: 'Active',
         billing_status: 'Paid',
@@ -374,6 +473,7 @@ export const platformProvisioningEngine = {
               city: formData.city,
               timezone: formData.timezone,
               currency: formData.currency,
+              default_currency: formData.currency,
               environment: formData.environment || 'Production Test Tenant',
               gstin: formData.gstin || null,
               pan: formData.pan || null,

@@ -394,76 +394,8 @@ class RealtimeSyncEngine {
 
   private setupAutoSyncPolling(): void {
     if (this.pollingTimer) clearInterval(this.pollingTimer);
-
-    // Periodic lightweight reconciliation polling
-    this.pollingTimer = setInterval(async () => {
-      try {
-        if (isSupabaseEnabled) {
-          const today = new Date().toISOString().split('T')[0];
-          const [employees, attendance, leaves] = await Promise.all([
-            supabase.from('employees').select('*').limit(200),
-            supabase.from('attendance_daily').select('*').eq('date', today),
-            supabase.from('leave_requests').select('*').limit(100),
-          ]);
-
-          if (employees.data && employees.data.length > 0) {
-            const currentStr = localStorage.getItem('workforce_employees');
-            const newStr = JSON.stringify(employees.data);
-            if (currentStr !== newStr) {
-              localStorage.setItem('workforce_employees', newStr);
-              hrEventBus.publish('employee.synced', employees.data, { actorId: 'background-polling' });
-            }
-          }
-          if (attendance.data && attendance.data.length > 0) {
-            try {
-              const getAttendanceKeys = () => {
-                const s = new Set([
-                  'workforceos_attendance_daily_v2',
-                  'workforceos_attendance_daily_v2_org-joy-01',
-                ]);
-                try {
-                  const activeOrg = localStorage.getItem('workforce_active_org_id');
-                  if (activeOrg) s.add(`workforceos_attendance_daily_v2_${activeOrg}`);
-                  for (let i = 0; i < localStorage.length; i++) {
-                    const k = localStorage.key(i);
-                    if (k && k.startsWith('workforceos_attendance_daily_v2')) {
-                      s.add(k);
-                    }
-                  }
-                } catch {}
-                return Array.from(s);
-              };
-
-              const keys = getAttendanceKeys();
-              for (const k of keys) {
-                const stored = localStorage.getItem(k);
-                const currentList = stored ? JSON.parse(stored) : [];
-                const merged = [...currentList];
-                for (const row of attendance.data) {
-                  const idx = merged.findIndex((a: any) => 
-                    a.id === row.id || 
-                    (a.employee_id && row.employee_id && a.employee_id === row.employee_id && a.date === row.date) ||
-                    (a.employee_code && row.employee_code && a.employee_code === row.employee_code && a.date === row.date)
-                  );
-                  if (idx >= 0) {
-                    merged[idx] = { ...merged[idx], ...row };
-                  } else {
-                    merged.unshift(row);
-                  }
-                }
-                localStorage.setItem(k, JSON.stringify(merged));
-              }
-              hrEventBus.publish('attendance.punch_received', attendance.data, { actorId: 'background-polling' });
-            } catch {}
-          }
-          if (leaves.data && leaves.data.length > 0) {
-            localStorage.setItem('workforce_leave_requests_v1', JSON.stringify(leaves.data));
-          }
-        }
-      } catch (err) {
-        // Ignored
-      }
-    }, 4000);
+    this.pollingTimer = null;
+    // WebSockets via realtimeChannelManager provide live instant sync with zero excess egress.
   }
 
   public destroy(): void {

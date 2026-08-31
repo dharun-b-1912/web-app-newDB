@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './hooks/useAuth';
 import { TenantProvider } from './hooks/useTenant';
 import { ToastProvider } from './components/ui/Toast';
 import { AuthPage } from './features/auth/AuthPage';
+import { SuperAdminLoginPage } from './features/auth/SuperAdminLoginPage';
 import { AppShell } from './components/shell/AppShell';
 import { DashboardView } from './features/dashboard/DashboardView';
 import { WorkforceOverviewView } from './features/dashboard/WorkforceOverviewView';
@@ -24,6 +25,7 @@ import { OffboardingView } from './features/offboarding/OffboardingView';
 import { AiAssistantDrawer } from './features/assistant/AiAssistantDrawer';
 
 import { RouteGuard } from './components/auth/RouteGuard';
+import { getPrimaryRole, canViewModule } from './lib/rbac/permissionEngine';
 
 import { AssetsView } from './features/organization/AssetsView';
 import { TalentManagementView } from './features/talent/TalentManagementView';
@@ -46,8 +48,12 @@ import { AdminMasterModule } from './features/admin/AdminMasterModule';
 import { EssMasterModule } from './features/ess/EssMasterModule';
 import { TlMasterModule } from './features/tl/TlMasterModule';
 import { PlatformAdminMasterModule } from './features/platform/PlatformAdminMasterModule';
+import { VendorMasterModule } from './features/vendor/VendorMasterModule';
 import { MyProfileView } from './features/profile/MyProfileView';
 import { RealtimeHealthView } from './features/diagnostics/RealtimeHealthView';
+import { LegalCenterView } from './features/legal/LegalCenterView';
+import { CompanyOnboardingWizard } from './features/onboarding/CompanyOnboardingWizard';
+import { SessionExpiryModal } from './components/states/SessionExpiryModal';
 import { parseRouteFromUrl, syncUrlWithRoute } from './lib/router/urlRouter';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { realtimeSyncEngine } from './services/realtimeSyncEngine';
@@ -80,7 +86,7 @@ const AppContent: React.FC = () => {
       keysToPurge.forEach((k) => {
         try {
           localStorage.removeItem(k);
-        } catch (_) {}
+        } catch (_) { }
       });
       localStorage.setItem('wf_storage_version', PURGE_VERSION);
     }
@@ -89,27 +95,118 @@ const AppContent: React.FC = () => {
     return () => realtimeSyncEngine.destroy();
   }, []);
 
-  // Compute the correct starting route URL-FIRST from the browser location
+  const getDefaultRouteForUser = (targetUser?: any) => {
+    const stored = targetUser || user || api.getCurrentUser();
+    const primaryRole = getPrimaryRole(stored);
+    const isPlatformRole = (['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'] as string[]).includes(primaryRole);
+    if (isPlatformRole) return 'platform-dashboard';
+    if (primaryRole === 'Vendor Admin' || stored?.vendor_id || stored?.email?.toLowerCase().includes('vendor')) {
+      return 'vendor-settlement-workspace';
+    }
+    if (primaryRole === 'Company Admin') {
+      return 'executive-overview';
+    }
+    if (
+      primaryRole === 'HR Head' ||
+      primaryRole === 'HR Admin' ||
+      (stored?.email && stored.email.toLowerCase().includes('hr'))
+    ) {
+      return 'dashboard';
+    }
+    if (primaryRole === 'Manager') return 'dashboard';
+    if (primaryRole === 'Team Lead') return 'tl-dashboard';
+    if (primaryRole === 'Employee') return 'ess-dashboard';
+    return 'executive-overview';
+  };
+
+  // Compute the correct starting route: URL first -> localStorage saved route -> role default
   const [currentRoute, setCurrentRoute] = useState<string>(() => {
     const urlState = parseRouteFromUrl();
-    if (urlState.route && urlState.route !== 'platform-dashboard') {
+    const stored = user || api.getCurrentUser();
+    const primaryRole = getPrimaryRole(stored);
+    const isPlatformRole = ['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(primaryRole);
+
+    // 0. If vendor role, ensure they are strictly on a vendor route
+    if (primaryRole === 'Vendor Admin' || (stored as any)?.vendor_id || stored?.email?.toLowerCase().includes('vendor')) {
+      if (urlState.route && (urlState.route.startsWith('vendor') || urlState.route.includes('vendor'))) {
+        return urlState.route;
+      }
+      return 'vendor-settlement-workspace';
+    }
+
+    // 1. If platform role, ensure they are strictly on a platform route
+    if (isPlatformRole) {
+      if (urlState.route && (urlState.route.startsWith('platform') || urlState.route.startsWith('saas-'))) {
+        return urlState.route;
+      }
+      return 'platform-dashboard';
+    }
+
+    // 2. If tenant role, ensure they are not on an auth or platform route
+    if (urlState.route) {
+      const r = urlState.route.toLowerCase();
+      if (
+        r.startsWith('platform') ||
+        r.startsWith('saas-') ||
+        r.includes('accept-invite') ||
+        r.includes('reset-password') ||
+        r.includes('login') ||
+        r.includes('activate') ||
+        r.includes('invitation') ||
+        r.startsWith('auth')
+      ) {
+        return getDefaultRouteForUser();
+      }
       return urlState.route;
     }
-    const stored = api.getCurrentUser();
-    const roleName = stored?.roles?.[0]?.name ?? '';
-    if (['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(roleName)) return urlState.route || 'platform-dashboard';
-    if (roleName === 'Team Lead')   return 'tl-dashboard';
-    if (roleName === 'Employee')    return 'ess-dashboard';
-    return 'dashboard'; // Company Admin, HR Head, Manager
+
+    // 3. Check localStorage saved active route
+    try {
+      const savedRoute = localStorage.getItem('workforce_active_route');
+      if (savedRoute) {
+        const sr = savedRoute.toLowerCase();
+        if (
+          !sr.startsWith('platform') &&
+          !sr.startsWith('saas-') &&
+          !sr.includes('accept-invite') &&
+          !sr.includes('reset-password') &&
+          !sr.includes('login') &&
+          !sr.includes('activate') &&
+          !sr.includes('invitation') &&
+          !sr.startsWith('auth')
+        ) {
+          return savedRoute;
+        }
+      }
+    } catch { }
+
+    // 4. Fallback based on role
+    return getDefaultRouteForUser();
   });
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
+  const [isSessionExpired, setIsSessionExpired] = useState(false);
+
+  // Synchronize route changes to URL and localStorage
+  useEffect(() => {
+    if (currentRoute) {
+      syncUrlWithRoute(currentRoute, undefined, true);
+      try {
+        localStorage.setItem('workforce_active_route', currentRoute);
+      } catch { }
+    }
+  }, [currentRoute]);
 
   // Sync with browser back/forward buttons
   useEffect(() => {
-    const handlePopState = () => {
+    const handlePopState = (e: PopStateEvent) => {
       const urlState = parseRouteFromUrl();
-      if (urlState.route) {
-        setCurrentRoute(urlState.route);
+      const routeToSet = urlState.route || (e.state && e.state.route) || getDefaultRouteForUser();
+      if (routeToSet) {
+        setCurrentRoute(routeToSet);
+        try {
+          localStorage.setItem('workforce_active_route', routeToSet);
+        } catch { }
       }
     };
     const handlePlatformNav = (e: any) => {
@@ -127,41 +224,37 @@ const AppContent: React.FC = () => {
   }, []);
 
   const handleNavigate = (route: string) => {
+    if (!route) return;
+    syncUrlWithRoute(route, undefined, false);
     setCurrentRoute(route);
-    syncUrlWithRoute(route);
+    try {
+      localStorage.setItem('workforce_active_route', route);
+    } catch { }
   };
 
-  // Auto-redirect on role/persona switch (UserMenu persona switcher).
-  const prevUserIdRef = useRef<string | undefined>(undefined);
+  // Auto-redirect on role/persona switch, context mismatch, or unauthorized module access
   useEffect(() => {
     if (!user) return;
-    const previousUserId = prevUserIdRef.current;
-    prevUserIdRef.current = user.id;
+    const roleName = getPrimaryRole(user);
+    const isPlatformRole = ['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(roleName);
 
-    // Skip on first mount — initial route already correct from useState above.
-    if (previousUserId === undefined) return;
-
-    // Only act when the user actually switched persona.
-    if (previousUserId !== user.id) {
-      const roleName = user.roles?.[0]?.name ?? '';
-      if (['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(roleName)) {
+    if (isPlatformRole) {
+      if (!currentRoute.startsWith('platform') && !currentRoute.startsWith('saas-')) {
         setCurrentRoute('platform-dashboard');
-      } else if (roleName === 'Team Lead') {
-        setCurrentRoute('tl-dashboard');
-      } else if (roleName === 'Employee') {
-        setCurrentRoute('ess-dashboard');
-      } else {
-        // Company Admin, HR Head, Manager — land on dashboard,
-        // but if already on an HRMS route keep it (no disruptive redirect).
-        setCurrentRoute(prev =>
-          prev.startsWith('platform') || prev.startsWith('saas-') ||
-          prev.startsWith('tl-') || prev.startsWith('ess-')
-            ? 'dashboard'
-            : prev
-        );
+        syncUrlWithRoute('platform-dashboard', undefined, true);
+      }
+    } else {
+      if (currentRoute.startsWith('platform') || currentRoute.startsWith('saas-')) {
+        const defRoute = getDefaultRouteForUser(user);
+        setCurrentRoute(defRoute);
+        syncUrlWithRoute(defRoute, undefined, true);
+      } else if (!canViewModule(user, currentRoute)) {
+        const defRoute = getDefaultRouteForUser(user);
+        setCurrentRoute(defRoute);
+        syncUrlWithRoute(defRoute, undefined, true);
       }
     }
-  }, [user]);
+  }, [user, currentRoute]);
 
   if (isLoading) {
     return (
@@ -176,18 +269,52 @@ const AppContent: React.FC = () => {
     );
   }
 
+  const isSuperAdminRoute =
+    currentRoute === 'superadmin-login' ||
+    window.location.pathname === '/superadmin' ||
+    window.location.pathname === '/super-admin' ||
+    window.location.pathname === '/platform-login' ||
+    window.location.pathname === '/admin/login' ||
+    window.location.pathname === '/platform/login';
+
+  if (isSuperAdminRoute) {
+    const roleName = user?.roles?.[0]?.name ?? '';
+    const isPlatformRole = ['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(roleName);
+
+    if (user && isPlatformRole) {
+      return (
+        <ErrorBoundary>
+          <AppShell
+            currentRoute="platform-dashboard"
+            onNavigate={handleNavigate}
+            onOpenCopilot={() => setIsCopilotOpen(true)}
+          >
+            <PlatformAdminMasterModule onNavigate={handleNavigate} initialTab="dashboard" />
+          </AppShell>
+        </ErrorBoundary>
+      );
+    }
+
+    return <SuperAdminLoginPage onSwitchToCustomer={() => handleNavigate('dashboard')} />;
+  }
+
   if (!user) {
-    return <AuthPage />;
+    return (
+      <AuthPage
+        onNavigateToSuperAdmin={() => handleNavigate('superadmin-login')}
+        onSuccessRoute={(targetRoute) => handleNavigate(targetRoute)}
+      />
+    );
   }
 
   const renderViewContent = () => {
     switch (currentRoute) {
       case 'dashboard':
-        return <DashboardView onNavigate={setCurrentRoute} />;
+        return <DashboardView onNavigate={handleNavigate} />;
       case 'executive-overview':
-        return <ExecutiveOverviewView onNavigate={setCurrentRoute} />;
+        return <ExecutiveOverviewView onNavigate={handleNavigate} />;
       case 'workforce-overview':
-        return <WorkforceOverviewView onNavigate={setCurrentRoute} />;
+        return <WorkforceOverviewView onNavigate={handleNavigate} />;
       case 'people':
         return <PeopleView />;
       case 'organization':
@@ -328,7 +455,7 @@ const AppContent: React.FC = () => {
         return (
           <AttendanceModuleMaster
             currentSubPath={currentRoute}
-            onNavigateSubPath={sub => setCurrentRoute(sub)}
+            onNavigateSubPath={handleNavigate}
           />
         );
       case 'work-overtime':
@@ -356,6 +483,11 @@ const AppContent: React.FC = () => {
         return <LeaveManagementModule initialTab={currentRoute} />;
       case 'payroll':
       case 'payroll-dashboard':
+      case 'client-billing':
+      case 'client-invoicing':
+      case 'billing-runs':
+      case 'billing-rules':
+      case 'client-contracts':
       case 'payroll-salary':
       case 'payroll-claims':
       case 'payroll-expenses':
@@ -512,18 +644,67 @@ const AppContent: React.FC = () => {
       case 'saas-coupons':
       case 'saas-partners':
         return <PlatformAdminMasterModule initialTab={currentRoute} onNavigateTab={handleNavigate} />;
+      case 'vendor':
+      case 'vendor-portal':
+      case 'vendor-settlement':
+      case 'vendor-settlement-workspace':
+      case 'vendor-dashboard':
+      case 'vendor-licenses':
+      case 'vendor-compliance-calendar':
+      case 'vendor-statutory-returns':
+      case 'vendor-workforce':
+      case 'vendor-employees':
+      case 'vendor-assignments':
+      case 'vendor-attendance':
+      case 'vendor-wages':
+      case 'vendor-wage-breakdown':
+      case 'vendor-payroll':
+      case 'vendor-payroll-verification':
+      case 'vendor-payable':
+      case 'vendor-purchase-orders':
+      case 'vendor-po':
+      case 'vendor-invoices':
+      case 'vendor-invoice':
+      case 'vendor-compliance':
+      case 'vendor-statutory':
+      case 'vendor-payslips':
+      case 'vendor-payments':
+      case 'vendor-reconciliation':
+      case 'vendor-audit':
+      case 'vendor-reports':
+      case 'vendor-audit-reports':
+        return <VendorMasterModule initialTab={currentRoute} onNavigateSubPath={handleNavigate} />;
       case 'my-profile':
       case 'profile':
         return <MyProfileView />;
       case 'realtime-health':
       case 'admin-realtime-health':
         return <RealtimeHealthView />;
+      case 'company-onboarding':
+      case 'tenant-onboarding':
+        return <CompanyOnboardingWizard onFinish={() => handleNavigate('dashboard')} onSkip={() => handleNavigate('dashboard')} />;
+      case 'legal':
+      case 'trust-legal':
+      case 'legal-center':
+      case 'privacy-policy':
+      case 'terms-of-service':
+      case 'dpa':
+      case 'security-center':
+        return <LegalCenterView />;
       case 'settings':
         return <AdminMasterModule initialTab="settings" />;
-      default:
+      default: {
+        const stored = api.getCurrentUser();
+        const primaryRole = getPrimaryRole(stored);
+        const isPlatformRole = ['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(primaryRole);
+        if (isPlatformRole) {
+          return <PlatformAdminMasterModule initialTab="platform-dashboard" onNavigateTab={handleNavigate} />;
+        }
         return <DashboardView onNavigate={handleNavigate} />;
+      }
     }
   };
+
 
   return (
     <AppShell
@@ -531,13 +712,24 @@ const AppContent: React.FC = () => {
       onNavigate={handleNavigate}
       onOpenCopilot={() => setIsCopilotOpen(true)}
     >
-      <RouteGuard module={currentRoute} onNavigate={setCurrentRoute}>
+      <RouteGuard module={currentRoute} onNavigate={handleNavigate}>
         <ErrorBoundary>
           {renderViewContent()}
         </ErrorBoundary>
       </RouteGuard>
 
       <AiAssistantDrawer isOpen={isCopilotOpen} onClose={() => setIsCopilotOpen(false)} />
+
+      <SessionExpiryModal
+        isOpen={isSessionModalOpen}
+        isExpired={isSessionExpired}
+        secondsRemaining={120}
+        onStaySignedIn={() => setIsSessionModalOpen(false)}
+        onReLoginSuccess={() => {
+          setIsSessionModalOpen(false);
+          setIsSessionExpired(false);
+        }}
+      />
     </AppShell>
   );
 };

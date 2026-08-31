@@ -1,5 +1,7 @@
 import { PeriodAttendanceMetrics } from '../attendance/attendanceCalculationService';
 import { payrollCalculationEngine } from './payrollCalculationEngine';
+import { StatutoryRuleEngine } from './statutoryRuleEngine';
+import { payrollApi } from '../payrollApi';
 
 export interface PayrollImpactCalculationParams {
   annualCtc: number;
@@ -32,7 +34,18 @@ export interface PayrollImpactResult {
   netAttendanceAdjustment: number;
   effectiveGrossEarnings: number;
   
+  basicEarned: number;
+  hraEarned: number;
+  specialEarned: number;
+  
+  epfEmployee: number;
+  esicEmployee: number;
+  professionalTax: number;
+  estimatedTds: number;
   totalEmployeeDeductions: number;
+  
+  epfEmployer: number;
+  esicEmployer: number;
   totalEmployerContributions: number;
   netTakeHomePay: number;
 }
@@ -49,7 +62,7 @@ class PayrollImpactCalculationEngine {
       otMultiplier = 1.5,
       structureCode = 'CORP_STD_01',
       pfApplicable = true,
-      esiApplicable = false,
+      esiApplicable = true,
       ptApplicable = true,
     } = params;
 
@@ -81,19 +94,35 @@ class PayrollImpactCalculationEngine {
     const approvedOtHours = approvedOtMinutes / 60.0;
     const otEarnings = Math.round(approvedOtHours * hourlyOtRate);
     
-    // Net Attendance Adjustment
+    // Net Attendance Adjustment & Effective Gross
     const netAttendanceAdjustment = otEarnings - lopDeductionAmount;
     const effectiveGrossEarnings = Math.max(0, baseGross + netAttendanceAdjustment);
-    
-    // Recalculate statutory deductions against adjusted gross
-    const adjustedBreakdown = payrollCalculationEngine.calculateBreakdown({
-      annualCtc: effectiveGrossEarnings * 12,
-      monthlyCtc: effectiveGrossEarnings,
-      structureCode,
-      pfApplicable,
-      esiApplicable,
-      ptApplicable,
-    });
+
+    // Wage Component Split after Attendance Adjustment
+    const basicEarned = Math.round(effectiveGrossEarnings * 0.5);
+    const hraEarned = Math.round(basicEarned * 0.4);
+    const specialEarned = Math.max(0, effectiveGrossEarnings - basicEarned - hraEarned);
+
+    // Fetch active tenant statutory rules
+    const statutoryConfig = payrollApi.getStatutoryConfig();
+
+    // Evaluate exact statutory withholdings on earned wage
+    const pfEval = StatutoryRuleEngine.evaluatePF(basicEarned, true, pfApplicable, statutoryConfig);
+    const esiEval = StatutoryRuleEngine.evaluateESI(effectiveGrossEarnings, 0, 'NEW_COVERAGE', statutoryConfig);
+    const ptEval = StatutoryRuleEngine.evaluateProfessionalTax(effectiveGrossEarnings, 'Tamil Nadu', statutoryConfig);
+    const tdsEval = StatutoryRuleEngine.evaluateProjectedTDS(effectiveGrossEarnings, effectiveGrossEarnings * 12, 'NEW');
+
+    const epfEmployee = pfApplicable !== false ? pfEval.employee_contribution : 0;
+    const esicEmployee = esiApplicable !== false && esiEval.is_covered ? esiEval.employee_contribution : 0;
+    const professionalTax = ptApplicable !== false ? ptEval.ptAmount : 0;
+    const estimatedTds = tdsEval.monthlyTdsWithholding;
+
+    const totalEmployeeDeductions = epfEmployee + esicEmployee + professionalTax + estimatedTds;
+    const netTakeHomePay = Math.max(0, effectiveGrossEarnings - totalEmployeeDeductions);
+
+    const epfEmployer = pfApplicable !== false ? pfEval.total_employer_pf_cost : 0;
+    const esicEmployer = esiApplicable !== false && esiEval.is_covered ? esiEval.employer_contribution : 0;
+    const totalEmployerContributions = epfEmployer + esicEmployer;
 
     const otHrs = Math.floor(approvedOtMinutes / 60);
     const otMins = approvedOtMinutes % 60;
@@ -114,9 +143,18 @@ class PayrollImpactCalculationEngine {
       otEarnings,
       netAttendanceAdjustment,
       effectiveGrossEarnings,
-      totalEmployeeDeductions: adjustedBreakdown.totalEmployeeDeductions,
-      totalEmployerContributions: adjustedBreakdown.totalEmployerContributions,
-      netTakeHomePay: adjustedBreakdown.netMonthlyPay,
+      basicEarned,
+      hraEarned,
+      specialEarned,
+      epfEmployee,
+      esicEmployee,
+      professionalTax,
+      estimatedTds,
+      totalEmployeeDeductions,
+      epfEmployer,
+      esicEmployer,
+      totalEmployerContributions,
+      netTakeHomePay,
     };
   }
 }

@@ -226,10 +226,16 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
   }, [monthKey]);
 
   useEffect(() => {
-    const unsub = hrEventBus.subscribe('attendance.*', () => {
+    const unsub1 = hrEventBus.subscribe('attendance.*', () => {
       loadData();
     });
-    return () => unsub();
+    const unsub2 = hrEventBus.subscribe('regularization.*', () => {
+      loadData();
+    });
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, [monthKey]);
 
   // Navigate months

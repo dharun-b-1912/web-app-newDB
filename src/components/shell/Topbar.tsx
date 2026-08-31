@@ -1,15 +1,12 @@
-// src/components/shell/Topbar.tsx
-// ============================================================
-// Joy PeopleHR — Top Command Header Bar
-// ============================================================
-
-import React from 'react';
-import { Search, MapPin, Sparkles, Shield, Globe } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, MapPin, Sparkles, Shield, Globe, Terminal } from 'lucide-react';
 import { CompanySelector } from './CompanySelector';
 import { UserMenu } from './UserMenu';
 import { NotificationsCenter } from './NotificationsCenter';
 import { useTenant } from '../../hooks/useTenant';
 import { usePermission } from '../../hooks/usePermission';
+import { AppDiagnosticsModal } from '../common/AppDiagnosticsModal';
+import { appLogger } from '../../lib/appLogger';
 
 export interface TopbarProps {
   onOpenSearch: () => void;
@@ -19,8 +16,32 @@ export interface TopbarProps {
 export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant }) => {
   const { activeCompany } = useTenant();
   const { primaryRole, roleProfile } = usePermission();
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
+  const [errorCount, setErrorCount] = useState(0);
 
   const isSuperAdmin = primaryRole === 'Super Admin';
+
+  useEffect(() => {
+    const handleLog = () => {
+      const logs = appLogger.getRecentLogs();
+      const errs = logs.filter((l) => l.level === 'ERROR' || l.level === 'CRASH').length;
+      setErrorCount(errs);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+        e.preventDefault();
+        setIsDiagnosticsOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('wf-app-log', handleLog);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('wf-app-log', handleLog);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   return (
     <header className="h-16 bg-white border-b border-gray-200/80 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20 shrink-0">
@@ -55,9 +76,13 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
             )}
 
             {/* Role & Scope Indicator Badge */}
-            <div className="hidden 2xl:flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-[#07563D] rounded-xl border border-emerald-200/60 text-xs font-bold whitespace-nowrap shrink-0">
-              <Shield className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-              <span>{primaryRole} ({roleProfile.defaultScope})</span>
+            <div className={`hidden 2xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 ${
+              primaryRole === 'Vendor Admin'
+                ? 'bg-indigo-50 text-indigo-900 border-indigo-200/80'
+                : 'bg-emerald-50 text-[#07563D] border-emerald-200/60'
+            }`}>
+              <Shield className={`w-3.5 h-3.5 shrink-0 ${primaryRole === 'Vendor Admin' ? 'text-indigo-600' : 'text-emerald-700'}`} />
+              <span>{primaryRole === 'Vendor Admin' ? 'Vendor Operations Admin (Partner)' : `${primaryRole} (${roleProfile.defaultScope})`}</span>
             </div>
           </>
         )}
@@ -83,7 +108,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
         </button>
       </div>
 
-      {/* Right Area: Search (mobile), AI Assistant, Notifications, User Menu */}
+      {/* Right Area: Search (mobile), AI Assistant, Diagnostics, Notifications, User Menu */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         {/* Search trigger for mobile viewport */}
         <button
@@ -104,12 +129,37 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
           </button>
         )}
 
+        {/* Diagnostics & Live Telemetry Trigger */}
+        <button
+          onClick={() => setIsDiagnosticsOpen(true)}
+          className={`p-2 rounded-xl border transition-colors cursor-pointer relative flex items-center justify-center ${
+            errorCount > 0
+              ? 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100'
+              : 'bg-gray-50/80 hover:bg-gray-100 border-gray-200 text-gray-600'
+          }`}
+          title="System Diagnostics & Crash Logs (Ctrl + Shift + D)"
+        >
+          <Terminal className="w-4 h-4" />
+          {errorCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-600 text-white rounded-full text-[9px] font-bold flex items-center justify-center animate-pulse">
+              {errorCount > 9 ? '9+' : errorCount}
+            </span>
+          )}
+        </button>
+
         {/* Unified Approvals & Notifications */}
         <NotificationsCenter />
 
         {/* User Account Menu */}
         <UserMenu />
       </div>
+
+      {/* Diagnostics Modal */}
+      <AppDiagnosticsModal
+        isOpen={isDiagnosticsOpen}
+        onClose={() => setIsDiagnosticsOpen(false)}
+      />
     </header>
   );
 };
+

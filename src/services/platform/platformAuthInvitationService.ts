@@ -1,14 +1,17 @@
 // src/services/platform/platformAuthInvitationService.ts
 // ============================================================
-// Joy PeopleHR — Supabase Dedicated User & Admin Auth Invitation Service
+// Joy PeopleHR — Customer User & Admin Realtime Auth Invitation Gateway
+// Integrated with Resend API & Supabase Identity Engine
 // ============================================================
 
-import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { supabase, isSupabaseEnabled, getAppBaseUrl } from '../../lib/supabase';
 import { platformAuditService } from './platformAuditService';
+import { resendEmailService, EmailDeliveryResponse } from '../email/resendEmailService';
 
 export type UserRole =
   | 'Organization Owner'
   | 'Organization Admin'
+  | 'HR Head'
   | 'HR Admin'
   | 'Payroll Admin'
   | 'Attendance Admin'
@@ -31,30 +34,14 @@ export interface OrganizationInvitation {
   expires_at: string;
   created_at: string;
   accepted_at?: string;
+  delivery_id?: string;
 }
 
-const localInvitationsDb: OrganizationInvitation[] = [
-  {
-    id: 'inv-joy-corp-001',
-    organization_id: 'org-joy-corp',
-    organization_name: 'Joy Corporate Solutions Pvt Ltd',
-    email: 'suresh.k@joycorporate.com',
-    full_name: 'Suresh Kumar',
-    phone: '+91 98765 43214',
-    role: 'HR Admin',
-    department: 'People Operations',
-    invitation_token: 'token_joy_suresh_auth_invite_2026',
-    invite_url: 'https://app.workforceos.in/auth/accept-invite?token=token_joy_suresh_auth_invite_2026',
-    status: 'pending',
-    invited_by: 'Thirumalai R K (Platform Admin)',
-    expires_at: new Date(Date.now() + 6 * 86400000).toISOString(),
-    created_at: new Date().toLocaleDateString(),
-  },
-];
+const localInvitationsDb: OrganizationInvitation[] = [];
 
 export const platformAuthInvitationService = {
   /**
-   * Invite an administrator or staff user to a company using Supabase Auth.
+   * Invite an administrator or staff user to a company in realtime using Resend & Supabase Auth.
    */
   async inviteUser(params: {
     organizationId: string;
@@ -66,11 +53,33 @@ export const platformAuthInvitationService = {
     department?: string;
     invitedBy?: string;
     sendSupabaseEmail?: boolean;
-  }): Promise<OrganizationInvitation> {
+  }): Promise<{ invitation: OrganizationInvitation; emailDelivery?: EmailDeliveryResponse }> {
     const token = `inv_${Math.random().toString(36).substring(2)}${Date.now().toString(36)}`;
-    const inviteUrl = `${window.location.origin}/auth/accept-invite?token=${token}`;
+    const inviteUrl = `${getAppBaseUrl()}/auth/accept-invite?token=${token}&org=${encodeURIComponent(params.organizationId)}&email=${encodeURIComponent(params.email)}&role=${encodeURIComponent(params.role)}`;
     const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
     const invId = `inv-${Date.now()}`;
+
+    // Realtime Email Dispatch via Resend API Gateway
+    let emailDelivery: EmailDeliveryResponse | undefined;
+    if (params.sendSupabaseEmail !== false) {
+      try {
+        emailDelivery = await resendEmailService.sendOrganizationUserInvitationEmail({
+          to: params.email.trim().toLowerCase(),
+          recipientName: params.fullName.trim(),
+          organizationName: params.organizationName,
+          roleDisplayName: params.role,
+          roleKey: params.role,
+          department: params.department || 'People Operations',
+          invitedBy: params.invitedBy || 'THIRUMALAI R K (Platform Super Admin)',
+          invitationUrl: inviteUrl,
+          token: token,
+          phone: params.phone,
+          expiresInDays: 7,
+        });
+      } catch (emailErr) {
+        console.warn('[PlatformAuthInvitationService] Resend email dispatch warning:', emailErr);
+      }
+    }
 
     const newInvite: OrganizationInvitation = {
       id: invId,
@@ -80,13 +89,14 @@ export const platformAuthInvitationService = {
       full_name: params.fullName.trim(),
       phone: params.phone?.trim(),
       role: params.role,
-      department: params.department || 'General',
+      department: params.department || 'People Operations',
       invitation_token: token,
       invite_url: inviteUrl,
       status: 'pending',
-      invited_by: params.invitedBy || 'Thirumalai R K (Platform Admin)',
+      invited_by: params.invitedBy || 'THIRUMALAI R K (Platform Super Admin)',
       expires_at: expiresAt,
       created_at: new Date().toLocaleDateString(),
+      delivery_id: emailDelivery?.id,
     };
 
     localInvitationsDb.unshift(newInvite);
@@ -108,7 +118,6 @@ export const platformAuthInvitationService = {
           expires_at: expiresAt,
         });
 
-        // If email dispatch enabled, trigger Supabase Auth invite
         if (params.sendSupabaseEmail) {
           await supabase.auth.admin.inviteUserByEmail(newInvite.email, {
             data: {
@@ -116,7 +125,7 @@ export const platformAuthInvitationService = {
               role: params.role,
               full_name: params.fullName,
             },
-            redirectTo: `${window.location.origin}/auth/accept-invite`,
+            redirectTo: inviteUrl,
           });
         }
       } catch (err) {
@@ -127,18 +136,18 @@ export const platformAuthInvitationService = {
     // Forensic audit entry
     await platformAuditService.logEvent({
       actor_id: 'user-thirumalai',
-      actor_name: 'Thirumalai R K',
-      actor_role: 'Platform Admin',
+      actor_name: 'THIRUMALAI R K',
+      actor_role: 'Platform Super Admin',
       organization_id: params.organizationId,
       organization_name: params.organizationName,
       action: 'ADMIN_INVITATION_SENT',
       resource_type: 'OrganizationInvitation',
       resource_id: invId,
       severity: 'Normal',
-      reason: `Dispatched ${params.role} invitation to ${params.email} for ${params.organizationName}`,
+      reason: `Dispatched ${params.role} invitation to ${params.email} for ${params.organizationName} via Resend (Delivery ID: ${emailDelivery?.id || 'dispatched'})`,
     });
 
-    return newInvite;
+    return { invitation: newInvite, emailDelivery };
   },
 
   /**
@@ -149,29 +158,56 @@ export const platformAuthInvitationService = {
   },
 
   /**
-   * Resend invitation with a refreshed 7-day token.
+   * Resend invitation with a refreshed 7-day token and dispatch realtime email.
    */
-  async resendInvitation(invitationId: string): Promise<OrganizationInvitation> {
+  async resendInvitation(
+    invitationId: string,
+    actorName: string = 'THIRUMALAI R K'
+  ): Promise<{ invite: OrganizationInvitation; emailDelivery?: EmailDeliveryResponse }> {
     const invite = localInvitationsDb.find((i) => i.id === invitationId);
     if (!invite) throw new Error('Invitation record not found');
 
+    const rawToken = `inv_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+    invite.invitation_token = rawToken;
+    invite.invite_url = `${getAppBaseUrl()}/auth/accept-invite?token=${rawToken}&org=${encodeURIComponent(invite.organization_id)}&email=${encodeURIComponent(invite.email)}&role=${encodeURIComponent(invite.role)}`;
     invite.expires_at = new Date(Date.now() + 7 * 86400000).toISOString();
     invite.status = 'pending';
 
+    // Realtime email dispatch via Resend
+    let emailDelivery: EmailDeliveryResponse | undefined;
+    try {
+      emailDelivery = await resendEmailService.sendOrganizationUserInvitationEmail({
+        to: invite.email,
+        recipientName: invite.full_name,
+        organizationName: invite.organization_name,
+        roleDisplayName: invite.role,
+        roleKey: invite.role,
+        department: invite.department,
+        invitedBy: `${actorName} (Platform Super Admin)`,
+        invitationUrl: invite.invite_url,
+        token: rawToken,
+        phone: invite.phone,
+        expiresInDays: 7,
+      });
+      invite.delivery_id = emailDelivery?.id;
+    } catch (err) {
+      console.warn('[PlatformAuthInvitationService] Resend email resend warning:', err);
+    }
+
     await platformAuditService.logEvent({
       actor_id: 'user-thirumalai',
-      actor_name: 'Thirumalai R K',
-      actor_role: 'Platform Admin',
+      actor_name: actorName,
+      actor_role: 'Platform Super Admin',
       organization_id: invite.organization_id,
       organization_name: invite.organization_name,
       action: 'ADMIN_INVITATION_RESENT',
       resource_type: 'OrganizationInvitation',
       resource_id: invite.id,
       severity: 'Normal',
-      reason: `Refreshed and resent ${invite.role} invitation to ${invite.email}`,
+      reason: `Refreshed and resent ${invite.role} invitation to ${invite.email} in realtime via Resend Gateway (Delivery ID: ${emailDelivery?.id || 'dispatched'})`,
     });
 
-    return invite;
+    return { invite, emailDelivery };
   },
 
   /**
@@ -185,8 +221,8 @@ export const platformAuthInvitationService = {
 
     await platformAuditService.logEvent({
       actor_id: 'user-thirumalai',
-      actor_name: 'Thirumalai R K',
-      actor_role: 'Platform Admin',
+      actor_name: 'THIRUMALAI R K',
+      actor_role: 'Platform Super Admin',
       organization_id: invite.organization_id,
       organization_name: invite.organization_name,
       action: 'ADMIN_INVITATION_REVOKED',
@@ -195,6 +231,44 @@ export const platformAuthInvitationService = {
       severity: 'Normal',
       reason: `Revoked pending invitation for ${invite.email}`,
     });
+  },
+
+  /**
+   * Dispatch single-use realtime direct authentication & password setup link.
+   */
+  async dispatchAuthLink(params: {
+    email: string;
+    fullName: string;
+    organizationId: string;
+    organizationName: string;
+    actorName?: string;
+  }): Promise<EmailDeliveryResponse> {
+    const rawToken = `auth_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+    const resetUrl = `${getAppBaseUrl()}/reset-password?token=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(params.email)}`;
+
+    const delivery = await resendEmailService.sendDirectAuthenticationLinkEmail({
+      to: params.email,
+      employeeName: params.fullName,
+      resetToken: rawToken,
+      resetUrl: resetUrl,
+      organizationName: params.organizationName,
+      expiresInMinutes: 30,
+    });
+
+    await platformAuditService.logEvent({
+      actor_id: 'user-thirumalai',
+      actor_name: params.actorName || 'THIRUMALAI R K',
+      actor_role: 'Platform Super Admin',
+      organization_id: params.organizationId,
+      organization_name: params.organizationName,
+      action: 'AUTHENTICATION_LINK_DISPATCHED',
+      resource_type: 'UserAuth',
+      resource_id: params.email,
+      severity: 'Normal',
+      reason: `Dispatched direct authentication & password setup link to ${params.email} for ${params.organizationName} via Resend (Delivery ID: ${delivery.id || 'dispatched'})`,
+    });
+
+    return delivery;
   },
 
   /**

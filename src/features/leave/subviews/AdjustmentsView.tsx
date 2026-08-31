@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { leaveApi } from '../../../services/leaveApi';
+import { api } from '../../../services/api';
 import { LeaveAdjustment, LeaveType } from '../../../types/leave';
 import { Badge } from '../../../components/ui/Badge';
 import {
@@ -19,8 +20,9 @@ export const AdjustmentsView: React.FC = () => {
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  const employees = api.getEmployeesSync();
   // Form State
-  const [selectedEmp, setSelectedEmp] = useState('emp-101');
+  const [selectedEmp, setSelectedEmp] = useState(() => (employees[0]?.id || 'emp-101'));
   const [selectedLeaveTypeId, setSelectedLeaveTypeId] = useState('lt-cl');
   const [adjType, setAdjType] = useState<'Grant' | 'Deduction' | 'Transfer'>('Grant');
   const [amount, setAmount] = useState<number>(1.0);
@@ -31,6 +33,7 @@ export const AdjustmentsView: React.FC = () => {
     const types = leaveApi.getLeaveTypes().filter(t => t.is_active);
     setLeaveTypes(types);
     if (types.length > 0) setSelectedLeaveTypeId(types[0].id);
+    if (employees.length > 0 && !selectedEmp) setSelectedEmp(employees[0].id);
   }, []);
 
   const handleExecuteAdjustment = (e: React.FormEvent) => {
@@ -39,16 +42,18 @@ export const AdjustmentsView: React.FC = () => {
 
     const chosenType = leaveTypes.find(t => t.id === selectedLeaveTypeId) || leaveTypes[0];
     const signedAmount = adjType === 'Deduction' ? -Math.abs(amount) : Math.abs(amount);
+    const empObj = employees.find(e => e.id === selectedEmp);
+    const empName = empObj ? (empObj.display_name || `${empObj.first_name} ${empObj.last_name}`.trim()) : 'Staff Member';
 
     leaveApi.createAdjustment({
       employee_id: selectedEmp,
-      employee_name: selectedEmp === 'emp-101' ? 'Rajesh Kumar' : 'Ananya Sen',
+      employee_name: empName,
       leave_type_id: chosenType.id,
       leave_type_name: chosenType.name,
       adjustment_type: adjType,
       amount: signedAmount,
       reason,
-      actor_name: 'Anand Viswanathan (HR Admin)',
+      actor_name: 'HR Admin',
     });
 
     setAdjustments(leaveApi.getAdjustments());
@@ -145,8 +150,14 @@ export const AdjustmentsView: React.FC = () => {
                   onChange={e => setSelectedEmp(e.target.value)}
                   className="w-full p-2.5 border border-gray-300 rounded-xl font-bold bg-white"
                 >
-                  <option value="emp-101">Rajesh Kumar (EMP-101 - Engineering)</option>
-                  <option value="emp-102">Ananya Sen (EMP-102 - Product)</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.display_name || `${emp.first_name} ${emp.last_name}`.trim()} ({emp.employee_code || emp.id} - {emp.department_name || 'Staff'})
+                    </option>
+                  ))}
+                  {employees.length === 0 && (
+                    <option value="emp-101">No active employees loaded</option>
+                  )}
                 </select>
               </div>
 

@@ -52,13 +52,13 @@ class GrievanceService {
   public async fetchGrievances(tenantId = getActiveOrgId()): Promise<EmployeeGrievance[]> {
     if (isSupabaseEnabled) {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('employee_grievances')
           .select('*')
           .eq('tenant_id', tenantId)
           .order('submitted_at', { ascending: false });
 
-        if (data && data.length > 0) {
+        if (!error && data !== null) {
           this.memoryCache = data;
           this.saveLocalStore(data, tenantId);
           return data;

@@ -109,6 +109,8 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
   const [provisionResult, setProvisionResult] = useState<ProvisioningResult | null>(null);
 
   // Live Validation States
+  const [companyStatus, setCompanyStatus] = useState<{ checking: boolean; available?: boolean; message?: string }>({ checking: false });
+  const [slugStatus, setSlugStatus] = useState<{ checking: boolean; available?: boolean; message?: string }>({ checking: false });
   const [domainStatus, setDomainStatus] = useState<{ checking: boolean; available?: boolean; message?: string }>({ checking: false });
   const [emailStatus, setEmailStatus] = useState<{ checking: boolean; available?: boolean; message?: string }>({ checking: false });
 
@@ -144,15 +146,65 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
   // 3. Auto-generate Tenant Slug when Company Name changes
   const handleLegalNameChange = (val: string) => {
     const autoSlug = platformProvisioningEngine.generateTenantSlug(val);
-    setFormData((prev) => ({
-      ...prev,
-      legal_name: val,
-      display_name: prev.display_name === prev.legal_name || !prev.display_name ? val : prev.display_name,
-      slug: autoSlug,
-    }));
+    setFormData((prev) => {
+      const cleanShortName = val
+        .replace(/\b(private\s+limited|pvt\s+ltd|pvt|ltd|limited|inc|incorporated|llc)\b/gi, '')
+        .trim();
+      const currentAutoSlug = platformProvisioningEngine.generateTenantSlug(prev.legal_name || '');
+      const isSlugAuto = !prev.slug || prev.slug === currentAutoSlug;
+
+      return {
+        ...prev,
+        legal_name: val,
+        display_name: prev.display_name === prev.legal_name || !prev.display_name ? (cleanShortName || val) : prev.display_name,
+        domain: (!prev.domain || prev.domain.endsWith('.com')) && autoSlug ? `${autoSlug}.com` : prev.domain,
+        slug: isSlugAuto ? autoSlug : prev.slug,
+      };
+    });
   };
 
-  // 4. Live Debounced Domain Check
+  const handleDisplayNameChange = (val: string) => {
+    const autoSlug = platformProvisioningEngine.generateTenantSlug(val);
+    setFormData((prev) => {
+      const currentAutoSlug = platformProvisioningEngine.generateTenantSlug(prev.display_name || prev.legal_name || '');
+      const isSlugAuto = !prev.slug || prev.slug === currentAutoSlug;
+      return {
+        ...prev,
+        display_name: val,
+        slug: isSlugAuto && autoSlug ? autoSlug : prev.slug,
+      };
+    });
+  };
+
+  // 4. Live Debounced Company Name Check
+  useEffect(() => {
+    if (!formData.legal_name || formData.legal_name.trim().length < 3) {
+      setCompanyStatus({ checking: false });
+      return;
+    }
+    setCompanyStatus({ checking: true });
+    const timer = setTimeout(async () => {
+      const res = await platformProvisioningEngine.checkCompanyNameAvailability(formData.legal_name);
+      setCompanyStatus({ checking: false, available: res.available, message: res.message });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [formData.legal_name]);
+
+  // 5. Live Debounced Slug Check
+  useEffect(() => {
+    if (!formData.slug || formData.slug.trim().length < 2) {
+      setSlugStatus({ checking: false });
+      return;
+    }
+    setSlugStatus({ checking: true });
+    const timer = setTimeout(async () => {
+      const res = await platformProvisioningEngine.checkTenantSlugAvailability(formData.slug);
+      setSlugStatus({ checking: false, available: res.available, message: res.message });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [formData.slug]);
+
+  // 6. Live Debounced Domain Check
   useEffect(() => {
     if (!formData.domain || !formData.domain.includes('.')) {
       setDomainStatus({ checking: false });
@@ -166,7 +218,7 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
     return () => clearTimeout(timer);
   }, [formData.domain]);
 
-  // 5. Live Debounced Admin Email Check
+  // 7. Live Debounced Admin Email Check
   useEffect(() => {
     if (!formData.admin_email || !formData.admin_email.includes('@')) {
       setEmailStatus({ checking: false });
@@ -253,6 +305,8 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
     if (step === 1) {
       return (
         formData.legal_name.trim().length >= 3 &&
+        companyStatus.available !== false &&
+        slugStatus.available !== false &&
         formData.domain.trim().length >= 4 &&
         domainStatus.available !== false &&
         formData.slug.trim().length >= 2
@@ -272,7 +326,7 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
       return formData.enabled_features.length > 0;
     }
     return true;
-  }, [step, formData, domainStatus, emailStatus]);
+  }, [step, formData, companyStatus, slugStatus, domainStatus, emailStatus]);
 
   // Handle Final Provisioning Execution
   const handleExecuteProvision = async () => {
@@ -492,14 +546,33 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
                 <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Company Identity</span>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block font-bold text-gray-700 mb-1">Company Legal Name *</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-gray-700">Company Legal Name *</label>
+                      {companyStatus.checking && <span className="text-[10px] text-gray-400">Checking...</span>}
+                      {!companyStatus.checking && companyStatus.available === true && (
+                        <span className="text-[10px] font-bold text-[#047857] flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Available
+                        </span>
+                      )}
+                      {!companyStatus.checking && companyStatus.available === false && (
+                        <span className="text-[10px] font-bold text-rose-600">Already Registered</span>
+                      )}
+                    </div>
                     <input
                       type="text"
                       placeholder="e.g. Joy Corporate Solutions Pvt Ltd"
                       value={formData.legal_name}
                       onChange={(e) => handleLegalNameChange(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#047857]"
+                      className={cn(
+                        'w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border text-gray-900 focus:outline-none focus:ring-2',
+                        companyStatus.available === false ? 'border-rose-300 focus:ring-rose-500' : 'border-gray-200 focus:ring-[#047857]'
+                      )}
                     />
+                    {companyStatus.message && (
+                      <p className={cn('text-[10px] mt-1 font-medium', companyStatus.available ? 'text-gray-500' : 'text-rose-600')}>
+                        {companyStatus.message}
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -508,7 +581,7 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
                       type="text"
                       placeholder="e.g. Joy Corporate Solutions"
                       value={formData.display_name}
-                      onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
+                      onChange={(e) => handleDisplayNameChange(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#047857]"
                     />
                   </div>
@@ -536,7 +609,10 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
                         placeholder="e.g. joycorporatesolutions.com"
                         value={formData.domain}
                         onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
-                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#047857] font-mono text-xs"
+                        className={cn(
+                          'w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-gray-50 border text-gray-900 focus:outline-none focus:ring-2 font-mono text-xs',
+                          domainStatus.available === false ? 'border-rose-300 focus:ring-rose-500' : 'border-gray-200 focus:ring-[#047857]'
+                        )}
                       />
                     </div>
                     {domainStatus.message && (
@@ -547,11 +623,49 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block font-bold text-gray-700 mb-1">Joy PeopleHR Tenant Identifier</label>
-                    <div className="px-3.5 py-2.5 rounded-xl bg-emerald-50/50 border border-emerald-200 text-[#047857] font-mono font-bold flex items-center justify-between">
-                      <span>{formData.slug || 'tenant-slug'}</span>
-                      <span className="text-[10px] bg-emerald-100 text-[#047857] px-2 py-0.5 rounded font-sans">Auto-Generated</span>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-gray-700">Joy PeopleHR Tenant Identifier</label>
+                      {slugStatus.checking && <span className="text-[10px] text-gray-400">Checking...</span>}
+                      {!slugStatus.checking && slugStatus.available === true && (
+                        <span className="text-[10px] font-bold text-[#047857] flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Unique ID
+                        </span>
+                      )}
+                      {!slugStatus.checking && slugStatus.available === false && (
+                        <span className="text-[10px] font-bold text-rose-600">Duplicate ID</span>
+                      )}
                     </div>
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3 font-mono font-bold text-xs text-gray-400 select-none">org-</span>
+                      <input
+                        type="text"
+                        placeholder="tenant-slug"
+                        value={formData.slug}
+                        onChange={(e) => {
+                          const clean = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                          setFormData({ ...formData, slug: clean });
+                        }}
+                        className={cn(
+                          'w-full pl-12 pr-28 py-2.5 rounded-xl font-mono text-xs font-bold border focus:outline-none focus:ring-2',
+                          slugStatus.available === false
+                            ? 'bg-rose-50 border-rose-300 text-rose-700 focus:ring-rose-500'
+                            : 'bg-emerald-50/40 border-emerald-300 text-[#047857] focus:ring-[#047857]'
+                        )}
+                      />
+                      <span
+                        className={cn(
+                          'absolute right-2.5 text-[10px] font-sans px-2 py-0.5 rounded font-bold pointer-events-none',
+                          slugStatus.available === false ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-[#047857]'
+                        )}
+                      >
+                        {slugStatus.available === false ? 'Taken' : 'Auto-Generated'}
+                      </span>
+                    </div>
+                    {slugStatus.message && (
+                      <p className={cn('text-[10px] mt-1 font-medium', slugStatus.available ? 'text-gray-500' : 'text-rose-600')}>
+                        {slugStatus.message}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -891,25 +1005,25 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
                   <div className="space-y-2 text-xs">
                     <div className="flex justify-between text-gray-600">
                       <span>{formData.plan_name} Plan ({formData.billing_cycle}):</span>
-                      <strong className="font-mono text-gray-900">₹{billingOutput.basePlanPrice.toLocaleString('en-IN')}</strong>
+                      <strong className="font-mono text-gray-900">₹{(billingOutput?.basePrice ?? billingOutput?.basePlanPrice ?? 0).toLocaleString('en-IN')}</strong>
                     </div>
-                    {billingOutput.additionalSeatsPrice > 0 && (
+                    {((billingOutput?.extraSeatsPrice ?? billingOutput?.additionalSeatsPrice ?? 0) > 0) && (
                       <div className="flex justify-between text-gray-600">
                         <span>Additional Capacity ({formData.seats - selectedPlanSpec.includedSeats} seats):</span>
-                        <strong className="font-mono text-gray-900">₹{billingOutput.additionalSeatsPrice.toLocaleString('en-IN')}</strong>
+                        <strong className="font-mono text-gray-900">₹{(billingOutput?.extraSeatsPrice ?? billingOutput?.additionalSeatsPrice ?? 0).toLocaleString('en-IN')}</strong>
                       </div>
                     )}
                     <div className="flex justify-between text-gray-600 border-t pt-2">
                       <span>Subtotal:</span>
-                      <strong className="font-mono text-gray-900">₹{billingOutput.subtotal.toLocaleString('en-IN')}</strong>
+                      <strong className="font-mono text-gray-900">₹{(billingOutput?.subtotal ?? 0).toLocaleString('en-IN')}</strong>
                     </div>
                     <div className="flex justify-between text-gray-600">
                       <span>GST / Tax (18%):</span>
-                      <strong className="font-mono text-gray-900">₹{billingOutput.taxAmount.toLocaleString('en-IN')}</strong>
+                      <strong className="font-mono text-gray-900">₹{(billingOutput?.taxAmount ?? 0).toLocaleString('en-IN')}</strong>
                     </div>
                     <div className="flex justify-between text-sm font-bold text-[#047857] border-t pt-2">
                       <span>Total Estimated Invoice:</span>
-                      <span className="font-mono">₹{billingOutput.totalAmount.toLocaleString('en-IN')}</span>
+                      <span className="font-mono">₹{(billingOutput?.totalAmount ?? 0).toLocaleString('en-IN')}</span>
                     </div>
                   </div>
                 </div>
@@ -1031,7 +1145,7 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
                     <div>Plan: <strong className="text-[#047857]">{formData.plan_name}</strong></div>
                     <div>Seats: <strong>{formData.seats} Seats</strong></div>
                     <div>Interval: <strong>{formData.billing_cycle}</strong></div>
-                    <div>Total Estimated: <strong className="font-mono text-gray-900">₹{billingOutput.totalAmount.toLocaleString('en-IN')}</strong></div>
+                    <div>Total Estimated: <strong className="font-mono text-gray-900">₹{(billingOutput?.totalAmount ?? 0).toLocaleString('en-IN')}</strong></div>
                   </div>
                 </div>
 

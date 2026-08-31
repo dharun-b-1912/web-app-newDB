@@ -76,6 +76,12 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
     setSubscriptions(platformSubscriptionService.getSubscriptions());
   };
 
+  React.useEffect(() => {
+    platformSubscriptionService.fetchLiveFromSupabase().then(() => {
+      refreshData();
+    });
+  }, []);
+
   const handleToggleAutoRenew = async (id: string) => {
     const updated = await platformSubscriptionService.toggleAutoRenew(id);
     setSubscriptions(subscriptions.map((s) => (s.id === id ? { ...updated } : s)));

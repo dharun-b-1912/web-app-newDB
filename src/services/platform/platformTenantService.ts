@@ -177,126 +177,8 @@ export interface PaginatedOrganizations {
   total_pages: number;
 }
 
-// Canonical Primary Test Organization: Joy Corporate Solutions Pvt Ltd
-const defaultJoyCorp: OrganizationRecord = {
-  id: 'org-joy-corp',
-  tenant_id: 'org-joy-corp',
-  legal_name: 'Joy Corporate Solutions Pvt Ltd',
-  display_name: 'Joy Corporate Solutions',
-  domain: 'joycorporate.com',
-  industry: 'Enterprise Cloud & HR Operations',
-  country: 'India',
-  state: 'Tamil Nadu',
-  city: 'Chennai',
-  timezone: 'Asia/Kolkata (IST)',
-  currency: 'INR (₹)',
-  gstin: undefined,
-  pan: undefined,
-  cin: undefined,
-  primary_admin_id: 'user-dharun-01',
-  primary_admin_name: 'Dharun B',
-  primary_admin_email: 'dharun@joycorporate.com',
-  primary_admin_phone: '+91 98765 43210',
-  account_owner_name: 'Arun Kumar (Super Admin)',
-  account_owner_team: 'Customer Success',
-  status: 'Active',
-  lifecycle_state: 'Active',
-  billing_status: 'Paid',
-  is_watchlisted: false,
-  tags: ['Primary Test Tenant', 'Enterprise', 'India', 'Paid Customer'],
-  plan: 'Professional',
-  mrr: 45000,
-  mrr_formatted: '₹45,000',
-  billing_cycle: 'Monthly',
-  created_at: new Date().toISOString().split('T')[0],
-  renewal_date: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split('T')[0],
-  auto_renew: true,
-  active_employees: 42,
-  total_employees: 45,
-  seat_limit: 100,
-  seat_utilization_pct: 42,
-  storage_used_gb: 4.2,
-  storage_quota_gb: 50,
-  api_calls_this_month: 18450,
-  feature_adoption_pct: 78,
-  attendance_usage_pct: 88,
-  payroll_usage_pct: 92,
-  health_score: 94,
-  health_grade: 'Healthy',
-  health_trend: +3,
-  engagement_score: 24,
-  usage_score: 23,
-  billing_score: 25,
-  support_score: 22,
-  primary_risk: 'None (Healthy Commercial Lifecycle)',
-  last_activity_event: 'Processed Monthly Payroll Run & Shift Roster',
-  last_activity_time: '10 minutes ago',
-  last_activity_timestamp: new Date().toLocaleString(),
-  people_summary: {
-    total_employees: 45,
-    active_employees: 42,
-    inactive_employees: 3,
-    pending_invitations: 0,
-    admins_count: 2,
-    managers_count: 5,
-  },
-  support_summary: {
-    open_tickets: 0,
-    pending_tickets: 0,
-    critical_tickets: 0,
-    sla_breaches: 0,
-    csat_score: 4.9,
-  },
-  security_summary: {
-    active_sessions_count: 14,
-    admin_users_count: 2,
-    mfa_adoption_pct: 100,
-    recent_suspicious_events: 0,
-    api_key_status: 'Active',
-  },
-  integrations: [
-    {
-      id: 'int-1',
-      name: 'Razorpay Payment Gateway (Test)',
-      category: 'Cloud',
-      status: 'Connected',
-      connected_date: '2026-08-01',
-      last_event: 'Auto-debit verified',
-      failure_rate_pct: 0,
-      metric_summary: '100% success rate on test invoices',
-    },
-    {
-      id: 'int-2',
-      name: 'WhatsApp Business API Mesh',
-      category: 'Messaging',
-      status: 'Connected',
-      connected_date: '2026-08-05',
-      last_event: 'Shift roster dispatched',
-      failure_rate_pct: 0.1,
-      metric_summary: '1,280 messages delivered',
-    },
-  ],
-  internal_notes: [
-    {
-      id: 'note-1',
-      author: 'Arun Kumar (Super Admin)',
-      created_at: new Date().toISOString().split('T')[0],
-      text: 'Joy Corporate Solutions Pvt Ltd established as primary verified customer on Professional Plan.',
-    },
-  ],
-  activity_log: [
-    {
-      id: 'act-1',
-      event: 'Invoice INV-2026-000001 (₹53,100) successfully settled via Sandbox Gateway',
-      actor: 'Razorpay Sandbox Webhook',
-      timestamp: new Date().toLocaleString(),
-      category: 'Billing',
-      source: 'Payment Adapter',
-    },
-  ],
-};
-
-let organizationDb: OrganizationRecord[] = [defaultJoyCorp];
+let organizationDb: OrganizationRecord[] = [];
+let lastOrgFetchTime = 0;
 
 export const platformTenantService = {
   getOrganizations(params: OrgQueryParams = {}): PaginatedOrganizations {
@@ -374,8 +256,24 @@ export const platformTenantService = {
   /**
    * Fetch live organizations directly from Supabase PostgreSQL tables.
    */
-  async fetchLiveFromSupabase(): Promise<OrganizationRecord[]> {
-    if (!isSupabaseEnabled) return organizationDb;
+  async fetchLiveFromSupabase(forceRefresh: boolean = false): Promise<OrganizationRecord[]> {
+    if (!isSupabaseEnabled) {
+      // Ensure memory db is deduplicated
+      const seen = new Set<string>();
+      organizationDb = organizationDb.filter((o) => {
+        if (o.id === 'org-joy-corp' || o.tenant_id === 'org-joy-corp') return false;
+        if (seen.has(o.id)) return false;
+        seen.add(o.id);
+        return true;
+      });
+      return organizationDb;
+    }
+
+    // Cache check: return cached organizations if fetched less than 15s ago
+    const now = Date.now();
+    if (organizationDb.length > 0 && (now - lastOrgFetchTime) < 15000 && !forceRefresh) {
+      return organizationDb;
+    }
 
     try {
       const { data: orgRows, error } = await supabase
@@ -384,94 +282,141 @@ export const platformTenantService = {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+      lastOrgFetchTime = Date.now();
+
+      // Dynamically fetch live employee counts across organizations
+      let employeeRows: any[] = [];
+      try {
+        const { data: emps } = await supabase
+          .from('employees')
+          .select('id, status, organization_id');
+        if (emps) employeeRows = emps;
+      } catch {
+        // Table might not have entries yet
+      }
 
       if (orgRows && orgRows.length > 0) {
-        const liveList: OrganizationRecord[] = orgRows.map((row: any) => {
-          const existing = organizationDb.find((o) => o.id === row.id || o.tenant_id === row.id);
-          return {
-            id: row.id,
-            tenant_id: row.tenant_id || row.id,
-            legal_name: row.legal_name || row.name || 'Organization',
-            display_name: row.display_name || row.name || 'Organization',
-            domain: row.domain || 'example.com',
-            industry: row.industry || 'Enterprise Services',
-            country: row.country || 'India',
-            state: row.state || 'Tamil Nadu',
-            city: row.city || 'Chennai',
-            timezone: row.timezone || 'Asia/Kolkata (IST)',
-            currency: row.currency || 'INR (₹)',
-            gstin: row.gstin || undefined,
-            pan: row.pan || undefined,
-            cin: row.cin || undefined,
-            primary_admin_id: row.primary_admin_id || 'user-admin',
-            primary_admin_name: row.primary_admin_name || 'Primary Admin',
-            primary_admin_email: row.primary_admin_email || 'admin@' + (row.domain || 'example.com'),
-            primary_admin_phone: row.primary_admin_phone || '+91 98765 43210',
-            account_owner_name: row.account_owner_name || 'Arun Kumar (Super Admin)',
-            account_owner_team: 'Customer Success',
-            status: (row.status as any) || 'Active',
-            lifecycle_state: (row.lifecycle_state as any) || 'Active',
-            billing_status: (row.billing_status as any) || 'Paid',
-            is_watchlisted: false,
-            tags: row.tags || ['Verified SaaS Customer'],
-            plan: (row.plan as any) || 'Professional',
-            mrr: Number(row.mrr) || 45000,
-            mrr_formatted: `₹${(Number(row.mrr) || 45000).toLocaleString('en-IN')}`,
-            billing_cycle: row.billing_cycle || 'Monthly',
-            created_at: row.created_at || new Date().toISOString(),
-            updated_at: row.updated_at || undefined,
-            renewal_date: row.renewal_date || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-            auto_renew: row.auto_renew !== undefined ? row.auto_renew : true,
-            active_employees: Number(row.active_employees) || 42,
-            total_employees: Number(row.total_employees) || 45,
-            seat_limit: Number(row.seat_limit) || 100,
-            seat_utilization_pct: Number(row.seat_utilization_pct) || 42,
-            storage_used_gb: Number(row.storage_used_gb) || 4.2,
-            storage_quota_gb: Number(row.storage_quota_gb) || 50,
-            api_calls_this_month: Number(row.api_calls_this_month) || 18450,
-            feature_adoption_pct: 78,
-            attendance_usage_pct: 88,
-            payroll_usage_pct: 92,
-            health_score: Number(row.health_score) || 94,
-            health_grade: (row.health_grade as any) || 'Healthy',
-            health_trend: +3,
-            engagement_score: 24,
-            usage_score: 23,
-            billing_score: 25,
-            support_score: 22,
-            primary_risk: 'None (Healthy Commercial Lifecycle)',
-            last_activity_event: 'Live Organization Telemetry Synchronized',
-            last_activity_time: 'Just now',
-            last_activity_timestamp: new Date().toLocaleString(),
-            people_summary: existing?.people_summary || {
-              total_employees: 45,
-              active_employees: 42,
-              inactive_employees: 3,
-              pending_invitations: 0,
-              admins_count: 2,
-              managers_count: 5,
-            },
-            support_summary: existing?.support_summary || {
-              open_tickets: 0,
-              pending_tickets: 0,
-              critical_tickets: 0,
-              sla_breaches: 0,
-              csat_score: 4.9,
-            },
-            security_summary: existing?.security_summary || {
-              active_sessions_count: 14,
-              admin_users_count: 2,
-              mfa_adoption_pct: 100,
-              recent_suspicious_events: 0,
-              api_key_status: 'Active',
-            },
-            integrations: existing?.integrations || defaultJoyCorp.integrations,
-            internal_notes: existing?.internal_notes || defaultJoyCorp.internal_notes,
-            activity_log: existing?.activity_log || defaultJoyCorp.activity_log,
-          };
-        });
+        const liveList: OrganizationRecord[] = orgRows
+          .filter((row: any) => row.id !== 'org-joy-corp' && row.tenant_id !== 'org-joy-corp')
+          .map((row: any) => {
+            const existing = organizationDb.find((o) => o.id === row.id || o.tenant_id === row.id);
 
-        organizationDb = liveList;
+            const legalName = row.legal_name || row.name || 'Organization';
+            const displayName = row.display_name || row.name || 'Organization';
+            const tenantSlug = String(row.tenant_id || row.id || 'org').toLowerCase().replace(/^org-/, '');
+            const domain = row.domain || `${tenantSlug}.joypeoplehr.com`;
+            const planTier = (row.plan as any) || 'Professional';
+
+            // Dynamically calculate from real employee rows or default to 1 (Primary Admin)
+            const orgEmps = employeeRows.filter((e) => e.organization_id === row.id || e.tenant_id === row.id);
+            const activeEmps = orgEmps.length > 0
+              ? orgEmps.filter((e) => e.status === 'Active').length
+              : 1;
+            const totalEmps = orgEmps.length > 0 ? orgEmps.length : 1;
+
+            const seatLimit = Number(row.seat_limit) || Number(row.seats) || (planTier === 'Enterprise' ? 50 : planTier === 'Business' ? 250 : planTier === 'Professional' ? 100 : 25);
+            const seatUtilization = seatLimit > 0 ? Math.min(100, Math.round((activeEmps / seatLimit) * 100)) : 0;
+
+            return {
+              id: row.id,
+              tenant_id: row.tenant_id || row.id,
+              legal_name: legalName,
+              display_name: displayName,
+              domain: domain,
+              industry: row.industry || 'Enterprise Services',
+              country: row.country || 'India',
+              state: row.state || 'Tamil Nadu',
+              city: row.city || 'Coimbatore',
+              timezone: row.timezone || 'Asia/Kolkata (IST)',
+              currency: row.currency || 'INR (₹)',
+              gstin: row.gstin,
+              pan: row.pan,
+              cin: row.cin,
+              primary_admin_id: row.primary_admin_id || 'user-admin',
+              primary_admin_name: row.primary_admin_name || 'Admin',
+              primary_admin_email: row.primary_admin_email || 'admin@' + domain,
+              primary_admin_phone: row.primary_admin_phone || '',
+              account_owner_name: row.account_owner_name || '',
+              account_owner_team: row.account_owner_team || '',
+              status: (row.status as any) || 'Active',
+              lifecycle_state: (row.lifecycle_state as any) || 'Active',
+              billing_status: (row.billing_status as any) || 'Paid',
+              is_watchlisted: false,
+              tags: row.tags || ['Verified SaaS Customer'],
+              plan: planTier,
+              mrr: Number(row.mrr) || 0,
+              mrr_formatted: `₹${(Number(row.mrr) || 0).toLocaleString('en-IN')}`,
+              billing_cycle: row.billing_cycle || 'Monthly',
+              created_at: row.created_at || new Date().toISOString(),
+              updated_at: row.updated_at || undefined,
+              renewal_date: row.renewal_date || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+              auto_renew: row.auto_renew !== undefined ? row.auto_renew : true,
+              active_employees: activeEmps,
+              total_employees: totalEmps,
+              seat_limit: seatLimit,
+              seat_utilization_pct: seatUtilization,
+              storage_used_gb: Number(row.storage_used_gb) || 0.1,
+              storage_quota_gb: Number(row.storage_quota_gb) || 50,
+              api_calls_this_month: Number(row.api_calls_this_month) || 0,
+              feature_adoption_pct: 25,
+              attendance_usage_pct: 0,
+              payroll_usage_pct: 0,
+              health_score: Number(row.health_score) || 100,
+              health_grade: (row.health_grade as any) || 'Healthy',
+              health_trend: 0,
+              engagement_score: 25,
+              usage_score: 25,
+              billing_score: 25,
+              support_score: 25,
+              primary_risk: 'None',
+              last_activity_event: 'Live Organization Synchronized',
+              last_activity_time: 'Just now',
+              last_activity_timestamp: new Date().toLocaleString(),
+              people_summary: existing?.people_summary || {
+                total_employees: totalEmps,
+                active_employees: activeEmps,
+                inactive_employees: Math.max(0, totalEmps - activeEmps),
+                pending_invitations: 0,
+                admins_count: 1,
+                managers_count: 0,
+              },
+              support_summary: existing?.support_summary || {
+                open_tickets: 0,
+                pending_tickets: 0,
+                critical_tickets: 0,
+                sla_breaches: 0,
+                csat_score: 5.0,
+              },
+              security_summary: existing?.security_summary || {
+                active_sessions_count: 0,
+                admin_users_count: 1,
+                mfa_adoption_pct: 100,
+                recent_suspicious_events: 0,
+                api_key_status: 'Active',
+              },
+              integrations: existing?.integrations || [],
+              internal_notes: existing?.internal_notes || [],
+              activity_log: existing?.activity_log || [],
+            };
+          });
+
+        // Robust Deduplication: enforce uniqueness on ID and Company Name
+        const seenIds = new Set<string>();
+        const seenNames = new Set<string>();
+        const deduplicated: OrganizationRecord[] = [];
+
+        for (const item of liveList) {
+          const normName = item.legal_name.toLowerCase().trim();
+          if (!seenIds.has(item.id) && !seenNames.has(normName)) {
+            seenIds.add(item.id);
+            seenNames.add(normName);
+            deduplicated.push(item);
+          }
+        }
+
+        organizationDb = deduplicated;
+      } else {
+        organizationDb = [];
       }
     } catch (err) {
       console.warn('[PlatformTenantService] Realtime Supabase fetch fallback:', err);
@@ -640,8 +585,152 @@ export const platformTenantService = {
     return newNote;
   },
 
+  /**
+   * Validate uniqueness of tenant ID, company legal name, display name, and domain,
+   * while strictly blocking reserved system subdomains and invalid formats.
+   */
+  validateTenantUniqueness(params: {
+    id?: string;
+    tenant_id?: string;
+    legal_name?: string;
+    display_name?: string;
+    domain?: string;
+    excludeId?: string;
+  }): { valid: boolean; error?: string } {
+    const RESERVED_SUBDOMAINS = new Set([
+      'admin', 'api', 'app', 'assets', 'auth', 'billing', 'cdn', 'dashboard',
+      'docs', 'help', 'mail', 'mfa', 'portal', 'root', 'security', 'smtp',
+      'ssl', 'staging', 'static', 'status', 'superadmin', 'support', 'test',
+      'webhook', 'webhooks', 'www', 'platform', 'system', 'gateway', 'cloud'
+    ]);
+
+    const list = organizationDb.filter((o) => !params.excludeId || o.id !== params.excludeId);
+    const cleanId = (params.id || params.tenant_id || '').toLowerCase().trim();
+    const cleanLegalName = (params.legal_name || '').toLowerCase().trim();
+    const cleanDisplayName = (params.display_name || '').toLowerCase().trim();
+    const cleanDomain = (params.domain || '').toLowerCase().trim();
+
+    // Check slug extraction from ID or Domain
+    const extractedSlug = cleanDomain.includes('.joypeoplehr.com')
+      ? cleanDomain.replace('.joypeoplehr.com', '').trim()
+      : cleanId.replace(/^org-/, '').trim();
+
+    if (extractedSlug) {
+      if (RESERVED_SUBDOMAINS.has(extractedSlug)) {
+        return {
+          valid: false,
+          error: `The subdomain or identifier "${extractedSlug}" is reserved for system operations. Please choose a different organization identifier.`
+        };
+      }
+
+      const slugRegex = /^[a-z0-9]([a-z0-9-]{1,28}[a-z0-9])?$/;
+      if (extractedSlug.length < 2 || !slugRegex.test(extractedSlug)) {
+        return {
+          valid: false,
+          error: `Subdomain "${extractedSlug}" must be between 2 and 30 characters and contain only lowercase letters, numbers, and hyphens (cannot start or end with a hyphen).`
+        };
+      }
+    }
+
+    if (cleanId) {
+      const matchId = list.find((o) => o.id.toLowerCase() === cleanId || o.tenant_id.toLowerCase() === cleanId);
+      if (matchId) {
+        return { valid: false, error: `Tenant ID "${cleanId}" is already taken by "${matchId.legal_name}".` };
+      }
+    }
+
+    if (cleanLegalName) {
+      const matchName = list.find(
+        (o) => o.legal_name.toLowerCase().trim() === cleanLegalName || o.display_name.toLowerCase().trim() === cleanLegalName
+      );
+      if (matchName) {
+        return {
+          valid: false,
+          error: `An organization with company name "${params.legal_name}" is already registered (Tenant ID: ${matchName.id}).`,
+        };
+      }
+    }
+
+    if (cleanDisplayName && cleanDisplayName !== cleanLegalName) {
+      const matchDisplay = list.find(
+        (o) => o.display_name.toLowerCase().trim() === cleanDisplayName || o.legal_name.toLowerCase().trim() === cleanDisplayName
+      );
+      if (matchDisplay) {
+        return {
+          valid: false,
+          error: `An organization with brand display name "${params.display_name}" is already registered (Tenant ID: ${matchDisplay.id}).`,
+        };
+      }
+    }
+
+    if (cleanDomain && cleanDomain.includes('.')) {
+      const matchDomain = list.find((o) => o.domain.toLowerCase().trim() === cleanDomain);
+      if (matchDomain) {
+        return { valid: false, error: `Domain "${cleanDomain}" is already claimed by "${matchDomain.legal_name}".` };
+      }
+    }
+
+    return { valid: true };
+  },
+
+  async deleteOrganization(id: string, reason?: string): Promise<boolean> {
+    const target = organizationDb.find((o) => o.id === id || o.tenant_id === id);
+    if (!target) return false;
+
+    // Remove from in-memory / local list
+    organizationDb = organizationDb.filter((o) => o.id !== id && o.tenant_id !== id);
+
+    // Remove from Supabase tables if enabled
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('organizations').delete().eq('id', id);
+        await supabase.from('customer_profiles').delete().eq('organization_id', id);
+        await supabase.from('subscriptions').delete().eq('tenant_id', id);
+        await supabase.from('invoices').delete().eq('tenant_id', id);
+        await supabase.from('organization_invitations').delete().eq('organization_id', id);
+      } catch (err) {
+        console.warn('[PlatformTenantService] Supabase delete fallback:', err);
+      }
+    }
+
+    await platformAuditService.logEvent({
+      actor_id: 'user-thirumalai',
+      actor_name: 'Thirumalai R K',
+      actor_role: 'Platform Admin',
+      organization_id: id,
+      organization_name: target.legal_name,
+      action: 'ORGANIZATION_DELETED',
+      resource_type: 'Organization',
+      resource_id: id,
+      severity: 'Critical',
+      reason: reason || `Purged duplicate or terminated tenant ${id} (${target.legal_name})`,
+    });
+
+    window.dispatchEvent(new CustomEvent('platform:tenant_updated', { detail: { deletedId: id } }));
+    return true;
+  },
+
   async provisionOrganization(payload: any): Promise<OrganizationRecord> {
-    const orgId = `org-${payload.company_name.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 20)}-${Date.now().toString().slice(-4)}`;
+    const rawSlug = (payload.slug || payload.company_name)
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .slice(0, 24);
+    const orgId = `org-${rawSlug}`;
+
+    // Validate uniqueness before provisioning
+    const check = this.validateTenantUniqueness({
+      id: orgId,
+      legal_name: payload.company_name,
+      display_name: payload.display_name,
+      domain: payload.domain,
+    });
+
+    if (!check.valid) {
+      throw new Error(check.error || 'Duplicate organization detected.');
+    }
+
     const planPrices: Record<string, number> = {
       Starter: 18000,
       Professional: 45000,
@@ -656,7 +745,7 @@ export const platformTenantService = {
       tenant_id: orgId,
       legal_name: payload.company_name,
       display_name: payload.display_name || payload.company_name,
-      domain: payload.domain || `${orgId}.workforceos.com`,
+      domain: payload.domain || `${rawSlug}.joypeoplehr.com`,
       industry: payload.industry || 'Information Technology',
       country: payload.country || 'India',
       state: payload.state || 'Tamil Nadu',
@@ -669,9 +758,9 @@ export const platformTenantService = {
       primary_admin_id: `user-${Date.now()}`,
       primary_admin_name: payload.admin_name,
       primary_admin_email: payload.admin_email,
-      primary_admin_phone: payload.admin_phone || '+91 90000 00000',
-      account_owner_name: 'WorkForce Super Admin',
-      account_owner_team: 'Platform Admin',
+      primary_admin_phone: payload.admin_phone || '',
+      account_owner_name: payload.account_owner_name || '',
+      account_owner_team: payload.account_owner_team || '',
       status: payload.is_trial ? 'Trial' : 'Active',
       lifecycle_state: payload.is_trial ? 'Trial' : 'Onboarding',
       billing_status: payload.is_trial ? 'Pending' : 'Paid',

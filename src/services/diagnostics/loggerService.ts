@@ -34,6 +34,7 @@ const MAX_RING_BUFFER = 250;
 const SENSITIVE_KEYS = new Set([
   'password',
   'passwd',
+  'password_hash',
   'otp',
   'token',
   'access_token',
@@ -42,21 +43,39 @@ const SENSITIVE_KEYS = new Set([
   'service_role_key',
   'anon_key',
   'secret',
+  'secret_key',
   'aadhaar',
   'aadhaar_number',
+  'aadhaar_masked',
   'pan',
   'pan_number',
+  'pan_masked',
+  'pf_uan',
+  'uan',
+  'esi_number',
+  'ssn',
+  'ssn_masked',
   'bank_account_number',
   'account_number',
+  'ifsc',
+  'routing_number',
   'salary',
+  'gross_salary',
+  'net_salary',
   'ctc',
   'basic_salary',
+  'cvv',
+  'credit_card',
 ]);
 
 export class LoggerService {
   private static buffer: StructuredLogEntry[] = [];
   private static listeners: Set<(entry: StructuredLogEntry) => void> = new Set();
-  private static isDebugMode: boolean = true;
+  private static isDebugMode: boolean = Boolean(
+    typeof window !== 'undefined' && (window as any).__WORKFORCE_DEBUG__ !== undefined
+      ? (window as any).__WORKFORCE_DEBUG__
+      : (import.meta as any).env?.DEV
+  );
 
   /**
    * Deeply redact sensitive PII fields

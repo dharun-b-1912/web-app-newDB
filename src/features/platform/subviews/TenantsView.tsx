@@ -49,6 +49,7 @@ import {
   Star,
   Play,
   RotateCcw,
+  Trash2,
 } from 'lucide-react';
 import {
   platformTenantService,
@@ -62,6 +63,7 @@ import {
   SupportAccessSession,
   SupportAccessMode,
 } from '../../../services/platform/platformSupportAccessService';
+import { platformSubscriptionService } from '../../../services/platform/platformSubscriptionService';
 import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
 import { ProvisionCustomerModal } from '../components/ProvisionCustomerModal';
 import { CustomerWorkspaceHeader } from '../components/tenants/CustomerWorkspaceHeader';
@@ -141,7 +143,10 @@ export const TenantsView: React.FC = () => {
 
   // Initial Live Supabase Fetch and Realtime Listener
   useEffect(() => {
-    platformTenantService.fetchLiveFromSupabase().then(() => fetchData());
+    Promise.all([
+      platformTenantService.fetchLiveFromSupabase(),
+      platformSubscriptionService.fetchLiveFromSupabase(),
+    ]).then(() => fetchData());
 
     if (!isSupabaseEnabled) return;
 
@@ -151,7 +156,17 @@ export const TenantsView: React.FC = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'organizations' },
         () => {
-          platformTenantService.fetchLiveFromSupabase().then(() => fetchData());
+          Promise.all([
+            platformTenantService.fetchLiveFromSupabase(),
+            platformSubscriptionService.fetchLiveFromSupabase(),
+          ]).then(() => fetchData());
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'platform_subscriptions' },
+        () => {
+          platformSubscriptionService.fetchLiveFromSupabase().then(() => fetchData());
         }
       )
       .on(
@@ -187,6 +202,18 @@ export const TenantsView: React.FC = () => {
       showToast('Organization updated successfully.', 'success');
     } catch (err: any) {
       showToast(err.message || 'Unable to update organization.', 'error');
+    }
+  };
+
+  const handleDeleteOrg = async (orgId: string, orgName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm(`Are you sure you want to permanently delete "${orgName}" (${orgId}) from the platform and Supabase?`)) {
+      await platformTenantService.deleteOrganization(orgId);
+      if (selectedOrgId === orgId) {
+        setSelectedOrgId(null);
+      }
+      showToast(`Organization "${orgName}" deleted successfully.`, 'success');
+      fetchData();
     }
   };
 
@@ -310,6 +337,14 @@ export const TenantsView: React.FC = () => {
           onSuspendCustomer={handleSuspendCustomer}
           onReactivateCustomer={handleReactivateCustomer}
           onAccessAccount={() => setShowAccessModal(true)}
+          onDeleteCustomer={async () => {
+            if (selectedOrg) {
+              await platformTenantService.deleteOrganization(selectedOrg.id);
+              setSelectedOrgId(null);
+              showToast(`Organization "${selectedOrg.legal_name}" deleted successfully.`, 'success');
+              fetchData();
+            }
+          }}
           activeSupportSession={activeSupportSession}
           onExitSupportSession={handleExitSupportAccess}
         />
@@ -522,8 +557,24 @@ export const TenantsView: React.FC = () => {
             <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
               {data.items.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-gray-400">
-                    No matching organizations found.
+                  <td colSpan={9} className="py-16 text-center">
+                    <div className="flex flex-col items-center justify-center max-w-sm mx-auto">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-[#047857] flex items-center justify-center mb-3">
+                        <Building2 className="w-6 h-6" />
+                      </div>
+                      <h3 className="text-sm font-bold text-gray-900 mb-1">No Organizations Found</h3>
+                      <p className="text-xs text-gray-500 mb-4">
+                        Your SaaS platform is clean and ready. Provision your first tenant or customer organization to get started.
+                      </p>
+                      <Button
+                        size="sm"
+                        onClick={() => setIsProvisionWizardOpen(true)}
+                        className="bg-[#047857] hover:bg-[#065f46] text-white text-xs font-semibold rounded-xl"
+                      >
+                        <Plus className="w-4 h-4 mr-1.5" />
+                        Add Customer
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -589,18 +640,27 @@ export const TenantsView: React.FC = () => {
                       {org.last_activity_time}
                     </td>
 
-                    <td className="py-4 px-5 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedOrgId(org.id);
-                        }}
-                        className="text-xs font-bold border-gray-200 text-[#047857] hover:bg-emerald-50"
-                      >
-                        Open
-                      </Button>
+                    <td className="py-4 px-5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedOrgId(org.id);
+                          }}
+                          className="text-xs font-bold border-gray-200 text-[#047857] hover:bg-emerald-50 cursor-pointer"
+                        >
+                          Open
+                        </Button>
+                        <button
+                          title="Delete Organization"
+                          onClick={(e) => handleDeleteOrg(org.id, org.legal_name, e)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer border border-transparent hover:border-rose-200"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

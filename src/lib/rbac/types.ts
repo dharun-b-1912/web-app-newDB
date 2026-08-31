@@ -3,6 +3,7 @@ export type DataScope = 'COMPANY' | 'HR' | 'MANAGER' | 'TEAM' | 'SELF';
 export type PrimaryRole =
   | 'Super Admin'
   | 'Company Admin'
+  | 'Vendor Admin'
   | 'HR Head'
   | 'Manager'
   | 'Team Lead'

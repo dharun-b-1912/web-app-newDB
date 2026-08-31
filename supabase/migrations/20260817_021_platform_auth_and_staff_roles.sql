@@ -148,19 +148,13 @@ INSERT INTO platform_staff (
     is_root_superadmin = true,
     updated_at = NOW();
 
--- 7. Upsert Assistant Admin, Billing Admin, and Security Officer
-INSERT INTO platform_staff (
-    email, first_name, last_name, name, staff_code, job_title, department, phone, role, status, mfa_enforced
-) VALUES 
-    ('assistant.admin@workforceos.com', 'Karthik', 'Natarajan', 'Karthik Natarajan', 'STF-0002', 'Assistant Operations Lead', 'Platform Operations', '+91 98765 00002', 'ASSISTANT_ADMIN', 'Active', true),
-    ('finance@workforceos.com', 'Pooja', 'Agarwal', 'Pooja Agarwal', 'STF-0003', 'FinOps & Billing Lead', 'Finance & Commercials', '+91 98765 00003', 'BILLING_ADMIN', 'Active', true),
-    ('security@workforceos.com', 'Vikram', 'Sethi', 'Vikram Sethi', 'STF-0004', 'Security & Compliance Officer', 'InfoSec & Audit', '+91 98765 00004', 'SECURITY_ADMIN', 'Active', true)
-ON CONFLICT (email) DO UPDATE SET
-    name = EXCLUDED.name,
-    job_title = EXCLUDED.job_title,
-    role = EXCLUDED.role,
-    status = 'Active',
-    updated_at = NOW();
+-- 7. Purge deprecated mock staff accounts
+DELETE FROM platform_staff 
+WHERE email IN (
+    'assistant.admin@workforceos.com',
+    'finance@workforceos.com',
+    'security@workforceos.com'
+);
 
 -- 8. Enable RLS and idempotent policies
 ALTER TABLE platform_profiles ENABLE ROW LEVEL SECURITY;

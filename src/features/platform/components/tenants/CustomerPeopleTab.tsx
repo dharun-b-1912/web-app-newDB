@@ -1,6 +1,7 @@
 // src/features/platform/components/tenants/CustomerPeopleTab.tsx
 // ============================================================
 // Joy PeopleHR — Customer Staff, Admins & Supabase Auth Invitations Tab
+// Realtime Resend Email Gateway Integration & Direct Authentication Dispatch
 // ============================================================
 
 import React, { useState } from 'react';
@@ -24,6 +25,8 @@ import {
   ExternalLink,
   Trash2,
   Sparkles,
+  Loader2,
+  Check,
 } from 'lucide-react';
 import { OrganizationRecord } from '../../../../services/platform/platformTenantService';
 import {
@@ -58,6 +61,12 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedInviteForAccept, setSelectedInviteForAccept] = useState<OrganizationInvitation | null>(null);
 
+  // Loading States for Realtime Email Dispatches
+  const [isInviting, setIsInviting] = useState(false);
+  const [isSendingAuth, setIsSendingAuth] = useState<Record<string, boolean>>({});
+  const [isResending, setIsResending] = useState<Record<string, boolean>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
   // Invite Form State
   const [inviteForm, setInviteForm] = useState({
     name: '',
@@ -68,47 +77,17 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
     sendSupabaseEmail: true,
   });
 
-  // Active Users Directory
+  // Active Users Directory (Initialized purely with real Primary Administrator)
   const [users, setUsers] = useState<CustomerUserItem[]>([
     {
-      id: 'u-1',
-      name: org.primary_admin_name || 'Dharun B',
-      email: org.primary_admin_email || 'dharun@joycorporate.com',
-      phone: org.primary_admin_phone || '+91 98765 43210',
+      id: 'u-admin',
+      name: org.primary_admin_name || 'Organization Administrator',
+      email: org.primary_admin_email || `admin@${org.domain}`,
+      phone: org.primary_admin_phone || 'Not provided',
       role: 'Organization Owner',
       status: 'Active',
       department: 'Executive Operations',
       lastActive: 'Just now',
-    },
-    {
-      id: 'u-2',
-      name: 'Priya Sundaram',
-      email: 'priya.s@joycorporate.com',
-      phone: '+91 98765 43211',
-      role: 'Organization Admin',
-      status: 'Active',
-      department: 'People Operations',
-      lastActive: '25 min ago',
-    },
-    {
-      id: 'u-3',
-      name: 'Karthik Raja',
-      email: 'karthik.r@joycorporate.com',
-      phone: '+91 98765 43212',
-      role: 'Payroll Admin',
-      status: 'Active',
-      department: 'Finance & Accounts',
-      lastActive: '2 hours ago',
-    },
-    {
-      id: 'u-4',
-      name: 'Ananya Sharma',
-      email: 'ananya.s@joycorporate.com',
-      phone: '+91 98765 43213',
-      role: 'Attendance Admin',
-      status: 'Active',
-      department: 'Plant Operations',
-      lastActive: 'Yesterday',
     },
   ]);
 
@@ -130,8 +109,9 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
     e.preventDefault();
     if (!inviteForm.name || !inviteForm.email) return;
 
+    setIsInviting(true);
     try {
-      const newInvite = await platformAuthInvitationService.inviteUser({
+      const { invitation: newInvite, emailDelivery } = await platformAuthInvitationService.inviteUser({
         organizationId: org.id,
         organizationName: org.legal_name,
         email: inviteForm.email,
@@ -152,25 +132,45 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
         department: 'People Operations',
         sendSupabaseEmail: true,
       });
-      showToast(`Supabase invite dispatched to ${newInvite.email} (${newInvite.role})`, 'success');
+
+      if (emailDelivery?.success) {
+        showToast(`Invitation and authentication link dispatched to ${newInvite.email} in realtime!`, 'success');
+      } else if (emailDelivery?.error) {
+        showToast(`Invite created, but Resend notice: ${emailDelivery.error}`, 'error');
+      } else {
+        showToast(`Invitation created for ${newInvite.email} (${newInvite.role})`, 'success');
+      }
       setActiveSubTab('invitations');
     } catch (err: any) {
       showToast(err.message || 'Invitation failed', 'error');
+    } finally {
+      setIsInviting(false);
     }
   };
 
   const handleCopyInviteLink = (invite: OrganizationInvitation) => {
     navigator.clipboard.writeText(invite.invite_url);
-    showToast(`Copied Supabase onboarding link for ${invite.email}`, 'success');
+    setCopiedId(invite.id);
+    showToast(`Copied onboarding & auth link for ${invite.email}`, 'success');
+    setTimeout(() => setCopiedId(null), 2500);
   };
 
   const handleResendInvite = async (invId: string) => {
+    setIsResending((prev) => ({ ...prev, [invId]: true }));
     try {
-      await platformAuthInvitationService.resendInvitation(invId);
+      const { invite, emailDelivery } = await platformAuthInvitationService.resendInvitation(invId);
       setInvitations(platformAuthInvitationService.getInvitations(org.id));
-      showToast('Invitation resent with refreshed 7-day token.', 'success');
+      if (emailDelivery?.success) {
+        showToast(`Invitation email resent to ${invite.email} in realtime!`, 'success');
+      } else if (emailDelivery?.error) {
+        showToast(`Resend notice: ${emailDelivery.error}`, 'error');
+      } else {
+        showToast('Invitation resent with refreshed 7-day token.', 'success');
+      }
     } catch (err: any) {
       showToast(err.message || 'Resend failed', 'error');
+    } finally {
+      setIsResending((prev) => ({ ...prev, [invId]: false }));
     }
   };
 
@@ -181,6 +181,28 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
       showToast('Invitation revoked.', 'info');
     } catch (err: any) {
       showToast(err.message || 'Revoke failed', 'error');
+    }
+  };
+
+  const handleSendAuthLink = async (user: CustomerUserItem) => {
+    setIsSendingAuth((prev) => ({ ...prev, [user.id]: true }));
+    try {
+      const result = await platformAuthInvitationService.dispatchAuthLink({
+        email: user.email,
+        fullName: user.name,
+        organizationId: org.id,
+        organizationName: org.legal_name,
+      });
+
+      if (result.success) {
+        showToast(`Authentication & password setup link dispatched to ${user.email} in realtime!`, 'success');
+      } else {
+        showToast(`Resend notice: ${result.error || result.message || 'Failed to dispatch'}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to dispatch authentication link', 'error');
+    } finally {
+      setIsSendingAuth((prev) => ({ ...prev, [user.id]: false }));
     }
   };
 
@@ -321,6 +343,8 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
                           'text-[10px] font-bold px-2 py-0.5 rounded-full border',
                           u.role === 'Organization Owner'
                             ? 'bg-purple-50 text-purple-700 border-purple-200'
+                            : u.role === 'HR Head'
+                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
                             : u.role.includes('Admin')
                             ? 'bg-blue-50 text-blue-700 border-blue-200'
                             : 'bg-gray-100 text-gray-700 border-gray-200'
@@ -336,13 +360,21 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-xs text-gray-500">{u.lastActive}</td>
-                    <td className="py-3.5 px-5 text-right space-x-2">
+                    <td className="py-3.5 px-5 text-right">
                       <button
-                        onClick={() => showToast(`Password reset link dispatched to ${u.email}`, 'success')}
-                        title="Dispatch password reset"
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
+                        onClick={() => handleSendAuthLink(u)}
+                        disabled={isSendingAuth[u.id]}
+                        title="Dispatch Realtime Authentication & Password Link via Resend"
+                        className={cn(
+                          'p-1.5 rounded-lg text-gray-400 hover:text-[#047857] hover:bg-emerald-50 cursor-pointer transition',
+                          isSendingAuth[u.id] && 'opacity-60 cursor-not-allowed'
+                        )}
                       >
-                        <KeyRound className="w-3.5 h-3.5" />
+                        {isSendingAuth[u.id] ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#047857]" />
+                        ) : (
+                          <KeyRound className="w-3.5 h-3.5" />
+                        )}
                       </button>
                     </td>
                   </tr>
@@ -353,7 +385,7 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
         )}
 
         {/* ----------------------------------------------------
-            4. PENDING INVITATIONS TABLE (SUPABASE AUTH)
+            4. PENDING INVITATIONS TABLE (SUPABASE & RESEND REALTIME)
            ---------------------------------------------------- */}
         {activeSubTab === 'invitations' && (
           <div className="overflow-x-auto">
@@ -364,6 +396,7 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
                   <th className="py-3 px-4">Assigned Role</th>
                   <th className="py-3 px-4">Department</th>
                   <th className="py-3 px-4">Invited By</th>
+                  <th className="py-3 px-4">Status / Gateway</th>
                   <th className="py-3 px-4">Expires In</th>
                   <th className="py-3 px-5 text-right">Actions</th>
                 </tr>
@@ -371,7 +404,7 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
               <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
                 {pendingInvitations.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-10 text-center text-gray-400">
+                    <td colSpan={7} className="py-10 text-center text-gray-400">
                       No pending invitations. Click <strong>+ Invite User / Admin</strong> to invite company staff.
                     </td>
                   </tr>
@@ -389,9 +422,15 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
                       </td>
                       <td className="py-3.5 px-4 text-gray-600">{inv.department}</td>
                       <td className="py-3.5 px-4 text-gray-500 text-[11px]">{inv.invited_by}</td>
+                      <td className="py-3.5 px-4">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                          <CheckCircle2 className="w-2.5 h-2.5" />
+                          <span>Resend Gateway</span>
+                        </span>
+                      </td>
                       <td className="py-3.5 px-4 text-amber-700 font-bold flex items-center gap-1 mt-1">
                         <Clock className="w-3 h-3" />
-                        <span>6 days</span>
+                        <span>7 days</span>
                       </td>
                       <td className="py-3.5 px-5 text-right space-x-1.5">
                         {/* Copy Link */}
@@ -399,10 +438,18 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
                           variant="outline"
                           size="sm"
                           onClick={() => handleCopyInviteLink(inv)}
-                          title="Copy Supabase Invitation Link"
+                          title="Copy Authentication & Onboarding Link"
                           className="h-7 px-2 text-[11px] font-bold"
                         >
-                          <Copy className="w-3 h-3 mr-1" /> Copy Link
+                          {copiedId === inv.id ? (
+                            <>
+                              <Check className="w-3 h-3 mr-1 text-emerald-600" /> Copied!
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3 mr-1" /> Copy Link
+                            </>
+                          )}
                         </Button>
 
                         {/* Test Accept & Onboard */}
@@ -415,13 +462,21 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
                           <Sparkles className="w-3 h-3 mr-1" /> Test Onboarding
                         </Button>
 
-                        {/* Resend */}
+                        {/* Resend Realtime Email */}
                         <button
                           onClick={() => handleResendInvite(inv.id)}
-                          title="Resend Invite"
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
+                          disabled={isResending[inv.id]}
+                          title="Resend Realtime Invitation Email via Resend"
+                          className={cn(
+                            'p-1.5 rounded-lg text-gray-400 hover:text-[#047857] hover:bg-emerald-50 cursor-pointer transition',
+                            isResending[inv.id] && 'opacity-60 cursor-not-allowed'
+                          )}
                         >
-                          <RotateCcw className="w-3.5 h-3.5" />
+                          {isResending[inv.id] ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#047857]" />
+                          ) : (
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          )}
                         </button>
 
                         {/* Revoke */}
@@ -443,14 +498,14 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
       </div>
 
       {/* ----------------------------------------------------
-          INVITE USER / ADMIN MODAL (SUPABASE AUTH INTEGRATED)
+          INVITE USER / ADMIN MODAL (REALTIME RESEND & SUPABASE INTEGRATED)
          ---------------------------------------------------- */}
       {showInviteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <form onSubmit={handleInviteSubmit} className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in text-xs">
             <div>
               <h3 className="text-base font-bold text-gray-900">Invite User to {org.legal_name}</h3>
-              <p className="text-xs text-gray-500 mt-0.5">Dispatches a dedicated Supabase Auth magic invite link with role permissions.</p>
+              <p className="text-xs text-gray-500 mt-0.5">Dispatches an enterprise invitation and direct authentication link in realtime.</p>
             </div>
 
             <div>
@@ -498,6 +553,7 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
                 >
                   <option value="Organization Owner">Organization Owner</option>
                   <option value="Organization Admin">Organization Admin</option>
+                  <option value="HR Head">HR Head</option>
                   <option value="HR Admin">HR Admin</option>
                   <option value="Payroll Admin">Payroll Admin</option>
                   <option value="Attendance Admin">Attendance Admin</option>
@@ -525,13 +581,27 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
                 onChange={(e) => setInviteForm({ ...inviteForm, sendSupabaseEmail: e.target.checked })}
                 className="text-[#047857] rounded"
               />
-              <span className="text-gray-800 font-medium">Send Supabase Auth Magic Invite Email immediately</span>
+              <span className="text-gray-800 font-medium">Dispatch Invitation Email & Auth Link in Realtime (Resend)</span>
             </label>
 
             <div className="flex justify-end gap-2 pt-2 border-t">
-              <Button variant="outline" size="sm" type="button" onClick={() => setShowInviteModal(false)}>Cancel</Button>
-              <Button variant="primary" size="sm" type="submit" className="bg-[#047857] hover:bg-[#036246] text-white font-bold">
-                Send Invitation
+              <Button variant="outline" size="sm" type="button" onClick={() => setShowInviteModal(false)} disabled={isInviting}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                type="submit"
+                disabled={isInviting}
+                className="bg-[#047857] hover:bg-[#036246] text-white font-bold"
+              >
+                {isInviting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Dispatching...
+                  </>
+                ) : (
+                  'Send Invitation & Auth Link'
+                )}
               </Button>
             </div>
           </form>

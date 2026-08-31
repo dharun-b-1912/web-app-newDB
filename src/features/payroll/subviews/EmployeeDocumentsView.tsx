@@ -101,11 +101,11 @@ export const EmployeeDocumentsView: React.FC<EmployeeDocumentsViewProps> = ({
           {subTab === 'payslips' && (
             <Button
               size="sm"
-              variant="outline"
+              variant="secondary"
               onClick={handleDownloadAll}
-              className="text-xs font-bold text-[#07563D] hover:bg-emerald-50 border-emerald-200 cursor-pointer"
+              className="text-xs font-bold text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 shadow-2xs rounded-xl cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5 mr-1" />
+              <Download className="w-3.5 h-3.5 mr-1.5" />
               Download All Zip
             </Button>
           )}
@@ -144,8 +144,8 @@ export const EmployeeDocumentsView: React.FC<EmployeeDocumentsViewProps> = ({
                 <tr>
                   <th className="p-3">Employee</th>
                   <th className="p-3">Department & Role</th>
-                  <th className="p-3 font-mono text-right">Gross Earnings</th>
-                  <th className="p-3 font-mono text-right">Net Take-Home Pay</th>
+                  <th className="p-3">Gross Earnings</th>
+                  <th className="p-3">Net Take-Home Pay</th>
                   <th className="p-3">Payout Mode</th>
                   <th className="p-3">Status</th>
                   <th className="p-3 text-right">Action</th>
@@ -154,24 +154,24 @@ export const EmployeeDocumentsView: React.FC<EmployeeDocumentsViewProps> = ({
               <tbody className="divide-y divide-gray-100">
                 {filteredEmployees.map(sal => (
                   <tr key={sal.id} className="hover:bg-gray-50/70 transition-colors">
-                    <td className="p-3 font-bold text-gray-900">
-                      <div>{sal.employee_name}</div>
+                    <td className="p-3">
+                      <div className="font-bold text-gray-900">{sal.employee_name}</div>
                       <div className="text-[10px] text-gray-400 font-mono">{sal.employee_code}</div>
                     </td>
                     <td className="p-3 text-gray-600">
-                      <div className="font-medium text-gray-900">{sal.department_name}</div>
-                      <div className="text-[10px] text-gray-400">{sal.designation}</div>
+                      <div>{sal.department_name}</div>
+                      <div className="text-[10px] text-gray-400 font-medium">{sal.designation}</div>
                     </td>
-                    <td className="p-3 text-right font-mono font-bold text-gray-900">
-                      ₹{sal.gross_monthly.toLocaleString('en-IN')}
+                    <td className="p-3 font-mono font-semibold text-gray-900">
+                      ₹ {sal.gross_monthly.toLocaleString('en-IN')}
                     </td>
-                    <td className="p-3 text-right font-mono font-black text-[#07563D]">
-                      ₹{sal.net_monthly_estimate.toLocaleString('en-IN')}
+                    <td className="p-3 font-mono font-bold text-[#07563D]">
+                      ₹ {sal.net_monthly_estimate.toLocaleString('en-IN')}
                     </td>
-                    <td className="p-3">
-                      <div className="flex items-center gap-1.5 text-gray-700 font-medium">
-                        <CreditCard className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                        <span>{sal.payment_mode || 'Bank Transfer'}</span>
+                    <td className="p-3 text-gray-600">
+                      <div className="flex items-center gap-1.5">
+                        <CreditCard className="w-3.5 h-3.5 text-gray-400" />
+                        <span className="font-medium text-gray-700">{sal.payment_mode || 'Bank Transfer'}</span>
                       </div>
                       <span className="text-[10px] text-gray-400 font-mono block">
                         {sal.bank_name || 'HDFC Bank Ltd'}
@@ -185,11 +185,11 @@ export const EmployeeDocumentsView: React.FC<EmployeeDocumentsViewProps> = ({
                     <td className="p-3 text-right">
                       <Button
                         size="xs"
-                        variant="outline"
+                        variant="secondary"
                         onClick={() => onOpenPayslip && onOpenPayslip(sal.employee_id)}
-                        className="text-[#07563D] hover:bg-emerald-50 border-emerald-200 font-bold cursor-pointer"
+                        className="text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 font-bold shadow-2xs cursor-pointer"
                       >
-                        <Eye className="w-3 h-3 mr-1" /> View Payslip
+                        <Eye className="w-3.5 h-3.5 mr-1 text-[#07563D]" /> View Payslip
                       </Button>
                     </td>
                   </tr>

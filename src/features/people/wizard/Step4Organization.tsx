@@ -136,7 +136,7 @@ export const Step4Organization: React.FC<Props> = ({
         <div className="pt-3 border-t border-gray-100 space-y-2">
           <div className="flex items-center justify-between">
             <label className="block text-xs font-bold text-gray-900">
-              Primary Reporting Manager <span className="text-rose-500">*</span>
+              Primary Reporting Manager <span className="text-gray-400 font-normal">(Optional)</span>
             </label>
             {formData.reporting_manager_name && (
               <span className="text-[11px] font-bold text-[#07563D] bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">

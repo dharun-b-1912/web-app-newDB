@@ -24,6 +24,17 @@ const STORAGE_KEYS = {
   TEMPLATES: 'workforce_ats_offer_templates_v2',
 };
 
+function getActiveOrgId(): string {
+  try {
+    const raw = localStorage.getItem('workforce_active_organization');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.id) return parsed.id;
+    }
+  } catch {}
+  return 'org-joy-01';
+}
+
 function getStore<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -514,7 +525,7 @@ ${org}`,
 
     const newOffer: Offer = {
       id: offerId,
-      organization_id: 'org-joy-01',
+      organization_id: (payload as any).organization_id || getActiveOrgId(),
       candidate_id: payload.candidate_id,
       candidate_name: payload.candidate_name,
       candidate_email: payload.candidate_email,
@@ -734,9 +745,9 @@ ${org}`,
     const last = rest.join(' ') || 'Employee';
 
     const created = await api.createEmployee({
-      organization_id: offer.organization_id || 'org-joy-01',
-      company_id: 'comp-joy-01',
-      company_name: 'Joy Corporate Solutions Pvt Ltd',
+      organization_id: (offer as any).organization_id || getActiveOrgId(),
+      company_id: (offer as any).company_id || 'comp-joy-01',
+      company_name: (offer as any).company_name || 'Joy Corporate Solutions Pvt Ltd',
       department_id: offer.department_id || 'dept-eng',
       department_name: offer.department_name || 'Engineering',
       designation_id: 'desig-eng',

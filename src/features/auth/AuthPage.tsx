@@ -1,196 +1,233 @@
 // src/features/auth/AuthPage.tsx
 // ============================================================
-// Joy PeopleHR — Multi-Tenant Customer & Dedicated Platform Control Plane Auth
+// Joy PeopleHR / WorkForceOS — Production Enterprise Authentication Gateway
 // ============================================================
 
 import React, { useState } from 'react';
 import { LoginForm } from './LoginForm';
-import { SignupForm } from './SignupForm';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
-import { PlatformAdminLoginForm } from './PlatformAdminLoginForm';
-import { Building2, ShieldCheck, Users, Layers, Sparkles, ShieldAlert, KeyRound } from 'lucide-react';
-import { parseRouteFromUrl } from '../../lib/router/urlRouter';
+import { PasswordSetupModal } from './PasswordSetupModal';
+import {
+  Building2,
+  ShieldCheck,
+  Users,
+  CreditCard,
+  Lock,
+  CheckCircle2,
+  Shield,
+  Layers,
+  Sparkles,
+} from 'lucide-react';
+import { AuthContextMode } from '../../services/auth/authService';
+import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
 
-export const AuthPage: React.FC = () => {
-  const urlState = parseRouteFromUrl();
-  const isPlatformInitial =
-    urlState.route?.startsWith('platform') ||
-    urlState.params?.portal === 'platform' ||
-    urlState.params?.tab === 'platform-login';
+export interface AuthPageProps {
+  initialContext?: AuthContextMode;
+  onNavigateToSuperAdmin?: () => void;
+  onSuccessRoute?: (route: string) => void;
+}
 
-  const [authMode, setAuthMode] = useState<'customer' | 'platform'>(
-    isPlatformInitial ? 'platform' : 'customer'
-  );
-  const [isSignup, setIsSignup] = useState(false);
+export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', onSuccessRoute }) => {
+  const { authContext, setAuthContextMode } = useAuth();
   const [isForgotOpen, setIsForgotOpen] = useState(false);
 
+  // Sync URL slug on mount and reflect deep-linked path
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const currentPath = window.location.pathname;
+      if (currentPath === '/vendor/login' || currentPath === '/vendor-login' || currentPath.startsWith('/vendor')) {
+        setAuthContextMode('vendor');
+      } else if (currentPath === '/platform-login' || currentPath === '/superadmin') {
+        setAuthContextMode('platform');
+      } else if (currentPath !== '/login' && !currentPath.includes('activate') && !currentPath.includes('reset-password')) {
+        const slug = authContext === 'platform' ? '/platform-login' : authContext === 'vendor' ? '/vendor/login' : '/login';
+        window.history.replaceState({ route: slug }, '', slug);
+      }
+    }
+  }, []);
+
+  const handleContextChange = (mode: AuthContextMode) => {
+    setAuthContextMode(mode);
+    if (typeof window !== 'undefined') {
+      const slug = mode === 'platform' ? '/platform-login' : mode === 'vendor' ? '/vendor/login' : '/login';
+      window.history.replaceState({ route: slug }, '', slug);
+    }
+  };
+
   return (
-    <div className="min-h-screen w-screen bg-[#F8F9FA] flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 font-sans">
-      {/* Top Portal Switcher Bar */}
-      <div className="mb-4 bg-white p-1 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-1 text-xs">
+    <div className="min-h-screen w-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 font-sans antialiased">
+      {/* 1. Context Switcher Bar */}
+      <div className="mb-6 bg-white p-1.5 rounded-2xl border border-gray-200/80 shadow-xs flex items-center gap-1.5 flex-wrap justify-center">
         <button
           type="button"
-          onClick={() => {
-            setAuthMode('customer');
-            setIsSignup(false);
-          }}
+          onClick={() => handleContextChange('tenant')}
           className={cn(
-            'px-4 py-2 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-2',
-            authMode === 'customer'
+            'px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2',
+            authContext === 'tenant'
               ? 'bg-[#073B2A] text-white shadow-xs'
               : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           )}
         >
           <Building2 className="w-3.5 h-3.5" />
-          <span>Customer HRMS Login</span>
+          <span>Organization Workspace</span>
         </button>
 
         <button
           type="button"
-          onClick={() => {
-            setAuthMode('platform');
-            setIsSignup(false);
-          }}
+          onClick={() => handleContextChange('vendor')}
           className={cn(
-            'px-4 py-2 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-2',
-            authMode === 'platform'
-              ? 'bg-indigo-900 text-white shadow-xs'
+            'px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2',
+            authContext === 'vendor'
+              ? 'bg-[#312E81] text-white shadow-xs'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          )}
+        >
+          <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Vendor & Contractor Portal</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleContextChange('platform')}
+          className={cn(
+            'px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2',
+            authContext === 'platform'
+              ? 'bg-[#0F172A] text-white shadow-xs'
               : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           )}
         >
           <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
-          <span>🛡️ Platform Staff Portal (Assistant / Super Admin)</span>
+          <span>Platform Administration</span>
         </button>
       </div>
 
-      <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-[580px]">
-        {/* Left Side Showcase */}
+      {/* 2. Main Authentication Shell (Balanced Two-Column Grid) */}
+      <div className="w-full max-w-4xl bg-white rounded-3xl shadow-xl border border-gray-100/90 overflow-hidden grid grid-cols-1 lg:grid-cols-12 min-h-[580px]">
+        {/* Left Side: Brand Showcase & Value Pillars */}
         <div
           className={cn(
-            'md:col-span-5 text-white p-8 sm:p-10 flex flex-col justify-between relative overflow-hidden transition-colors duration-300',
-            authMode === 'platform' ? 'bg-[#0b132b]' : 'bg-[#073B2A]'
+            'lg:col-span-5 text-white p-8 sm:p-10 flex flex-col justify-between relative overflow-hidden transition-colors duration-300',
+            authContext === 'platform'
+              ? 'bg-[#0F172A]'
+              : authContext === 'vendor'
+              ? 'bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900'
+              : 'bg-[#073B2A]'
           )}
         >
-          {/* Decorative background glow */}
-          <div className="absolute -top-24 -left-24 w-64 h-64 rounded-full bg-emerald-600/10 blur-2xl pointer-events-none" />
-          <div className="absolute -bottom-24 -right-24 w-64 h-64 rounded-full bg-indigo-500/10 blur-2xl pointer-events-none" />
+          {/* Subtle decorative glow */}
+          <div className="absolute -top-24 -left-24 w-72 h-72 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-24 -right-24 w-72 h-72 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
 
-          <div className="relative z-10">
-            <div className="flex items-center gap-2.5">
-              <div
-                className={cn(
-                  'w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xl shadow-lg',
-                  authMode === 'platform'
-                    ? 'bg-indigo-500 text-white'
-                    : 'bg-emerald-400 text-[#073B2A]'
-                )}
-              >
-                W
-              </div>
-              <div>
-                <span className="font-black text-lg tracking-tight text-white leading-tight">
-                  WorkForce<span className={authMode === 'platform' ? 'text-indigo-400' : 'text-emerald-400'}>OS</span>
-                </span>
-                <p className="text-[10px] text-gray-300 uppercase font-bold tracking-wider">
-                  {authMode === 'platform' ? 'Platform Control Plane' : 'Enterprise HRMS Engine'}
-                </p>
-              </div>
+          {/* Top Brand Logo */}
+          <div className="relative z-10 space-y-6">
+            <div className="bg-white/95 rounded-2xl p-2.5 inline-block shadow-sm">
+              <img
+                src="/joy-people-hr-logo.png"
+                alt="JOY People - People First. Work Simplified."
+                className="h-10 w-auto object-contain"
+              />
             </div>
 
-            <div className="mt-12 space-y-6">
-              {authMode === 'platform' ? (
-                <>
-                  <h1 className="text-2xl font-extrabold tracking-tight text-white leading-snug">
-                    SaaS Platform Control Center & Multi-Tenant Operations.
-                  </h1>
-                  <p className="text-xs text-indigo-200/80 leading-relaxed">
-                    Internal administration console for Super Admins, Assistant Admins, Billing Specialists, and Security Officers managing customer organizations.
-                  </p>
-
-                  <div className="space-y-3 pt-2">
-                    <div className="flex items-center gap-3 text-xs text-indigo-100">
-                      <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center shrink-0 text-indigo-300">
-                        <Users className="w-3.5 h-3.5" />
-                      </div>
-                      <span>Tenant Lifecycle Provisioning & Health</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-indigo-100">
-                      <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center shrink-0 text-indigo-300">
-                        <ShieldAlert className="w-3.5 h-3.5" />
-                      </div>
-                      <span>Delegated Operations & Support Sessions</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-indigo-100">
-                      <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center shrink-0 text-indigo-300">
-                        <Layers className="w-3.5 h-3.5" />
-                      </div>
-                      <span>Commercial GST Invoicing & FinOps Engine</span>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <h1 className="text-2xl font-extrabold tracking-tight text-white leading-snug">
-                    Powering modern multi-entity enterprise workforces.
-                  </h1>
-                  <p className="text-xs text-emerald-100/80 leading-relaxed">
-                    Streamline organizational structures, department hierarchies, RBAC policy enforcement, and employee directories across global legal entities.
-                  </p>
-
-                  <div className="space-y-3 pt-2">
-                    <div className="flex items-center gap-3 text-xs text-emerald-50">
-                      <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center shrink-0 text-emerald-300">
-                        <Building2 className="w-3.5 h-3.5" />
-                      </div>
-                      <span>Multi-Tenant Legal Entities & Branch Mapping</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-emerald-50">
-                      <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center shrink-0 text-emerald-300">
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                      </div>
-                      <span>Granular Role-Based Access Control (RBAC)</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-emerald-50">
-                      <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center shrink-0 text-emerald-300">
-                        <Users className="w-3.5 h-3.5" />
-                      </div>
-                      <span>Unified Employee Lifecycle Directory & Profiles</span>
-                    </div>
-                  </div>
-                </>
-              )}
+            <div className="space-y-2">
+              <h1 className="text-xl font-bold tracking-tight text-white">
+                {authContext === 'platform'
+                  ? 'Platform Control Plane'
+                  : authContext === 'vendor'
+                  ? 'Vendor Compliance & Contractor Intelligence'
+                  : 'One secure workspace for your people operations.'}
+              </h1>
+              <p className="text-xs text-white/70 leading-relaxed">
+                {authContext === 'platform'
+                  ? 'Manage multi-tenant infrastructure, customer lifecycle, and compliance policies.'
+                  : authContext === 'vendor'
+                  ? 'Direct contractor portal for KYC onboarding, CLRA licenses, worker payroll, and invoice matching.'
+                  : 'Empowering teams with seamless attendance, payroll, talent, and workforce intelligence.'}
+              </p>
             </div>
           </div>
 
-          <div className="relative z-10 pt-8 border-t border-white/10 text-[11px] text-gray-300 flex items-center justify-between">
-            <span>© 2026 Joy PeopleHR</span>
-            <span className="flex items-center gap-1 text-gray-200">
-              <Sparkles className="w-3 h-3 text-amber-300" /> Enterprise v3.2
+          {/* Middle: 3 Concise Enterprise Pillars */}
+          <div className="relative z-10 py-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-7 h-7 rounded-xl bg-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                <Users className="w-4 h-4 text-emerald-300" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white">Workforce & Employee Management</div>
+                <div className="text-[11px] text-white/60">Unified lifecycle from onboarding to separation.</div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <div className="w-7 h-7 rounded-xl bg-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                <CreditCard className="w-4 h-4 text-emerald-300" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white">Payroll & Compliance Operations</div>
+                <div className="text-[11px] text-white/60">Automated salary runs, EPF, ESIC & tax filings.</div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <div className="w-7 h-7 rounded-xl bg-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                <Lock className="w-4 h-4 text-emerald-300" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white">Secure Multi-Tenant Access</div>
+                <div className="text-[11px] text-white/60">Strict tenant isolation and enterprise RBAC.</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Security Assurance */}
+          <div className="relative z-10 pt-4 border-t border-white/10 flex items-center justify-between text-[11px] text-white/60">
+            <span>Joy PeopleHR — HR & Payroll SaaS</span>
+            <span className="flex items-center gap-1">
+              <Shield className="w-3 h-3 text-emerald-400" />
+              <span>SOC2 & ISO 27001 Ready</span>
             </span>
           </div>
         </div>
 
-        {/* Right Side: Dynamic Form Container */}
-        <div className="md:col-span-7 p-8 sm:p-12 flex flex-col justify-center">
-          {authMode === 'platform' ? (
-            <PlatformAdminLoginForm onSwitchToCustomerLogin={() => setAuthMode('customer')} />
-          ) : isSignup ? (
-            <SignupForm onToggleLogin={() => setIsSignup(false)} />
-          ) : (
+        {/* Right Side: Focused Authentication Gateway Form */}
+        <div className="lg:col-span-7 p-8 sm:p-10 flex flex-col justify-between">
+          <div className="max-w-md mx-auto w-full my-auto">
             <LoginForm
-              onToggleSignup={() => setIsSignup(true)}
+              authContext={authContext}
               onForgotPassword={() => setIsForgotOpen(true)}
+              onSuccessRoute={onSuccessRoute}
             />
-          )}
+          </div>
+
+          {/* Bottom Footer Links */}
+          <div className="pt-6 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400">
+            <span>© {new Date().getFullYear()} JOY PeopleHR. All rights reserved.</span>
+            <div className="flex items-center gap-3">
+              <a href="#privacy" className="hover:text-gray-600 transition-colors">
+                Privacy
+              </a>
+              <span>•</span>
+              <a href="#terms" className="hover:text-gray-600 transition-colors">
+                Terms
+              </a>
+              <span>•</span>
+              <a href="#support" className="hover:text-gray-600 transition-colors">
+                Support
+              </a>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Forgot Password Dialog */}
+      {/* Forgot Password Modal */}
       <ForgotPasswordModal
         isOpen={isForgotOpen}
         onClose={() => setIsForgotOpen(false)}
       />
+
+      {/* Mandatory First-Login Password Setup Gate */}
+      <PasswordSetupModal />
     </div>
   );
 };

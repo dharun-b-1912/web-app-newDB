@@ -33,6 +33,10 @@ import {
   Bookmark,
   Check,
   X,
+  Send,
+  Stamp,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react';
 import {
   Vendor,
@@ -44,10 +48,19 @@ import {
   VendorAuditLog,
   VendorReturnReason,
 } from '../../types';
+import {
+  VendorDocumentRequest,
+  PrincipalEmployerFormV,
+  VendorEmployee,
+  VendorOrganization,
+} from '../../types/vendorPortal';
 import { vendorService } from '../../services/vendorService';
+import { vendorPortalService } from '../../services/vendorPortalService';
 import { hrEventBus } from '../../services/hrEventBus';
 import { useToast } from '../../components/ui/Toast';
 import { VendorCreateWizardModal } from './wizard/VendorCreateWizardModal';
+import { RequestVendorDocumentModal } from '../vendor/components/RequestVendorDocumentModal';
+import { IssueFormVModal } from '../vendor/components/IssueFormVModal';
 
 export const VendorsView: React.FC = () => {
   const { showToast } = useToast();
@@ -68,8 +81,15 @@ export const VendorsView: React.FC = () => {
   const [vendorWorkforce, setVendorWorkforce] = useState<VendorEmployeeAssignment[]>([]);
   const [vendorAuditLogs, setVendorAuditLogs] = useState<VendorAuditLog[]>([]);
 
+  // Compliance & Requisitions State
+  const [docRequests, setDocRequests] = useState<VendorDocumentRequest[]>([]);
+  const [formVCertificates, setFormVCertificates] = useState<PrincipalEmployerFormV[]>([]);
+  const [contractWorkers, setContractWorkers] = useState<VendorEmployee[]>([]);
+
   // Modals
   const [isCreateWizardOpen, setIsCreateWizardOpen] = useState(false);
+  const [isRequestDocModalOpen, setIsRequestDocModalOpen] = useState(false);
+  const [isIssueFormVModalOpen, setIsIssueFormVModalOpen] = useState(false);
   const [isReturnPaymentModalOpen, setIsReturnPaymentModalOpen] = useState(false);
   const [selectedPaymentToReturn, setSelectedPaymentToReturn] = useState<VendorPayment | null>(null);
   const [returnReason, setReturnReason] = useState<VendorReturnReason>('INVALID_ACCOUNT');
@@ -114,50 +134,80 @@ export const VendorsView: React.FC = () => {
     setVendorPayments(payments);
     setVendorWorkforce(workforce);
     setVendorAuditLogs(logs);
+
+    // Load Vendor Portal Requisitions & Form V Certs
+    const reqs = vendorPortalService.getDocumentRequests(vendor.id);
+    const formVs = vendorPortalService.getPrincipalEmployerFormVs(vendor.id);
+    const emps = vendorPortalService.getEmployees(vendor.id);
+    setDocRequests(reqs);
+    setFormVCertificates(formVs);
+    setContractWorkers(emps);
+
     setIsDrawerOpen(true);
   };
 
-  // KPI Computations from Real Master State
-  const totalVendors = vendors.length;
-  const activeVendorsCount = vendors.filter((v) => v.status === 'ACTIVE').length;
-  const manpowerCount = vendors.filter((v) => v.vendor_type === 'MANPOWER_PROVIDER').length;
-  const totalWorkforce = vendors.reduce((acc, v) => acc + (v.deployed_workforce_count || 0), 0);
-  const complianceIssuesCount = vendors.reduce((acc, v) => acc + (v.compliance_issues_count || 0), 0);
-  const paymentIssuesCount = vendors.reduce((acc, v) => acc + (v.pending_payments_count || 0), 0);
+  const handleEndDeployment = async (assignmentId: string) => {
+    if (window.confirm('Are you sure you want to end this contractor deployment?')) {
+      try {
+        await vendorService.endEmployeeDeployment(assignmentId);
+        showToast('Workforce deployment ended successfully', 'success');
+        if (selectedVendor) handleOpenVendorDetails(selectedVendor);
+      } catch (err: any) {
+        showToast(err.message || 'Failed to end deployment', 'error');
+      }
+    }
+  };
 
-  // Filtered List
-  const filteredVendors = vendors.filter((v) => {
-    const q = search.toLowerCase().trim();
-    const matchesSearch =
-      !q ||
-      v.legal_name.toLowerCase().includes(q) ||
-      (v.trade_name && v.trade_name.toLowerCase().includes(q)) ||
-      v.vendor_code.toLowerCase().includes(q) ||
-      v.primary_contact_name.toLowerCase().includes(q) ||
-      v.primary_contact_email.toLowerCase().includes(q);
+  const handleApproveContractWorker = (workerId: string) => {
+    vendorPortalService.updateVendorEmployeeStatus(
+      workerId,
+      'ACTIVE',
+      'Approved by Principal Employer HR. Biometric & Site Pass active.'
+    );
+    showToast('Contract worker approved! Gate pass & site access issued.', 'success');
+    if (selectedVendor) {
+      setContractWorkers(vendorPortalService.getEmployees(selectedVendor.id));
+    }
+  };
 
-    const matchesType = typeFilter === 'ALL' || v.vendor_type === typeFilter;
-    const matchesStatus = statusFilter === 'ALL' || v.status === statusFilter;
-    const matchesCity = cityFilter === 'ALL' || (v.city && v.city.toLowerCase() === cityFilter.toLowerCase());
+  const handleRejectContractWorker = (workerId: string) => {
+    vendorPortalService.updateVendorEmployeeStatus(
+      workerId,
+      'REJECTED',
+      'Rejected by Principal Employer HR due to missing verification.'
+    );
+    showToast('Contract worker deployment rejected.', 'info');
+    if (selectedVendor) {
+      setContractWorkers(vendorPortalService.getEmployees(selectedVendor.id));
+    }
+  };
 
-    let matchesSegment = true;
-    if (activeSegment === 'ACTIVE_VENDORS') matchesSegment = v.status === 'ACTIVE';
-    else if (activeSegment === 'MANPOWER_PROVIDERS') matchesSegment = v.vendor_type === 'MANPOWER_PROVIDER';
-    else if (activeSegment === 'CONTRACTORS') matchesSegment = v.vendor_type === 'CONTRACTOR';
-    else if (activeSegment === 'COMPLIANCE_PENDING') matchesSegment = (v.compliance_issues_count || 0) > 0;
-    else if (activeSegment === 'PAYMENT_ISSUES') matchesSegment = (v.pending_payments_count || 0) > 0;
-    else if (activeSegment === 'ACTIVE_WORKFORCE') matchesSegment = (v.deployed_workforce_count || 0) > 0;
+  const handleVerifyDocumentRequest = (reqId: string) => {
+    vendorPortalService.updateDocumentRequestStatus(
+      reqId,
+      'VERIFIED',
+      'Verified by Principal Employer Compliance Officer.',
+      'Senthil Nathan (HR Head)'
+    );
+    showToast('Document marked as Verified & Compliant!', 'success');
+    if (selectedVendor) {
+      setDocRequests(vendorPortalService.getDocumentRequests(selectedVendor.id));
+    }
+  };
 
-    return matchesSearch && matchesType && matchesStatus && matchesCity && matchesSegment;
-  });
-
-  const handleEndDeployment = async (asgnId: string) => {
-    try {
-      await vendorService.endEmployeeDeployment(asgnId);
-      showToast('Workforce deployment ended successfully', 'success');
-      if (selectedVendor) handleOpenVendorDetails(selectedVendor);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to end deployment', 'error');
+  const handleRejectDocumentRequest = (reqId: string) => {
+    const reason = prompt('Please enter rejection remarks for the vendor:');
+    if (reason) {
+      vendorPortalService.updateDocumentRequestStatus(
+        reqId,
+        'REJECTED',
+        reason,
+        'Senthil Nathan (HR Head)'
+      );
+      showToast('Document request marked as Rejected.', 'warning');
+      if (selectedVendor) {
+        setDocRequests(vendorPortalService.getDocumentRequests(selectedVendor.id));
+      }
     }
   };
 
@@ -169,27 +219,64 @@ export const VendorsView: React.FC = () => {
         returnReason,
         returnNotes
       );
-      showToast('Payment marked as Returned for investigation', 'warning');
+      showToast('Returned payment recorded. Investigation logged.', 'success');
       setIsReturnPaymentModalOpen(false);
+      setSelectedPaymentToReturn(null);
       setReturnNotes('');
       if (selectedVendor) handleOpenVendorDetails(selectedVendor);
     } catch (err: any) {
-      showToast(err.message || 'Failed to mark returned payment', 'error');
+      showToast(err.message || 'Failed to record returned payment', 'error');
     }
   };
 
   const handleResolveReturnedPayment = async (paymentId: string) => {
     try {
-      await vendorService.resolveReturnedPayment(paymentId, 'Account verified and re-disbursed successfully');
-      showToast('Returned payment marked as Resolved and Paid', 'success');
+      await vendorService.resolveReturnedPayment(paymentId, 'Account verified and re-disbursed via RTGS.');
+      showToast('Returned payment resolved and marked as PAID', 'success');
       if (selectedVendor) handleOpenVendorDetails(selectedVendor);
     } catch (err: any) {
       showToast(err.message || 'Failed to resolve payment', 'error');
     }
   };
 
+  // Filter Logic
+  const filteredVendors = vendors.filter((v) => {
+    if (search) {
+      const q = search.toLowerCase();
+      const match =
+        v.legal_name.toLowerCase().includes(q) ||
+        v.vendor_code.toLowerCase().includes(q) ||
+        v.primary_contact_name.toLowerCase().includes(q) ||
+        v.primary_contact_email.toLowerCase().includes(q);
+      if (!match) return false;
+    }
+    if (typeFilter !== 'ALL' && v.vendor_type !== typeFilter) return false;
+    if (statusFilter !== 'ALL' && v.status !== statusFilter) return false;
+    if (cityFilter !== 'ALL' && v.city !== cityFilter) return false;
+
+    // Segment filtering
+    if (activeSegment === 'ACTIVE_VENDORS' && v.status !== 'ACTIVE') return false;
+    if (activeSegment === 'MANPOWER_PROVIDERS' && v.vendor_type !== 'MANPOWER_PROVIDER') return false;
+    if (activeSegment === 'ACTIVE_WORKFORCE' && (!v.deployed_workforce_count || v.deployed_workforce_count === 0)) return false;
+    if (activeSegment === 'COMPLIANCE_PENDING' && (!v.compliance_issues_count || v.compliance_issues_count === 0)) return false;
+    if (activeSegment === 'PAYMENT_ISSUES' && (!v.payment_issues_count || v.payment_issues_count === 0)) return false;
+
+    return true;
+  });
+
+  // Calculate Aggregates
+  const totalVendors = vendors.length;
+  const activeVendorsCount = vendors.filter((v) => v.status === 'ACTIVE').length;
+  const manpowerCount = vendors.filter((v) => v.vendor_type === 'MANPOWER_PROVIDER').length;
+  const totalWorkforce = vendors.reduce((sum, v) => sum + (v.deployed_workforce_count || 0), 0);
+  const complianceIssuesCount = vendors.filter((v) => (v.compliance_issues_count || 0) > 0).length;
+  const paymentIssuesCount = vendors.filter((v) => (v.payment_issues_count || 0) > 0).length;
+
   const handleSaveCurrentView = async () => {
-    if (!newViewName.trim()) return;
+    if (!newViewName.trim()) {
+      showToast('Please enter a view name', 'error');
+      return;
+    }
     try {
       const saved = await vendorService.saveView(newViewName, {
         vendor_type: typeFilter,
@@ -206,16 +293,49 @@ export const VendorsView: React.FC = () => {
     }
   };
 
+  // Convert selectedVendor to VendorOrganization for modals
+  const selectedVendorOrg: VendorOrganization = selectedVendor
+    ? {
+        id: selectedVendor.id,
+        tenant_id: selectedVendor.tenant_id,
+        name: selectedVendor.legal_name,
+        trade_name: selectedVendor.trade_name || selectedVendor.legal_name,
+        code: selectedVendor.vendor_code,
+        vendor_type: 'MANPOWER_STAFFING',
+        company_type: 'Pvt Ltd',
+        registration_number: selectedVendor.tax_id || 'U74999TN2020PTC135892',
+        contact_person: selectedVendor.primary_contact_name,
+        email: selectedVendor.primary_contact_email,
+        phone: selectedVendor.primary_contact_phone,
+        gstin: selectedVendor.tax_id || '33AAACA1234F1Z8',
+        pan: 'AAACA1234F',
+        address: `${selectedVendor.address_line1 || ''}, ${selectedVendor.city || ''}`,
+        city: selectedVendor.city,
+        state: selectedVendor.state,
+        postal_code: selectedVendor.postal_code || '641001',
+        status: selectedVendor.status as any,
+        service_charge_percentage: 8.5,
+        is_gst_applicable: true,
+        bank_name: 'HDFC Bank',
+        account_number: '50200088192841',
+        ifsc_code: 'HDFC0001234',
+        created_at: selectedVendor.created_at,
+        updated_at: selectedVendor.updated_at,
+      }
+    : vendorPortalService.getActiveVendor();
+
   return (
     <div className="space-y-6 pb-12">
-      <Breadcrumb items={[{ label: 'Company Admin' }, { label: 'Vendors / Manpower Providers 2.0' }]} />
+      <Breadcrumb items={[{ label: 'Company Admin' }, { label: 'Vendors & Contractor Governance' }]} />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-gray-900 tracking-tight">Vendor Management</h1>
+          <h1 className="text-2xl font-black text-gray-900 tracking-tight">
+            Vendor & Contractor Governance Suite
+          </h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Manage manpower providers, contracts, compliance licenses, returned disbursements, and deployed workforce.
+            Principal Employer command center for manpower providers, document requisitions, CLRA Form V certificates, worker approvals, and 3-way match.
           </p>
         </div>
 
@@ -233,9 +353,9 @@ export const VendorsView: React.FC = () => {
           <Button
             onClick={() => setIsCreateWizardOpen(true)}
             leftIcon={<Plus className="w-4 h-4" />}
-            className="font-bold shadow-sm"
+            className="font-bold shadow-sm bg-emerald-700 hover:bg-emerald-800 text-white"
           >
-            Add Vendor
+            Add / Onboard Vendor
           </Button>
         </div>
       </div>
@@ -445,7 +565,7 @@ export const VendorsView: React.FC = () => {
                   </TableCell>
 
                   <TableCell>
-                    <Badge variant="emerald" className="bg-emerald-50 text-emerald-800 border-emerald-300 text-xs font-bold">
+                    <Badge variant={vendor.status === 'ACTIVE' ? 'emerald' : 'amber'}>
                       {vendor.status}
                     </Badge>
                   </TableCell>
@@ -454,21 +574,32 @@ export const VendorsView: React.FC = () => {
                     <Button
                       size="sm"
                       variant="outline"
-                      leftIcon={<Eye className="w-3.5 h-3.5" />}
                       onClick={() => handleOpenVendorDetails(vendor)}
+                      leftIcon={<Eye className="w-3.5 h-3.5" />}
                       className="text-xs font-bold"
                     >
-                      Inspect
+                      Manage
                     </Button>
                   </TableCell>
                 </TableRow>
               );
             })}
+
+            {filteredVendors.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={9} className="text-center py-12">
+                  <div className="flex flex-col items-center justify-center text-gray-400 space-y-2">
+                    <Building2 className="w-8 h-8 text-gray-300" />
+                    <p className="text-sm font-semibold">No vendors match your search filters.</p>
+                  </div>
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </div>
 
-      {/* 7-Tab Vendor Detail Drawer */}
+      {/* Comprehensive Vendor Detail Drawer */}
       <Drawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
@@ -477,34 +608,59 @@ export const VendorsView: React.FC = () => {
       >
         {selectedVendor && (
           <div className="space-y-5">
-            {/* Vendor Hero Card */}
-            <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-950 to-amber-900 text-white space-y-2">
-              <div className="flex items-center justify-between">
+            {/* Vendor Hero Card with Quick Actions */}
+            <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-black">{selectedVendor.legal_name}</h3>
-                  <p className="text-xs text-amber-200">{selectedVendor.vendor_type} · {selectedVendor.city}, {selectedVendor.state}</p>
+                  <p className="text-xs text-indigo-200">
+                    {selectedVendor.vendor_type} · {selectedVendor.city}, {selectedVendor.state}
+                  </p>
                 </div>
-                <Badge variant="emerald" className="bg-emerald-400 text-emerald-950 font-black">
+                <Badge variant="emerald" className="bg-emerald-400 text-emerald-950 font-black w-fit">
                   {selectedVendor.status}
                 </Badge>
               </div>
 
-              <div className="pt-2 border-t border-white/10 flex items-center gap-4 text-[11px] text-amber-200 font-mono">
-                <span>CODE: {selectedVendor.vendor_code}</span>
-                <span>•</span>
-                <span>GST: {selectedVendor.tax_id || '33AABCW1234F1Z5'}</span>
-                <span>•</span>
-                <span>Capacity: {selectedVendor.max_workforce_capacity || 100}</span>
+              <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-4 text-[11px] text-indigo-200 font-mono">
+                  <span>CODE: {selectedVendor.vendor_code}</span>
+                  <span>•</span>
+                  <span>GST: {selectedVendor.tax_id || '33AABCW1234F1Z5'}</span>
+                  <span>•</span>
+                  <span>Capacity: {selectedVendor.max_workforce_capacity || 100}</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => setIsRequestDocModalOpen(true)}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-xs"
+                    leftIcon={<Send className="w-3.5 h-3.5" />}
+                  >
+                    Request Document
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => setIsIssueFormVModalOpen(true)}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs"
+                    leftIcon={<Stamp className="w-3.5 h-3.5" />}
+                  >
+                    Issue Form V
+                  </Button>
+                </div>
               </div>
             </div>
 
-            {/* 7 Dedicated Tabs */}
+            {/* Dedicated Tabs */}
             <Tabs
               tabs={[
                 { id: 'overview', label: 'Overview', icon: <Building2 className="w-4 h-4" /> },
-                { id: 'workforce', label: `Workforce (${vendorWorkforce.length})`, icon: <Users className="w-4 h-4" /> },
+                { id: 'workforce', label: `Workforce (${vendorWorkforce.length + contractWorkers.length})`, icon: <Users className="w-4 h-4" /> },
+                { id: 'doc-requisitions', label: `Requisitions (${docRequests.length})`, icon: <Send className="w-4 h-4" /> },
+                { id: 'form-v', label: `Form V (${formVCertificates.length})`, icon: <Stamp className="w-4 h-4" /> },
                 { id: 'contracts', label: `Contracts (${vendorContracts.length})`, icon: <Briefcase className="w-4 h-4" /> },
-                { id: 'compliance', label: 'Compliance', icon: <ShieldCheck className="w-4 h-4" /> },
+                { id: 'compliance', label: 'Compliance & Licenses', icon: <ShieldCheck className="w-4 h-4" /> },
                 { id: 'payments', label: `Payments (${vendorPayments.length})`, icon: <CreditCard className="w-4 h-4" /> },
                 { id: 'documents', label: `Docs (${vendorDocs.length})`, icon: <FileText className="w-4 h-4" /> },
                 { id: 'audit', label: 'Audit Trail', icon: <History className="w-4 h-4" /> },
@@ -547,17 +703,89 @@ export const VendorsView: React.FC = () => {
               </div>
             )}
 
-            {/* Tab 2: Workforce */}
+            {/* Tab 2: Workforce Governance */}
             {activeDrawerTab === 'workforce' && (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-black text-gray-900 uppercase tracking-wider">
-                    Supplied Canonical Workforce ({vendorWorkforce.length})
+                    Contractor Workers & Site Passes ({contractWorkers.length + vendorWorkforce.length})
                   </h4>
                 </div>
 
-                {vendorWorkforce.length > 0 ? (
+                {/* Portal Registered Workers with Approval Actions */}
+                {contractWorkers.length > 0 && (
                   <div className="space-y-2">
+                    <span className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider block">
+                      Contractor Portal Submissions
+                    </span>
+                    {contractWorkers.map((emp) => {
+                      const isPending = emp.status === 'PENDING_COMPANY_APPROVAL';
+                      return (
+                        <div
+                          key={emp.id}
+                          className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
+                            isPending ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-gray-900">{emp.display_name}</span>
+                              <span className="font-mono text-[11px] font-bold text-gray-600 bg-gray-100 px-1.5 py-0.2 rounded">
+                                {emp.employee_code}
+                              </span>
+                              <Badge variant={emp.status === 'ACTIVE' ? 'emerald' : 'amber'} size="sm">
+                                {emp.status.replace(/_/g, ' ')}
+                              </Badge>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500 mt-1">
+                              <span>Designation: <strong className="text-gray-700">{emp.designation}</strong></span>
+                              <span>•</span>
+                              <span>Category: <strong className="text-gray-700">{emp.worker_category}</strong></span>
+                              <span>•</span>
+                              <span>UAN: <strong className="text-gray-700 font-mono">{emp.uan}</strong></span>
+                              <span>•</span>
+                              <span>ESIC: <strong className="text-gray-700 font-mono">{emp.esic_number}</strong></span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {isPending ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleApproveContractWorker(emp.id)}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                                  leftIcon={<Check className="w-3.5 h-3.5" />}
+                                >
+                                  Approve & Issue Gate Pass
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleRejectContractWorker(emp.id)}
+                                  className="text-xs text-rose-600 hover:bg-rose-50"
+                                >
+                                  Reject
+                                </Button>
+                              </>
+                            ) : (
+                              <span className="text-[11px] font-bold text-emerald-700 flex items-center gap-1">
+                                <CheckCircle className="w-3.5 h-3.5" /> Gate Pass Active
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Canonical Deployed Workforce */}
+                {vendorWorkforce.length > 0 && (
+                  <div className="space-y-2 pt-2">
+                    <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider block">
+                      Canonical Employee Deployments
+                    </span>
                     {vendorWorkforce.map((asgn) => (
                       <div
                         key={asgn.id}
@@ -591,9 +819,177 @@ export const VendorsView: React.FC = () => {
                       </div>
                     ))}
                   </div>
-                ) : (
+                )}
+
+                {contractWorkers.length === 0 && vendorWorkforce.length === 0 && (
                   <div className="text-center py-8 bg-gray-50 rounded-xl border border-gray-100 text-xs text-gray-400">
                     No active employees currently deployed under this vendor.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab: Document Requisitions */}
+            {activeDrawerTab === 'doc-requisitions' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black text-gray-900 uppercase tracking-wider">
+                    Statutory Document Requisitions ({docRequests.length})
+                  </h4>
+                  <Button
+                    size="sm"
+                    onClick={() => setIsRequestDocModalOpen(true)}
+                    leftIcon={<Send className="w-3.5 h-3.5" />}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs"
+                  >
+                    + Request Document
+                  </Button>
+                </div>
+
+                {docRequests.length > 0 ? (
+                  <div className="space-y-2.5">
+                    {docRequests.map((req) => {
+                      const isRequested = req.status === 'REQUESTED';
+                      const isSubmitted = req.status === 'SUBMITTED';
+                      const isVerified = req.status === 'VERIFIED';
+                      return (
+                        <div
+                          key={req.id}
+                          className="p-4 rounded-xl border border-gray-200 bg-white space-y-2 text-xs shadow-xs"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-gray-900">{req.document_type}</span>
+                              <Badge
+                                variant={
+                                  isVerified ? 'emerald' : isSubmitted ? 'info' : req.priority === 'CRITICAL' ? 'rose' : 'amber'
+                                }
+                                size="sm"
+                              >
+                                {req.status}
+                              </Badge>
+                            </div>
+                            <span className="text-[11px] text-gray-500 font-medium">
+                              Due: <strong className="text-gray-800">{req.due_date}</strong>
+                            </span>
+                          </div>
+
+                          <p className="text-gray-600 text-[11px] leading-relaxed">
+                            {req.description}
+                          </p>
+
+                          {req.submitted_file_name && (
+                            <div className="p-2 bg-indigo-50/70 border border-indigo-200/60 rounded-lg flex items-center justify-between text-[11px]">
+                              <span className="font-mono text-indigo-900 font-semibold flex items-center gap-1.5">
+                                <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                                {req.submitted_file_name}
+                              </span>
+                              <span className="text-gray-500">Uploaded {req.submitted_at?.split('T')[0]}</span>
+                            </div>
+                          )}
+
+                          <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-[11px]">
+                            <span className="text-gray-400">Requested by: {req.requested_by_name}</span>
+                            <div className="flex items-center gap-2">
+                              {isSubmitted && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleVerifyDocumentRequest(req.id)}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                                    leftIcon={<Check className="w-3.5 h-3.5" />}
+                                  >
+                                    Verify & Approve
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleRejectDocumentRequest(req.id)}
+                                    className="text-xs text-rose-600 hover:bg-rose-50"
+                                  >
+                                    Reject
+                                  </Button>
+                                </>
+                              )}
+                              {isVerified && (
+                                <span className="text-emerald-700 font-bold flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5" /> Verified & Compliant
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 bg-gray-50 rounded-xl border border-gray-100 text-xs text-gray-400">
+                    No document requisitions currently open for this vendor.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab: Form V Certificates */}
+            {activeDrawerTab === 'form-v' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black text-gray-900 uppercase tracking-wider">
+                    Principal Employer Form V Certificates ({formVCertificates.length})
+                  </h4>
+                  <Button
+                    size="sm"
+                    onClick={() => setIsIssueFormVModalOpen(true)}
+                    leftIcon={<Stamp className="w-3.5 h-3.5" />}
+                    className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs"
+                  >
+                    + Issue Form V
+                  </Button>
+                </div>
+
+                {formVCertificates.length > 0 ? (
+                  <div className="space-y-3">
+                    {formVCertificates.map((fv) => (
+                      <div
+                        key={fv.id}
+                        className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/30 space-y-2.5 text-xs shadow-xs"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono font-bold text-emerald-950 text-sm">
+                            {fv.certificate_number}
+                          </span>
+                          <Badge variant="emerald">{fv.status}</Badge>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-700 pt-1 border-t border-emerald-100">
+                          <div>
+                            <span className="text-gray-400 block">Nature of Work</span>
+                            <span className="font-semibold text-gray-900">{fv.nature_of_work}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400 block">Max Approved Strength</span>
+                            <span className="font-bold text-emerald-800 font-mono">{fv.max_contract_labour_capacity} Workers</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400 block">Engagement Period</span>
+                            <span className="font-semibold text-gray-900">{fv.duration_from} to {fv.duration_to}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400 block">Site Location</span>
+                            <span className="font-semibold text-gray-900">{fv.site_location}</span>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-emerald-100 flex items-center justify-between text-[10px] text-gray-500">
+                          <span>Issued by: <strong>{fv.issued_by_name}</strong> ({fv.issued_by_designation})</span>
+                          <span>Dated: {fv.issue_date}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 bg-gray-50 rounded-xl border border-gray-100 text-xs text-gray-400">
+                    No Form V certificates issued yet. Click "Issue Form V" above to generate.
                   </div>
                 )}
               </div>
@@ -662,7 +1058,7 @@ export const VendorsView: React.FC = () => {
               </div>
             )}
 
-            {/* Tab 5: Payments & Returned Payments Workflow */}
+            {/* Tab 5: Payments */}
             {activeDrawerTab === 'payments' && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -694,7 +1090,6 @@ export const VendorsView: React.FC = () => {
                           <span>UTR: {p.payment_reference || 'N/A'}</span>
                         </div>
 
-                        {/* Returned Payment Investigation Box */}
                         {isReturned && (
                           <div className="p-3 rounded-lg bg-rose-100/60 border border-rose-200 space-y-1.5 text-[11px]">
                             <div className="flex items-center justify-between text-rose-900 font-bold">
@@ -775,6 +1170,30 @@ export const VendorsView: React.FC = () => {
           </div>
         )}
       </Drawer>
+
+      {/* Request Document Modal */}
+      {selectedVendor && (
+        <RequestVendorDocumentModal
+          isOpen={isRequestDocModalOpen}
+          onClose={() => setIsRequestDocModalOpen(false)}
+          vendor={selectedVendorOrg}
+          onSuccess={() => {
+            setDocRequests(vendorPortalService.getDocumentRequests(selectedVendor.id));
+          }}
+        />
+      )}
+
+      {/* Issue Form V Modal */}
+      {selectedVendor && (
+        <IssueFormVModal
+          isOpen={isIssueFormVModalOpen}
+          onClose={() => setIsIssueFormVModalOpen(false)}
+          vendor={selectedVendorOrg}
+          onSuccess={() => {
+            setFormVCertificates(vendorPortalService.getPrincipalEmployerFormVs(selectedVendor.id));
+          }}
+        />
+      )}
 
       {/* 7-Step Add Vendor Wizard Modal */}
       <VendorCreateWizardModal

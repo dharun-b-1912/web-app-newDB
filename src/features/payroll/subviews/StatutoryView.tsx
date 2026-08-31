@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { payrollApi } from '../../../services/payrollApi';
 import { StatutoryConfig, TamilNaduPTSlab } from '../../../types/payroll';
+import { StatutoryRuleEngine } from '../../../services/payroll/statutoryRuleEngine';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import {
@@ -54,7 +55,7 @@ export const StatutoryView: React.FC<StatutoryViewProps> = ({ initialSubTab }) =
     { id: 'lwf', label: 'Labour Welfare Fund (LWF)', icon: HeartHandshake },
   ];
 
-  // Mathematical Simulator Calculation based on current live config inputs
+  // Mathematical Simulator Calculation based on current live config inputs via Unified Statutory Rule Engine
   const simResult = useMemo(() => {
     const gross = simGrossMonthly || 0;
     const basic = Math.round(gross * 0.5);
@@ -63,35 +64,41 @@ export const StatutoryView: React.FC<StatutoryViewProps> = ({ initialSubTab }) =
 
     // LOP
     const lopDeduction = simLopDays > 0 ? Math.round((gross / 30) * simLopDays) : 0;
+    const effectiveGross = Math.max(0, gross - lopDeduction);
+    const effectiveBasic = Math.max(0, Math.round(effectiveGross * 0.5));
 
-    // EPF
-    const epfBase = config.pf_wage_ceiling > 0 ? Math.min(basic, config.pf_wage_ceiling) : basic;
-    const epfEmployee = config.pf_enabled ? Math.round((epfBase * (config.pf_employee_percent || 0)) / 100) : 0;
-    const epfEmployer = config.pf_enabled ? Math.round((epfBase * (config.pf_employer_percent || 0)) / 100) : 0;
-    const epfPensionFund = config.pf_enabled ? Math.round((epfBase * 8.33) / 100) : 0;
+    // EPF via unified engine
+    const pfEval = StatutoryRuleEngine.evaluatePF(effectiveBasic, true, true, config);
+    const epfEmployee = pfEval.employee_contribution;
+    const epfEmployer = pfEval.employer_pf_amount;
+    const epfPensionFund = Math.round(pfEval.pf_wage * 0.0833);
     const epfEmployerDiff = Math.max(0, epfEmployer - epfPensionFund);
 
-    // ESIC
-    const esicApplicable = config.esi_enabled && gross <= (config.esi_wage_ceiling || 21000);
-    const esicEmployee = esicApplicable ? Math.round((gross * (config.esi_employee_percent || 0)) / 100) : 0;
-    const esicEmployer = esicApplicable ? Math.round((gross * (config.esi_employer_percent || 0)) / 100) : 0;
+    // ESIC via unified engine
+    const esiEval = StatutoryRuleEngine.evaluateESI(effectiveGross, 0, 'NEW_COVERAGE', config);
+    const esicApplicable = esiEval.is_covered;
+    const esicEmployee = esiEval.employee_contribution;
+    const esicEmployer = esiEval.employer_contribution;
 
-    // PT
-    const pt = config.pt_enabled ? (config.pt_monthly_slab || 0) : 0;
+    // PT via unified engine
+    const ptEval = StatutoryRuleEngine.evaluateProfessionalTax(effectiveGross, 'Tamil Nadu', config);
+    const pt = ptEval.ptAmount;
 
-    // LWF
-    const lwf = config.lwf_enabled ? (config.lwf_amount || 0) : 0;
+    // LWF via unified engine
+    const lwfEval = StatutoryRuleEngine.evaluateLWF('Tamil Nadu', config);
+    const lwf = lwfEval.employeeContribution;
+    const lwfEmployer = lwfEval.employerContribution;
 
     const totalEmployeeDeductions = lopDeduction + epfEmployee + esicEmployee + pt + lwf;
     const netTakeHome = Math.max(0, gross - totalEmployeeDeductions);
-    const totalEmployerCost = gross + epfEmployer + esicEmployer + (config.lwf_enabled ? lwf * 2 : 0);
+    const totalEmployerCost = gross + pfEval.total_employer_pf_cost + esicEmployer + (config.lwf_enabled ? lwfEmployer : 0);
 
     return {
       basic,
       hra,
       special,
       lopDeduction,
-      epfBase,
+      epfBase: pfEval.pf_wage,
       epfEmployee,
       epfEmployer,
       epfPensionFund,

@@ -26,6 +26,8 @@ export const EmployeeCreateModal: React.FC<EmployeeCreateModalProps> = ({
   const { activeCompany, companies } = useTenant();
   const { showToast } = useToast();
 
+  const activeOrgId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-corporate-solutions-private-') : 'org-joy-corporate-solutions-private-';
+
   const {
     register,
     handleSubmit,
@@ -34,7 +36,7 @@ export const EmployeeCreateModal: React.FC<EmployeeCreateModalProps> = ({
   } = useForm<EmployeeCreateInput>({
     resolver: zodResolver(EmployeeCreateSchema),
     defaultValues: {
-      company_id: activeCompany?.id || 'comp-joy-01',
+      company_id: activeCompany?.id || `comp-${activeOrgId.replace('org-', '')}`,
       employment_type: 'Full Time',
       status: 'Active',
       employee_code: `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -47,8 +49,8 @@ export const EmployeeCreateModal: React.FC<EmployeeCreateModalProps> = ({
   const onSubmit = async (data: EmployeeCreateInput) => {
     try {
       const newEmp = await api.createEmployee({
-        organization_id: 'org-joy-01',
-        company_id: data.company_id || activeCompany?.id || 'comp-joy-01',
+        organization_id: activeOrgId,
+        company_id: data.company_id || activeCompany?.id || `comp-${activeOrgId.replace('org-', '')}`,
         department_id: data.department_id,
         designation_id: data.designation_id,
         employee_code: data.employee_code,

@@ -147,7 +147,7 @@ export function EnterpriseDataTable<T>({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${exportFileName || 'workforceos-export'}.csv`);
+    link.setAttribute('download', `${exportFileName || 'joy-peoplehr-export'}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

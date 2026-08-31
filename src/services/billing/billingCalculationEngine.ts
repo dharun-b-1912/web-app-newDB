@@ -66,7 +66,9 @@ export interface BillingCalculationInput {
 
 export interface BillingCalculationOutput {
   basePrice: number;
+  basePlanPrice: number;
   extraSeatsPrice: number;
+  additionalSeatsPrice: number;
   subtotal: number;
   discountAmount: number;
   totalDiscount: number;
@@ -140,7 +142,9 @@ export const billingCalculationEngine = {
 
     return {
       basePrice: baseRate,
+      basePlanPrice: baseRate,
       extraSeatsPrice: extraSeatsCost,
+      additionalSeatsPrice: extraSeatsCost,
       subtotal,
       discountAmount,
       totalDiscount: discountAmount,

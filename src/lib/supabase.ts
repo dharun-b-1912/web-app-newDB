@@ -43,3 +43,21 @@ export const auth = supabase.auth;
  * Usage: storage.from('documents').upload(path, file)
  */
 export const storage = supabase.storage;
+
+/**
+ * Canonical Application Base URL for production and local environments.
+ * Resolves to https://joypeoplehr.com in production.
+ */
+export const getAppBaseUrl = (): string => {
+  if (typeof window !== 'undefined' && window.location.origin) {
+    if (!window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1')) {
+      return window.location.origin;
+    }
+  }
+  const envUrl = (import.meta as any).env?.VITE_APP_URL || (import.meta as any).env?.APP_URL;
+  if (envUrl && !envUrl.includes('localhost')) {
+    return envUrl;
+  }
+  return 'https://joypeoplehr.com';
+};
+

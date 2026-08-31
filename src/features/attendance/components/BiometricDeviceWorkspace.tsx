@@ -150,9 +150,7 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
     window.addEventListener('biometric:updated', handleCustomUpdate);
     window.addEventListener('storage', handleCustomUpdate);
 
-    const interval = setInterval(loadWorkspaceData, 5000);
     return () => {
-      clearInterval(interval);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       unsubBiometric();
       unsubDevice();

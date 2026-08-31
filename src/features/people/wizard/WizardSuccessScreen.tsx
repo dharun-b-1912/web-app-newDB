@@ -1,14 +1,25 @@
 // src/features/people/wizard/WizardSuccessScreen.tsx
 // ============================================================================
-// Joy PeopleHR — Employee Creation Success with Auth Provisioning Badge
+// Joy PeopleHR — Employee Creation Success with Auth Provisioning & Resend Email
 // ============================================================================
 
 import React, { useState } from 'react';
-import { CheckCircle2, User, ArrowRight, Sparkles, Phone, ShieldCheck, KeyRound, RefreshCw, Send } from 'lucide-react';
+import {
+  CheckCircle2,
+  User,
+  ArrowRight,
+  Sparkles,
+  Send,
+  Mail,
+  Copy,
+  Check,
+  Smartphone,
+} from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Avatar } from '../../../components/ui/Avatar';
 import { Employee } from '../../../types';
 import { employeeAuthService } from '../../../services/auth/employeeAuthService';
+import { resendEmailService } from '../../../services/email/resendEmailService';
 import { useToast } from '../../../components/ui/Toast';
 
 interface Props {
@@ -25,19 +36,56 @@ export const WizardSuccessScreen: React.FC<Props> = ({
   onAddAnother,
 }) => {
   const { showToast } = useToast();
-  const [isResending, setIsResending] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [isSendingSms, setIsSendingSms] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const phone = employee.profile?.phone || '+91 98401 22334';
-  const authStatus = employeeAuthService.getEmployeeAuthStatus(employee.id, employee.organization_id);
+  const email = employee.work_email || (employee.profile as any)?.personal_email || '';
+  const loginId = employee.employee_code || employee.id;
+  const activationToken = `${loginId.toLowerCase()}-act-${Math.floor(100000 + Math.random() * 900000)}`;
+  const activationLink = `${window.location.origin}/activate?token=${activationToken}&emp=${employee.id}`;
 
-  const handleResendActivation = async () => {
-    setIsResending(true);
+  const handleSendEmailActivation = async () => {
+    if (!email) {
+      showToast('No email address registered for this employee.', 'error');
+      return;
+    }
+
+    setIsSendingEmail(true);
+    try {
+      const res = await resendEmailService.sendEmployeeActivationEmail({
+        to: email,
+        employeeName: `${employee.first_name} ${employee.last_name}`.trim(),
+        employeeId: employee.employee_code || employee.id,
+        loginIdentifier: loginId,
+        activationToken: activationToken,
+        activationUrl: activationLink,
+        organizationName: employee.company_name || 'Joy Corporate Solutions',
+        authMethod: 'Employee ID + Password',
+        requiresPasswordChange: true,
+      });
+
+      if (res.success) {
+        showToast(`Activation invitation dispatched via Resend to ${email}`, 'success');
+      } else {
+        showToast(res.error || 'Failed to dispatch activation email.', 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Error sending email.', 'error');
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
+  const handleSendSmsActivation = async () => {
+    setIsSendingSms(true);
     try {
       await employeeAuthService.provisionEmployeeAuth({
         tenantId: employee.organization_id || 'org-joy-01',
         employeeId: employee.id,
         phone: phone,
-        email: employee.work_email,
+        email: email,
         firstName: employee.first_name,
         lastName: employee.last_name,
         role: employee.designation_title || 'Employee',
@@ -45,10 +93,17 @@ export const WizardSuccessScreen: React.FC<Props> = ({
       });
       showToast(`Activation SMS instructions dispatched to ${phone}`, 'success');
     } catch (err: any) {
-      showToast(err.message || 'Failed to dispatch activation instructions.', 'error');
+      showToast(err.message || 'Failed to dispatch SMS instructions.', 'error');
     } finally {
-      setIsResending(false);
+      setIsSendingSms(false);
     }
+  };
+
+  const handleCopyActivationLink = () => {
+    navigator.clipboard.writeText(activationLink);
+    setCopiedLink(true);
+    showToast('Activation link copied to clipboard!', 'success');
+    setTimeout(() => setCopiedLink(false), 2500);
   };
 
   return (
@@ -60,13 +115,13 @@ export const WizardSuccessScreen: React.FC<Props> = ({
 
       <div className="space-y-1">
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-black uppercase tracking-wider">
-          <Sparkles className="w-3.5 h-3.5" /> Record Created & Provisioned
+          <Sparkles className="w-3.5 h-3.5" /> Record Created & App Access Provisioned
         </div>
         <h2 className="text-2xl font-black text-gray-900 tracking-tight">
           Employee Created Successfully!
         </h2>
         <p className="text-xs text-gray-500 max-w-sm">
-          The master employee record and authentication identity are now active across Joy PeopleHR.
+          The master employee identity and isolated authentication credentials are ready.
         </p>
       </div>
 
@@ -74,7 +129,7 @@ export const WizardSuccessScreen: React.FC<Props> = ({
       <div className="w-full p-4 rounded-2xl bg-gray-50 border border-gray-200 text-left flex items-center gap-4">
         <Avatar
           name={`${employee.first_name} ${employee.last_name}`}
-          src={employee.avatar_url || employee.profile?.personal_email}
+          src={employee.avatar_url}
           size="lg"
           className="w-14 h-14 rounded-2xl ring-2 ring-emerald-600 shadow-sm flex-shrink-0"
         />
@@ -92,57 +147,76 @@ export const WizardSuccessScreen: React.FC<Props> = ({
             {employee.designation_title || 'Software Engineer'} · {employee.department_name || 'Engineering'}
           </p>
           <p className="text-[11px] text-gray-400 font-medium truncate">
-            Joining Date: {employee.employment?.doj || employee.created_at?.slice(0, 10)}
+            {email ? `Email: ${email}` : 'No Corporate Email (Mobile Only)'}
           </p>
         </div>
       </div>
 
-      {/* Authentication Provisioning Status Card */}
-      <div className="w-full p-4 rounded-2xl bg-white border border-emerald-200 shadow-xs text-left space-y-2.5">
+      {/* Employee App Access Provisioning Box */}
+      <div className="w-full p-4 rounded-2xl bg-white border-2 border-[#07563D]/20 shadow-xs text-left space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-[#07563D]" />
-            <span className="text-xs font-extrabold text-gray-900">Login Authentication Identity</span>
+            <Smartphone className="w-4 h-4 text-[#07563D]" />
+            <span className="text-xs font-extrabold text-gray-900">Employee App Access</span>
           </div>
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 uppercase tracking-wider">
-            {authStatus?.activation_status || 'INVITED'}
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 uppercase tracking-wider flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+            Enabled
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 text-xs bg-emerald-50/50 p-2.5 rounded-xl border border-emerald-100">
+        <div className="grid grid-cols-2 gap-2 text-xs bg-emerald-50/50 p-3 rounded-xl border border-emerald-100">
           <div>
             <span className="text-[10px] text-gray-400 font-medium block">Login Identifier</span>
-            <span className="font-mono font-bold text-gray-900 flex items-center gap-1">
-              <Phone className="w-3 h-3 text-[#07563D]" />
-              {phone}
+            <span className="font-mono font-bold text-gray-900">
+              {loginId}
             </span>
           </div>
           <div>
-            <span className="text-[10px] text-gray-400 font-medium block">Authentication Policy</span>
-            <span className="font-bold text-gray-800 flex items-center gap-1">
-              <KeyRound className="w-3 h-3 text-[#07563D]" />
-              Phone + OTP / Password
+            <span className="text-[10px] text-gray-400 font-medium block">Activation Status</span>
+            <span className="font-bold text-amber-700">
+              Pending Activation
             </span>
           </div>
         </div>
 
-        <div className="flex items-center justify-between pt-1">
-          <span className="text-[11px] text-gray-500">
-            SMS activation invite dispatched to employee.
-          </span>
+        {/* Action Buttons to Send Activation */}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {email && (
+            <button
+              type="button"
+              disabled={isSendingEmail}
+              onClick={handleSendEmailActivation}
+              className="flex-1 px-3 py-2 text-xs font-bold text-white bg-[#07563D] hover:bg-[#064e37] rounded-xl flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              {isSendingEmail ? 'Sending...' : 'Send Resend Email'}
+            </button>
+          )}
+
           <button
             type="button"
-            disabled={isResending}
-            onClick={handleResendActivation}
-            className="text-[11px] font-bold text-[#07563D] hover:underline flex items-center gap-1 disabled:opacity-50"
+            disabled={isSendingSms}
+            onClick={handleSendSmsActivation}
+            className="flex-1 px-3 py-2 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
-            <Send className="w-3 h-3" />
-            {isResending ? 'Sending...' : 'Resend SMS'}
+            <Send className="w-3.5 h-3.5 text-[#07563D]" />
+            {isSendingSms ? 'Sending...' : 'Send SMS'}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCopyActivationLink}
+            className="px-3 py-2 text-xs font-bold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl flex items-center justify-center gap-1.5"
+            title="Copy one-time activation link"
+          >
+            {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+            {copiedLink ? 'Copied' : 'Copy Link'}
           </button>
         </div>
       </div>
 
-      {/* Action Buttons */}
+      {/* Navigation Buttons */}
       <div className="w-full flex flex-col sm:flex-row items-center gap-3 pt-1">
         <Button
           size="md"

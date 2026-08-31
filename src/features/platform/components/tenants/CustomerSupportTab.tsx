@@ -27,17 +27,15 @@ export const CustomerSupportTab: React.FC<CustomerSupportTabProps> = ({ organiza
   const [ticketSubject, setTicketSubject] = useState('');
   const [ticketPriority, setTicketPriority] = useState<'Normal' | 'High' | 'Urgent'>('Normal');
 
-  const [cases, setCases] = useState([
-    {
-      id: 'SUP-10482',
-      subject: 'Verification of biometric hardware push daemon credentials',
-      priority: 'Normal',
-      status: 'Resolved',
-      created_at: '2026-08-10',
-      assigned_to: 'Arun Kumar (Super Admin)',
-      sla_status: 'Met',
-    },
-  ]);
+  const [cases, setCases] = useState<Array<{
+    id: string;
+    subject: string;
+    priority: string;
+    status: string;
+    created_at: string;
+    assigned_to: string;
+    sla_status: string;
+  }>>([]);
 
   const handleCreateTicket = (e: React.FormEvent) => {
     e.preventDefault();

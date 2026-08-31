@@ -1,0 +1,174 @@
+# Dynamic Client Payroll, Wage Billing & Invoice Automation Engine
+
+## System Overview & Architecture
+
+This implementation establishes a production-grade, enterprise-ready **Payroll-to-Invoice Automation Engine** for JOY PeopleHR / JOY Corporate Solutions. 
+
+The architecture completely decouples client-specific billing requirements from hardcoded application logic by introducing a **dynamic, configuration-driven rule engine** with effective-dated policies, immutable financial snapshots, employee-level audit drill-downs, statutory reconciliation, and multi-format Excel/PDF generation.
+
+```
+┌─────────────────────────┐
+│     Client Master       │
+│  (GSTIN, State, Terms)  │
+└────────────┬────────────┘
+             │ 1:N
+┌────────────▼────────────┐     ┌─────────────────────────┐
+│ Client Contract Master  │     │   Active Deployments    │
+│  (SAC, Billing Cycle)   │◄────┤ (Emp ↔ Client/Contract) │
+└────────────┬────────────┘     └────────────┬────────────┘
+             │                               │
+┌────────────▼────────────┐     ┌────────────▼────────────┐
+│  Billing Policy Master  │     │    Actual Attendance    │
+│ (Component & Rate Rules)│     │   (Present, OT, LOP)    │
+└────────────┬────────────┘     └────────────┬────────────┘
+             │                               │
+             └───────────────┬───────────────┘
+                             │
+                  ┌──────────▼──────────┐
+                  │ Wage Calculation    │
+                  │ & Statutory Engine  │
+                  └──────────┬──────────┘
+                             │
+     ┌───────────────────────┼───────────────────────┐
+     ▼                       ▼                       ▼
+Employee Earnings     Employer PF / ESI     Recoveries & LOP
+     │                       │                       │
+     └───────────────────────┼───────────────────────┘
+                             ▼
+                  ┌─────────────────────┐
+                  │ Client Billing Run  │
+                  │   Calculation Core  │
+                  └──────────┬──────────┘
+                             │
+     ┌───────────────────────┼───────────────────────┐
+     ▼                       ▼                       ▼
+Service Charges %     Per-Head Transport     Other Allowances
+     │                       │                       │
+     └───────────────────────┼───────────────────────┘
+                             ▼
+                  ┌─────────────────────┐
+                  │  Indian GST Engine  │
+                  │  (CGST/SGST / IGST) │
+                  └──────────┬──────────┘
+                             │
+                  ┌──────────▼──────────┐
+                  │ Pre-Invoice Audit   │
+                  │  & Reconciliation   │
+                  └──────────┬──────────┘
+                             │
+                  ┌──────────▼──────────┐
+                  │  Immutable Snapshot │
+                  │  & Invoice / Excel  │
+                  └─────────────────────┘
+```
+
+---
+
+## Proposed Technical Changes
+
+### 1. Data Contracts & Type Definitions
+#### [NEW] [clientBilling.ts](file:///d:/Joy%20PeopleHR%20new%20version/workforceos-enterprise-hrms/src/types/clientBilling.ts)
+Comprehensive TypeScript interfaces for:
+- `ClientMaster`: Legal name, code, GSTIN, PAN, state code, addresses, payment terms.
+- `ClientContract`: Contract number, service type (Manpower, Security, Facility, etc.), SAC code (default 998519), billing cycle, validity dates.
+- `EmployeeClientDeployment`: Effective-dated mapping of employee to client, contract, site location, department, shift, and wage structure.
+- `SalaryDivisorType`: `CALENDAR_DAYS`, `FIXED_26`, `FIXED_30`, `FIXED_31`, `WORKING_DAYS`, `CLIENT_CUSTOM`.
+- `BillingRule`: Calculation methods (`FIXED_AMOUNT`, `PERCENTAGE_OF_GROSS`, `PERCENTAGE_OF_BASIC`, `PERCENTAGE_OF_BILLABLE_WAGES`, `PER_EMPLOYEE`, `PER_DAY`, `PER_HOUR`, `PER_OT_HOUR`, `CUSTOM_FORMULA`), priority, charge category, effective date ranges.
+- `BillingConfiguration`: Toggleable billable salary components, employer contribution pass-through flags, recovery deduction treatments.
+- `BillingRun`: Full lifecycle state (`DRAFT` $\rightarrow$ `CALCULATED` $\rightarrow$ `AUDIT_REVIEW` $\rightarrow$ `FINANCE_REVIEW` $\rightarrow$ `APPROVED` $\rightarrow$ `INVOICE_GENERATED` $\rightarrow$ `PAID` $\rightarrow$ `CLOSED`).
+- `BillingEmployeeResult`: Attendance breakdown, earnings, deductions, employer EPF/EPS/EDLI/ESI/LWF, billable component breakdown.
+- `BillingStatutoryReconciliation`: Payroll vs. Billing comparison for employee counts, pay days, OT hours, employer PF, and employer ESI.
+- `BillingInvoice`: Generated tax invoice with SAC code, CGST/SGST/IGST breakup, amount in words (Indian numbering format), and immutable calculation snapshots.
+- `ExcelTemplateMapping`: Configurable mapping configuration connecting SaaS fields to client legacy templates.
+
+---
+
+### 2. Core Calculation & Engine Services
+#### [NEW] [clientBillingEngine.ts](file:///d:/Joy%20PeopleHR%20new%20version/workforceos-enterprise-hrms/src/services/clientBilling/clientBillingEngine.ts)
+- Pure, deterministic calculation pipeline implementing Steps 1 through 10.
+- Dynamic wage determination supporting Monthly, Daily Wage, Hourly, Shift Rate, Piece Rate, and Fixed Contract wages.
+- Dynamic payable days engine respecting client salary divisor rules.
+- Employer statutory cost calculation separating employee deduction from employer liability (EPF 3.67%, EPS 8.33%, EDLI 0.5%, EPF Admin 0.5%, Employer ESI 3.25%).
+- Contractual billing charge calculation (Service Charges %, Transport per employee/day, Canteen recoveries, Uniform charges, Accommodations).
+- Indian GST Engine evaluating supplier state vs. client state (Intrastate CGST+SGST vs. Interstate IGST).
+- Human-readable calculation explainability tree generation.
+- Configurable financial rounding engine (`ROUND`, `ROUND_UP`, `ROUND_DOWN`).
+
+#### [NEW] [clientBillingRunService.ts](file:///d:/Joy%20PeopleHR%20new%20version/workforceos-enterprise-hrms/src/services/clientBilling/clientBillingRunService.ts)
+- CRUD and lifecycle orchestration for Client Billing Runs.
+- Attendance & Payroll data aggregation from active employees mapped to the contract.
+- Pre-invoice validation guard (checks locked attendance, active contracts, tax config, and positive totals).
+- Immutable snapshot creation (`payroll_snapshot`, `billing_snapshot`, `invoice_snapshot`) upon approval to guarantee historical reproducibility.
+- Sequence-safe, configurable invoice numbering generator (e.g. `JCS/2026-27/001`).
+
+#### [NEW] [clientMasterService.ts](file:///d:/Joy%20PeopleHR%20new%20version/workforceos-enterprise-hrms/src/services/clientBilling/clientMasterService.ts)
+- Management of Clients, Contracts, Deployments, and Billing Policies with effective dating and multi-tenant isolation.
+- Preloaded standard client profiles and contract templates (e.g. Heavy Engineering Manpower, Manufacturing Facility, IT Staffing, Security Services) serving as working dynamic configurations.
+
+#### [NEW] [billingExportEngine.ts](file:///d:/Joy%20PeopleHR%20new%20version/workforceos-enterprise-hrms/src/services/clientBilling/billingExportEngine.ts)
+- Multi-sheet Excel workbook generator:
+  - **Sheet 1**: Detailed Employee-wise Wage Register (Sl No, UAN, ESI IP, Days, OT, Earnings, Deductions, Net, Employer PF/ESI).
+  - **Sheet 2**: Salary & OT Workings.
+  - **Sheet 3**: Billing Summary & Contractual Charges.
+  - **Sheet 4**: Formal GST Tax Invoice.
+  - **Sheet 5**: Statutory PF/ESI Reconciliation Statement.
+- PDF generation support with Indian currency formatting and Amount in Words conversion (`rupeesInWords`).
+- Legacy Template Mapping Engine to import/map custom client formats without code changes.
+
+---
+
+### 3. User Interface & Enterprise Workspace
+#### [NEW] [ClientBillingMasterModule.tsx](file:///d:/Joy%20PeopleHR%20new%20version/workforceos-enterprise-hrms/src/features/clientBilling/ClientBillingMasterModule.tsx)
+The central workspace offering comprehensive client billing workflows:
+1. **Billing Runs Stepper & Dashboard**:
+   - Filter by Client, Contract, and Period.
+   - 4-Step Executive Calculation Cards (Employee Payroll $\rightarrow$ Statutory Cost $\rightarrow$ Contract Charges $\rightarrow$ GST Tax & Total).
+   - "How was this calculated?" Explainability drawer for every total.
+2. **Employee Breakdown & Drill-Down Modal**:
+   - Click any card (Wages, OT, Employer PF, Employer ESI, Transport) to inspect employee-level line items.
+3. **Billing Audit & Reconciliation View**:
+   - Head-to-head comparison: Payroll Employee Count vs. Billed Count, Payroll Pay Days vs. Billed Pay Days, Employer PF & ESI match status with visual indicators (`✓ Matched` / `⚠ Variance`).
+   - 10-point Pre-Invoice Validation Checklist with actionable fix buttons.
+4. **Visual Billing Rule Builder**:
+   - Interactive configuration UI to set up Service Charge %, Transport per employee/day, Canteen deductions, Divisor types, and custom formulas with live preview.
+5. **Invoice Generator & Approval Workflow**:
+   - Draft $\rightarrow$ Audit $\rightarrow$ Finance Review $\rightarrow$ Approve $\rightarrow$ Lock & Export.
+   - Multi-tab invoice preview (Tax Invoice, Wage Register, Statutory Summary, Legacy Sheet).
+   - 1-Click Excel & PDF exports.
+6. **Client & Contract Master Management View**:
+   - Manage Clients, GSTIN, Addresses, Contracts, and Employee Deployments.
+
+#### [MODIFY] [PayrollMasterModule.tsx](file:///d:/Joy%20PeopleHR%20new%20version/workforceos-enterprise-hrms/src/features/payroll/PayrollMasterModule.tsx)
+- Add "Client Wage Billing & Invoicing" to Payroll navigation tabs.
+
+#### [MODIFY] [Sidebar.tsx](file:///d:/Joy%20PeopleHR%20new%20version/workforceos-enterprise-hrms/src/components/shell/Sidebar.tsx)
+- Integrate dedicated navigation items under the Payroll / Financial Operations menu group:
+  - `Client Billing Runs`
+  - `Billing Rules & Setup`
+  - `Client Contracts & Deployments`
+  - `Billing Audit & Reconciliation`
+
+#### [MODIFY] [App.tsx](file:///d:/Joy%20PeopleHR%20new%20version/workforceos-enterprise-hrms/src/App.tsx)
+- Add routing hooks for `client-billing`, `billing-runs`, `billing-rules`, and `client-contracts`.
+
+---
+
+## Verification Plan
+
+### Automated & Logic Tests
+1. **Billing Calculation Pipeline Verification**:
+   - Verify calculation of Gross Billable Wages + Employer PF (13% / 12% + admin) + Employer ESI (3.25%) + Service Charge % + Flat Transport - Canteen Recoveries.
+   - Verify Taxable Value $\times$ GST rate (Intrastate 9% + 9% vs Interstate 18%).
+2. **Salary Divisor & Payable Days Verification**:
+   - Test calendar days (31/30), fixed 26 days, and working days divisors.
+3. **Reconciliation & Pre-Invoice Guard**:
+   - Test variance detection when employee count or attendance days differ.
+   - Confirm blocking when required statutory configurations or active contracts are absent.
+4. **Snapshot Immutability**:
+   - Ensure modifying a client's service charge rate does not alter previously finalized and approved billing runs.
+5. **Export Integrity**:
+   - Verify Excel export multi-sheet structure and Indian numbering format in Amount in Words.
+
+### Manual Verification
+- Test creating a billing run for a client contract with real employee data.
+- Run calculation, inspect explainability breakdown, drill down into employee line items, execute pre-invoice validation, approve the run, and download Excel/PDF exports.

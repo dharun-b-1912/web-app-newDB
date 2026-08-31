@@ -14,13 +14,8 @@ import { leaveApi } from './leaveApi';
 
 export const tlApi = {
   getTeamSummary(): TlTeamSummary {
-    let employees: any[] = [];
-    try {
-      const raw = localStorage.getItem('workforceos_employees_v2') || localStorage.getItem('workforceos_employees_v2_org-joy-01');
-      if (raw) employees = JSON.parse(raw);
-    } catch {}
-
-    const activeCount = employees.length > 0 ? employees.length : 2;
+    const employees = api.getEmployeesSync();
+    const activeCount = employees.length;
     const todayStr = new Date().toISOString().split('T')[0];
     const recs = attendanceApi.getDailyAttendance(todayStr);
     const presentCount = recs.filter(r => r.status === 'Present' || (r as any).first_punch_time || (r as any).in_time).length;
@@ -40,12 +35,7 @@ export const tlApi = {
   },
 
   getTeamMembers(): TlTeamMember[] {
-    let employees: any[] = [];
-    try {
-      const raw = localStorage.getItem('workforceos_employees_v2') || localStorage.getItem('workforceos_employees_v2_org-joy-01');
-      if (raw) employees = JSON.parse(raw);
-    } catch {}
-
+    const employees = api.getEmployeesSync();
     const todayStr = new Date().toISOString().split('T')[0];
     const recs = attendanceApi.getDailyAttendance(todayStr);
 

@@ -72,44 +72,7 @@ export interface EmployeePayrollContext {
 
 const STORAGE_KEY_PERIODS = 'workforce_payroll_periods_v1';
 
-const DEFAULT_PERIODS: PayrollPeriod[] = [
-  {
-    id: 'b0000001-0000-0000-0000-000000000001',
-    tenant_id: 'org-joy-01',
-    organization_id: 'org-joy-01',
-    period_name: 'August 2026',
-    start_date: '2026-08-01',
-    end_date: '2026-08-31',
-    pay_date: '2026-08-31',
-    status: 'FINALIZED',
-    policy_version: 'Joy Enterprise Standard Policy (v3.2)',
-    is_locked: true,
-  },
-  {
-    id: 'b0000002-0000-0000-0000-000000000002',
-    tenant_id: 'org-joy-01',
-    organization_id: 'org-joy-01',
-    period_name: 'July 2026',
-    start_date: '2026-07-01',
-    end_date: '2026-07-31',
-    pay_date: '2026-07-31',
-    status: 'LOCKED',
-    policy_version: 'Joy Enterprise Standard Policy (v3.2)',
-    is_locked: true,
-  },
-  {
-    id: 'b0000003-0000-0000-0000-000000000003',
-    tenant_id: 'org-joy-01',
-    organization_id: 'org-joy-01',
-    period_name: 'September 2026',
-    start_date: '2026-09-01',
-    end_date: '2026-09-30',
-    pay_date: '2026-09-30',
-    status: 'OPEN',
-    policy_version: 'Joy Enterprise Standard Policy (v3.2)',
-    is_locked: false,
-  },
-];
+const DEFAULT_PERIODS: PayrollPeriod[] = [];
 
 class PayrollPeriodService {
   /**
@@ -122,7 +85,7 @@ class PayrollPeriodService {
         .select('*')
         .order('start_date', { ascending: false });
 
-      if (!error && data && data.length > 0) {
+      if (!error && data !== null) {
         localStorage.setItem(STORAGE_KEY_PERIODS, JSON.stringify(data));
         return data as PayrollPeriod[];
       }

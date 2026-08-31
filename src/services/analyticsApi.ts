@@ -1,4 +1,7 @@
 import { MetricCatalogItem, CustomReportDefinition, ScheduledReportItem } from '../types/analytics';
+import { api } from './api';
+import { executiveAnalyticsService } from './executiveAnalyticsService';
+import { attendanceApi } from './attendanceApi';
 
 const metricCatalog: MetricCatalogItem[] = [
   { id: 'met-01', metric_code: 'ATTRITION_RATE', name: 'Annual Attrition Rate', description: 'Percentage of employee exits divided by average active headcount during period', formula: '(Total Exits / Average Active Headcount) * 100', source_module: 'CoreHR', period: 'Annual (YTD)', visibility: 'HR_Only', version: 'v2.1' },
@@ -27,25 +30,32 @@ export const analyticsApi = {
   getScheduledReports(): ScheduledReportItem[] {
     return scheduledReports;
   },
-  getExecutiveKpis() {
+  async getExecutiveKpis(companyId?: string) {
+    const summary = await executiveAnalyticsService.getExecutiveSummary(companyId);
+    const employees = await api.getEmployees(companyId ? { companyId } : undefined);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const dailyAtt = attendanceApi.getDailyAttendance(todayStr);
+    const presentCount = dailyAtt.filter(a => a.status === 'Present' || Boolean((a as any).first_punch_time)).length;
+    const attRate = employees.length > 0 ? (presentCount / employees.length) * 100 : 100;
+
     return {
-      totalEmployees: 428,
-      activeHeadcount: 416,
-      newHiresYtd: 38,
-      exitsYtd: 18,
-      attritionRate: 4.2,
-      openPositions: 14,
-      avgTimeToHireDays: 22,
-      attendanceRate: 96.4,
-      absenceRate: 3.6,
-      leaveUtilizationPct: 78.5,
-      monthlyPayrollLakhs: 570,
-      overtimeCostMonthly: 425000,
-      avgPerformanceRating: 4.35,
-      trainingCompletionPct: 91.8,
-      certificationCompliancePct: 97.2,
-      engagementEnps: '+68 eNPS',
-      openHelpdeskTickets: 14,
+      totalEmployees: summary.totalWorkforce || employees.length,
+      activeHeadcount: summary.activeWorkforce || employees.filter(e => e.status === 'Active' || e.status === 'Confirmed' || e.status === 'Probation').length,
+      newHiresYtd: summary.newHiresCount || 0,
+      exitsYtd: summary.exitsCount || 0,
+      attritionRate: summary.attritionRatePct || 0,
+      openPositions: summary.openPositionsCount || 0,
+      avgTimeToHireDays: 20,
+      attendanceRate: Number(attRate.toFixed(1)),
+      absenceRate: Number((100 - attRate).toFixed(1)),
+      leaveUtilizationPct: summary.leaveRatePct || 0,
+      monthlyPayrollLakhs: summary.workforceCostTotal ? Number((summary.workforceCostTotal / 100000).toFixed(1)) : 0,
+      overtimeCostMonthly: 0,
+      avgPerformanceRating: 4.5,
+      trainingCompletionPct: 95.0,
+      certificationCompliancePct: 98.0,
+      engagementEnps: '+72 eNPS',
+      openHelpdeskTickets: 0,
     };
   },
 };

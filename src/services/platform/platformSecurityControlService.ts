@@ -655,7 +655,7 @@ export const platformSecurityControlService = {
       {
         id: 'usr-superadmin',
         name: 'WorkForce Super Admin',
-        email: 'superadmin@workforceos.com',
+        email: 'superadmin@joypeoplehr.com',
         role: 'Super Administrator',
         mfa_enabled: true,
         mfa_method: 'Passkey (WebAuthn)',

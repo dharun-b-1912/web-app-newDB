@@ -227,6 +227,7 @@ export interface LeaveRequest {
   id: string;
   request_code: string;
   employee_id: string;
+  employee_code?: string;
   employee_name: string;
   department_name: string;
   company_id: string;

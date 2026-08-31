@@ -23,21 +23,26 @@ import { workOvertimeService } from '../../services/workOvertimeService';
 
 export const BreaksWorkHoursView: React.FC = () => {
   const { showToast } = useToast();
-  const [workHours, setWorkHours] = useState<WorkHourRecord[]>(() => workOvertimeService.getWorkHourRecords());
+  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [workHours, setWorkHours] = useState<WorkHourRecord[]>(() => workOvertimeService.getWorkHourRecords(new Date().toISOString().split('T')[0]));
   const [breakPolicy, setBreakPolicy] = useState<BreakPolicy>(() => workOvertimeService.getBreakPolicy());
   const [selectedRecord, setSelectedRecord] = useState<WorkHourRecord | null>(null);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
-  const refreshData = () => {
-    setWorkHours(workOvertimeService.getWorkHourRecords());
+  const refreshData = (date = selectedDate) => {
+    setWorkHours(workOvertimeService.getWorkHourRecords(date));
     setBreakPolicy(workOvertimeService.getBreakPolicy());
   };
 
   useEffect(() => {
-    const handleUpdate = () => refreshData();
+    refreshData(selectedDate);
+  }, [selectedDate]);
+
+  useEffect(() => {
+    const handleUpdate = () => refreshData(selectedDate);
     window.addEventListener('work-overtime:updated', handleUpdate);
     return () => window.removeEventListener('work-overtime:updated', handleUpdate);
-  }, []);
+  }, [selectedDate]);
 
   return (
     <div className="space-y-6">
@@ -55,14 +60,22 @@ export const BreaksWorkHoursView: React.FC = () => {
           </p>
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          leftIcon={<SlidersHorizontal className="w-4 h-4" />}
-          onClick={() => setIsConfigModalOpen(true)}
-        >
-          Break Policies
-        </Button>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={e => setSelectedDate(e.target.value)}
+            className="text-xs px-2.5 py-1.5 rounded-xl border border-gray-200 bg-white font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#07563D]"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<SlidersHorizontal className="w-4 h-4" />}
+            onClick={() => setIsConfigModalOpen(true)}
+          >
+            Break Policies
+          </Button>
+        </div>
       </div>
 
       {/* Break Policy Snapshot Cards */}

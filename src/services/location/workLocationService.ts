@@ -127,96 +127,7 @@ const STORAGE_KEY_LOCATIONS = 'workforceos_work_locations_v2';
 const STORAGE_KEY_ASSIGNMENTS = 'workforceos_emp_work_locations_v2';
 const STORAGE_KEY_EVENTS = 'workforceos_location_events_v2';
 
-const SEED_WORK_LOCATIONS: WorkLocation[] = [
-  {
-    id: 'c0000001-0000-0000-0000-000000000001',
-    tenant_id: 'org-joy-01',
-    organization_id: 'org-joy-01',
-    name: 'Joy Corporate Solutions Private Limited (HQ)',
-    code: 'LOC-7EQ3',
-    location_type: 'OFFICE',
-    address: 'D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur, Coimbatore, Tamil Nadu 641407',
-    city: 'Coimbatore',
-    state: 'Tamil Nadu',
-    country: 'India',
-    latitude: 11.0844,
-    longitude: 77.1263,
-    geofence_radius_meters: 100.00,
-    accuracy_requirement_meters: 50.00,
-    location_max_age_seconds: 60,
-    timezone: 'Asia/Kolkata',
-    is_active: true,
-    version: 1,
-    created_at: '2026-08-01T00:00:00Z',
-    updated_at: '2026-08-01T00:00:00Z',
-  },
-  {
-    id: 'c0000002-0000-0000-0000-000000000002',
-    tenant_id: 'org-joy-01',
-    organization_id: 'org-joy-01',
-    name: 'Chennai Factory Unit 02',
-    code: 'LOC-CHE-FAC02',
-    location_type: 'FACTORY',
-    address: 'Ambattur Industrial Estate, Chennai',
-    city: 'Chennai',
-    state: 'Tamil Nadu',
-    country: 'India',
-    latitude: 13.0827000,
-    longitude: 80.2707000,
-    geofence_radius_meters: 300.00,
-    accuracy_requirement_meters: 60.00,
-    location_max_age_seconds: 60,
-    timezone: 'Asia/Kolkata',
-    is_active: true,
-    version: 1,
-    created_at: '2026-08-01T00:00:00Z',
-    updated_at: '2026-08-01T00:00:00Z',
-  },
-  {
-    id: 'c0000003-0000-0000-0000-000000000003',
-    tenant_id: 'org-joy-01',
-    organization_id: 'org-joy-01',
-    name: 'Hosur Plant Assembly Area',
-    code: 'LOC-HOS-PLANT',
-    location_type: 'FACTORY',
-    address: 'SIPCOT Phase II, Hosur',
-    city: 'Hosur',
-    state: 'Tamil Nadu',
-    country: 'India',
-    latitude: 12.7409000,
-    longitude: 77.8253000,
-    geofence_radius_meters: 200.00,
-    accuracy_requirement_meters: 50.00,
-    location_max_age_seconds: 60,
-    timezone: 'Asia/Kolkata',
-    is_active: true,
-    version: 1,
-    created_at: '2026-08-01T00:00:00Z',
-    updated_at: '2026-08-01T00:00:00Z',
-  },
-  {
-    id: 'c0000004-0000-0000-0000-000000000004',
-    tenant_id: 'org-joy-01',
-    organization_id: 'org-joy-01',
-    name: 'Bangalore Innovation Hub',
-    code: 'LOC-BLR-HUB',
-    location_type: 'OFFICE',
-    address: 'Indiranagar 100ft Road, Bangalore',
-    city: 'Bangalore',
-    state: 'Karnataka',
-    country: 'India',
-    latitude: 12.9716000,
-    longitude: 77.5946000,
-    geofence_radius_meters: 100.00,
-    accuracy_requirement_meters: 40.00,
-    location_max_age_seconds: 60,
-    timezone: 'Asia/Kolkata',
-    is_active: true,
-    version: 1,
-    created_at: '2026-08-01T00:00:00Z',
-    updated_at: '2026-08-01T00:00:00Z',
-  },
-];
+const SEED_WORK_LOCATIONS: WorkLocation[] = [];
 
 class WorkLocationService {
   private getStorageKey(base: string, tenantId = getActiveOrgId()): string {
@@ -256,8 +167,7 @@ class WorkLocationService {
         .from('work_locations')
         .select('*')
         .order('name', { ascending: true });
-
-      if (!error && data && data.length > 0) {
+      if (!error && data !== null) {
         const locations: WorkLocation[] = data.map((d: any) => ({
           id: d.id,
           tenant_id: d.tenant_id || tenantId,
@@ -272,11 +182,15 @@ class WorkLocationService {
           postal_code: d.postal_code,
           latitude: Number(d.latitude),
           longitude: Number(d.longitude),
-          geofence_radius_meters: Number(d.geofence_radius_meters || 150),
+          geofence_radius_meters: Number(d.geofence_radius_meters) || 100,
           accuracy_requirement_meters: Number(d.accuracy_requirement_meters || 50),
           location_max_age_seconds: Number(d.location_max_age_seconds || 60),
           timezone: d.timezone || 'Asia/Kolkata',
-          is_active: d.is_active ?? true,
+          ip_ranges: Array.isArray(d.ip_ranges) ? d.ip_ranges : [],
+          bssid_list: Array.isArray(d.bssid_list) ? d.bssid_list : [],
+          qr_code_enabled: Boolean(d.qr_code_enabled),
+          biometric_enabled: Boolean(d.biometric_enabled),
+          is_active: Boolean(d.is_active),
           version: d.version || 1,
           created_at: d.created_at || new Date().toISOString(),
           updated_at: d.updated_at || new Date().toISOString(),
@@ -466,7 +380,7 @@ class WorkLocationService {
         .select('*')
         .eq('is_active', true);
 
-      if (!error && data && data.length > 0) {
+      if (!error && data !== null) {
         const assignments: EmployeeWorkLocationAssignment[] = data.map((d: any) => ({
           id: d.id,
           tenant_id: d.tenant_id || tenantId,

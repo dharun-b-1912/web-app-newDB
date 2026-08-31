@@ -17,6 +17,35 @@ export const reportingHierarchyService = {
     return employees.filter((e) => e.employment?.reporting_manager_id === managerId);
   },
 
+  // Get operational reports for a specific team lead
+  getTeamLeadReports(teamLeadId: string, employees: Employee[]): Employee[] {
+    return employees.filter((e) => e.employment?.team_lead_id === teamLeadId);
+  },
+
+  // Resolve an employee's full management line (Team Lead, Reporting Manager, Secondary Manager)
+  getSupervisors(employeeId: string, employees: Employee[]): {
+    reportingManager?: Employee;
+    secondaryManager?: Employee;
+    teamLead?: Employee;
+  } {
+    const emp = employees.find((e) => e.id === employeeId);
+    if (!emp) return {};
+
+    const reportingManager = emp.employment?.reporting_manager_id
+      ? employees.find((e) => e.id === emp.employment?.reporting_manager_id)
+      : undefined;
+
+    const secondaryManager = emp.employment?.secondary_manager_id
+      ? employees.find((e) => e.id === emp.employment?.secondary_manager_id)
+      : undefined;
+
+    const teamLead = emp.employment?.team_lead_id
+      ? employees.find((e) => e.id === emp.employment?.team_lead_id)
+      : undefined;
+
+    return { reportingManager, secondaryManager, teamLead };
+  },
+
   // Recursively compute total team size (direct + indirect reports)
   getTotalTeam(managerId: string, employees: Employee[], visited = new Set<string>()): Employee[] {
     if (visited.has(managerId)) return []; // Prevent infinite circular loop

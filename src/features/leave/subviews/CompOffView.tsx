@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { leaveApi } from '../../../services/leaveApi';
+import { api } from '../../../services/api';
 import { CompOffGrant } from '../../../types/leave';
 import { Badge } from '../../../components/ui/Badge';
 import {
@@ -27,6 +28,10 @@ export const CompOffView: React.FC = () => {
     setGrants(leaveApi.getCompOffGrants());
   }, []);
 
+  const currentUser = api.getCurrentUser();
+  const employees = api.getEmployeesSync();
+  const currentEmp = employees.find(e => e.id === currentUser?.employee_id || e.work_email === currentUser?.email) || employees[0];
+
   const handleSubmitClaim = (e: React.FormEvent) => {
     e.preventDefault();
     if (!reason.trim()) return;
@@ -35,8 +40,8 @@ export const CompOffView: React.FC = () => {
     expiryDateObj.setDate(expiryDateObj.getDate() + 60);
 
     leaveApi.claimCompOffCredit({
-      employee_id: 'emp-101',
-      employee_name: 'Rajesh Kumar',
+      employee_id: currentEmp?.id || currentUser?.employee_id || 'WF-1001',
+      employee_name: currentEmp ? (currentEmp.display_name || `${currentEmp.first_name} ${currentEmp.last_name}`.trim()) : (currentUser?.name || 'Authorized Staff'),
       worked_date: workedDate,
       earned_date: workedDate,
       reason,

@@ -18,8 +18,8 @@ export interface SubscriptionHistoryEntry {
 }
 
 export interface SubscriptionContractItem {
-  id: string; // e.g. 'sub-joy-prof-01'
-  tenant_id: string; // e.g. 'org-joy-corp'
+  id: string; // e.g. 'sub-joy-01'
+  tenant_id: string; // e.g. 'org-joy-01'
   tenant_name: string;
   plan: 'Starter' | 'Professional' | 'Business' | 'Enterprise';
   plan_id: string;
@@ -46,51 +46,139 @@ export interface SubscriptionContractItem {
   history: SubscriptionHistoryEntry[];
 }
 
-// Canonical Primary Subscription: Joy Corporate Solutions Pvt Ltd
-const defaultJoySubscription: SubscriptionContractItem = {
-  id: 'sub-joy-prof-01',
-  tenant_id: 'org-joy-corp',
-  tenant_name: 'Joy Corporate Solutions Pvt Ltd',
-  plan: 'Professional',
-  plan_id: 'plan-professional',
-  billing_cycle: 'Monthly',
-  seats: 100,
-  used_seats: 42,
-  price_per_seat: 450,
-  total_amount: 45000,
-  currency: 'INR',
-  status: 'Active',
-  start_date: new Date().toISOString().slice(0, 10),
-  renewal_date: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
-  auto_renew: true,
-  linked_invoices_count: 1,
-  last_invoice_id: 'INV-2026-000001',
-  last_invoice_status: 'Paid',
-  storage_used_gb: 4.2,
-  storage_limit_gb: 50,
-  api_used_calls: 18450,
-  api_limit_calls: 100000,
-  biometric_devices_used: 2,
-  biometric_devices_limit: 10,
-  history: [
-    {
-      id: 'h-1',
-      timestamp: new Date().toISOString().slice(0, 10),
-      actor: 'Super Admin',
-      action: 'SUBSCRIPTION_ACTIVATED',
-      details: 'Activated Professional Plan with 100 included seats upon settlement of INV-2026-000001',
-    },
-  ],
-};
+import { platformTenantService } from './platformTenantService';
 
-let initialSubscriptions: SubscriptionContractItem[] = [defaultJoySubscription];
+let initialSubscriptions: SubscriptionContractItem[] = [];
 
 export const platformSubscriptionService = {
+  /**
+   * Fetch live subscriptions directly from Supabase / live organizations.
+   */
+  async fetchLiveFromSupabase(): Promise<SubscriptionContractItem[]> {
+    console.log('[JOY-PLATFORM][SUBSCRIPTION-SYNC] Fetching live contracts from database...');
+    
+    if (isSupabaseEnabled) {
+      try {
+        const { data: subRows, error } = await supabase
+          .from('platform_subscriptions')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && subRows && subRows.length > 0) {
+          const liveContracts: SubscriptionContractItem[] = subRows.map((row: any) => {
+            const org = platformTenantService.getOrganizationById(row.tenant_id);
+            const planName = (row.plan_name || org?.plan || 'Enterprise') as any;
+            const seatsAlloc = Number(row.seats_allocated) || Number(org?.seat_limit) || 50;
+            const usedSeats = Number(row.seats_used) || Number(org?.active_employees) || 1;
+            const totalAmt = Number(row.total_amount) || Number(org?.mrr) || 180000;
+
+            return {
+              id: row.id,
+              tenant_id: row.tenant_id,
+              tenant_name: org?.legal_name || row.tenant_name || 'Customer Organization',
+              plan: planName,
+              plan_id: row.plan_id || `plan-${planName.toLowerCase()}`,
+              billing_cycle: row.billing_cycle || org?.billing_cycle || 'Monthly',
+              seats: seatsAlloc,
+              used_seats: usedSeats,
+              price_per_seat: Number(row.unit_price) || (seatsAlloc > 0 ? Math.round(totalAmt / seatsAlloc) : 450),
+              total_amount: totalAmt,
+              currency: 'INR',
+              status: (row.status as any) || 'Active',
+              start_date: row.created_at ? row.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+              renewal_date: org?.renewal_date || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+              auto_renew: true,
+              linked_invoices_count: 1,
+              last_invoice_id: `INV-${row.tenant_id?.slice(-6) || '2026'}`,
+              last_invoice_status: 'Paid',
+              storage_used_gb: org?.storage_used_gb || 0.1,
+              storage_limit_gb: org?.storage_quota_gb || 50,
+              api_used_calls: org?.api_calls_this_month || 0,
+              api_limit_calls: 100000,
+              biometric_devices_used: 0,
+              biometric_devices_limit: 10,
+              history: [
+                {
+                  id: `h-${row.id}`,
+                  timestamp: row.created_at ? row.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+                  actor: 'Super Admin',
+                  action: 'CONTRACT_SYNCHRONIZED',
+                  details: `Live database contract synchronized for ${org?.legal_name || row.tenant_id}`,
+                },
+              ],
+            };
+          });
+
+          initialSubscriptions = liveContracts;
+          console.log(`[JOY-PLATFORM][SUBSCRIPTION-SYNC] Loaded ${liveContracts.length} live contracts from Supabase.`);
+          return initialSubscriptions;
+        }
+      } catch (err) {
+        console.warn('[JOY-PLATFORM][SUBSCRIPTION-SYNC] Supabase fetch fallback:', err);
+      }
+    }
+
+    // Fallback: Synthesize contracts from live organizations
+    const orgs = platformTenantService.getOrganizations().items;
+    initialSubscriptions = orgs.map((org) => {
+      const seatsAlloc = org.seat_limit || 50;
+      const usedSeats = org.active_employees || 1;
+      const totalAmt = org.mrr || 180000;
+
+      return {
+        id: `sub-${org.tenant_id}`,
+        tenant_id: org.tenant_id,
+        tenant_name: org.legal_name,
+        plan: org.plan as any,
+        plan_id: `plan-${org.plan.toLowerCase()}`,
+        billing_cycle: org.billing_cycle as any,
+        seats: seatsAlloc,
+        used_seats: usedSeats,
+        price_per_seat: seatsAlloc > 0 ? Math.round(totalAmt / seatsAlloc) : 450,
+        total_amount: totalAmt,
+        currency: 'INR',
+        status: org.status === 'Active' ? 'Active' : org.status === 'Trial' ? 'Trial' : 'Suspended',
+        start_date: org.created_at || new Date().toISOString().slice(0, 10),
+        renewal_date: org.renewal_date || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+        auto_renew: org.auto_renew,
+        linked_invoices_count: 1,
+        last_invoice_id: `INV-${org.tenant_id.slice(-6)}`,
+        last_invoice_status: org.billing_status === 'Paid' ? 'Paid' : 'Issued',
+        storage_used_gb: org.storage_used_gb || 0.1,
+        storage_limit_gb: org.storage_quota_gb || 50,
+        api_used_calls: org.api_calls_this_month || 0,
+        api_limit_calls: 100000,
+        biometric_devices_used: 0,
+        biometric_devices_limit: 10,
+        history: [
+          {
+            id: `h-${org.id}`,
+            timestamp: org.created_at || new Date().toISOString().slice(0, 10),
+            actor: 'Super Admin',
+            action: 'CONTRACT_SYNCHRONIZED',
+            details: `Active subscription linked to organization ${org.legal_name}`,
+          },
+        ],
+      };
+    });
+
+    console.log(`[JOY-PLATFORM][SUBSCRIPTION-SYNC] Synchronized ${initialSubscriptions.length} subscriptions from active organizations.`);
+    return initialSubscriptions;
+  },
+
   getSubscriptions(filters?: {
     plan?: string;
     status?: string;
     search?: string;
   }): SubscriptionContractItem[] {
+    // If empty, auto-sync from organizations
+    if (initialSubscriptions.length === 0) {
+      const orgs = platformTenantService.getOrganizations().items;
+      if (orgs.length > 0) {
+        this.fetchLiveFromSupabase().catch(() => {});
+      }
+    }
+
     let result = [...initialSubscriptions];
 
     if (filters?.plan && filters.plan !== 'All') {

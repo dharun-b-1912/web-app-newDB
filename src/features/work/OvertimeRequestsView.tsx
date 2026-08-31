@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { OvertimeRequest, OvertimeRequestStatus, CompensationType } from '../../types/workOvertime';
 import { workOvertimeService } from '../../services/workOvertimeService';
+import { api } from '../../services/api';
 
 export const OvertimeRequestsView: React.FC = () => {
   const { showToast } = useToast();
@@ -30,8 +31,19 @@ export const OvertimeRequestsView: React.FC = () => {
   const [isIndividualModalOpen, setIsIndividualModalOpen] = useState(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
 
+  const activeComp = api.getActiveCompany();
+  const employees = api.getEmployeesSync(activeComp?.id) || [];
+  const currentEmp = employees[0] || {
+    id: 'emp-admin-001',
+    display_name: 'Dharun B',
+    employee_code: 'JCS-017',
+    department_name: 'Engineering & Management',
+    designation_title: 'Engineering Lead',
+  };
+
   // Individual Form State
-  const [date, setDate] = useState('2026-08-27');
+  const [selectedEmpId, setSelectedEmpId] = useState(currentEmp.id);
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [startTime, setStartTime] = useState('18:30');
   const [endTime, setEndTime] = useState('21:30');
   const [expectedHours, setExpectedHours] = useState(3.0);
@@ -40,9 +52,16 @@ export const OvertimeRequestsView: React.FC = () => {
   const [workType, setWorkType] = useState<OvertimeRequest['work_type']>('MANUFACTURING');
   const [productionLine, setProductionLine] = useState('Line B - High Speed Assembly');
   const [machineId, setMachineId] = useState('MCH-EXT-440');
-  const [projectName, setProjectName] = useState('WorkForceOS Enterprise');
+  const [projectName, setProjectName] = useState('Joy PeopleHR — HR & Payroll SaaS');
   const [location, setLocation] = useState('Coimbatore HQ / Plant 1');
   const [compType, setCompType] = useState<CompensationType>('PAID_OVERTIME');
+
+  // Bulk Form State
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(() => new Set(employees.map(e => e.id)));
+  const [bulkDate, setBulkDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [bulkStartTime, setBulkStartTime] = useState('22:00');
+  const [bulkEndTime, setBulkEndTime] = useState('02:00');
+  const [bulkHours, setBulkHours] = useState(4.0);
 
   // Approver modal
   const [selectedRequestForAction, setSelectedRequestForAction] = useState<OvertimeRequest | null>(null);
@@ -58,37 +77,39 @@ export const OvertimeRequestsView: React.FC = () => {
     return () => window.removeEventListener('work-overtime:updated', handleUpdate);
   }, []);
 
-  const handleApprove = (id: string) => {
-    workOvertimeService.approveOvertimeRequest(id, 'HOD / Department Manager', approverComment);
+  const handleApprove = async (id: string) => {
+    await workOvertimeService.approveOvertimeRequest(id, currentEmp.display_name || (currentEmp as any).name || 'Department Manager', approverComment);
     showToast('Overtime request approved and mapped to operational payroll engine!');
     setSelectedRequestForAction(null);
     setApproverComment('');
     refreshList();
   };
 
-  const handleReject = (id: string) => {
-    workOvertimeService.rejectOvertimeRequest(id, 'HOD / Department Manager', approverComment);
+  const handleReject = async (id: string) => {
+    await workOvertimeService.rejectOvertimeRequest(id, currentEmp.display_name || (currentEmp as any).name || 'Department Manager', approverComment);
     showToast('Overtime request rejected');
     setSelectedRequestForAction(null);
     setApproverComment('');
     refreshList();
   };
 
-  const handleSubmitIndividual = (e: React.FormEvent) => {
+  const handleSubmitIndividual = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customReason.trim()) {
       showToast('Please provide an operational business rationale');
       return;
     }
 
+    const emp = employees.find(e => e.id === selectedEmpId) || currentEmp;
     const estimatedCost = expectedHours * 350 * 1.5;
-    workOvertimeService.submitOvertimeRequest({
-      tenant_id: 'default-tenant',
-      employee_id: 'emp-001',
-      employee_name: 'Arun Kumar',
-      employee_code: 'JOY-0104',
-      department: 'Engineering',
-      designation: 'Senior Lead Engineer',
+
+    await workOvertimeService.submitOvertimeRequest({
+      tenant_id: 'org-joy-01',
+      employee_id: emp.id,
+      employee_name: emp.display_name || `${(emp as any).first_name || ''} ${(emp as any).last_name || ''}`.trim() || (emp as any).name || 'Employee',
+      employee_code: emp.employee_code || `WF-${emp.id}`,
+      department: emp.department_name || (emp as any).department || 'Operations',
+      designation: emp.designation_title || (emp as any).designation || 'Staff Specialist',
       date,
       start_time: startTime,
       end_time: endTime,
@@ -112,47 +133,74 @@ export const OvertimeRequestsView: React.FC = () => {
   };
 
   const handleBulkSubmit = () => {
-    const sampleStaff = [
-      { id: 'emp-021', name: 'Ramesh Balan', code: 'JOY-0221', department: 'Manufacturing Ops' },
-      { id: 'emp-022', name: 'Saravanan K', code: 'JOY-0222', department: 'Manufacturing Ops' },
-      { id: 'emp-023', name: 'Velmurugan M', code: 'JOY-0223', department: 'Manufacturing Ops' },
-      { id: 'emp-024', name: 'Praveen Chandran', code: 'JOY-0224', department: 'Manufacturing Ops' },
-    ];
+    const selectedStaff = employees
+      .filter(e => bulkSelectedIds.has(e.id))
+      .map(e => ({
+        id: e.id,
+        name: e.display_name || `${(e as any).first_name || ''} ${(e as any).last_name || ''}`.trim() || (e as any).name || 'Employee',
+        code: e.employee_code || `WF-${e.id}`,
+        department: e.department_name || (e as any).department || 'Operations',
+      }));
 
-    const count = workOvertimeService.bulkAssignOvertime(sampleStaff, {
-      date: '2026-08-27',
-      start_time: '22:00',
-      end_time: '02:00',
-      expected_hours: 4.0,
+    if (selectedStaff.length === 0) {
+      showToast('Please select at least one employee for bulk overtime dispatch');
+      return;
+    }
+
+    const count = workOvertimeService.bulkAssignOvertime(selectedStaff, {
+      date: bulkDate,
+      start_time: bulkStartTime,
+      end_time: bulkEndTime,
+      expected_hours: bulkHours,
       reason_type: 'PRODUCTION_TARGET',
-      custom_reason: 'Night Shift production surge for Q3 export dispatch',
+      custom_reason: 'Night Shift production surge for scheduled operational dispatch',
       work_type: 'MANUFACTURING',
-      production_line: 'Line A - Press Stamping',
+      production_line: 'Line A - High Precision Operations',
       machine_id: 'PRESS-HYD-09',
       location: 'Plant 1 - Coimbatore',
     });
 
-    showToast(`Successfully assigned and approved bulk overtime for ${count} floor operators!`);
+    showToast(`Successfully assigned and approved bulk overtime for ${count} personnel!`);
     setIsBulkModalOpen(false);
     refreshList();
   };
 
   const filteredRequests = requests.filter(req => {
-    if (activeTab === 'MY_REQUESTS') return req.employee_id === 'emp-001';
-    if (activeTab === 'PENDING') return req.status === 'PENDING_MANAGER' || req.status === 'PENDING_HR';
+    if (activeTab === 'MY_REQUESTS') return req.employee_id === currentEmp.id;
+    if (activeTab === 'PENDING') return req.status === 'PENDING_MANAGER' || req.status === 'PENDING_HR' || req.status === 'SUBMITTED';
     if (activeTab === 'APPROVED') return req.status === 'APPROVED';
     if (activeTab === 'REJECTED') return req.status === 'REJECTED';
     return true;
   });
+
+  const getStatusBadge = (status: OvertimeRequestStatus) => {
+    switch (status) {
+      case 'APPROVED':
+        return <Badge variant="success">Approved</Badge>;
+      case 'PENDING_MANAGER':
+      case 'PENDING_HR':
+      case 'SUBMITTED':
+        return <Badge variant="warning">Pending Authorization</Badge>;
+      case 'REJECTED':
+        return <Badge variant="danger">Rejected</Badge>;
+      default:
+        return <Badge variant="neutral">{status}</Badge>;
+    }
+  };
 
   return (
     <div className="space-y-6">
       {/* Top Banner */}
       <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-gray-900 tracking-tight">Overtime Requests & Pre-Approval Workflow</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-bold text-gray-900 tracking-tight">Overtime Authorization Desk</h2>
+            <Badge variant="outline" size="sm">
+              Live DB Outbox
+            </Badge>
+          </div>
           <p className="text-xs text-gray-500 mt-1">
-            Planned & emergency overtime requests. Note: <span className="font-semibold text-gray-700">Requested OT ≠ Actual Work ≠ Payable OT</span>.
+            Review, pre-approve and bulk-allocate overtime shifts with strict policy enforcement and zero payroll variance.
           </p>
         </div>
 
@@ -163,166 +211,124 @@ export const OvertimeRequestsView: React.FC = () => {
             leftIcon={<Users className="w-4 h-4" />}
             onClick={() => setIsBulkModalOpen(true)}
           >
-            Bulk Shift OT
+            Bulk Shift Dispatch
           </Button>
           <Button
             size="sm"
             leftIcon={<Plus className="w-4 h-4" />}
             onClick={() => setIsIndividualModalOpen(true)}
           >
-            + Request Overtime
+            Request Overtime
           </Button>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
-        <button
-          onClick={() => setActiveTab('PENDING')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
-            activeTab === 'PENDING' ? 'bg-[#07563D] text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          <span>Pending Approvals</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-400 text-gray-950 font-black">
-            {requests.filter(r => r.status === 'PENDING_MANAGER' || r.status === 'PENDING_HR').length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('MY_REQUESTS')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-            activeTab === 'MY_REQUESTS' ? 'bg-[#07563D] text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          My Requests
-        </button>
-
-        <button
-          onClick={() => setActiveTab('APPROVED')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-            activeTab === 'APPROVED' ? 'bg-[#07563D] text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          Approved History
-        </button>
-
-        <button
-          onClick={() => setActiveTab('REJECTED')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-            activeTab === 'REJECTED' ? 'bg-[#07563D] text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          Rejected
-        </button>
-
-        <button
-          onClick={() => setActiveTab('ALL')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-            activeTab === 'ALL' ? 'bg-[#07563D] text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          All Requests ({requests.length})
-        </button>
+      <div className="flex items-center justify-between border-b border-gray-200">
+        <div className="flex gap-2">
+          {(
+            [
+              { id: 'PENDING', label: 'Pending Approval', count: requests.filter(r => r.status === 'PENDING_MANAGER' || r.status === 'PENDING_HR' || r.status === 'SUBMITTED').length },
+              { id: 'APPROVED', label: 'Approved Logs', count: requests.filter(r => r.status === 'APPROVED').length },
+              { id: 'MY_REQUESTS', label: 'My Submissions' },
+              { id: 'REJECTED', label: 'Rejected' },
+              { id: 'ALL', label: 'All Requests' },
+            ] as Array<{ id: 'MY_REQUESTS' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'; label: string; count?: number }>
+          ).map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2.5 text-xs font-bold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
+                activeTab === tab.id
+                  ? 'border-[#07563D] text-[#07563D]'
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              {tab.label}
+              {tab.count !== undefined && tab.count > 0 && (
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === tab.id ? 'bg-emerald-100 text-[#07563D]' : 'bg-gray-100 text-gray-600'}`}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Requests Table */}
-      <Card className="p-5 bg-white rounded-2xl border border-gray-200/80 shadow-xs">
+      {/* Table */}
+      <Card className="bg-white rounded-2xl border border-gray-200/80 shadow-xs overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-gray-50/60">
-              <TableHead className="font-bold text-xs text-gray-700">Employee & Dept</TableHead>
-              <TableHead className="font-bold text-xs text-gray-700">Date & Window</TableHead>
-              <TableHead className="font-bold text-xs text-gray-700">Expected Hours</TableHead>
-              <TableHead className="font-bold text-xs text-gray-700">Reason & Work Type</TableHead>
-              <TableHead className="font-bold text-xs text-gray-700">Production / Project Target</TableHead>
-              <TableHead className="font-bold text-xs text-gray-700">Compensation</TableHead>
-              <TableHead className="font-bold text-xs text-gray-700">Status</TableHead>
-              <TableHead className="font-bold text-xs text-gray-700 text-right">Action</TableHead>
+            <TableRow className="bg-gray-50/50 text-[11px] font-bold text-gray-500 uppercase">
+              <TableHead className="pl-4">Request Ref</TableHead>
+              <TableHead>Employee</TableHead>
+              <TableHead>Date & Window</TableHead>
+              <TableHead>Duration</TableHead>
+              <TableHead>Reason & Context</TableHead>
+              <TableHead>Compensation</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right pr-4">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredRequests.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-xs text-gray-500">
-                  No overtime requests found in this view.
+                <TableCell colSpan={8} className="text-center py-12 text-gray-400">
+                  <Clock className="w-8 h-8 text-gray-300 mx-auto mb-2 opacity-60" />
+                  <p className="text-xs font-medium">No overtime records found in this queue</p>
                 </TableCell>
               </TableRow>
             ) : (
               filteredRequests.map(req => (
-                <TableRow key={req.id} className="hover:bg-gray-50/60 transition-colors">
-                  <TableCell>
-                    <div className="font-bold text-xs text-gray-900">{req.employee_name}</div>
-                    <div className="text-[10px] text-gray-500">
-                      {req.employee_code} • {req.department}
-                    </div>
+                <TableRow key={req.id} className="text-xs hover:bg-gray-50/60 transition-colors">
+                  <TableCell className="pl-4 font-mono font-bold text-[#07563D]">
+                    {req.id}
                   </TableCell>
                   <TableCell>
-                    <div className="text-xs font-semibold text-gray-900">{req.date}</div>
-                    <div className="text-[10px] font-mono text-gray-500">
-                      {req.start_time} - {req.end_time}
-                    </div>
+                    <div className="font-bold text-gray-900">{req.employee_name}</div>
+                    <div className="text-[10px] text-gray-500 font-mono">{req.employee_code} • {req.department}</div>
                   </TableCell>
                   <TableCell>
-                    <div className="text-xs font-bold text-gray-900">{req.expected_hours}h</div>
-                    {req.actual_hours && (
-                      <div className="text-[10px] text-gray-500">Actual: {req.actual_hours}h</div>
+                    <div className="font-semibold text-gray-900">{req.date}</div>
+                    <div className="text-[10px] text-gray-500 font-mono">{req.start_time} - {req.end_time}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="font-black text-gray-900">{req.expected_hours}h</div>
+                    {req.approved_hours !== undefined && (
+                      <div className="text-[10px] text-emerald-600 font-bold">{req.approved_hours}h Apprv</div>
                     )}
                   </TableCell>
+                  <TableCell className="max-w-xs">
+                    <div className="font-semibold text-gray-900 truncate">{req.reason_type.replace('_', ' ')}</div>
+                    <div className="text-[10px] text-gray-500 truncate" title={req.custom_reason}>{req.custom_reason}</div>
+                  </TableCell>
                   <TableCell>
-                    <div className="text-xs font-semibold text-gray-900">{req.reason_type.replace(/_/g, ' ')}</div>
-                    <div className="text-[10px] text-gray-500 truncate max-w-[200px]" title={req.custom_reason}>
-                      {req.custom_reason}
+                    <div className="font-bold text-gray-800">
+                      {req.compensation_type === 'PAID_OVERTIME' ? 'Paid (1.5x)' : 'Comp-Off'}
                     </div>
+                    {req.estimated_cost !== undefined && (
+                      <div className="text-[10px] text-[#07563D] font-black">₹{req.estimated_cost.toFixed(2)}</div>
+                    )}
                   </TableCell>
-                  <TableCell>
-                    <div className="text-xs font-medium text-gray-800">
-                      {req.production_line || req.project_name || req.location}
-                    </div>
-                    {req.machine_id && <div className="text-[10px] text-gray-500">Machine: {req.machine_id}</div>}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={req.compensation_type === 'COMP_OFF' ? 'amber' : 'outline'} size="sm">
-                      {req.compensation_type === 'COMP_OFF' ? 'Comp-Off Credit' : 'Paid Overtime'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        req.status === 'APPROVED'
-                          ? 'emerald'
-                          : req.status === 'REJECTED'
-                          ? 'rose'
-                          : 'amber'
-                      }
-                      size="sm"
-                    >
-                      {req.status.replace(/_/g, ' ')}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {req.status === 'PENDING_MANAGER' || req.status === 'PENDING_HR' ? (
+                  <TableCell>{getStatusBadge(req.status)}</TableCell>
+                  <TableCell className="text-right pr-4">
+                    {req.status === 'PENDING_MANAGER' || req.status === 'PENDING_HR' || req.status === 'SUBMITTED' ? (
                       <div className="flex items-center justify-end gap-1.5">
                         <Button
-                          size="sm"
-                          className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                          onClick={() => handleApprove(req.id)}
-                        >
-                          Approve
-                        </Button>
-                        <Button
-                          size="sm"
                           variant="outline"
-                          className="h-7 text-xs border-rose-200 text-rose-700 hover:bg-rose-50"
-                          onClick={() => handleReject(req.id)}
+                          size="sm"
+                          className="text-emerald-700 hover:bg-emerald-50 h-7 text-xs border-emerald-300"
+                          onClick={() => {
+                            setSelectedRequestForAction(req);
+                          }}
                         >
-                          Reject
+                          <Check className="w-3.5 h-3.5 mr-1" /> Authorize
                         </Button>
                       </div>
                     ) : (
-                      <span className="text-[10px] text-gray-400 font-medium">
-                        {req.approver_name ? `By ${req.approver_name}` : 'Processed'}
-                      </span>
+                      <div className="text-[10px] text-gray-400 font-medium">
+                        {req.approver_name ? `By ${req.approver_name}` : 'Completed'}
+                      </div>
                     )}
                   </TableCell>
                 </TableRow>
@@ -332,21 +338,86 @@ export const OvertimeRequestsView: React.FC = () => {
         </Table>
       </Card>
 
+      {/* Authorization Modal */}
+      {selectedRequestForAction && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl border border-gray-200 p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="text-base font-bold text-gray-900">Review Overtime Authorization</h3>
+              <button onClick={() => setSelectedRequestForAction(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                <div className="font-bold text-gray-900">{selectedRequestForAction.employee_name} ({selectedRequestForAction.employee_code})</div>
+                <div className="text-gray-500 mt-0.5">{selectedRequestForAction.date} • {selectedRequestForAction.start_time} - {selectedRequestForAction.end_time} ({selectedRequestForAction.expected_hours}h)</div>
+                <div className="text-gray-700 font-medium mt-1">"{selectedRequestForAction.custom_reason}"</div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-700 mb-1">Supervisor Decision Comment</label>
+                <textarea
+                  value={approverComment}
+                  onChange={e => setApproverComment(e.target.value)}
+                  placeholder="Enter decision rationale for payroll audit log..."
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 font-medium h-20 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-rose-700 border-rose-200 hover:bg-rose-50"
+                onClick={() => handleReject(selectedRequestForAction.id)}
+              >
+                Reject Request
+              </Button>
+              <Button
+                size="sm"
+                className="bg-[#07563D] hover:bg-[#064e37]"
+                onClick={() => handleApprove(selectedRequestForAction.id)}
+              >
+                Approve & Sync Payroll
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Individual Request Modal */}
       {isIndividualModalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-gray-200 p-6 space-y-5">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-gray-200 p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <h3 className="text-base font-bold text-gray-900">Request Overtime Pre-Approval</h3>
+              <h3 className="text-base font-bold text-gray-900">Pre-Approval Overtime Request</h3>
               <button onClick={() => setIsIndividualModalOpen(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmitIndividual} className="space-y-4 text-xs">
+            <form onSubmit={handleSubmitIndividual} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-gray-700 mb-1">Select Employee</label>
+                <select
+                  value={selectedEmpId}
+                  onChange={e => setSelectedEmpId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 font-medium"
+                >
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || (emp as any).name || 'Employee'} ({emp.employee_code || emp.id}) - {emp.department_name || (emp as any).department || 'Operations'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">Date</label>
+                  <label className="block font-bold text-gray-700 mb-1">Overtime Date</label>
                   <input
                     type="date"
                     value={date}
@@ -379,10 +450,12 @@ export const OvertimeRequestsView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">Expected Hours</label>
+                  <label className="block font-bold text-gray-700 mb-1">Estimated Hours</label>
                   <input
                     type="number"
                     step="0.5"
+                    min="0.5"
+                    max="12"
                     value={expectedHours}
                     onChange={e => setExpectedHours(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl border border-gray-200 font-medium"
@@ -390,13 +463,13 @@ export const OvertimeRequestsView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">Compensation</label>
+                  <label className="block font-bold text-gray-700 mb-1">Compensation Plan</label>
                   <select
                     value={compType}
                     onChange={e => setCompType(e.target.value as CompensationType)}
                     className="w-full px-3 py-2 rounded-xl border border-gray-200 font-medium"
                   >
-                    <option value="PAID_OVERTIME">Paid Overtime (Payroll)</option>
+                    <option value="PAID_OVERTIME">Paid Overtime (1.5x Premium)</option>
                     <option value="COMP_OFF">Compensatory Off Credit</option>
                   </select>
                 </div>
@@ -454,7 +527,7 @@ export const OvertimeRequestsView: React.FC = () => {
                 <Button variant="outline" size="sm" type="button" onClick={() => setIsIndividualModalOpen(false)}>
                   Cancel
                 </Button>
-                <Button size="sm" type="submit">
+                <Button size="sm" type="submit" className="bg-[#07563D] hover:bg-[#064e37]">
                   Submit for Approval
                 </Button>
               </div>
@@ -466,7 +539,7 @@ export const OvertimeRequestsView: React.FC = () => {
       {/* Bulk Shift Modal */}
       {isBulkModalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl border border-gray-200 p-6 space-y-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-gray-200 p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <h3 className="text-base font-bold text-gray-900">Bulk Shift Overtime Dispatch</h3>
               <button onClick={() => setIsBulkModalOpen(false)} className="text-gray-400 hover:text-gray-600">
@@ -474,22 +547,91 @@ export const OvertimeRequestsView: React.FC = () => {
               </button>
             </div>
 
-            <p className="text-xs text-gray-600">
-              Assign overtime simultaneously to all 4 operators on <span className="font-bold text-gray-900">Line A - Night Shift (22:00 - 02:00)</span> for production target fulfillment.
-            </p>
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block font-bold text-gray-700 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={bulkDate}
+                    onChange={e => setBulkDate(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-gray-200 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-700 mb-1">Start</label>
+                  <input
+                    type="time"
+                    value={bulkStartTime}
+                    onChange={e => setBulkStartTime(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-gray-200 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-700 mb-1">End</label>
+                  <input
+                    type="time"
+                    value={bulkEndTime}
+                    onChange={e => setBulkEndTime(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-gray-200 font-medium"
+                  />
+                </div>
+              </div>
 
-            <div className="p-3 rounded-xl bg-gray-50 border border-gray-200 text-xs space-y-1.5">
-              <div className="flex justify-between font-medium text-gray-700">
-                <span>Selected Operators:</span>
-                <span className="font-bold text-gray-900">4 Specialists</span>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="font-bold text-gray-700">Select Operating Personnel ({bulkSelectedIds.size} Selected)</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (bulkSelectedIds.size === employees.length) {
+                        setBulkSelectedIds(new Set());
+                      } else {
+                        setBulkSelectedIds(new Set(employees.map(e => e.id)));
+                      }
+                    }}
+                    className="text-[#07563D] font-bold text-[11px] hover:underline"
+                  >
+                    {bulkSelectedIds.size === employees.length ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+
+                <div className="max-h-44 overflow-y-auto space-y-1 p-2 rounded-xl bg-gray-50 border border-gray-200">
+                  {employees.map(emp => (
+                    <label key={emp.id} className="flex items-center gap-2 p-1.5 hover:bg-white rounded-lg cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={bulkSelectedIds.has(emp.id)}
+                        onChange={() => {
+                          const next = new Set(bulkSelectedIds);
+                          if (next.has(emp.id)) next.delete(emp.id);
+                          else next.add(emp.id);
+                          setBulkSelectedIds(next);
+                        }}
+                        className="rounded text-[#07563D] focus:ring-[#07563D]"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-gray-900 truncate">{emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || (emp as any).name || 'Employee'}</div>
+                        <div className="text-[10px] text-gray-500 truncate">{emp.employee_code || emp.id} • {emp.department_name || (emp as any).department || 'Operations'}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
               </div>
-              <div className="flex justify-between font-medium text-gray-700">
-                <span>Total Overtime Hours:</span>
-                <span className="font-bold text-gray-900">16.0 Man-Hours</span>
-              </div>
-              <div className="flex justify-between font-medium text-gray-700">
-                <span>Estimated Batch Cost:</span>
-                <span className="font-bold text-[#07563D]">₹5,600.00</span>
+
+              <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-100 text-xs space-y-1">
+                <div className="flex justify-between font-medium text-emerald-900">
+                  <span>Total Selected:</span>
+                  <span className="font-bold">{bulkSelectedIds.size} Personnel</span>
+                </div>
+                <div className="flex justify-between font-medium text-emerald-900">
+                  <span>Total Scheduled Hours:</span>
+                  <span className="font-bold">{(bulkSelectedIds.size * bulkHours).toFixed(1)} Man-Hours</span>
+                </div>
+                <div className="flex justify-between font-medium text-emerald-900">
+                  <span>Estimated Batch Payroll Cost:</span>
+                  <span className="font-black text-[#07563D]">₹{(bulkSelectedIds.size * bulkHours * 350 * 1.5).toFixed(2)}</span>
+                </div>
               </div>
             </div>
 
@@ -497,7 +639,7 @@ export const OvertimeRequestsView: React.FC = () => {
               <Button variant="outline" size="sm" onClick={() => setIsBulkModalOpen(false)}>
                 Cancel
               </Button>
-              <Button size="sm" onClick={handleBulkSubmit}>
+              <Button size="sm" onClick={handleBulkSubmit} className="bg-[#07563D] hover:bg-[#064e37]">
                 Confirm & Dispatch
               </Button>
             </div>

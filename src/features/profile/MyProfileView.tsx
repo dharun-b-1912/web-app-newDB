@@ -149,6 +149,7 @@ export const MyProfileView: React.FC = () => {
       setProfile(updated);
       setIsEditingPersonal(false);
       showToast('Personal details updated successfully!');
+      window.dispatchEvent(new CustomEvent('platform:profile_updated', { detail: { profile: updated } }));
     } catch {
       showToast('Failed to update personal details.', 'error');
     }
@@ -162,6 +163,7 @@ export const MyProfileView: React.FC = () => {
       setProfile(updated);
       setIsEditingContact(false);
       showToast('Contact details updated successfully!');
+      window.dispatchEvent(new CustomEvent('platform:profile_updated', { detail: { profile: updated } }));
     } catch {
       showToast('Failed to update contact details.', 'error');
     }
@@ -175,6 +177,7 @@ export const MyProfileView: React.FC = () => {
       setProfile(updated);
       setIsEditingAddress(false);
       showToast('Address details updated successfully!');
+      window.dispatchEvent(new CustomEvent('platform:profile_updated', { detail: { profile: updated } }));
     } catch {
       showToast('Failed to update address details.', 'error');
     }

@@ -30,6 +30,9 @@ export type ComponentCategory =
   | 'Loan'
   | 'Advance'
   | 'LOP'
+  | 'Retiral'
+  | 'Gratuity'
+  | 'Reimbursement'
   | 'Custom';
 
 export type CalculationType =
@@ -165,8 +168,12 @@ export interface EmployeeSalaryAssignment {
   pan_number: string;
   pf_uan: string;
   esic_number: string;
+  pf_applicable?: boolean;
+  esi_applicable?: boolean;
+  pt_applicable?: boolean;
+  tds_applicable?: boolean;
   effective_from: string;
-  status: 'Active' | 'Revised' | 'Inactive';
+  status: 'Active' | 'Revised' | 'Inactive' | 'Draft';
   updated_at: string;
 }
 
@@ -230,6 +237,7 @@ export interface EmployeePayrollInput {
   tds_tax: number;
   loan_emi: number;
   advance_recovery: number;
+  fines_deductions?: number;
   other_deductions: number;
   total_deductions: number;
   
@@ -248,7 +256,9 @@ export interface EmployeePayrollInput {
   pan_number: string;
   has_exceptions: boolean;
   exception_notes?: string;
-  status: 'Draft' | 'Calculated' | 'Approved' | 'Finalized' | 'Paid';
+  status: 'Draft' | 'Calculated' | 'Approved' | 'Finalized' | 'Paid' | 'Excluded';
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface PayrollRun {
@@ -291,6 +301,7 @@ export interface LoanRecord {
   balance_amount: number;
   start_period: string; // e.g. "August 2026"
   end_period: string;
+  disbursement_date?: string;
   status: 'Active' | 'Completed' | 'Defaulted' | 'Settled';
   approved_by: string;
   created_at: string;
@@ -585,7 +596,7 @@ export interface CalculationBreakdown {
     paid_leave_days: number;
     lop_days: number;
     overtime_hours: number;
-    proration_method: 'Actual Days in Month' | 'Fixed 30-Day Basis' | 'Working Days Only';
+    proration_method: 'Actual Days in Month' | 'Actual Days in Month (DOJ Adjusted)' | 'Fixed 30-Day Basis' | 'Working Days Only';
     source: string;
   };
 }
@@ -647,9 +658,26 @@ export interface BankReconciliationDiscrepancy {
   status: 'Pending Investigation' | 'Resolved' | 'Manual Correction';
 }
 
+export interface PayslipComponentConfigItem {
+  id: string;
+  code: string;
+  name: string;
+  category: 'Earning' | 'Deduction' | 'Employer Contribution' | 'Reimbursement';
+  calculation_rule: string;
+  visibility: 'always' | 'nonzero' | 'hide';
+  order: number;
+  is_custom?: boolean;
+}
+
 export interface PayslipTemplateConfig {
+  id?: string;
   tenant_id: string;
-  template_style: 'TamilNaduStandardGrid' | 'ModernMinimal' | 'CorporateClean';
+  template_name?: string;
+  template_code?: string;
+  template_style: 'TamilNaduStandardGrid' | 'ModernMinimal' | 'CorporateClean' | 'ContractWorker' | 'DailyWage';
+  status?: 'Active' | 'Draft' | 'Archived';
+  version?: string;
+  effective_from?: string;
   company_name: string;
   company_logo_url?: string;
   company_address: string;
@@ -661,6 +689,9 @@ export interface PayslipTemplateConfig {
   website: string;
   client_name_default: string; // e.g. "Watertec Unit I"
   show_per_day_column: boolean;
+  show_monthly_column?: boolean;
+  show_ot_breakdown?: boolean;
+  show_employer_contributions?: boolean;
   show_food_allowance: boolean;
   show_night_allowance: boolean;
   show_ot_wages: boolean;
@@ -669,6 +700,7 @@ export interface PayslipTemplateConfig {
   show_snacks_deduction: boolean;
   show_tent_deduction: boolean;
   show_lwf_deduction: boolean;
+  components?: PayslipComponentConfigItem[];
   footer_disclaimer: string;
 }
 
@@ -755,10 +787,192 @@ export interface PayrollAuditEvent {
   tenant_id: string;
   actor_name: string;
   actor_role: string;
-  action_type: 'RUN_CREATED' | 'CALCULATED' | 'APPROVED' | 'FINALIZED' | 'LOCKED' | 'SALARY_REVISED' | 'DISBURSED' | 'FNF_SETTLED' | 'UPDATED';
+  action_type: 'RUN_CREATED' | 'CALCULATED' | 'APPROVED' | 'FINALIZED' | 'LOCKED' | 'SALARY_REVISED' | 'DISBURSED' | 'FNF_SETTLED' | 'UPDATED' | 'ADJUSTED' | 'REOPENED' | 'DELETED';
   entity_id: string;
   summary: string;
   timestamp: string;
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// LAYER 2: IMMUTABLE PAYROLL INPUT SNAPSHOT (Frozen at Payroll Run Creation)
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface PayrollInputSnapshot {
+  id: string;
+  tenant_id: string;
+  payroll_run_id: string;
+  employee_id: string;
+  employee_code: string;
+  employee_name: string;
+  department: string;
+  designation: string;
+  location: string;
+  joining_date: string;
+  exit_date?: string;
+  is_new_joiner: boolean;
+  is_exit_period: boolean;
+  employment_status: string;
+  
+  // Statutory Profile
+  pf_eligible: boolean;
+  pf_uan?: string;
+  pf_capped: boolean;
+  esi_eligible: boolean;
+  esi_ip_number?: string;
+  esi_coverage_status: 'NEW_COVERAGE' | 'CONTINUING_COVERAGE' | 'NOT_COVERED' | 'COVERAGE_ENDED' | 'REVIEW_REQUIRED';
+  pt_eligible: boolean;
+  pt_state_jurisdiction: string;
+  tax_regime: 'NEW' | 'OLD';
+
+  // Base Structure Snapshot
+  salary_structure_id: string;
+  salary_structure_code: string;
+  annual_ctc: number;
+  monthly_gross_fixed: number;
+  basic_fixed: number;
+  hra_fixed: number;
+  special_allowance_fixed: number;
+  conveyance_fixed: number;
+  medical_fixed: number;
+  other_allowances_fixed: number;
+
+  // Ingested Attendance Snapshot (Locked from Attendance Module)
+  total_calendar_days: number;
+  payable_days: number;
+  present_days: number;
+  paid_leave_days: number;
+  unpaid_leave_days: number;
+  absent_days: number;
+  lop_days: number;
+  ncp_days: number;
+  approved_ot_hours: number;
+
+  // Dynamic Variable Ingestion
+  approved_claims_total: number;
+  bonus_amount: number;
+  incentives_amount: number;
+  loan_emi_due: number;
+  advance_recovery_due: number;
+  voluntary_deductions: number;
+
+  snapshot_created_at: string;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// LAYER 3: DISTINCT WAGE CLASSIFICATIONS (Independent Statutory Bases)
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface PayrollWageClassification {
+  gross_earnings: number;
+  pf_wage: number;                  // Basic + qualifying allowances (capped at ₹15,000 or full basic)
+  esi_coverage_wage: number;        // Salary excluding OT remuneration for ₹21,000 threshold check
+  esi_overtime_wage: number;        // Approved OT earnings
+  esi_contribution_wage: number;    // esi_coverage_wage + esi_overtime_wage (once covered)
+  gratuity_wage: number;            // Applicable Basic wage base for 4.81% gratuity provision
+  taxable_wage: number;             // Gross - statutory exemptions
+  lop_wage_base: number;            // Gross or Basic based on configured LOP rule
+  ot_wage_base: number;             // Gross or Basic based on configured OT rule
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// LAYER 4: NORMALIZED CALCULATION LINE ITEM ("How Calculated" Explainability)
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface CalculationLineItem {
+  component_code: string;
+  component_name: string;
+  category: ComponentCategory;
+  type: 'EARNING' | 'DEDUCTION' | 'EMPLOYER_CONTRIBUTION' | 'STATUTORY';
+  basis: string;                    // e.g. "PF_WAGE", "ESI_CONTRIBUTION_WAGE", "MONTHLY_GROSS"
+  basis_amount: number;             // Base value evaluated
+  rate: number;                     // Rate percentage or fixed multiplier (e.g. 12% = 0.12)
+  quantity?: number;                // e.g. 10 hours OT, 2 LOP days
+  formula: string;                  // Plain-text readable formula (e.g. "₹15,000 × 12%")
+  amount: number;                   // Final calculated amount
+  source: string;                   // e.g. "Salary Structure", "Statutory Rule PF-2026", "Attendance Engine"
+  rule_version: string;             // e.g. "PF-V4-2026", "ESIC-2026-V1"
+  is_employer_cost: boolean;        // True if employer-side liability (NEVER deducted from net)
+  is_taxable: boolean;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// STATUTORY ASSESSMENTS (Official Indian Compliance Proofs)
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface ESIStatutoryAssessment {
+  coverage_wage: number;            // Excludes OT
+  coverage_limit: number;           // ₹21,000
+  overtime_wage: number;            // OT amount
+  is_covered: boolean;              // true if coverage_wage <= 21,000 or continuing coverage
+  coverage_status: 'NEW_COVERAGE' | 'CONTINUING_COVERAGE' | 'NOT_COVERED' | 'COVERAGE_ENDED';
+  contribution_wage: number;        // coverage_wage + overtime_wage if covered, else 0
+  employee_rate: number;            // 0.75%
+  employee_contribution: number;    // contribution_wage * 0.0075
+  employer_rate: number;            // 3.25%
+  employer_contribution: number;    // contribution_wage * 0.0325
+  rule_version: string;
+  explanation: string;
+}
+
+export interface PFStatutoryAssessment {
+  pf_wage: number;                  // Capped at ₹15,000 ceiling or full basic
+  wage_ceiling: number;             // ₹15,000
+  employee_rate: number;            // 12%
+  employee_contribution: number;    // pf_wage * 0.12
+  employer_pf_rate: number;         // 12%
+  employer_pf_amount: number;       // pf_wage * 0.12
+  employer_gov_portion_rate: number;// 1% (0.5% Admin + 0.5% EDLI)
+  employer_gov_portion_amount: number; // pf_wage * 0.01
+  total_employer_pf_cost: number;   // employer_pf_amount + employer_gov_portion_amount (13% total)
+  rule_version: string;
+  explanation: string;
+}
+
+export interface GratuityStatutoryAssessment {
+  gratuity_wage: number;
+  provision_rate: number;           // 4.81%
+  employer_provision_amount: number;// gratuity_wage * 0.0481
+  rule_version: string;
+  is_employer_cost: boolean;        // Always true (not deducted from employee)
+  explanation: string;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// LAYER 5: EXCEPTION & VARIANCE ENGINE
+// ────────────────────────────────────────────────────────────────────────────
+
+export type ExceptionSeverity = 'BLOCKER' | 'ERROR' | 'WARNING' | 'INFO';
+
+export interface PayrollException {
+  id: string;
+  tenant_id: string;
+  payroll_run_id?: string;
+  employee_id: string;
+  employee_code: string;
+  employee_name: string;
+  severity: ExceptionSeverity;
+  category: 'SALARY_MISSING' | 'BANK_INVALID' | 'STATUTORY_MISMATCH' | 'ATTENDANCE_INCOMPLETE' | 'NEGATIVE_NET' | 'ABNORMAL_VARIANCE' | 'ESI_ANOMALY';
+  message: string;
+  suggested_action: string;
+  source: string;
+  detected_at: string;
+  is_resolved: boolean;
+  resolved_by?: string;
+  resolved_at?: string;
+}
+
+export interface PayrollVarianceItem {
+  employee_id: string;
+  employee_code: string;
+  employee_name: string;
+  department: string;
+  previous_net: number;
+  current_net: number;
+  net_variance_amount: number;
+  net_variance_percentage: number;
+  primary_reason: string;           // e.g. "LOP: 4 days (₹4,500 deduction)", "Salary Revision (+15%)", "New Joiner (18 days prorated)"
+  severity: 'NORMAL' | 'SIGNIFICANT' | 'ABNORMAL';
+}
+
 
 

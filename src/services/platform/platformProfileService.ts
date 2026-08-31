@@ -39,12 +39,12 @@ export interface PlatformUserPreferences {
 }
 
 let cachedProfile: PlatformAdminProfile = {
-  id: 'prof-superadmin-01',
-  email: 'superadmin@workforceos.com',
-  first_name: 'THIRUMALAI',
-  last_name: 'R K',
-  display_name: 'THIRUMALAI R K',
-  job_title: 'Chief Platform Architect & Super Admin',
+  id: '069e584c-c577-4577-9890-c96c6fbdcb07',
+  email: 'superadmin@joypeoplehr.com',
+  first_name: 'Super',
+  last_name: 'Admin',
+  display_name: 'Super Admin',
+  job_title: 'Platform Super Administrator',
   department: 'Platform Core & Infrastructure',
   phone: '+91 9384125278',
   avatar_url: '',
@@ -52,7 +52,7 @@ let cachedProfile: PlatformAdminProfile = {
   locale: 'en-US',
   is_primary_email_verified: true,
   last_profile_update_at: new Date().toISOString(),
-  created_at: new Date(Date.now() - 90 * 86400000).toISOString(),
+  created_at: new Date().toISOString(),
 };
 
 let cachedPreferences: PlatformUserPreferences = {
@@ -146,22 +146,28 @@ export const platformProfileService = {
 
     if (isSupabaseEnabled) {
       try {
-        const { data, error } = await supabase
+        const { data: authUserData } = await supabase.auth.getUser();
+        const activeEmail = authUserData?.user?.email || cachedProfile.email;
+        const activeUserId = authUserData?.user?.id;
+
+        const query = supabase
           .from('platform_profiles')
-          .select('*')
-          .eq('email', cachedProfile.email)
-          .maybeSingle();
+          .select('*');
+
+        const { data, error } = activeUserId
+          ? await query.or(`auth_user_id.eq.${activeUserId},email.eq.${activeEmail}`).maybeSingle()
+          : await query.eq('email', activeEmail).maybeSingle();
 
         if (data && !error) {
           cachedProfile = {
             id: data.id,
-            auth_user_id: data.auth_user_id,
-            email: data.email || cachedProfile.email,
+            auth_user_id: data.auth_user_id || activeUserId,
+            email: data.email || activeEmail,
             first_name: data.first_name || '',
             last_name: data.last_name || '',
-            display_name: data.display_name || `${data.first_name} ${data.last_name}`.trim() || 'Platform Super Admin',
+            display_name: data.display_name || `${data.first_name || ''} ${data.last_name || ''}`.trim() || 'Super Admin',
             job_title: data.job_title || 'Platform Administrator',
-            department: data.department || 'Infrastructure',
+            department: data.department || 'Platform Operations',
             phone: data.phone || '',
             avatar_url: data.avatar_url || '',
             timezone: data.timezone || 'Asia/Kolkata (IST)',
@@ -171,6 +177,34 @@ export const platformProfileService = {
             created_at: data.created_at || new Date().toISOString(),
           };
           localStorage.setItem('workforce_platform_profile', JSON.stringify(cachedProfile));
+        } else if (activeEmail) {
+          // Check platform_staff table fallback
+          const { data: staffData } = await supabase
+            .from('platform_staff')
+            .select('*')
+            .or(`auth_user_id.eq.${activeUserId},email.eq.${activeEmail}`)
+            .maybeSingle();
+
+          if (staffData) {
+            cachedProfile = {
+              id: staffData.id,
+              auth_user_id: staffData.auth_user_id || activeUserId,
+              email: staffData.email || activeEmail,
+              first_name: staffData.first_name || '',
+              last_name: staffData.last_name || '',
+              display_name: staffData.name || `${staffData.first_name || ''} ${staffData.last_name || ''}`.trim() || 'Super Admin',
+              job_title: staffData.job_title || 'Platform Super Admin',
+              department: staffData.department || 'Platform Operations',
+              phone: staffData.phone || '',
+              avatar_url: staffData.avatar_url || '',
+              timezone: 'Asia/Kolkata (IST)',
+              locale: 'en-US',
+              is_primary_email_verified: true,
+              last_profile_update_at: new Date().toISOString(),
+              created_at: staffData.created_at || new Date().toISOString(),
+            };
+            localStorage.setItem('workforce_platform_profile', JSON.stringify(cachedProfile));
+          }
         }
       } catch (err) {
         console.warn('[PlatformProfileService] Supabase profile fetch warning:', err);

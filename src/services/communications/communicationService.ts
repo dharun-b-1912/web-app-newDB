@@ -22,7 +22,7 @@ class CommunicationService {
           .select('*')
           .order('publish_at', { ascending: false });
 
-        if (data && data.length > 0) {
+        if (!error && data !== null) {
           // Enrich with real recipients analytics
           const enriched = await Promise.all(
             data.map(async (comm) => {
@@ -95,6 +95,47 @@ class CommunicationService {
             .select()
             .single();
         }
+
+        // Also sync to company_announcements table (consumed by Flutter Mobile App)
+        try {
+          await supabase.from('company_announcements').insert([
+            {
+              title: comm.title || 'Company Announcement',
+              summary: (comm.body || '').substring(0, 150),
+              body: comm.body || '',
+              category: comm.communication_type || 'COMPANY_NEWS',
+              priority: comm.priority === 'URGENT' ? 'URGENT' : (comm.priority === 'IMPORTANT' ? 'HIGH' : 'NORMAL'),
+              target_scope: comm.audience_type || 'ALL',
+              published_by_name: comm.author_name || 'HR Management',
+              is_pinned: comm.priority === 'URGENT' || comm.priority === 'IMPORTANT',
+              published_at: comm.publish_at || new Date().toISOString(),
+              status: comm.status || 'PUBLISHED',
+            },
+          ]);
+        } catch (annErr) {
+          console.warn('[CommunicationService] company_announcements sync notice:', annErr);
+        }
+
+        // Also dispatch to notification_events for real-time Flutter push banner
+        try {
+          await supabase.from('notification_events').insert([
+            {
+              event_type: 'COMPANY_ANNOUNCEMENT',
+              category: 'BROADCAST',
+              severity: comm.priority === 'URGENT' ? 'CRITICAL' : 'INFO',
+              title: `Announcement: ${comm.title}`,
+              body: (comm.body || '').substring(0, 120),
+              actor_name: comm.author_name || 'HR Management',
+              metadata: {
+                communication_type: comm.communication_type,
+                priority: comm.priority,
+              },
+            },
+          ]);
+        } catch (notifErr) {
+          console.warn('[CommunicationService] notification_events sync notice:', notifErr);
+        }
+
         if (res.data) return res.data;
       } catch (err) {
         console.warn('[CommunicationService] save error:', err);

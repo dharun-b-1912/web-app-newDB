@@ -696,6 +696,9 @@ final Map<String, CompanyOrganizationModel> _tenantOrganizations = {};
         attachmentFileName: attachmentFileName,
       );
       if (tkt != null) {
+        helpdeskTickets.removeWhere((x) => x.id == tkt.id || x.ticketNumber == tkt.ticketNumber);
+        helpdeskTickets.insert(0, tkt);
+        notifyListeners();
         await loadAllData();
         return true;
       }

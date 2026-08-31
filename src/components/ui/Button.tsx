@@ -25,11 +25,13 @@ export const buttonVariants = cva(
           'text-[#047857] underline-offset-4 hover:underline p-0 h-auto font-medium',
       },
       size: {
+        xs: 'text-xs px-2.5 py-1 h-7.5 gap-1.5 rounded-lg font-semibold',
         sm: 'text-xs px-2.5 py-1.5 h-8 gap-1.5 rounded-[8px]',
         md: 'text-[13.5px] px-3.5 py-2 h-9 gap-2 rounded-[10px]',
         lg: 'text-base px-5 py-2.5 h-11 gap-2.5 rounded-[12px] font-semibold',
         icon: 'h-9 w-9 p-0 rounded-[10px]',
-        'icon-sm': 'h-7 w-7 p-0 rounded-[8px]',
+        'icon-sm': 'h-8 w-8 p-0 rounded-[8px]',
+        'icon-xs': 'h-7.5 w-7.5 p-0 rounded-lg',
       },
     },
     defaultVariants: {

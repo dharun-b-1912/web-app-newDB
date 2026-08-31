@@ -2,7 +2,7 @@ import React from 'react';
 import { cn } from '../../lib/utils';
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  variant?: 'emerald' | 'amber' | 'rose' | 'blue' | 'gray' | 'purple' | 'secondary' | 'outline' | 'danger' | 'neutral' | 'info';
+  variant?: 'emerald' | 'amber' | 'rose' | 'blue' | 'gray' | 'purple' | 'secondary' | 'outline' | 'danger' | 'neutral' | 'info' | 'success' | 'warning' | 'primary';
   size?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
   key?: React.Key;
@@ -11,8 +11,11 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 export const Badge = ({ className, variant = 'emerald', size = 'md', children, ...props }: BadgeProps) => {
   const variants: Record<string, string> = {
+    primary: 'bg-emerald-50 text-[#07563D] border-emerald-200/80',
     emerald: 'bg-emerald-50 text-[#07563D] border-emerald-200/80',
+    success: 'bg-emerald-50 text-[#07563D] border-emerald-200/80',
     amber: 'bg-amber-50 text-amber-800 border-amber-200/80',
+    warning: 'bg-amber-50 text-amber-800 border-amber-200/80',
     rose: 'bg-rose-50 text-rose-800 border-rose-200/80',
     danger: 'bg-rose-50 text-rose-800 border-rose-200/80',
     blue: 'bg-sky-50 text-sky-800 border-sky-200/80',

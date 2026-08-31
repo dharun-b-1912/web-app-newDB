@@ -1,21 +1,20 @@
 // src/services/platform/platformImpersonationService.ts
 // ============================================================
 // Joy PeopleHR — Controlled Impersonation Session Service
+// Clean Zero-Mock Service
 // ============================================================
 
 import { ImpersonationSession, SupportAccessRequest } from '../../types/platformAdmin';
 import { platformAuditService } from './platformAuditService';
+import { api } from '../api';
 
 const LOCAL_IMPERSONATION_KEY = 'workforce_active_impersonation';
 
-const initialSupportRequests: SupportAccessRequest[] = [
-  { id: 'sup-req-101', tenant_id: 'org-zenith-04', tenant_name: 'Zenith Logistics & Supply Chain', requested_by: 'Lead Support Engineer Arun', reason: 'Investigating payroll loss of pay (LOP) calculation discrepancy on July cycle', duration_minutes: 60, status: 'Active', started_at: '2026-08-14 10:45 AM', expires_at: '2026-08-14 11:45 AM' },
-  { id: 'sup-req-102', tenant_id: 'org-cyber-03', tenant_name: 'CyberSoft Global Tech Ltd', requested_by: 'Solutions Architect Priya', reason: 'Assisting with ZK Teco biometric hardware network configuration', duration_minutes: 30, status: 'Approved', expires_at: '2026-08-14 02:00 PM' },
-];
+let supportRequestsDb: SupportAccessRequest[] = [];
 
 export const platformImpersonationService = {
   getSupportRequests(): SupportAccessRequest[] {
-    return initialSupportRequests;
+    return supportRequestsDb;
   },
 
   getActiveSession(): ImpersonationSession | null {
@@ -40,11 +39,12 @@ export const platformImpersonationService = {
     duration_minutes: number;
   }): Promise<ImpersonationSession> {
     const expiresAt = new Date(Date.now() + data.duration_minutes * 60000).toISOString();
+    const currentUser = api.getCurrentUser();
 
     const session: ImpersonationSession = {
       id: `imp-${Date.now().toString(36)}`,
-      admin_user_id: 'user-superadmin',
-      admin_name: 'WorkForce Super Admin',
+      admin_user_id: currentUser?.id || 'user-superadmin',
+      admin_name: currentUser?.name || 'Platform Super Admin',
       target_tenant_id: data.target_tenant_id,
       target_tenant_name: data.target_tenant_name,
       reason: data.reason,
@@ -58,9 +58,9 @@ export const platformImpersonationService = {
 
     // Audit Event
     await platformAuditService.logEvent({
-      actor_id: 'user-superadmin',
-      actor_name: 'WorkForce Super Admin',
-      actor_role: 'Super Admin',
+      actor_id: currentUser?.id || 'user-superadmin',
+      actor_name: currentUser?.name || 'Platform Super Admin',
+      actor_role: currentUser?.roles?.[0]?.name || 'Super Admin',
       organization_id: data.target_tenant_id,
       organization_name: data.target_tenant_name,
       action: 'IMPERSONATION_SESSION_STARTED',
@@ -76,12 +76,13 @@ export const platformImpersonationService = {
   async endImpersonation(): Promise<void> {
     const session = this.getActiveSession();
     sessionStorage.removeItem(LOCAL_IMPERSONATION_KEY);
+    const currentUser = api.getCurrentUser();
 
     if (session) {
       await platformAuditService.logEvent({
-        actor_id: 'user-superadmin',
-        actor_name: 'WorkForce Super Admin',
-        actor_role: 'Super Admin',
+        actor_id: currentUser?.id || 'user-superadmin',
+        actor_name: currentUser?.name || 'Platform Super Admin',
+        actor_role: currentUser?.roles?.[0]?.name || 'Super Admin',
         organization_id: session.target_tenant_id,
         organization_name: session.target_tenant_name,
         action: 'IMPERSONATION_SESSION_ENDED',

@@ -44,6 +44,9 @@ import {
   Activity,
   User,
   Key,
+  Trash2,
+  Send,
+  Zap,
 } from 'lucide-react';
 import {
   platformStaffService,
@@ -155,7 +158,7 @@ export const PlatformStaffView: React.FC = () => {
       if (finalStaff.length === 0 && prof) {
         const rootAdmin: PlatformStaffRecord = {
           id: prof.id || 'stf-root-01',
-          email: prof.email || 'superadmin@workforceos.com',
+          email: prof.email || 'superadmin@joypeoplehr.com',
           first_name: prof.first_name || 'Arun',
           last_name: prof.last_name || 'Kumar',
           name: prof.display_name || 'Platform Super Admin',
@@ -365,6 +368,43 @@ export const PlatformStaffView: React.FC = () => {
       loadData();
     } catch (err: any) {
       showToast(err.message || 'Failed to revoke sessions.', 'error');
+    }
+  };
+
+  // --- Handlers: Delete Staff Member ---
+  const handleDeleteStaff = async (staff: PlatformStaffRecord) => {
+    if (staff.is_root_superadmin || staff.role_key === 'SUPER_ADMIN') {
+      showToast('Root Super Admin accounts cannot be deleted.', 'error');
+      return;
+    }
+    if (!confirm(`Are you sure you want to permanently delete platform staff account for ${staff.name} (${staff.email})?`)) {
+      return;
+    }
+    try {
+      await platformStaffService.deleteStaff(staff.id);
+      showToast(`Platform staff member ${staff.name} deleted successfully.`, 'success');
+      if (selectedStaff?.id === staff.id) {
+        setIsDetailDrawerOpen(false);
+        setSelectedStaff(null);
+      }
+      loadData();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete staff member.', 'error');
+    }
+  };
+
+  // --- Handlers: Resend Email Invitation via Resend SMTP Gateway ---
+  const [isResendingInvite, setIsResendingInvite] = useState<string | null>(null);
+  const handleResendInvitation = async (staff: PlatformStaffRecord) => {
+    setIsResendingInvite(staff.id);
+    try {
+      const res = await platformStaffService.resendStaffInvitation(staff.id);
+      showToast(res.message, res.success ? 'success' : 'info');
+      loadData();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to resend invitation email.', 'error');
+    } finally {
+      setIsResendingInvite(null);
     }
   };
 
@@ -703,6 +743,18 @@ export const PlatformStaffView: React.FC = () => {
                             >
                               <KeyRound className="w-3.5 h-3.5" />
                             </button>
+                            <button
+                              onClick={() => handleResendInvitation(staff)}
+                              disabled={isResendingInvite === staff.id}
+                              title="Resend Invitation Email (Resend SMTP Gateway)"
+                              className="p-1.5 rounded-lg hover:bg-emerald-50 text-gray-600 hover:text-[#047857] transition disabled:opacity-50 cursor-pointer"
+                            >
+                              {isResendingInvite === staff.id ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#047857]" />
+                              ) : (
+                                <Send className="w-3.5 h-3.5" />
+                              )}
+                            </button>
                             {staff.status === 'Active' ? (
                               <button
                                 onClick={() => handleOpenStatusChange(staff, 'Suspended')}
@@ -719,6 +771,15 @@ export const PlatformStaffView: React.FC = () => {
                                 className="p-1.5 rounded-lg hover:bg-emerald-50 text-gray-600 hover:text-[#047857] transition cursor-pointer"
                               >
                                 <UserCheck className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {!staff.is_root_superadmin && staff.role_key !== 'SUPER_ADMIN' && (
+                              <button
+                                onClick={() => handleDeleteStaff(staff)}
+                                title="Delete Staff Account"
+                                className="p-1.5 rounded-lg hover:bg-rose-50 text-gray-600 hover:text-rose-600 transition cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             )}
                             <button
@@ -872,7 +933,7 @@ export const PlatformStaffView: React.FC = () => {
               <label className="block text-[11px] font-semibold text-gray-600 mb-1">Who (Actor Name / Admin)</label>
               <input
                 type="text"
-                placeholder="e.g. Arun Kumar"
+                placeholder="e.g. Platform Admin"
                 value={activityFilterWho}
                 onChange={(e) => setActivityFilterWho(e.target.value)}
                 className="w-full px-3 py-1.5 text-xs rounded-lg bg-white border border-gray-200 text-gray-900 focus:outline-none focus:ring-1 focus:ring-[#047857]"
@@ -1001,12 +1062,58 @@ export const PlatformStaffView: React.FC = () => {
             <div className="w-full bg-gray-100 h-1.5">
               <div
                 className="bg-[#047857] h-1.5 transition-all duration-300"
-                style={{ width: `${(wizardStep / 4) * 100}%` }}
+                style={{ width: `${createdStaffResult ? 100 : (wizardStep / 4) * 100}%` }}
               />
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-4 flex-1">
-              {wizardStep === 1 && (
+            {createdStaffResult ? (
+              <div className="p-6 text-center space-y-4">
+                <div className="w-14 h-14 rounded-full bg-emerald-100 text-[#047857] flex items-center justify-center mx-auto shadow-xs">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-gray-900">Platform Staff Invitation Dispatched!</h4>
+                  <p className="text-xs text-gray-500 mt-1">
+                    An official high-security onboarding email with invitation tokens was sent to{' '}
+                    <strong className="text-gray-900">{createdStaffResult.email}</strong> via Resend SMTP Gateway.
+                  </p>
+                </div>
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 text-left space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 font-medium">Staff ID:</span>
+                    <span className="font-mono font-bold text-gray-900">{createdStaffResult.staff_code}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 font-medium">Assigned Role:</span>
+                    <span className="font-bold text-[#047857]">{createdStaffResult.role_display_name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 font-medium">Delivery Gateway:</span>
+                    <span className="font-bold text-emerald-700 flex items-center gap-1">
+                      <Zap className="w-3.5 h-3.5 text-[#047857]" />
+                      Resend SMTP (Production)
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 font-medium">Status:</span>
+                    <span className="font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      Invitation Pending
+                    </span>
+                  </div>
+                </div>
+                <div className="pt-2">
+                  <button
+                    onClick={handleCloseWizard}
+                    className="w-full py-2.5 bg-[#047857] hover:bg-[#065f46] text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                  >
+                    Done & Return to Staff Directory
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="p-6 overflow-y-auto space-y-4 flex-1">
+                  {wizardStep === 1 && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -1210,8 +1317,10 @@ export const PlatformStaffView: React.FC = () => {
                 </button>
               )}
             </div>
-          </div>
-        </div>
+          </>
+        )}
+      </div>
+    </div>
       )}
 
       {/* 9. MODAL: CHANGE ROLE */}
@@ -1532,6 +1641,19 @@ export const PlatformStaffView: React.FC = () => {
               >
                 Change Role
               </button>
+              <button
+                onClick={() => handleResendInvitation(selectedStaff)}
+                disabled={isResendingInvite === selectedStaff.id}
+                className="flex-1 py-2 text-xs font-bold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Resend official onboarding invitation email via Resend SMTP"
+              >
+                {isResendingInvite === selectedStaff.id ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Send className="w-3.5 h-3.5" />
+                )}
+                Resend Invite
+              </button>
               {selectedStaff.status === 'Active' ? (
                 <button
                   onClick={() => {
@@ -1552,6 +1674,15 @@ export const PlatformStaffView: React.FC = () => {
                   className="flex-1 py-2 text-xs font-bold rounded-lg bg-emerald-50 text-[#047857] hover:bg-emerald-100 transition cursor-pointer"
                 >
                   Activate
+                </button>
+              )}
+              {!selectedStaff.is_root_superadmin && selectedStaff.role_key !== 'SUPER_ADMIN' && (
+                <button
+                  onClick={() => handleDeleteStaff(selectedStaff)}
+                  className="py-2 px-3 text-xs font-bold rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
+                  title="Delete Account"
+                >
+                  <Trash2 className="w-4 h-4" />
                 </button>
               )}
             </div>

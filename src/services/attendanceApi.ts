@@ -209,6 +209,10 @@ export const attendanceApi = {
     return list;
   },
 
+  getAllAttendanceLogs: (): AttendanceDaily[] => {
+    return attendanceApi.getDailyAttendance();
+  },
+
   checkIn: (employeeId: string, employeeName: string, source: PunchSource = 'WEB', locationName: string = 'HQ Office Web Check-in'): AttendanceDaily => {
     const list = loadStorage<AttendanceDaily[]>(STORAGE_KEY_DAILY, SEED_DAILY);
     const today = attendanceTimeService.getOrganizationBusinessDate();

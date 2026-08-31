@@ -48,18 +48,43 @@ class DocumentVerificationService {
 
     // Persist to Supabase
     if (isSupabaseEnabled) {
+      // 1. Direct table updates to ensure both employee_documents and document_requirements are synced
       try {
-        await supabase.from('employee_documents').update({
-          verification_status: 'VERIFIED',
-          updated_at: now,
-        }).eq('id', documentId);
+        const { error } = await supabase
+          .from('employee_documents')
+          .update({
+            verification_status: 'Verified',
+          })
+          .eq('id', documentId);
 
-        await supabase.from('document_requirements').update({
-          status: 'VERIFIED',
-          updated_at: now,
-        }).or(`id.eq.${documentId},document_id.eq.${documentId}`);
+        if (error) {
+          // If title-case failed or table expects uppercase, try VERIFIED
+          await supabase
+            .from('employee_documents')
+            .update({
+              verification_status: 'VERIFIED',
+            })
+            .eq('id', documentId);
+        }
+      } catch (docErr) {
+        console.warn('[DocumentVerificationService] employee_documents verify update:', docErr);
+      }
 
-        // Notify Flutter App
+      try {
+        await supabase
+          .from('document_requirements')
+          .update({
+            status: 'VERIFIED',
+            completed_at: now,
+            updated_at: now,
+          })
+          .or(`id.eq.${documentId},document_id.eq.${documentId}`);
+      } catch (reqErr) {
+        console.warn('[DocumentVerificationService] document_requirements verify update:', reqErr);
+      }
+
+      // 3. Notify Flutter App via notification_events
+      try {
         await supabase.from('notification_events').insert({
           event_type: 'DOCUMENT_VERIFIED',
           category: 'APPROVAL',
@@ -72,10 +97,11 @@ class DocumentVerificationService {
           metadata: {
             requirement_id: documentId,
             status: 'VERIFIED',
+            employee_id: docs[idx].subject_id,
           },
         });
-      } catch (err) {
-        console.warn('[DocumentVerificationService] Supabase verify error:', err);
+      } catch (notifErr) {
+        console.warn('[DocumentVerificationService] notification_events verify insert:', notifErr);
       }
     }
 
@@ -126,19 +152,42 @@ class DocumentVerificationService {
 
     // Persist to Supabase
     if (isSupabaseEnabled) {
+      // 1. Direct updates
       try {
-        await supabase.from('employee_documents').update({
-          verification_status: 'REJECTED',
-          updated_at: now,
-        }).eq('id', documentId);
+        const { error } = await supabase
+          .from('employee_documents')
+          .update({
+            verification_status: 'Rejected',
+          })
+          .eq('id', documentId);
 
-        await supabase.from('document_requirements').update({
-          status: 'REJECTED',
-          rejection_reason: reason,
-          updated_at: now,
-        }).or(`id.eq.${documentId},document_id.eq.${documentId}`);
+        if (error) {
+          await supabase
+            .from('employee_documents')
+            .update({
+              verification_status: 'REJECTED',
+            })
+            .eq('id', documentId);
+        }
+      } catch (docErr) {
+        console.warn('[DocumentVerificationService] employee_documents reject update:', docErr);
+      }
 
-        // Notify Flutter App
+      try {
+        await supabase
+          .from('document_requirements')
+          .update({
+            status: 'REJECTED',
+            rejection_reason: reason,
+            updated_at: now,
+          })
+          .or(`id.eq.${documentId},document_id.eq.${documentId}`);
+      } catch (reqErr) {
+        console.warn('[DocumentVerificationService] document_requirements reject update:', reqErr);
+      }
+
+      // 3. Notify Flutter App
+      try {
         await supabase.from('notification_events').insert({
           event_type: 'DOCUMENT_REJECTED',
           category: 'APPROVAL',
@@ -152,10 +201,11 @@ class DocumentVerificationService {
             requirement_id: documentId,
             status: 'REJECTED',
             rejection_reason: reason,
+            employee_id: docs[idx].subject_id,
           },
         });
-      } catch (err) {
-        console.warn('[DocumentVerificationService] Supabase reject error:', err);
+      } catch (notifErr) {
+        console.warn('[DocumentVerificationService] notification_events reject insert:', notifErr);
       }
     }
 

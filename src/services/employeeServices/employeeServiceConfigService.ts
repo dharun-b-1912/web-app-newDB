@@ -173,7 +173,7 @@ class EmployeeServiceConfigService {
           .eq('tenant_id', tenantId)
           .order('sort_order', { ascending: true });
 
-        if (data && data.length > 0) {
+        if (!error && data !== null) {
           this.memoryCache = data;
           this.saveLocalStore(data, tenantId);
           return data;

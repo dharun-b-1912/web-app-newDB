@@ -120,11 +120,11 @@ export const ExplainCalculationModal: React.FC<ExplainCalculationModalProps> = (
             </div>
 
             <div className="divide-y divide-gray-100 border border-gray-200/80 rounded-2xl overflow-hidden bg-white shadow-2xs">
-              {breakdown.earnings_breakdown.map((item, idx) => (
+              {breakdown.earnings_breakdown.map((item: any, idx) => (
                 <div key={idx} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-gray-50/80 transition-colors">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-gray-900">{item.name}</span>
+                      <span className="text-xs font-bold text-gray-900">{item.component_name || item.name}</span>
                       {item.rule_version && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-medium border border-emerald-100">
                           {item.rule_version}
@@ -163,11 +163,11 @@ export const ExplainCalculationModal: React.FC<ExplainCalculationModalProps> = (
             </div>
 
             <div className="divide-y divide-gray-100 border border-gray-200/80 rounded-2xl overflow-hidden bg-white shadow-2xs">
-              {breakdown.deductions_breakdown.map((item, idx) => (
+              {breakdown.deductions_breakdown.map((item: any, idx) => (
                 <div key={idx} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-gray-50/80 transition-colors">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-gray-900">{item.name}</span>
+                      <span className="text-xs font-bold text-gray-900">{item.component_name || item.name}</span>
                       {item.rule_version && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-700 font-medium border border-rose-100">
                           {item.rule_version}
@@ -193,12 +193,57 @@ export const ExplainCalculationModal: React.FC<ExplainCalculationModalProps> = (
             </div>
           </div>
 
-          {/* 3. Tax & TDS FY 2026-27 Projection Card */}
+          {/* 3. Employer Statutory Liabilities & Retirals (Company Cost - Not Deducted) */}
+          {breakdown.statutory_breakdown && breakdown.statutory_breakdown.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-800 uppercase tracking-wide">
+                  <Building2 className="w-4 h-4 text-amber-700" />
+                  <span>3. Employer Statutory Liabilities & Retirals (Employer Cost)</span>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold">
+                  Company Cost • Not Deducted from Take-Home
+                </span>
+              </div>
+
+              <div className="divide-y divide-gray-100 border border-amber-200/60 rounded-2xl overflow-hidden bg-amber-50/20 shadow-2xs">
+                {breakdown.statutory_breakdown.map((item: any, idx) => (
+                  <div key={idx} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-amber-50/50 transition-colors">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-900">{item.component_name || item.name}</span>
+                        {item.rule_version && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 font-medium border border-amber-200">
+                            {item.rule_version}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-gray-500">
+                        Source: <span className="font-semibold text-gray-700">{item.source}</span>
+                      </div>
+                      {item.formula_applied && (
+                        <div className="text-[10px] font-mono text-amber-900/80">
+                          Formula: {item.formula_applied}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-sm font-black text-amber-900 font-mono">
+                        ₹{item.amount.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 4. Tax & TDS FY 2026-27 Projection Card */}
           <div className="bg-gradient-to-br from-indigo-50/60 to-purple-50/60 p-4 rounded-2xl border border-indigo-100/80 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-bold text-indigo-900 uppercase tracking-wide">
                 <ShieldCheck className="w-4 h-4 text-indigo-700" />
-                <span>3. Income Tax FY 2026-27 Projection & TDS</span>
+                <span>4. Income Tax FY 2026-27 Projection & TDS</span>
               </div>
               <span className="text-[10px] px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-bold">
                 {breakdown.tax_projection.regime}

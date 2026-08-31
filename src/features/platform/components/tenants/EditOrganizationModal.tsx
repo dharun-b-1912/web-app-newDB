@@ -51,7 +51,7 @@ export const EditOrganizationModal: React.FC<EditOrganizationModalProps> = ({
     primary_admin_name: org.primary_admin_name || '',
     primary_admin_email: org.primary_admin_email || '',
     primary_admin_phone: org.primary_admin_phone || '',
-    account_owner_name: org.account_owner_name || 'Arun Kumar (Super Admin)',
+    account_owner_name: org.account_owner_name || 'Platform Administrator',
   });
 
   const [isSaving, setIsSaving] = useState(false);

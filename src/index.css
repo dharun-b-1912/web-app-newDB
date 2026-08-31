@@ -96,13 +96,26 @@
   background: var(--ink-400);
 }
 
+/* Utility to hide scrollbars completely while preserving full horizontal/vertical scroll behavior */
+.no-scrollbar,
+.scrollbar-none {
+  -ms-overflow-style: none !important; /* IE and Edge */
+  scrollbar-width: none !important; /* Firefox */
+}
+
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none !important; /* Chrome, Safari, Opera */
+}
+
+
 /* ============================================================
-   A4 PRINT ISOLATION RULES
+   PRINT ISOLATION & STYLING RULES
    ============================================================ */
 @media print {
   @page {
-    size: A4 portrait;
-    margin: 12mm;
+    size: auto;
+    margin: 8mm;
   }
 
   body {
@@ -111,11 +124,11 @@
   }
 
   /* Hide app navigation, control plane sidebars, header toolbars */
-  #root > div:not(#invoice-print-container),
   aside,
   nav,
   header,
-  .print\\:hidden {
+  .no-print,
+  .print\:hidden {
     display: none !important;
   }
 

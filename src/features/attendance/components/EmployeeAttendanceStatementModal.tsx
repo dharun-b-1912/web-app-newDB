@@ -248,14 +248,23 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
 
   const { dailyRows, metrics } = calculationResult;
 
-  // Resolve Employee Salary Package
+  // Resolve Employee Salary Package dynamically
   const annualCtc = useMemo(() => {
-    return (
+    const rawCtc = Number(
       currentEmployee?.annual_ctc ||
       currentEmployee?.employment?.annual_ctc ||
+      currentEmployee?.employment?.ctc ||
       currentEmployee?.compensation?.annual_ctc ||
-      1200000
+      (currentEmployee as any)?.compensation?.ctc ||
+      (currentEmployee as any)?.ctc ||
+      0
     );
+
+    if (rawCtc > 0) return rawCtc;
+
+    // If employee profile has no CTC mapped yet, dynamically fallback to the tenant's active default Salary Structure
+    const structures = payrollApi.getSalaryStructures();
+    return structures[0]?.base_annual_ctc || 0;
   }, [currentEmployee]);
 
   const monthlyCtc = useMemo(() => {
@@ -264,15 +273,30 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
 
   // Execute Realtime Attendance-to-Payroll Financial Impact Calculation
   const payrollImpact: PayrollImpactResult = useMemo(() => {
+    const isEsiApplicable =
+      (currentEmployee as any)?.statutory?.esi_applicable !== undefined
+        ? (currentEmployee as any)?.statutory?.esi_applicable !== false
+        : (currentEmployee?.esi_applicable !== undefined ? currentEmployee.esi_applicable !== false : true);
+
+    const isPfApplicable =
+      (currentEmployee as any)?.statutory?.pf_applicable !== undefined
+        ? (currentEmployee as any)?.statutory?.pf_applicable !== false
+        : currentEmployee?.pf_applicable !== false;
+
+    const isPtApplicable =
+      (currentEmployee as any)?.statutory?.pt_applicable !== undefined
+        ? (currentEmployee as any)?.statutory?.pt_applicable !== false
+        : currentEmployee?.pt_applicable !== false;
+
     return payrollImpactCalculationEngine.calculateImpact({
       annualCtc,
       monthlyCtc,
       metrics,
       otMultiplier: 1.5,
       structureCode: currentEmployee?.salary_structure_code || 'CORP_STD_01',
-      pfApplicable: currentEmployee?.pf_applicable !== false,
-      esiApplicable: currentEmployee?.esi_applicable === true,
-      ptApplicable: currentEmployee?.pt_applicable !== false,
+      pfApplicable: isPfApplicable,
+      esiApplicable: isEsiApplicable,
+      ptApplicable: isPtApplicable,
     });
   }, [annualCtc, monthlyCtc, metrics, currentEmployee]);
 
@@ -1144,55 +1168,125 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
                 </div>
 
                 {/* Real-time Payroll Simulation & Financial Breakdown */}
-                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 text-xs space-y-3">
-                  <div className="flex items-center gap-2 pb-2 border-b border-gray-200">
-                    <Calculator className="w-4 h-4 text-[#07563D]" />
-                    <h4 className="font-bold text-gray-900">Real-Time Payroll Handoff Calculation</h4>
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 text-xs space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-gray-200">
+                    <div className="flex items-center gap-2">
+                      <Calculator className="w-4 h-4 text-[#07563D]" />
+                      <h4 className="font-bold text-gray-900">Attendance-Adjusted Payroll Calculation</h4>
+                    </div>
+                    <span className="text-[10px] font-mono bg-emerald-100 text-[#07563D] px-2.5 py-0.5 rounded-full font-bold">
+                      Live Engine Synced
+                    </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
-                    <div className="p-2.5 rounded-xl bg-white border border-gray-200">
-                      <span className="text-gray-500 block text-[11px]">Gross Base Monthly Salary</span>
-                      <strong className="text-gray-900 font-mono text-sm block mt-0.5">
-                        ₹{payrollImpact.baseGrossEarnings.toLocaleString('en-IN')}
-                      </strong>
-                      <span className="text-[10px] text-gray-400 block mt-0.5">₹{payrollImpact.dailyWageRate}/day</span>
+                  {/* 1. Gross Earnings Adjustment */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] uppercase font-bold text-gray-500 block font-mono">
+                      1. Attendance-Adjusted Gross Earnings
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                      <div className="p-2.5 rounded-xl bg-white border border-gray-200">
+                        <span className="text-gray-500 block text-[11px]">Gross Base Monthly Salary</span>
+                        <strong className="text-gray-900 font-mono text-sm block mt-0.5">
+                          ₹{payrollImpact.baseGrossEarnings.toLocaleString('en-IN')}
+                        </strong>
+                        <span className="text-[10px] text-gray-400 block mt-0.5">₹{payrollImpact.dailyWageRate}/day</span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-white border border-gray-200">
+                        <span className="text-gray-500 block text-[11px]">LOP Attendance Deduction</span>
+                        <strong className={cn("font-mono text-sm block mt-0.5", payrollImpact.lopDeductionAmount > 0 ? "text-rose-700" : "text-gray-700")}>
+                          -₹{payrollImpact.lopDeductionAmount.toLocaleString('en-IN')}
+                        </strong>
+                        <span className="text-[10px] text-gray-400 block mt-0.5">{metrics.lopDays} days × ₹{payrollImpact.dailyWageRate}</span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-white border border-gray-200">
+                        <span className="text-gray-500 block text-[11px]">Approved Overtime Earnings</span>
+                        <strong className="text-teal-800 font-mono text-sm block mt-0.5">
+                          +₹{payrollImpact.otEarnings.toLocaleString('en-IN')}
+                        </strong>
+                        <span className="text-[10px] text-gray-400 block mt-0.5">{formatMinutesToHoursStr(metrics.approvedOvertimeMinutes)} × ₹{payrollImpact.hourlyOtRate}/hr</span>
+                      </div>
                     </div>
 
-                    <div className="p-2.5 rounded-xl bg-white border border-gray-200">
-                      <span className="text-gray-500 block text-[11px]">LOP Attendance Deduction</span>
-                      <strong className={cn("font-mono text-sm block mt-0.5", payrollImpact.lopDeductionAmount > 0 ? "text-rose-700" : "text-gray-700")}>
-                        -₹{payrollImpact.lopDeductionAmount.toLocaleString('en-IN')}
+                    <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200 flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-blue-900 block">
+                          Earned Monthly Gross Salary (Post-LOP)
+                        </span>
+                        <span className="text-[10px] text-blue-700">
+                          Base (₹{payrollImpact.baseGrossEarnings.toLocaleString('en-IN')}) − LOP (₹{payrollImpact.lopDeductionAmount.toLocaleString('en-IN')}) + OT (₹{payrollImpact.otEarnings.toLocaleString('en-IN')})
+                        </span>
+                      </div>
+                      <strong className="text-base font-black text-blue-950 font-mono">
+                        ₹{payrollImpact.effectiveGrossEarnings.toLocaleString('en-IN')}
                       </strong>
-                      <span className="text-[10px] text-gray-400 block mt-0.5">{metrics.lopDays} days × ₹{payrollImpact.dailyWageRate}</span>
-                    </div>
-
-                    <div className="p-2.5 rounded-xl bg-white border border-gray-200">
-                      <span className="text-gray-500 block text-[11px]">Approved Overtime Earnings</span>
-                      <strong className="text-teal-800 font-mono text-sm block mt-0.5">
-                        +₹{payrollImpact.otEarnings.toLocaleString('en-IN')}
-                      </strong>
-                      <span className="text-[10px] text-gray-400 block mt-0.5">{formatMinutesToHoursStr(metrics.approvedOvertimeMinutes)} × ₹{payrollImpact.hourlyOtRate}/hr</span>
                     </div>
                   </div>
 
-                  <div className="p-3 rounded-xl bg-[#07563D]/10 border border-[#07563D]/20 flex items-center justify-between flex-wrap gap-2">
+                  {/* 2. Statutory Withholdings & Deductions */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] uppercase font-bold text-gray-500 block font-mono">
+                      2. Post-Attendance Statutory & Tax Deductions
+                    </span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                      <div className="p-2.5 rounded-xl bg-white border border-gray-200">
+                        <span className="text-gray-500 block text-[10px]">Employee EPF (12%):</span>
+                        <strong className="text-rose-700 font-mono text-xs block mt-0.5">
+                          -₹{payrollImpact.epfEmployee.toLocaleString('en-IN')}
+                        </strong>
+                        <span className="text-[9px] text-gray-400">on Earned Basic ₹{payrollImpact.basicEarned.toLocaleString('en-IN')}</span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-white border border-gray-200">
+                        <span className="text-gray-500 block text-[10px]">Employee ESIC (0.75%):</span>
+                        <strong className="text-rose-700 font-mono text-xs block mt-0.5">
+                          -₹{payrollImpact.esicEmployee.toLocaleString('en-IN')}
+                        </strong>
+                        <span className="text-[9px] text-gray-400">on Earned Gross</span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-white border border-gray-200">
+                        <span className="text-gray-500 block text-[10px]">Professional Tax (PT):</span>
+                        <strong className="text-rose-700 font-mono text-xs block mt-0.5">
+                          -₹{payrollImpact.professionalTax.toLocaleString('en-IN')}
+                        </strong>
+                        <span className="text-[9px] text-gray-400">TN Slabs</span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200">
+                        <span className="text-rose-800 font-bold block text-[10px]">Total Deductions:</span>
+                        <strong className="text-rose-900 font-mono text-sm block mt-0.5">
+                          -₹{payrollImpact.totalEmployeeDeductions.toLocaleString('en-IN')}
+                        </strong>
+                        <span className="text-[9px] text-rose-700">EPF + ESIC + PT</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. Final Net Take-Home Pay Result */}
+                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-[#07563D] to-emerald-800 text-white shadow-xs flex items-center justify-between flex-wrap gap-2">
                     <div>
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#07563D] block">
-                        Estimated Earned Gross (Pre-Statutory Deductions)
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-200 block">
+                        Estimated Net Take-Home Pay (Bank Payout)
                       </span>
-                      <span className="text-xs text-gray-600">
-                        = Base (₹{payrollImpact.baseGrossEarnings.toLocaleString('en-IN')}) - LOP (₹{payrollImpact.lopDeductionAmount.toLocaleString('en-IN')}) + OT (₹{payrollImpact.otEarnings.toLocaleString('en-IN')})
+                      <span className="text-[11px] text-emerald-100/90 font-mono">
+                        Earned Gross (₹{payrollImpact.effectiveGrossEarnings.toLocaleString('en-IN')}) − Deductions (₹{payrollImpact.totalEmployeeDeductions.toLocaleString('en-IN')})
                       </span>
                     </div>
-                    <strong className="text-lg font-black text-[#07563D] font-mono">
-                      ₹{payrollImpact.effectiveGrossEarnings.toLocaleString('en-IN')}
-                    </strong>
+                    <div className="text-right">
+                      <strong className="text-xl font-black text-white font-mono block">
+                        ₹{payrollImpact.netTakeHomePay.toLocaleString('en-IN')}
+                      </strong>
+                      <span className="text-[10px] text-emerald-200 font-mono">Disbursement Amount</span>
+                    </div>
                   </div>
 
-                  <div className="pt-2 text-[11px] text-gray-500 flex justify-between items-center border-t border-gray-200">
-                    <span>Target Payroll Engine: <strong className="text-gray-800 font-mono">Universal Payroll Calculation Engine (v2.4)</strong></span>
-                    <span>Late/Early Penalty: <strong className="text-emerald-700">₹0 (Within Grace Allowance)</strong></span>
+                  {/* 4. Employer Contributions & Compliance Invariant Footer */}
+                  <div className="pt-2 text-[11px] text-gray-500 flex justify-between items-center border-t border-gray-200 flex-wrap gap-2">
+                    <span>Employer Liability: <strong className="text-gray-800 font-mono">EPF ₹{payrollImpact.epfEmployer.toLocaleString('en-IN')} + ESIC ₹{payrollImpact.esicEmployer.toLocaleString('en-IN')} = ₹{payrollImpact.totalEmployerContributions.toLocaleString('en-IN')}</strong></span>
+                    <span>Target Engine: <strong className="text-emerald-700 font-mono">Universal Statutory Engine (v4.0)</strong></span>
                   </div>
                 </div>
               </div>

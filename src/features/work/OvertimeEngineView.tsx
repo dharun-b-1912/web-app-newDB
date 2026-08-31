@@ -57,42 +57,49 @@ const PRESET_NAMES: Record<IndustryPreset, string> = {
 
 export const OvertimeEngineView: React.FC = () => {
   const { showToast } = useToast();
-  const [metrics, setMetrics] = useState<OvertimeDashboardMetrics>(() => workOvertimeService.getDashboardMetrics());
+  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [metrics, setMetrics] = useState<OvertimeDashboardMetrics>(() => workOvertimeService.getDashboardMetrics(new Date().toISOString().split('T')[0]));
   const [activePreset, setActivePreset] = useState<IndustryPreset>(() => workOvertimeService.getActivePreset());
-  const [workHours, setWorkHours] = useState<WorkHourRecord[]>(() => workOvertimeService.getWorkHourRecords());
-  const [exceptions, setExceptions] = useState<WorkException[]>(() => workOvertimeService.getWorkExceptions());
+  const [workHours, setWorkHours] = useState<WorkHourRecord[]>(() => workOvertimeService.getWorkHourRecords(new Date().toISOString().split('T')[0]));
+  const [exceptions, setExceptions] = useState<WorkException[]>(() => workOvertimeService.getWorkExceptions(new Date().toISOString().split('T')[0]));
   const [policy, setPolicy] = useState<OvertimePolicy>(() => workOvertimeService.getPolicy());
   const [selectedRecordForDrawer, setSelectedRecordForDrawer] = useState<WorkHourRecord | null>(null);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [filterDepartment, setFilterDepartment] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ALL');
 
-  const refreshData = () => {
-    setMetrics(workOvertimeService.getDashboardMetrics());
+  const refreshData = (date = selectedDate) => {
+    setMetrics(workOvertimeService.getDashboardMetrics(date));
     setActivePreset(workOvertimeService.getActivePreset());
-    setWorkHours(workOvertimeService.getWorkHourRecords());
-    setExceptions(workOvertimeService.getWorkExceptions());
+    setWorkHours(workOvertimeService.getWorkHourRecords(date));
+    setExceptions(workOvertimeService.getWorkExceptions(date));
     setPolicy(workOvertimeService.getPolicy());
   };
 
   useEffect(() => {
-    const handleUpdate = () => refreshData();
+    refreshData(selectedDate);
+  }, [selectedDate]);
+
+  useEffect(() => {
+    const handleUpdate = () => refreshData(selectedDate);
     window.addEventListener('work-overtime:updated', handleUpdate);
     return () => window.removeEventListener('work-overtime:updated', handleUpdate);
-  }, []);
+  }, [selectedDate]);
 
   const handleSwitchPreset = (preset: IndustryPreset) => {
     workOvertimeService.setActivePreset(preset);
     setActivePreset(preset);
     showToast(`Operational mode switched to ${PRESET_NAMES[preset]} with industry rule defaults!`);
-    refreshData();
+    refreshData(selectedDate);
   };
 
   const handleResolveException = (id: string) => {
     workOvertimeService.resolveException(id, 'Resolved and authorized by Department Manager');
     showToast('Exception verified and cleared for payroll calculation');
-    refreshData();
+    refreshData(selectedDate);
   };
+
+  const departments = Array.from(new Set(['ALL', ...workHours.map(w => w.department)]));
 
   const filteredWorkHours = workHours.filter(record => {
     if (filterDepartment !== 'ALL' && record.department !== filterDepartment) return false;
@@ -260,16 +267,23 @@ export const OvertimeEngineView: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
+              className="text-xs px-2.5 py-1.5 rounded-xl border border-gray-200 bg-white font-bold text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#07563D]"
+            />
+
             <select
               value={filterDepartment}
               onChange={e => setFilterDepartment(e.target.value)}
               className="text-xs px-2.5 py-1.5 rounded-xl border border-gray-200 bg-white font-medium text-gray-700"
             >
-              <option value="ALL">All Departments</option>
-              <option value="Engineering">Engineering</option>
-              <option value="Manufacturing Ops">Manufacturing Ops</option>
-              <option value="Finance & Accounts">Finance & Accounts</option>
-              <option value="Logistics & Warehouse">Logistics & Warehouse</option>
+              {departments.map(d => (
+                <option key={d} value={d}>
+                  {d === 'ALL' ? 'All Departments' : d}
+                </option>
+              ))}
             </select>
 
             <select

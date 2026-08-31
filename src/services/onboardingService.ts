@@ -1,19 +1,22 @@
 import {
   EmployeeOnboarding,
   OnboardingTask,
+  OnboardingTaskRole,
   OnboardingPolicyAck,
   OnboardingOverride,
   OnboardingAuditLog,
   OnboardingSummaryMetrics,
   OnboardingStatus,
   OnboardingEmploymentSource,
-  OnboardingTaskRole,
   Employee,
 } from '../types';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { hrEventBus } from './hrEventBus';
 import { api } from './api';
+import { payrollApi } from './payrollApi';
 import { vendorService } from './vendorService';
+import { employeeAuthService } from './auth/employeeAuthService';
+import { resendEmailService } from './email/resendEmailService';
 
 const ONBOARDINGS_STORAGE_KEY = 'workforce_employee_onboardings';
 const ONBOARDING_TASKS_KEY = 'workforce_onboarding_tasks';
@@ -697,36 +700,20 @@ export const onboardingService = {
     annual_ctc?: number;
     monthly_ctc?: number;
   }> {
-    if (isSupabaseEnabled) {
-      try {
-        const { data, error } = await supabase.rpc('fn_finalize_employee_onboarding', {
-          p_payload: payload,
-        });
-        if (error) {
-          console.warn('[OnboardingService] Supabase RPC error during finalizeOnboarding:', error);
-          throw error;
-        }
-        if (data && data.success) {
-          hrEventBus.publish('employee.created', data);
-          return data;
-        }
-      } catch (err: any) {
-        console.warn('[OnboardingService] Falling back to local finalize flow:', err);
-      }
-    }
-
-    // Local / Offline Fallback Finalization
     const employeeId = `EMP-${Math.floor(100000 + Math.random() * 900000)}`;
     const employeeCode = payload.identity?.employee_code || `JCS-${Math.floor(100 + Math.random() * 900)}`;
     const annualCtc = Number(payload.compensation?.annual_ctc) || 1200000;
     const monthlyCtc = Math.round(annualCtc / 12);
 
+    const activeOrgId = payload.organization_id || (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-corporate-solutions-private-') : 'org-joy-corporate-solutions-private-');
+    const activeCompanyId = payload.company_id || (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_company_id') || `comp-${activeOrgId.replace('org-', '')}`) : `comp-${activeOrgId.replace('org-', '')}`);
+
     const newEmp: Employee = {
       id: employeeId,
       employee_code: employeeCode,
-      organization_id: payload.organization_id || 'org-joy-01',
-      company_id: payload.company_id || 'comp-joy-01',
-      company_name: 'Joy Corporate Solutions Pvt Ltd',
+      organization_id: activeOrgId,
+      company_id: activeCompanyId,
+      company_name: payload.company_name || 'Joy Corporate Solutions Pvt Ltd',
       first_name: payload.identity?.first_name || '',
       middle_name: payload.identity?.middle_name || '',
       last_name: payload.identity?.last_name || '',
@@ -799,6 +786,32 @@ export const onboardingService = {
         team_lead_name: payload.reporting?.team_lead_name,
         probation_period_months: payload.employment?.probation_months || 6,
         notice_period_days: payload.employment?.notice_period_days || 60,
+        ctc: annualCtc,
+        shift_id: payload.employment?.shift_id || 'shift-general-01',
+        shift_name: payload.employment?.shift_name || 'General Shift (09:30 AM – 06:30 PM)',
+        attendance_policy_id: payload.employment?.attendance_policy_id || 'pol-standard-office',
+        leave_policy_id: payload.employment?.leave_policy_id || 'leave-pol-std-2026',
+        leave_policy_name: payload.employment?.leave_policy_name || 'Standard Full-Time Leave Policy',
+        salary_structure_code: payload.compensation?.salary_structure_code || 'CORP_STD_01',
+        salary_structure_name: payload.compensation?.salary_structure_name || 'Corporate Standard CTC Structure',
+        salary_effective_from: payload.compensation?.salary_effective_from || payload.employment?.doj || new Date().toISOString().split('T')[0],
+      },
+      bank: {
+        bank_name: payload.statutory?.bank_name || payload.bank?.bank_name || 'HDFC Bank',
+        account_number: payload.statutory?.account_number || payload.bank?.account_number || '',
+        ifsc: payload.statutory?.ifsc || payload.bank?.ifsc || 'HDFC0001234',
+        account_holder_name: payload.statutory?.account_holder_name || `${payload.identity?.first_name} ${payload.identity?.last_name}`.trim(),
+        account_type: payload.statutory?.account_type || payload.bank?.account_type || 'SALARY',
+      },
+      statutory: {
+        pan: payload.statutory?.pan || '',
+        uan: payload.statutory?.uan || '',
+        pf_number: payload.statutory?.pf_number || '',
+        esi_number: payload.statutory?.esi_number || '',
+        pf_applicable: payload.statutory?.pf_applicable !== false,
+        esi_applicable: payload.statutory?.esi_applicable === true,
+        pt_applicable: payload.statutory?.pt_applicable !== false,
+        tax_regime: payload.statutory?.tax_regime || 'NEW',
       },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -806,6 +819,73 @@ export const onboardingService = {
 
     // Save to employees list
     await api.createEmployee(newEmp);
+
+    // Save to Payroll
+    try {
+      payrollApi.saveEmployeeSalary({
+        id: `sal-${employeeId}`,
+        tenant_id: activeOrgId,
+        employee_id: employeeId,
+        employee_code: employeeCode,
+        employee_name: newEmp.display_name || `${newEmp.first_name} ${newEmp.last_name}`.trim(),
+        department_name: newEmp.department_name || 'General',
+        designation: newEmp.designation_title || 'Staff',
+        salary_structure_id: payload.compensation?.salary_structure_code || 'CORP_STD_01',
+        salary_structure_name: payload.compensation?.salary_structure_name || 'Corporate Standard CTC Structure',
+        annual_ctc: annualCtc,
+        gross_monthly: monthlyCtc,
+        basic_monthly: Math.round(monthlyCtc * 0.5),
+        net_monthly_estimate: Math.max(0, Math.round(monthlyCtc * 0.88)),
+        payment_mode: 'BankTransfer',
+        bank_name: newEmp.bank?.bank_name || 'HDFC Bank Ltd',
+        account_number: newEmp.bank?.account_number || '',
+        ifsc_code: newEmp.bank?.ifsc || 'HDFC0001234',
+        pan_number: newEmp.statutory?.pan || '',
+        pf_uan: newEmp.statutory?.uan || '',
+        esic_number: newEmp.statutory?.esi_number || '',
+        effective_from: payload.employment?.doj || new Date().toISOString().split('T')[0],
+        status: 'Active',
+        updated_at: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn('[OnboardingService] Payroll sync warning:', e);
+    }
+
+    // 4. Provision Employee App Access Account
+    const appAccessConfig = payload.app_access || { enable_app_access: true };
+    const emailToDispatch = newEmp.work_email || (newEmp.profile as any)?.personal_email;
+    const phoneToDispatch = newEmp.profile?.phone || '+919791817437';
+
+    if (appAccessConfig.enable_app_access !== false) {
+      try {
+        const authResult = await employeeAuthService.provisionEmployeeAuth({
+          tenantId: activeOrgId,
+          employeeId: employeeId,
+          phone: phoneToDispatch,
+          email: emailToDispatch,
+          firstName: newEmp.first_name,
+          lastName: newEmp.last_name,
+          role: newEmp.designation_title || 'Employee',
+          sendSms: false,
+        });
+
+        // If employee has an email, dispatch welcome activation email via Resend
+        if (emailToDispatch) {
+          resendEmailService.sendEmployeeActivationEmail({
+            to: emailToDispatch,
+            employeeName: `${newEmp.first_name} ${newEmp.last_name}`.trim(),
+            employeeId: employeeCode,
+            loginIdentifier: employeeCode,
+            activationToken: authResult.activation_token || `act-${employeeId}`,
+            organizationName: newEmp.company_name || 'Joy Corporate Solutions',
+            authMethod: appAccessConfig.auth_method || 'Employee ID + Password',
+            requiresPasswordChange: appAccessConfig.require_password_change !== false,
+          }).catch((err) => console.warn('[OnboardingService] Resend email dispatch notice:', err));
+        }
+      } catch (err) {
+        console.warn('[OnboardingService] Auth provisioning notice:', err);
+      }
+    }
 
     hrEventBus.publish('employee.created', {
       employee_id: employeeId,

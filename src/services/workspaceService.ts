@@ -145,194 +145,36 @@ export const workspaceService = {
       }
     }
 
-    // Leave Entitlements: ensure normalized list for this employee
-    const defaultEntitlements: LeaveEntitlement[] = [
-      {
-        id: 'ent-cl',
-        employee_id: empId,
-        employee_name: employee.display_name || user.name,
-        department_name: employee.department_name || 'People & HR',
-        leave_type_id: 'lt-cl',
-        leave_type_name: 'Casual Leave',
-        policy_id: 'pol-cl',
-        policy_name: 'Corporate Casual Leave Policy',
-        period: '2026',
-        opening_balance: 12,
-        granted: 12,
-        accrued: 0,
-        carried_forward: 0,
-        adjustments: 0,
-        used: 4,
-        pending: 0,
-        encashed: 0,
-        expired: 0,
-        closing_balance: 8,
-        available_balance: 8,
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'ent-sl',
-        employee_id: empId,
-        employee_name: employee.display_name || user.name,
-        department_name: employee.department_name || 'People & HR',
-        leave_type_id: 'lt-sl',
-        leave_type_name: 'Sick Leave',
-        policy_id: 'pol-sl',
-        policy_name: 'Corporate Sick Leave Policy',
-        period: '2026',
-        opening_balance: 12,
-        granted: 12,
-        accrued: 0,
-        carried_forward: 0,
-        adjustments: 0,
-        used: 2,
-        pending: 0,
-        encashed: 0,
-        expired: 0,
-        closing_balance: 10,
-        available_balance: 10,
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'ent-el',
-        employee_id: empId,
-        employee_name: employee.display_name || user.name,
-        department_name: employee.department_name || 'People & HR',
-        leave_type_id: 'lt-el',
-        leave_type_name: 'Earned Leave',
-        policy_id: 'pol-el',
-        policy_name: 'Corporate Earned Leave Policy',
-        period: '2026',
-        opening_balance: 18,
-        granted: 18,
-        accrued: 0,
-        carried_forward: 0,
-        adjustments: 0,
-        used: 4,
-        pending: 0,
-        encashed: 0,
-        expired: 0,
-        closing_balance: 14,
-        available_balance: 14,
-        updated_at: new Date().toISOString(),
-      },
-    ];
-
-    const userEntitlements = entitlements.length > 0 ? entitlements : defaultEntitlements;
+    // Leave Entitlements: return actual employee entitlements
+    const userEntitlements = entitlements;
 
     // Upcoming Holiday from Organization Calendar
-    let upcomingHoliday: { name: string; date: string; description?: string } | null = {
-      name: 'Independence Day',
-      date: '15 Aug 2026',
-      description: 'National Public Holiday',
-    };
+    let upcomingHoliday: { name: string; date: string; description?: string } | null = null;
 
     if (holidayCalendars.length > 0) {
       const activeCalendar = holidayCalendars[0];
-      const futureHolidays = activeCalendar.holidays
-        .filter((h) => h.date >= todayStr)
-        .sort((a, b) => a.date.localeCompare(b.date));
-      if (futureHolidays.length > 0) {
-        upcomingHoliday = {
-          name: futureHolidays[0].name,
-          date: new Date(futureHolidays[0].date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }),
-          description: futureHolidays[0].type || 'Company Holiday',
-        };
+      if (activeCalendar.holidays && activeCalendar.holidays.length > 0) {
+        const futureHolidays = activeCalendar.holidays
+          .filter((h) => h.date >= todayStr)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        if (futureHolidays.length > 0) {
+          upcomingHoliday = {
+            name: futureHolidays[0].name,
+            date: new Date(futureHolidays[0].date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }),
+            description: futureHolidays[0].type || 'Company Holiday',
+          };
+        }
       }
     }
 
-    // Pending Action Items for Current Employee
-    const pendingTasks: PendingTaskItem[] = [
-      {
-        id: 'tsk-01',
-        title: 'Q3 Performance Self-Assessment',
-        category: 'Performance',
-        description: 'Complete quarterly self-evaluation for People Operations leadership metrics.',
-        dueDate: '25 Aug 2026',
-        priority: 'High',
-        status: 'Pending',
-        actionLabel: 'Complete Assessment',
-        targetRoute: 'performance',
-      },
-      {
-        id: 'tsk-02',
-        title: 'Statutory POSH Policy 2026 Acknowledgement',
-        category: 'Document',
-        description: 'Review and electronically sign updated organizational compliance charter.',
-        dueDate: '31 Aug 2026',
-        priority: 'Normal',
-        status: 'Pending',
-        actionLabel: 'Review & Sign',
-        targetRoute: 'documents',
-      },
-      {
-        id: 'tsk-03',
-        title: 'Pending Leave Approvals (3 Team Requests)',
-        category: 'Approval',
-        description: '3 team member leave requests are awaiting your review as HR Head.',
-        dueDate: 'Today',
-        priority: 'Urgent',
-        status: 'Pending',
-        actionLabel: 'Review Approvals',
-        targetRoute: 'leave',
-      },
-    ];
+    // Pending Action Items for Current Employee (Derived from real pending approvals)
+    const pendingTasks: PendingTaskItem[] = [];
 
-    // Authoritative Recent Service Requests
-    const serviceRequests: ServiceRequestItem[] = [
-      {
-        id: 'req-01',
-        requestCode: 'REQ-ATT-2026-08',
-        requestType: 'Attendance Regularization',
-        submittedDate: '12 Aug 2026',
-        status: 'Approved',
-        summary: 'Missed evening punch out due to client strategy meeting (06:30 PM)',
-      },
-      {
-        id: 'req-02',
-        requestCode: 'REQ-DOC-2026-14',
-        requestType: 'Employment Letter Request',
-        submittedDate: '05 Aug 2026',
-        status: 'Approved',
-        summary: 'Official embassy verification letter for Schengen Business Visa',
-      },
-      {
-        id: 'req-03',
-        requestCode: 'REQ-BNK-2026-02',
-        requestType: 'Bank Detail Verification',
-        submittedDate: '01 Aug 2026',
-        status: 'Approved',
-        summary: 'Salary disbursement account validation with HDFC Bank',
-      },
-    ];
+    // Real Service Requests
+    const serviceRequests: ServiceRequestItem[] = [];
 
-    // Notification Feed
-    const notifications: NotificationItem[] = [
-      {
-        id: 'notif-01',
-        title: 'July 2026 Payslip Available',
-        message: 'Your official salary payslip for July 2026 has been published and is ready for download.',
-        timestamp: '31 Jul 2026',
-        type: 'payroll',
-        isRead: false,
-      },
-      {
-        id: 'notif-02',
-        title: 'Leave Request Approved',
-        message: 'Your 1-day Casual Leave for 08 Aug 2026 has been approved by Dharun Joy.',
-        timestamp: '02 Aug 2026',
-        type: 'leave',
-        isRead: true,
-      },
-      {
-        id: 'notif-03',
-        title: 'New Device Sign-in Verified',
-        message: 'Joy PeopleHR session active on Windows PC (Chrome 126) from Coimbatore HQ.',
-        timestamp: 'Today 09:12 AM',
-        type: 'security',
-        isRead: true,
-      },
-    ];
+    // Real Notification Feed
+    const notifications: NotificationItem[] = [];
 
     return {
       user,

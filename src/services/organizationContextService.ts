@@ -2,6 +2,7 @@ import { Organization, Company, User } from '../types';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { api } from './api';
 import { hrEventBus } from './hrEventBus';
+import { getPrimaryRole } from '../lib/rbac/permissionEngine';
 
 export interface EffectiveUserContext {
   userId: string;
@@ -20,69 +21,63 @@ const STORAGE_KEYS = {
 };
 
 // Authoritative Default Organizations & Entities (matching Supabase seeds)
-export const DEFAULT_ORGANIZATIONS: Organization[] = [
-  {
-    id: 'org-joy-01',
-    name: 'Joy Corporate Solutions',
-    slug: 'joy-corporate-solutions',
-    status: 'Active',
-    plan: 'Enterprise',
-    default_currency: 'INR',
-    timezone: 'Asia/Kolkata',
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-01T00:00:00Z',
-  },
-];
-
-export const DEFAULT_LEGAL_ENTITIES: Company[] = [
-  {
-    id: 'comp-joy-01',
-    organization_id: 'org-joy-01',
-    legal_name: 'Joy Corporate Solutions Pvt Ltd',
-    trade_name: 'Joy Corporate India',
-    statutory_registration_no: 'U72200TZ2020PTC034567',
-    tax_id: '33AABCJ1234F1Z5',
-    country: 'India',
-    city: 'Coimbatore',
-    currency: 'INR',
-    timezone: 'Asia/Kolkata',
-    address: 'Joy Tech Park, Avinashi Road, Coimbatore, Tamil Nadu 641014',
-    created_at: '2024-01-01T00:00:00Z',
-  },
-  {
-    id: 'comp-joy-02',
-    organization_id: 'org-joy-01',
-    legal_name: 'Joy Global Technologies Inc',
-    trade_name: 'Joy Global USA',
-    statutory_registration_no: 'EIN-84-9876543',
-    tax_id: 'US-TAX-98765',
-    country: 'United States',
-    city: 'New York',
-    currency: 'USD',
-    timezone: 'America/New_York',
-    address: '450 Lexington Avenue, Suite 1200, New York, NY 10017',
-    created_at: '2024-01-01T00:00:00Z',
-  },
-];
+export const DEFAULT_ORGANIZATIONS: Organization[] = [];
+export const DEFAULT_LEGAL_ENTITIES: Company[] = [];
 
 class OrganizationContextService {
+  /**
+   * Extract current subdomain slug safely if accessing via a custom tenant subdomain.
+   * Examples:
+   * - "acme.joypeoplehr.com" -> "acme"
+   * - "acme.localhost:5173" -> "acme"
+   * - "joypeoplehr.com" -> null (Main root domain)
+   * - "app.joypeoplehr.com" -> null (Global App portal)
+   */
+  detectSubdomainSlug(): string | null {
+    if (typeof window === 'undefined' || !window.location) return null;
+    const hostname = window.location.hostname.toLowerCase();
+
+    if (!hostname || hostname === 'localhost' || hostname === 'joypeoplehr.com' || /^(\d+\.){3}\d+$/.test(hostname)) {
+      return null;
+    }
+
+    const reservedPrefixes = new Set([
+      'www', 'app', 'api', 'admin', 'auth', 'mail', 'mfa', 'portal', 'root',
+      'security', 'staging', 'static', 'status', 'superadmin', 'support', 'test', 'platform'
+    ]);
+
+    // Handle *.joypeoplehr.com
+    if (hostname.endsWith('.joypeoplehr.com')) {
+      const parts = hostname.replace('.joypeoplehr.com', '').split('.');
+      const sub = parts[0];
+      if (sub && !reservedPrefixes.has(sub)) {
+        return sub;
+      }
+    }
+
+    // Handle *.localhost for local development testing
+    if (hostname.endsWith('.localhost')) {
+      const parts = hostname.replace('.localhost', '').split('.');
+      const sub = parts[0];
+      if (sub && !reservedPrefixes.has(sub)) {
+        return sub;
+      }
+    }
+
+    return null;
+  }
+
   /**
    * Resolves the authoritative multi-entity organization context for the authenticated user.
    */
   async resolveUserContext(user: User): Promise<EffectiveUserContext> {
-    const roleName = user.roles?.[0]?.name || 'Employee';
-    const isPlatformAdmin = [
-      'Super Admin',
-      'Assistant Admin',
-      'Billing Admin',
-      'Security Officer',
-      'Platform Admin',
-    ].includes(roleName);
+    const roleName = getPrimaryRole(user);
+    const isPlatformAdmin = roleName === 'Super Admin';
 
-    let allOrgs: Organization[] = [...DEFAULT_ORGANIZATIONS];
-    let allEntities: Company[] = [...DEFAULT_LEGAL_ENTITIES];
+    let allOrgs: Organization[] = [];
+    let allEntities: Company[] = [];
 
-    // 1. Fetch from live Supabase if enabled
+    // 1. Fetch live from Supabase tables
     if (isSupabaseEnabled) {
       try {
         const [orgRes, compRes] = await Promise.all([
@@ -96,40 +91,62 @@ class OrganizationContextService {
           allEntities = compRes.data;
         }
       } catch (err) {
-        console.warn('[OrgContextService] Supabase context query fallback to local state:', err);
+        console.warn('[OrgContextService] Supabase context query notice:', err);
       }
     }
 
-    // 2. Determine Active Organization
-    const savedOrgId = localStorage.getItem(STORAGE_KEYS.ACTIVE_ORG_ID);
-    let activeOrg = allOrgs.find((o) => o.id === savedOrgId) || allOrgs[0];
+    // 2. Determine Active Organization via Subdomain or Saved Preference
+    const subdomainSlug = this.detectSubdomainSlug();
+    let activeOrg: Organization | undefined;
+
+    if (subdomainSlug) {
+      activeOrg = allOrgs.find((o) => {
+        const oSlug = (o.slug || '').toLowerCase();
+        const oId = (o.id || '').toLowerCase().replace(/^org-/, '');
+        return oSlug === subdomainSlug || oId === subdomainSlug;
+      });
+    }
+
+    if (!activeOrg) {
+      const savedOrgId = localStorage.getItem(STORAGE_KEYS.ACTIVE_ORG_ID);
+      activeOrg = allOrgs.find((o) => o.id === savedOrgId) || allOrgs[0] || ({
+        id: user.organization_id || 'org-active',
+        name: 'Organization',
+        slug: 'organization',
+        status: 'Active',
+        plan: 'Enterprise',
+        default_currency: 'INR',
+        timezone: 'Asia/Kolkata',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as Organization);
+    }
 
     // 3. Filter authorized Legal Entities by Role Scope
     let authorizedEntities: Company[] = [];
 
-    if (isPlatformAdmin) {
-      // Platform Admin can inspect all entities in the selected org
-      authorizedEntities = allEntities.filter((e) => e.organization_id === activeOrg.id);
-    } else if (roleName === 'Company Admin') {
-      // Company Admin manages all legal entities in their Customer Organization
-      authorizedEntities = allEntities.filter((e) => e.organization_id === activeOrg.id);
-    } else if (roleName === 'HR Head') {
-      // HR Head scope: Default 1 assigned legal entity (Joy Corporate Solutions Pvt Ltd)
-      // If multi-entity HR explicitly configured, includes additional entities
-      const assignedEntityId = 'comp-joy-01'; // Default legal entity
-      authorizedEntities = allEntities.filter(
-        (e) => e.organization_id === activeOrg.id && e.id === assignedEntityId
-      );
-      if (authorizedEntities.length === 0) {
-        authorizedEntities = [allEntities.find((e) => e.organization_id === activeOrg.id) || allEntities[0]];
-      }
-    } else {
-      // Manager / Team Lead / Employee: assigned legal entity
-      const userEntityId = 'comp-joy-01';
-      authorizedEntities = allEntities.filter((e) => e.id === userEntityId);
-      if (authorizedEntities.length === 0) {
-        authorizedEntities = [allEntities[0]];
-      }
+    if (activeOrg?.id) {
+      authorizedEntities = allEntities.filter((e) => e.organization_id === activeOrg?.id);
+    }
+
+    if (authorizedEntities.length === 0) {
+      authorizedEntities = allEntities.length > 0
+        ? allEntities
+        : [
+            {
+              id: 'comp-active',
+              organization_id: activeOrg?.id || 'org-active',
+              legal_name: activeOrg?.name || 'Company',
+              trade_name: activeOrg?.name || 'Company',
+              statutory_registration_no: '',
+              tax_id: '',
+              country: 'India',
+              city: '',
+              currency: 'INR',
+              timezone: 'Asia/Kolkata',
+              created_at: new Date().toISOString(),
+            } as Company,
+          ];
     }
 
     // 4. Determine Active Legal Entity
@@ -138,8 +155,12 @@ class OrganizationContextService {
       authorizedEntities.find((e) => e.id === savedEntityId) || authorizedEntities[0];
 
     // Persist verified context back to local session pointer
-    localStorage.setItem(STORAGE_KEYS.ACTIVE_ORG_ID, activeOrg.id);
-    localStorage.setItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID, activeLegalEntity.id);
+    if (activeOrg?.id) {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_ORG_ID, activeOrg.id);
+    }
+    if (activeLegalEntity?.id) {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID, activeLegalEntity.id);
+    }
 
     return {
       userId: user.id,
@@ -232,25 +253,18 @@ class OrganizationContextService {
    * Formats clean, unpolluted role titles according to enterprise governance standard.
    */
   formatCleanRoleTitle(rawRole: string): string {
-    switch (rawRole) {
-      case 'Super Admin':
-      case 'Platform Admin':
-        return 'Platform Super Admin';
-      case 'Assistant Admin':
-        return 'Assistant Admin (Delegated Ops)';
-      case 'Company Admin':
-        return 'Company Admin (Company)';
-      case 'HR Head':
-        return 'HR Head (Company)';
-      case 'Manager':
-        return 'Manager (Department)';
-      case 'Team Lead':
-        return 'Team Lead (Team)';
-      case 'Employee':
-        return 'Employee (Self)';
-      default:
-        return rawRole;
-    }
+    const normalized = String(rawRole || '').toLowerCase().trim();
+    if (normalized.includes('vendor') || normalized.includes('contractor')) return 'Vendor Operations Admin';
+    if (normalized.includes('super') || normalized.includes('platform')) return 'Platform Super Admin';
+    if (normalized.includes('assistant')) return 'Assistant Admin (Delegated Ops)';
+    if (normalized.includes('owner') || normalized.includes('organization owner')) return 'Organization Owner (Company)';
+    if (normalized.includes('company admin')) return 'Company Admin (Company)';
+    if (normalized.includes('hr head')) return 'HR Head (Company)';
+    if (normalized.includes('hr admin') || normalized.includes('hr')) return 'HR Admin (Company)';
+    if (normalized.includes('manager')) return 'Manager (Department)';
+    if (normalized.includes('lead')) return 'Team Lead (Team)';
+    if (normalized.includes('employee')) return 'Employee (Self)';
+    return rawRole || 'Company Admin (Company)';
   }
 
   /**

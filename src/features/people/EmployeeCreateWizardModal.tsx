@@ -18,6 +18,7 @@ import {
 import { api } from '../../services/api';
 import { onboardingService } from '../../services/onboardingService';
 import { hrEventBus } from '../../services/hrEventBus';
+import { payrollApi } from '../../services/payrollApi';
 
 // Wizard Subcomponents
 import { WizardProgressHeader, WIZARD_STEPS } from './wizard/WizardProgressHeader';
@@ -80,9 +81,16 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     preferred_name: '',
     work_email: '',
     personal_email: '',
+    email_type: 'WORK' as 'PERSONAL' | 'WORK' | 'NONE',
     phone: '',
     dob: '',
     gender: 'Male',
+
+    // Step 7: Employee App Access & Login
+    enable_app_access: true,
+    auth_method: 'EMPLOYEE_ID_PASSWORD' as 'EMPLOYEE_ID_PASSWORD' | 'MOBILE_OTP' | 'EMAIL_PASSWORD',
+    require_password_change: true,
+    require_device_verification: true,
 
     // Step 2: Contact
     alternate_phone: '',
@@ -257,15 +265,15 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       // Compensation & CTC
       salary_structure_code: (e as any).salary_structure_code || 'CORP_STD_01',
       salary_structure_name: (e as any).salary_structure_name || 'Corporate Standard CTC Structure',
-      annual_ctc: (e as any).annual_ctc || 1200000,
-      monthly_ctc: (e as any).monthly_ctc || 100000,
-      currency: 'INR',
-      pay_frequency: 'MONTHLY',
+      annual_ctc: Number(e.ctc || (e as any).annual_ctc || (emp as any).ctc || (emp as any).annual_ctc || (p as any).annual_ctc || 1200000),
+      monthly_ctc: Math.round(Number(e.ctc || (e as any).annual_ctc || (emp as any).ctc || (emp as any).annual_ctc || (p as any).annual_ctc || 1200000) / 12),
+      currency: (e as any).currency || 'INR',
+      pay_frequency: (e as any).pay_frequency || 'MONTHLY',
       payroll_group_id: (e as any).payroll_group_id || 'pg-monthly-main',
-      salary_effective_from: (e as any).salary_effective_from || new Date().toISOString().split('T')[0],
-      pf_applicable: (e as any).pf_applicable !== false,
-      esi_applicable: (e as any).esi_applicable === true,
-      pt_applicable: (e as any).pt_applicable !== false,
+      salary_effective_from: (e as any).salary_effective_from || e.doj || new Date().toISOString().split('T')[0],
+      pf_applicable: (emp as any).statutory?.pf_applicable !== undefined ? (emp as any).statutory?.pf_applicable : ((e as any).pf_applicable !== false),
+      esi_applicable: (emp as any).statutory?.esi_applicable !== undefined ? (emp as any).statutory?.esi_applicable : ((e as any).esi_applicable === true),
+      pt_applicable: (emp as any).statutory?.pt_applicable !== undefined ? (emp as any).statutory?.pt_applicable : ((e as any).pt_applicable !== false),
 
       // Step 4: Organization & Reporting
       reporting_manager_id: e.reporting_manager_id || '',
@@ -405,10 +413,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         return false;
       }
     } else if (currentStep === 4) {
-      if (!formData.reporting_manager_id) {
-        showToast('Please assign a Primary Reporting Manager.', 'error');
-        return false;
-      }
+      // Primary Reporting Manager is optional
     } else if (currentStep === 5) {
       if (!formData.emergency_name.trim() || !formData.emergency_phone.trim()) {
         showToast('Please provide a Primary Emergency Contact Name and Phone.', 'error');
@@ -442,10 +447,18 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       const selectedBranch = branches.find((b) => b.id === formData.branch_id);
       const selectedLocation = locations.find((l) => l.id === formData.location_id);
 
+      const allCompanies = await api.getCompanies();
+      const realComp = (activeCompany?.id && allCompanies.find((c) => c.id === activeCompany.id)) || allCompanies[0] || activeCompany;
+      const realOrg = organization?.id ? organization : (await api.getOrganization());
+
+      const activeOrgId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-corporate-solutions-private-') : 'org-joy-corporate-solutions-private-';
+      const activeCompanyId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_company_id') || `comp-${activeOrgId.replace('org-', '')}`) : `comp-${activeOrgId.replace('org-', '')}`;
+
       const payload = {
-        tenant_id: organization?.id || 'org-joy-01',
-        organization_id: organization?.id || 'org-joy-01',
-        company_id: activeCompany?.id || 'comp-joy-01',
+        tenant_id: realOrg?.id || realComp?.organization_id || activeOrgId,
+        organization_id: realOrg?.id || realComp?.organization_id || activeOrgId,
+        company_id: realComp?.id || activeCompanyId,
+        company_name: realComp?.legal_name || 'Joy Corporate Solutions Pvt Ltd',
         identity: {
           photo_url: formData.photo_url,
           employee_code: formData.employee_code,
@@ -563,13 +576,20 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           review_frequency: 'ANNUAL',
         },
         documents: formData.documents || [],
+        app_access: {
+          enable_app_access: formData.enable_app_access !== false,
+          auth_method: formData.auth_method || 'EMPLOYEE_ID_PASSWORD',
+          login_identifier: formData.employee_code,
+          require_password_change: formData.require_password_change !== false,
+          require_device_verification: formData.require_device_verification !== false,
+        },
       };
 
       if (isEditMode && employeeToEdit) {
         const updatePayload: Partial<Employee> = {
           organization_id: payload.organization_id,
           company_id: payload.company_id,
-          company_name: activeCompany?.legal_name || 'Joy Corporate Solutions Pvt Ltd',
+          company_name: activeCompany?.legal_name,
           first_name: payload.identity.first_name,
           middle_name: payload.identity.middle_name,
           last_name: payload.identity.last_name,
@@ -637,6 +657,21 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
             team_lead_name: payload.reporting.team_lead_name,
             probation_period_months: payload.employment.probation_months,
             notice_period_days: payload.employment.notice_period_days,
+            ctc: formData.annual_ctc,
+            annual_ctc: formData.annual_ctc,
+            monthly_ctc: formData.monthly_ctc,
+            salary_structure_code: formData.salary_structure_code,
+            salary_structure_name: formData.salary_structure_name,
+            salary_effective_from: formData.salary_effective_from,
+            shift_id: formData.shift_id,
+            shift_name: formData.shift_name,
+            attendance_policy_id: formData.attendance_policy_id,
+            leave_policy_id: formData.leave_policy_id,
+            leave_policy_name: formData.leave_policy_name,
+            payroll_group_id: formData.payroll_group_id,
+            vendor_id: formData.vendor_id,
+            vendor_name: formData.vendor_name,
+            vendor_employee_code: formData.vendor_employee_code,
           },
           bank: {
             bank_name: formData.bank_name || 'HDFC Bank Ltd',
@@ -650,12 +685,48 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
             uan: formData.uan || '',
             pf_number: formData.pf_number || '',
             esi_number: formData.esi_number || '',
+            pf_applicable: formData.pf_applicable !== false,
+            esi_applicable: formData.esi_applicable === true,
+            pt_applicable: formData.pt_applicable !== false,
             tax_regime: formData.tax_regime || 'NEW',
           },
           updated_at: new Date().toISOString(),
         };
 
         const updatedResult = await api.updateEmployee(employeeToEdit.id, updatePayload);
+
+        // Real-time synchronization with Payroll Engine
+        try {
+          const grossMonthly = Math.round((formData.annual_ctc || 0) / 12);
+          const basicMonthly = Math.round(grossMonthly * 0.5);
+          payrollApi.saveEmployeeSalary({
+            id: `sal-${employeeToEdit.id}`,
+            tenant_id: payload.organization_id || (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-corporate-solutions-private-') : 'org-joy-corporate-solutions-private-'),
+            employee_id: employeeToEdit.id,
+            employee_code: employeeToEdit.employee_code || payload.identity.employee_code,
+            employee_name: payload.identity.preferred_name || `${payload.identity.first_name} ${payload.identity.last_name}`.trim(),
+            department_name: payload.employment.department_name || 'General',
+            designation: payload.employment.designation_title || 'Staff',
+            salary_structure_id: formData.salary_structure_code || 'CORP_STD_01',
+            salary_structure_name: formData.salary_structure_name || 'Corporate Standard CTC Structure',
+            annual_ctc: formData.annual_ctc || 0,
+            gross_monthly: grossMonthly,
+            basic_monthly: basicMonthly,
+            net_monthly_estimate: Math.max(0, Math.round(grossMonthly * 0.88)),
+            payment_mode: 'BankTransfer',
+            bank_name: formData.bank_name || 'HDFC Bank Ltd',
+            account_number: formData.account_number || '',
+            ifsc_code: formData.ifsc || 'HDFC0001234',
+            pan_number: formData.pan || '',
+            pf_uan: formData.uan || '',
+            esic_number: formData.esi_number || '',
+            effective_from: formData.salary_effective_from || formData.doj || '2026-04-01',
+            status: 'Active',
+            updated_at: new Date().toISOString(),
+          });
+        } catch (e) {
+          console.warn('[EmployeeWizard] Payroll sync warning:', e);
+        }
 
         // Emit global event
         window.dispatchEvent(new CustomEvent('employee:updated', { detail: updatedResult }));
@@ -932,6 +1003,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
                   departments={departments}
                   designations={designations}
                   onJumpToStep={(step) => setCurrentStep(step)}
+                  onUpdateAppAccess={updateFormData}
                 />
               )}
             </div>

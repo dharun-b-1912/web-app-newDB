@@ -163,6 +163,12 @@ export const DocumentManagementView: React.FC = () => {
       setDocuments(res.items);
       setTotalDocsCount(res.total);
       setTotalPages(res.totalPages);
+
+      setActiveDocument(prev => {
+        if (!prev) return null;
+        const fresh = res.items.find(d => d.id === prev.id) || documentService.getDocumentById(prev.id);
+        return fresh || prev;
+      });
     } catch (err: any) {
       console.error('Error loading documents:', err);
     }
@@ -1018,8 +1024,8 @@ export const DocumentManagementView: React.FC = () => {
                       </Button>
                       <Button
                         size="sm"
-                        onClick={() => {
-                          documentVerificationService.verifyDocument(doc.id, 'Verified via review queue.');
+                        onClick={async () => {
+                          await documentVerificationService.verifyDocument(doc.id, 'Verified via review queue.');
                           showToast('Document verified.', 'success');
                           loadData();
                         }}

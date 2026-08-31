@@ -14,6 +14,7 @@ import {
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { hrEventBus } from './hrEventBus';
 import { api } from './api';
+import { vendorPortalService } from './vendorPortalService';
 
 const VENDOR_STORAGE_KEY = 'workforce_vendors_master';
 const VENDOR_CONTRACTS_KEY = 'workforce_vendor_contracts';
@@ -23,7 +24,7 @@ const VENDOR_ASSIGNMENTS_KEY = 'workforce_vendor_assignments';
 const VENDOR_SAVED_VIEWS_KEY = 'workforce_vendor_saved_views';
 const VENDOR_AUDIT_KEY = 'workforce_vendor_audit';
 
-// Pure Realtime Definitions - No hardcoded mock seeds
+// Pure Realtime Definitions - Initialized empty for production multi-tenant database
 const INITIAL_VENDORS: Vendor[] = [];
 const INITIAL_CONTRACTS: VendorContract[] = [];
 const INITIAL_DOCS: VendorDocument[] = [];
@@ -33,7 +34,10 @@ const INITIAL_ASSIGNMENTS: VendorEmployeeAssignment[] = [];
 function getStorage<T>(key: string, defaultValue: T): T {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : defaultValue;
+    if (!raw) {
+      return defaultValue;
+    }
+    return JSON.parse(raw);
   } catch {
     return defaultValue;
   }
@@ -64,13 +68,13 @@ export const vendorService = {
         if (params?.vendorType && params.vendorType !== 'ALL') q = q.eq('vendor_type', params.vendorType);
         if (params?.legalEntityId && params.legalEntityId !== 'ALL') q = q.eq('legal_entity_id', params.legalEntityId);
         const { data, error } = await q;
-        if (!error && data) return data;
+        if (!error && data !== null) return data;
       } catch (err) {
         console.warn('[VendorService] Supabase getVendors failed:', err);
       }
     }
 
-    let list = getStorage<Vendor[]>(VENDOR_STORAGE_KEY, []);
+    let list = getStorage<Vendor[]>(VENDOR_STORAGE_KEY, INITIAL_VENDORS);
 
     // Refresh dynamically computed workforce counts & contract status
     const assignments = getStorage<VendorEmployeeAssignment[]>(VENDOR_ASSIGNMENTS_KEY, INITIAL_ASSIGNMENTS);
@@ -202,6 +206,40 @@ export const vendorService = {
     }
 
     setStorage(VENDOR_STORAGE_KEY, [newVendor, ...list]);
+
+    // Also sync to Vendor Portal organizations master if applicable
+    try {
+      vendorPortalService.addVendorOrganization({
+        id: newVendor.id,
+        tenant_id: newVendor.organization_id,
+        name: newVendor.legal_name,
+        code: newVendor.vendor_code,
+        vendor_type: newVendor.vendor_type === 'MANPOWER_PROVIDER'
+          ? 'MANPOWER_STAFFING'
+          : newVendor.vendor_type === 'FACILITY_SERVICE_PROVIDER'
+          ? 'FACILITY'
+          : newVendor.vendor_type === 'IT_SERVICE_PROVIDER'
+          ? 'IT_CONTRACTING'
+          : 'OTHER',
+        contact_person: `${newVendor.primary_contact_name}${newVendor.primary_contact_designation ? ` (${newVendor.primary_contact_designation})` : ''}`,
+        email: newVendor.primary_contact_email,
+        phone: newVendor.primary_contact_phone,
+        gstin: newVendor.gstin || newVendor.tax_id || '',
+        pan: newVendor.pan || '',
+        address: newVendor.address_line1 || '',
+        city: newVendor.city || 'Coimbatore',
+        state: newVendor.state || 'Tamil Nadu',
+        status: newVendor.status === 'ACTIVE' ? 'Active' : 'Pending Verification',
+        service_charge_percentage: 8.5,
+        is_gst_applicable: !!newVendor.gstin,
+        bank_name: newVendor.bank_name || '',
+        account_number: newVendor.account_number_masked || '',
+        ifsc_code: newVendor.ifsc_code || '',
+        created_at: newVendor.created_at || new Date().toISOString(),
+        updated_at: newVendor.updated_at || new Date().toISOString(),
+      });
+    } catch (_) {}
+
     await this.logAudit(newVendor.id, 'VENDOR_CREATED', null, newVendor);
     hrEventBus.publish('vendor.created', newVendor);
     return newVendor;

@@ -875,7 +875,7 @@ export const platformCapabilitiesService = {
       feature_code: cap.code,
       feature_name: cap.name,
       tenant_id: tenantId,
-      tenant_name: override?.tenant_name || 'Acme Technologies Pvt Ltd',
+      tenant_name: override?.tenant_name || 'Joy Corporate Solutions Pvt Ltd',
       is_enabled: isFinalEnabled,
       plan_name: 'Enterprise',
       reason_summary: isFinalEnabled

@@ -1,3 +1,5 @@
+import { PunchSource } from './attendance';
+
 export type IndustryPreset = 'CORPORATE' | 'MANUFACTURING' | 'IT_SERVICES' | 'RETAIL' | 'HEALTHCARE' | 'CONSTRUCTION';
 
 export type OvertimeCategory =
@@ -146,6 +148,7 @@ export interface WfhRequest {
   tenant_id: string;
   employee_id: string;
   employee_name: string;
+  employee_code?: string;
   department: string;
   mode: WfhMode;
   start_date: string;
@@ -171,7 +174,7 @@ export interface BreakRecord {
   is_paid: boolean;
   is_excess: boolean;
   excess_minutes: number;
-  source: 'MANUAL' | 'AUTOMATIC' | 'BIOMETRIC' | 'ADMIN';
+  source: PunchSource | 'AUTOMATIC' | 'ADMIN' | 'QR';
 }
 
 export interface CalculationExplainability {
@@ -207,8 +210,8 @@ export interface WorkHourRecord {
   scheduled_start: string;
   scheduled_end: string;
   scheduled_hours: number;
-  check_in: string;
-  check_out: string;
+  check_in?: string;
+  check_out?: string;
   actual_presence_hours: number;
   paid_break_hours: number;
   unpaid_break_hours: number;
@@ -217,8 +220,8 @@ export interface WorkHourRecord {
   eligible_ot_hours: number;
   approved_ot_hours: number;
   payable_ot_hours: number;
-  status: 'NORMAL' | 'OVERTIME' | 'DEFICIT' | 'EXCEED_MAX' | 'BREAK_EXCEEDED' | 'ON_LEAVE' | 'WFH';
-  location_type: 'OFFICE' | 'PLANT' | 'FIELD' | 'REMOTE';
+  status: 'NORMAL' | 'OVERTIME' | 'DEFICIT' | 'EXCEED_MAX' | 'BREAK_EXCEEDED' | 'ON_LEAVE' | 'WFH' | 'ABSENT';
+  location_type: 'OFFICE' | 'PLANT' | 'FIELD' | 'REMOTE' | 'WFH';
   estimated_cost: number;
   breaks: BreakRecord[];
   explainability: CalculationExplainability;

@@ -43,9 +43,13 @@ export const PeopleView: React.FC = () => {
       const data = await api.getEmployees();
       if (data && data.length > 0) {
         setEmployees(data);
+      } else {
+        const fallback = api.getEmployeesSync();
+        setEmployees(fallback);
       }
     } catch (err) {
       console.warn('[PeopleView] Failed to load employees:', err);
+      setEmployees(api.getEmployeesSync());
     }
   };
 

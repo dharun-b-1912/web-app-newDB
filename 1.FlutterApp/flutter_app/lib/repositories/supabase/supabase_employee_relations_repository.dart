@@ -26,20 +26,36 @@ class SupabaseEmployeeRelationsRepository {
         employeeId,
         user.dataId,
         user.employeeId,
+        user.id,
         if (user.employeeUuid != null && user.employeeUuid!.isNotEmpty) user.employeeUuid!,
       }.where((s) => s.isNotEmpty).toSet();
 
-      final idFilter = candidateIds.map((c) => '"$c"').join(',');
+      final list = candidateIds.toList();
+      if (list.isEmpty) return [];
+
+      final orFilter = 'employee_id.in.(${list.join(",")}),employee_code.in.(${list.join(",")})';
       final rows = await _client
           .from('helpdesk_tickets')
           .select('*')
-          .filter('employee_id', 'in', '($idFilter)')
+          .or(orFilter)
           .order('created_at', ascending: false);
 
       return (rows as List).map((r) => HelpdeskTicketModel.fromJson(r)).toList();
     } catch (e) {
-      secureLog('[HelpdeskRepo] getTickets error: $e');
-      return [];
+      secureLog('[HelpdeskRepo] getTickets or-filter error: $e, falling back to inFilter');
+      try {
+        final user = UserService.instance.currentUser;
+        final list = [employeeId, user.employeeId, user.dataId].where((s) => s.isNotEmpty).toList();
+        final rows = await _client
+            .from('helpdesk_tickets')
+            .select('*')
+            .inFilter('employee_id', list)
+            .order('created_at', ascending: false);
+        return (rows as List).map((r) => HelpdeskTicketModel.fromJson(r)).toList();
+      } catch (err) {
+        secureLog('[HelpdeskRepo] getTickets fallback error: $err');
+        return [];
+      }
     }
   }
 
@@ -179,11 +195,13 @@ class SupabaseEmployeeRelationsRepository {
         if (user.employeeUuid != null && user.employeeUuid!.isNotEmpty) user.employeeUuid!,
       }.where((s) => s.isNotEmpty).toSet();
 
-      final idFilter = candidateIds.map((c) => '"$c"').join(',');
+      final list = candidateIds.toList();
+      if (list.isEmpty) return [];
+
       final rows = await _client
           .from('service_requests')
           .select('*')
-          .filter('employee_id', 'in', '($idFilter)')
+          .inFilter('employee_id', list)
           .order('submitted_at', ascending: false);
 
       return (rows as List).map((r) => ServiceRequestModel.fromJson(r)).toList();

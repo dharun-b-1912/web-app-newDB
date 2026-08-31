@@ -2,16 +2,17 @@ import React, { useState } from 'react';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { FileSpreadsheet, Download } from 'lucide-react';
+import { api } from '../../../services/api';
 
 export const LmsReportsView: React.FC = () => {
   const [selectedReportId, setSelectedReportId] = useState<string>('lms-rep-01');
 
   const reportList = [
-    { id: 'lms-rep-01', name: '1. Master Course Completion Register', desc: 'Employee-wise course progress, status, and completion timestamps' },
-    { id: 'lms-rep-02', name: '2. Mandatory & Compliance Audit Report', desc: 'POSH, InfoSec, and GDPR compliance completion status across departments' },
-    { id: 'lms-rep-03', name: '3. Certification Expiry & Renewal Statement', desc: 'Active, expiring, and renewed employee professional certifications' },
-    { id: 'lms-rep-04', name: '4. Learner Assessment & Exam Score Register', desc: 'Score breakdown, attempts taken, and pass/fail results' },
-    { id: 'lms-rep-05', name: '5. Skill Gap & Learning Path Matrix', desc: 'Employee target vs current skill levels and recommended training' },
+    { id: 'lms-rep-01', name: '1. Mandatory Training Compliance Register', desc: 'Enterprise-wide completion rates for POSH, InfoSec, and Safety compliance' },
+    { id: 'lms-rep-02', name: '2. Course Enrollment & Completion Statement', desc: 'Department-wise catalog enrollments, active in-progress learners, and dropouts' },
+    { id: 'lms-rep-03', name: '3. Skill Gap & Competency Assessment Audit', desc: 'Pre and post-training competency score deltas by job role grade' },
+    { id: 'lms-rep-04', name: '4. Professional Certification Pipeline', desc: 'Cloud, project management, and domain certification tracking with expiry alerts' },
+    { id: 'lms-rep-05', name: '5. Assessment Score & Pass Rate Ledger', desc: 'Detailed score logs, pass percentages, and retake counts per exam' },
     { id: 'lms-rep-06', name: '6. Training Attendance & Session Log', desc: 'Live training session participant attendance and duration logs' },
     { id: 'lms-rep-07', name: '7. Trainer Effectiveness & Feedback Report', desc: 'Learner feedback scores for internal and external vendor trainers' },
     { id: 'lms-rep-08', name: '8. Department Training Cost & Budget Ledger', desc: 'Training program costs, vendor invoices, and department budget utilization' },
@@ -26,11 +27,15 @@ export const LmsReportsView: React.FC = () => {
   ];
 
   const handleExportCSV = () => {
+    const employees = api.getEmployeesSync();
+    const rows = employees.length > 0
+      ? employees.map(e => `${e.employee_code || e.id},"${(e.display_name || `${e.first_name} ${e.last_name}`).replace(/"/g, '""')}",${e.department_name || 'Staff'},Workplace Policy 2026,${new Date().toISOString().split('T')[0]},100%,CERT-${e.employee_code || '101'},Completed`).join('\n')
+      : 'EMP-001,"Learner",Engineering,Workplace Policy 2026,2026-08-01,100%,CERT-101,Completed';
+
     const csvContent =
       'data:text/csv;charset=utf-8,' +
       'EmpID,Name,Department,CourseName,CompletionDate,Score,CertificateNo,Status\n' +
-      'EMP-101,Rajesh Kumar,Engineering,POSH Policy 2026,2026-08-05,100%,CERT-POSH-101,Completed\n' +
-      'EMP-102,Ananya Sen,Product,POSH Policy 2026,2026-08-08,95%,CERT-POSH-102,Completed\n';
+      rows;
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);

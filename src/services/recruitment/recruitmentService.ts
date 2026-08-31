@@ -36,6 +36,17 @@ const STORAGE_KEYS = {
   AUDIT_LOGS: 'workforce_ats_audit_logs_v2',
 };
 
+function getActiveOrgId(): string {
+  try {
+    const raw = localStorage.getItem('workforce_active_organization');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.id) return parsed.id;
+    }
+  } catch {}
+  return 'org-joy-01';
+}
+
 function getStore<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -275,7 +286,7 @@ class RecruitmentService {
   async createJob(payload: Partial<JobOpening> & { job_title: string }): Promise<JobOpening> {
     const newJob: JobOpening = {
       id: `JOB-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-      organization_id: payload.organization_id || 'org-joy-01',
+      organization_id: payload.organization_id || getActiveOrgId(),
       requisition_id: payload.requisition_id,
       job_code: `JOB-${Math.floor(100 + Math.random() * 900)}`,
       job_title: payload.job_title,

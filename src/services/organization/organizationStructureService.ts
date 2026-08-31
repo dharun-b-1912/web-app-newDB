@@ -9,6 +9,7 @@ import { Company, Branch, Department, Team, Location, OrganizationSummaryMetrics
 import { hrEventBus } from '../hrEventBus';
 import { api } from '../api';
 import { vendorWorkforceService } from './vendorWorkforceService';
+import { appLogger } from '../../lib/appLogger';
 
 const DEPT_STORAGE_KEY = 'workforce_departments_custom';
 const BRANCH_STORAGE_KEY = 'workforce_branches_custom';
@@ -51,55 +52,7 @@ class OrganizationStructureService {
       };
     }
 
-    try {
-      if (isSupabaseEnabled && supabase) {
-        const [
-          { count: compCount },
-          { count: brCount },
-          { count: deptCount },
-          { count: teamCount },
-          { count: empCount },
-          { count: vendorCount },
-          { count: manpowerCount },
-          { count: workerCount },
-          { count: deployCount },
-        ] = await Promise.all([
-          supabase.from('companies').select('id', { count: 'exact' }).eq('organization_id', organizationId).limit(1),
-          supabase.from('branches').select('id, companies!inner(organization_id)', { count: 'exact' }).eq('companies.organization_id', organizationId).limit(1),
-          supabase.from('departments').select('id, companies!inner(organization_id)', { count: 'exact' }).eq('companies.organization_id', organizationId).limit(1),
-          supabase.from('teams').select('id', { count: 'exact' }).eq('organization_id', organizationId).limit(1),
-          supabase.from('employees').select('id', { count: 'exact' }).eq('organization_id', organizationId).neq('status', 'Exited').limit(1),
-          supabase.from('vendors').select('id', { count: 'exact' }).eq('organization_id', organizationId).limit(1),
-          supabase.from('vendors').select('id', { count: 'exact' }).eq('organization_id', organizationId).eq('vendor_type', 'MANPOWER_PROVIDER').limit(1),
-          supabase.from('vendor_workers').select('id', { count: 'exact' }).eq('organization_id', organizationId).neq('status', 'OFFBOARDED').limit(1),
-          supabase.from('vendor_deployments').select('id', { count: 'exact' }).eq('organization_id', organizationId).eq('status', 'ACTIVE').limit(1),
-        ]);
-
-        if (
-          (compCount || 0) > 0 ||
-          (brCount || 0) > 0 ||
-          (deptCount || 0) > 0 ||
-          (empCount || 0) > 0
-        ) {
-          return {
-            totalLegalEntities: compCount || 0,
-            totalBranches: brCount || 0,
-            totalDepartments: deptCount || 0,
-            totalTeams: teamCount || 0,
-            totalEmployees: empCount || 0,
-            totalVendors: vendorCount || 0,
-            totalManpowerProviders: manpowerCount || 0,
-            totalVendorWorkers: workerCount || 0,
-            totalActiveDeployments: deployCount || 0,
-            complianceExpiringCount: 0,
-          };
-        }
-      }
-    } catch (err) {
-      console.warn('[OrganizationStructureService] getMetrics live query error:', err);
-    }
-
-    // Fallback: Calculate from active state
+    // Resolve unified live collections across multi-tenant database & domain services
     const [comps, branches, depts, teams, emps, vendors, workers, deploy] = await Promise.all([
       this.getLegalEntities(organizationId),
       this.getBranches(undefined, organizationId),
@@ -137,7 +90,7 @@ class OrganizationStructureService {
           .eq('organization_id', organizationId)
           .order('created_at', { ascending: true });
 
-        if (!error && data && data.length > 0) {
+        if (!error && data !== null) {
           return data;
         }
       } catch (err) {
@@ -171,6 +124,11 @@ class OrganizationStructureService {
       try {
         const { data, error } = await supabase.from('companies').insert([newComp]).select().single();
         if (!error && data) {
+          try {
+            const existingComps = JSON.parse(localStorage.getItem('workforce_companies') || '[]');
+            localStorage.setItem('workforce_companies', JSON.stringify([data, ...existingComps.filter((c: any) => c.id !== data.id)]));
+          } catch (_) {}
+          window.dispatchEvent(new CustomEvent('organization:context_updated'));
           hrEventBus.emit('organization.legal_entity_created', { legalEntity: data });
           return data;
         }
@@ -179,6 +137,11 @@ class OrganizationStructureService {
       }
     }
 
+    try {
+      const existingComps = JSON.parse(localStorage.getItem('workforce_companies') || '[]');
+      localStorage.setItem('workforce_companies', JSON.stringify([newComp, ...existingComps.filter((c: any) => c.id !== newComp.id)]));
+    } catch (_) {}
+    window.dispatchEvent(new CustomEvent('organization:context_updated'));
     hrEventBus.emit('organization.legal_entity_created', { legalEntity: newComp });
     return newComp;
   }
@@ -218,7 +181,7 @@ class OrganizationStructureService {
   }
 
   /**
-   * Creates a new Branch in SQL database.
+   * Creates a new Branch in SQL database with adaptive resilient retry.
    */
   async createBranch(payload: Partial<Branch> & { company_id: string; name: string; code: string }): Promise<Branch> {
     const newBranch: Branch = {
@@ -242,13 +205,34 @@ class OrganizationStructureService {
 
     if (isSupabaseEnabled && supabase) {
       try {
-        const { data, error } = await supabase.from('branches').insert([newBranch]).select().single();
+        const { data, error, status } = await supabase.from('branches').insert([newBranch]).select().single();
         if (!error && data) {
+          appLogger.dbOperation('branches', 'INSERT', newBranch);
           hrEventBus.emit('organization.branch_created', { branch: data });
           return data;
+        } else if (error) {
+          appLogger.dbOperation('branches', 'INSERT', newBranch, error, status);
+
+          // Adaptive fallback: retry with basic columns if table lacks extended columns
+          const basePayload = {
+            id: newBranch.id,
+            company_id: newBranch.company_id,
+            name: newBranch.name,
+            code: newBranch.code,
+            city: newBranch.city,
+            state: newBranch.state,
+            timezone: newBranch.timezone,
+          };
+          const retryRes = await supabase.from('branches').insert([basePayload]).select().single();
+          if (!retryRes.error && retryRes.data) {
+            appLogger.info('BRANCHES', `Branch "${newBranch.name}" created with base column compatibility`, retryRes.data);
+            const merged = { ...newBranch, ...retryRes.data };
+            hrEventBus.emit('organization.branch_created', { branch: merged });
+            return merged;
+          }
         }
       } catch (err) {
-        console.warn('[OrganizationStructureService] createBranch fallback:', err);
+        appLogger.warn('BRANCHES', 'createBranch caught exception, activating resilient local storage', String(err));
       }
     }
 
@@ -288,16 +272,29 @@ class OrganizationStructureService {
 
     if (isSupabaseEnabled && supabase) {
       try {
-        let query = supabase.from('departments').select('*, companies!inner(organization_id)');
+        let query = supabase.from('departments').select('*');
+        if (organizationId) {
+          query = query.eq('organization_id', organizationId);
+        }
         if (companyId) {
           query = query.eq('company_id', companyId);
-        } else if (organizationId) {
-          query = query.eq('companies.organization_id', organizationId);
         }
 
         const { data, error } = await query.order('name', { ascending: true });
-        if (!error && data && data.length > 0) {
+        if (!error && data !== null && data.length > 0) {
           deptList = data;
+        } else if (!error && data !== null) {
+          deptList = data;
+        } else if (organizationId) {
+          // Fallback to joined companies query if organization_id on departments was not backfilled yet
+          const fallbackRes = await supabase
+            .from('departments')
+            .select('*, companies!inner(organization_id)')
+            .eq('companies.organization_id', organizationId)
+            .order('name', { ascending: true });
+          if (!fallbackRes.error && fallbackRes.data !== null) {
+            deptList = fallbackRes.data;
+          }
         }
       } catch (err) {
         console.warn('[OrganizationStructureService] getDepartments SQL error:', err);
@@ -346,9 +343,10 @@ class OrganizationStructureService {
   /**
    * Creates a new Department in SQL database.
    */
-  async createDepartment(payload: Partial<Department> & { company_id: string; name: string; code: string }): Promise<Department> {
-    const newDept: Department = {
+  async createDepartment(payload: Partial<Department> & { company_id: string; name: string; code: string; organization_id?: string }): Promise<Department> {
+    const newDept: Department & { organization_id?: string } = {
       id: `dept-${Date.now()}`,
+      organization_id: payload.organization_id || 'org-joy-01',
       company_id: payload.company_id,
       branch_id: payload.branch_id || null,
       parent_department_id: payload.parent_department_id || null,
@@ -364,10 +362,24 @@ class OrganizationStructureService {
 
     if (isSupabaseEnabled && supabase) {
       try {
-        const { data, error } = await supabase.from('departments').insert([newDept]).select().single();
+        const dbPayload = {
+          id: newDept.id,
+          organization_id: newDept.organization_id,
+          company_id: newDept.company_id,
+          branch_id: newDept.branch_id,
+          parent_department_id: newDept.parent_department_id,
+          name: newDept.name,
+          code: newDept.code,
+          cost_center_code: newDept.cost_center_code,
+          head_employee_id: newDept.head_employee_id,
+          description: newDept.description,
+          status: newDept.status,
+        };
+        const { data, error } = await supabase.from('departments').insert([dbPayload]).select().single();
         if (!error && data) {
-          hrEventBus.emit('organization.department_created', { department: data });
-          return data;
+          const merged = { ...newDept, ...data };
+          hrEventBus.emit('organization.department_created', { department: merged });
+          return merged;
         }
       } catch (err) {
         console.warn('[OrganizationStructureService] createDepartment fallback:', err);
@@ -387,9 +399,13 @@ class OrganizationStructureService {
   async updateDepartment(id: string, updates: Partial<Department>): Promise<Department | null> {
     if (isSupabaseEnabled && supabase) {
       try {
+        const dbUpdates: any = { ...updates };
+        delete dbUpdates.employee_count;
+        delete dbUpdates.team_count;
+
         const { data, error } = await supabase
           .from('departments')
-          .update(updates)
+          .update(dbUpdates)
           .eq('id', id)
           .select()
           .single();

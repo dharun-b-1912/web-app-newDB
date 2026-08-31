@@ -27,7 +27,7 @@ export const CompanySelector: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  if (!activeLegalEntity) return null;
+  if (primaryRole === 'Super Admin' || !activeLegalEntity) return null;
 
   const isCompanyAdmin = primaryRole === 'Company Admin';
   const isHRHead = primaryRole === 'HR Head';

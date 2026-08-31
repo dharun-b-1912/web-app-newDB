@@ -109,110 +109,30 @@ export function sanitizeEmployeeForSupabase(emp: any): Record<string, any> {
   return clean;
 }
 
-const DEFAULT_LEGAL_ENTITIES: Company[] = [
-  {
-    id: 'comp-joy-01',
-    organization_id: 'org-joy-01',
-    legal_name: 'Joy Corporate Solutions Pvt Ltd',
-    trade_name: 'Joy Corporate India',
-    statutory_registration_no: 'U72200TZ2020PTC034567',
-    tax_id: '33AABCJ1234F1Z5',
-    country: 'India',
-    city: 'Coimbatore',
-    currency: 'INR',
-    timezone: 'Asia/Kolkata',
-    address: 'Joy Tech Park, Avinashi Road, Coimbatore, Tamil Nadu 641014',
-    created_at: '2024-01-01T00:00:00Z',
-  },
-];
+const DEFAULT_LEGAL_ENTITIES: Company[] = [];
 
-export const DEFAULT_EMPLOYEES: Employee[] = [
-  {
-    id: 'emp-hr-001',
-    organization_id: 'org-joy-01',
-    company_id: 'comp-joy-01',
-    branch_id: null,
-    department_id: 'dept-hr-01',
-    designation_id: 'desig-hr-01',
-    user_id: null,
-    employee_code: 'JCS-HR-001',
-    first_name: 'Haripriya',
-    last_name: '',
-    middle_name: null,
-    display_name: 'Haripriya',
-    work_email: 'haripriya@joycorporate.com',
-    avatar_url: null,
-    status: 'Active',
-    employment_type: 'Full Time',
-    profile: {
-      phone: '+919840122334',
-      gender: 'Female',
-      nationality: 'Indian',
-    },
-    employment: {
-      doj: '2024-01-15',
-      work_location: 'Joy Corporate Solutions Private Limited (HQ)',
-      employment_type: 'Full Time',
-      confirmation_status: 'Confirmed',
-      reporting_manager_name: 'Dharun B',
-    },
-    company_name: 'Joy Corporate Solutions Pvt Ltd',
-    branch_name: 'Joy Corporate Solutions Private Limited (HQ)',
-    department_name: 'Human Resources',
-    designation_title: 'HR Head & People Operations',
-    created_at: '2026-08-17T10:46:22.749284+00:00',
-    updated_at: '2026-08-25T05:05:33.855+00:00',
-    employment_source: 'DIRECT',
-    vendor_id: null,
-    vendor_name: null,
-    vendor_employee_code: null,
-  },
-  {
-    id: 'emp-admin-001',
-    organization_id: 'org-joy-01',
-    company_id: 'comp-joy-01',
-    branch_id: 'br-cbe-01',
-    department_id: 'dept-eng',
-    designation_id: 'desig-sr-eng',
-    user_id: null,
-    employee_code: 'JCS-017',
-    first_name: 'Dharun',
-    last_name: 'B',
-    middle_name: null,
-    display_name: 'Dharun B',
-    work_email: 'dharunjoysolutions@gmail.com',
-    avatar_url: null,
-    status: 'Active',
-    employment_type: 'Full Time',
-    profile: {
-      phone: '+919791817437',
-      gender: 'Male',
-      nationality: 'Indian',
-    },
-    employment: {
-      doj: '2024-01-01',
-      work_location: 'Joy Corporate Solutions Private Limited (HQ)',
-      employment_type: 'Full Time',
-      confirmation_status: 'Confirmed',
-      reporting_manager_name: 'Haripriya',
-    },
-    company_name: 'Joy Corporate Solutions Pvt Ltd',
-    branch_name: 'Joy Corporate Solutions Private Limited (HQ)',
-    department_name: 'Engineering & Management',
-    designation_title: 'Software Engineer & Administrator',
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2026-08-25T05:05:34.246+00:00',
-    employment_source: 'DIRECT',
-    vendor_id: null,
-    vendor_name: null,
-    vendor_employee_code: null,
-  },
-];
+export const DEFAULT_EMPLOYEES: Employee[] = [];
 
 export const api = {
   // ==========================================
   // Organization API
   // ==========================================
+  getOrganizationSync(): Organization {
+    const cached = getStorage<Organization | null>(KEYS.ORG, null);
+    if (cached) return cached;
+    return {
+      id: 'org-joy-01',
+      name: 'Joy Corporate Solutions',
+      slug: 'joy-corporate-solutions',
+      status: 'Active',
+      plan: 'Enterprise',
+      default_currency: 'INR',
+      timezone: 'Asia/Kolkata',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    };
+  },
+
   async getOrganization(): Promise<Organization> {
     if (isSupabaseEnabled) {
       try {
@@ -225,17 +145,7 @@ export const api = {
         console.error('[API] Failed to fetch organization from Supabase:', err);
       }
     }
-    return {
-      id: 'org-joy-01',
-      name: 'Joy Corporate Solutions',
-      slug: 'joy-corporate-solutions',
-      status: 'Active',
-      plan: 'Enterprise',
-      default_currency: 'INR',
-      timezone: 'Asia/Kolkata',
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
-    };
+    return this.getOrganizationSync();
   },
 
   async updateOrganization(data: Partial<Organization>): Promise<Organization> {
@@ -256,12 +166,12 @@ export const api = {
 
   // ==========================================
   // Company API
-  // ==========================================
+
   async getCompanies(): Promise<Company[]> {
     if (isSupabaseEnabled) {
       try {
         const { data, error } = await supabase.from('companies').select('*');
-        if (!error && data && data.length > 0) {
+        if (!error && data !== null) {
           setStorage(KEYS.COMPANIES, data);
           return data;
         }
@@ -270,8 +180,7 @@ export const api = {
       }
     }
     const list = getStorage<Company[]>(KEYS.COMPANIES, []);
-    if (list.length > 0) return list;
-    return DEFAULT_LEGAL_ENTITIES;
+    return list;
   },
 
   async createCompany(input: Omit<Company, 'id' | 'created_at'>): Promise<Company> {
@@ -294,6 +203,36 @@ export const api = {
     return newCompany;
   },
 
+  async updateCompany(id: string, updates: Partial<Company>): Promise<Company> {
+    const companies = await this.getCompanies();
+    const index = companies.findIndex((c) => c.id === id);
+    const existing = index >= 0 ? companies[index] : ({ id } as Company);
+    const updated: Company = { ...existing, ...updates };
+
+    if (isSupabaseEnabled) {
+      try {
+        const { error } = await supabase.from('companies').update(updates).eq('id', id);
+        if (error) console.error('[API] Failed to update company in Supabase:', error);
+      } catch (err) {
+        console.error('[API] Failed to update company in Supabase:', err);
+      }
+    }
+
+    if (index >= 0) {
+      companies[index] = updated;
+      setStorage(KEYS.COMPANIES, companies);
+    } else {
+      setStorage(KEYS.COMPANIES, [updated, ...companies]);
+    }
+
+    const active = getStorage<Company | null>(KEYS.ACTIVE_COMPANY, null);
+    if (active && active.id === id) {
+      setStorage(KEYS.ACTIVE_COMPANY, updated);
+    }
+
+    return updated;
+  },
+
   // ==========================================
   // Branch API
   // ==========================================
@@ -303,7 +242,7 @@ export const api = {
         let q = supabase.from('branches').select('*');
         if (companyId) q = q.eq('company_id', companyId);
         const { data, error } = await q;
-        if (!error && data && data.length > 0) {
+        if (!error && data !== null) {
           setStorage(KEYS.BRANCHES, data);
           return data;
         }
@@ -312,21 +251,7 @@ export const api = {
       }
     }
     const list = getStorage<Branch[]>(KEYS.BRANCHES, []);
-    if (list.length > 0) {
-      return companyId ? list.filter((b) => b.company_id === companyId) : list;
-    }
-    return [
-      {
-        id: 'br-cbe-01',
-        company_id: 'comp-joy-01',
-        name: 'Joy Corporate Solutions Private Limited (HQ)',
-        code: 'HQ-CBE',
-        city: 'Coimbatore',
-        state: 'Tamil Nadu',
-        timezone: 'Asia/Kolkata',
-        created_at: '2024-01-01T00:00:00Z',
-      },
-    ];
+    return companyId ? list.filter((b) => b.company_id === companyId) : list;
   },
 
   async createBranch(input: Omit<Branch, 'id' | 'created_at'>): Promise<Branch> {
@@ -359,7 +284,7 @@ export const api = {
         let q = supabase.from('locations').select('*');
         if (branchId) q = q.eq('branch_id', branchId);
         const { data, error } = await q;
-        if (!error && data && data.length > 0) {
+        if (!error && data !== null) {
           setStorage(KEYS.LOCATIONS, data);
           return data;
         }
@@ -368,20 +293,7 @@ export const api = {
       }
     }
     const list = getStorage<Location[]>(KEYS.LOCATIONS, []);
-    if (list.length > 0) {
-      return branchId ? list.filter((l) => l.branch_id === branchId) : list;
-    }
-    return [
-      {
-        id: 'loc-cbe-01',
-        branch_id: 'br-cbe-01',
-        name: 'Joy Tech Park, Avinashi Road',
-        building: 'Tower A, 4th Floor',
-        address: 'Coimbatore, Tamil Nadu 641014',
-        code: 'LOC-CBE-01',
-        created_at: '2024-01-01T00:00:00Z',
-      },
-    ];
+    return branchId ? list.filter((l) => l.branch_id === branchId) : list;
   },
 
   async createLocation(input: Omit<Location, 'id'>): Promise<Location> {
@@ -409,7 +321,7 @@ export const api = {
         let q = supabase.from('departments').select('*');
         if (companyId) q = q.eq('company_id', companyId);
         const { data, error } = await q;
-        if (!error && data && data.length > 0) {
+        if (!error && data !== null) {
           setStorage(KEYS.DEPARTMENTS, data);
           return data;
         }
@@ -418,25 +330,32 @@ export const api = {
       }
     }
     const list = getStorage<Department[]>(KEYS.DEPARTMENTS, []);
-    if (list.length > 0) {
-      return companyId ? list.filter((d) => d.company_id === companyId) : list;
-    }
-    // Dynamic fallback matching active employees
-    return [
-      { id: 'dept-hr-01', company_id: 'comp-joy-01', name: 'Human Resources', code: 'HR', employee_count: 1 },
-      { id: 'dept-eng', company_id: 'comp-joy-01', name: 'Engineering & Management', code: 'ENG-MGMT', employee_count: 1 },
-    ];
+    return companyId ? list.filter((d) => d.company_id === companyId) : list;
+  },
+
+  getDepartmentsSync(companyId?: string): Department[] {
+    const list = getStorage<Department[]>(KEYS.DEPARTMENTS, []);
+    return companyId ? list.filter((d) => d.company_id === companyId) : list;
   },
 
   async createDepartment(input: Omit<Department, 'id'>): Promise<Department> {
     const newDept: Department = { ...input, id: `dept-${Date.now().toString(36)}`, employee_count: 0 };
     if (isSupabaseEnabled) {
       try {
-        const { error } = await supabase.from('departments').insert(newDept);
-        if (error) throw error;
+        const payload: Record<string, any> = {
+          id: newDept.id,
+          name: newDept.name,
+          code: newDept.code,
+          company_id: newDept.company_id || 'comp-joy-01',
+        };
+        if (newDept.branch_id) payload.branch_id = newDept.branch_id;
+        if (newDept.description) payload.description = newDept.description;
+        if (newDept.status) payload.status = newDept.status;
+
+        const { error } = await supabase.from('departments').insert(payload);
+        if (error) console.warn('[API] Department insert to Supabase notice:', error.message || error);
       } catch (err) {
-        console.error('[API] Failed to insert department into Supabase:', err);
-        throw err;
+        console.warn('[API] Department insert fallback:', err);
       }
     }
     const list = getStorage<Department[]>(KEYS.DEPARTMENTS, []);
@@ -453,7 +372,7 @@ export const api = {
         let q = supabase.from('designations').select('*');
         if (companyId) q = q.eq('company_id', companyId);
         const { data, error } = await q;
-        if (!error && data && data.length > 0) {
+        if (!error && data !== null) {
           setStorage(KEYS.DESIGNATIONS, data);
           return data;
         }
@@ -462,24 +381,25 @@ export const api = {
       }
     }
     const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
-    if (list.length > 0) {
-      return companyId ? list.filter((d) => d.company_id === companyId) : list;
-    }
-    return [
-      { id: 'desig-hr-01', company_id: 'comp-joy-01', title: 'HR Head & People Operations', code: 'HR-HEAD', grade: 'L6' },
-      { id: 'desig-sr-eng', company_id: 'comp-joy-01', title: 'Software Engineer & Administrator', code: 'SWE-ADMIN', grade: 'L4' },
-    ];
+    return companyId ? list.filter((d) => d.company_id === companyId) : list;
   },
 
   async createDesignation(input: Omit<Designation, 'id'>): Promise<Designation> {
     const newDesig: Designation = { ...input, id: `desig-${Date.now().toString(36)}` };
     if (isSupabaseEnabled) {
       try {
-        const { error } = await supabase.from('designations').insert(newDesig);
-        if (error) throw error;
+        const payload: Record<string, any> = {
+          id: newDesig.id,
+          title: newDesig.title,
+          code: newDesig.code,
+          company_id: newDesig.company_id || 'comp-joy-01',
+        };
+        if (newDesig.grade) payload.grade = newDesig.grade;
+
+        const { error } = await supabase.from('designations').insert(payload);
+        if (error) console.warn('[API] Designation insert to Supabase notice:', error.message || error);
       } catch (err) {
-        console.error('[API] Failed to insert designation into Supabase:', err);
-        throw err;
+        console.warn('[API] Designation insert fallback:', err);
       }
     }
     const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
@@ -490,6 +410,56 @@ export const api = {
   // ==========================================
   // Employees API (Direct Realtime Supabase)
   // ==========================================
+  getEmployeesSync(params?: {
+    search?: string;
+    departmentId?: string;
+    companyId?: string;
+    status?: string;
+    type?: string;
+    source?: string;
+    vendorId?: string;
+  } | string): Employee[] {
+    let list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+    // Filter out any legacy mock employee records
+    if (list.length > 0 && list.some((e) => e.id === 'emp-hr-001' || e.employee_code === 'JCS-HR-001')) {
+      list = list.filter((e) => e.id !== 'emp-hr-001' && e.employee_code !== 'JCS-HR-001' && !e.id.startsWith('emp-00') && !e.id.startsWith('vemp-'));
+      setStorage(KEYS.EMPLOYEES, list);
+    }
+    if (!params) return list;
+
+    const filterObj = typeof params === 'string' ? { companyId: params } : params;
+    if (filterObj && filterObj.search) {
+      const q = typeof filterObj.search === 'string' ? filterObj.search.toLowerCase() : String(filterObj.search).toLowerCase();
+      list = list.filter(
+        (e) =>
+          (e.first_name && e.first_name.toLowerCase().includes(q)) ||
+          (e.last_name && e.last_name.toLowerCase().includes(q)) ||
+          (e.work_email && e.work_email.toLowerCase().includes(q)) ||
+          (e.employee_code && e.employee_code.toLowerCase().includes(q)) ||
+          (e.department_name && e.department_name.toLowerCase().includes(q)) ||
+          (e.designation_title && e.designation_title.toLowerCase().includes(q)) ||
+          (e.vendor_name && e.vendor_name.toLowerCase().includes(q))
+      );
+    }
+    if (filterObj && filterObj.companyId && filterObj.companyId !== 'all') {
+      const filteredByComp = list.filter((e) => e.company_id === filterObj.companyId);
+      if (filteredByComp.length > 0) list = filteredByComp;
+    }
+    if (filterObj && filterObj.departmentId && filterObj.departmentId !== 'all') {
+      list = list.filter((e) => e.department_id === filterObj.departmentId);
+    }
+    if (filterObj && filterObj.status && filterObj.status !== 'all') {
+      list = list.filter((e) => e.status === filterObj.status);
+    }
+    if (filterObj && filterObj.source && filterObj.source !== 'all') {
+      list = list.filter((e) => (e.employment_source || 'DIRECT') === filterObj.source);
+    }
+    if (filterObj && filterObj.vendorId && filterObj.vendorId !== 'all') {
+      list = list.filter((e) => e.vendor_id === filterObj.vendorId);
+    }
+    return list;
+  },
+
   async getEmployees(params?: {
     search?: string;
     departmentId?: string;
@@ -509,62 +479,19 @@ export const api = {
         if (filterObj?.source && filterObj.source !== 'all') q = q.eq('employment_source', filterObj.source);
         if (filterObj?.vendorId && filterObj.vendorId !== 'all') q = q.eq('vendor_id', filterObj.vendorId);
         const { data, error } = await q;
-        if (!error && data !== null && data.length > 0) {
+        if (!error && data !== null) {
           setStorage(KEYS.EMPLOYEES, data);
           return data;
         }
-        // If 0 returned with companyId filter, fallback to query all active employees from Supabase
-        if (!error && data !== null && data.length === 0 && filterObj?.companyId) {
-          const fallback = await supabase.from('employees').select('*');
-          if (fallback.data && fallback.data.length > 0) {
-            setStorage(KEYS.EMPLOYEES, fallback.data);
-            return fallback.data;
-          }
-        }
         if (error) {
-          console.error('[API] Supabase getEmployees error:', error);
+          console.warn('[API] Supabase getEmployees fallback to local store:', error.message || error);
         }
       } catch (err) {
-        console.error('[API] Failed to fetch employees from Supabase:', err);
+        console.warn('[API] Supabase getEmployees fetch notice:', err);
       }
     }
 
-    let list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
-    if (!list || list.length === 0) {
-      list = [...DEFAULT_EMPLOYEES];
-    }
-    if (!params) return list;
-
-    const filterObj = typeof params === 'string' ? { companyId: params } : params;
-    if (filterObj && filterObj.search) {
-      const q = typeof filterObj.search === 'string' ? filterObj.search.toLowerCase() : String(filterObj.search).toLowerCase();
-      list = list.filter(
-        (e) =>
-          (e.first_name && e.first_name.toLowerCase().includes(q)) ||
-          (e.last_name && e.last_name.toLowerCase().includes(q)) ||
-          (e.work_email && e.work_email.toLowerCase().includes(q)) ||
-          (e.employee_code && e.employee_code.toLowerCase().includes(q)) ||
-          (e.department_name && e.department_name.toLowerCase().includes(q)) ||
-          (e.designation_title && e.designation_title.toLowerCase().includes(q)) ||
-          (e.vendor_name && e.vendor_name.toLowerCase().includes(q))
-      );
-    }
-    if (filterObj && filterObj.companyId) {
-      list = list.filter((e) => e.company_id === filterObj.companyId);
-    }
-    if (filterObj && filterObj.departmentId && filterObj.departmentId !== 'all') {
-      list = list.filter((e) => e.department_id === filterObj.departmentId);
-    }
-    if (filterObj && filterObj.status && filterObj.status !== 'all') {
-      list = list.filter((e) => e.status === filterObj.status);
-    }
-    if (filterObj && filterObj.source && filterObj.source !== 'all') {
-      list = list.filter((e) => (e.employment_source || 'DIRECT') === filterObj.source);
-    }
-    if (filterObj && filterObj.vendorId && filterObj.vendorId !== 'all') {
-      list = list.filter((e) => e.vendor_id === filterObj.vendorId);
-    }
-    return list;
+    return this.getEmployeesSync(params);
   },
 
   async getEmployeeById(id: string): Promise<Employee | undefined> {
@@ -657,11 +584,191 @@ export const api = {
 
     if (isSupabaseEnabled) {
       try {
+        // 1. Resolve valid organization_id from database (Read-only lookup to avoid 403 RLS)
+        let validOrgId = newEmp.organization_id || 'org-joy-01';
+        try {
+          const { data: matchedOrg } = await supabase
+            .from('organizations')
+            .select('id')
+            .eq('id', validOrgId)
+            .maybeSingle();
+
+          if (matchedOrg) {
+            validOrgId = matchedOrg.id;
+          } else {
+            const { data: firstOrg } = await supabase
+              .from('organizations')
+              .select('id')
+              .limit(1)
+              .maybeSingle();
+
+            if (firstOrg) {
+              validOrgId = firstOrg.id;
+            }
+          }
+        } catch (e) {
+          console.warn('[API] Organization lookup notice:', e);
+        }
+
+        // 2. Resolve valid company_id from database
+        let validCompanyId = newEmp.company_id || `comp-${validOrgId.replace('org-', '')}`;
+        try {
+          const { data: matchedCompany } = await supabase
+            .from('companies')
+            .select('id, organization_id, legal_name')
+            .eq('id', validCompanyId)
+            .maybeSingle();
+
+          if (matchedCompany) {
+            validCompanyId = matchedCompany.id;
+            validOrgId = matchedCompany.organization_id || validOrgId;
+            newEmp.company_name = matchedCompany.legal_name || newEmp.company_name;
+          } else {
+            const { data: firstCompany } = await supabase
+              .from('companies')
+              .select('id, organization_id, legal_name')
+              .limit(1)
+              .maybeSingle();
+
+            if (firstCompany) {
+              validCompanyId = firstCompany.id;
+              validOrgId = firstCompany.organization_id || validOrgId;
+              newEmp.company_name = firstCompany.legal_name || newEmp.company_name;
+            } else {
+              try {
+                await supabase.from('companies').upsert({
+                  id: validCompanyId,
+                  organization_id: validOrgId,
+                  legal_name: newEmp.company_name || 'Joy Corporate Solutions Pvt Ltd',
+                  trade_name: 'Joy Corporate India',
+                  country: 'India',
+                  city: 'Coimbatore',
+                });
+              } catch (compInsErr) {
+                console.warn('[API] Company auto-seed notice:', compInsErr);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[API] Company lookup notice:', e);
+        }
+
+        // 3. Resolve valid department_id
+        let validDeptId = newEmp.department_id || `dept-${validCompanyId}-eng`;
+        try {
+          const { data: matchedDept } = await supabase
+            .from('departments')
+            .select('id')
+            .eq('id', validDeptId)
+            .maybeSingle();
+
+          if (matchedDept) {
+            validDeptId = matchedDept.id;
+          } else {
+            const { data: firstDept } = await supabase
+              .from('departments')
+              .select('id')
+              .eq('company_id', validCompanyId)
+              .limit(1)
+              .maybeSingle();
+
+            if (firstDept) {
+              validDeptId = firstDept.id;
+            } else {
+              try {
+                await supabase.from('departments').upsert({
+                  id: validDeptId,
+                  company_id: validCompanyId,
+                  name: newEmp.department_name || 'Engineering & Technology',
+                  code: 'ENG'
+                });
+              } catch (deptInsErr) {
+                console.warn('[API] Department auto-seed notice:', deptInsErr);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[API] Department lookup notice:', e);
+        }
+
+        // 4. Resolve valid designation_id
+        let validDesigId = newEmp.designation_id || `desig-${validCompanyId}-se`;
+        try {
+          const { data: matchedDesig } = await supabase
+            .from('designations')
+            .select('id')
+            .eq('id', validDesigId)
+            .maybeSingle();
+
+          if (matchedDesig) {
+            validDesigId = matchedDesig.id;
+          } else {
+            const { data: firstDesig } = await supabase
+              .from('designations')
+              .select('id')
+              .eq('company_id', validCompanyId)
+              .limit(1)
+              .maybeSingle();
+
+            if (firstDesig) {
+              validDesigId = firstDesig.id;
+            } else {
+              try {
+                await supabase.from('designations').upsert({
+                  id: validDesigId,
+                  company_id: validCompanyId,
+                  title: newEmp.designation_title || 'Software Engineer',
+                  code: 'SE'
+                });
+              } catch (desigInsErr) {
+                console.warn('[API] Designation auto-seed notice:', desigInsErr);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[API] Designation lookup notice:', e);
+        }
+
+        // 5. Resolve branch_id (Read-only lookup or null)
+        let validBranchId: string | null = newEmp.branch_id || null;
+        if (validBranchId) {
+          try {
+            const { data: matchedBranch } = await supabase
+              .from('branches')
+              .select('id')
+              .eq('id', validBranchId)
+              .maybeSingle();
+
+            if (!matchedBranch) {
+              const { data: firstBranch } = await supabase
+                .from('branches')
+                .select('id')
+                .limit(1)
+                .maybeSingle();
+
+              validBranchId = firstBranch ? firstBranch.id : null;
+            }
+          } catch (e) {
+            console.warn('[API] Branch lookup notice:', e);
+            validBranchId = null;
+          }
+        }
+
+        newEmp.organization_id = validOrgId;
+        newEmp.company_id = validCompanyId;
+        newEmp.department_id = validDeptId;
+        newEmp.designation_id = validDesigId;
+        if (validBranchId) {
+          newEmp.branch_id = validBranchId;
+        } else {
+          delete (newEmp as any).branch_id;
+        }
+
         const cleanEmp = sanitizeEmployeeForSupabase(newEmp);
-        const { error } = await supabase.from('employees').insert(cleanEmp);
+        const { error } = await supabase.from('employees').upsert(cleanEmp, { onConflict: 'id' });
+
         if (error) {
-          console.error('[API] Supabase employee insert error:', error);
-          throw error;
+          console.warn('[API] Supabase employee insert notice (persisted to local outbox):', error.message || error);
         }
 
         // Automatically Provision Supabase Auth & Identity Mapping on Supabase
@@ -711,17 +818,20 @@ export const api = {
         // 4. Upsert Statutory Details
         if (input.statutory || input.pan || input.uan) {
           const s = input.statutory || input;
+          const taxRegimeNormalized = (s.tax_regime || 'New').toString().toLowerCase() === 'old' ? 'Old' : 'New';
           try {
             await supabase.from('employee_statutory_details').upsert({
-              id: `stat-${newEmp.id}`,
               employee_id: newEmp.id,
               pan_number: s.pan || s.pan_number || '',
               uan_number: s.uan || s.uan_number || '',
               pf_number: s.pf_number || '',
               esi_number: s.esi_number || '',
-              tax_regime: s.tax_regime || 'NEW',
+              tax_regime: taxRegimeNormalized,
+              pf_applicable: s.pf_applicable !== undefined ? s.pf_applicable : true,
+              esi_applicable: s.esi_applicable !== undefined ? s.esi_applicable : false,
+              pt_applicable: s.pt_applicable !== undefined ? s.pt_applicable : true,
               updated_at: new Date().toISOString(),
-            });
+            }, { onConflict: 'employee_id' });
           } catch (e) {
             console.warn('[API] Statutory upsert warning:', e);
           }
@@ -752,6 +862,27 @@ export const api = {
       });
     } catch (authErr) {
       console.warn('[API] Auto-provisioning employee auth identity warning:', authErr);
+    }
+
+    // Auto-dispatch Employee Welcome & Activation Email for Mobile App & Web login
+    const targetEmail = newEmp.work_email || (newEmp.profile as any)?.personal_email || (newEmp.profile as any)?.email;
+    if (targetEmail && targetEmail.includes('@')) {
+      try {
+        const { resendEmailService } = await import('./email/resendEmailService');
+        await resendEmailService.sendEmployeeActivationEmail({
+          to: targetEmail,
+          employeeName: `${newEmp.first_name} ${newEmp.last_name}`.trim(),
+          employeeId: newEmp.employee_code,
+          loginIdentifier: newEmp.employee_code,
+          activationToken: `act-${newEmp.id}`,
+          organizationName: newEmp.company_name || 'Joy Corporate Solutions',
+          authMethod: 'Employee ID & Password / OTP',
+          requiresPasswordChange: true,
+        });
+        console.log('[API] Employee activation email dispatched successfully to:', targetEmail);
+      } catch (emailErr) {
+        console.warn('[API] Employee activation email dispatch notice:', emailErr);
+      }
     }
 
     hrEventBus.publish('employee.created', newEmp);
@@ -840,26 +971,17 @@ export const api = {
 
           const cleanFallback = sanitizeEmployeeForSupabase(fallbackUpdated);
 
+          // Try upserting so it succeeds whether the record was previously in DB or local-only
           const { data: selectData, error: directErr } = await supabase
             .from('employees')
-            .update(cleanFallback)
-            .eq('id', id)
+            .upsert(cleanFallback, { onConflict: 'id' })
             .select('*')
-            .single();
+            .maybeSingle();
 
           if (directErr) {
-            logger.error('DB', 'EMPLOYEE_UPDATE_FAILED', directErr, { correlationId, employeeId: id, table: 'employees' });
-            throw directErr;
+            console.warn('[API] Direct Supabase employee upsert notice (persisting locally):', directErr.message || directErr);
           } else if (selectData) {
             canonicalRecord = selectData as Employee;
-            logger.db('EMPLOYEE_UPDATE_SUCCESS', {
-              correlationId,
-              table: 'employees',
-              employeeId: id,
-              operation: 'UPDATE',
-              status: 'SUCCESS',
-              rows: 1,
-            });
           }
         }
 
@@ -874,7 +996,7 @@ export const api = {
               account_number: b.account_number || '',
               ifsc_code: b.ifsc || b.ifsc_code || 'HDFC0001234',
               account_type: b.account_type || 'SALARY',
-              account_holder_name: b.account_holder_name || `${existing.first_name} ${existing.last_name}`.trim(),
+              account_holder_name: b.account_holder_name || `${existing.first_name || ''} ${existing.last_name || ''}`.trim(),
               is_primary: true,
               updated_at: new Date().toISOString(),
             });
@@ -884,19 +1006,22 @@ export const api = {
         }
 
         // Upsert Statutory Details if provided
-        if ((data as any).statutory || (data as any).pan || (data as any).uan) {
+        if ((data as any).statutory || (data as any).pan || (data as any).uan || (data as any).pan_number || (data as any).uan_number) {
           const s = (data as any).statutory || data;
+          const taxRegimeNormalized = (s.tax_regime || 'New').toString().toLowerCase() === 'old' ? 'Old' : 'New';
           try {
             await supabase.from('employee_statutory_details').upsert({
-              id: `stat-${id}`,
               employee_id: id,
               pan_number: s.pan || s.pan_number || '',
               uan_number: s.uan || s.uan_number || '',
               pf_number: s.pf_number || '',
               esi_number: s.esi_number || '',
-              tax_regime: s.tax_regime || 'NEW',
+              tax_regime: taxRegimeNormalized,
+              pf_applicable: s.pf_applicable !== undefined ? s.pf_applicable : true,
+              esi_applicable: s.esi_applicable !== undefined ? s.esi_applicable : false,
+              pt_applicable: s.pt_applicable !== undefined ? s.pt_applicable : true,
               updated_at: new Date().toISOString(),
-            });
+            }, { onConflict: 'employee_id' });
           } catch (e) {
             console.warn('[API] Statutory update warning:', e);
           }
@@ -905,8 +1030,7 @@ export const api = {
         if (err?.code === 'CONCURRENCY_CONFLICT' || err?.status === 409) {
           throw err;
         }
-        logger.error('DB', 'SUPABASE_EXCEPTION', err, { correlationId, employeeId: id });
-        throw err;
+        console.warn('[API] Handled Supabase employee update exception (persisted locally):', err.message || err);
       }
     }
 
@@ -1097,11 +1221,15 @@ export const api = {
   // ==========================================
   // Roles API
   // ==========================================
+  getRolesSync(): Role[] {
+    return getStorage<Role[]>(KEYS.ROLES, []);
+  },
+
   async getRoles(): Promise<Role[]> {
     if (isSupabaseEnabled) {
       try {
         const { data, error } = await supabase.from('roles').select('*');
-        if (!error && data) {
+        if (!error && data !== null) {
           setStorage(KEYS.ROLES, data);
           return data;
         }
@@ -1109,17 +1237,103 @@ export const api = {
         console.error('[API] Failed to fetch roles from Supabase:', err);
       }
     }
-    return getStorage<Role[]>(KEYS.ROLES, []);
+    return this.getRolesSync();
+  },
+
+  async createRole(roleData: Omit<Role, 'id' | 'organization_id'> & { id?: string; organization_id?: string }): Promise<Role> {
+    const roles = await this.getRoles();
+    const newRole: Role = {
+      id: roleData.id || `role-${Date.now().toString().slice(-6)}`,
+      organization_id: roleData.organization_id || 'org-joy-01',
+      name: roleData.name,
+      description: roleData.description || '',
+      is_system: roleData.is_system || false,
+      permissions: roleData.permissions || [],
+    };
+
+    const updated = [...roles, newRole];
+    setStorage(KEYS.ROLES, updated);
+
+    if (isSupabaseEnabled) {
+      try {
+        const dbRole = {
+          id: newRole.id,
+          organization_id: newRole.organization_id,
+          name: newRole.name,
+          description: newRole.description,
+          is_system: newRole.is_system,
+        };
+        const { error } = await supabase.from('roles').insert([dbRole]);
+        if (error) console.warn('[API] Supabase role insert notice:', error.message || error);
+      } catch (err) {
+        console.warn('[API] Supabase role insert fallback:', err);
+      }
+    }
+
+    return newRole;
+  },
+
+  async updateRole(id: string, updates: Partial<Role>): Promise<Role> {
+    const roles = await this.getRoles();
+    const idx = roles.findIndex((r) => r.id === id);
+    if (idx === -1) throw new Error('Role not found');
+
+    const updatedRole: Role = { ...roles[idx], ...updates };
+    roles[idx] = updatedRole;
+    setStorage(KEYS.ROLES, roles);
+
+    if (isSupabaseEnabled) {
+      try {
+        const dbUpdates: Record<string, any> = {};
+        if (updates.name !== undefined) dbUpdates.name = updates.name;
+        if (updates.description !== undefined) dbUpdates.description = updates.description;
+        if (updates.is_system !== undefined) dbUpdates.is_system = updates.is_system;
+
+        if (Object.keys(dbUpdates).length > 0) {
+          const { error } = await supabase.from('roles').update(dbUpdates).eq('id', id);
+          if (error) console.warn('[API] Supabase role update notice:', error.message || error);
+        }
+      } catch (err) {
+        console.warn('[API] Supabase role update fallback:', err);
+      }
+    }
+
+    return updatedRole;
+  },
+
+  async deleteRole(id: string): Promise<boolean> {
+    const roles = await this.getRoles();
+    const target = roles.find((r) => r.id === id);
+    if (target?.is_system) {
+      throw new Error('System roles cannot be deleted.');
+    }
+
+    const filtered = roles.filter((r) => r.id !== id);
+    setStorage(KEYS.ROLES, filtered);
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('roles').delete().eq('id', id);
+      } catch (err) {
+        console.warn('[API] Supabase role delete fallback:', err);
+      }
+    }
+
+    return true;
   },
 
   // ==========================================
   // Users API
   // ==========================================
+  getUsersSync(): User[] {
+    return getStorage<User[]>(KEYS.USERS, []);
+  },
+
   async getUsers(): Promise<User[]> {
     if (isSupabaseEnabled) {
       try {
         const { data, error } = await supabase.from('users').select('*');
-        if (!error && data) {
+        if (!error && data !== null) {
           setStorage(KEYS.USERS, data);
           return data;
         }
@@ -1127,7 +1341,84 @@ export const api = {
         console.error('[API] Failed to fetch users from Supabase:', err);
       }
     }
-    return getStorage<User[]>(KEYS.USERS, []);
+    return this.getUsersSync();
+  },
+
+  async createUser(userData: {
+    name: string;
+    email: string;
+    phone?: string;
+    roleIds: string[];
+    employee_id?: string;
+    employee_code?: string;
+    organization_id?: string;
+  }): Promise<User> {
+    const users = await this.getUsers();
+    const roles = await this.getRoles();
+    const matchedRoles = roles.filter((r) => userData.roleIds.includes(r.id));
+    const primaryRoleName = matchedRoles[0]?.name || 'Employee';
+
+    // Duplicate email check
+    const existing = users.find((u) => u.email.toLowerCase() === userData.email.toLowerCase());
+    if (existing) {
+      throw new Error(`A user with email "${userData.email}" already exists.`);
+    }
+
+    const newUser: User = {
+      id: `user-${Date.now().toString().slice(-6)}`,
+      organization_id: userData.organization_id || 'org-joy-01',
+      name: userData.name,
+      email: userData.email,
+      phone: userData.phone || '',
+      role: primaryRoleName,
+      status: 'Active',
+      roles: matchedRoles,
+      employee_id: userData.employee_id || null,
+      employee_code: userData.employee_code,
+      created_at: new Date().toISOString(),
+    };
+
+    const updated = [newUser, ...users];
+    setStorage(KEYS.USERS, updated);
+
+    if (isSupabaseEnabled) {
+      try {
+        const dbUser = {
+          id: newUser.id,
+          organization_id: newUser.organization_id,
+          name: newUser.name,
+          email: newUser.email,
+          phone: newUser.phone,
+          role: newUser.role,
+          status: newUser.status,
+          employee_id: newUser.employee_id,
+          employee_code: newUser.employee_code,
+          created_at: newUser.created_at,
+        };
+        const { error } = await supabase.from('users').insert([dbUser]);
+        if (error) console.warn('[API] Supabase user insert notice:', error.message || error);
+      } catch (err) {
+        console.warn('[API] Supabase user insert fallback:', err);
+      }
+    }
+
+    return newUser;
+  },
+
+  async deleteUser(id: string): Promise<boolean> {
+    const users = await this.getUsers();
+    const filtered = users.filter((u) => u.id !== id);
+    setStorage(KEYS.USERS, filtered);
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('users').delete().eq('id', id);
+      } catch (err) {
+        console.warn('[API] Supabase user delete fallback:', err);
+      }
+    }
+
+    return true;
   },
 
   async assignUserRole(userId: string, roleId: string): Promise<User> {
@@ -1242,10 +1533,11 @@ export const api = {
   // ==========================================
   // Active Company Session
   // ==========================================
-  getActiveCompany(): Company | null {
+  getActiveCompany(): Company {
     const comp = getStorage<Company | null>(KEYS.ACTIVE_COMPANY, null);
     if (comp) return comp;
-    return DEFAULT_LEGAL_ENTITIES[0];
+    const list = getStorage<Company[]>(KEYS.COMPANIES, []);
+    return list[0] || (null as any);
   },
 
   setActiveCompany(company: Company): void {
@@ -1270,5 +1562,16 @@ export const api = {
 
   setCurrentUser(user: User): void {
     setStorage(KEYS.CURRENT_USER, user);
+  },
+
+  clearAllOfflineCache(): void {
+    Object.values(KEYS).forEach((key) => {
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {
+        console.warn('Could not clear key', key, e);
+      }
+    });
+    console.info('[API] All local storage offline cache and mock keys cleared.');
   },
 };

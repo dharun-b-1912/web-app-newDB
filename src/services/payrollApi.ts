@@ -17,7 +17,6 @@ import {
   ReimbursementClaim,
   StatutoryConfig,
   Payslip,
-  TaxDocument,
   FnFSettlement,
   BankDisbursementBatch,
   DisbursementBatchStatus,
@@ -26,21 +25,22 @@ import {
   CalculationBreakdown,
   CalculationSourceItem,
   TaxDeclaration12BB,
-  ECRRecord,
   TamilNaduPTSlab,
   PayslipTemplateConfig,
   BankPaymentTemplate,
   BankDisbursementItem,
   OrgTagRuleAssignment,
   CorporateFundingAccount,
+  PayrollInputSnapshot,
 } from '../types/payroll';
-import { api } from './api';
 import { attendanceApi } from './attendanceApi';
 import { leaveApi } from './leaveApi';
-import { attendanceOperationsEngine } from './attendance/attendanceOperationsEngine';
+import { attendanceRosterService } from './attendance/attendanceRosterService';
 import { hrEventBus } from './hrEventBus';
 import { getActiveOrgId } from './attendance/biometricCommandService';
 import { supabase } from '../lib/supabase';
+import { PayrollCalculationEngine, DetailedEmployeePayrollResult } from './payroll/payrollCalculationEngine';
+import { api } from './api';
 
 const STORAGE_KEYS = {
   COMPONENTS: 'workforce_payroll_components_v2',
@@ -60,6 +60,8 @@ const STORAGE_KEYS = {
   BANK_TEMPLATES: 'workforce_payroll_bank_templates_v2',
   ORG_TAG_RULES: 'workforce_payroll_org_tag_rules_v2',
   CORPORATE_ACCOUNTS: 'workforce_payroll_corporate_accounts_v2',
+  SNAPSHOTS: 'workforce_payroll_snapshots_v2',
+  BREAKDOWNS: 'workforce_payroll_breakdowns_v2',
 };
 
 function getTenantStorageKey(baseKey: string, tenantId = getActiveOrgId()): string {
@@ -447,7 +449,7 @@ class PayrollApi {
   async getEmployeeSalaries(tenantId = getActiveOrgId()): Promise<EmployeeSalaryAssignment[]> {
     const stored = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
 
-    // Fetch live active employees to ensure every real tenant employee has a salary mapping
+    // Fetch live active employees to ensure every real tenant employee has an accurate salary mapping
     const activeCompany = api.getActiveCompany();
     const realEmployees = await api.getEmployees(activeCompany?.id);
     const structures = this.getSalaryStructures(tenantId);
@@ -460,53 +462,73 @@ class PayrollApi {
       if (emp.status === 'Terminated' || emp.status === 'Exited') continue;
 
       const existing = storedMap.get(emp.id);
-    if (existing) {
-      // Sync any updated names or designations from employee master
-      updatedList.push({
-        ...existing,
-        employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || 'Employee',
-        employee_code: emp.employee_code || `WF-${emp.id}`,
-        department_name: emp.department_name || emp.department_id || 'Engineering',
-        designation: emp.designation_title || 'Software Engineer',
-      });
-    } else {
-      // Auto-assign default CTC formula
-      const annualCtc = 1200000;
-      const grossMonthly = Math.round(annualCtc / 12);
+
+      // Extract real CTC from employee master / compensation records
+      const empMasterCtc = Number(
+        emp.employment?.ctc ||
+        emp.employment?.annual_ctc ||
+        (emp as any).ctc ||
+        (emp as any).annual_ctc ||
+        (emp.profile as any)?.ctc ||
+        (emp as any).compensation?.annual_ctc ||
+        0
+      );
+
+      const effectiveAnnualCtc = empMasterCtc > 0 
+        ? empMasterCtc 
+        : (existing?.annual_ctc && existing.annual_ctc > 0 
+          ? existing.annual_ctc 
+          : (defaultStructure?.base_annual_ctc || 600000));
+
+      const grossMonthly = Math.round(effectiveAnnualCtc / 12);
       const basicMonthly = Math.round(grossMonthly * 0.5);
-      const epf = Math.round(basicMonthly * 0.12);
-      const pt = 200;
-      const netEstimate = grossMonthly - epf - pt;
+      const ptMonthly = grossMonthly > 75000 ? 208 : grossMonthly > 60000 ? 170 : grossMonthly > 45000 ? 113 : grossMonthly > 30000 ? 52 : grossMonthly > 21000 ? 22 : 0;
+      const pfMonthly = Math.round(Math.min(basicMonthly, 15000) * 0.12);
+      const esiMonthly = grossMonthly <= 21000 ? Math.round(grossMonthly * 0.0075) : 0;
+      const netEstimated = Math.max(0, grossMonthly - pfMonthly - esiMonthly - ptMonthly);
+
+      // Extract real-time bank details
+      const empBankName = emp.bank?.bank_name || emp.profile?.bank_name || (emp.employment as any)?.bank_name || existing?.bank_name || 'HDFC Bank Ltd';
+      const empAccNo = emp.bank?.account_number || (emp.employment as any)?.bank_account_no || emp.profile?.bank_account_masked || existing?.account_number || '';
+      const empIfsc = emp.bank?.ifsc || emp.bank?.ifsc_code || (emp.employment as any)?.bank_ifsc || existing?.ifsc_code || '';
+
+      // Extract real-time statutory numbers
+      const empPan = emp.statutory?.pan || emp.statutory?.pan_number || (emp.profile as any)?.pan_number || existing?.pan_number || '';
+      const empUan = emp.statutory?.uan || emp.statutory?.uan_number || (emp.employment as any)?.pf_uan || (emp.profile as any)?.uan || existing?.pf_uan || '';
+      const empEsic = emp.statutory?.esi_number || (emp.employment as any)?.esi_number || (emp.profile as any)?.esi_number || existing?.esic_number || '';
+      const effectiveFrom = emp.employment?.doj || (emp.employment as any)?.start_date || existing?.effective_from || '2026-04-01';
+
+      const structId = existing?.salary_structure_id || defaultStructure?.id || 'str-corp-std';
+      const structName = existing?.salary_structure_name || defaultStructure?.name || 'Corporate Standard CTC Structure';
 
       updatedList.push({
-        id: `sal-${emp.id}`,
+        id: existing?.id || `sal-${emp.id}`,
         tenant_id: tenantId,
         employee_id: emp.id,
         employee_code: emp.employee_code || `WF-${emp.id}`,
         employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || 'Employee',
-        department_name: emp.department_name || emp.department_id || 'Engineering',
-        designation: emp.designation_title || 'Software Engineer',
-        salary_structure_id: defaultStructure?.id || 'str-corp-std',
-        salary_structure_name: defaultStructure?.name || 'Corporate Standard CTC Structure',
-        annual_ctc: annualCtc,
+        department_name: emp.department_name || emp.department_id || 'General',
+        designation: emp.designation_title || 'Staff',
+        salary_structure_id: structId,
+        salary_structure_name: structName,
+        annual_ctc: effectiveAnnualCtc,
         gross_monthly: grossMonthly,
         basic_monthly: basicMonthly,
-        net_monthly_estimate: netEstimate,
+        net_monthly_estimate: netEstimated,
         payment_mode: 'BankTransfer',
-        bank_name: 'HDFC Bank Ltd',
-        account_number: `50100${Math.floor(10000000 + Math.random() * 90000000)}`,
-        ifsc_code: 'HDFC0001242',
-        pan_number: 'ABCDE1234F',
-        pf_uan: '100918234812',
-        esic_number: '3192847192',
-        effective_from: '2026-01-01',
+        bank_name: empBankName,
+        account_number: empAccNo,
+        ifsc_code: empIfsc,
+        pan_number: empPan,
+        pf_uan: empUan,
+        esic_number: empEsic,
+        effective_from: effectiveFrom,
         status: 'Active',
         updated_at: new Date().toISOString(),
       });
     }
-  }
 
-  setStore(STORAGE_KEYS.SALARIES, updatedList, tenantId);
+    setStore(STORAGE_KEYS.SALARIES, updatedList, tenantId);
     return updatedList;
   }
 
@@ -519,6 +541,7 @@ saveEmployeeSalary(assignment: EmployeeSalaryAssignment, tenantId = getActiveOrg
     list.push(assignment);
   }
   setStore(STORAGE_KEYS.SALARIES, list, tenantId);
+  hrEventBus.emit('payroll.salary.updated', { assignment, tenantId });
   return assignment;
 }
 
@@ -535,207 +558,497 @@ getPayrollRunById(runId: string, tenantId = getActiveOrgId()): PayrollRun | null
   return runs.find(r => r.id === runId) || null;
 }
 
-  async calculatePayrollRun(
-  periodName: string, // e.g. "August 2026"
-  periodStart: string, // "2026-08-01"
-  periodEnd: string,   // "2026-08-31"
-  payoutDate: string,  // "2026-08-31"
-  tenantId = getActiveOrgId()
-): Promise < PayrollRun > {
-  const salaries = await this.getEmployeeSalaries(tenantId);
-  const statutory = this.getStatutoryConfig(tenantId);
-  const allLoans = this.getLoans(tenantId);
-  const allAdvances = this.getSalaryAdvances(tenantId);
-  const allReimbursements = this.getReimbursements(tenantId);
-
-  const totalWorkingDaysInMonth = 30; // standard payroll denominator
-  const employeeRecords: EmployeePayrollInput[] = [];
-
-  let sumGross = 0;
-  let sumDeductions = 0;
-  let sumNet = 0;
-  let sumEmployerStatutory = 0;
-
-  for(const sal of salaries) {
-    // 1. Pull Real Attendance & LOP for this period
-    const dailyAttendance = attendanceApi.getDailyAttendance('2026-08-20');
-    const empAttendance = dailyAttendance.find(d => d.employee_id === sal.employee_id);
-
-    // Calculate real payable days & LOP
-    let lopDays = 0;
-    let presentDays = 26;
-    let paidLeaveDays = 2;
-    let unpaidLeaveDays = 0;
-    let overtimeHours = 0;
-
-    if (empAttendance) {
-      if (empAttendance.status === 'Absent') {
-        lopDays = 1;
-        presentDays = 25;
-      }
-    }
-
-    const payableDays = Math.max(0, totalWorkingDaysInMonth - lopDays);
-
-    // 2. Base Earnings Computation
-    const grossFixed = sal.gross_monthly;
-    const basic = Math.round(grossFixed * 0.5);
-    const hra = Math.round(basic * 0.4);
-    const conveyance = 1600;
-    const medical = 2500;
-    const specialAllowance = Math.max(0, grossFixed - basic - hra - conveyance - medical);
-
-    // 3. Dynamic Additions
-    const otRatePerHour = Math.round((grossFixed / totalWorkingDaysInMonth / 8) * 1.5);
-    const overtimePay = overtimeHours * otRatePerHour;
-
-    // Approved Reimbursements in this period
-    const empReimbs = allReimbursements.filter(r => r.employee_id === sal.employee_id && (r.status === 'Finance Approved' || r.status === 'Manager Approved'));
-    const reimbursements = empReimbs.reduce((acc, curr) => acc + curr.approved_amount, 0);
-
-    const totalEarnings = grossFixed + overtimePay + reimbursements;
-
-    // 4. Deductions Computation
-    const lopDeduction = Math.round((grossFixed / totalWorkingDaysInMonth) * lopDays);
-
-    // EPF Calculation
-    const epfBase = statutory.pf_wage_ceiling > 0 ? Math.min(basic, statutory.pf_wage_ceiling) : basic;
-    const epfEmployee = statutory.pf_enabled ? Math.round((epfBase * statutory.pf_employee_percent) / 100) : 0;
-    const epfEmployer = statutory.pf_enabled ? Math.round((epfBase * statutory.pf_employer_percent) / 100) : 0;
-
-    // ESIC Calculation
-    const esicEmployee = (statutory.esi_enabled && grossFixed <= statutory.esi_wage_ceiling)
-      ? Math.round((grossFixed * statutory.esi_employee_percent) / 100)
-      : 0;
-    const esicEmployer = (statutory.esi_enabled && grossFixed <= statutory.esi_wage_ceiling)
-      ? Math.round((grossFixed * statutory.esi_employer_percent) / 100)
-      : 0;
-
-    // Professional Tax
-    const pt = statutory.pt_enabled ? statutory.pt_monthly_slab : 0;
-
-    // TDS (Tax Deducted at Source) Estimate based on annual bracket
-    const annualIncome = sal.annual_ctc;
-    let monthlyTds = 0;
-    if (annualIncome > 1500000) monthlyTds = Math.round((annualIncome * 0.15) / 12);
-    else if (annualIncome > 1000000) monthlyTds = Math.round((annualIncome * 0.10) / 12);
-    else if (annualIncome > 700000) monthlyTds = Math.round((annualIncome * 0.05) / 12);
-
-    // Loan EMI & Advances
-    const empLoan = allLoans.find(l => l.employee_id === sal.employee_id && l.status === 'Active');
-    const loanEmi = empLoan ? Math.min(empLoan.monthly_emi, empLoan.balance_amount) : 0;
-
-    const empAdvance = allAdvances.find(a => a.employee_id === sal.employee_id && a.status === 'Approved');
-    const advanceRecovery = empAdvance ? empAdvance.balance_amount : 0;
-
-    const totalDeductions = lopDeduction + epfEmployee + esicEmployee + pt + monthlyTds + loanEmi + advanceRecovery;
-    const netPay = Math.max(0, totalEarnings - totalDeductions);
-
-    const hasExceptions = netPay <= 0 || !sal.account_number || !sal.ifsc_code;
-    const exceptionNotes = netPay <= 0
-      ? 'Critical: Net Pay computed is zero or negative.'
-      : !sal.account_number
-        ? 'Warning: Missing bank account information.'
-        : undefined;
-
-    employeeRecords.push({
-      id: `inp-${sal.employee_id}-${Date.now()}`,
-      tenant_id: tenantId,
-      payroll_run_id: `run-${periodName.replace(/\s+/g, '-').toLowerCase()}`,
-      employee_id: sal.employee_id,
-      employee_code: sal.employee_code,
-      employee_name: sal.employee_name,
-      department: sal.department_name,
-      designation: sal.designation,
-      total_working_days: totalWorkingDaysInMonth,
-      payable_days: payableDays,
-      present_days: presentDays,
-      paid_leave_days: paidLeaveDays,
-      unpaid_leave_days: unpaidLeaveDays,
-      lop_days: lopDays,
-      overtime_hours: overtimeHours,
-      ctc_annual: sal.annual_ctc,
-      gross_fixed: grossFixed,
-      basic,
-      hra,
-      special_allowance: specialAllowance,
-      conveyance,
-      medical,
-      other_allowances: 0,
-      overtime_pay: overtimePay,
-      incentives: 0,
-      bonus: 0,
-      reimbursements,
-      arrears: 0,
-      total_earnings: totalEarnings,
-      lop_deduction: lopDeduction,
-      epf_employee: epfEmployee,
-      esic_employee: esicEmployee,
-      professional_tax: pt,
-      tds_tax: monthlyTds,
-      loan_emi: loanEmi,
-      advance_recovery: advanceRecovery,
-      other_deductions: 0,
-      total_deductions: totalDeductions,
-      epf_employer: epfEmployer,
-      esic_employer: esicEmployer,
-      net_pay: netPay,
-      net_pay_in_words: numberToWordsIndian(netPay),
-      bank_name: sal.bank_name,
-      account_number: sal.account_number,
-      ifsc_code: sal.ifsc_code,
-      pan_number: sal.pan_number,
-      has_exceptions: hasExceptions,
-      exception_notes: exceptionNotes,
-      status: 'Calculated',
-    });
-
-    sumGross += totalEarnings;
-    sumDeductions += totalDeductions;
-    sumNet += netPay;
-    sumEmployerStatutory += (epfEmployer + esicEmployer);
-  }
-
-    const newRun: PayrollRun = {
-    id: `run-${Date.now()}`,
-    tenant_id: tenantId,
-    run_number: `RUN-${new Date(periodStart).getFullYear()}-${String(new Date(periodStart).getMonth() + 1).padStart(2, '0')}`,
-    pay_period: periodName,
-    period_start: periodStart,
-    period_end: periodEnd,
-    payout_date: payoutDate,
-    total_employees: employeeRecords.length,
-    total_gross: sumGross,
-    total_deductions: sumDeductions,
-    total_net_payout: sumNet,
-    total_employer_statutory: sumEmployerStatutory,
-    total_payroll_cost: sumGross + sumEmployerStatutory,
-    status: 'PreviewReady',
-    is_locked: false,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    employee_records: employeeRecords,
-  };
-
-  const existingRuns = this.getPayrollRuns(tenantId);
-  existingRuns.unshift(newRun);
-  setStore(STORAGE_KEYS.RUNS, existingRuns, tenantId);
+clearAllPayrollRuns(tenantId = getActiveOrgId()): void {
+  setStore(STORAGE_KEYS.RUNS, [], tenantId);
+  setStore(STORAGE_KEYS.SNAPSHOTS, [], tenantId);
+  setStore(STORAGE_KEYS.BREAKDOWNS, {}, tenantId);
+  
+  // Clean up non-settled disbursement batches associated with purged runs
+  const batches = this.getDisbursementBatches(tenantId);
+  const preservedBatches = batches.filter(b => b.status === 'Paid' || b.status === 'Settled' || b.status === 'Reconciled' || b.status === 'Closed');
+  setStore(STORAGE_KEYS.DISBURSEMENTS, preservedBatches, tenantId);
 
   this.logAudit({
     tenant_id: tenantId,
     actor_name: 'Payroll Administrator',
     actor_role: 'HR Admin',
-    action_type: 'CALCULATED',
-    entity_id: newRun.id,
-    summary: `Calculated ${newRun.pay_period} payroll for ${newRun.total_employees} employees. Net Payout: ₹${newRun.total_net_payout.toLocaleString('en-IN')}`,
+    action_type: 'DELETED',
+    entity_id: `all-runs-${tenantId}`,
+    summary: 'Purged all previous payroll runs and calculation history.',
     timestamp: new Date().toISOString(),
   });
 
-  hrEventBus.emit('payroll.calculated', { run: newRun });
-  return newRun;
+  hrEventBus.emit('payroll.cleared', { tenantId });
 }
 
-submitPayrollRunForApproval(runId: string, actorName = 'HR Administrator', tenantId = getActiveOrgId()): PayrollRun {
+deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
+  const runs = this.getPayrollRuns(tenantId);
+  const filteredRuns = runs.filter(r => r.id !== runId);
+  setStore(STORAGE_KEYS.RUNS, filteredRuns, tenantId);
+
+  const snapshots = getStore<PayrollInputSnapshot[]>(STORAGE_KEYS.SNAPSHOTS, [], tenantId);
+  setStore(STORAGE_KEYS.SNAPSHOTS, snapshots.filter(s => s.payroll_run_id !== runId), tenantId);
+
+  const batches = this.getDisbursementBatches(tenantId);
+  setStore(STORAGE_KEYS.DISBURSEMENTS, batches.filter(b => b.payroll_run_id !== runId), tenantId);
+
+  this.logAudit({
+    tenant_id: tenantId,
+    actor_name: 'Payroll Administrator',
+    actor_role: 'HR Admin',
+    action_type: 'DELETED',
+    entity_id: runId,
+    summary: `Deleted payroll run ${runId}.`,
+    timestamp: new Date().toISOString(),
+  });
+
+  hrEventBus.emit('payroll.deleted', { runId, tenantId });
+  return true;
+}
+
+  async calculatePayrollRun(
+    periodName: string, // e.g. "August 2026"
+    periodStart: string, // "2026-08-01"
+    periodEnd: string,   // "2026-08-31"
+    payoutDate: string,  // "2026-08-31"
+    tenantId = getActiveOrgId()
+  ): Promise<PayrollRun> {
+    const salaries = await this.getEmployeeSalaries(tenantId);
+    const statutory = this.getStatutoryConfig(tenantId);
+    const allLoans = this.getLoans(tenantId);
+    const allAdvances = this.getSalaryAdvances(tenantId);
+    const allReimbursements = this.getReimbursements(tenantId);
+    const allDailyAttendance = attendanceApi.getDailyAttendance();
+    const allLeaveRequests = leaveApi.getLeaveRequests();
+
+    const periodStartDate = new Date(periodStart);
+    const periodEndDate = new Date(periodEnd);
+    const startMs = periodStartDate.getTime();
+    const endMs = periodEndDate.getTime();
+    const totalDaysInMonth = Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1);
+
+    const employeeRecords: EmployeePayrollInput[] = [];
+    const snapshots: PayrollInputSnapshot[] = [];
+    const breakdowns: Record<string, CalculationBreakdown> = {};
+    const detailedResults: Record<string, DetailedEmployeePayrollResult> = {};
+
+    let sumGross = 0;
+    let sumDeductions = 0;
+    let sumNet = 0;
+    let sumEmployerStatutory = 0;
+
+    const runId = `run-${Date.now()}`;
+
+    for (const sal of salaries) {
+      // 1. Pull Real Attendance & Leave Data across full month calendar
+      const empId = sal.employee_id;
+      const empCode = sal.employee_code;
+      const empName = sal.employee_name;
+
+      // Filter approved leaves for this employee
+      const empLeaveRequests = allLeaveRequests.filter(l => {
+        if (l.employee_id && empId && l.employee_id.toLowerCase() === empId.toLowerCase()) return true;
+        if (l.employee_code && empCode && l.employee_code.toLowerCase() === empCode.toLowerCase()) return true;
+        if (l.employee_name && empName && l.employee_name.toLowerCase() === empName.toLowerCase()) return true;
+        return false;
+      }).filter(l => l.status === 'Approved');
+
+      // Check if new joiner within this period
+      const joiningDate = sal.effective_from || '2026-04-01';
+      const joinDt = new Date(joiningDate);
+      const isNewJoiner = joinDt > periodStartDate && joinDt <= periodEndDate;
+
+      let recordedAbsent = 0;
+      let recordedPresent = 0;
+      let recordedHalfDays = 0;
+      let recordedOtHours = 0;
+      let paidLeaveDays = 0;
+      let unpaidLeaveDays = 0;
+      let weeklyOffDays = 0;
+
+      // Day-by-day evaluation matching Attendance Ledger
+      const curDate = new Date(periodStartDate);
+      while (curDate <= periodEndDate) {
+        const y = curDate.getFullYear();
+        const m = String(curDate.getMonth() + 1).padStart(2, '0');
+        const dStr = String(curDate.getDate()).padStart(2, '0');
+        const dateStr = `${y}-${m}-${dStr}`;
+
+        // If before new joiner start date
+        if (isNewJoiner && curDate < joinDt) {
+          curDate.setDate(curDate.getDate() + 1);
+          continue;
+        }
+
+        // Check approved leave on this date
+        const leaveOnDate = empLeaveRequests.find(l => l.from_date <= dateStr && l.to_date >= dateStr);
+        if (leaveOnDate) {
+          const isLop = leaveOnDate.is_lop ||
+            (leaveOnDate.leave_type_name && leaveOnDate.leave_type_name.toLowerCase().includes('unpaid')) ||
+            (leaveOnDate.leave_type_code && leaveOnDate.leave_type_code.toLowerCase().includes('lop'));
+          if (isLop) {
+            unpaidLeaveDays++;
+            recordedAbsent++;
+          } else {
+            paidLeaveDays++;
+          }
+          curDate.setDate(curDate.getDate() + 1);
+          continue;
+        }
+
+        // Check roster / weekly off
+        const roster = attendanceRosterService.getRosterForEmployeeOnDate(empId, dateStr);
+        if (roster?.is_weekly_off) {
+          weeklyOffDays++;
+          curDate.setDate(curDate.getDate() + 1);
+          continue;
+        }
+
+        // Check explicit daily attendance record
+        const att = allDailyAttendance.find(d =>
+          ((d.employee_id && empId && d.employee_id.toLowerCase() === empId.toLowerCase()) ||
+           (d.employee_code && empCode && d.employee_code.toLowerCase() === empCode.toLowerCase()) ||
+           (d.employee_name && empName && d.employee_name.toLowerCase() === empName.toLowerCase())) &&
+          d.date === dateStr
+        );
+
+        if (att) {
+          if (att.status === 'Absent') {
+            recordedAbsent++;
+          } else if (att.status === 'Half Day') {
+            recordedHalfDays++;
+            recordedPresent += 0.5;
+            recordedAbsent += 0.5;
+          } else if (
+            att.status === 'Present' ||
+            att.status === 'WFH' ||
+            att.status === 'Late' ||
+            att.status === 'Early Checkout' ||
+            att.status === 'Checked Out' ||
+            att.status === 'Overtime' ||
+            att.first_check_in
+          ) {
+            recordedPresent++;
+          } else if (att.status === 'On Leave') {
+            paidLeaveDays++;
+          } else {
+            recordedAbsent++;
+          }
+          if (att.overtime_minutes && att.overtime_minutes > 0) {
+            recordedOtHours += att.overtime_minutes / 60;
+          }
+        } else {
+          // No attendance punch on working day -> Absent / Loss of Pay (LOP)
+          recordedAbsent++;
+        }
+
+        curDate.setDate(curDate.getDate() + 1);
+      }
+
+      const lopDays = recordedAbsent + unpaidLeaveDays;
+      const overtimeHours = Math.round(recordedOtHours * 10) / 10;
+
+      let effectiveEligibleDays = totalDaysInMonth;
+      if (isNewJoiner) {
+        const daysFromJoin = Math.max(1, Math.round((endMs - joinDt.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+        effectiveEligibleDays = Math.min(totalDaysInMonth, daysFromJoin);
+      }
+
+      const payableDays = Math.max(0, effectiveEligibleDays - lopDays);
+      const presentDays = recordedPresent;
+
+      // Approved Reimbursements
+      const empReimbs = allReimbursements.filter(r => r.employee_id === sal.employee_id && (r.status === 'Finance Approved' || r.status === 'Manager Approved'));
+      const reimbursements = empReimbs.reduce((acc, curr) => acc + (curr.approved_amount || 0), 0);
+
+      // Loans & Advances
+      const empLoan = allLoans.find(l => l.employee_id === sal.employee_id && l.status === 'Active');
+      const loanEmi = empLoan ? Math.min(empLoan.monthly_emi || 0, empLoan.balance_amount || 0) : 0;
+
+      const empAdvance = allAdvances.find(a => a.employee_id === sal.employee_id && a.status === 'Approved');
+      const advanceRecovery = empAdvance ? (empAdvance.balance_amount || 0) : 0;
+
+      const grossFixed = sal.gross_monthly || 0;
+      const basicFixed = sal.basic_monthly || Math.round(grossFixed * 0.5);
+      const hraFixed = Math.round(basicFixed * 0.4);
+      const conveyanceFixed = 1600;
+      const medicalFixed = 2500;
+      const specialFixed = Math.max(0, grossFixed - basicFixed - hraFixed - conveyanceFixed - medicalFixed);
+
+      // Construct Layer 2 Immutable Snapshot
+      const snapshot: PayrollInputSnapshot = {
+        id: `snap-${sal.employee_id}-${Date.now()}`,
+        tenant_id: tenantId,
+        payroll_run_id: runId,
+        employee_id: sal.employee_id,
+        employee_code: sal.employee_code,
+        employee_name: sal.employee_name,
+        department: sal.department_name,
+        designation: sal.designation,
+        location: 'Coimbatore HQ',
+        joining_date: joiningDate,
+        is_new_joiner: isNewJoiner,
+        is_exit_period: false,
+        employment_status: 'Active',
+        pf_eligible: (sal.pf_applicable !== undefined ? sal.pf_applicable : statutory.pf_enabled) && !!sal.pf_uan,
+        pf_uan: sal.pf_uan || '',
+        pf_capped: true,
+        esi_eligible: (sal.esi_applicable !== undefined ? sal.esi_applicable : statutory.esi_enabled) && (grossFixed <= statutory.esi_wage_ceiling),
+        esi_ip_number: sal.esic_number || '',
+        esi_coverage_status: sal.esic_number ? 'CONTINUING_COVERAGE' : 'NEW_COVERAGE',
+        pt_eligible: sal.pt_applicable !== undefined ? sal.pt_applicable : statutory.pt_enabled,
+        pt_state_jurisdiction: 'Tamil Nadu',
+        tax_regime: 'NEW',
+        salary_structure_id: sal.salary_structure_id,
+        salary_structure_code: sal.salary_structure_name || 'CORP_STD_01',
+        annual_ctc: sal.annual_ctc,
+        monthly_gross_fixed: grossFixed,
+        basic_fixed: basicFixed,
+        hra_fixed: hraFixed,
+        special_allowance_fixed: specialFixed,
+        conveyance_fixed: conveyanceFixed,
+        medical_fixed: medicalFixed,
+        other_allowances_fixed: 0,
+        total_calendar_days: totalDaysInMonth,
+        payable_days: payableDays,
+        present_days: presentDays,
+        paid_leave_days: paidLeaveDays,
+        unpaid_leave_days: unpaidLeaveDays,
+        absent_days: lopDays,
+        lop_days: lopDays,
+        ncp_days: lopDays,
+        approved_ot_hours: overtimeHours,
+        approved_claims_total: reimbursements,
+        bonus_amount: 0,
+        incentives_amount: 0,
+        loan_emi_due: loanEmi,
+        advance_recovery_due: advanceRecovery,
+        voluntary_deductions: 0,
+        snapshot_created_at: new Date().toISOString(),
+      };
+      snapshots.push(snapshot);
+
+      // Execute Layer 4 Layered Calculation
+      const detailedResult = PayrollCalculationEngine.calculateSnapshot(snapshot, {
+        prorationDivisor: 'CALENDAR_DAYS',
+        pfCapped: true,
+        stateJurisdiction: 'Tamil Nadu',
+      });
+      detailedResults[sal.employee_id] = detailedResult;
+
+      const empRec = detailedResult.employeeInput;
+      empRec.bank_name = sal.bank_name || 'HDFC Bank Ltd';
+      empRec.account_number = sal.account_number;
+      empRec.ifsc_code = sal.ifsc_code;
+      empRec.pan_number = sal.pan_number;
+      empRec.net_pay_in_words = numberToWordsIndian(empRec.net_pay);
+      employeeRecords.push(empRec);
+
+      // Map to Itemized Traceable CalculationBreakdown
+      const earningsBreakdown: CalculationSourceItem[] = detailedResult.calculationLines
+        .filter(l => l.type === 'EARNING')
+        .map(l => ({
+          name: l.component_name,
+          category: l.category,
+          amount: l.amount,
+          source: l.source,
+          formula_applied: l.formula,
+          rule_version: l.rule_version,
+        }));
+
+      const deductionsBreakdown: CalculationSourceItem[] = detailedResult.calculationLines
+        .filter(l => l.type === 'DEDUCTION' || (l.type === 'STATUTORY' && !l.is_employer_cost))
+        .map(l => ({
+          name: l.component_name,
+          category: l.category,
+          amount: l.amount,
+          source: l.source,
+          formula_applied: l.formula,
+          rule_version: l.rule_version,
+        }));
+
+      const statutoryBreakdown: CalculationSourceItem[] = detailedResult.calculationLines
+        .filter(l => l.type === 'STATUTORY' || l.type === 'EMPLOYER_CONTRIBUTION')
+        .map(l => ({
+          name: l.component_name,
+          category: l.category,
+          amount: l.amount,
+          source: l.source,
+          formula_applied: l.formula,
+          rule_version: l.rule_version,
+          notes: l.is_employer_cost ? 'Employer Liability' : 'Employee Deduction',
+        }));
+
+      const breakdown: CalculationBreakdown = {
+        employee_id: sal.employee_id,
+        employee_code: sal.employee_code,
+        employee_name: sal.employee_name,
+        pay_period: periodName,
+        annual_ctc: sal.annual_ctc,
+        gross_earnings: empRec.total_earnings,
+        total_deductions: empRec.total_deductions,
+        net_pay: empRec.net_pay,
+        net_pay_in_words: numberToWordsIndian(empRec.net_pay),
+        earnings_breakdown: earningsBreakdown,
+        deductions_breakdown: deductionsBreakdown,
+        statutory_breakdown: statutoryBreakdown,
+        tax_projection: {
+          regime: 'New Regime (Sec 115BAC)',
+          projected_annual_gross: empRec.total_earnings * 12,
+          standard_deduction: 75000,
+          exemptions_and_80c: 0,
+          projected_taxable_income: Math.max(0, (empRec.total_earnings * 12) - 75000),
+          annual_tax_liability: empRec.tds_tax * 12,
+          tax_already_deducted: 0,
+          remaining_tax: empRec.tds_tax * 12,
+          remaining_months: 12,
+          monthly_tds: empRec.tds_tax,
+          tax_source: 'Sec 115BAC Standard Slabs',
+        },
+        attendance_summary: {
+          total_days: totalDaysInMonth,
+          payable_days: payableDays,
+          present_days: presentDays,
+          paid_leave_days: paidLeaveDays,
+          lop_days: lopDays,
+          overtime_hours: overtimeHours,
+          proration_method: isNewJoiner ? 'Actual Days in Month (DOJ Adjusted)' : 'Actual Days in Month',
+          source: 'Attendance Ledger Engine & Leave Records',
+        },
+      };
+      breakdowns[sal.employee_id] = breakdown;
+
+      sumGross += empRec.total_earnings;
+      sumDeductions += empRec.total_deductions;
+      sumNet += empRec.net_pay;
+      sumEmployerStatutory += empRec.epf_employer + empRec.esic_employer;
+    }
+
+    const newRun: PayrollRun = {
+      id: runId,
+      tenant_id: tenantId,
+      run_number: `RUN-${new Date(periodStart).getFullYear()}-${String(new Date(periodStart).getMonth() + 1).padStart(2, '0')}`,
+      pay_period: periodName,
+      period_start: periodStart,
+      period_end: periodEnd,
+      payout_date: payoutDate,
+      total_employees: employeeRecords.length,
+      total_gross: sumGross,
+      total_deductions: sumDeductions,
+      total_net_payout: sumNet,
+      total_employer_statutory: sumEmployerStatutory,
+      total_payroll_cost: sumGross + sumEmployerStatutory,
+      status: 'PreviewReady',
+      is_locked: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      employee_records: employeeRecords,
+    };
+
+    const existingRuns = this.getPayrollRuns(tenantId);
+    existingRuns.unshift(newRun);
+    setStore(STORAGE_KEYS.RUNS, existingRuns, tenantId);
+    setStore(STORAGE_KEYS.SNAPSHOTS, snapshots, tenantId);
+    setStore(STORAGE_KEYS.BREAKDOWNS, breakdowns, tenantId);
+
+    this.logAudit({
+      tenant_id: tenantId,
+      actor_name: 'Payroll Administrator',
+      actor_role: 'HR Admin',
+      action_type: 'CALCULATED',
+      entity_id: newRun.id,
+      summary: `Calculated ${newRun.pay_period} payroll with Layer 4 statutory engine for ${newRun.total_employees} employees. Net Payout: ₹${newRun.total_net_payout.toLocaleString('en-IN')}`,
+      timestamp: new Date().toISOString(),
+    });
+
+    hrEventBus.emit('payroll.calculated', { run: newRun });
+    return newRun;
+  }
+
+  getCalculationBreakdown(employeeId: string, runIdOrPeriod?: string, tenantId = getActiveOrgId()): CalculationBreakdown | null {
+    const breakdowns = getStore<Record<string, CalculationBreakdown>>(STORAGE_KEYS.BREAKDOWNS, {}, tenantId);
+    if (breakdowns[employeeId]) return breakdowns[employeeId];
+
+    // Fallback: construct live breakdown from active employee salary
+    const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+    const sal = salaries.find(s => s.employee_id === employeeId);
+    if (!sal) return null;
+
+    const gross = sal.gross_monthly;
+    const basic = Math.round(gross * 0.5);
+    const hra = Math.round(basic * 0.4);
+    const conveyance = 1600;
+    const medical = 2500;
+    const special = Math.max(0, gross - basic - hra - conveyance - medical);
+    const epf = Math.round(Math.min(basic, 15000) * 0.12);
+    const esic = gross <= 21000 ? Math.round(gross * 0.0075) : 0;
+    const pt = 208;
+    const totalDeductions = epf + esic + pt;
+    const net = gross - totalDeductions;
+
+    return {
+      employee_id: sal.employee_id,
+      employee_code: sal.employee_code,
+      employee_name: sal.employee_name,
+      pay_period: runIdOrPeriod || 'August 2026',
+      annual_ctc: sal.annual_ctc,
+      gross_earnings: gross,
+      total_deductions: totalDeductions,
+      net_pay: net,
+      net_pay_in_words: numberToWordsIndian(net),
+      earnings_breakdown: [
+        { name: 'Basic Salary', category: 'Basic', amount: basic, source: 'Salary Structure (50% of Gross)', formula_applied: `₹${gross} × 50% = ₹${basic}` },
+        { name: 'House Rent Allowance (HRA)', category: 'HRA', amount: hra, source: 'Salary Structure (40% of Basic)', formula_applied: `₹${basic} × 40% = ₹${hra}` },
+        { name: 'Special Allowance', category: 'SpecialAllowance', amount: special, source: 'Salary Structure (Balancing Figure)', formula_applied: `Gross - Basic - HRA - Conv - Med = ₹${special}` },
+        { name: 'Conveyance Allowance', category: 'Conveyance', amount: conveyance, source: 'Fixed Component', formula_applied: `Standard Monthly Allowance` },
+        { name: 'Medical Allowance', category: 'Medical', amount: medical, source: 'Fixed Component', formula_applied: `Standard Monthly Allowance` },
+      ],
+      deductions_breakdown: [
+        { name: 'Employee Provident Fund (EPF 12%)', category: 'PF', amount: epf, source: 'Statutory Rule Engine', formula_applied: `₹${Math.min(basic, 15000)} × 12% = ₹${epf}` },
+        { name: 'Employee State Insurance (ESIC 0.75%)', category: 'ESI', amount: esic, source: 'Statutory Rule Engine', formula_applied: gross <= 21000 ? `₹${gross} × 0.75% = ₹${esic}` : 'Gross > ₹21,000 (Exempt)' },
+        { name: 'Professional Tax (PT)', category: 'ProfessionalTax', amount: pt, source: 'Tamil Nadu Slabs', formula_applied: `Gross > ₹75,000 = ₹208/month` },
+      ],
+      statutory_breakdown: [
+        { name: 'Employer EPF (12%)', category: 'PF', amount: epf, source: 'Statutory Rule Engine', formula_applied: `₹${Math.min(basic, 15000)} × 12% = ₹${epf}`, notes: 'Employer Liability' },
+        { name: 'Employer Gov Portion (1% Admin + EDLI)', category: 'PF', amount: Math.round(Math.min(basic, 15000) * 0.01), source: 'Statutory Rule Engine', formula_applied: `₹${Math.min(basic, 15000)} × 1% = ₹${Math.round(Math.min(basic, 15000) * 0.01)}`, notes: 'Employer Liability' },
+        { name: 'Employer Gratuity Provision (4.81%)', category: 'Custom', amount: Math.round(basic * 0.0481), source: 'Company Policy', formula_applied: `₹${basic} × 4.81% = ₹${Math.round(basic * 0.0481)}`, notes: 'Employer Liability' },
+      ],
+      tax_projection: {
+        regime: 'New Regime (Sec 115BAC)',
+        projected_annual_gross: gross * 12,
+        standard_deduction: 75000,
+        exemptions_and_80c: 0,
+        projected_taxable_income: Math.max(0, (gross * 12) - 75000),
+        annual_tax_liability: 0,
+        tax_already_deducted: 0,
+        remaining_tax: 0,
+        remaining_months: 12,
+        monthly_tds: 0,
+        tax_source: 'Sec 115BAC Standard Slabs',
+      },
+      attendance_summary: {
+        total_days: 31,
+        payable_days: 31,
+        present_days: 26,
+        paid_leave_days: 5,
+        lop_days: 0,
+        overtime_hours: 0,
+        proration_method: 'Actual Days in Month',
+        source: 'Attendance Ledger Engine',
+      },
+    };
+  }
+
+  getDetailedEmployeeCalculation(employeeId: string, runId?: string, tenantId = getActiveOrgId()): DetailedEmployeePayrollResult | null {
+    const snapshots = getStore<PayrollInputSnapshot[]>(STORAGE_KEYS.SNAPSHOTS, [], tenantId);
+    const snap = snapshots.find(s => s.employee_id === employeeId && (!runId || s.payroll_run_id === runId));
+    if (snap) {
+      return PayrollCalculationEngine.calculateSnapshot(snap);
+    }
+    return null;
+  }
+
+  submitPayrollRunForApproval(runId: string, actorName = 'HR Administrator', tenantId = getActiveOrgId()): PayrollRun {
   const runs = this.getPayrollRuns(tenantId);
   const run = runs.find(r => r.id === runId);
   if (!run) throw new Error('Payroll run not found');
@@ -913,6 +1226,16 @@ getPayslipForEmployee(employeeId: string, payPeriod = 'August 2026', tenantId = 
     { name: 'Employer ESIC (3.25%)', amount: record.esic_employer },
   ];
 
+  const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+  const sal = salaries.find(s => s.employee_id === employeeId);
+  const uan = sal?.pf_uan || 'N/A';
+  const esic = sal?.esic_number || 'N/A';
+  const pan = sal?.pan_number || record.pan_number || '';
+  const doj = sal?.effective_from || '2026-04-01';
+  const accNo = sal?.account_number || record.account_number || '';
+  const ifsc = sal?.ifsc_code || record.ifsc_code || '';
+  const bankName = sal?.bank_name || record.bank_name || 'Bank Transfer';
+
   return {
     id: `ps-${record.employee_id}-${targetRun.id}`,
     tenant_id: tenantId,
@@ -922,17 +1245,17 @@ getPayslipForEmployee(employeeId: string, payPeriod = 'August 2026', tenantId = 
     employee_name: record.employee_name,
     department: record.department,
     designation: record.designation,
-    joining_date: '2025-06-15',
+    joining_date: doj,
     pay_period: targetRun.pay_period,
     payout_date: targetRun.payout_date,
     payable_days: record.payable_days,
     lop_days: record.lop_days,
-    bank_name: record.bank_name,
-    account_number_masked: `•••• •••• ${record.account_number?.slice(-4) || '1234'}`,
-    ifsc_code: record.ifsc_code,
-    pan_number_masked: `${record.pan_number?.slice(0, 2) || 'AB'}••••${record.pan_number?.slice(-1) || 'F'}`,
-    pf_uan: '100918234812',
-    esic_number: '3192847192',
+    bank_name: bankName,
+    account_number_masked: accNo ? `•••• •••• ${accNo.slice(-4)}` : '•••• •••• ----',
+    ifsc_code: ifsc,
+    pan_number_masked: pan ? `${pan.slice(0, 2)}••••${pan.slice(-1)}` : '••••••••••',
+    pf_uan: uan,
+    esic_number: esic,
     earnings,
     gross_earnings: record.total_earnings,
     deductions,
@@ -2197,218 +2520,6 @@ calculateFnFSettlement(
 }
 
 // ==========================================================================
-// 9. CALCULATION EXPLAINER & TRACEABILITY ENGINE
-// ==========================================================================
-
-getCalculationBreakdown(employeeId: string, payPeriod = 'August 2026', tenantId = getActiveOrgId()): CalculationBreakdown | null {
-  const runs = this.getPayrollRuns(tenantId);
-  const targetRun = runs.find(r => r.pay_period === payPeriod) || runs[0];
-  if (!targetRun) return null;
-
-  const record = targetRun.employee_records.find(r => r.employee_id === employeeId);
-  if (!record) return null;
-
-  const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
-  const sal = salaries.find(s => s.employee_id === employeeId);
-
-  const earningsBreakdown: CalculationSourceItem[] = [
-    {
-      name: 'Basic Salary',
-      category: 'Basic',
-      amount: record.basic,
-      source: 'Salary Structure: Permanent Staff (TN-2026) • 50% of Fixed Gross',
-      formula_applied: 'Gross × 50%',
-      rule_version: 'v4.2 (Effective 01-Apr-2026)',
-    },
-    {
-      name: 'House Rent Allowance (HRA)',
-      category: 'HRA',
-      amount: record.hra,
-      source: 'Salary Structure: Standard Metro/Non-Metro Rule (40% of Basic)',
-      formula_applied: 'Basic × 40%',
-      rule_version: 'v4.2',
-    },
-    {
-      name: 'Special Allowance',
-      category: 'SpecialAllowance',
-      amount: record.special_allowance,
-      source: 'Salary Structure: Balancing component',
-      formula_applied: 'Gross - (Basic + HRA + Conveyance + Medical)',
-      rule_version: 'v4.2',
-    },
-    {
-      name: 'Conveyance Allowance',
-      category: 'Conveyance',
-      amount: record.conveyance,
-      source: 'Statutory Travel Transport Policy',
-      formula_applied: 'Fixed ₹1,600/month',
-      rule_version: 'v1.0',
-    },
-    {
-      name: 'Medical Allowance',
-      category: 'Medical',
-      amount: record.medical,
-      source: 'Executive Healthcare Reimbursement Policy',
-      formula_applied: 'Fixed ₹2,500/month',
-      rule_version: 'v1.0',
-    },
-  ];
-
-  if (record.overtime_pay > 0) {
-    earningsBreakdown.push({
-      name: 'Approved Overtime Pay',
-      category: 'Overtime',
-      amount: record.overtime_pay,
-      source: `Attendance Module → Overtime Engine (Approved ${record.overtime_hours || 0} Hours @ 1.5x Multiplier)`,
-      formula_applied: `(Gross ÷ 30 ÷ 8) × 1.5 × ${record.overtime_hours || 0} hrs`,
-      rule_version: 'Live Attendance Sync',
-    });
-  }
-
-  if (record.reimbursements > 0) {
-    earningsBreakdown.push({
-      name: 'Approved Claims & Reimbursements',
-      category: 'Incentive',
-      amount: record.reimbursements,
-      source: 'Finance Approved Expense Voucher Claims',
-      formula_applied: 'Sum of verified receipts in cycle',
-      rule_version: 'Claims Desk',
-    });
-  }
-
-  const deductionsBreakdown: CalculationSourceItem[] = [
-    {
-      name: 'Employee Provident Fund (EPF)',
-      category: 'PF',
-      amount: record.epf_employee,
-      source: 'EPFO Statutory Rule (12% of Basic capped at ₹15,000 ceiling)',
-      formula_applied: 'MIN(Basic, 15000) × 12%',
-      rule_version: 'EPFO-2026-REG',
-    },
-    {
-      name: 'Professional Tax (Tamil Nadu)',
-      category: 'ProfessionalTax',
-      amount: record.professional_tax,
-      source: 'Tamil Nadu Local Authority PT Matrix (Hosur / Greater Chennai Corporation Slabs)',
-      formula_applied: 'Half-Yearly Gross Slab ÷ 6 Months',
-      rule_version: 'TN-PT-2026-S1',
-    },
-  ];
-
-  if (record.esic_employee > 0) {
-    deductionsBreakdown.push({
-      name: 'Employee State Insurance (ESIC)',
-      category: 'ESI',
-      amount: record.esic_employee,
-      source: 'ESIC Act (0.75% of Gross for wages <= ₹21,000)',
-      formula_applied: 'Gross × 0.75%',
-      rule_version: 'ESIC-CENTRAL-2026',
-    });
-  }
-
-  if (record.tds_tax > 0) {
-    deductionsBreakdown.push({
-      name: 'Income Tax (TDS Withholding)',
-      category: 'TDS',
-      amount: record.tds_tax,
-      source: 'Income Tax Dept FY 2026-27 (New Tax Regime Sec 115BAC Projection)',
-      formula_applied: 'Projected Annual Tax Liability ÷ 12 Months',
-      rule_version: 'CBDT-2026-27',
-    });
-  }
-
-  if (record.lop_deduction > 0) {
-    deductionsBreakdown.push({
-      name: `Loss of Pay (${record.lop_days} Days Absent)`,
-      category: 'LOP',
-      amount: record.lop_deduction,
-      source: `Core Attendance Ledger → Approved Unpaid Absence (${record.lop_days} days)`,
-      formula_applied: `(Gross ÷ 30) × ${record.lop_days} days`,
-      rule_version: 'Attendance Calendar',
-    });
-  }
-
-  if (record.loan_emi > 0) {
-    deductionsBreakdown.push({
-      name: 'Company Loan Recovery',
-      category: 'Loan',
-      amount: record.loan_emi,
-      source: 'Active Loan Schedule Recovery (Loan Desk)',
-      formula_applied: 'Scheduled Monthly EMI',
-      rule_version: 'Loan Agreement',
-    });
-  }
-
-  if (record.advance_recovery > 0) {
-    deductionsBreakdown.push({
-      name: 'Salary Advance Recovery',
-      category: 'Advance',
-      amount: record.advance_recovery,
-      source: 'Approved Emergency Salary Advance',
-      formula_applied: 'Single-cycle Full Recovery',
-      rule_version: 'Advance Desk',
-    });
-  }
-
-  const statutoryBreakdown: CalculationSourceItem[] = [
-    {
-      name: 'Employer EPF (EPF 3.67% + EPS 8.33%)',
-      category: 'PF',
-      amount: record.epf_employer,
-      source: 'EPFO Employer Contribution (12% of Basic up to wage ceiling)',
-      formula_applied: 'MIN(Basic, 15000) × 12%',
-      rule_version: 'EPFO-ER-2026',
-    },
-    {
-      name: 'Employer ESIC (3.25%)',
-      category: 'ESI' as const,
-      amount: record.esic_employer,
-      source: 'ESIC Employer Contribution (3.25% of Gross wages <= ₹21,000)',
-      formula_applied: 'Gross × 3.25%',
-      rule_version: 'ESIC-ER-2026',
-    },
-  ];
-
-  return {
-    employee_id: record.employee_id,
-    employee_code: record.employee_code,
-    employee_name: record.employee_name,
-    pay_period: targetRun.pay_period,
-    annual_ctc: sal?.annual_ctc || record.ctc_annual || 1200000,
-    gross_earnings: record.total_earnings,
-    total_deductions: record.total_deductions,
-    net_pay: record.net_pay,
-    net_pay_in_words: record.net_pay_in_words || numberToWordsIndian(record.net_pay),
-    earnings_breakdown: earningsBreakdown,
-    deductions_breakdown: deductionsBreakdown,
-    statutory_breakdown: statutoryBreakdown,
-    tax_projection: {
-      regime: 'New Regime (Sec 115BAC)',
-      projected_annual_gross: (sal?.annual_ctc || 1200000),
-      standard_deduction: 75000, // FY 2026-27 enhanced standard deduction
-      exemptions_and_80c: 0,
-      projected_taxable_income: Math.max(0, (sal?.annual_ctc || 1200000) - 75000),
-      annual_tax_liability: record.tds_tax * 12,
-      tax_already_deducted: record.tds_tax * 4,
-      remaining_tax: record.tds_tax * 8,
-      remaining_months: 8,
-      monthly_tds: record.tds_tax,
-      tax_source: 'CBDT Income Tax 2026-27 Slabs (0-3L: 0%, 3-7L: 5%, 7-10L: 10%, 10-12L: 15%, 12-15L: 20%, >15L: 30%)',
-    },
-    attendance_summary: {
-      total_days: 30,
-      payable_days: record.payable_days,
-      present_days: record.present_days,
-      paid_leave_days: record.paid_leave_days,
-      lop_days: record.lop_days,
-      overtime_hours: record.overtime_hours,
-      proration_method: 'Fixed 30-Day Basis',
-      source: 'Biometric + Attendance Ledger Sync',
-    },
-  };
-}
-
-// ==========================================================================
 // 10. PAYROLL READINESS & CONTROL ENGINE
 // ==========================================================================
 
@@ -2448,37 +2559,6 @@ getPayrollReadinessSummary(tenantId = getActiveOrgId()) {
   };
 }
 
-// ==========================================================================
-// 11. EPFO ECR & STATUTORY FILE EXPORTER
-// ==========================================================================
-
-generateEPFO_ECR_Text(payrollRunId: string, tenantId = getActiveOrgId()): string {
-  const runs = this.getPayrollRuns(tenantId);
-  const run = runs.find(r => r.id === payrollRunId) || runs[0];
-  if (!run) return '';
-
-  // EPFO Electronic Challan cum Return (ECR) Version 2.0 Text format
-  // Delimiter: #~#
-  // Format: UAN#~#MEMBER_NAME#~#GROSS#~#EPF_WAGES#~#EPS_WAGES#~#EDLI_WAGES#~#EE_SHARE#~#EPS_SHARE#~#ER_SHARE_DIFF#~#NCP_DAYS#~#REFUND
-  const lines: string[] = [];
-
-  run.employee_records.forEach((rec, idx) => {
-    const uan = `1009${String(idx + 1).padStart(8, '0')}`;
-    const memberName = rec.employee_name.toUpperCase();
-    const gross = rec.total_earnings;
-    const epfWages = Math.min(rec.basic, 15000);
-    const epsWages = Math.min(rec.basic, 15000);
-    const edliWages = Math.min(rec.basic, 15000);
-    const eeShare = rec.epf_employee;
-    const epsShare = Math.round(epfWages * 0.0833);
-    const erShareDiff = Math.max(0, eeShare - epsShare);
-    const ncpDays = rec.lop_days;
-
-    lines.push(`${uan}#~#${memberName}#~#${gross}#~#${epfWages}#~#${epsWages}#~#${edliWages}#~#${eeShare}#~#${epsShare}#~#${erShareDiff}#~#${ncpDays}#~#0`);
-  });
-
-  return lines.join('\n');
-}
 
 // ==========================================================================
 // 12. TAX DECLARATIONS (FORM 12BB)
@@ -2564,14 +2644,332 @@ savePayslipTemplateConfig(config: PayslipTemplateConfig, tenantId = getActiveOrg
 }
 
 // ==========================================================================
-// 14. AUDIT LOGGING
+// 15. PHYSICAL STATUTORY REGISTERS & DOCUMENT GENERATORS
+// ==========================================================================
+
+generateFormXXVII_Wages_CSV(payrollRunId?: string, tenantId = getActiveOrgId(), options?: { establishmentName?: string; workSite?: string }): string {
+  const runs = this.getPayrollRuns(tenantId);
+  const run = runs.find(r => r.id === payrollRunId) || runs[0];
+  const estName = options?.establishmentName || 'Joy Corporate Solutions Pvt Ltd';
+  const site = options?.workSite || 'Technology Park, Coimbatore, Tamil Nadu';
+
+  const header = [
+    `"FORM XXVII"`,
+    `"REGISTER OF WAGES"`,
+    `"[See Rule 78(1)(a)(i) of Tamil Nadu Contract Labour Rules]"`,
+    `"Name of Establishment: ${estName}"`,
+    `"Work Site Address: ${site}"`,
+    `"Wage Period: ${run ? (run.period_start || '2026-08-01') : '2026-08-01'} to ${run ? (run.period_end || '2026-08-31') : '2026-08-31'}"`,
+    `"Month & Year: ${run ? (run.pay_period || 'August 2026') : 'August 2026'}"`,
+    ``,
+    `"Sl.No","Name of Workman","Sex","Designation","Daily Attendance / Days Worked","Basic Wages","Dearness Allowance (DA)","House Rent Allowance (HRA)","Other Allowances / OT","Gross Wages","PF Deduction (EE)","ESI Deduction (EE)","Professional Tax (PT)","Advance Recovery","Fines / Damage","Total Deductions","Net Wages Payable","Signature / Thumb Impression"`
+  ].join('\n');
+
+  let records = run ? (run.employee_records || []) : [];
+  if (records.length === 0) {
+    const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+    records = salaries.map(s => ({
+      employee_id: s.employee_id,
+      employee_name: s.employee_name,
+      department: s.department_name,
+      payable_days: 30,
+      lop_days: 0,
+      basic: s.basic_monthly,
+      hra: Math.round(s.basic_monthly * 0.4),
+      total_earnings: s.gross_monthly,
+      epf_employee: Math.round(Math.min(s.basic_monthly, 15000) * 0.12),
+      esic_employee: s.gross_monthly <= 21000 ? Math.round(s.gross_monthly * 0.0075) : 0,
+      professional_tax: 208,
+      advance_recovery: 0,
+      total_deductions: Math.round(Math.min(s.basic_monthly, 15000) * 0.12) + (s.gross_monthly <= 21000 ? Math.round(s.gross_monthly * 0.0075) : 0) + 208,
+      net_pay: s.net_monthly_estimate,
+    } as any));
+  }
+
+  const rows = records.map((r, i) => {
+    const basic = r.basic || Math.round((r.total_earnings || 0) * 0.5);
+    const da = 0;
+    const hra = r.hra || Math.round(basic * 0.4);
+    const other = Math.max(0, (r.total_earnings || 0) - basic - da - hra);
+    const gross = r.total_earnings || 0;
+    const pf = r.epf_employee || 0;
+    const esi = r.esic_employee || 0;
+    const pt = r.professional_tax || 208;
+    const adv = r.advance_recovery || 0;
+    const fine = 0;
+    const totDed = r.total_deductions || (pf + esi + pt + adv);
+    const net = r.net_pay || (gross - totDed);
+    
+    // Deduce gender
+    let gender = (r as any).gender;
+    if (!gender) {
+      const lower = (r.employee_name || '').toLowerCase();
+      gender = lower.includes('haripriya') || lower.includes('priya') || lower.includes('ananya') || lower.includes('kavitha') || lower.includes('deepa') ? 'F' : 'M';
+    }
+
+    const designation = (r as any).designation || (r as any).designation_title || r.department || 'Operations';
+
+    return `${i + 1},"${r.employee_name || 'Employee'}","${gender}","${designation}",${r.payable_days || 30},${basic},${da},${hra},${other},${gross},${pf},${esi},${pt},${adv},${fine},${totDed},${net},"________________"`;
+  }).join('\n');
+
+  return header + '\n' + rows;
+}
+
+generateFormXXVI_ContractLabour_CSV(month = 8, year = 2026, tenantId = getActiveOrgId(), options?: { principalEmployer?: string; contractor?: string; workSite?: string }): string {
+  const runs = this.getPayrollRuns(tenantId);
+  const run = runs[0];
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const dateCols = Array.from({ length: daysInMonth }, (_, i) => `"${i + 1}"`).join(',');
+  const pEmployer = options?.principalEmployer || 'Joy Corporate Solutions Pvt Ltd, Coimbatore, Tamil Nadu';
+  const contractor = options?.contractor || 'Joy Workforce Solutions, Coimbatore';
+  const site = options?.workSite || 'Joy Technology Park, Coimbatore';
+
+  const header = [
+    `"FORM No. XXVI"`,
+    `"BOOK OF CONTRACT LABOUR"`,
+    `"[See Rule 75 of Tamil Nadu Contract Labour Rules]"`,
+    `"Name and Address of Principal Employer: ${pEmployer}"`,
+    `"Name and Address of Contractor: ${contractor}"`,
+    `"Name and Address of Work Site: ${site}"`,
+    `"Month: August"`,
+    `"Year: ${year}"`,
+    ``,
+    `"Sl.No","Name of the Workman","Age & Sex","Permanent Home Address","Local Address","Designation / Nature of Work","Father's / Husband's Name","Rate of Wages (Per Day)",${dateCols},"Total Hours Worked","Number of Days Worked","Number of Days Absent","Leave With Wages","Signature / Thumb Impression"`
+  ].join('\n');
+
+  let records = run ? (run.employee_records || []) : [];
+  if (records.length === 0) {
+    const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+    records = salaries.map(s => ({
+      employee_id: s.employee_id,
+      employee_name: s.employee_name,
+      department: s.department_name,
+      payable_days: 30,
+      lop_days: 0,
+      total_earnings: s.gross_monthly,
+    } as any));
+  }
+
+  const rows = records.map((r, i) => {
+    const dailyRate = Math.round((r.total_earnings || 0) / 30);
+    const daysWorked = r.payable_days || 30;
+    const daysAbsent = r.lop_days || 0;
+    const totalHours = daysWorked * 8;
+    
+    // Dynamic attendance day marks (P = Present, WO = Weekly Off, A = Absent)
+    const dayMarks = Array.from({ length: daysInMonth }, (_, d) => {
+      const dayOfWeek = (d + 1) % 7;
+      if (dayOfWeek === 0) return `"WO"`;
+      if (daysAbsent > 0 && d === 15) return `"A"`;
+      return `"P"`;
+    }).join(',');
+
+    // Deduce gender and age
+    let gender = (r as any).gender;
+    if (!gender) {
+      const lower = (r.employee_name || '').toLowerCase();
+      gender = lower.includes('haripriya') || lower.includes('priya') || lower.includes('ananya') || lower.includes('kavitha') || lower.includes('deepa') ? 'F' : 'M';
+    }
+    const age = (r as any).age || 28;
+    const designation = (r as any).designation || (r as any).designation_title || r.department || 'Operations';
+    const fatherOrHusband = (r as any).father_or_husband_name || (r as any).profile?.family_members?.find((f: any) => f.relationship === 'Father' || f.relationship === 'Spouse')?.name || '—';
+
+    return `${i + 1},"${r.employee_name || 'Employee'}","${age} / ${gender}","${site}","${site}","${designation}","${fatherOrHusband}",${dailyRate},${dayMarks},${totalHours},${daysWorked},${daysAbsent},0,"________________"`;
+  }).join('\n');
+
+  return header + '\n' + rows;
+}
+
+generateAdvancesDeductions_CSV(payrollRunId?: string, tenantId = getActiveOrgId(), options?: { establishmentName?: string }): string {
+  const loans = this.getLoans(tenantId) || [];
+  const estName = options?.establishmentName || 'Joy Corporate Solutions Pvt Ltd, Coimbatore';
+  const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+  const runs = this.getPayrollRuns(tenantId);
+  const run = runs.find(r => r.id === payrollRunId) || runs[0];
+
+  const header = [
+    `"REGISTER OF ADVANCES, DEDUCTIONS FOR DAMAGE OR LOSS AND FINES"`,
+    `"[Under Tamil Nadu Contract Labour / Factories / Payment of Wages Rules]"`,
+    `"Name and Address of the Establishment: ${estName}"`,
+    `"Statutory Compliance Period: August 2026"`,
+    ``,
+    `"Sl.No","Name of the Workman","Father's / Husband's Name","Employee Number","Designation","Date of Payment","Amount Paid (Rs.)","No. of instalments in which the advance is to be recovered","Date on which the advance was recovered","Deductions for Damage or Loss (Rs.)","Date of Notice","Total Amount of Deductions Imposed (Rs.)","No. of instalments in which deduction is to be recovered","Date on which deductions are completed","Date of entry of recovery / completion","Date of payment of fine","Amount of fine imposed (Rs.)","Date on which fine is imposed","Signature of the person employed","Remarks"`
+  ].join('\n');
+
+  let records = run ? (run.employee_records || []) : [];
+  if (records.length === 0 && salaries.length > 0) {
+    records = salaries.map(s => ({
+      employee_id: s.employee_id,
+      employee_name: s.employee_name,
+      department: s.department_name,
+    } as any));
+  }
+
+  const rows = records.map((r, idx) => {
+    const empName = r.employee_name || 'Employee';
+    const fatherName = (r as any).father_or_husband_name || (r as any).profile?.family_members?.find((f: any) => f.relationship === 'Father' || f.relationship === 'Spouse')?.name || '—';
+    const loan = loans.find(l => l.employee_id === r.employee_id && l.status === 'Active');
+    
+    const advAmount = loan ? (loan.principal_amount || 0) : 0;
+    const instalments = loan ? (loan.tenure_months || 1) : 0;
+    const monthlyRecovery = loan ? (loan.monthly_emi || Math.round(advAmount / (instalments || 1))) : (r.advance_recovery || 0);
+    const fineAmt = r.fines_deductions || 0;
+    const remarks = advAmount > 0 ? 'Salary Advance / Loan Recovery' : fineAmt > 0 ? 'Statutory Fine Imposed' : 'Clean Record';
+
+    return `${idx + 1},"${empName}","${fatherName}","${r.employee_id || `EMP-0${idx + 1}`}","${r.department || 'Operations'}","${loan?.disbursement_date || '2026-08-01'}",${advAmount},${instalments},"2026-08-31",0,"N/A",${monthlyRecovery || fineAmt},${instalments},"2027-05-31","2026-08-31",${fineAmt > 0 ? '2026-08-15' : 'N/A'},${fineAmt},${fineAmt > 0 ? '2026-08-10' : 'N/A'},"________________","${remarks}"`;
+  });
+
+  return header + '\n' + rows.join('\n');
+}
+
+generateFactoryWageRegister_CSV(payrollRunId?: string, tenantId = getActiveOrgId(), options?: { establishmentName?: string }): string {
+  const runs = this.getPayrollRuns(tenantId);
+  const run = runs.find(r => r.id === payrollRunId) || runs[0];
+  const estName = options?.establishmentName || 'Joy Corporate Solutions Pvt Ltd';
+
+  const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+  const salMap = new Map(salaries.map(s => [s.employee_id, s]));
+
+  const header = [
+    `"FACTORY WAGE & PAYROLL WORKING REGISTER"`,
+    `"[Under Section 59 & 62 of Factories Act / Tamil Nadu Factories Rules Form 25]"`,
+    `"Name of Factory / Establishment: ${estName}"`,
+    `"Pay Period: ${run ? run.pay_period : 'August 2026'} (${run ? run.period_start : '2026-08-01'} - ${run ? run.period_end : '2026-08-31'})"`,
+    ``,
+    `"Sl.No","ESI Number","PF / UAN Number","Employee Name","Designation","Total Days","Absent Days","Date Paid","Basic Wages","Dearness Allowance (DA)","House Rent Allowance (HRA)","Other Allowances / OT","Total Gross Earnings","Employer EPF (3.67%)","Employer EPS (8.33%)","Employer EDLI & Admin (1.0%)","Employer ESIC (3.25%)","Total Employer Contribution","Employee EPF (12%)","Employee ESIC (0.75%)","Professional Tax (PT)","Salary Advance Recovery","Fines / Loss Deductions","Total Employee Deductions","Net Pay (Take-Home)","Employee Signature"`
+  ].join('\n');
+
+  let records = run ? (run.employee_records || []) : [];
+  if (records.length === 0) {
+    records = salaries.map(s => ({
+      employee_id: s.employee_id,
+      employee_name: s.employee_name,
+      department: s.department_name,
+      payable_days: 30,
+      lop_days: 0,
+      basic: s.basic_monthly,
+      hra: Math.round(s.basic_monthly * 0.4),
+      total_earnings: s.gross_monthly,
+      epf_employer: Math.round(Math.min(s.basic_monthly, 15000) * 0.0367),
+      eps_employer: Math.round(Math.min(s.basic_monthly, 15000) * 0.0833),
+      esic_employer: s.gross_monthly <= 21000 ? Math.round(s.gross_monthly * 0.0325) : 0,
+      epf_employee: Math.round(Math.min(s.basic_monthly, 15000) * 0.12),
+      esic_employee: s.gross_monthly <= 21000 ? Math.round(s.gross_monthly * 0.0075) : 0,
+      professional_tax: 208,
+      advance_recovery: 0,
+      total_deductions: Math.round(Math.min(s.basic_monthly, 15000) * 0.12) + (s.gross_monthly <= 21000 ? Math.round(s.gross_monthly * 0.0075) : 0) + 208,
+      net_pay: s.net_monthly_estimate,
+    } as any));
+  }
+
+  const rows = records.map((r, i) => {
+    const sal = salMap.get(r.employee_id);
+    const uan = sal?.pf_uan || '101928374651';
+    const esiNo = sal?.esic_number || '31000987650001001';
+    const basic = r.basic || Math.round((r.total_earnings || 0) * 0.5);
+    const da = 0;
+    const hra = r.hra || Math.round(basic * 0.4);
+    const other = Math.max(0, (r.total_earnings || 0) - basic - da - hra);
+    const pfBase = Math.min(basic, 15000);
+    const erEpf = Math.round(pfBase * 0.0367);
+    const erEps = Math.min(1250, Math.round(pfBase * 0.0833));
+    const erAdmin = Math.round(pfBase * 0.01);
+    const isEsi = (r.total_earnings || 0) <= 21000;
+    const erEsi = isEsi ? Math.round((r.total_earnings || 0) * 0.0325) : 0;
+    const totalEr = erEpf + erEps + erAdmin + erEsi;
+
+    const eePf = r.epf_employee || Math.round(pfBase * 0.12);
+    const eeEsi = r.esic_employee || (isEsi ? Math.round((r.total_earnings || 0) * 0.0075) : 0);
+    const pt = r.professional_tax || 208;
+    const adv = r.advance_recovery || 0;
+    const fine = 0;
+    const totDed = r.total_deductions || (eePf + eeEsi + pt + adv + fine);
+    const net = r.net_pay || ((r.total_earnings || 0) - totDed);
+
+    return `${i + 1},"${esiNo}","${uan}","${r.employee_name || 'Employee'}","${r.department || 'Operations'}",${r.payable_days || 30},${r.lop_days || 0},"${run ? (run.payout_date || '2026-08-31') : '2026-08-31'}",${basic},${da},${hra},${other},${r.total_earnings || 0},${erEpf},${erEps},${erAdmin},${erEsi},${totalEr},${eePf},${eeEsi},${pt},${adv},${fine},${totDed},${net},"________________"`;
+  }).join('\n');
+
+  return header + '\n' + rows;
+}
+
+generateEPFO_ECR_Text(payrollRunId?: string, tenantId = getActiveOrgId()): string {
+  const runs = this.getPayrollRuns(tenantId);
+  const run = runs.find(r => r.id === payrollRunId) || runs[0];
+  const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+  const salMap = new Map(salaries.map(s => [s.employee_id, s]));
+
+  let records = run ? (run.employee_records || []) : [];
+  if (records.length === 0) {
+    records = salaries.map(s => ({
+      employee_id: s.employee_id,
+      employee_name: s.employee_name,
+      payable_days: 30,
+      lop_days: 0,
+      basic: s.basic_monthly,
+      total_earnings: s.gross_monthly,
+      epf_employee: Math.round(Math.min(s.basic_monthly, 15000) * 0.12),
+      epf_employer: Math.round(Math.min(s.basic_monthly, 15000) * 0.12),
+    } as any));
+  }
+
+  // Official EPFO ECR 2.0 Electronic Format with #~# delimiter
+  // Field Structure: UAN#~#MEMBER_NAME#~#GROSS_WAGES#~#EPF_WAGES#~#EPS_WAGES#~#EDLI_WAGES#~#EE_SHARE#~#EPS_SHARE#~#ER_EPF_DIFF#~#NCP_DAYS#~#REFUND
+  return records.map(r => {
+    const sal = salMap.get(r.employee_id);
+    const uan = sal?.pf_uan || '101928374651';
+    const name = (r.employee_name || 'EMPLOYEE').toUpperCase().replace(/[^A-Z ]/g, '');
+    const gross = Math.round(r.total_earnings || 0);
+    const epfWage = Math.min(Math.round(r.basic || gross * 0.5), 15000);
+    const epsWage = epfWage;
+    const edliWage = epfWage;
+    const eeShare = Math.round(epfWage * 0.12);
+    const epsShare = Math.round(epsWage * 0.0833);
+    const erEpfDiff = eeShare - epsShare;
+    const ncpDays = r.lop_days || 0;
+    const refund = 0;
+
+    return `${uan}#~#${name}#~#${gross}#~#${epfWage}#~#${epsWage}#~#${edliWage}#~#${eeShare}#~#${epsShare}#~#${erEpfDiff}#~#${ncpDays}#~#${refund}`;
+  }).join('\n');
+}
+
+generateESIC_Upload_CSV(payrollRunId?: string, tenantId = getActiveOrgId()): string {
+  const runs = this.getPayrollRuns(tenantId);
+  const run = runs.find(r => r.id === payrollRunId) || runs[0];
+  const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+  const salMap = new Map(salaries.map(s => [s.employee_id, s]));
+
+  let records = run ? (run.employee_records || []) : [];
+  if (records.length === 0) {
+    records = salaries.map(s => ({
+      employee_id: s.employee_id,
+      employee_name: s.employee_name,
+      payable_days: 30,
+      lop_days: 0,
+      total_earnings: s.gross_monthly,
+    } as any));
+  }
+
+  const header = `IP Number,IP Name,No of Days for which wages paid,Total Monthly Wages,Reason Code for Zero workings days,Last Working Day\n`;
+  const rows = records.map((r) => {
+    const sal = salMap.get(r.employee_id);
+    const ipNumber = sal?.esic_number || '31000987650001001';
+    const reasonCode = (r.payable_days || 0) === 0 ? '1' : '0';
+    const lwd = (r.lop_days || 0) > 0 ? (run?.period_end || '2026-08-31') : '';
+    return `"${ipNumber}","${r.employee_name || 'Employee'}",${r.payable_days || 30},${r.total_earnings || 0},${reasonCode},"${lwd}"`;
+  }).join('\n');
+
+  return header + rows;
+}
+
+// ==========================================================================
+// 16. AUDIT LOGGING
 // ==========================================================================
 
 getAuditLogs(tenantId = getActiveOrgId()): PayrollAuditEvent[] {
   return getStore<PayrollAuditEvent[]>(STORAGE_KEYS.AUDIT, [], tenantId);
 }
 
-  private logAudit(event: Omit<PayrollAuditEvent, 'id'>): void {
+logAudit(event: Omit<PayrollAuditEvent, 'id'>): void {
   const list = this.getAuditLogs(event.tenant_id);
   const item: PayrollAuditEvent = {
     ...event,
@@ -2583,3 +2981,4 @@ getAuditLogs(tenantId = getActiveOrgId()): PayrollAuditEvent[] {
 }
 
 export const payrollApi = new PayrollApi();
+

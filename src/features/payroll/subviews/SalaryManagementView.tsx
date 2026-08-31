@@ -12,6 +12,7 @@ import {
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
+import { IntelligentSalaryStructureBuilder } from '../components/IntelligentSalaryStructureBuilder';
 import {
   SlidersHorizontal,
   Building2,
@@ -46,9 +47,10 @@ import { hrEventBus } from '../../../services/hrEventBus';
 interface SalaryManagementViewProps {
   initialSubTab?: string;
   onOpenPayslip?: (employeeId: string) => void;
+  onNavigateTab?: (tabKey: string) => void;
 }
 
-export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ initialSubTab }) => {
+export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ initialSubTab, onOpenPayslip, onNavigateTab }) => {
   const { showToast } = useToast();
   const [subTab, setSubTab] = useState<string>(initialSubTab || 'structures');
   const [structures, setStructures] = useState<SalaryStructure[]>([]);
@@ -569,14 +571,14 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
                 <div className="flex items-center justify-between pt-3 border-t border-gray-100 flex-wrap gap-2">
                   <span className="text-[10px] text-gray-400 font-mono">v{str.version || 1} • {str.effective_from || 'Active'}</span>
                   <div className="flex items-center gap-1.5">
-                    <Button size="xs" variant="outline" onClick={() => handleDuplicateStructure(str)} className="text-gray-700 hover:bg-gray-100 rounded-lg text-xs">
-                      <Copy className="w-3 h-3 mr-1 text-gray-500" /> Duplicate
+                    <Button size="xs" variant="outline" onClick={() => handleDuplicateStructure(str)} className="text-gray-700 bg-white hover:bg-gray-100 border-gray-200 font-semibold shadow-2xs">
+                      <Copy className="w-3.5 h-3.5 mr-1 text-gray-500" /> Duplicate
                     </Button>
-                    <Button size="xs" variant="outline" onClick={() => handleOpenStructureModal(str)} className="text-[#07563D] hover:bg-emerald-50 border-emerald-200 font-semibold rounded-lg text-xs">
-                      <Edit2 className="w-3 h-3 mr-1" /> Edit
+                    <Button size="xs" variant="secondary" onClick={() => handleOpenStructureModal(str)} className="text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 font-bold shadow-2xs">
+                      <Edit2 className="w-3.5 h-3.5 mr-1 text-[#07563D]" /> Edit
                     </Button>
-                    <Button size="xs" variant="outline" onClick={() => handleDeleteStructure(str)} className="text-rose-700 hover:bg-rose-50 border-rose-200 font-semibold rounded-lg text-xs">
-                      <Trash2 className="w-3 h-3 mr-1 text-rose-600" /> Delete
+                    <Button size="xs" variant="outline" onClick={() => handleDeleteStructure(str)} className="text-rose-700 bg-rose-50/50 hover:bg-rose-100 border-rose-200/80 font-semibold shadow-2xs">
+                      <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-600" /> Delete
                     </Button>
                   </div>
                 </div>
@@ -742,11 +744,11 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
                     <td className="px-5 py-3.5 text-right">
                       <Button
                         size="xs"
-                        variant="outline"
+                        variant="secondary"
                         onClick={() => handleOpenRevisionModal(sal)}
-                        className="text-[#07563D] hover:bg-emerald-50 border-emerald-200 font-semibold rounded-lg"
+                        className="text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 font-bold shadow-2xs cursor-pointer"
                       >
-                        <Edit2 className="w-3 h-3 mr-1" /> Revise Salary
+                        <Edit2 className="w-3.5 h-3.5 mr-1 text-[#07563D]" /> Revise Salary
                       </Button>
                     </td>
                   </tr>
@@ -1003,126 +1005,17 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
         </Modal>
       )}
 
-      {/* MODAL 2: SALARY STRUCTURE BUILDER */}
+      {/* MODAL 2: INTELLIGENT SALARY STRUCTURE BUILDER */}
       {isStructureModalOpen && (
-        <Modal
+        <IntelligentSalaryStructureBuilder
           isOpen={isStructureModalOpen}
           onClose={() => setIsStructureModalOpen(false)}
-          title={selectedStructure ? `Edit Salary Structure: ${strCode}` : 'Create Salary Structure Template'}
-          size="lg"
-        >
-          <div className="space-y-4 text-xs">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-gray-700 font-bold mb-1">Structure Code *</label>
-                <input
-                  type="text"
-                  value={strCode}
-                  onChange={e => setStrCode(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono uppercase font-bold"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-700 font-bold mb-1">Structure Name *</label>
-                <input
-                  type="text"
-                  value={strName}
-                  onChange={e => setStrName(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-gray-700 font-bold mb-1">Applicable Grade / Category</label>
-                <input
-                  type="text"
-                  value={strGrade}
-                  onChange={e => setStrGrade(e.target.value)}
-                  placeholder="e.g. Grade L1 - L5"
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-700 font-bold mb-1">Benchmark Annual CTC (₹)</label>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={strCtc === 0 ? '' : strCtc}
-                  onChange={e => {
-                    const val = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0;
-                    setStrCtc(val);
-                    setSandboxCtc(val);
-                  }}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono font-bold placeholder:text-gray-400"
-                />
-              </div>
-            </div>
-
-            {/* Selectable Components Checklist */}
-            <div className="space-y-2">
-              <span className="font-bold text-gray-700 block">Select Included Wage Components</span>
-              <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto border border-gray-200 p-2 rounded-xl">
-                {components.map(comp => (
-                  <label key={comp.id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 hover:bg-gray-100 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedCompIds.includes(comp.id)}
-                      onChange={e => {
-                        if (e.target.checked) {
-                          setSelectedCompIds([...selectedCompIds, comp.id]);
-                        } else {
-                          setSelectedCompIds(selectedCompIds.filter(id => id !== comp.id));
-                        }
-                      }}
-                      className="rounded text-[#07563D]"
-                    />
-                    <div className="min-w-0">
-                      <span className="font-bold text-gray-900 block truncate">{comp.name}</span>
-                      <span className="text-[10px] text-gray-500 font-mono">{comp.code} • {comp.category}</span>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Interactive Salary Calculation Sandbox Preview */}
-            <div className="p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-xl space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-emerald-950 block text-[11px] uppercase">
-                  Sandbox Calculation Simulation (Sample CTC: ₹{sandboxCtc.toLocaleString('en-IN')})
-                </span>
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-200 text-emerald-900">
-                  SIMULATION ONLY
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-center font-mono">
-                <div className="bg-white p-2 rounded-lg border border-emerald-100">
-                  <span className="text-[10px] text-gray-500 block font-sans">Monthly Gross</span>
-                  <span className="font-bold text-gray-900">₹{Math.round(sandboxCtc / 12).toLocaleString('en-IN')}</span>
-                </div>
-                <div className="bg-white p-2 rounded-lg border border-emerald-100">
-                  <span className="text-[10px] text-gray-500 block font-sans">Est. Deductions</span>
-                  <span className="font-bold text-rose-700">₹{Math.round((sandboxCtc / 12) * 0.08).toLocaleString('en-IN')}</span>
-                </div>
-                <div className="bg-white p-2 rounded-lg border border-emerald-100">
-                  <span className="text-[10px] text-gray-500 block font-sans">Est. Net Take-Home</span>
-                  <span className="font-black text-[#07563D]">₹{Math.round((sandboxCtc / 12) * 0.92).toLocaleString('en-IN')}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
-              <Button variant="outline" size="sm" onClick={() => setIsStructureModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button size="sm" variant="primary" onClick={handleSaveStructure} className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold">
-                Publish Structure
-              </Button>
-            </div>
-          </div>
-        </Modal>
+          existingStructure={selectedStructure}
+          onStructureSaved={() => {
+            loadData();
+            setIsStructureModalOpen(false);
+          }}
+        />
       )}
 
       {/* MODAL 3: BULK SALARY ASSIGNMENT */}

@@ -79,11 +79,53 @@ export const FnFSettlementView: React.FC = () => {
           size="sm"
           variant="primary"
           onClick={() => setIsModalOpen(true)}
-          className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs"
+          className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs cursor-pointer shadow-xs"
         >
           <Calculator className="w-3.5 h-3.5 mr-1" />
           Calculate Exit Settlement
         </Button>
+      </div>
+
+      {/* Quick KPI Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Completed F&F Settlements</span>
+            <span className="text-base font-black text-gray-900 mt-0.5 block font-mono">
+              {settlements.length} Record(s)
+            </span>
+            <span className="text-[10px] text-emerald-700 font-semibold">100% Statutory Cleared</span>
+          </div>
+          <span className="p-3 rounded-xl bg-emerald-50 text-[#07563D] border border-emerald-100">
+            <CheckCircle2 className="w-5 h-5" />
+          </span>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Total Net Exit Payout</span>
+            <span className="text-base font-black text-[#07563D] mt-0.5 block font-mono">
+              ₹ {settlements.reduce((acc, s) => acc + s.net_settlement_payable, 0).toLocaleString('en-IN')}
+            </span>
+            <span className="text-[10px] text-gray-500 font-medium">Gratuity + Encashment + Unpaid</span>
+          </div>
+          <span className="p-3 rounded-xl bg-blue-50 text-blue-700 border border-blue-100">
+            <Calculator className="w-5 h-5" />
+          </span>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Gratuity Formula</span>
+            <span className="text-base font-black text-gray-900 mt-0.5 block font-mono">
+              15/26 × Basic × Yrs
+            </span>
+            <span className="text-[10px] text-purple-700 font-semibold">Payment of Gratuity Act 1972</span>
+          </div>
+          <span className="p-3 rounded-xl bg-purple-50 text-purple-700 border border-purple-100">
+            <FileText className="w-5 h-5" />
+          </span>
+        </div>
       </div>
 
       {/* Settlements Table */}

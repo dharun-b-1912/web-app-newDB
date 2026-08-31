@@ -221,21 +221,19 @@ class ProfileService {
     if (cached) {
       try {
         const parsed: FullProfileContext = JSON.parse(cached);
-        // Security check: Validate cached profile belongs strictly to this user
-        if (
-          parsed.user?.id === user.id &&
-          parsed.user?.email === user.email &&
-          (parsed.personal?.legalFirstName === firstName || parsed.personal?.preferredName === displayName)
-        ) {
+        // Security check: Validate cached profile belongs to this user session
+        const isUserMatch =
+          (parsed.user?.id && (parsed.user.id === user.id || (parsed.user as any).auth_user_id === user.id)) ||
+          (parsed.user?.email && user.email && parsed.user.email.toLowerCase() === user.email.toLowerCase()) ||
+          (parsed.contact?.workEmail && user.email && parsed.contact.workEmail.toLowerCase() === user.email.toLowerCase());
+
+        if (isUserMatch && parsed.personal) {
           return {
             ...parsed,
             user,
             organization: orgContext.activeOrganization,
             legalEntity: orgContext.activeLegalEntity,
           };
-        } else {
-          // Stale or contaminated cache from previous user session - purge immediately
-          localStorage.removeItem(storageKey);
         }
       } catch (_) {
         localStorage.removeItem(storageKey);
@@ -375,6 +373,33 @@ class ProfileService {
       ],
     };
     localStorage.setItem(`${STORAGE_KEYS.PROFILE_PREFIX}${user.id}`, JSON.stringify(updated));
+    if (user.email) {
+      localStorage.setItem(`${STORAGE_KEYS.PROFILE_PREFIX}${user.email}`, JSON.stringify(updated));
+    }
+
+    if (isSupabaseEnabled) {
+      try {
+        const fullName = `${data.legalFirstName || ''} ${data.legalLastName || ''}`.trim() || data.preferredName;
+        await supabase.auth.updateUser({
+          data: {
+            full_name: fullName,
+            name: fullName,
+            first_name: data.legalFirstName,
+            last_name: data.legalLastName,
+            preferred_name: data.preferredName,
+            dob: data.dateOfBirth,
+            gender: data.gender,
+            marital_status: data.maritalStatus,
+            nationality: data.nationality,
+            blood_group: data.bloodGroup,
+            preferred_language: data.preferredLanguage,
+          },
+        });
+      } catch (err) {
+        console.warn('[ProfileService] Supabase profile sync notice:', err);
+      }
+    }
+
     return updated;
   }
 
@@ -398,6 +423,9 @@ class ProfileService {
       ],
     };
     localStorage.setItem(`${STORAGE_KEYS.PROFILE_PREFIX}${user.id}`, JSON.stringify(updated));
+    if (user.email) {
+      localStorage.setItem(`${STORAGE_KEYS.PROFILE_PREFIX}${user.email}`, JSON.stringify(updated));
+    }
     return updated;
   }
 
@@ -421,6 +449,9 @@ class ProfileService {
       ],
     };
     localStorage.setItem(`${STORAGE_KEYS.PROFILE_PREFIX}${user.id}`, JSON.stringify(updated));
+    if (user.email) {
+      localStorage.setItem(`${STORAGE_KEYS.PROFILE_PREFIX}${user.email}`, JSON.stringify(updated));
+    }
     return updated;
   }
 

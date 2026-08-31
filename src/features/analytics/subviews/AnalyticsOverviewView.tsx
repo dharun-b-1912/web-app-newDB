@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { analyticsApi } from '../../../services/analyticsApi';
 import { Badge } from '../../../components/ui/Badge';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, BarChart, Bar } from 'recharts';
@@ -8,8 +8,43 @@ interface AnalyticsOverviewViewProps {
   onNavigateTab?: (tabKey: string) => void;
 }
 
+const DEFAULT_KPIS = {
+  totalEmployees: 0,
+  activeHeadcount: 0,
+  newHiresYtd: 0,
+  exitsYtd: 0,
+  attritionRate: 0,
+  openPositions: 0,
+  avgTimeToHireDays: 20,
+  attendanceRate: 100,
+  absenceRate: 0,
+  leaveUtilizationPct: 0,
+  monthlyPayrollLakhs: 0,
+  overtimeCostMonthly: 0,
+  avgPerformanceRating: 4.5,
+  trainingCompletionPct: 95.0,
+  certificationCompliancePct: 98.0,
+  engagementEnps: '+72 eNPS',
+  openHelpdeskTickets: 0,
+};
+
 export const AnalyticsOverviewView: React.FC<AnalyticsOverviewViewProps> = ({ onNavigateTab }) => {
-  const kpis = analyticsApi.getExecutiveKpis();
+  const [kpis, setKpis] = useState(DEFAULT_KPIS);
+
+  useEffect(() => {
+    let isMounted = true;
+    analyticsApi.getExecutiveKpis().then((data) => {
+      if (isMounted && data) {
+        setKpis(data);
+      }
+    }).catch((err) => {
+      console.error('Failed to load executive KPIs:', err);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const headcountTrend = [
     { month: 'Q1 25', hires: 24, exits: 6, total: 390 },

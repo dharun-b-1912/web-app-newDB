@@ -52,13 +52,13 @@ class DigitalLetterService {
   public async fetchLetters(tenantId = getActiveOrgId()): Promise<DigitalLetter[]> {
     if (isSupabaseEnabled) {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('digital_letters')
           .select('*')
           .eq('tenant_id', tenantId)
           .order('issued_date', { ascending: false });
 
-        if (data && data.length > 0) {
+        if (!error && data !== null) {
           this.memoryCache = data;
           this.saveLocalStore(data, tenantId);
           return data;

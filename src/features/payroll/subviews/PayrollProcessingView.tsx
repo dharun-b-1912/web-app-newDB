@@ -27,6 +27,13 @@ import {
   Users,
   HelpCircle,
   CreditCard,
+  Zap,
+  Sparkles,
+  FolderArchive,
+  FileSpreadsheet,
+  Trash2,
+  Minus,
+  TrendingUp,
 } from 'lucide-react';
 import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
@@ -34,6 +41,7 @@ import { hrEventBus } from '../../../services/hrEventBus';
 import { useAuth } from '../../../hooks/useAuth';
 
 import { PayrollWorkflowStepper } from '../components/PayrollWorkflowStepper';
+import { AutoPayrollAndReportsModal } from '../components/AutoPayrollAndReportsModal';
 
 interface PayrollProcessingViewProps {
   initialSubTab?: string;
@@ -59,6 +67,9 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
   const [selectedBreakdown, setSelectedBreakdown] = useState<CalculationBreakdown | null>(null);
   const [isExplainModalOpen, setIsExplainModalOpen] = useState(false);
 
+  // 1-Click Automation Modal State
+  const [isAutoModalOpen, setIsAutoModalOpen] = useState(false);
+
   // Run Wizard Modal State
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
@@ -66,6 +77,69 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
   const [wizardStart, setWizardStart] = useState('2026-08-01');
   const [wizardEnd, setWizardEnd] = useState('2026-08-31');
   const [wizardPayoutDate, setWizardPayoutDate] = useState('2026-08-31');
+
+  const downloadFile = (content: string, fileName: string, type: string) => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportQuickReport = (reportType: string) => {
+    if (!selectedRun) {
+      showToast('Please select a payroll run first.', 'error');
+      return;
+    }
+    const records = selectedRun.employee_records || [];
+    const period = selectedRun.pay_period || 'August 2026';
+    const periodStr = period.replace(/\s+/g, '_');
+
+    if (reportType === 'ecr') {
+      const ecrText = payrollApi.generateEPFO_ECR_Text(selectedRun.id);
+      downloadFile(ecrText, `EPFO_ECR_${periodStr}.txt`, 'text/plain;charset=utf-8');
+      showToast(`✓ Generated & Exported EPFO ECR File (${periodStr}.txt)`);
+    } else if (reportType === 'bank') {
+      const header = 'EmpCode,BeneficiaryName,BankName,AccountNumber,IFSCCode,NetPayoutAmount,PaymentMode,Narration\n';
+      const rows = records.map(r => `${r.employee_code},"${r.employee_name}","${r.bank_name || 'Bank Transfer'}","${r.account_number || ''}","${r.ifsc_code || ''}",${r.net_pay},NEFT,"SALARY ${period}"`).join('\n');
+      downloadFile(header + rows, `Bank_Payment_Advice_${periodStr}.csv`, 'text/csv');
+      showToast(`✓ Generated & Exported Bank Payment Advice (${periodStr}.csv)`);
+    } else if (reportType === 'esic') {
+      const header = 'EmpCode,EmployeeName,IPNumber,GrossWages,EmployeeESIC,EmployerESIC,TotalESIC\n';
+      const rows = records.map(r => `${r.employee_code},"${r.employee_name}","${(r as any).esic_number || (r as any).esi_ip_number || ''}",${r.total_earnings},${r.esic_employee},${r.esic_employer},${r.esic_employee + r.esic_employer}`).join('\n');
+      downloadFile(header + rows, `ESIC_Monthly_Statement_${periodStr}.csv`, 'text/csv');
+      showToast(`✓ Generated & Exported ESIC Statement (${periodStr}.csv)`);
+    } else if (reportType === 'pt') {
+      const header = 'EmpCode,EmployeeName,State,GrossSalary,PT_Deducted\n';
+      const rows = records.map(r => `${r.employee_code},"${r.employee_name}","${(r as any).state || 'Tamil Nadu'}",${r.total_earnings},${r.professional_tax}`).join('\n');
+      downloadFile(header + rows, `PT_Challan_Summary_${periodStr}.csv`, 'text/csv');
+      showToast(`✓ Generated & Exported PT Challan (${periodStr}.csv)`);
+    } else if (reportType === 'tds') {
+      const header = 'EmpCode,EmployeeName,PAN,GrossSalary,TotalDeductions,TDS_Withheld\n';
+      const rows = records.map(r => `${r.employee_code},"${r.employee_name}","${r.pan_number || ''}",${r.total_earnings},${r.total_deductions},${r.tds_tax}`).join('\n');
+      downloadFile(header + rows, `TDS_24Q_Report_${periodStr}.csv`, 'text/csv');
+      showToast(`✓ Generated & Exported TDS 24Q Register (${periodStr}.csv)`);
+    } else {
+      // Master Register
+      const header = 'EmpCode,Name,Department,Days,Basic,HRA,Gross,EPF,ESIC,PT,TDS,NetPay\n';
+      const rows = records.map(r => `${r.employee_code},"${r.employee_name}","${r.department}",${r.payable_days},${r.basic},${r.hra},${r.total_earnings},${r.epf_employee},${r.esic_employee},${r.professional_tax},${r.tds_tax},${r.net_pay}`).join('\n');
+      downloadFile(header + rows, `Salary_Register_${periodStr}.csv`, 'text/csv');
+      showToast(`✓ Generated & Exported Master Salary Register (${periodStr}.csv)`);
+    }
+  };
+
+  const handleExportAllReports = () => {
+    if (!selectedRun) return;
+    const reports = ['register', 'ecr', 'bank', 'esic', 'pt', 'tds'];
+    reports.forEach((rep, index) => {
+      setTimeout(() => handleExportQuickReport(rep), index * 250);
+    });
+    showToast(`✓ Batch exporting all 6 payroll & compliance reports for ${selectedRun.pay_period}!`);
+  };
 
   const handleExplainCalculation = (employeeId: string) => {
     const breakdown = payrollApi.getCalculationBreakdown(employeeId, selectedRun?.pay_period || 'August 2026');
@@ -160,6 +234,37 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
     }
   };
 
+  const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
+
+  const handleClearAllRuns = () => {
+    try {
+      payrollApi.clearAllPayrollRuns();
+      setRuns([]);
+      setSelectedRun(null);
+      setIsPurgeModalOpen(false);
+      showToast('✓ Purged all previous payroll runs and history. Ready for a clean calculation!');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to clear runs', 'error');
+    }
+  };
+
+  const handleDeleteRun = (runId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Are you sure you want to permanently delete this payroll execution run?')) {
+      try {
+        payrollApi.deletePayrollRun(runId);
+        const updated = payrollApi.getPayrollRuns();
+        setRuns(updated);
+        if (selectedRun?.id === runId) {
+          setSelectedRun(updated.length > 0 ? updated[0] : null);
+        }
+        showToast('✓ Deleted payroll execution run.');
+      } catch (err: any) {
+        showToast(err.message || 'Failed to delete run', 'error');
+      }
+    }
+  };
+
   const currentWorkflowStage: 1 | 2 | 3 | 4 | 5 | 6 = !selectedRun
     ? 2
     : selectedRun.status === 'Finalized'
@@ -247,14 +352,36 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {selectedRun && selectedRun.status === 'Finalized' && (
+          {runs.length > 0 && (
             <Button
               size="sm"
               variant="outline"
-              onClick={() => onNavigateTab && onNavigateTab('disbursement')}
-              className="border-emerald-200 text-[#07563D] hover:bg-emerald-50 font-bold text-xs"
+              onClick={() => setIsPurgeModalOpen(true)}
+              className="border-rose-200/80 text-rose-700 bg-rose-50/60 hover:bg-rose-100 font-semibold text-xs rounded-xl shadow-2xs cursor-pointer"
             >
-              <CreditCard className="w-3.5 h-3.5 mr-1" />
+              <Trash2 className="w-3.5 h-3.5 mr-1.5 text-rose-600" />
+              Purge All Runs
+            </Button>
+          )}
+
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => setIsAutoModalOpen(true)}
+            className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer border border-emerald-500/30"
+          >
+            <Zap className="w-3.5 h-3.5 mr-1.5 fill-white" />
+            1-Click Auto Run & Reports
+          </Button>
+
+          {selectedRun && selectedRun.status === 'Finalized' && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onNavigateTab && onNavigateTab('disbursement')}
+              className="border-emerald-200 text-[#07563D] hover:bg-emerald-100 font-bold text-xs rounded-xl shadow-2xs cursor-pointer"
+            >
+              <CreditCard className="w-3.5 h-3.5 mr-1.5" />
               Open Bank Disbursement Batch →
             </Button>
           )}
@@ -263,10 +390,10 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
             size="sm"
             variant="primary"
             onClick={handleStartRunWizard}
-            className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs"
+            className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer"
           >
-            <Play className="w-3.5 h-3.5 mr-1" />
-            Run August 2026 Payroll
+            <Play className="w-3.5 h-3.5 mr-1.5" />
+            Manual Wizard Run
           </Button>
         </div>
       </div>
@@ -279,6 +406,16 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
               <h2 className="text-sm font-bold text-gray-900">Tenant Payroll Execution Runs</h2>
               <p className="text-xs text-gray-500 mt-0.5">Idempotent monthly calculation snapshots with strict financial locking</p>
             </div>
+            {runs.length > 0 && (
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => setIsPurgeModalOpen(true)}
+                className="text-rose-700 border-rose-200/80 bg-rose-50/50 hover:bg-rose-100 font-semibold rounded-lg shadow-2xs cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-600" /> Reset & Clear History
+              </Button>
+            )}
           </div>
 
           <div className="overflow-x-auto">
@@ -299,10 +436,34 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
               <tbody className="divide-y divide-gray-100">
                 {runs.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="p-8 text-center text-gray-400">
-                      <Clock className="w-8 h-8 mx-auto text-gray-300 mb-2" />
-                      <p className="font-semibold text-gray-700">No payroll runs found</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5">Click "Run August 2026 Payroll" to calculate your first period.</p>
+                    <td colSpan={9} className="p-10 text-center text-gray-400">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-[#07563D] flex items-center justify-center mx-auto mb-3 border border-emerald-100">
+                        <Play className="w-5 h-5 ml-0.5" />
+                      </div>
+                      <p className="font-bold text-gray-800 text-sm">No payroll runs computed yet</p>
+                      <p className="text-xs text-gray-500 max-w-sm mx-auto mt-1 mb-4">
+                        All previous mock data has been purged. Generate a 100% dynamic, real-time payroll run using your live employee master and biometric attendance.
+                      </p>
+                      <div className="flex items-center justify-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onClick={handleStartRunWizard}
+                          className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold rounded-xl shadow-xs cursor-pointer"
+                        >
+                          <Play className="w-3.5 h-3.5 mr-1.5" />
+                          Launch Calculation Wizard
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setIsAutoModalOpen(true)}
+                          className="border-emerald-300 text-[#07563D] hover:bg-emerald-100/80 font-bold rounded-xl shadow-2xs cursor-pointer"
+                        >
+                          <Zap className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+                          ⚡ 1-Click Auto Run
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -319,37 +480,39 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                       <td className="p-3 font-mono font-bold text-[#07563D]">₹ {run.total_net_payout.toLocaleString('en-IN')}</td>
                       <td className="p-3 whitespace-nowrap">
                         {run.is_locked ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-800">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-800 border border-gray-200">
                             <Lock className="w-3 h-3 text-gray-600" /> Locked Snapshot
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
                             Editable Draft
                           </span>
                         )}
                       </td>
                       <td className="p-3 whitespace-nowrap">
                         <span className={cn(
-                          "px-2 py-0.5 text-[10px] font-bold rounded",
-                          run.status === 'Finalized' ? "bg-emerald-100 text-emerald-800" :
-                          run.status === 'Approved' ? "bg-blue-100 text-blue-800" :
-                          run.status === 'SubmittedForApproval' ? "bg-purple-100 text-purple-800" :
-                          "bg-amber-100 text-amber-800"
+                          "px-2.5 py-0.5 text-[10px] font-bold rounded-full border",
+                          run.status === 'Finalized' ? "bg-emerald-50 text-emerald-800 border-emerald-200" :
+                          run.status === 'Approved' ? "bg-blue-50 text-blue-800 border-blue-200" :
+                          run.status === 'SubmittedForApproval' ? "bg-purple-50 text-purple-800 border-purple-200" :
+                          "bg-amber-50 text-amber-800 border-amber-200"
                         )}>
                           {run.status}
                         </span>
                       </td>
                       <td className="p-3 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-2">
                           <Button
                             size="xs"
-                            variant="outline"
+                            variant="secondary"
                             onClick={() => {
                               setSelectedRun(run);
                               setSubTab('preview');
                             }}
+                            className="text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 font-bold shadow-2xs cursor-pointer"
                           >
-                            <Eye className="w-3 h-3 mr-1" /> View Register
+                            <Eye className="w-3.5 h-3.5 mr-1 text-[#07563D]" />
+                            View Register
                           </Button>
 
                           {run.status === 'PreviewReady' && (
@@ -357,7 +520,7 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                               size="xs"
                               variant="outline"
                               onClick={() => handleSubmitForApproval(run.id)}
-                              className="text-purple-700 hover:bg-purple-50 border-purple-200"
+                              className="text-purple-700 bg-purple-50/80 hover:bg-purple-100 border-purple-200/80 font-bold shadow-2xs cursor-pointer"
                             >
                               Submit
                             </Button>
@@ -368,8 +531,9 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                               size="xs"
                               variant="outline"
                               onClick={() => handleApprove(run.id)}
-                              className="text-blue-700 hover:bg-blue-50 border-blue-200 font-bold"
+                              className="text-blue-700 bg-blue-50/80 hover:bg-blue-100 border-blue-200/80 font-bold shadow-2xs cursor-pointer"
                             >
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
                               Approve
                             </Button>
                           )}
@@ -379,11 +543,21 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                               size="xs"
                               variant="primary"
                               onClick={() => handleFinalizeAndLock(run.id)}
-                              className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold"
+                              className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold shadow-xs cursor-pointer"
                             >
-                              <Lock className="w-3 h-3 mr-1" /> Finalize & Lock
+                              <Lock className="w-3.5 h-3.5 mr-1" /> Finalize & Lock
                             </Button>
                           )}
+
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={(e) => handleDeleteRun(run.id, e)}
+                            className="h-7.5 w-7.5 p-0 text-rose-600 hover:bg-rose-50 hover:border-rose-300 border-rose-200/80 rounded-lg flex items-center justify-center shadow-2xs cursor-pointer"
+                            title="Delete this run"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -500,6 +674,96 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
             </div>
           </div>
 
+          {/* Automated Reports & Compliance Quick Dock */}
+          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-4 rounded-2xl border border-slate-700 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3.5">
+            <div className="flex items-center gap-3">
+              <span className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                <FolderArchive className="w-5 h-5" />
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-black text-white tracking-tight">Automated Compliance & Reports Generator</h4>
+                  <span className="text-[9px] font-mono bg-emerald-500/30 text-emerald-200 px-2 py-0.5 rounded-full uppercase font-bold">
+                    6 Ready Reports
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 mt-0.5">
+                  Instant 1-click export of certified Salary Register, EPFO ECR text file, ESIC return, PT Challan, TDS & Bank Advice
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => handleExportQuickReport('register')}
+                className="bg-white/10 hover:bg-white/20 text-white border-white/20 text-[11px] font-bold cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3 h-3 mr-1 text-emerald-300" />
+                Salary Register
+              </Button>
+
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => handleExportQuickReport('ecr')}
+                className="bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 border-emerald-400/40 text-[11px] font-bold cursor-pointer"
+              >
+                <Download className="w-3 h-3 mr-1 text-emerald-300" />
+                EPFO ECR (.txt)
+              </Button>
+
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => handleExportQuickReport('bank')}
+                className="bg-white/10 hover:bg-white/20 text-white border-white/20 text-[11px] font-bold cursor-pointer"
+              >
+                <CreditCard className="w-3 h-3 mr-1 text-blue-300" />
+                Bank Advice
+              </Button>
+
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => handleExportQuickReport('esic')}
+                className="bg-white/10 hover:bg-white/20 text-white border-white/20 text-[11px] font-bold cursor-pointer"
+              >
+                <ShieldCheck className="w-3 h-3 mr-1 text-amber-300" />
+                ESIC Return
+              </Button>
+
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => handleExportQuickReport('pt')}
+                className="bg-white/10 hover:bg-white/20 text-white border-white/20 text-[11px] font-bold cursor-pointer"
+              >
+                PT Challan
+              </Button>
+
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => handleExportQuickReport('tds')}
+                className="bg-white/10 hover:bg-white/20 text-white border-white/20 text-[11px] font-bold cursor-pointer"
+              >
+                TDS 24Q
+              </Button>
+
+              <Button
+                size="xs"
+                variant="primary"
+                onClick={handleExportAllReports}
+                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] ml-1 shadow-xs cursor-pointer"
+              >
+                <Zap className="w-3 h-3 mr-1 fill-slate-950" />
+                Export All (Batch)
+              </Button>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-100">
@@ -540,22 +804,22 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                         <div className="flex items-center justify-end gap-1.5">
                           <Button
                             size="xs"
-                            variant="outline"
+                            variant="secondary"
                             onClick={() => handleExplainCalculation(emp.employee_id)}
-                            className="text-emerald-700 hover:bg-emerald-50 border-emerald-200"
+                            className="text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 font-bold shadow-2xs cursor-pointer"
                           >
-                            <HelpCircle className="w-3 h-3 mr-1" /> Explain
+                            <HelpCircle className="w-3.5 h-3.5 mr-1 text-[#07563D]" /> Explain
                           </Button>
                           <Button
                             size="xs"
                             variant="outline"
                             onClick={() => onOpenPayslip && onOpenPayslip(emp.employee_id)}
                             className={cn(
-                              "border-gray-200",
-                              isVendor ? "text-amber-800 hover:bg-amber-50" : "text-gray-700 hover:bg-gray-100"
+                              "font-bold shadow-2xs cursor-pointer",
+                              isVendor ? "text-amber-800 bg-amber-50/70 hover:bg-amber-100 border-amber-200" : "text-gray-700 bg-white hover:bg-gray-100 border-gray-200"
                             )}
                           >
-                            <FileText className="w-3 h-3 mr-1" /> {isVendor ? 'Vendor Slip' : 'Payslip'}
+                            <FileText className="w-3.5 h-3.5 mr-1" /> {isVendor ? 'Vendor Slip' : 'Payslip'}
                           </Button>
                         </div>
                       </td>
@@ -568,7 +832,112 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
         </div>
       )}
 
-      {/* 4. RUN PAYROLL 6-STEP WIZARD MODAL */}
+      {/* 4. SUBTAB: ATTENDANCE & LOP INPUTS */}
+      {subTab === 'inputs' && (
+        <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap border-b border-gray-100 pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-gray-900">Attendance, LOP & Overtime Verification Handoff</h2>
+                <Badge variant="emerald">Ledger Synced</Badge>
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Attendance days, verified LOP deductions, and turnstile overtime handoffs for the active period.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => onNavigateTab && onNavigateTab('deductions')}
+                className="text-xs font-bold text-gray-700 hover:bg-gray-100 border-gray-200 cursor-pointer"
+              >
+                <Minus className="w-3.5 h-3.5 mr-1 text-rose-600" />
+                Deductions & LOP Desk →
+              </Button>
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => onNavigateTab && onNavigateTab('earnings')}
+                className="text-xs font-bold text-gray-700 hover:bg-gray-100 border-gray-200 cursor-pointer"
+              >
+                <TrendingUp className="w-3.5 h-3.5 mr-1 text-teal-600" />
+                Earnings & OT Desk →
+              </Button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-100">
+                <tr>
+                  <th className="p-3">Employee</th>
+                  <th className="p-3 text-center">Month Days</th>
+                  <th className="p-3 text-center">Present Days</th>
+                  <th className="p-3 text-center">Weekly Offs</th>
+                  <th className="p-3 text-center">Unpaid LOP</th>
+                  <th className="p-3 text-center font-bold text-emerald-800">Payable Days</th>
+                  <th className="p-3 text-right">LOP Deduction</th>
+                  <th className="p-3 text-right">Approved OT</th>
+                  <th className="p-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredEmployees.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="p-8 text-center text-gray-400">
+                      No employee payroll records found for this run.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredEmployees.map(emp => {
+                    const grossBase = emp.total_earnings + (emp.lop_deduction || 0);
+                    const dailyRate = Math.round((grossBase / 31) * 100) / 100;
+                    const lopDays = emp.lop_days || (31 - emp.payable_days);
+                    const lopDed = emp.lop_deduction || Math.round(lopDays * dailyRate);
+                    return (
+                      <tr key={emp.employee_id} className="hover:bg-gray-50/70">
+                        <td className="p-3">
+                          <div className="font-bold text-gray-900">{emp.employee_name}</div>
+                          <div className="text-[10px] text-gray-400 font-mono">{emp.employee_code} • {emp.department}</div>
+                        </td>
+                        <td className="p-3 text-center font-mono text-gray-600">31d</td>
+                        <td className="p-3 text-center font-mono font-bold text-emerald-700">{emp.present_days || 3}d</td>
+                        <td className="p-3 text-center font-mono text-gray-600">10d</td>
+                        <td className="p-3 text-center font-mono font-bold text-rose-700">
+                          {lopDays}d LOP
+                        </td>
+                        <td className="p-3 text-center font-mono font-black text-[#07563D] bg-emerald-50/50">
+                          {emp.payable_days}d Paid
+                        </td>
+                        <td className="p-3 text-right font-mono font-bold text-rose-700">
+                          -₹{lopDed.toLocaleString('en-IN')}
+                        </td>
+                        <td className="p-3 text-right font-mono text-teal-700">
+                          +₹{(emp.overtime_pay || 0).toLocaleString('en-IN')}
+                        </td>
+                        <td className="p-3 text-right">
+                          <Button
+                            size="xs"
+                            variant="secondary"
+                            onClick={() => handleExplainCalculation(emp.employee_id)}
+                            className="text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 font-bold shadow-2xs cursor-pointer"
+                          >
+                            <HelpCircle className="w-3.5 h-3.5 mr-1 text-[#07563D]" /> Inspect
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 5. RUN PAYROLL 6-STEP WIZARD MODAL */}
       {isWizardOpen && (
         <Modal
           isOpen={isWizardOpen}
@@ -789,6 +1158,62 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
         isOpen={isExplainModalOpen}
         onClose={() => setIsExplainModalOpen(false)}
       />
+
+      {/* 1-Click Automated Full-Cycle Run & Report Generator Modal */}
+      <AutoPayrollAndReportsModal
+        isOpen={isAutoModalOpen}
+        onClose={() => setIsAutoModalOpen(false)}
+        onRunCompleted={(run) => {
+          loadRuns();
+          setSelectedRun(run);
+          setSubTab('preview');
+        }}
+        onNavigateTab={onNavigateTab}
+      />
+
+      {/* Purge / Reset Confirmation Modal */}
+      {isPurgeModalOpen && (
+        <Modal
+          isOpen={isPurgeModalOpen}
+          onClose={() => setIsPurgeModalOpen(false)}
+          title="⚠️ Purge All Payroll Runs & Reset History"
+        >
+          <div className="space-y-4 text-xs">
+            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 space-y-2">
+              <div className="flex items-center gap-2 text-rose-900 font-bold text-sm">
+                <AlertCircle className="w-5 h-5 text-rose-600" />
+                <span>Permanently Clear All Previous Payroll Runs</span>
+              </div>
+              <p className="text-rose-700 text-[11px] leading-relaxed">
+                This action will delete all stored payroll calculation runs, calculation snapshots, and uncommitted disbursement batches for this tenant. No mock or outdated calculation records will remain.
+              </p>
+            </div>
+
+            <p className="text-gray-600 text-[11px]">
+              After clearing, you can generate fresh, real-time payroll calculations dynamically powered by your current employee master records and live biometric punch data.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsPurgeModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleClearAllRuns}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1" />
+                Yes, Purge Everything
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

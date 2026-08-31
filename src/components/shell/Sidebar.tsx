@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -85,6 +85,8 @@ import {
   Terminal,
   DollarSign,
   Receipt,
+  Calculator,
+  Upload,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { usePermission } from '../../hooks/usePermission';
@@ -119,9 +121,109 @@ interface NavGroup {
   items: NavItem[];
 }
 
+export const isItemActive = (itemId: string, currentNav: string): boolean => {
+  if (!currentNav) return false;
+  if (itemId === currentNav) return true;
+
+  // Leave module mappings
+  if (itemId === 'leave' && (currentNav === 'leave' || currentNav.startsWith('leave-'))) return true;
+
+  // Payroll module mappings
+  if (itemId === 'payroll-dashboard' && (currentNav === 'payroll' || currentNav === 'payroll-dashboard')) return true;
+  if (itemId === 'payroll-processing' && (currentNav === 'payroll-processing' || currentNav === 'processing' || currentNav === 'payroll-runs')) return true;
+  if (itemId === 'payroll-salary' && (currentNav === 'payroll-salary' || currentNav === 'salary')) return true;
+  if (itemId === 'payroll-earnings' && (currentNav === 'payroll-earnings' || currentNav === 'earnings')) return true;
+  if (itemId === 'payroll-deductions' && (currentNav === 'payroll-deductions' || currentNav === 'deductions')) return true;
+  if (itemId === 'payroll-statutory' && (currentNav === 'payroll-statutory' || currentNav === 'statutory')) return true;
+  if (itemId === 'payroll-claims' && (currentNav === 'payroll-claims' || currentNav === 'claims' || currentNav === 'expense-desk')) return true;
+  if (itemId === 'payroll-disbursement' && (currentNav === 'payroll-disbursement' || currentNav === 'disbursement' || currentNav === 'bank-disbursement')) return true;
+  if (itemId === 'payroll-documents' && (currentNav === 'payroll-documents' || currentNav === 'documents')) return true;
+  if (itemId === 'payroll-fnf' && (currentNav === 'payroll-fnf' || currentNav === 'fnf')) return true;
+  if (itemId === 'payroll-reports' && (currentNav === 'payroll-reports' || currentNav === 'reports')) return true;
+  if (itemId === 'payroll-settings' && (currentNav === 'payroll-settings')) return true;
+
+  // Attendance module mappings
+  if (itemId === 'attendance' && (currentNav === 'attendance' || currentNav === 'attendance-dashboard')) return true;
+  if (itemId === 'attendance-employees' && (currentNav === 'employee-attendance' || currentNav === 'employees' || currentNav === 'attendance-employees')) return true;
+  if (itemId === 'history' && (currentNav === 'attendance-history' || currentNav === 'ledger' || currentNav === 'history')) return true;
+  if (itemId === 'late-early' && (currentNav === 'late-early')) return true;
+  if (itemId === 'regularization' && (currentNav === 'regularization')) return true;
+  if (itemId === 'exceptions' && (currentNav === 'exceptions')) return true;
+  if (itemId === 'shifts' && (currentNav === 'shifts' || currentNav === 'roster' || currentNav === 'shift-calendar')) return true;
+  if (itemId === 'roster' && (currentNav === 'roster' || currentNav === 'shift-calendar')) return true;
+  if (itemId === 'policies' && (currentNav === 'policies')) return true;
+  if (itemId === 'biometric' && (currentNav === 'biometric' || currentNav === 'biometric-devices' || currentNav === 'device-enrollment' || currentNav === 'device-sync' || currentNav === 'device-logs')) return true;
+  if (itemId === 'gps' && (currentNav === 'gps' || currentNav === 'gps-attendance' || currentNav === 'geofences' || currentNav === 'mobile-clocking')) return true;
+  if (itemId === 'face-attendance' && (currentNav === 'face-attendance' || currentNav === 'face-enrollment' || currentNav === 'face-devices')) return true;
+  if (itemId === 'calculation-audit' && (currentNav === 'calculation-audit' || currentNav === 'payroll-inputs' || currentNav === 'payable-days' || currentNav === 'lop-desk' || currentNav === 'payroll-freeze')) return true;
+  if (itemId === 'attendance-corrections' && (currentNav === 'attendance-corrections')) return true;
+  if (itemId === 'approval-history' && (currentNav === 'approval-history')) return true;
+  if (itemId === 'attendance-activity-logs' && (currentNav === 'attendance-activity-logs')) return true;
+
+  // Work & Overtime mappings
+  if (itemId === 'overtime' && (currentNav === 'overtime' || currentNav === 'work-overtime')) return true;
+  if (itemId === 'overtime-requests' && (currentNav === 'overtime-requests')) return true;
+  if (itemId === 'wfh' && (currentNav === 'wfh')) return true;
+  if (itemId === 'breaks-workhours' && (currentNav === 'breaks-workhours' || currentNav === 'breaks')) return true;
+
+  // People & Org mappings
+  if (itemId === 'people' && (currentNav === 'people')) return true;
+  if (itemId === 'organization' && (currentNav === 'organization' || currentNav === 'departments' || currentNav === 'designations' || currentNav === 'locations')) return true;
+  if (itemId === 'vendors' && (currentNav === 'vendors' || currentNav === 'organization-vendors')) return true;
+  if (itemId === 'documents' && (currentNav === 'documents')) return true;
+  if (itemId === 'assets' && (currentNav === 'assets')) return true;
+  if (itemId === 'onboarding' && (currentNav === 'onboarding')) return true;
+  if (itemId === 'offboarding' && (currentNav === 'offboarding')) return true;
+
+  // Performance mappings
+  if (itemId === 'performance-dashboard' && (currentNav === 'performance' || currentNav === 'performance-dashboard')) return true;
+
+  // LMS mappings
+  if (itemId === 'lms-dashboard' && (currentNav === 'lms' || currentNav === 'lms-dashboard')) return true;
+
+  // Admin mappings
+  if (itemId === 'admin-roles' && (currentNav === 'admin' || currentNav === 'rbac' || currentNav === 'admin-roles' || currentNav === 'roles' || currentNav === 'users' || currentNav === 'permissions')) return true;
+  if (itemId === 'admin-notifications' && (currentNav === 'admin-notifications')) return true;
+  if (itemId === 'notifications' && (currentNav === 'notifications')) return true;
+
+  // SaaS Platform mappings
+  if (itemId === 'platform-dashboard' && (currentNav === 'platform' || currentNav === 'platform-dashboard')) return true;
+  if (itemId === 'platform-tenants' && (currentNav === 'platform-tenants' || currentNav === 'platform-organizations' || currentNav === 'platform-provisioning')) return true;
+  if (itemId === 'platform-tenant-health' && (currentNav === 'platform-tenant-health' || currentNav === 'platform-health')) return true;
+  if (itemId === 'saas-revenue' && (currentNav === 'saas-revenue' || (currentNav.startsWith('saas-') && currentNav !== 'saas-subscriptions'))) return true;
+  if (itemId === 'platform-subscriptions' && (currentNav === 'platform-subscriptions' || currentNav === 'saas-subscriptions')) return true;
+  if (itemId === 'platform-billing' && (currentNav === 'platform-billing' || currentNav === 'platform-invoices')) return true;
+  if (itemId === 'platform-usage' && (currentNav === 'platform-usage' || currentNav === 'platform-metering')) return true;
+  if (itemId === 'platform-features' && (currentNav === 'platform-features' || currentNav === 'platform-flags')) return true;
+  if (itemId === 'platform-plans' && (currentNav === 'platform-plans')) return true;
+  if (itemId === 'platform-security' && (currentNav === 'platform-security')) return true;
+  if (itemId === 'platform-sessions' && (currentNav === 'platform-sessions')) return true;
+  if (itemId === 'platform-audit' && (currentNav === 'platform-audit')) return true;
+  if (itemId === 'platform-support' && (currentNav === 'platform-support')) return true;
+  if (itemId === 'platform-jobs' && (currentNav === 'platform-jobs')) return true;
+  if (itemId === 'platform-incidents' && (currentNav === 'platform-incidents' || currentNav === 'platform-operations')) return true;
+  if (itemId === 'platform-webhooks' && (currentNav === 'platform-webhooks')) return true;
+  if (itemId === 'platform-notifications' && (currentNav === 'platform-notifications' || currentNav === 'platform-dlq' || currentNav === 'platform-events')) return true;
+  if (itemId === 'platform-settings' && (currentNav === 'platform-settings' || currentNav === 'platform-account' || currentNav === 'platform-profile' || currentNav.startsWith('platform-account-'))) return true;
+  if (itemId === 'platform-api' && (currentNav === 'platform-api' || currentNav === 'platform-keys')) return true;
+  if (itemId === 'platform-staff' && (currentNav === 'platform-staff' || currentNav.startsWith('platform-staff/') || currentNav === 'platform-iam')) return true;
+
+  // ESS & TL mappings
+  if (itemId === 'ess-dashboard' && currentNav === 'ess') return true;
+  if (itemId === 'tl-dashboard' && (currentNav === 'tl' || currentNav === 'supervisor')) return true;
+
+  // Specific prefix mappings for sub-modules that don't have separate parent nav items
+  if (itemId === 'leave' && currentNav.startsWith('leave-')) return true;
+  if (itemId === 'payroll-dashboard' && currentNav.startsWith('payroll-')) return true;
+
+  return false;
+};
+
 export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { canViewModule, primaryRole, filterAccessibleEmployees } = usePermission();
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const activeItemRef = useRef<HTMLButtonElement>(null);
 
   // Each role gets its own isolated collapse-state key so Super Admin and
   // Company Admin (or any other role switch) never share or overwrite each other.
@@ -130,7 +232,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
 
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
     try {
-      // primaryRole isn't available yet in the lazy initialiser; we'll sync in useEffect
       return {};
     } catch {
       return {};
@@ -146,6 +247,32 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       setCollapsedGroups({});
     }
   }, [primaryRole]);
+
+  // Restore scroll position on initial render
+  useEffect(() => {
+    try {
+      const savedScroll = sessionStorage.getItem('workforce_sidebar_scroll');
+      if (savedScroll && scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = Number(savedScroll);
+      }
+    } catch { }
+  }, []);
+
+  // Ensure active menu item is scrolled into view whenever activeNav or primaryRole changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (activeItemRef.current) {
+        activeItemRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [activeNav, primaryRole]);
+
+  const handleSidebarScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    try {
+      sessionStorage.setItem('workforce_sidebar_scroll', String(e.currentTarget.scrollTop));
+    } catch { }
+  };
 
   const toggleGroup = (groupName: string) => {
     const next = { ...collapsedGroups, [groupName]: !collapsedGroups[groupName] };
@@ -172,19 +299,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         const emps = await api.getEmployees(activeComp?.id);
         const accessible = filterAccessibleEmployees(emps);
         setEmployeeCount(accessible.length);
-      } catch {}
+      } catch { }
 
       try {
         const m = await onboardingService.getMetrics();
         setOnboardingCount(m.active_onboardings);
-      } catch {}
+      } catch { }
 
       try {
         const leaveRes = await supabase.from('leave_requests').select('id', { count: 'exact' }).eq('status', 'PENDING').limit(1);
         const docRes = await supabase.from('document_requirements').select('id', { count: 'exact' }).eq('status', 'SUBMITTED').limit(1);
         const totalPending = (leaveRes.count || 0) + (docRes.count || 0);
         setPendingApprovalsCount(totalPending);
-      } catch {}
+      } catch { }
     }
   }, [isPlatformAdmin, filterAccessibleEmployees]);
 
@@ -288,6 +415,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
+      groupName: 'VENDOR & CONTRACTOR GOVERNANCE',
+      items: [
+        { id: 'vendors', label: 'Vendor Directory & Onboarding', icon: Building2, badge: 'Command' },
+        { id: 'vendor-dashboard', label: 'Compliance Intelligence & Risk', icon: LayoutDashboard },
+        { id: 'vendor-settlement-workspace', label: 'Settlement & 3-Way Match', icon: Sparkles, badge: 'Master' },
+        { id: 'vendor-licenses', label: 'Licenses & Expiry Radar', icon: ShieldCheck, badge: 'Smart 🔔' },
+        { id: 'vendor-statutory-returns', label: 'Form V & Statutory Returns', icon: FileSpreadsheet },
+        { id: 'vendor-employees', label: 'Contract Workforce & Gate Pass', icon: Users },
+        { id: 'vendor-assignments', label: 'Deployments & Sites', icon: MapPin },
+        { id: 'vendor-attendance', label: 'Attendance & OT Audit', icon: Clock },
+        { id: 'vendor-wages', label: 'Wage Breakdown', icon: Calculator },
+        { id: 'vendor-payroll', label: 'Payroll Verification', icon: ShieldCheck },
+        { id: 'vendor-payable', label: 'Vendor Payable Engine', icon: CircleDollarSign },
+        { id: 'vendor-po', label: 'Purchase Orders', icon: FileText },
+        { id: 'vendor-invoices', label: 'Invoices & 3-Way Match', icon: Upload },
+        { id: 'vendor-compliance', label: 'Statutory (PF/ESI)', icon: Layers },
+        { id: 'vendor-payslips', label: 'Payslip Package', icon: FileSpreadsheet },
+        { id: 'vendor-payments', label: 'Payment Reconciliation', icon: CreditCard },
+        { id: 'vendor-compliance-calendar', label: 'Compliance Deadlines Calendar', icon: Calendar },
+        { id: 'vendor-audit-reports', label: 'Audit Trail & Reports', icon: History },
+      ],
+    },
+    {
       groupName: 'RECRUITMENT & ATS',
       items: [
         { id: 'recruitment-dashboard', label: 'Recruitment Dashboard', icon: Briefcase },
@@ -359,17 +509,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'PAYROLL',
       items: [
         { id: 'payroll-dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard },
-        { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
+        { id: 'client-billing', label: 'Client Wage Billing & Invoicing', icon: Receipt, badge: 'Master' },
+        { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
         { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
-        { id: 'payroll-claims', label: 'Expense Claims & Approvals', icon: Receipt },
+        { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
         { id: 'payroll-earnings', label: 'Earnings & Overtime', icon: TrendingUp },
         { id: 'payroll-deductions', label: 'Deductions, Loans & LOP', icon: Minus },
+        { id: 'payroll-claims', label: 'Expense Claims & Approvals', icon: Receipt },
         { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
+        { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
         { id: 'payroll-disbursement', label: 'Bank Disbursement', icon: CreditCard },
         { id: 'payroll-documents', label: 'Digital Payslips & Docs', icon: FileText },
-        { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
         { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
-        { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
       ],
     },
     {
@@ -454,6 +605,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'AUTOMATION & ADMIN',
       items: [
+        { id: 'company-onboarding', label: 'Company Setup Wizard', icon: Sparkles },
+        { id: 'trust-legal', label: 'Trust & Legal Center', icon: ShieldCheck },
         { id: 'admin-roles', label: 'Role Management', icon: KeyRound },
         { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
         { id: 'admin-notifications', label: 'Notification Settings', icon: SlidersHorizontal },
@@ -461,6 +614,63 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     },
   ];
 
+  // ─── COMPANY ADMIN & ORGANIZATION OWNER: Executive Control, Multi-Entity, RBAC & Commercials ─
+  const companyAdminGroups: NavGroup[] = [
+    {
+      groupName: 'EXECUTIVE COCKPIT',
+      items: [
+        { id: 'executive-overview', label: 'Executive Cockpit', icon: BarChart3 },
+        { id: 'workforce-overview', label: 'Workforce Overview', icon: LineChart },
+        { id: 'dashboard', label: 'Operations Summary', icon: LayoutDashboard },
+        { id: 'my-workspace', label: 'My Workspace', icon: Sparkles },
+      ],
+    },
+    {
+      groupName: 'ORGANIZATION ARCHITECTURE',
+      items: [
+        { id: 'organization', label: 'Legal Entities & Hierarchy', icon: Building2 },
+        { id: 'departments', label: 'Departments Master', icon: Layers },
+        { id: 'designations', label: 'Designation Framework', icon: Award },
+        { id: 'locations', label: 'Operating Locations', icon: MapPin },
+      ],
+    },
+    {
+      groupName: 'GOVERNANCE & ACCESS',
+      items: [
+        { id: 'people', label: 'Workforce Directory', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'admin-roles', label: 'RBAC & Access Control', icon: KeyRound },
+        { id: 'documents', label: 'Enterprise Documents & E-Sign', icon: FileText },
+        { id: 'assets', label: 'Company Asset Master', icon: Package },
+      ],
+    },
+    {
+      groupName: 'MANPOWER & COMMERCIALS',
+      items: [
+        { id: 'vendors', label: 'Vendor & Manpower Master', icon: HeartHandshake },
+        { id: 'vendor-settlement-workspace', label: 'Settlement Workspace', icon: Sparkles, badge: 'Master' },
+        { id: 'client-billing', label: 'Client Wage Invoicing', icon: Receipt, badge: 'Master' },
+        { id: 'vendor-audit-reports', label: 'Vendor Compliance & ECR', icon: ShieldCheck },
+      ],
+    },
+    {
+      groupName: 'FINANCIAL & PAYROLL OVERSIGHT',
+      items: [
+        { id: 'payroll-dashboard', label: 'Payroll Executive Desk', icon: LayoutDashboard },
+        { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
+        { id: 'payroll-freeze', label: 'Payroll Freeze Controls', icon: SlidersHorizontal },
+        { id: 'payroll-reports', label: 'Statutory Reports & ECR', icon: FileSpreadsheet },
+      ],
+    },
+    {
+      groupName: 'AUDIT, COMPLIANCE & ALERTS',
+      items: [
+        { id: 'calculation-audit', label: 'Financial Audit Logs', icon: ShieldCheck },
+        { id: 'approval-history', label: 'Approval Audit Trail', icon: History },
+        { id: 'trust-legal', label: 'Trust & Legal Center', icon: ShieldCheck },
+        { id: 'notifications', label: 'Notification Center', icon: Bell },
+      ],
+    },
+  ];
 
   // ─── HR HEAD: Full HR operations — no system admin config ────────────────
   const hrHeadGroups: NavGroup[] = [
@@ -482,6 +692,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'assets', label: 'Asset Management', icon: Package },
         { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus, badge: onboardingCount > 0 ? onboardingCount : undefined },
         { id: 'offboarding', label: 'Offboarding & Exit', icon: UserMinus },
+      ],
+    },
+    {
+      groupName: 'VENDOR & CONTRACTOR GOVERNANCE',
+      items: [
+        { id: 'vendors', label: 'Vendor Directory & Onboarding', icon: Building2, badge: 'Command' },
+        { id: 'vendor-dashboard', label: 'Compliance Intelligence & Risk', icon: LayoutDashboard },
+        { id: 'vendor-settlement-workspace', label: 'Settlement & 3-Way Match', icon: Sparkles, badge: 'Master' },
+        { id: 'vendor-licenses', label: 'Licenses & Expiry Radar', icon: ShieldCheck, badge: 'Smart 🔔' },
+        { id: 'vendor-statutory-returns', label: 'Form V & Statutory Returns', icon: FileSpreadsheet },
+        { id: 'vendor-employees', label: 'Contract Workforce & Gate Pass', icon: Users },
+        { id: 'vendor-assignments', label: 'Deployments & Sites', icon: MapPin },
+        { id: 'vendor-attendance', label: 'Attendance & OT Audit', icon: Clock },
+        { id: 'vendor-wages', label: 'Wage Breakdown', icon: Calculator },
+        { id: 'vendor-payroll', label: 'Payroll Verification', icon: ShieldCheck },
+        { id: 'vendor-payable', label: 'Vendor Payable Engine', icon: CircleDollarSign },
+        { id: 'vendor-po', label: 'Purchase Orders', icon: FileText },
+        { id: 'vendor-invoices', label: 'Invoices & 3-Way Match', icon: Upload },
+        { id: 'vendor-compliance', label: 'Statutory (PF/ESI)', icon: Layers },
+        { id: 'vendor-payslips', label: 'Payslip Package', icon: FileSpreadsheet },
+        { id: 'vendor-payments', label: 'Payment Reconciliation', icon: CreditCard },
+        { id: 'vendor-compliance-calendar', label: 'Compliance Deadlines Calendar', icon: Calendar },
+        { id: 'vendor-audit-reports', label: 'Audit Trail & Reports', icon: History },
       ],
     },
     {
@@ -546,17 +779,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'PAYROLL',
       items: [
         { id: 'payroll-dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard },
-        { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
+        { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
         { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
-        { id: 'payroll-claims', label: 'Expense Claims & Approvals', icon: Receipt },
+        { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
         { id: 'payroll-earnings', label: 'Earnings & Overtime', icon: TrendingUp },
         { id: 'payroll-deductions', label: 'Deductions, Loans & LOP', icon: Minus },
+        { id: 'payroll-claims', label: 'Expense Claims & Approvals', icon: Receipt },
         { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
         { id: 'payroll-disbursement', label: 'Bank Disbursement', icon: CreditCard },
-        { id: 'payroll-documents', label: 'Digital Payslips & Docs', icon: FileText },
         { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
+        { id: 'payroll-documents', label: 'Digital Payslips & Docs', icon: FileText },
         { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
-        { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
       ],
     },
     {
@@ -794,15 +1027,51 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     },
   ];
 
+  const vendorGroups: NavGroup[] = [
+    {
+      groupName: 'VENDOR OPERATIONS & COMPLIANCE',
+      items: [
+        { id: 'vendor-settlement-workspace', label: 'Settlement Workspace', icon: Sparkles, badge: 'Master' },
+        { id: 'vendor-dashboard', label: 'Vendor Dashboard & Risk', icon: LayoutDashboard },
+        { id: 'vendor-licenses', label: 'Licenses & Expiry Hub', icon: ShieldCheck, badge: 'Smart 🔔' },
+        { id: 'vendor-compliance-calendar', label: 'Compliance Calendar', icon: Calendar },
+        { id: 'vendor-statutory-returns', label: 'Form V & Returns', icon: FileSpreadsheet },
+      ],
+    },
+    {
+      groupName: 'CONTRACT WORKFORCE',
+      items: [
+        { id: 'vendor-employees', label: 'Assigned Workforce', icon: Users },
+        { id: 'vendor-assignments', label: 'Deployments & Sites', icon: MapPin },
+        { id: 'vendor-attendance', label: 'Attendance & OT', icon: Clock },
+      ],
+    },
+    {
+      groupName: 'PAYROLL & INVOICES',
+      items: [
+        { id: 'vendor-wages', label: 'Wage Breakdown', icon: Calculator },
+        { id: 'vendor-payroll', label: 'Payroll Verification', icon: ShieldCheck },
+        { id: 'vendor-payable', label: 'Vendor Payable Engine', icon: CircleDollarSign },
+        { id: 'vendor-po', label: 'Purchase Orders', icon: FileText },
+        { id: 'vendor-invoices', label: 'Invoices & 3-Way Match', icon: Upload },
+        { id: 'vendor-compliance', label: 'Statutory (PF/ESI)', icon: Layers },
+        { id: 'vendor-payslips', label: 'Payslip Package', icon: FileSpreadsheet },
+        { id: 'vendor-payments', label: 'Payment Reconciliation', icon: CreditCard },
+        { id: 'vendor-audit-reports', label: 'Audit Trail & Reports', icon: History },
+      ],
+    },
+  ];
+
   // Select nav groups based on the user's primary role
   const navGroups = (() => {
     if (isPlatformAdmin) return platformGroups;
-    if (primaryRole === 'Company Admin') return standardGroups;
-    if (primaryRole === 'HR Head') return hrHeadGroups;
+    if (primaryRole === 'Vendor Admin') return vendorGroups;
+    if (primaryRole === 'Company Admin') return companyAdminGroups;
+    if (primaryRole === 'HR Head' || primaryRole === 'HR Admin') return hrHeadGroups;
     if (primaryRole === 'Manager') return managerGroups;
     if (primaryRole === 'Team Lead') return teamLeadGroups;
     if (primaryRole === 'Employee') return employeeGroups;
-    return standardGroups; // fallback (HR Admin, etc.)
+    return hrHeadGroups; // fallback
   })();
 
   // Tenant-level feature toggle: For Joy Manpower / current tenant, Recruitment & ATS, Career Development, Performance, L&D, Analytics, and Travel & Expense are disabled,
@@ -815,7 +1084,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
 
   const filteredNavGroups = navGroups
     .filter(group => {
-      if (!isPlatformAdmin) {
+      if (!isPlatformAdmin && primaryRole !== 'Vendor Admin') {
         if (group.groupName === 'RECRUITMENT & ATS' && !isRecruitmentEnabledForTenant) return false;
         if (group.groupName === 'PERFORMANCE' && !isPerformanceEnabledForTenant) return false;
         if (group.groupName === 'LEARNING & DEVELOPMENT' && !isLndEnabledForTenant) return false;
@@ -827,6 +1096,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     .map(group => ({
       ...group,
       items: group.items.filter(item => {
+        if (primaryRole === 'Vendor Admin') return true;
         if (!isPlatformAdmin) {
           if (!isRecruitmentEnabledForTenant && (item.id === 'recruitment' || item.id.startsWith('recruitment-') || item.id === 'career-dev')) {
             return false;
@@ -883,11 +1153,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       </div>
 
       {/* Navigation Group Items */}
-      <div className="flex-1 overflow-y-auto py-3 px-2 space-y-3">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleSidebarScroll}
+        className="flex-1 overflow-y-auto py-3 px-2 space-y-3"
+      >
         {filteredNavGroups.map((group, idx) => {
-          const hasActiveItem = group.items.some(
-            item => activeNav === item.id || (item.id === 'leave' && (activeNav === 'leave' || activeNav.startsWith('leave-')))
-          );
+          const hasActiveItem = group.items.some(item => isItemActive(item.id, activeNav));
           const isGroupCollapsed = hasActiveItem ? false : (collapsedGroups[group.groupName] ?? false);
 
           return (
@@ -911,9 +1183,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
                 <div className="space-y-0.5">
                   {group.items.map(item => {
                     const Icon = item.icon;
-                    const isActive =
-                      activeNav === item.id ||
-                      (item.id === 'leave' && (activeNav === 'leave' || activeNav.startsWith('leave-')));
+                    const isActive = isItemActive(item.id, activeNav);
 
                     return (
                       <React.Fragment key={item.id}>
@@ -923,6 +1193,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
                           </div>
                         )}
                         <button
+                          ref={isActive ? activeItemRef : undefined}
                           onClick={() => onSelectNav?.(item.id)}
                           title={isCollapsed ? item.label : undefined}
                           className={cn(
@@ -933,32 +1204,32 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
                             isCollapsed && 'justify-center px-0'
                           )}
                         >
-                        {/* Left Active Bar */}
-                        {isActive && !isCollapsed && (
-                          <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-[#07563D] rounded-r-full" />
-                        )}
-
-                        <Icon
-                          className={cn(
-                            'w-4 h-4 shrink-0 transition-colors',
-                            isActive ? 'text-[#07563D]' : 'text-gray-400 group-hover:text-gray-600'
+                          {/* Left Active Bar */}
+                          {isActive && !isCollapsed && (
+                            <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-[#07563D] rounded-r-full" />
                           )}
-                        />
 
-                        {!isCollapsed && <span className="truncate text-[11px] sm:text-xs">{item.label}</span>}
-
-                        {!isCollapsed && item.badge !== undefined && (
-                          <span
+                          <Icon
                             className={cn(
-                              'ml-auto text-[10px] font-bold px-1.5 py-0.2 rounded-md shrink-0',
-                              isActive
-                                ? 'bg-emerald-100 text-[#07563D]'
-                                : 'bg-gray-100 text-gray-500 group-hover:bg-gray-200'
+                              'w-4 h-4 shrink-0 transition-colors',
+                              isActive ? 'text-[#07563D]' : 'text-gray-400 group-hover:text-gray-600'
                             )}
-                          >
-                            {item.badge}
-                          </span>
-                        )}
+                          />
+
+                          {!isCollapsed && <span className="truncate text-[11px] sm:text-xs">{item.label}</span>}
+
+                          {!isCollapsed && item.badge !== undefined && (
+                            <span
+                              className={cn(
+                                'ml-auto text-[10px] font-bold px-1.5 py-0.2 rounded-md shrink-0',
+                                isActive
+                                  ? 'bg-emerald-100 text-[#07563D]'
+                                  : 'bg-gray-100 text-gray-500 group-hover:bg-gray-200'
+                              )}
+                            >
+                              {item.badge}
+                            </span>
+                          )}
                         </button>
                       </React.Fragment>
                     );

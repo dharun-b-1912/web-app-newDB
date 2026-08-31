@@ -1,29 +1,32 @@
 import React, { useMemo } from 'react';
 import { Avatar } from '../../../components/ui/Avatar';
 import {
-  User,
-  MapPin,
   Briefcase,
   Network,
-  ShieldAlert,
-  FileText,
+  CreditCard,
+  Clock,
+  DollarSign,
   Edit2,
   CheckCircle2,
-  AlertTriangle,
-  DollarSign,
-  Clock,
-  CreditCard,
+  Smartphone,
+  KeyRound,
   ShieldCheck,
-  TrendingUp,
 } from 'lucide-react';
 import { Department, Designation } from '../../../types';
 import { payrollCalculationEngine } from '../../../services/payroll/payrollCalculationEngine';
+import { payrollApi } from '../../../services/payrollApi';
 
 interface Props {
   formData: any;
   departments: Department[];
   designations: Designation[];
   onJumpToStep: (stepNumber: number) => void;
+  onUpdateAppAccess?: (fields: {
+    enable_app_access?: boolean;
+    auth_method?: 'EMPLOYEE_ID_PASSWORD' | 'MOBILE_OTP' | 'EMAIL_PASSWORD';
+    require_password_change?: boolean;
+    require_device_verification?: boolean;
+  }) => void;
 }
 
 export const Step7Review: React.FC<Props> = ({
@@ -31,6 +34,7 @@ export const Step7Review: React.FC<Props> = ({
   departments,
   designations,
   onJumpToStep,
+  onUpdateAppAccess,
 }) => {
   const deptName =
     departments.find((d) => d.id === formData.department_id)?.name ||
@@ -45,6 +49,8 @@ export const Step7Review: React.FC<Props> = ({
   const annualCtc = formData.annual_ctc || 1200000;
   const monthlyCtc = formData.monthly_ctc || Math.round(annualCtc / 12);
 
+  const statutoryConfig = useMemo(() => payrollApi.getStatutoryConfig(), []);
+
   // Live Calculations for Review Summary
   const liveCalculation = useMemo(() => {
     return payrollCalculationEngine.calculateBreakdown({
@@ -54,17 +60,23 @@ export const Step7Review: React.FC<Props> = ({
       pfApplicable: formData.pf_applicable !== false,
       esiApplicable: formData.esi_applicable !== false,
       ptApplicable: formData.pt_applicable !== false,
+      statutoryConfig,
     });
-  }, [annualCtc, monthlyCtc, formData.salary_structure_code, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable]);
+  }, [annualCtc, monthlyCtc, formData.salary_structure_code, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, statutoryConfig]);
+
+  const enableAppAccess = formData.enable_app_access !== false;
+  const authMethod = formData.auth_method || 'EMPLOYEE_ID_PASSWORD';
+  const requirePasswordChange = formData.require_password_change !== false;
+  const requireDeviceVerification = formData.require_device_verification !== false;
 
   return (
     <div className="space-y-6">
       <div>
         <h3 className="text-base font-black text-gray-900 tracking-tight">
-          360° Comprehensive Onboarding Review & Activation
+          360° Comprehensive Onboarding Review & App Access
         </h3>
         <p className="text-xs text-gray-500">
-          Review canonical employee identity, downstream organizational mappings, CTC calculation, statutory profiles, and attendance policies.
+          Review canonical employee identity, compensation structure, statutory details, and configure the Employee App authentication credentials.
         </p>
       </div>
 
@@ -90,7 +102,7 @@ export const Step7Review: React.FC<Props> = ({
               {desigTitle} · <span className="text-[#07563D] font-bold">{deptName}</span>
             </p>
             <p className="text-[11px] text-gray-400 font-medium truncate">
-              {formData.work_email} · {formData.phone}
+              {formData.work_email || formData.personal_email || 'No email registered (Mobile Auth)'} · {formData.phone}
             </p>
           </div>
         </div>
@@ -156,7 +168,133 @@ export const Step7Review: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* 2-Column Summary Grid */}
+      {/* DEDICATED STEP 7: EMPLOYEE APP ACCESS & AUTHENTICATION CONFIGURATION */}
+      <div className="p-5 rounded-2xl bg-white border-2 border-[#07563D]/20 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Smartphone className="w-5 h-5 text-[#07563D]" />
+            <div>
+              <h4 className="text-xs font-black uppercase tracking-wider text-gray-900">
+                Employee App Access & Authentication Setup
+              </h4>
+              <p className="text-[11px] text-gray-500">
+                Provision isolated authentication account for mobile attendance, self-service leave, and payslips.
+              </p>
+            </div>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enableAppAccess}
+              onChange={(e) => onUpdateAppAccess?.({ enable_app_access: e.target.checked })}
+              className="w-4 h-4 text-[#07563D] rounded border-gray-300 focus:ring-[#07563D]"
+            />
+            <span className="text-xs font-bold text-gray-800">Enable Employee App Access</span>
+          </label>
+        </div>
+
+        {enableAppAccess ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Login ID & Binding */}
+              <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-200 space-y-2">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600">
+                  Authentication Login ID
+                </label>
+                <div className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-gray-200">
+                  <span className="font-mono font-black text-sm text-gray-900">
+                    {formData.employee_code || 'JCS-0914'}
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    Automatically Linked
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-400">
+                  Independent login identifier scoped strictly to this tenant organization.
+                </p>
+              </div>
+
+              {/* Authentication Method Selector */}
+              <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-200 space-y-2">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600">
+                  Authentication Method
+                </label>
+                <div className="space-y-1.5 text-xs">
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-gray-800">
+                    <input
+                      type="radio"
+                      name="authMethod"
+                      value="EMPLOYEE_ID_PASSWORD"
+                      checked={authMethod === 'EMPLOYEE_ID_PASSWORD'}
+                      onChange={() => onUpdateAppAccess?.({ auth_method: 'EMPLOYEE_ID_PASSWORD' })}
+                      className="text-[#07563D] focus:ring-[#07563D]"
+                    />
+                    Employee ID + Password <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.2 rounded">(Recommended for Factory & Site)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-gray-800">
+                    <input
+                      type="radio"
+                      name="authMethod"
+                      value="MOBILE_OTP"
+                      checked={authMethod === 'MOBILE_OTP'}
+                      onChange={() => onUpdateAppAccess?.({ auth_method: 'MOBILE_OTP' })}
+                      className="text-[#07563D] focus:ring-[#07563D]"
+                    />
+                    Mobile Number + OTP ({formData.phone || '+91 XXXXX XXXXX'})
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-gray-800">
+                    <input
+                      type="radio"
+                      name="authMethod"
+                      value="EMAIL_PASSWORD"
+                      checked={authMethod === 'EMAIL_PASSWORD'}
+                      onChange={() => onUpdateAppAccess?.({ auth_method: 'EMAIL_PASSWORD' })}
+                      disabled={!formData.work_email && !formData.personal_email}
+                      className="text-[#07563D] focus:ring-[#07563D] disabled:opacity-40"
+                    />
+                    Email Address + Password {(!formData.work_email && !formData.personal_email) && <span className="text-[10px] text-gray-400 font-normal">(No email registered)</span>}
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Security Compliance Checkboxes */}
+            <div className="bg-emerald-50/50 border border-emerald-100 p-3.5 rounded-xl space-y-2 text-xs">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={requirePasswordChange}
+                  onChange={(e) => onUpdateAppAccess?.({ require_password_change: e.target.checked })}
+                  className="w-4 h-4 text-[#07563D] rounded border-gray-300 focus:ring-[#07563D]"
+                />
+                <span className="font-bold text-gray-800 flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-[#07563D]" />
+                  Require password change on first login (One-time temporary activation)
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={requireDeviceVerification}
+                  onChange={(e) => onUpdateAppAccess?.({ require_device_verification: e.target.checked })}
+                  className="w-4 h-4 text-[#07563D] rounded border-gray-300 focus:ring-[#07563D]"
+                />
+                <span className="font-bold text-gray-800 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+                  Require hardware device verification / Biometric device binding
+                </span>
+              </label>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl text-xs text-amber-800 flex items-center gap-2">
+            <span>App access is disabled. You can manually generate an invitation from the Employee Profile Drawer at any time.</span>
+          </div>
+        )}
+      </div>
+
+      {/* 2-Column Summary Grid for Core Assignments */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* 1. Employment Terms */}
         <div className="p-4 rounded-2xl bg-white border border-gray-200 space-y-3">
@@ -337,7 +475,7 @@ export const Step7Review: React.FC<Props> = ({
         <div>
           <p className="font-bold">Enterprise Transaction Ready</p>
           <p className="text-emerald-800 text-[11px] mt-0.5">
-            Clicking <strong>Complete Onboarding & Activate Employee</strong> will execute a transactional database operation that creates the employee identity, links all sub-domain assignments (CTC, Attendance, Leave, Statutory, Bank, Performance), provisions the login identity, and emits realtime sync events.
+            Clicking <strong>Complete Onboarding & Activate Employee</strong> will execute a transactional database operation that creates the employee identity, provisions the App Access credentials, links all sub-domain assignments (CTC, Attendance, Leave, Statutory, Bank), and optionally dispatches the Resend email activation invitation.
           </p>
         </div>
       </div>

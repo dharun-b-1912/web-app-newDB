@@ -293,7 +293,7 @@ export const platformAuditService = {
 
     if (isSupabaseEnabled) {
       try {
-        await supabase.rpc('fn_record_audit_event', {
+        const { error } = await supabase.rpc('fn_record_audit_event', {
           p_event_type: params.event_type || params.action,
           p_category: category,
           p_action: params.reason || params.action,
@@ -301,7 +301,7 @@ export const platformAuditService = {
           p_risk_level: riskLevel,
           p_risk_score: riskScore,
           p_actor_name: params.actor_name || 'WorkForce Super Admin',
-          p_actor_email: params.actor_email || 'superadmin@workforceos.com',
+          p_actor_email: params.actor_email || 'superadmin@joypeoplehr.com',
           p_actor_role: params.actor_role || 'Super Admin',
           p_actor_type: params.actor_type || 'SUPER_ADMIN',
           p_tenant_id: params.tenant_id || 'global',
@@ -316,9 +316,9 @@ export const platformAuditService = {
           p_after_value: params.after_value || null,
           p_metadata: params.metadata || {},
         });
-        return;
-      } catch (err) {
-        console.warn('Failed to call fn_record_audit_event in Supabase:', err);
+        if (!error) return;
+      } catch (_) {
+        // Fallback to local storage
       }
     }
   },

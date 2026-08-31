@@ -351,6 +351,46 @@ export const ROLE_PROFILES: Record<string, RoleAccessProfile> = {
     defaultScope: 'COMPANY',
     moduleScopes: {},
   },
+  'Vendor Admin': {
+    roleName: 'Vendor Admin',
+    hierarchyLevel: 1,
+    allowedModules: [
+      'vendor',
+      'vendor-settlement',
+      'vendor-settlement-workspace',
+      'vendor-dashboard',
+      'vendor-licenses',
+      'vendor-compliance-calendar',
+      'vendor-statutory-returns',
+      'vendor-workforce',
+      'vendor-employees',
+      'vendor-assignments',
+      'vendor-attendance',
+      'vendor-wages',
+      'vendor-wage-breakdown',
+      'vendor-payroll',
+      'vendor-payroll-verification',
+      'vendor-payable',
+      'vendor-purchase-orders',
+      'vendor-po',
+      'vendor-invoices',
+      'vendor-invoice',
+      'vendor-compliance',
+      'vendor-statutory',
+      'vendor-payslips',
+      'vendor-payments',
+      'vendor-reconciliation',
+      'vendor-audit',
+      'vendor-reports',
+      'vendor-audit-reports',
+      'my-profile',
+      'profile',
+      'workspace',
+      'my-workspace',
+    ] as any,
+    defaultScope: 'COMPANY',
+    moduleScopes: {},
+  },
   'HR Head': {
     roleName: 'HR Head',
     hierarchyLevel: 2, // HR operations — full HRMS within authorized legal entity
@@ -439,16 +479,79 @@ export const ROLE_PROFILES: Record<string, RoleAccessProfile> = {
  * Returns the primary role name for a user.
  */
 export function getPrimaryRole(user: User | null): PrimaryRole {
-  if (!user || !user.roles || user.roles.length === 0) return 'Employee';
+  if (!user) return 'Employee';
 
-  const roleNames = user.roles.map(r => r.name);
-  if (roleNames.some(n => n === 'Super Admin')) return 'Super Admin';
-  if (roleNames.some(n => n === 'Company Admin')) return 'Company Admin';
-  if (roleNames.some(n => n === 'HR Head' || n === 'HR_HEAD_SUPER_ADMIN' || n.includes('HR Head')))
-    return 'HR Head';
-  if (roleNames.some(n => n === 'HR Admin')) return 'HR Admin';
-  if (roleNames.some(n => n === 'Manager')) return 'Manager';
-  if (roleNames.some(n => n === 'Team Lead')) return 'Team Lead';
+  // 1. Check explicit platform admin flags
+  if ((user as any).is_platform_admin === true) return 'Super Admin';
+  if ((user as any).platform_role) {
+    const pr = String((user as any).platform_role).toUpperCase();
+    if (pr.includes('SUPER') || pr.includes('PLATFORM')) return 'Super Admin';
+  }
+
+  // 2. Check superadmin root email
+  if (user.email && user.email.toLowerCase() === 'superadmin@joypeoplehr.com') {
+    return 'Super Admin';
+  }
+
+  // 3. Check direct user role string (from Supabase auth metadata: user_metadata.role or (user as any).role)
+  const directRole = String((user as any).role || (user as any).role_display_name || '').trim().toLowerCase();
+  if (directRole) {
+    if (directRole.includes('vendor') || directRole.includes('contractor') || (user as any).vendor_id) return 'Vendor Admin';
+    if (directRole.includes('super') || directRole.includes('platform')) return 'Super Admin';
+    if (directRole.includes('hr head') || directRole === 'hr_head') return 'HR Head';
+    if (directRole.includes('hr admin') || directRole === 'hr_admin' || directRole.includes('payroll admin') || directRole.includes('attendance admin')) return 'HR Admin';
+    if (
+      directRole.includes('company admin') ||
+      directRole.includes('organization owner') ||
+      directRole.includes('organization admin') ||
+      directRole === 'owner' ||
+      directRole === 'company_admin' ||
+      directRole === 'admin'
+    ) {
+      return 'Company Admin';
+    }
+    if (directRole.includes('manager')) return 'Manager';
+    if (directRole.includes('lead')) return 'Team Lead';
+  }
+
+  // 4. Check user roles array (from Supabase roles or session roles)
+  if (user.roles && user.roles.length > 0) {
+    const roleNames = user.roles.map(r => String(r.name || '').trim().toLowerCase());
+    
+    if (roleNames.some(n => n.includes('vendor') || n.includes('contractor') || n === 'vendor admin')) {
+      return 'Vendor Admin';
+    }
+    if (roleNames.some(n => n === 'super admin' || n === 'super_admin' || n === 'superadmin' || n.includes('platform admin') || n.includes('super'))) {
+      return 'Super Admin';
+    }
+    if (roleNames.some(n => n.includes('hr head') || n === 'hr_head')) {
+      return 'HR Head';
+    }
+    if (roleNames.some(n => n.includes('hr admin') || n === 'hr_admin' || n.includes('payroll admin') || n.includes('attendance admin'))) {
+      return 'HR Admin';
+    }
+    if (
+      roleNames.some(
+        n =>
+          n === 'company admin' ||
+          n === 'organization owner' ||
+          n === 'organization admin' ||
+          n.includes('company admin') ||
+          n.includes('organization owner') ||
+          n.includes('organization admin') ||
+          n === 'company_admin' ||
+          n === 'owner'
+      )
+    ) {
+      return 'Company Admin';
+    }
+    if (roleNames.some(n => n === 'manager' || n.includes('manager'))) {
+      return 'Manager';
+    }
+    if (roleNames.some(n => n === 'team lead' || n === 'team_lead' || n.includes('lead'))) {
+      return 'Team Lead';
+    }
+  }
 
   return 'Employee';
 }
@@ -510,6 +613,11 @@ export function canViewModule(user: User | null, module: ModuleId | string): boo
     return roleName === 'Team Lead' || profile.hierarchyLevel <= 2;
   }
 
+  // ── Vendor Operations: Vendor Admin (level 1 vendor) or Company Admin/HR Head ───
+  if (module.startsWith('vendor') || module.includes('vendor')) {
+    if (roleName === 'Vendor Admin' || profile.hierarchyLevel <= 2) return true;
+  }
+
   // ── All other roles/modules: check explicit allowedModules list ──────────────
   if (profile.allowedModules.includes(module as ModuleId)) return true;
 
@@ -550,6 +658,14 @@ export function hasPermission(
   // ── Universal self-service routes (Profile, Workspace) ──────────────────────
   if (module === 'my-profile' || module === 'profile' || module === 'workspace' || module === 'my-workspace') {
     return true;
+  }
+
+  // ── Vendor Admin: full access to vendor operations modules ──────────────────
+  if (roleName === 'Vendor Admin') {
+    if (module.startsWith('vendor') || module.includes('vendor') || module.includes('workspace') || module.includes('profile')) {
+      return true;
+    }
+    return false;
   }
 
   // ── Super Admin: unrestricted ─────────────────────────────────────────────
@@ -634,12 +750,17 @@ export function canAccessEmployee(user: User | null, targetEmployee: Employee): 
   if (roleName === 'Manager') {
     return (
       targetEmployee.employment?.reporting_manager_id === user.employee_id ||
+      targetEmployee.employment?.secondary_manager_id === user.employee_id ||
       targetEmployee.user_id === user.id
     );
   }
 
   if (roleName === 'Team Lead') {
-    return targetEmployee.employment?.reporting_manager_id === user.employee_id;
+    return (
+      targetEmployee.employment?.team_lead_id === user.employee_id ||
+      targetEmployee.employment?.reporting_manager_id === user.employee_id ||
+      targetEmployee.user_id === user.id
+    );
   }
 
   return false;

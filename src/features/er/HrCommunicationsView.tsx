@@ -17,6 +17,7 @@ import {
   Eye,
   X,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 import { HrCommunication, CommunicationUrgency } from '../../types/employeeRelations';
 import { employeeRelationsService } from '../../services/employeeRelationsService';
@@ -84,6 +85,20 @@ export const HrCommunicationsView: React.FC = () => {
     refreshData();
   };
 
+  const handleDelete = async (id: string, noticeTitle: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${noticeTitle}"?`)) return;
+    await employeeRelationsService.deleteCommunication(id, noticeTitle);
+    showToast('Announcement deleted successfully.', 'success');
+    refreshData();
+  };
+
+  const handleClearAll = async () => {
+    if (!window.confirm('Are you sure you want to clear all test announcements? This will remove them completely.')) return;
+    await employeeRelationsService.clearAllCommunications();
+    showToast('All test announcements cleared.', 'success');
+    refreshData();
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Banner */}
@@ -107,9 +122,22 @@ export const HrCommunicationsView: React.FC = () => {
           </p>
         </div>
 
-        <Button size="sm" leftIcon={<Plus className="w-4 h-4" />} onClick={() => setIsModalOpen(true)}>
-          + Create Announcement
-        </Button>
+        <div className="flex items-center gap-2">
+          {comms.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-rose-600 border-rose-200 hover:bg-rose-50"
+              leftIcon={<Trash2 className="w-4 h-4" />}
+              onClick={handleClearAll}
+            >
+              Clear Test Data
+            </Button>
+          )}
+          <Button size="sm" leftIcon={<Plus className="w-4 h-4" />} onClick={() => setIsModalOpen(true)}>
+            + Create Announcement
+          </Button>
+        </div>
       </div>
 
       {/* Overview Cards */}
@@ -143,7 +171,8 @@ export const HrCommunicationsView: React.FC = () => {
               <TableHead className="font-bold text-xs text-gray-700">Target Audience</TableHead>
               <TableHead className="font-bold text-xs text-gray-700">Published Date</TableHead>
               <TableHead className="font-bold text-xs text-gray-700">Acknowledgement</TableHead>
-              <TableHead className="font-bold text-xs text-gray-700 text-right">Reach Stats</TableHead>
+              <TableHead className="font-bold text-xs text-gray-700">Reach Stats</TableHead>
+              <TableHead className="font-bold text-xs text-gray-700 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -183,11 +212,21 @@ export const HrCommunicationsView: React.FC = () => {
                   )}
                 </TableCell>
 
-                <TableCell className="text-right">
+                <TableCell>
                   <div className="text-xs font-bold text-gray-900">
                     {c.stats.target_count} Employees Target
                   </div>
                   <div className="text-[10px] text-emerald-600 font-medium">Delivered 100%</div>
+                </TableCell>
+
+                <TableCell className="text-right">
+                  <button
+                    onClick={() => handleDelete(c.id, c.title)}
+                    className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                    title="Delete Announcement"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </TableCell>
               </TableRow>
             ))}

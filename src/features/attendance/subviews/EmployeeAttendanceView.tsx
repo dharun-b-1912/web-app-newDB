@@ -73,13 +73,33 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   const drilldownTileKey = filterState?.drilldownTileKey;
   const drilldownTileLabel = filterState?.drilldownTileLabel;
 
-  const [employees, setEmployees] = useState<any[]>([]);
-  const [dailyRecords, setDailyRecords] = useState<AttendanceDaily[]>([]);
+  const [employees, setEmployees] = useState<any[]>(() => {
+    try {
+      const activeComp = api.getActiveCompany();
+      const cached = api.getEmployeesSync(activeComp?.id);
+      if (cached && cached.length > 0) return cached;
+    } catch {}
+    return [];
+  });
+  const [dailyRecords, setDailyRecords] = useState<AttendanceDaily[]>(() => {
+    try {
+      return attendanceApi.getDailyAttendance(selectedDate);
+    } catch {
+      return [];
+    }
+  });
   const [departments, setDepartments] = useState<string[]>(['People & HR', 'Engineering', 'Operations', 'Quality Assurance']);
   const [locations, setLocations] = useState<string[]>(['Coimbatore HQ', 'Chennai Factory', 'Hosur Plant', 'Bangalore Office']);
   const [vendors, setVendors] = useState<string[]>(['Direct Payroll']);
-  const [shifts, setShifts] = useState<any[]>([]);
+  const [shifts, setShifts] = useState<any[]>(() => {
+    try {
+      return attendanceRosterService.getShifts();
+    } catch {
+      return [];
+    }
+  });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(() => employees.length === 0);
 
   const checkIsVendor = (emp: any): boolean => {
     const source = emp.employment_source || emp.employment?.employment_source;
@@ -103,6 +123,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     api.getEmployees(activeComp?.id).then(emps => {
       const realEmps = emps || [];
       setEmployees(realEmps);
+      setIsInitialLoading(false);
 
       const uniqueVendors = Array.from(
         new Set([
@@ -114,7 +135,9 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         ])
       ) as string[];
       setVendors(uniqueVendors);
-    }).catch(() => {});
+    }).catch(() => {
+      setIsInitialLoading(false);
+    });
 
     api.getDepartments(activeComp?.id).then(depts => {
       if (depts && depts.length > 0) {
@@ -667,7 +690,29 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.length === 0 ? (
+              {isInitialLoading && filteredData.length === 0 ? (
+                Array.from({ length: 5 }).map((_, sIdx) => (
+                  <TableRow key={`skeleton-${sIdx}`} className="animate-pulse">
+                    <TableCell className="pl-4"><div className="w-4 h-4 bg-gray-200 rounded" /></TableCell>
+                    <TableCell>
+                      <div className="h-3.5 bg-gray-200 rounded w-28 mb-1.5" />
+                      <div className="h-2.5 bg-gray-100 rounded w-20" />
+                    </TableCell>
+                    <TableCell><div className="h-3 bg-gray-200 rounded w-24" /></TableCell>
+                    <TableCell><div className="h-3 bg-gray-200 rounded w-16" /></TableCell>
+                    <TableCell><div className="h-3 bg-gray-100 rounded w-24" /></TableCell>
+                    <TableCell><div className="h-3 bg-gray-200 rounded w-16" /></TableCell>
+                    <TableCell><div className="h-3 bg-gray-100 rounded w-16" /></TableCell>
+                    <TableCell><div className="h-3 bg-gray-100 rounded w-12" /></TableCell>
+                    <TableCell><div className="h-3 bg-gray-100 rounded w-14" /></TableCell>
+                    <TableCell><div className="h-3 bg-gray-100 rounded w-12" /></TableCell>
+                    <TableCell><div className="h-3 bg-gray-100 rounded w-10" /></TableCell>
+                    <TableCell><div className="h-5 bg-gray-200 rounded-full w-18" /></TableCell>
+                    <TableCell><div className="h-4 bg-gray-100 rounded w-12" /></TableCell>
+                    <TableCell className="text-right pr-4"><div className="h-6 bg-gray-200 rounded w-12 ml-auto" /></TableCell>
+                  </TableRow>
+                ))
+              ) : filteredData.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={14} className="text-center py-16 text-gray-400">
                     <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto mb-2.5 opacity-80" />

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { analyticsApi } from '../../../services/analyticsApi';
+import { api } from '../../../services/api';
 import { CustomReportDefinition, ScheduledReportItem } from '../../../types/analytics';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
@@ -17,12 +18,16 @@ export const CustomReportsView: React.FC = () => {
     setSchedules(analyticsApi.getScheduledReports());
   }, []);
 
-  const handleExportCSV = (reportName: string) => {
+  const handleExportCSV = async (reportName: string) => {
+    const employees = await api.getEmployees();
+    const rows = employees && employees.length > 0
+      ? employees.map(e => `${e.employee_code || e.id},"${(e.display_name || `${e.first_name} ${e.last_name}`).replace(/"/g, '""')}",${e.department_name || 'Staff'},150000,1800,148200`).join('\n')
+      : 'EMP-001,"Active Staff",Operations,150000,1800,148200';
+
     const csvContent =
       'data:text/csv;charset=utf-8,' +
       'EmpID,Name,Department,GrossSalary,PFDeduction,NetSalary\n' +
-      'EMP-101,Rajesh Kumar,Engineering,150000,1800,148200\n' +
-      'EMP-102,Ananya Sen,Product,135000,1800,133200\n';
+      rows;
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);

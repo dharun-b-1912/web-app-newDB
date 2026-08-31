@@ -31,7 +31,7 @@ class ServiceCatalogService {
           .select('*')
           .order('name', { ascending: true });
 
-        if (data && data.length > 0) return data;
+        if (!error && data !== null) return data;
         if (error) console.warn('[ServiceCatalog] fetchDefinitions error:', error);
       } catch (err) {
         console.warn('[ServiceCatalog] definitions notice:', err);
@@ -114,7 +114,7 @@ class ServiceCatalogService {
           .select('*')
           .order('submitted_at', { ascending: false });
 
-        if (data && data.length > 0) return data;
+        if (!error && data !== null) return data;
         if (error) console.warn('[ServiceCatalog] fetchRequests error:', error);
       } catch (err) {
         console.warn('[ServiceCatalog] requests notice:', err);

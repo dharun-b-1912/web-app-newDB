@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { leaveApi } from '../../../services/leaveApi';
+import { api } from '../../../services/api';
 import { LeaveEncashment } from '../../../types/leave';
 import { Badge } from '../../../components/ui/Badge';
 import {
@@ -25,7 +26,11 @@ export const EncashmentView: React.FC = () => {
     setEncashments(leaveApi.getEncashments());
   }, []);
 
-  const dailyBasicPay = 3333; // Mock standard basic daily rate
+  const currentUser = api.getCurrentUser();
+  const employees = api.getEmployeesSync();
+  const currentEmp = employees.find(e => e.id === currentUser?.employee_id || e.work_email === currentUser?.email) || employees[0];
+
+  const dailyBasicPay = 3333;
   const estimatedAmount = daysToEncash * dailyBasicPay;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -36,9 +41,9 @@ export const EncashmentView: React.FC = () => {
     }
 
     leaveApi.submitEncashmentRequest({
-      employee_id: 'emp-101',
-      employee_name: 'Rajesh Kumar',
-      department_name: 'Engineering',
+      employee_id: currentEmp?.id || currentUser?.employee_id || 'WF-1001',
+      employee_name: currentEmp ? (currentEmp.display_name || `${currentEmp.first_name} ${currentEmp.last_name}`.trim()) : (currentUser?.name || 'Authorized Staff'),
+      department_name: currentEmp?.department_name || 'Enterprise Operations',
       leave_type_id: 'lt-pl',
       leave_type_name: 'Privilege Leave',
       requested_days: daysToEncash,

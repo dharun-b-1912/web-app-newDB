@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Department, Designation, Branch, Location, EmploymentType, WorkMode, EmployeeStatus, EmploymentSource, Vendor } from '../../../types';
 import { vendorService } from '../../../services/vendorService';
 import { payrollCalculationEngine } from '../../../services/payroll/payrollCalculationEngine';
+import { payrollApi } from '../../../services/payrollApi';
 import { Briefcase, Building2, Calendar, MapPin, Shield, Users, DollarSign, Clock, ShieldCheck, Calculator, Sparkles, TrendingUp } from 'lucide-react';
 
 export interface Step3FormData {
@@ -130,7 +131,9 @@ export const Step3Employment: React.FC<Props> = ({
   const monthlyCtc = formData.monthly_ctc || Math.round(annualCtc / 12);
   const salaryStructureCode = formData.salary_structure_code || 'CORP_STD_01';
 
-  // Live Deterministic Calculation via Centralized Payroll Engine
+  const statutoryConfig = useMemo(() => payrollApi.getStatutoryConfig(), []);
+
+  // Live Deterministic Calculation via Centralized Payroll Engine (Synced with Payroll Statutory Settings)
   const liveCalculation = useMemo(() => {
     return payrollCalculationEngine.calculateBreakdown({
       annualCtc,
@@ -139,8 +142,9 @@ export const Step3Employment: React.FC<Props> = ({
       pfApplicable: formData.pf_applicable !== false,
       esiApplicable: formData.esi_applicable !== false,
       ptApplicable: formData.pt_applicable !== false,
+      statutoryConfig,
     });
-  }, [annualCtc, monthlyCtc, salaryStructureCode, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable]);
+  }, [annualCtc, monthlyCtc, salaryStructureCode, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, statutoryConfig]);
 
   const handleAnnualCtcChange = (value: number) => {
     const validAnnual = Math.max(0, value);
@@ -731,12 +735,12 @@ export const Step3Employment: React.FC<Props> = ({
             <div className="space-y-1.5 bg-emerald-800/40 p-3 rounded-xl border border-emerald-700/40">
               <p className="text-[11px] font-black text-rose-200 uppercase tracking-wider mb-2">Statutory & Tax Withholdings</p>
               <div className="flex justify-between text-emerald-100">
-                <span>Employee EPF (12%):</span>
+                <span>Employee EPF ({statutoryConfig.pf_employee_percent ?? 12}%):</span>
                 <span className="font-bold text-rose-200">-₹{liveCalculation.epfEmployee.toLocaleString('en-IN')}</span>
               </div>
               {liveCalculation.esicEmployee > 0 && (
                 <div className="flex justify-between text-emerald-100">
-                  <span>Employee ESIC (0.75%):</span>
+                  <span>Employee ESIC ({statutoryConfig.esi_employee_percent ?? 0.75}%):</span>
                   <span className="font-bold text-rose-200">-₹{liveCalculation.esicEmployee.toLocaleString('en-IN')}</span>
                 </div>
               )}

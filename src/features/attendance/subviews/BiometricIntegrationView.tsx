@@ -198,9 +198,7 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
       }
     };
 
-    const interval = setInterval(runPulse, 6000);
     return () => {
-      clearInterval(interval);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       unsubBiometric();
       unsubDevice();

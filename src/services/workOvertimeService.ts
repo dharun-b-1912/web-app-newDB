@@ -2,7 +2,6 @@ import {
   IndustryPreset,
   OvertimePolicy,
   BreakPolicy,
-  OvertimeSegment,
   OvertimeRequest,
   WfhRequest,
   WorkHourRecord,
@@ -10,10 +9,15 @@ import {
   OvertimeDashboardMetrics,
   CalculationExplainability,
 } from '../types/workOvertime';
+import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { hrEventBus } from './hrEventBus';
+import { attendanceApi } from './attendanceApi';
+import { attendanceRosterService } from './attendance/attendanceRosterService';
+import { api } from './api';
 
 const DEFAULT_OVERTIME_POLICY: OvertimePolicy = {
   id: 'pol-ot-001',
-  tenant_id: 'default-tenant',
+  tenant_id: 'org-joy-01',
   name: 'Standard Enterprise Overtime Policy',
   version: 'v3.2',
   preset: 'CORPORATE',
@@ -50,446 +54,425 @@ const DEFAULT_BREAK_POLICY: BreakPolicy = {
   breaks_prohibited_in_core_hours: false,
 };
 
-const INITIAL_REQUESTS: OvertimeRequest[] = [
-  {
-    id: 'otr-001',
-    tenant_id: 'default-tenant',
-    employee_id: 'emp-001',
-    employee_name: 'Arun Kumar',
-    employee_code: 'JOY-0104',
-    department: 'Engineering',
-    designation: 'Senior Lead Engineer',
-    date: '2026-08-27',
-    start_time: '18:30',
-    end_time: '21:30',
-    expected_hours: 3,
-    actual_hours: 3.25,
-    eligible_hours: 3,
-    approved_hours: 3,
-    reason_type: 'PROJECT_RELEASE',
-    custom_reason: 'Sprint 28 production cloud deployment & migration testing',
-    work_type: 'PROJECT',
-    project_name: 'WorkForceOS Enterprise Core',
-    location: 'Coimbatore HQ',
-    status: 'APPROVED',
-    compensation_type: 'PAID_OVERTIME',
-    approver_id: 'emp-002',
-    approver_name: 'Vikramaditya Roy',
-    approver_comment: 'Approved for critical production sprint release.',
-    estimated_cost: 1125,
-    created_at: '2026-08-26T14:30:00Z',
-    updated_at: '2026-08-26T16:00:00Z',
-  },
-  {
-    id: 'otr-002',
-    tenant_id: 'default-tenant',
-    employee_id: 'emp-004',
-    employee_name: 'Kavitha Ramaswamy',
-    employee_code: 'JOY-0219',
-    department: 'Manufacturing Ops',
-    designation: 'Assembly Specialist',
-    date: '2026-08-27',
-    start_time: '20:00',
-    end_time: '23:30',
-    expected_hours: 3.5,
-    reason_type: 'PRODUCTION_TARGET',
-    custom_reason: 'Line 2 assembly surge to fulfill Q3 export dispatch',
-    work_type: 'MANUFACTURING',
-    production_line: 'Line B - High Speed Assembly',
-    machine_id: 'MCH-EXT-440',
-    location: 'Plant 1 - Coimbatore',
-    status: 'PENDING_MANAGER',
-    compensation_type: 'PAID_OVERTIME',
-    estimated_cost: 980,
-    created_at: '2026-08-27T09:15:00Z',
-    updated_at: '2026-08-27T09:15:00Z',
-  },
-  {
-    id: 'otr-003',
-    tenant_id: 'default-tenant',
-    employee_id: 'emp-007',
-    employee_name: 'Muthukumar S',
-    employee_code: 'JOY-0312',
-    department: 'Plant Maintenance',
-    designation: 'Maintenance Technician',
-    date: '2026-08-27',
-    start_time: '22:00',
-    end_time: '02:00',
-    expected_hours: 4,
-    reason_type: 'MACHINE_BREAKDOWN',
-    custom_reason: 'Emergency hydraulic press seal replacement on Unit 4',
-    work_type: 'MANUFACTURING',
-    production_line: 'Line A - Press Stamping',
-    machine_id: 'PRESS-HYD-09',
-    location: 'Plant 1 - Coimbatore',
-    status: 'PENDING_HR',
-    compensation_type: 'COMP_OFF',
-    approver_name: 'Senthil Nathan (Supervisor Approved)',
-    estimated_cost: 1400,
-    created_at: '2026-08-27T11:00:00Z',
-    updated_at: '2026-08-27T12:00:00Z',
-    is_emergency: true,
-  },
-];
-
-const INITIAL_WFH_REQUESTS: WfhRequest[] = [
-  {
-    id: 'wfh-001',
-    tenant_id: 'default-tenant',
-    employee_id: 'emp-003',
-    employee_name: 'Sneha Patel',
-    department: 'UI/UX Design',
-    mode: 'FULL_DAY',
-    start_date: '2026-08-28',
-    end_date: '2026-08-28',
-    days_count: 1,
-    reason: 'Deep focus day for Joy PeopleHR design system motion library',
-    work_plan: 'Deliver high-fidelity motion specs and Flutter widget token review',
-    location_city: 'Coimbatore',
-    status: 'APPROVED',
-    approver_name: 'Vikramaditya Roy',
-    remaining_wfh_quota: 3,
-    created_at: '2026-08-26T10:00:00Z',
-  },
-  {
-    id: 'wfh-002',
-    tenant_id: 'default-tenant',
-    employee_id: 'emp-008',
-    employee_name: 'Rajesh Nambiar',
-    department: 'Customer Success',
-    mode: 'RECURRING',
-    start_date: '2026-09-01',
-    end_date: '2026-09-30',
-    days_count: 8,
-    reason: 'Hybrid schedule: Tuesdays & Thursdays Remote',
-    work_plan: 'Client onboarding calls and APAC timezone escalation triage',
-    location_city: 'Bangalore',
-    status: 'PENDING',
-    remaining_wfh_quota: 4,
-    created_at: '2026-08-27T08:30:00Z',
-  },
-];
-
-const INITIAL_WORK_HOURS: WorkHourRecord[] = [
-  {
-    id: 'wh-001',
-    employee_id: 'emp-001',
-    employee_name: 'Arun Kumar',
-    employee_code: 'JOY-0104',
-    department: 'Engineering',
-    shift_name: 'General Day (09:00 - 18:00)',
-    date: '2026-08-27',
-    scheduled_start: '09:00',
-    scheduled_end: '18:00',
-    scheduled_hours: 8,
-    check_in: '08:52',
-    check_out: '21:30',
-    actual_presence_hours: 12.63,
-    paid_break_hours: 0.25,
-    unpaid_break_hours: 0.75,
-    payable_work_hours: 11.88,
-    deficit_hours: 0,
-    eligible_ot_hours: 3.25,
-    approved_ot_hours: 3.0,
-    payable_ot_hours: 3.0,
-    status: 'OVERTIME',
-    location_type: 'OFFICE',
-    estimated_cost: 1125,
-    breaks: [
-      {
-        id: 'brk-01',
-        employee_id: 'emp-001',
-        type: 'MEAL',
-        start_time: '13:00',
-        end_time: '13:45',
-        duration_minutes: 45,
-        is_paid: false,
-        is_excess: false,
-        excess_minutes: 0,
-        source: 'BIOMETRIC',
-      },
-      {
-        id: 'brk-02',
-        employee_id: 'emp-001',
-        type: 'TEA',
-        start_time: '16:15',
-        end_time: '16:30',
-        duration_minutes: 15,
-        is_paid: true,
-        is_excess: false,
-        excess_minutes: 0,
-        source: 'MANUAL',
-      },
-    ],
-    explainability: {
-      scheduled_hours: 8,
-      scheduled_window: '09:00 - 18:00',
-      actual_presence_hours: 12.63,
-      check_in: '08:52',
-      check_out: '21:30',
-      total_break_minutes: 60,
-      paid_break_minutes: 15,
-      unpaid_break_minutes: 45,
-      payable_work_hours: 11.88,
-      grace_period_applied_minutes: 15,
-      rounding_adjustment_minutes: 0,
-      eligible_ot_minutes: 195,
-      approved_ot_minutes: 180,
-      payable_ot_minutes: 180,
-      deficit_minutes: 0,
-      policy_used: 'Standard Enterprise Overtime Policy',
-      policy_version: 'v3.2',
-      applied_multipliers: [
-        { category: 'REGULAR_OT', hours: 3.0, multiplier: 1.5, amount: 1125 },
-      ],
-      steps: [
-        'Shift expected duration: 8h 00m (09:00 - 18:00)',
-        'Recorded check-in at 08:52, check-out at 21:30 (Gross presence: 12h 38m)',
-        'Unpaid Meal Break deducted: 45m; Paid Tea Break credited: 15m',
-        'Net Payable Work Hours: 11h 53m (exceeds scheduled 8h by 3h 53m)',
-        'Grace period of 15m applied; 15-minute rounding normalized raw extra time',
-        'Manager approved 3h 00m under Project Deployment sprint ticket OTR-001',
-        'Payable Overtime locked at 3h 00m with 1.5x regular multiplier (₹1,125.00)',
-      ],
-    },
-  },
-  {
-    id: 'wh-002',
-    employee_id: 'emp-004',
-    employee_name: 'Kavitha Ramaswamy',
-    employee_code: 'JOY-0219',
-    department: 'Manufacturing Ops',
-    shift_name: 'Afternoon Shift (14:00 - 22:00)',
-    date: '2026-08-27',
-    scheduled_start: '14:00',
-    scheduled_end: '22:00',
-    scheduled_hours: 7.5,
-    check_in: '13:50',
-    check_out: '00:30',
-    actual_presence_hours: 10.67,
-    paid_break_hours: 0.25,
-    unpaid_break_hours: 0.5,
-    payable_work_hours: 10.17,
-    deficit_hours: 0,
-    eligible_ot_hours: 2.5,
-    approved_ot_hours: 2.5,
-    payable_ot_hours: 2.5,
-    status: 'OVERTIME',
-    location_type: 'PLANT',
-    estimated_cost: 980,
-    breaks: [
-      {
-        id: 'brk-03',
-        employee_id: 'emp-004',
-        type: 'MEAL',
-        start_time: '18:00',
-        end_time: '18:30',
-        duration_minutes: 30,
-        is_paid: false,
-        is_excess: false,
-        excess_minutes: 0,
-        source: 'BIOMETRIC',
-      },
-    ],
-    explainability: {
-      scheduled_hours: 7.5,
-      scheduled_window: '14:00 - 22:00',
-      actual_presence_hours: 10.67,
-      check_in: '13:50',
-      check_out: '00:30',
-      total_break_minutes: 30,
-      paid_break_minutes: 0,
-      unpaid_break_minutes: 30,
-      payable_work_hours: 10.17,
-      grace_period_applied_minutes: 10,
-      rounding_adjustment_minutes: 0,
-      eligible_ot_minutes: 150,
-      approved_ot_minutes: 150,
-      payable_ot_minutes: 150,
-      policy_used: 'Manufacturing Plant Shift Policy',
-      policy_version: 'v3.2',
-      applied_multipliers: [
-        { category: 'REGULAR_OT', hours: 1.5, multiplier: 1.5, amount: 525 },
-        { category: 'NIGHT_OT', hours: 1.0, multiplier: 1.75, amount: 455 },
-      ],
-      deficit_minutes: 0,
-      steps: [
-        'Shift expected duration: 7h 30m (14:00 - 22:00)',
-        'Check-out at 00:30 (Post-shift overtime: 2h 30m)',
-        'Segment decomposition: 22:00-00:00 (Evening regular OT: 1.5h @ 1.5x) + 00:00-00:30 (Late night OT: 1.0h @ 1.75x)',
-        'Overtime request OTR-002 validated against Line B shift roster',
-        'Total payable compensation: ₹980.00',
-      ],
-    },
-  },
-  {
-    id: 'wh-003',
-    employee_id: 'emp-005',
-    employee_name: 'Pooja Sharma',
-    employee_code: 'JOY-0155',
-    department: 'Finance & Accounts',
-    shift_name: 'General Day (09:00 - 18:00)',
-    date: '2026-08-27',
-    scheduled_start: '09:00',
-    scheduled_end: '18:00',
-    scheduled_hours: 8,
-    check_in: '09:12',
-    check_out: '18:05',
-    actual_presence_hours: 8.88,
-    paid_break_hours: 0.25,
-    unpaid_break_hours: 0.75,
-    payable_work_hours: 8.13,
-    deficit_hours: 0,
-    eligible_ot_hours: 0,
-    approved_ot_hours: 0,
-    payable_ot_hours: 0,
-    status: 'NORMAL',
-    location_type: 'OFFICE',
-    estimated_cost: 0,
-    breaks: [
-      {
-        id: 'brk-04',
-        employee_id: 'emp-005',
-        type: 'MEAL',
-        start_time: '13:15',
-        end_time: '14:00',
-        duration_minutes: 45,
-        is_paid: false,
-        is_excess: false,
-        excess_minutes: 0,
-        source: 'BIOMETRIC',
-      },
-    ],
-    explainability: {
-      scheduled_hours: 8,
-      scheduled_window: '09:00 - 18:00',
-      actual_presence_hours: 8.88,
-      check_in: '09:12',
-      check_out: '18:05',
-      total_break_minutes: 45,
-      paid_break_minutes: 0,
-      unpaid_break_minutes: 45,
-      payable_work_hours: 8.13,
-      grace_period_applied_minutes: 15,
-      rounding_adjustment_minutes: 0,
-      eligible_ot_minutes: 0,
-      approved_ot_minutes: 0,
-      payable_ot_minutes: 0,
-      deficit_minutes: 0,
-      policy_used: 'Standard Enterprise Overtime Policy',
-      policy_version: 'v3.2',
-      applied_multipliers: [],
-      steps: [
-        'Shift expected duration: 8h 00m',
-        'Check-out at 18:05 is within the 15-minute grace threshold',
-        'Extra time 5m discarded under grace period policy',
-        'Payable work hours satisfy standard 8h requirement. Zero OT generated.',
-      ],
-    },
-  },
-];
-
-const INITIAL_EXCEPTIONS: WorkException[] = [
-  {
-    id: 'exc-001',
-    employee_id: 'emp-009',
-    employee_name: 'Dinesh Karthik',
-    department: 'Logistics & Warehouse',
-    date: '2026-08-27',
-    type: 'EXCEED_MAX_WORK_HOURS',
-    details: 'Shift presence exceeded maximum allowable daily statutory limit (13.5h vs 12.0h max)',
-    hours_or_minutes: '1.5h Excess',
-    severity: 'HIGH',
-    status: 'OPEN',
-    manager_name: 'Suresh Menon',
-    created_at: '2026-08-27T07:45:00Z',
-  },
-  {
-    id: 'exc-002',
-    employee_id: 'emp-011',
-    employee_name: 'Anita Deshmukh',
-    department: 'Customer Support',
-    date: '2026-08-27',
-    type: 'EXCESS_BREAK',
-    details: 'Lunch break exceeded standard 45-minute allocation by 28 minutes without manager approval',
-    hours_or_minutes: '28 min Excess',
-    severity: 'MEDIUM',
-    status: 'IN_REVIEW',
-    manager_name: 'Vikramaditya Roy',
-    created_at: '2026-08-27T14:10:00Z',
-  },
-  {
-    id: 'exc-003',
-    employee_id: 'emp-014',
-    employee_name: 'Gopalakrishnan V',
-    department: 'Manufacturing Ops',
-    date: '2026-08-26',
-    type: 'OT_WITHOUT_APPROVAL',
-    details: 'Stayed 2.5h post-shift on Line A without submitting an overtime pre-approval request',
-    hours_or_minutes: '2.5h Unapproved OT',
-    severity: 'HIGH',
-    status: 'OPEN',
-    manager_name: 'Senthil Nathan',
-    created_at: '2026-08-26T23:30:00Z',
-  },
-];
+function getActiveOrgId(): string {
+  if (typeof window !== 'undefined') {
+    try {
+      const storedOrg = localStorage.getItem('workforce_active_organization');
+      if (storedOrg) {
+        const parsed = JSON.parse(storedOrg);
+        if (parsed && parsed.id) return parsed.id;
+      }
+      const stored = localStorage.getItem('workforce_active_org_id');
+      if (stored) return stored;
+    } catch {}
+  }
+  return 'org-joy-01';
+}
 
 class WorkOvertimeService {
-  private STORAGE_KEY = 'workforce_work_overtime_v3';
+  private isRealtimeSubscribed = false;
 
-  private loadState() {
+  private getStorageKey(tenantId = getActiveOrgId()): string {
+    return `workforce_work_overtime_v4_${tenantId}`;
+  }
+
+  private loadState(tenantId = getActiveOrgId()) {
     try {
-      const saved = localStorage.getItem(this.STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
+      const sKey = this.getStorageKey(tenantId);
+      const saved = localStorage.getItem(sKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          activePreset: (parsed.activePreset || 'CORPORATE') as IndustryPreset,
+          policy: { ...DEFAULT_OVERTIME_POLICY, ...(parsed.policy || {}) },
+          breakPolicy: { ...DEFAULT_BREAK_POLICY, ...(parsed.breakPolicy || {}) },
+          requests: (parsed.requests || []) as OvertimeRequest[],
+          wfhRequests: (parsed.wfhRequests || []) as WfhRequest[],
+          isPayrollLocked: !!parsed.isPayrollLocked,
+          payrollPeriod: parsed.payrollPeriod || new Date().toISOString().slice(0, 7),
+        };
+      }
     } catch {}
+
     return {
       activePreset: 'CORPORATE' as IndustryPreset,
       policy: DEFAULT_OVERTIME_POLICY,
       breakPolicy: DEFAULT_BREAK_POLICY,
-      requests: INITIAL_REQUESTS,
-      wfhRequests: INITIAL_WFH_REQUESTS,
-      workHours: INITIAL_WORK_HOURS,
-      exceptions: INITIAL_EXCEPTIONS,
+      requests: [] as OvertimeRequest[],
+      wfhRequests: [] as WfhRequest[],
       isPayrollLocked: false,
-      payrollPeriod: '2026-08',
+      payrollPeriod: new Date().toISOString().slice(0, 7),
     };
   }
 
-  private saveState(state: any) {
+  private saveState(state: any, tenantId = getActiveOrgId()) {
     try {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(state));
-      window.dispatchEvent(new CustomEvent('work-overtime:updated'));
+      const sKey = this.getStorageKey(tenantId);
+      localStorage.setItem(sKey, JSON.stringify(state));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('work-overtime:updated'));
+      }
     } catch {}
   }
 
-  getDashboardMetrics(): OvertimeDashboardMetrics {
-    const state = this.loadState();
-    const workHours: WorkHourRecord[] = state.workHours || [];
-    const requests: OvertimeRequest[] = state.requests || [];
-    const exceptions: WorkException[] = state.exceptions || [];
+  // ==========================================================================
+  // REALTIME MESH SUBSCRIPTION
+  // ==========================================================================
+  public initRealtimeSubscription(tenantId = getActiveOrgId()): void {
+    if (this.isRealtimeSubscribed || !isSupabaseEnabled) return;
+    this.isRealtimeSubscribed = true;
 
+    try {
+      const channelName = `work_overtime_mesh_${tenantId}`;
+      const existingChannel = supabase.getChannels().find((ch) => ch.topic === `realtime:${channelName}`);
+      if (existingChannel) {
+        supabase.removeChannel(existingChannel);
+      }
+
+      const channel = supabase.channel(channelName);
+
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'realtime_outbox',
+            filter: `entity_type=in.(overtime_requests,wfh_requests)`,
+          },
+          () => {
+            this.fetchFromSupabase(tenantId).then(() => {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('work-overtime:updated'));
+              }
+            });
+          }
+        )
+        .subscribe((status) => {
+          if (status !== 'SUBSCRIBED' && status !== 'TIMED_OUT') {
+            this.isRealtimeSubscribed = false;
+          }
+        });
+    } catch (e) {
+      console.warn('[WorkOvertime] Realtime subscription notice:', e);
+      this.isRealtimeSubscribed = false;
+    }
+  }
+
+  public async fetchFromSupabase(tenantId = getActiveOrgId()): Promise<void> {
+    if (!isSupabaseEnabled) return;
+    try {
+      const { data: outboxRows } = await supabase
+        .from('realtime_outbox')
+        .select('*')
+        .in('entity_type', ['overtime_requests', 'wfh_requests'])
+        .order('created_at', { ascending: true });
+
+      if (outboxRows && outboxRows.length > 0) {
+        const state = this.loadState(tenantId);
+        const otMap = new Map<string, OvertimeRequest>();
+        const wfhMap = new Map<string, WfhRequest>();
+
+        state.requests.forEach((r) => otMap.set(r.id, r));
+        state.wfhRequests.forEach((w) => wfhMap.set(w.id, w));
+
+        outboxRows.forEach((row: any) => {
+          if (row.entity_type === 'overtime_requests' && row.payload?.id) {
+            otMap.set(row.payload.id, { ...(otMap.get(row.payload.id) || {}), ...row.payload });
+          } else if (row.entity_type === 'wfh_requests' && row.payload?.id) {
+            wfhMap.set(row.payload.id, { ...(wfhMap.get(row.payload.id) || {}), ...row.payload });
+          }
+        });
+
+        state.requests = Array.from(otMap.values()).sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        state.wfhRequests = Array.from(wfhMap.values()).sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+
+        this.saveState(state, tenantId);
+      }
+    } catch (err) {
+      console.warn('[WorkOvertime] fetchFromSupabase error:', err);
+    }
+  }
+
+  // ==========================================================================
+  // DASHBOARD METRICS (ZERO-MOCK REAL DATA ENGINE)
+  // ==========================================================================
+  getDashboardMetrics(selectedDate = new Date().toISOString().split('T')[0]): OvertimeDashboardMetrics {
+    const tenantId = getActiveOrgId();
+    this.initRealtimeSubscription(tenantId);
+
+    const state = this.loadState(tenantId);
+    const workHours = this.getWorkHourRecords(selectedDate);
+    const requests = state.requests || [];
+    const exceptions = this.getWorkExceptions(selectedDate);
+
+    // Sum actual overtime hours from today's real attendance
     const ot_today_hours = workHours.reduce((sum, wh) => sum + (wh.payable_ot_hours || 0), 0);
-    const ot_week_hours = ot_today_hours * 4.2 + 24.5;
-    const ot_month_hours = ot_week_hours * 3.8 + 118.0;
-    const pending_requests_count = requests.filter(r => r.status === 'PENDING_MANAGER' || r.status === 'PENDING_HR').length;
-    const projected_ot_hours = ot_today_hours + 8.5;
-    const policy_exceptions_count = exceptions.filter(e => e.status === 'OPEN' || e.status === 'IN_REVIEW').length;
-    const estimated_ot_cost = workHours.reduce((sum, wh) => sum + (wh.estimated_cost || 0), 0) + 12500;
-    const workers_on_ot_count = workHours.filter(wh => wh.payable_ot_hours > 0).length;
+
+    // Compute month and week actuals from attendance daily logs
+    const allAttendance = attendanceApi.getAllAttendanceLogs();
+    const currDate = new Date(selectedDate);
+    const currMonthPrefix = selectedDate.slice(0, 7); // YYYY-MM
+
+    // Month total OT
+    const monthRecords = allAttendance.filter((a: any) => (a.date || '').startsWith(currMonthPrefix));
+    const ot_month_minutes = monthRecords.reduce((sum: number, a: any) => sum + (a.overtime_minutes || 0), 0);
+    const ot_month_hours = Math.round((ot_month_minutes / 60) * 10) / 10;
+
+    // Week total OT (last 7 days)
+    const sevenDaysAgo = new Date(currDate);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const weekRecords = allAttendance.filter((a: any) => {
+      const d = new Date(a.date);
+      return d >= sevenDaysAgo && d <= currDate;
+    });
+    const ot_week_minutes = weekRecords.reduce((sum: number, a: any) => sum + (a.overtime_minutes || 0), 0);
+    const ot_week_hours = Math.round((ot_week_minutes / 60) * 10) / 10;
+
+    const pending_requests_count = requests.filter(
+      (r) => r.status === 'PENDING_MANAGER' || r.status === 'PENDING_HR' || r.status === 'SUBMITTED'
+    ).length;
+
+    const policy_exceptions_count = exceptions.filter((e) => e.status === 'OPEN' || e.status === 'IN_REVIEW').length;
+    const workers_on_ot_count = workHours.filter((wh) => wh.payable_ot_hours > 0).length;
+
+    // Estimated cost: real sum of (payable_ot_hours * standard rate * multiplier)
+    const estimated_ot_cost = workHours.reduce((sum, wh) => sum + (wh.estimated_cost || 0), 0);
+
+    // Active plant / department presence percentage
+    const active_plant_coverage_percent = workHours.length > 0
+      ? Math.round((workHours.filter((w) => w.status !== 'ABSENT').length / workHours.length) * 1000) / 10
+      : 100;
 
     return {
       ot_today_hours: Number(ot_today_hours.toFixed(1)),
       ot_week_hours: Number(ot_week_hours.toFixed(1)),
       ot_month_hours: Number(ot_month_hours.toFixed(1)),
       pending_requests_count,
-      projected_ot_hours: Number(projected_ot_hours.toFixed(1)),
+      projected_ot_hours: Number((ot_today_hours + requests.filter((r) => r.status === 'APPROVED').reduce((s, r) => s + (r.approved_hours || 0), 0)).toFixed(1)),
       policy_exceptions_count,
       estimated_ot_cost: Math.round(estimated_ot_cost),
       workers_on_ot_count,
-      active_plant_coverage_percent: 94.8,
+      active_plant_coverage_percent,
     };
   }
 
+  // ==========================================================================
+  // WORK HOURS & REALTIME OVERTIME DECOMPOSITION ENGINE
+  // ==========================================================================
+  getWorkHourRecords(selectedDate = new Date().toISOString().split('T')[0]): WorkHourRecord[] {
+    const tenantId = getActiveOrgId();
+    const activeComp = api.getActiveCompany();
+    const employees = api.getEmployeesSync(activeComp?.id) || [];
+    const dailyRecords = attendanceApi.getDailyAttendance(selectedDate);
+    const policy = this.getPolicy();
+    const breakPolicy = this.getBreakPolicy();
+
+    if (employees.length === 0) return [];
+
+    return employees.map((emp) => {
+      const record = dailyRecords.find(
+        (r) =>
+          r.employee_id === emp.id ||
+          (r.employee_code && emp.employee_code && r.employee_code.toLowerCase() === emp.employee_code.toLowerCase())
+      );
+      const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate);
+      const shift = attendanceRosterService.getShiftById(roster.shift_id) || {
+        shift_name: roster.shift_name || 'General Day Shift',
+        shift_code: roster.shift_code || 'GEN-09',
+        start_time: '09:00',
+        end_time: '18:00',
+        cross_midnight: (roster.shift_code || '').includes('NGT'),
+      };
+
+      const scheduledHours = 8.0;
+      const scheduledWindow = `${shift.start_time} - ${shift.end_time}`;
+      const checkIn = record?.first_check_in || null;
+      const checkOut = record?.last_check_out || null;
+
+      const grossMinutes = record?.gross_working_minutes || 0;
+      const netMinutes = record?.net_working_minutes || 0;
+      const breakMinutes = record?.total_break_minutes || (grossMinutes > 300 ? breakPolicy.automatic_break_minutes : 0);
+      const actualPresenceHours = Math.round((grossMinutes / 60) * 100) / 100;
+      const payableWorkHours = Math.round((netMinutes / 60) * 100) / 100;
+
+      // Overtime calculation
+      const otMinutes = record?.overtime_minutes || Math.max(0, netMinutes - policy.daily_threshold_minutes);
+      const eligibleOtHours = Math.round((otMinutes / 60) * 100) / 100;
+      const payableOtHours = eligibleOtHours;
+
+      const hourlyRate = 350; // Standard base hourly rate
+      const estimatedCost = Math.round(payableOtHours * hourlyRate * policy.normal_rate_multiplier);
+
+      const status: WorkHourRecord['status'] =
+        payableOtHours > 0
+          ? 'OVERTIME'
+          : record?.status === 'Absent' || (!checkIn && !roster.is_weekly_off)
+          ? 'DEFICIT'
+          : 'NORMAL';
+
+      const explainSteps: string[] = [
+        `Shift scheduled duration: ${scheduledHours}h 00m (${scheduledWindow})`,
+        checkIn ? `Check-in recorded at ${checkIn}` : 'No check-in recorded for date',
+        checkOut ? `Check-out recorded at ${checkOut}` : 'Open presence / no check-out recorded',
+        `Presence duration: ${grossMinutes}m gross, with ${breakMinutes}m break deductions`,
+      ];
+
+      if (payableOtHours > 0) {
+        explainSteps.push(
+          `Overtime threshold (${policy.daily_threshold_minutes}m) exceeded by ${otMinutes}m (${payableOtHours}h)`,
+          `Multipliers applied: Regular OT ${policy.normal_rate_multiplier}x. Estimated compensation: ₹${estimatedCost}`
+        );
+      } else {
+        explainSteps.push('Presence within standard working limit. 0h overtime generated.');
+      }
+
+      const explainability: CalculationExplainability = {
+        scheduled_hours: scheduledHours,
+        scheduled_window: scheduledWindow,
+        actual_presence_hours: actualPresenceHours,
+        check_in: checkIn || '--:--',
+        check_out: checkOut || '--:--',
+        total_break_minutes: breakMinutes,
+        paid_break_minutes: breakPolicy.paid_break_allowance_minutes,
+        unpaid_break_minutes: Math.max(0, breakMinutes - breakPolicy.paid_break_allowance_minutes),
+        payable_work_hours: payableWorkHours,
+        grace_period_applied_minutes: policy.grace_period_minutes,
+        rounding_adjustment_minutes: 0,
+        eligible_ot_minutes: otMinutes,
+        approved_ot_minutes: otMinutes,
+        payable_ot_minutes: otMinutes,
+        deficit_minutes: Math.max(0, Math.round((scheduledHours - payableWorkHours) * 60)),
+        policy_used: policy.name,
+        policy_version: policy.version,
+        applied_multipliers: payableOtHours > 0 ? [{ category: 'REGULAR_OT', hours: payableOtHours, multiplier: policy.normal_rate_multiplier, amount: estimatedCost }] : [],
+        steps: explainSteps,
+      };
+
+      return {
+        id: `wh-${emp.id}-${selectedDate}`,
+        employee_id: emp.id,
+        employee_name: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || (emp as any).name || 'Employee',
+        employee_code: emp.employee_code || `WF-${emp.id}`,
+        department: emp.department_name || (emp as any).department || 'Operations',
+        shift_name: `${shift.shift_code} (${shift.shift_name})`,
+        date: selectedDate,
+        scheduled_start: shift.start_time,
+        scheduled_end: shift.end_time,
+        scheduled_hours: scheduledHours,
+        check_in: checkIn || undefined,
+        check_out: checkOut || undefined,
+        actual_presence_hours: actualPresenceHours,
+        paid_break_hours: Math.round((breakPolicy.paid_break_allowance_minutes / 60) * 100) / 100,
+        unpaid_break_hours: Math.round((Math.max(0, breakMinutes - breakPolicy.paid_break_allowance_minutes) / 60) * 100) / 100,
+        payable_work_hours: payableWorkHours,
+        deficit_hours: Math.max(0, Math.round((scheduledHours - payableWorkHours) * 100) / 100),
+        eligible_ot_hours: eligibleOtHours,
+        approved_ot_hours: payableOtHours,
+        payable_ot_hours: payableOtHours,
+        status,
+        location_type: record?.status === 'WFH' ? 'WFH' : 'OFFICE',
+        estimated_cost: estimatedCost,
+        breaks: [
+          {
+            id: `brk-${emp.id}-${selectedDate}`,
+            employee_id: emp.id,
+            type: 'MEAL',
+            start_time: '13:00',
+            end_time: '13:30',
+            duration_minutes: breakMinutes,
+            is_paid: false,
+            is_excess: breakMinutes > breakPolicy.max_unpaid_break_minutes,
+            excess_minutes: Math.max(0, breakMinutes - breakPolicy.max_unpaid_break_minutes),
+            source: record?.source || 'SYSTEM',
+          },
+        ],
+        explainability,
+      };
+    });
+  }
+
+  // ==========================================================================
+  // DYNAMIC WORK EXCEPTIONS ENGINE
+  // ==========================================================================
+  getWorkExceptions(selectedDate = new Date().toISOString().split('T')[0]): WorkException[] {
+    const workHours = this.getWorkHourRecords(selectedDate);
+    const policy = this.getPolicy();
+    const breakPolicy = this.getBreakPolicy();
+    const exceptions: WorkException[] = [];
+
+    workHours.forEach((wh) => {
+      // 1. Exceeding max allowable daily work hours (e.g. > 12h limit)
+      if (wh.actual_presence_hours > policy.max_work_hours_day) {
+        exceptions.push({
+          id: `exc-max-${wh.employee_id}-${wh.date}`,
+          employee_id: wh.employee_id,
+          employee_name: wh.employee_name,
+          department: wh.department,
+          date: wh.date,
+          type: 'EXCEED_MAX_WORK_HOURS',
+          details: `Shift presence (${wh.actual_presence_hours}h) exceeded maximum daily statutory limit of ${policy.max_work_hours_day}h.`,
+          hours_or_minutes: `${(wh.actual_presence_hours - policy.max_work_hours_day).toFixed(1)}h Excess`,
+          severity: 'HIGH',
+          status: 'OPEN',
+          manager_name: 'Department Manager',
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      // 2. Excess break duration without authorization
+      const breakDuration = wh.breaks.reduce((s, b) => s + b.duration_minutes, 0);
+      if (breakDuration > breakPolicy.max_unpaid_break_minutes) {
+        exceptions.push({
+          id: `exc-brk-${wh.employee_id}-${wh.date}`,
+          employee_id: wh.employee_id,
+          employee_name: wh.employee_name,
+          department: wh.department,
+          date: wh.date,
+          type: 'EXCESS_BREAK',
+          details: `Break time (${breakDuration}m) exceeded policy limit of ${breakPolicy.max_unpaid_break_minutes}m.`,
+          hours_or_minutes: `${breakDuration - breakPolicy.max_unpaid_break_minutes}m Excess`,
+          severity: 'MEDIUM',
+          status: 'IN_REVIEW',
+          manager_name: 'Team Supervisor',
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      // 3. Overtime generated without prior approved request
+      if (wh.payable_ot_hours > 0 && policy.approval_required) {
+        const approvedReq = this.getOvertimeRequests().find(
+          (r) => (r.employee_id === wh.employee_id || r.employee_name === wh.employee_name) && r.date === wh.date && r.status === 'APPROVED'
+        );
+        if (!approvedReq) {
+          exceptions.push({
+            id: `exc-ot-${wh.employee_id}-${wh.date}`,
+            employee_id: wh.employee_id,
+            employee_name: wh.employee_name,
+            department: wh.department,
+            date: wh.date,
+            type: 'OT_WITHOUT_APPROVAL',
+            details: `Employee logged ${wh.payable_ot_hours}h of overtime without an approved pre-shift overtime authorization.`,
+            hours_or_minutes: `${wh.payable_ot_hours}h Unapproved OT`,
+            severity: 'HIGH',
+            status: 'OPEN',
+            manager_name: 'Operations Manager',
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+    });
+
+    return exceptions;
+  }
+
+  // ==========================================================================
+  // POLICIES & PRESETS
+  // ==========================================================================
   getActivePreset(): IndustryPreset {
     return this.loadState().activePreset || 'CORPORATE';
   }
@@ -520,51 +503,159 @@ class WorkOvertimeService {
     this.saveState(state);
   }
 
+  // ==========================================================================
+  // OVERTIME REQUESTS CRUD + DATABASE PERSISTENCE
+  // ==========================================================================
   getOvertimeRequests(): OvertimeRequest[] {
     return this.loadState().requests || [];
   }
 
-  submitOvertimeRequest(data: Omit<OvertimeRequest, 'id' | 'created_at' | 'updated_at'>): OvertimeRequest {
-    const state = this.loadState();
+  public async submitOvertimeRequest(
+    data: Omit<OvertimeRequest, 'id' | 'created_at' | 'updated_at'>,
+    tenantId = getActiveOrgId()
+  ): Promise<OvertimeRequest> {
+    const state = this.loadState(tenantId);
+    const now = new Date().toISOString();
     const newRequest: OvertimeRequest = {
       ...data,
       id: `otr-${Date.now()}`,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: now,
+      updated_at: now,
     };
+
     state.requests = [newRequest, ...state.requests];
-    this.saveState(state);
+    this.saveState(state, tenantId);
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('realtime_outbox').insert([
+          {
+            tenant_id: tenantId,
+            organization_id: tenantId,
+            entity_type: 'overtime_requests',
+            entity_id: newRequest.id,
+            event_type: 'overtime.submitted',
+            actor_id: newRequest.employee_id,
+            payload: newRequest,
+          },
+        ]);
+      } catch (err) {
+        console.warn('[WorkOvertime] Outbox insert error:', err);
+      }
+    }
+
+    hrEventBus.publish('custom', { type: 'overtime.submitted', data: newRequest });
     return newRequest;
   }
 
-  approveOvertimeRequest(id: string, approverName: string, comment?: string): boolean {
-    const state = this.loadState();
+  public async approveOvertimeRequest(
+    id: string,
+    approverName: string,
+    comment?: string,
+    tenantId = getActiveOrgId()
+  ): Promise<boolean> {
+    const state = this.loadState(tenantId);
     const idx = state.requests.findIndex((r: OvertimeRequest) => r.id === id);
     if (idx === -1) return false;
 
-    state.requests[idx].status = 'APPROVED';
-    state.requests[idx].approver_name = approverName;
-    state.requests[idx].approver_comment = comment || 'Approved for operational payroll compensation.';
-    state.requests[idx].approved_hours = state.requests[idx].expected_hours;
-    state.requests[idx].updated_at = new Date().toISOString();
-    this.saveState(state);
+    const now = new Date().toISOString();
+    const req = state.requests[idx];
+    req.status = 'APPROVED';
+    req.approver_name = approverName;
+    req.approver_comment = comment || 'Approved for operational payroll compensation.';
+    req.approved_hours = req.expected_hours;
+    req.updated_at = now;
+
+    this.saveState(state, tenantId);
+
+    // Apply Overtime directly to Daily Attendance record
+    try {
+      const otMinutes = Math.round((req.approved_hours || req.expected_hours) * 60);
+      const storageKeys = [
+        'workforceos_attendance_daily_v2',
+        `workforceos_attendance_daily_v2_${tenantId}`,
+        'workforceos_attendance_daily_v2_org-joy-01',
+      ];
+      for (const sKey of storageKeys) {
+        const raw = localStorage.getItem(sKey);
+        let list: any[] = raw ? JSON.parse(raw) : [];
+        const mIdx = list.findIndex(
+          (a) => (a.employee_id === req.employee_id || a.employee_code === req.employee_code) && a.date === req.date
+        );
+        if (mIdx >= 0) {
+          list[mIdx].overtime_minutes = otMinutes;
+          localStorage.setItem(sKey, JSON.stringify(list));
+        }
+      }
+
+      if (isSupabaseEnabled) {
+        await supabase
+          .from('attendance_daily')
+          .update({ overtime_minutes: otMinutes, updated_at: now })
+          .match({ employee_id: req.employee_id, date: req.date });
+
+        await supabase.from('realtime_outbox').insert([
+          {
+            tenant_id: tenantId,
+            organization_id: tenantId,
+            entity_type: 'overtime_requests',
+            entity_id: req.id,
+            event_type: 'overtime.approved',
+            actor_id: req.employee_id,
+            payload: req,
+          },
+        ]);
+      }
+    } catch (err) {
+      console.warn('[WorkOvertime] Attendance OT sync error:', err);
+    }
+
+    hrEventBus.publish('custom', { type: 'overtime.approved', data: req });
     return true;
   }
 
-  rejectOvertimeRequest(id: string, approverName: string, comment?: string): boolean {
-    const state = this.loadState();
+  public async rejectOvertimeRequest(
+    id: string,
+    approverName: string,
+    comment?: string,
+    tenantId = getActiveOrgId()
+  ): Promise<boolean> {
+    const state = this.loadState(tenantId);
     const idx = state.requests.findIndex((r: OvertimeRequest) => r.id === id);
     if (idx === -1) return false;
 
-    state.requests[idx].status = 'REJECTED';
-    state.requests[idx].approver_name = approverName;
-    state.requests[idx].approver_comment = comment || 'Rejected due to budget limits / policy mismatch.';
-    state.requests[idx].updated_at = new Date().toISOString();
-    this.saveState(state);
+    const now = new Date().toISOString();
+    const req = state.requests[idx];
+    req.status = 'REJECTED';
+    req.approver_name = approverName;
+    req.approver_comment = comment || 'Rejected due to budget limits / policy mismatch.';
+    req.updated_at = now;
+
+    this.saveState(state, tenantId);
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('realtime_outbox').insert([
+          {
+            tenant_id: tenantId,
+            organization_id: tenantId,
+            entity_type: 'overtime_requests',
+            entity_id: req.id,
+            event_type: 'overtime.rejected',
+            actor_id: req.employee_id,
+            payload: req,
+          },
+        ]);
+      } catch (err) {
+        console.warn('[WorkOvertime] Outbox insert error:', err);
+      }
+    }
+
+    hrEventBus.publish('custom', { type: 'overtime.rejected', data: req });
     return true;
   }
 
-  bulkAssignOvertime(
+  public bulkAssignOvertime(
     employeeIds: { id: string; name: string; code: string; department: string }[],
     params: {
       date: string;
@@ -577,12 +668,14 @@ class WorkOvertimeService {
       production_line?: string;
       machine_id?: string;
       location: string;
-    }
+    },
+    tenantId = getActiveOrgId()
   ): number {
-    const state = this.loadState();
-    const created: OvertimeRequest[] = employeeIds.map(emp => ({
+    const state = this.loadState(tenantId);
+    const now = new Date().toISOString();
+    const created: OvertimeRequest[] = employeeIds.map((emp) => ({
       id: `otr-bulk-${Date.now()}-${emp.id}`,
-      tenant_id: 'default-tenant',
+      tenant_id: tenantId,
       employee_id: emp.id,
       employee_name: emp.name,
       employee_code: emp.code,
@@ -601,73 +694,191 @@ class WorkOvertimeService {
       location: params.location,
       status: 'APPROVED',
       compensation_type: 'PAID_OVERTIME',
-      approver_name: 'Plant Supervisor / Bulk Dispatch',
+      approver_name: 'Operations Dispatch',
       approver_comment: 'Bulk shift allocation approved for factory operations',
-      estimated_cost: params.expected_hours * 350,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      estimated_cost: params.expected_hours * 350 * 1.5,
+      created_at: now,
+      updated_at: now,
     }));
 
     state.requests = [...created, ...state.requests];
-    this.saveState(state);
+    this.saveState(state, tenantId);
+
+    // Save to Supabase Outbox
+    if (isSupabaseEnabled) {
+      try {
+        const outboxEntries = created.map((req) => ({
+          tenant_id: tenantId,
+          organization_id: tenantId,
+          entity_type: 'overtime_requests',
+          entity_id: req.id,
+          event_type: 'overtime.approved',
+          actor_id: req.employee_id,
+          payload: req,
+        }));
+        supabase.from('realtime_outbox').insert(outboxEntries).then(() => {});
+      } catch (_) {}
+    }
+
     return created.length;
   }
 
+  // ==========================================================================
+  // WFH REQUESTS CRUD + DATABASE PERSISTENCE
+  // ==========================================================================
   getWfhRequests(): WfhRequest[] {
     return this.loadState().wfhRequests || [];
   }
 
-  submitWfhRequest(data: Omit<WfhRequest, 'id' | 'created_at'>): WfhRequest {
-    const state = this.loadState();
+  public async submitWfhRequest(
+    data: Omit<WfhRequest, 'id' | 'created_at'>,
+    tenantId = getActiveOrgId()
+  ): Promise<WfhRequest> {
+    const state = this.loadState(tenantId);
+    const now = new Date().toISOString();
     const newRequest: WfhRequest = {
       ...data,
       id: `wfh-${Date.now()}`,
-      created_at: new Date().toISOString(),
+      created_at: now,
     };
+
     state.wfhRequests = [newRequest, ...state.wfhRequests];
-    this.saveState(state);
+    this.saveState(state, tenantId);
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('realtime_outbox').insert([
+          {
+            tenant_id: tenantId,
+            organization_id: tenantId,
+            entity_type: 'wfh_requests',
+            entity_id: newRequest.id,
+            event_type: 'wfh.submitted',
+            actor_id: newRequest.employee_id,
+            payload: newRequest,
+          },
+        ]);
+      } catch (err) {
+        console.warn('[WorkOvertime] Outbox insert error:', err);
+      }
+    }
+
+    hrEventBus.publish('custom', { type: 'wfh.submitted', data: newRequest });
     return newRequest;
   }
 
-  approveWfhRequest(id: string, approverName: string, comment?: string): boolean {
-    const state = this.loadState();
+  public async approveWfhRequest(
+    id: string,
+    approverName: string,
+    comment?: string,
+    tenantId = getActiveOrgId()
+  ): Promise<boolean> {
+    const state = this.loadState(tenantId);
     const idx = state.wfhRequests.findIndex((r: WfhRequest) => r.id === id);
     if (idx === -1) return false;
 
-    state.wfhRequests[idx].status = 'APPROVED';
-    state.wfhRequests[idx].approver_name = approverName;
-    state.wfhRequests[idx].approver_comment = comment || 'Approved for remote working.';
-    this.saveState(state);
+    const req = state.wfhRequests[idx];
+    req.status = 'APPROVED';
+    req.approver_name = approverName;
+    req.approver_comment = comment || 'Approved for remote working.';
+
+    this.saveState(state, tenantId);
+
+    // Apply WFH to Daily Attendance
+    try {
+      const storageKeys = [
+        'workforceos_attendance_daily_v2',
+        `workforceos_attendance_daily_v2_${tenantId}`,
+        'workforceos_attendance_daily_v2_org-joy-01',
+      ];
+      for (const sKey of storageKeys) {
+        const raw = localStorage.getItem(sKey);
+        let list: any[] = raw ? JSON.parse(raw) : [];
+        const mIdx = list.findIndex(
+          (a) => (a.employee_id === req.employee_id || (req.employee_code && a.employee_code === req.employee_code)) && a.date === req.start_date
+        );
+        if (mIdx >= 0) {
+          list[mIdx].status = 'WFH';
+          localStorage.setItem(sKey, JSON.stringify(list));
+        }
+      }
+
+      if (isSupabaseEnabled) {
+        await supabase
+          .from('attendance_daily')
+          .update({ status: 'WFH', updated_at: new Date().toISOString() })
+          .match({ employee_id: req.employee_id, date: req.start_date });
+
+        await supabase.from('realtime_outbox').insert([
+          {
+            tenant_id: tenantId,
+            organization_id: tenantId,
+            entity_type: 'wfh_requests',
+            entity_id: req.id,
+            event_type: 'wfh.approved',
+            actor_id: req.employee_id,
+            payload: req,
+          },
+        ]);
+      }
+    } catch (err) {
+      console.warn('[WorkOvertime] Attendance WFH sync error:', err);
+    }
+
+    hrEventBus.publish('custom', { type: 'wfh.approved', data: req });
     return true;
   }
 
-  rejectWfhRequest(id: string, approverName: string, comment?: string): boolean {
-    const state = this.loadState();
+  public async rejectWfhRequest(
+    id: string,
+    approverName: string,
+    comment?: string,
+    tenantId = getActiveOrgId()
+  ): Promise<boolean> {
+    const state = this.loadState(tenantId);
     const idx = state.wfhRequests.findIndex((r: WfhRequest) => r.id === id);
     if (idx === -1) return false;
 
-    state.wfhRequests[idx].status = 'REJECTED';
-    state.wfhRequests[idx].approver_name = approverName;
-    state.wfhRequests[idx].approver_comment = comment || 'Rejected. Physical office presence required.';
-    this.saveState(state);
+    const req = state.wfhRequests[idx];
+    req.status = 'REJECTED';
+    req.approver_name = approverName;
+    req.approver_comment = comment || 'Rejected. Physical office presence required.';
+
+    this.saveState(state, tenantId);
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('realtime_outbox').insert([
+          {
+            tenant_id: tenantId,
+            organization_id: tenantId,
+            entity_type: 'wfh_requests',
+            entity_id: req.id,
+            event_type: 'wfh.rejected',
+            actor_id: req.employee_id,
+            payload: req,
+          },
+        ]);
+      } catch (err) {
+        console.warn('[WorkOvertime] Outbox insert error:', err);
+      }
+    }
+
+    hrEventBus.publish('custom', { type: 'wfh.rejected', data: req });
     return true;
   }
 
-  getWorkHourRecords(): WorkHourRecord[] {
-    return this.loadState().workHours || [];
-  }
-
-  getWorkExceptions(): WorkException[] {
-    return this.loadState().exceptions || [];
-  }
-
+  // ==========================================================================
+  // EXCEPTIONS RESOLUTION
+  // ==========================================================================
   resolveException(id: string, actionNote: string, status: 'APPROVED' | 'WAIVED' | 'REJECTED' = 'APPROVED'): boolean {
     const state = this.loadState();
-    const idx = state.exceptions.findIndex((e: WorkException) => e.id === id);
-    if (idx === -1) return false;
-
-    state.exceptions[idx].status = status;
-    state.exceptions[idx].action_note = actionNote;
+    const exceptions = this.getWorkExceptions();
+    const idx = exceptions.findIndex((e) => e.id === id);
+    if (idx >= 0) {
+      exceptions[idx].status = status;
+      exceptions[idx].action_note = actionNote;
+    }
     this.saveState(state);
     return true;
   }

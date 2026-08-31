@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { leaveApi } from '../../../services/leaveApi';
+import { api } from '../../../services/api';
 import { LeaveRequest, LeaveType } from '../../../types/leave';
 import { calculateLeaveDuration, validateLeaveRequest } from '../../../lib/leave/leaveEngine';
 import { Badge } from '../../../components/ui/Badge';
@@ -30,10 +31,19 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
 }) => {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
-  const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
-
-  // Filters
+  const [activeFilter, setActiveFilter] = useState<string>(initialFilter || 'All');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Apply Leave Modal State
+  const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
+  const [selectedTypeId, setSelectedTypeId] = useState<string>('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [isHalfDay, setIsHalfDay] = useState(false);
+  const [reason, setReason] = useState('');
+  const [contactNumber, setContactNumber] = useState('');
+  const [attachmentName, setAttachmentName] = useState('');
+
   const [statusFilter, setStatusFilter] = useState<string>(() => {
     if (initialFilter === 'pending-requests') return 'Pending';
     if (initialFilter === 'approved-requests') return 'Approved';
@@ -42,21 +52,12 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
   });
   const [typeFilter, setTypeFilter] = useState<string>('All');
 
-  // Form State
-  const [selectedLeaveTypeId, setSelectedLeaveTypeId] = useState<string>('lt-cl');
-  const [fromDate, setFromDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [toDate, setToDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [isHalfDay, setIsHalfDay] = useState<boolean>(false);
-  const [reason, setReason] = useState<string>('');
-  const [contactNumber, setContactNumber] = useState<string>('+91 98765 43210');
-  const [attachmentName, setAttachmentName] = useState<string>('');
-
   const loadData = () => {
     setRequests(leaveApi.getLeaveRequests());
     const activeTypes = leaveApi.getLeaveTypes().filter(t => t.is_active);
     setLeaveTypes(activeTypes);
-    if (activeTypes.length > 0 && !selectedLeaveTypeId) {
-      setSelectedLeaveTypeId(activeTypes[0].id);
+    if (activeTypes.length > 0 && !selectedTypeId) {
+      setSelectedTypeId(activeTypes[0].id);
     }
   };
 
@@ -72,27 +73,32 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
     else if (initialFilter === 'rejected-requests') setStatusFilter('Rejected');
   }, [initialFilter]);
 
-  const selectedLeaveType = leaveTypes.find(t => t.id === selectedLeaveTypeId) || leaveTypes[0];
+  const selectedLeaveType = leaveTypes.find(t => t.id === selectedTypeId);
 
   // Live Engine Calculation
-  const durationResult = selectedLeaveType
-    ? calculateLeaveDuration(
-        fromDate,
-        toDate,
-        isHalfDay,
-        selectedLeaveType,
-        undefined, // Policy rules
-        leaveApi.getHolidayCalendars()[0]
-      )
-    : {
-        totalCalendarDays: 0,
-        workingDays: 0,
-        holidayDays: 0,
-        weeklyOffDays: 0,
-        leaveDaysDeducted: 0,
-        sandwichDaysAdded: 0,
-        dailyBreakdown: [],
-      };
+  const durationResult =
+    fromDate && toDate && selectedLeaveType
+      ? calculateLeaveDuration(
+          fromDate,
+          toDate,
+          isHalfDay,
+          selectedLeaveType,
+          undefined
+        )
+      : {
+          totalCalendarDays: 0,
+          workingDays: 0,
+          holidayDays: 0,
+          weeklyOffDays: 0,
+          leaveDaysDeducted: 0,
+          sandwichDaysAdded: 0,
+          dailyBreakdown: [],
+        };
+
+  const currentUser = api.getCurrentUser();
+  const employees = api.getEmployeesSync();
+  const currentEmp = employees.find(e => e.id === currentUser?.employee_id || e.work_email === currentUser?.email) || employees[0];
+  const targetEmpId = currentEmp?.id || currentUser?.employee_id || 'WF-1001';
 
   const currentAvailableBalance = 6.0; // Current CL balance for test user
   const validationResult = selectedLeaveType
@@ -104,7 +110,7 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
         undefined,
         currentAvailableBalance,
         requests,
-        'emp-101'
+        targetEmpId
       )
     : {
         isValid: true,
@@ -118,13 +124,13 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
 
   const handleApplySubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validationResult.isValid) return;
+    if (!validationResult.isValid || !selectedLeaveType) return;
 
     leaveApi.submitLeaveRequest({
-      employee_id: 'emp-101',
-      employee_name: 'Rajesh Kumar',
-      department_name: 'Engineering',
-      company_id: 'comp-01',
+      employee_id: targetEmpId,
+      employee_name: currentEmp ? (currentEmp.display_name || `${currentEmp.first_name} ${currentEmp.last_name}`.trim()) : (currentUser?.name || 'Authorized Staff'),
+      department_name: currentEmp?.department_name || 'Enterprise Operations',
+      company_id: currentEmp?.company_id || 'comp-01',
       leave_type_id: selectedLeaveType.id,
       leave_type_name: selectedLeaveType.name,
       leave_type_code: selectedLeaveType.code,
@@ -350,8 +356,8 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
                 <div>
                   <label className="block font-bold text-gray-700 mb-1">Select Leave Type *</label>
                   <select
-                    value={selectedLeaveTypeId}
-                    onChange={e => setSelectedLeaveTypeId(e.target.value)}
+                    value={selectedTypeId}
+                    onChange={e => setSelectedTypeId(e.target.value)}
                     className="w-full p-2.5 border border-gray-300 rounded-xl font-bold bg-white"
                   >
                     {leaveTypes.map(t => (

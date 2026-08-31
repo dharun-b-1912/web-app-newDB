@@ -85,13 +85,13 @@ export const AdminMasterModule: React.FC<AdminMasterModuleProps> = ({ initialTab
       <div className="bg-gradient-to-r from-[#07563D] to-[#0a7352] p-6 rounded-3xl text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-emerald-200 text-xs font-bold uppercase tracking-wider">
-            <span>Joy PeopleHR Enterprise Suite</span>
+            <span>Joy PeopleHR</span>
             <span>•</span>
-            <span>Administration Control Plane v5.0</span>
+            <span>Company Governance & IAM Control</span>
           </div>
-          <h1 className="text-2xl font-black tracking-tight mt-1">Platform Administration & System Control Plane</h1>
+          <h1 className="text-2xl font-black tracking-tight mt-1">Company Administration & Role Authorization</h1>
           <p className="text-xs text-emerald-100/80 mt-1 max-w-2xl">
-            Centralized control plane managing Identity, Provisioning, RBAC, Workflows, Approvals, Audit Trails, MFA Security & Platform Billing.
+            Authorize HR department personnel, assign operational scopes, and manage access policies across all legal entities.
           </p>
         </div>
 

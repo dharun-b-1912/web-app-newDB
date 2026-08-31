@@ -517,7 +517,17 @@ export interface EmploymentDetails {
   resignation_date?: string;
   exit_reason?: string;
   work_location?: string;
+  shift_id?: string;
   shift_name?: string;
+  attendance_policy_id?: string;
+  leave_policy_id?: string;
+  leave_policy_name?: string;
+  salary_structure_code?: string;
+  salary_structure_name?: string;
+  salary_effective_from?: string;
+  payroll_group_id?: string;
+  annual_ctc?: number;
+  monthly_ctc?: number;
   ctc?: number;
   history?: LifecycleHistoryItem[];
 }
@@ -538,6 +548,9 @@ export interface EmployeeStatutory {
   uan_number?: string;
   pf_number?: string;
   esi_number?: string;
+  pf_applicable?: boolean;
+  esi_applicable?: boolean;
+  pt_applicable?: boolean;
   tax_regime?: 'NEW' | 'OLD';
 }
 
@@ -572,8 +585,8 @@ export interface Employee {
   employment: EmploymentDetails;
   bank?: EmployeeBankAccount;
   statutory?: EmployeeStatutory;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
   updated_by?: string;
   record_version?: number;
   deleted_at?: string | null;
@@ -1441,6 +1454,7 @@ export interface VendorDocument {
   file_name: string;
   storage_reference?: string;
   file_url?: string;
+  document_url?: string;
   uploaded_by?: string;
   uploaded_at: string;
   expiry_date?: string;
@@ -1448,6 +1462,7 @@ export interface VendorDocument {
   verified_by?: string;
   verified_at?: string;
   notes?: string;
+  created_at?: string;
 }
 
 export interface VendorPayment {
@@ -1456,6 +1471,7 @@ export interface VendorPayment {
   legal_entity_id?: string;
   legal_entity_name?: string;
   invoice_reference: string;
+  invoice_number?: string;
   payment_reference?: string;
   amount: number;
   currency: string;
@@ -1464,6 +1480,7 @@ export interface VendorPayment {
   status: VendorPaymentStatus;
   bank_reference?: string;
   return_reason?: VendorReturnReason;
+  return_notes?: string;
   returned_date?: string;
   resolution_notes?: string;
   notes?: string;
@@ -1476,10 +1493,15 @@ export interface VendorEmployeeAssignment {
   vendor_id: string;
   vendor_name?: string;
   employee_id: string;
+  employee_name?: string;
   employee?: Employee;
   legal_entity_id?: string;
   legal_entity_name?: string;
   deployment_role?: string;
+  designation?: string;
+  worker_category?: string;
+  client_name?: string;
+  work_location?: string;
   contract_reference?: string;
   start_date: string;
   end_date?: string;

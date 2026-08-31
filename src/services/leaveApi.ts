@@ -36,6 +36,17 @@ const STORAGE_KEYS = {
   EXCEPTIONS: 'workforce_leave_exceptions_v2',
 };
 
+function getActiveOrgId(): string {
+  try {
+    const raw = localStorage.getItem('workforce_active_organization');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.id) return parsed.id;
+    }
+  } catch { }
+  return 'org-joy-01';
+}
+
 // Purge legacy mock data from browser localStorage once
 try {
   if (typeof window !== 'undefined' && window.localStorage) {
@@ -52,7 +63,7 @@ try {
     ];
     legacyKeys.forEach(k => window.localStorage.removeItem(k));
   }
-} catch (_) {}
+} catch (_) { }
 
 // Default seed data
 const initialLeaveTypes: LeaveType[] = [
@@ -632,17 +643,18 @@ export const leaveApi = {
     hrEventBus.publish('leave.type_updated', type, { actorId: 'admin' });
 
     if (isSupabaseEnabled) {
+      const activeOrg = getActiveOrgId();
       Promise.resolve(
         supabase.from('realtime_outbox').insert({
-          tenant_id: 'org-joy-01',
-          organization_id: 'org-joy-01',
+          tenant_id: activeOrg,
+          organization_id: activeOrg,
           entity_type: 'leave_types',
           entity_id: type.id,
           event_type: 'leave.type_updated',
           actor_id: 'admin',
           payload: type,
         })
-      ).catch(() => {});
+      ).catch(() => { });
     }
 
     return type;
@@ -686,21 +698,22 @@ export const leaveApi = {
     setStored(STORAGE_KEYS.LEAVE_TYPES, filtered);
 
     if (isSupabaseEnabled) {
+      const activeOrg = getActiveOrgId();
       Promise.resolve(
         supabase.from('leave_types').delete().eq('id', typeId)
       ).catch((e: any) => console.warn('[Supabase Leave] delete leave_type failed:', e));
 
       Promise.resolve(
         supabase.from('realtime_outbox').insert({
-          tenant_id: 'org-joy-01',
-          organization_id: 'org-joy-01',
+          tenant_id: activeOrg,
+          organization_id: activeOrg,
           entity_type: 'leave_types',
           entity_id: typeId,
           event_type: 'leave.type_deleted',
           actor_id: 'admin',
           payload: { id: typeId, code: target.code, name: target.name },
         })
-      ).catch(() => {});
+      ).catch(() => { });
     }
 
     leaveApi.addAuditLog({
@@ -1133,8 +1146,8 @@ export const leaveApi = {
             .from('leave_requests')
             .upsert({
               id: req.id,
-              organization_id: 'org-joy-01',
-              company_id: req.company_id || 'comp-01',
+              organization_id: (req as any).organization_id || getActiveOrgId(),
+              company_id: req.company_id,
               employee_id: req.employee_id,
               request_code: req.request_code,
               employee_name: req.employee_name,
@@ -1791,13 +1804,13 @@ export const leaveApi = {
 // Initial background hydration from Supabase
 if (typeof window !== 'undefined') {
   setTimeout(() => {
-    leaveApi.syncWithSupabase().catch(() => {});
+    leaveApi.syncWithSupabase().catch(() => { });
   }, 100);
 
   // Auto-sync when leave events occur
   hrEventBus.subscribe('leave.*', () => {
     setTimeout(() => {
-      leaveApi.syncWithSupabase().catch(() => {});
+      leaveApi.syncWithSupabase().catch(() => { });
     }, 200);
   });
 }

@@ -45,13 +45,13 @@ export const CreateInvoiceMultiStepModal: React.FC<CreateInvoiceMultiStepModalPr
   const organizations = platformTenantService.getOrganizations().items;
 
   // Selected Customer Form State
-  const [selectedOrgId, setSelectedOrgId] = useState<string>(organizations[0]?.id || 'org-joy-corp');
+  const [selectedOrgId, setSelectedOrgId] = useState<string>(organizations[0]?.id || '');
   const selectedOrg = organizations.find((o) => o.id === selectedOrgId) || organizations[0];
 
   // Invoice Header State
   const [issueDate, setIssueDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState<string>(new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0]);
-  const [notes, setNotes] = useState<string>('Thank you for choosing Joy PeopleHR Enterprise.');
+  const [notes, setNotes] = useState<string>('Thank you for choosing Joy PeopleHR — HR & Payroll SaaS.');
 
   // Line Items State
   const [lineItems, setLineItems] = useState([

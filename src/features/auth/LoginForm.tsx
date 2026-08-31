@@ -1,432 +1,317 @@
 // src/features/auth/LoginForm.tsx
-// ============================================================================
-// Joy PeopleHR — Production Employee Authentication
-// Supports Phone + Password & Phone + OTP with First-Time Account Activation
-// ============================================================================
+// ============================================================
+// Joy PeopleHR / WorkForceOS — Production Enterprise Login Form
+// ============================================================
 
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import {
+  Lock,
+  Mail,
+  AlertCircle,
+  Eye,
+  EyeOff,
+  Sparkles,
+  ArrowRight,
+  ShieldCheck,
+} from 'lucide-react';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
-import { Mail, Lock, Phone, KeyRound, ArrowRight, Sparkles, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../components/ui/Toast';
-import { employeeAuthService } from '../../services/auth/employeeAuthService';
+import { AuthContextMode } from '../../services/auth/authService';
 import { EmployeeActivationModal } from './EmployeeActivationModal';
 
+const LoginSchema = z.object({
+  identifier: z.string().min(1, 'Please enter your work email or mobile number'),
+  password: z.string().min(1, 'Please enter your password'),
+});
+
+type LoginFormData = z.infer<typeof LoginSchema>;
+
 export interface LoginFormProps {
-  onToggleSignup: () => void;
+  authContext?: AuthContextMode;
   onForgotPassword: () => void;
+  onSuccessRoute?: (route: string) => void;
 }
 
-export const LoginForm: React.FC<LoginFormProps> = ({ onToggleSignup, onForgotPassword }) => {
-  const [authMethod, setAuthMethod] = useState<'PASSWORD' | 'OTP'>('PASSWORD');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isActivationOpen, setIsActivationOpen] = useState(false);
-
-  // Form states
-  const [identifier, setIdentifier] = useState('haripriya@joycorporate.com');
-  const [password, setPassword] = useState('joy@Hr2026');
-  const [phoneForOtp, setPhoneForOtp] = useState('+919840122334');
-  const [otpCode, setOtpCode] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [timerSeconds, setTimerSeconds] = useState(0);
-
-  // Dev OTP auto-capture for developer convenience
-  const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
-
-  const { login } = useAuth();
+export const LoginForm: React.FC<LoginFormProps> = ({
+  authContext = 'tenant',
+  onForgotPassword,
+  onSuccessRoute,
+}) => {
+  const { signIn } = useAuth();
   const { showToast } = useToast();
 
+  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isActivationOpen, setIsActivationOpen] = useState(false);
+
+  // Auto-detect invitation/reset-password URLs and open the password setup modal
   useEffect(() => {
-    const handler = (e: any) => {
-      if (e.detail?.otp) {
-        setDevOtpHint(e.detail.otp);
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      const search = window.location.search;
+      const params = new URLSearchParams(search);
+      const urlEmail = params.get('email') || '';
+
+      if (
+        path.includes('reset-password') ||
+        path.includes('activate') ||
+        path.includes('accept-invite') ||
+        search.includes('token=') ||
+        search.includes('code=')
+      ) {
+        setIsActivationOpen(true);
       }
-    };
-    window.addEventListener('workforce:dev:sms_received', handler);
-    return () => window.removeEventListener('workforce:dev:sms_received', handler);
+    }
   }, []);
 
-  useEffect(() => {
-    if (timerSeconds <= 0) return;
-    const interval = setInterval(() => {
-      setTimerSeconds((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [timerSeconds]);
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    formState: { errors },
+  } = useForm<LoginFormData>({
+    resolver: zodResolver(LoginSchema),
+    defaultValues: {
+      identifier:
+        typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('email') || ''
+          : '',
+      password: '',
+    },
+  });
 
-  // Standard Phone/Email + Password Login
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!identifier.trim() || !password) {
-      showToast('Please enter your phone number/email and password.', 'error');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const { user } = await employeeAuthService.signInWithPhonePassword(
-        identifier,
-        password,
-        'org-joy-01'
-      );
-      login(user);
-      showToast(`Welcome back, ${user.name}!`, 'success');
-    } catch (err: any) {
-      showToast(err.message || 'Login failed. Please verify credentials.', 'error');
-    } finally {
-      setIsLoading(false);
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.getModifierState && e.getModifierState('CapsLock')) {
+      setCapsLockOn(true);
+    } else {
+      setCapsLockOn(false);
     }
   };
 
-  // Step 1 of OTP Login: Request OTP
-  const handleRequestOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!phoneForOtp.trim()) {
-      showToast('Please enter your mobile phone number.', 'error');
-      return;
-    }
-
+  const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true);
+    setAuthError(null);
+
     try {
-      const res = await employeeAuthService.requestLoginOtp(phoneForOtp, 'org-joy-01');
-      setPhoneForOtp(res.phone);
-      setOtpSent(true);
-      setTimerSeconds(60);
-      showToast(`Verification code sent to ${res.phone}`, 'success');
+      const res = await signIn(data.identifier, data.password, authContext);
+
+      if (res.success && res.user) {
+        showToast(`Welcome back, ${res.user.name}`, 'success');
+        if (res.destinationRoute && onSuccessRoute) {
+          onSuccessRoute(res.destinationRoute);
+        }
+      } else {
+        const errorText =
+          res.errorMessage ||
+          'Unable to sign in. Please verify your credentials and try again.';
+        setAuthError(errorText);
+      }
     } catch (err: any) {
-      showToast(err.message || 'Failed to send OTP.', 'error');
+      setAuthError(err.message || 'An unexpected error occurred during sign-in.');
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Step 2 of OTP Login: Verify OTP
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (otpCode.trim().length !== 6) {
-      showToast('Please enter the 6-digit verification code.', 'error');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const { user } = await employeeAuthService.verifyLoginOtp(
-        phoneForOtp,
-        otpCode,
-        'org-joy-01'
-      );
-      login(user);
-      showToast(`Signed in successfully as ${user.name}!`, 'success');
-    } catch (err: any) {
-      showToast(err.message || 'Invalid or expired OTP code.', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Fast Account Switcher for Test / Demo Workspaces
-  const selectQuickAccount = (ident: string, pass: string, phone: string) => {
-    setIdentifier(ident);
-    setPassword(pass);
-    setPhoneForOtp(phone);
-    showToast(`Loaded credentials for ${ident}`, 'info');
   };
 
   return (
-    <div className="space-y-5">
-      <div className="text-center sm:text-left">
-        <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Sign in to Joy PeopleHR</h2>
+    <div className="w-full space-y-6">
+      {/* Title and context indicator */}
+      <div>
+        <h2 className="text-xl font-bold text-gray-900 tracking-tight">
+          {authContext === 'platform'
+            ? 'Platform Administration'
+            : authContext === 'vendor'
+            ? 'Vendor & Contractor Sign In'
+            : 'Sign In to Workspace'}
+        </h2>
         <p className="text-xs text-gray-500 mt-1">
-          Enter your employee credentials to access your tenant workspace.
+          {authContext === 'platform'
+            ? 'Authorized personnel only. All access attempts are recorded.'
+            : authContext === 'vendor'
+            ? 'Access your vendor self-service portal, contractor workforce & invoice matching.'
+            : 'Enter your credentials to access your organization portal.'}
         </p>
       </div>
 
-      {/* Auth Method Selector */}
-      <div className="grid grid-cols-2 p-1 bg-gray-100/80 rounded-xl text-xs font-bold text-gray-600">
-        <button
-          type="button"
-          onClick={() => {
-            setAuthMethod('PASSWORD');
-            setOtpSent(false);
-          }}
-          className={`py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-            authMethod === 'PASSWORD'
-              ? 'bg-white text-gray-900 shadow-xs'
-              : 'hover:text-gray-900'
-          }`}
-        >
-          <Lock className="w-3.5 h-3.5" />
-          <span>Phone / Password</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setAuthMethod('OTP')}
-          className={`py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-            authMethod === 'OTP'
-              ? 'bg-white text-gray-900 shadow-xs'
-              : 'hover:text-gray-900'
-          }`}
-        >
-          <Phone className="w-3.5 h-3.5" />
-          <span>Phone OTP Login</span>
-        </button>
-      </div>
-
-      {/* METHOD 1: Phone / Email + Password */}
-      {authMethod === 'PASSWORD' && (
-        <form onSubmit={handlePasswordSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1">
-              Registered Phone / Email
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                required
-                placeholder="+91 98401 22334 or name@joycorporate.com"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                className="w-full px-3 py-2.5 pl-9 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none"
-              />
-              <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
-            </div>
+      {/* 1-Click Vendor Demo Test Box */}
+      {authContext === 'vendor' && (
+        <div className="p-3.5 bg-indigo-50 border border-indigo-200 rounded-2xl space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600" /> Live Demo Testing Account
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-200/60 text-indigo-800 font-mono font-semibold">
+              Apex Staffing
+            </span>
           </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-bold text-gray-700">Password</label>
-              <button
-                type="button"
-                onClick={onForgotPassword}
-                className="text-[11px] font-bold text-[#07563D] hover:underline"
-              >
-                Forgot Password?
-              </button>
-            </div>
-            <div className="relative">
-              <input
-                type="password"
-                required
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2.5 pl-9 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none"
-              />
-              <Lock className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
-            </div>
-          </div>
-
+          <p className="text-[11px] text-indigo-800/80">
+            Sign in as <strong>Rajesh Kumar</strong> (Vendor Admin) to test contractor onboarding, licenses, Form V, and invoices.
+          </p>
           <Button
-            type="submit"
-            variant="primary"
-            disabled={isLoading}
-            className="w-full justify-center bg-[#07563D] hover:bg-[#064e37] text-white py-2.5 text-xs font-bold shadow-sm"
+            type="button"
+            onClick={() => {
+              setValue('identifier', 'vendor@apexstaffing.in');
+              setValue('password', 'demo1234');
+              onSubmit({ identifier: 'vendor@apexstaffing.in', password: 'demo1234' });
+            }}
+            className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center justify-center gap-1.5"
           >
-            {isLoading ? 'Authenticating...' : 'Sign In'}
-            <ArrowRight className="w-4 h-4 ml-1.5" />
+            ⚡ 1-Click Live Test Vendor Login
           </Button>
-        </form>
+        </div>
       )}
 
-      {/* METHOD 2: Phone OTP Authentication */}
-      {authMethod === 'OTP' && (
-        <div className="space-y-4">
-          {!otpSent ? (
-            <form onSubmit={handleRequestOtp} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  Registered Mobile Number
-                </label>
-                <div className="flex rounded-xl shadow-xs overflow-hidden border border-gray-200 focus-within:ring-1 focus-within:ring-[#07563D]">
-                  <span className="inline-flex items-center px-3 text-xs font-bold text-gray-600 bg-gray-50 border-r border-gray-200">
-                    🇮🇳 +91
-                  </span>
-                  <input
-                    type="tel"
-                    required
-                    placeholder="98401 22334"
-                    value={phoneForOtp}
-                    onChange={(e) => setPhoneForOtp(e.target.value)}
-                    className="w-full px-3 py-2.5 text-xs bg-white focus:outline-none"
-                  />
-                </div>
-              </div>
+      {/* Global Error Banner */}
+      {authError && (
+        <div
+          role="alert"
+          className="p-3.5 bg-red-50/90 border border-red-200 rounded-2xl flex items-start gap-3 animate-in fade-in duration-200"
+        >
+          <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+          <div className="text-xs text-red-800 font-medium leading-relaxed">{authError}</div>
+        </div>
+      )}
 
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={isLoading}
-                className="w-full justify-center bg-[#07563D] hover:bg-[#064e37] text-white py-2.5 text-xs font-bold shadow-sm"
-              >
-                {isLoading ? 'Sending SMS OTP...' : 'Request OTP Code'}
-                <ArrowRight className="w-4 h-4 ml-1.5" />
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyOtp} className="space-y-4">
-              {devOtpHint && (
-                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center justify-between">
-                  <span>
-                    🧪 <strong>Dev Auto-Capture OTP:</strong>{' '}
-                    <code className="font-mono font-black text-amber-950 bg-white px-1.5 py-0.5 rounded border">
-                      {devOtpHint}
-                    </code>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setOtpCode(devOtpHint)}
-                    className="text-[11px] font-bold text-[#07563D] underline ml-2"
-                  >
-                    Auto-fill
-                  </button>
-                </div>
-              )}
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-bold text-gray-700">Enter 6-Digit OTP</label>
-                  <span className="text-[11px] text-gray-500 font-mono">{phoneForOtp}</span>
-                </div>
-                <input
-                  type="text"
-                  maxLength={6}
-                  required
-                  placeholder="123456"
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                  className="w-full px-4 py-2.5 text-center text-base font-mono font-black tracking-widest bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none"
-                  autoFocus
-                />
-              </div>
-
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <button
-                  type="button"
-                  onClick={() => setOtpSent(false)}
-                  className="font-bold text-gray-600 hover:underline"
-                >
-                  Change Phone
-                </button>
-
-                <button
-                  type="button"
-                  disabled={timerSeconds > 0 || isLoading}
-                  onClick={handleRequestOtp}
-                  className="font-bold text-[#07563D] hover:underline disabled:opacity-50 flex items-center gap-1"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  {timerSeconds > 0 ? `Resend in ${timerSeconds}s` : 'Resend OTP'}
-                </button>
-              </div>
-
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={isLoading}
-                className="w-full justify-center bg-[#07563D] hover:bg-[#064e37] text-white py-2.5 text-xs font-bold shadow-sm"
-              >
-                {isLoading ? 'Verifying...' : 'Verify OTP & Sign In'}
-              </Button>
-            </form>
+      {/* Main Authentication Form */}
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        {/* Identifier Field */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+            {authContext === 'platform'
+              ? 'Staff Email'
+              : authContext === 'vendor'
+              ? 'Vendor Contact Email'
+              : 'Work Email or Mobile Number'}
+          </label>
+          <div className="relative">
+            <Input
+              type={authContext === 'platform' || authContext === 'vendor' ? 'email' : 'text'}
+              placeholder={
+                authContext === 'platform'
+                  ? 'admin@joypeople.com'
+                  : authContext === 'vendor'
+                  ? 'vendor@apexstaffing.in'
+                  : 'name@company.com or +91 98765 43210'
+              }
+              {...register('identifier')}
+              disabled={isLoading}
+              className="pl-3 pr-3 text-xs h-10 rounded-xl"
+              autoComplete="username"
+              autoFocus
+            />
+          </div>
+          {errors.identifier && (
+            <p className="mt-1 text-[11px] text-red-600 font-medium">{errors.identifier.message}</p>
           )}
         </div>
+
+        {/* Password Field */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-semibold text-gray-700">Password</label>
+            <button
+              type="button"
+              onClick={onForgotPassword}
+              className="text-[11px] font-semibold text-gray-500 hover:text-indigo-600 transition"
+            >
+              Forgot Password?
+            </button>
+          </div>
+          <div className="relative">
+            <Input
+              type={showPassword ? 'text' : 'password'}
+              placeholder="••••••••••••"
+              {...register('password')}
+              onKeyDown={handleKeyDown}
+              disabled={isLoading}
+              className="pl-3 pr-10 text-xs h-10 rounded-xl"
+              autoComplete="current-password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+          {capsLockOn && (
+            <p className="mt-1 text-[11px] text-amber-600 font-medium flex items-center gap-1">
+              <span>⚠️ Caps Lock is ON</span>
+            </p>
+          )}
+          {errors.password && (
+            <p className="mt-1 text-[11px] text-red-600 font-medium">{errors.password.message}</p>
+          )}
+        </div>
+
+        {/* Submit Button */}
+        <Button
+          type="submit"
+          disabled={isLoading}
+          className={`w-full py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all duration-200 flex items-center justify-center gap-2 ${
+            authContext === 'platform'
+              ? 'bg-[#0f172a] hover:bg-[#1e293b] text-white'
+              : authContext === 'vendor'
+              ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+              : 'bg-[#073B2A] hover:bg-[#052b1e] text-white'
+          }`}
+        >
+          {isLoading ? (
+            <span className="flex items-center gap-2">
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <span>Signing you in...</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <span>Sign In as {authContext === 'vendor' ? 'Vendor' : 'User'}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </span>
+          )}
+        </Button>
+      </form>
+
+      {/* First-Time Employee Activation Banner (Only in Tenant Context) */}
+      {authContext === 'tenant' && (
+        <div className="pt-2 border-t border-gray-100">
+          <div className="p-3 bg-emerald-50/80 border border-emerald-100 rounded-2xl flex items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <div className="text-xs font-bold text-[#065f46] flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                <span>First Time Here?</span>
+              </div>
+              <p className="text-[11px] text-emerald-800/80">
+                Activate your account using your invitation code.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => setIsActivationOpen(true)}
+              className="text-[11px] font-bold bg-white text-[#047857] border-emerald-200 hover:bg-emerald-100 shrink-0"
+            >
+              Activate Account
+            </Button>
+          </div>
+        </div>
       )}
 
-      {/* First-Time Employee Activation Banner */}
-      <div className="pt-2 border-t border-gray-100">
-        <div className="p-3 bg-emerald-50/70 border border-emerald-100 rounded-2xl flex items-center justify-between gap-3">
-          <div className="space-y-0.5">
-            <div className="text-xs font-black text-emerald-950 flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-              <span>First Time Logging In?</span>
-            </div>
-            <p className="text-[11px] text-emerald-800/80">
-              Activate your employee login with your mobile phone.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setIsActivationOpen(true)}
-            className="text-[11px] font-bold bg-white text-[#07563D] border-emerald-200 hover:bg-emerald-100 shrink-0"
-          >
-            Activate Account
-          </Button>
-        </div>
+      {/* Security Footer Note */}
+      <div className="flex items-center justify-center gap-1.5 text-[11px] text-gray-400">
+        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+        <span>End-to-end encrypted enterprise access</span>
       </div>
 
-      {/* Quick Demo Identities Accordion (Clearly Labeled as Test Profiles) */}
-      <div className="pt-2 space-y-2">
-        <div className="flex items-center justify-between text-[11px] text-gray-400 font-bold uppercase tracking-wider">
-          <span>Enterprise Test Accounts</span>
-          <span className="text-[9px] px-1.5 py-0.5 bg-gray-100 rounded text-gray-500 font-mono">
-            Auto-Sync
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-1.5">
-          <button
-            type="button"
-            onClick={() => selectQuickAccount('haripriya@joycorporate.com', 'joy@Hr2026', '+919840122334')}
-            className="p-2 text-left rounded-xl border border-gray-200 bg-white hover:border-[#07563D] hover:bg-emerald-50/30 transition-all text-xs"
-          >
-            <div className="font-extrabold text-gray-900 flex items-center justify-between">
-              <span>Hari Priya</span>
-              <span className="text-[9px] font-mono text-emerald-700 bg-emerald-100 px-1 py-0.2 rounded font-bold">
-                HR Head
-              </span>
-            </div>
-            <div className="text-[10px] text-gray-400 font-mono truncate">+91 98401 22334</div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => selectQuickAccount('deepa.s@joycorporate.com', 'joy@Tl2026', '+919840233445')}
-            className="p-2 text-left rounded-xl border border-gray-200 bg-white hover:border-[#07563D] hover:bg-emerald-50/30 transition-all text-xs"
-          >
-            <div className="font-extrabold text-gray-900 flex items-center justify-between">
-              <span>Deepa S.</span>
-              <span className="text-[9px] font-mono text-blue-700 bg-blue-100 px-1 py-0.2 rounded font-bold">
-                Team Lead
-              </span>
-            </div>
-            <div className="text-[10px] text-gray-400 font-mono truncate">+91 98402 33445</div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => selectQuickAccount('priya.sharma@joycorporate.com', 'joy@Emp2026', '+919840455667')}
-            className="p-2 text-left rounded-xl border border-gray-200 bg-white hover:border-[#07563D] hover:bg-emerald-50/30 transition-all text-xs"
-          >
-            <div className="font-extrabold text-gray-900 flex items-center justify-between">
-              <span>Priya Sharma</span>
-              <span className="text-[9px] font-mono text-gray-700 bg-gray-100 px-1 py-0.2 rounded font-bold">
-                Employee
-              </span>
-            </div>
-            <div className="text-[10px] text-gray-400 font-mono truncate">+91 98404 55667</div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => selectQuickAccount('admin@joycorporate.com', 'joy@Admin2026', '+919840000001')}
-            className="p-2 text-left rounded-xl border border-gray-200 bg-white hover:border-[#07563D] hover:bg-emerald-50/30 transition-all text-xs"
-          >
-            <div className="font-extrabold text-gray-900 flex items-center justify-between">
-              <span>Dharun Joy</span>
-              <span className="text-[9px] font-mono text-purple-700 bg-purple-100 px-1 py-0.2 rounded font-bold">
-                Admin
-              </span>
-            </div>
-            <div className="text-[10px] text-gray-400 font-mono truncate">+91 98400 00001</div>
-          </button>
-        </div>
-      </div>
-
-      {/* First-Time Activation Modal */}
+      {/* Activation Modal */}
       <EmployeeActivationModal
         isOpen={isActivationOpen}
         onClose={() => setIsActivationOpen(false)}

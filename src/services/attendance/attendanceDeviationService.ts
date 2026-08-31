@@ -189,9 +189,16 @@ class AttendanceDeviationService {
   // ==========================================================================
   public initRealtimeSubscription(tenantId = getActiveOrgId()): void {
     if (this.isRealtimeSubscribed || !isSupabaseEnabled) return;
+    this.isRealtimeSubscribed = true;
 
     try {
-      const channel = supabase.channel(`deviations_mesh_${tenantId}`);
+      const channelName = `deviations_mesh_${tenantId}`;
+      const existingChannel = supabase.getChannels().find((ch) => ch.topic === `realtime:${channelName}`);
+      if (existingChannel) {
+        supabase.removeChannel(existingChannel);
+      }
+
+      const channel = supabase.channel(channelName);
 
       channel
         .on(
@@ -204,17 +211,18 @@ class AttendanceDeviationService {
           },
           (payload) => {
             this.fetchDeviationsFromDb(tenantId).then(() => {
-              hrEventBus.publish('deviation.updated' as any, payload.new);
+              hrEventBus.publish('deviation.updated', payload.new as any);
             });
           }
         )
         .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            this.isRealtimeSubscribed = true;
+          if (status !== 'SUBSCRIBED' && status !== 'TIMED_OUT') {
+            this.isRealtimeSubscribed = false;
           }
         });
     } catch (e) {
       console.warn('[AttendanceDeviation] Realtime notice:', e);
+      this.isRealtimeSubscribed = false;
     }
   }
 

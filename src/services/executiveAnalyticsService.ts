@@ -59,6 +59,11 @@ export interface StrategicDecisionItem {
 
 export const executiveAnalyticsService = {
   // Aggregate real operational metrics into strategic executive summary
+  async getExecutiveSummary(companyId?: string, period: string = 'this_month'): Promise<ExecutiveSummaryMetrics> {
+    const metrics = await this.getExecutiveMetrics(companyId, period);
+    return metrics.summary;
+  },
+
   async getExecutiveMetrics(companyId?: string, period: string = 'this_month'): Promise<{
     summary: ExecutiveSummaryMetrics;
     scorecards: DepartmentScorecardItem[];

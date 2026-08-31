@@ -257,40 +257,64 @@ export const VendorCreateWizardModal: React.FC<VendorCreateWizardModalProps> = (
   };
 
   const isManpower = formData.vendor_type === 'MANPOWER_PROVIDER';
+  const progressPercent = Math.round(((currentStep - 1) / (WIZARD_STEPS.length - 1)) * 100);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Register Vendor / Manpower Provider" size="xl">
+    <Modal isOpen={isOpen} onClose={onClose} title="Register Vendor / Manpower Provider" maxWidth="4xl">
       <div className="space-y-6">
-        {/* Wizard Progress Bar */}
-        <div className="bg-gray-50 p-3 rounded-2xl border border-gray-200">
-          <div className="flex items-center justify-between overflow-x-auto gap-2 pb-1">
+        {/* Wizard Progress & Stepper Bar */}
+        <div className="bg-gradient-to-r from-emerald-950 to-[#07563D] p-4 rounded-2xl text-white shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-black uppercase tracking-wider bg-white/10 px-2.5 py-0.5 rounded-full text-emerald-200">
+                Step {currentStep} of {WIZARD_STEPS.length}
+              </span>
+              <span className="text-xs font-bold text-emerald-100">
+                {WIZARD_STEPS[currentStep - 1].title} — {WIZARD_STEPS[currentStep - 1].desc}
+              </span>
+            </div>
+            <span className="text-xs font-mono font-black text-emerald-300">{progressPercent}% Completed</span>
+          </div>
+
+          {/* Progress track */}
+          <div className="w-full bg-white/20 h-1.5 rounded-full overflow-hidden">
+            <div
+              className="bg-emerald-400 h-full rounded-full transition-all duration-300 ease-out"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+
+          {/* Stepper Buttons */}
+          <div className="grid grid-cols-7 gap-1.5 pt-1">
             {WIZARD_STEPS.map((s) => {
               const isCurrent = s.step === currentStep;
               const isPast = s.step < currentStep;
               return (
-                <div
+                <button
+                  type="button"
                   key={s.step}
-                  onClick={() => s.step < currentStep && setCurrentStep(s.step)}
-                  className={`flex items-center gap-2 cursor-pointer shrink-0 ${
-                    isCurrent ? 'opacity-100' : isPast ? 'opacity-80 hover:opacity-100' : 'opacity-40'
+                  onClick={() => s.step <= currentStep && setCurrentStep(s.step)}
+                  className={`flex flex-col items-center p-1.5 rounded-xl transition-all text-center cursor-pointer ${
+                    isCurrent
+                      ? 'bg-white text-[#07563D] shadow-xs font-black'
+                      : isPast
+                      ? 'bg-white/15 text-white hover:bg-white/25 font-semibold'
+                      : 'bg-white/5 text-white/40 cursor-not-allowed font-medium'
                   }`}
                 >
-                  <div
-                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black ${
-                      isCurrent
-                        ? 'bg-[#07563D] text-white shadow-xs'
-                        : isPast
-                        ? 'bg-emerald-100 text-emerald-900'
-                        : 'bg-gray-200 text-gray-600'
-                    }`}
-                  >
-                    {isPast ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" /> : s.step}
+                  <div className="flex items-center gap-1">
+                    {isPast ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                    ) : (
+                      <span className={`text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold ${
+                        isCurrent ? 'bg-[#07563D] text-white' : 'bg-white/20 text-white'
+                      }`}>
+                        {s.step}
+                      </span>
+                    )}
+                    <span className="text-[11px] truncate max-w-[80px] hidden sm:inline">{s.title}</span>
                   </div>
-                  <div className="hidden sm:block">
-                    <p className="text-xs font-bold text-gray-900 leading-tight">{s.title}</p>
-                    <p className="text-[10px] text-gray-400">{s.desc}</p>
-                  </div>
-                </div>
+                </button>
               );
             })}
           </div>

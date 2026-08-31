@@ -3,16 +3,21 @@ import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { BarChart3, Download } from 'lucide-react';
 import { useToast } from '../../../components/ui/Toast';
+import { api } from '../../../services/api';
 
 export const TlReportsView: React.FC = () => {
   const { showToast } = useToast();
 
   const handleExportCsv = (reportName: string) => {
+    const employees = api.getEmployeesSync();
+    const rows = employees.length > 0
+      ? employees.map(e => `${e.employee_code || e.id},"${(e.display_name || `${e.first_name} ${e.last_name}`).replace(/"/g, '""')}",${e.designation_title || 'Software Engineer'},98%,2,10,100%`).join('\n')
+      : 'EMP-001,"Team Member",Engineer,100%,0,12,100%';
+
     const csvContent =
       'data:text/csv;charset=utf-8,' +
       'EmployeeID,Name,Designation,AttendancePct,LeaveDaysUsed,TasksCompleted,TrainingPct\n' +
-      'EMP-101,Rajesh Kumar,Senior Principal Engineer,98%,4,12,100%\n' +
-      'EMP-102,Ananya Sen,Senior UI/UX Lead,99%,2,15,100%\n';
+      rows;
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);

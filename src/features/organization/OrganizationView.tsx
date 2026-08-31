@@ -248,47 +248,63 @@ export const OrganizationView: React.FC = () => {
         </div>
       </Card>
 
-      {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-gray-200">
+      {/* Navigation Subnav Ribbon */}
+      <div
+        className="bg-white p-2 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center gap-2 overflow-x-auto no-scrollbar scrollbar-none scroll-smooth"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+        onWheel={(e) => {
+          if (e.deltaY !== 0) {
+            e.currentTarget.scrollLeft += e.deltaY * 0.9;
+          }
+        }}
+      >
         <button
           onClick={() => setActiveTab('entities')}
           className={cn(
-            'pb-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2',
-            activeTab === 'entities' ? 'border-[#07563D] text-[#07563D]' : 'border-transparent text-gray-500 hover:text-gray-900'
+            'px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0',
+            activeTab === 'entities'
+              ? 'bg-[#07563D] text-white shadow-2xs'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
           )}
         >
-          <Building2 className="w-3.5 h-3.5" />
-          Legal Entities & Locations
+          <Building2 className="w-4 h-4" />
+          <span>Legal Entities & Locations</span>
         </button>
         <button
           onClick={() => setActiveTab('org_chart')}
           className={cn(
-            'pb-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2',
-            activeTab === 'org_chart' ? 'border-[#07563D] text-[#07563D]' : 'border-transparent text-gray-500 hover:text-gray-900'
+            'px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap',
+            activeTab === 'org_chart'
+              ? 'bg-[#07563D] text-white shadow-2xs'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
           )}
         >
-          <FolderTree className="w-3.5 h-3.5" />
-          Interactive Org Chart
+          <FolderTree className="w-4 h-4" />
+          <span>Interactive Org Chart</span>
         </button>
         <button
           onClick={() => setActiveTab('departments')}
           className={cn(
-            'pb-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2',
-            activeTab === 'departments' ? 'border-[#07563D] text-[#07563D]' : 'border-transparent text-gray-500 hover:text-gray-900'
+            'px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap',
+            activeTab === 'departments'
+              ? 'bg-[#07563D] text-white shadow-2xs'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
           )}
         >
-          <Layers className="w-3.5 h-3.5" />
-          Departments & Teams
+          <Layers className="w-4 h-4" />
+          <span>Departments & Teams</span>
         </button>
         <button
           onClick={() => setActiveTab('vendors')}
           className={cn(
-            'pb-3 text-xs font-bold transition-all border-b-2 cursor-pointer flex items-center gap-2',
-            activeTab === 'vendors' ? 'border-[#07563D] text-[#07563D]' : 'border-transparent text-gray-500 hover:text-gray-900'
+            'px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap',
+            activeTab === 'vendors'
+              ? 'bg-[#07563D] text-white shadow-2xs'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
           )}
         >
-          <Users className="w-3.5 h-3.5" />
-          Vendors & Manpower Partners
+          <Users className="w-4 h-4" />
+          <span>Vendors & Manpower Partners</span>
         </button>
       </div>
 

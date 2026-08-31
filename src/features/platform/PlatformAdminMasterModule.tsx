@@ -101,6 +101,13 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
     if (onNavigateTab) onNavigateTab(tab, payload);
   };
 
+  // Sync activeTab whenever initialTab prop changes
+  React.useEffect(() => {
+    if (initialTab && initialTab !== activeTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
   // Listen to platform:navigate custom event from UserMenu
   React.useEffect(() => {
     const handleCustomNav = (e: any) => {

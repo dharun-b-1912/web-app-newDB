@@ -22,6 +22,14 @@ class _HelpdeskScreenState extends State<HelpdeskScreen> {
   int _selectedTabIndex = 0;
   final List<String> _tabs = ["All", "Open", "In Progress", "Resolved"];
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      MoreModulesController.instance.loadAllData();
+    });
+  }
+
   void _showNewTicketModal(BuildContext context) {
     showWorkForceRequestModal(
       context: context,
@@ -103,132 +111,136 @@ class _HelpdeskScreenState extends State<HelpdeskScreen> {
 
               // Tickets List
               Expanded(
-                child: controller.isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : filteredTickets.isEmpty
-                        ? EmptyStateWidget(
-                            icon: CupertinoIcons.question_circle_fill,
-                            title: "No support tickets",
-                            description: "Raise an issue with HR for attendance, payroll, leaves, or benefits.",
-                            actionLabel: "Raise Ticket",
-                            onAction: () => _showNewTicketModal(context),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(AppSpacing.screenHorizontal),
-                            itemCount: filteredTickets.length,
-                            itemBuilder: (context, index) {
-                              final item = filteredTickets[index];
-                              StatusType chipType = StatusType.warning;
-                              String statusLabel = "Open";
-
-                              if (item.status == HelpdeskStatus.inProgress || item.status == HelpdeskStatus.assigned) {
-                                chipType = StatusType.info;
-                                statusLabel = "In Progress";
-                              } else if (item.status == HelpdeskStatus.resolved || item.status == HelpdeskStatus.closed) {
-                                chipType = StatusType.success;
-                                statusLabel = "Resolved";
-                              } else if (item.status == HelpdeskStatus.escalated) {
-                                chipType = StatusType.error;
-                                statusLabel = "Escalated";
-                              }
-
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                                child: InkWell(
-                                  borderRadius: AppRadius.borderLg,
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      CupertinoPageRoute(
-                                        builder: (_) => TicketDetailScreen(ticket: item),
-                                      ),
-                                    );
-                                  },
-                                  child: AppCard(
-                                    padding: const EdgeInsets.all(AppSpacing.md),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                item.subject,
-                                                style: AppTypography.titleMedium,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                            StatusChip(label: statusLabel, type: chipType),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            Text(
-                                              item.ticketNumber,
-                                              style: AppTypography.caption.copyWith(
-                                                fontFamily: 'monospace',
-                                                fontWeight: FontWeight.bold,
-                                                color: AppColors.primary,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: AppColors.slateBg,
-                                                borderRadius: AppRadius.borderSm,
-                                              ),
-                                              child: Text(
-                                                item.category,
-                                                style: AppTypography.caption.copyWith(fontSize: 10),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          item.description,
-                                          style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                const Icon(CupertinoIcons.clock, size: 12, color: AppColors.textMuted),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  "${item.createdAt.day}/${item.createdAt.month}/${item.createdAt.year}",
-                                                  style: AppTypography.caption,
-                                                ),
-                                              ],
-                                            ),
-                                            Row(
-                                              children: [
-                                                Text(
-                                                  "View Conversation",
-                                                  style: AppTypography.caption.copyWith(
-                                                    fontWeight: FontWeight.bold,
-                                                    color: AppColors.primary,
-                                                  ),
-                                                ),
-                                                const Icon(CupertinoIcons.chevron_right, size: 12, color: AppColors.primary),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
+                child: RefreshIndicator(
+                  onRefresh: () => MoreModulesController.instance.loadAllData(),
+                  child: controller.isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : filteredTickets.isEmpty
+                          ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                SizedBox(
+                                  height: MediaQuery.of(context).size.height * 0.5,
+                                  child: EmptyStateWidget(
+                                    icon: CupertinoIcons.question_circle_fill,
+                                    title: "No support tickets",
+                                    description: "Raise an issue with HR for attendance, payroll, leaves, or benefits.",
+                                    actionLabel: "Raise Ticket",
+                                    onAction: () => _showNewTicketModal(context),
                                   ),
                                 ),
-                              );
-                            },
-                          ),
+                              ],
+                            )
+                          : ListView.builder(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.all(AppSpacing.screenHorizontal),
+                              itemCount: filteredTickets.length,
+                              itemBuilder: (context, index) {
+                                final item = filteredTickets[index];
+                                StatusType chipType = StatusType.warning;
+                                String statusLabel = "Open";
+
+                                if (item.status == HelpdeskStatus.inProgress || item.status == HelpdeskStatus.assigned) {
+                                  chipType = StatusType.info;
+                                  statusLabel = "In Progress";
+                                } else if (item.status == HelpdeskStatus.resolved || item.status == HelpdeskStatus.closed) {
+                                  chipType = StatusType.success;
+                                  statusLabel = "Resolved";
+                                } else if (item.status == HelpdeskStatus.escalated) {
+                                  chipType = StatusType.error;
+                                  statusLabel = "Escalated";
+                                }
+
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                                  child: InkWell(
+                                    borderRadius: AppRadius.borderLg,
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        CupertinoPageRoute(
+                                          builder: (_) => TicketDetailScreen(ticket: item),
+                                        ),
+                                      );
+                                    },
+                                    child: AppCard(
+                                      padding: const EdgeInsets.all(AppSpacing.md),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  item.subject,
+                                                  style: AppTypography.titleMedium,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              StatusChip(label: statusLabel, type: chipType),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              Text(
+                                                item.ticketNumber,
+                                                style: AppTypography.caption.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppColors.textMuted,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                "• ${item.category}",
+                                                style: AppTypography.caption.copyWith(color: AppColors.textMuted),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            item.description,
+                                            style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 10),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  const Icon(CupertinoIcons.clock, size: 12, color: AppColors.textMuted),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    "${item.createdAt.day}/${item.createdAt.month}/${item.createdAt.year}",
+                                                    style: AppTypography.caption,
+                                                  ),
+                                                ],
+                                              ),
+                                              Row(
+                                                children: [
+                                                  Text(
+                                                    "View Conversation",
+                                                    style: AppTypography.caption.copyWith(
+                                                      fontWeight: FontWeight.bold,
+                                                      color: AppColors.primary,
+                                                    ),
+                                                  ),
+                                                  const Icon(CupertinoIcons.chevron_right, size: 12, color: AppColors.primary),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                ),
               ),
             ],
           ),

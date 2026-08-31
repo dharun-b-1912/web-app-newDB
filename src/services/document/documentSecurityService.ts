@@ -1,6 +1,6 @@
 import { DocumentSecurityStatus, DocumentClassification } from '../../types';
 
-class DocumentSecurityService {
+export class DocumentSecurityService {
   // Generate logical private object storage key
   generateStoragePath(params: {
     tenantId: string;

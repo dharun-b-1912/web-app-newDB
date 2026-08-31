@@ -99,10 +99,107 @@ class AttendanceRegularizationService {
     return `${STORAGE_KEY_REGULARIZATIONS}_${tenantId}`;
   }
 
+  private syncApprovedToDailyAttendance(items: RegularizationRequest[], tenantId = getActiveOrgId()): void {
+    if (typeof window === 'undefined') return;
+    try {
+      const approvedItems = items.filter((r) => r.status === 'APPROVED');
+      if (approvedItems.length === 0) return;
+
+      const storageKeys = [
+        'workforceos_attendance_daily_v2',
+        `workforceos_attendance_daily_v2_${tenantId}`,
+        'workforceos_attendance_daily_v2_org-joy-01',
+      ];
+
+      for (const sKey of storageKeys) {
+        const raw = localStorage.getItem(sKey);
+        let list: any[] = raw ? JSON.parse(raw) : [];
+        let modified = false;
+
+        for (const req of approvedItems) {
+          const idx = list.findIndex(
+            (r: any) =>
+              (r.employee_id === req.employee_id || r.employee_code === req.employee_code) &&
+              r.date === req.attendance_date
+          );
+
+          const record = {
+            id: `daily-${req.employee_id}-${req.attendance_date}`,
+            organization_id: tenantId,
+            company_id: 'comp-joy-01',
+            employee_id: req.employee_id,
+            employee_code: req.employee_code,
+            employee_name: req.employee_name,
+            department: req.department || 'Engineering & Management',
+            designation: 'Staff',
+            date: req.attendance_date,
+            shift_id: 'sh-gen-01',
+            shift_name: req.shift_name || 'General Day Shift (GEN-09)',
+            expected_check_in: '09:30 AM',
+            expected_check_out: '06:30 PM',
+            first_check_in: req.requested_check_in || '09:30 AM',
+            last_check_out: req.requested_check_out || '06:30 PM',
+            status: 'Present',
+            gross_working_minutes: 540,
+            net_working_minutes: 480,
+            total_break_minutes: 60,
+            late_minutes: 0,
+            early_checkout_minutes: 0,
+            overtime_minutes: 0,
+            source: 'MANUAL',
+            updated_at: new Date().toISOString(),
+          };
+
+          if (idx >= 0) {
+            if (list[idx].status !== 'Present' || !list[idx].first_check_in) {
+              list[idx] = { ...list[idx], ...record };
+              modified = true;
+            }
+          } else {
+            list.unshift(record);
+            modified = true;
+          }
+        }
+
+        if (modified) {
+          localStorage.setItem(sKey, JSON.stringify(list));
+        }
+      }
+    } catch (e) {
+      console.warn('[Regularization] syncApprovedToDailyAttendance error:', e);
+    }
+  }
+
   private loadLocalStore(tenantId = getActiveOrgId()): RegularizationRequest[] {
     try {
-      const raw = localStorage.getItem(this.getStorageKey(tenantId));
-      if (raw) return JSON.parse(raw);
+      const storageKeys = [
+        this.getStorageKey(tenantId),
+        'workforceos_regularization_master_v3_org-joy-01',
+        'workforceos_regularization_master_v3_org-joy-corp',
+        STORAGE_KEY_REGULARIZATIONS,
+      ];
+
+      const map = new Map<string, RegularizationRequest>();
+      for (const sKey of storageKeys) {
+        const raw = localStorage.getItem(sKey);
+        if (raw) {
+          try {
+            const list: RegularizationRequest[] = JSON.parse(raw);
+            list.forEach((item) => {
+              if (item && item.id && !map.has(item.id)) {
+                map.set(item.id, item);
+              }
+            });
+          } catch (_) {}
+        }
+      }
+
+      const items = Array.from(map.values()).sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      this.syncApprovedToDailyAttendance(items, tenantId);
+      return items;
     } catch (e) {
       console.warn('[Regularization] loadLocalStore error:', e);
     }
@@ -111,7 +208,10 @@ class AttendanceRegularizationService {
 
   private saveLocalStore(items: RegularizationRequest[], tenantId = getActiveOrgId()): void {
     try {
-      localStorage.setItem(this.getStorageKey(tenantId), JSON.stringify(items));
+      this.syncApprovedToDailyAttendance(items, tenantId);
+      const sKey = this.getStorageKey(tenantId);
+      localStorage.setItem(sKey, JSON.stringify(items));
+      localStorage.setItem('workforceos_regularization_master_v3_org-joy-01', JSON.stringify(items));
     } catch (e) {
       console.warn('[Regularization] saveLocalStore error:', e);
     }
@@ -122,9 +222,16 @@ class AttendanceRegularizationService {
   // ==========================================================================
   public initRealtimeSubscription(tenantId = getActiveOrgId()): void {
     if (this.isRealtimeSubscribed || !isSupabaseEnabled) return;
+    this.isRealtimeSubscribed = true;
 
     try {
-      const channel = supabase.channel(`regularization_mesh_${tenantId}`);
+      const channelName = `regularization_mesh_${tenantId}`;
+      const existingChannel = supabase.getChannels().find((ch) => ch.topic === `realtime:${channelName}`);
+      if (existingChannel) {
+        supabase.removeChannel(existingChannel);
+      }
+
+      const channel = supabase.channel(channelName);
 
       channel
         .on(
@@ -138,17 +245,18 @@ class AttendanceRegularizationService {
           (payload) => {
             console.log('[REALTIME REGULARIZATION] Outbox event:', payload);
             this.fetchRequestsFromDb(tenantId).then(() => {
-              hrEventBus.publish('regularization.updated' as any, payload.new);
+              hrEventBus.publish('regularization.updated', payload.new as any);
             });
           }
         )
         .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            this.isRealtimeSubscribed = true;
+          if (status !== 'SUBSCRIBED' && status !== 'TIMED_OUT') {
+            this.isRealtimeSubscribed = false;
           }
         });
     } catch (e) {
       console.warn('[Regularization] Realtime subscription notice:', e);
+      this.isRealtimeSubscribed = false;
     }
   }
 
@@ -158,35 +266,86 @@ class AttendanceRegularizationService {
   public async fetchRequestsFromDb(tenantId = getActiveOrgId()): Promise<RegularizationRequest[]> {
     this.initRealtimeSubscription(tenantId);
 
-    // 1. Fetch from Supabase outbox and local store
+    // 1. Fetch from local store
     const localItems = this.loadLocalStore(tenantId);
+    const map = new Map<string, RegularizationRequest>();
+    localItems.forEach((item) => map.set(item.id, item));
 
     if (isSupabaseEnabled) {
       try {
+        // Fetch from Supabase outbox
         const { data: outboxRows } = await supabase
           .from('realtime_outbox')
           .select('*')
           .eq('entity_type', 'attendance_regularization_requests')
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: true }); // oldest first, so latest events overwrite older
 
         if (outboxRows && outboxRows.length > 0) {
-          const map = new Map<string, RegularizationRequest>();
-          localItems.forEach((item) => map.set(item.id, item));
-
           outboxRows.forEach((row: any) => {
             if (row.payload && row.payload.id) {
-              map.set(row.payload.id, row.payload as RegularizationRequest);
+              const prev = map.get(row.payload.id);
+              const payload = row.payload as RegularizationRequest;
+              // If previously marked as APPROVED, keep APPROVED
+              if (prev && prev.status === 'APPROVED' && payload.status !== 'APPROVED') {
+                map.set(payload.id, { ...payload, status: 'APPROVED', current_stage: 'COMPLETED' });
+              } else {
+                map.set(payload.id, { ...(prev || {}), ...payload });
+              }
             }
           });
-
-          const merged = Array.from(map.values()).sort(
-            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-
-          this.memoryCache = merged;
-          this.saveLocalStore(merged, tenantId);
-          return merged;
         }
+
+        // Also query attendance_regularization_requests table if populated
+        try {
+          const { data: tableRows } = await supabase
+            .from('attendance_regularization_requests')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (tableRows && tableRows.length > 0) {
+            tableRows.forEach((r: any) => {
+              if (r.id) {
+                const prev = map.get(r.id);
+                map.set(r.id, {
+                  id: r.id,
+                  tenant_id: r.tenant_id || tenantId,
+                  organization_id: r.organization_id || tenantId,
+                  employee_id: r.employee_id,
+                  employee_code: r.employee_code,
+                  employee_name: r.employee_name,
+                  department: r.department,
+                  attendance_date: r.attendance_date,
+                  shift_name: r.shift_name,
+                  shift_window: r.shift_window,
+                  original_check_in: r.original_check_in,
+                  original_check_out: r.original_check_out,
+                  original_status: r.original_status,
+                  original_source: r.original_source,
+                  requested_check_in: r.requested_check_in,
+                  requested_check_out: r.requested_check_out,
+                  reason_code: r.reason_code,
+                  reason: r.reason_text || r.reason,
+                  current_stage: (r.current_stage || prev?.current_stage || 'MANAGER_REVIEW') as RegularizationStage,
+                  manager_comment: r.manager_comment,
+                  hr_comment: r.hr_comment,
+                  timeline: prev?.timeline || [],
+                  created_at: r.created_at,
+                  updated_at: r.updated_at || r.created_at,
+                  ...prev,
+                  status: (r.status || prev?.status || 'MANAGER_PENDING') as RegularizationState,
+                });
+              }
+            });
+          }
+        } catch (_) {}
+
+        const merged = Array.from(map.values()).sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+
+        this.memoryCache = merged;
+        this.saveLocalStore(merged, tenantId);
+        return merged;
       } catch (err) {
         console.warn('[Regularization] fetchRequestsFromDb notice:', err);
       }
@@ -340,7 +499,7 @@ class AttendanceRegularizationService {
   public async approveRequest(
     requestId: string,
     actorId = 'emp-hr-001',
-    actorName = 'Haripriya (HR Head)',
+    actorName = 'Hari priya (HR Head)',
     comment = 'Approved after verification',
     tenantId = getActiveOrgId()
   ): Promise<{ success: boolean; request: RegularizationRequest; isFinal: boolean }> {
@@ -353,74 +512,91 @@ class AttendanceRegularizationService {
     const req = list[idx];
     const now = new Date().toISOString();
 
-    let nextStatus: RegularizationState = 'APPROVED';
-    let nextStage: RegularizationStage = 'COMPLETED';
-    let isFinal = true;
-
-    // Stage progression logic:
-    // If currently in MANAGER_PENDING and acting as Manager -> moves to HR_PENDING
-    // If acting as HR Head or currently in HR_PENDING -> final APPROVED
-    if (req.status === 'MANAGER_PENDING' && actorId !== 'emp-hr-001' && !actorName.toLowerCase().includes('hr')) {
-      nextStatus = 'HR_PENDING';
-      nextStage = 'HR_REVIEW';
-      isFinal = false;
-      req.manager_id = actorId;
-      req.manager_name = actorName;
-      req.manager_action_at = now;
-      req.manager_comment = comment;
-    } else {
-      nextStatus = 'APPROVED';
-      nextStage = 'COMPLETED';
-      isFinal = true;
-      req.hr_reviewer_id = actorId;
-      req.hr_reviewer_name = actorName;
-      req.hr_action_at = now;
-      req.hr_comment = comment;
-      req.approved_at = now;
-      req.effective_at = now;
-    }
+    // HR is the single-tier direct authority (no separate manager portal/assigned manager)
+    const nextStatus: RegularizationState = 'APPROVED';
+    const nextStage: RegularizationStage = 'COMPLETED';
+    const isFinal = true;
 
     req.status = nextStatus;
     req.current_stage = nextStage;
+    req.hr_reviewer_id = actorId;
+    req.hr_reviewer_name = actorName;
+    req.hr_action_at = now;
+    req.hr_comment = comment;
+    req.approved_at = now;
+    req.effective_at = now;
     req.updated_at = now;
     req.timeline.push({
       stage: nextStatus,
       timestamp: now,
       actor: actorName,
-      action: isFinal ? 'HR_FINAL_APPROVED' : 'MANAGER_APPROVED',
+      action: 'HR_FINAL_APPROVED',
       note: comment,
     });
 
     list[idx] = req;
     this.saveLocalStore(list, tenantId);
 
-    // If Final Approval: Atomically Update Attendance Daily in Supabase
-    if (isFinal && isSupabaseEnabled) {
+    // Apply Daily Attendance Record (Present, punches, net hours)
+    const dailyRecord = {
+      id: `daily-${req.employee_id}-${req.attendance_date}`,
+      organization_id: tenantId,
+      company_id: 'comp-joy-01',
+      employee_id: req.employee_id,
+      employee_code: req.employee_code,
+      employee_name: req.employee_name,
+      department: req.department || 'Engineering & Management',
+      designation: 'Staff',
+      date: req.attendance_date,
+      shift_id: 'sh-gen-01',
+      shift_name: req.shift_name || 'General Day Shift (GEN-09)',
+      expected_check_in: '09:30 AM',
+      expected_check_out: '06:30 PM',
+      first_check_in: req.requested_check_in || '09:30 AM',
+      last_check_out: req.requested_check_out || '06:30 PM',
+      status: 'Present',
+      gross_working_minutes: 540,
+      net_working_minutes: 480,
+      total_break_minutes: 60,
+      late_minutes: 0,
+      early_checkout_minutes: 0,
+      overtime_minutes: 0,
+      source: 'MANUAL',
+      created_at: now,
+      updated_at: now,
+    };
+
+    // 1. Update localStorage across all attendance daily storage keys
+    try {
+      const storageKeys = [
+        'workforceos_attendance_daily_v2',
+        `workforceos_attendance_daily_v2_${tenantId}`,
+        'workforceos_attendance_daily_v2_org-joy-01',
+      ];
+
+      for (const sKey of storageKeys) {
+        const raw = localStorage.getItem(sKey);
+        let currentList: any[] = raw ? JSON.parse(raw) : [];
+        const matchIdx = currentList.findIndex(
+          (r: any) =>
+            (r.employee_id === req.employee_id || r.employee_code === req.employee_code) &&
+            r.date === req.attendance_date
+        );
+        if (matchIdx >= 0) {
+          currentList[matchIdx] = { ...currentList[matchIdx], ...dailyRecord };
+        } else {
+          currentList.unshift(dailyRecord);
+        }
+        localStorage.setItem(sKey, JSON.stringify(currentList));
+      }
+    } catch (lsErr) {
+      console.warn('[Regularization] LocalStorage daily attendance update error:', lsErr);
+    }
+
+    // 2. If Supabase is enabled, atomically persist to database
+    if (isSupabaseEnabled) {
       try {
-        const dailyId = `daily-${req.employee_id}-${req.attendance_date}`;
-        await supabase.from('attendance_daily').upsert({
-          id: dailyId,
-          organization_id: tenantId,
-          company_id: 'comp-joy-01',
-          employee_id: req.employee_id,
-          employee_code: req.employee_code,
-          employee_name: req.employee_name,
-          department: req.department,
-          date: req.attendance_date,
-          shift_name: req.shift_name,
-          expected_check_in: '09:30 AM',
-          expected_check_out: '06:30 PM',
-          first_check_in: req.requested_check_in,
-          last_check_out: req.requested_check_out,
-          status: 'Present',
-          net_working_minutes: 480,
-          gross_working_minutes: 540,
-          total_break_minutes: 60,
-          late_minutes: 0,
-          early_checkout_minutes: 0,
-          source: 'REGULARIZATION',
-          updated_at: now,
-        });
+        await supabase.from('attendance_daily').upsert(dailyRecord, { onConflict: 'employee_id,date' });
 
         // Insert Immutable Location Event Audit
         await supabase.from('attendance_location_events').insert({
@@ -451,6 +627,24 @@ class AttendanceRegularizationService {
     // Publish to Realtime Outbox (for Attendance Request + Employee In-App Notification)
     if (isSupabaseEnabled) {
       try {
+        // Update attendance_regularization_requests table if present
+        try {
+          await supabase
+            .from('attendance_regularization_requests')
+            .update({
+              status: nextStatus,
+              current_stage: nextStage,
+              hr_reviewer_id: actorId,
+              hr_reviewer_name: actorName,
+              hr_action_at: now,
+              hr_comment: comment,
+              approved_at: now,
+              effective_at: now,
+              updated_at: now,
+            })
+            .eq('id', req.id);
+        } catch (_) {}
+
         await supabase.from('realtime_outbox').insert([
           {
             tenant_id: tenantId,
@@ -494,6 +688,11 @@ class AttendanceRegularizationService {
       date: req.attendance_date,
       status: nextStatus,
     } as any);
+
+    hrEventBus.publish('attendance.updated', dailyRecord as any);
+    hrEventBus.publish('attendance.regularized', dailyRecord as any);
+    hrEventBus.publish('attendance.recorded', dailyRecord as any);
+    hrEventBus.publish('attendance.ledger_updated', dailyRecord as any);
 
     return { success: true, request: req, isFinal };
   }
@@ -548,6 +747,22 @@ class AttendanceRegularizationService {
     // Save to Supabase Outbox & Employee Notification
     if (isSupabaseEnabled) {
       try {
+        // Update attendance_regularization_requests table if present
+        try {
+          await supabase
+            .from('attendance_regularization_requests')
+            .update({
+              status: 'REJECTED',
+              current_stage: 'REJECTED',
+              rejected_at: now,
+              updated_at: now,
+              ...(actorName.toLowerCase().includes('hr')
+                ? { hr_reviewer_id: actorId, hr_reviewer_name: actorName, hr_comment: reason, hr_action_at: now }
+                : { manager_id: actorId, manager_name: actorName, manager_comment: reason, manager_action_at: now }),
+            })
+            .eq('id', req.id);
+        } catch (_) {}
+
         await supabase.from('realtime_outbox').insert([
           {
             tenant_id: tenantId,

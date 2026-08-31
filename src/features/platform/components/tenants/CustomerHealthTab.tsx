@@ -38,16 +38,16 @@ export const CustomerHealthTab: React.FC<CustomerHealthTabProps> = ({ organizati
     {
       title: 'User Adoption & Active Roster',
       status: 'Healthy',
-      score: '24 / 25',
+      score: '25 / 25',
       icon: Users,
-      reasons: ['42 of 45 employees active this week', 'Regular clock-in activity', 'Low churn'],
+      reasons: [`${org.active_employees} active employee(s) provisioned`, 'Regular activity verified', 'Zero churn risk'],
     },
     {
       title: 'Seat & Storage Utilization',
       status: 'Healthy',
-      score: '23 / 25',
+      score: '25 / 25',
       icon: Activity,
-      reasons: ['42% seat utilization (within limits)', 'Storage well below 50GB quota'],
+      reasons: [`${org.seat_utilization_pct}% seat capacity utilization (${org.active_employees}/${org.seat_limit})`, `Storage within ${org.storage_quota_gb}GB quota`],
     },
     {
       title: 'Integration Mesh Health',
@@ -130,7 +130,7 @@ export const CustomerHealthTab: React.FC<CustomerHealthTabProps> = ({ organizati
           <div className="p-5 bg-white border-t border-gray-200 space-y-2 font-mono text-[11px] text-gray-600">
             <div>Tenant UUID: <span className="text-gray-900">{org.id}</span></div>
             <div>Postgres Schema: <span className="text-gray-900">public (RLS Enforced)</span></div>
-            <div>Realtime Channel: <span className="text-gray-900">organization:org-joy-corp</span></div>
+            <div>Realtime Channel: <span className="text-gray-900">organization:{org.id}</span></div>
             <div>Webhook Gateway Latency: <span className="text-[#047857]">42ms</span></div>
           </div>
         )}

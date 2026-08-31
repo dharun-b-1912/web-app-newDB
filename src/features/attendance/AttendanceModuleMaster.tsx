@@ -390,8 +390,16 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
           </div>
         </div>
 
-        {/* Sub-navigation tabs scrollable strip */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-3 border-t border-gray-100 scrollbar-thin">
+        {/* Sub-navigation tabs scrollable strip with smooth hidden scroll */}
+        <div
+          className="flex items-center gap-2 overflow-x-auto pb-2 pt-3 border-t border-gray-100 no-scrollbar scrollbar-none scroll-smooth"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+          onWheel={(e) => {
+            if (e.deltaY !== 0) {
+              e.currentTarget.scrollLeft += e.deltaY * 0.9;
+            }
+          }}
+        >
           {subTabs.map(tab => {
             const Icon = tab.icon;
             const isActive =
