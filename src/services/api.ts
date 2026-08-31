@@ -368,44 +368,126 @@ export const api = {
   // Designation API
   // ==========================================
   async getDesignations(companyId?: string): Promise<Designation[]> {
+    const defaultDesignations: Designation[] = [
+      { id: 'desig-se', company_id: companyId || 'comp-joy-01', title: 'Software Engineer', code: 'SE', grade: 'L3 - Mid Level' },
+      { id: 'desig-sse', company_id: companyId || 'comp-joy-01', title: 'Senior Software Engineer', code: 'SSE', grade: 'L4 - Senior' },
+      { id: 'desig-techlead', company_id: companyId || 'comp-joy-01', title: 'Technical Lead', code: 'TECHLEAD', grade: 'L5 - Lead' },
+      { id: 'desig-eng-mgr', company_id: companyId || 'comp-joy-01', title: 'Engineering Manager', code: 'EM', grade: 'L6 - Manager' },
+      { id: 'desig-hr-exec', company_id: companyId || 'comp-joy-01', title: 'HR Executive', code: 'HRE', grade: 'L2 - Associate' },
+      { id: 'desig-hr-mgr', company_id: companyId || 'comp-joy-01', title: 'HR Manager', code: 'HRM', grade: 'L5 - Lead' },
+      { id: 'desig-hr-head', company_id: companyId || 'comp-joy-01', title: 'HR Head', code: 'HRH', grade: 'L7 - Director' },
+      { id: 'desig-qa-eng', company_id: companyId || 'comp-joy-01', title: 'QA Engineer', code: 'QAE', grade: 'L3 - Mid Level' },
+      { id: 'desig-qa-lead', company_id: companyId || 'comp-joy-01', title: 'QA Specialist / Lead', code: 'QAL', grade: 'L5 - Lead' },
+      { id: 'desig-prod-mgr', company_id: companyId || 'comp-joy-01', title: 'Product Manager', code: 'PM', grade: 'L5 - Lead' },
+      { id: 'desig-ops-lead', company_id: companyId || 'comp-joy-01', title: 'Operations Lead', code: 'OPL', grade: 'L4 - Senior' },
+      { id: 'desig-md', company_id: companyId || 'comp-joy-01', title: 'Managing Director', code: 'MD', grade: 'L8 - Executive' },
+      { id: 'desig-admin', company_id: companyId || 'comp-joy-01', title: 'Administrative Assistant', code: 'ADM', grade: 'L2 - Associate' },
+      { id: 'desig-accountant', company_id: companyId || 'comp-joy-01', title: 'Accountant', code: 'ACC', grade: 'L3 - Mid Level' },
+      { id: 'desig-uiux', company_id: companyId || 'comp-joy-01', title: 'UI/UX Designer', code: 'UIUX', grade: 'L3 - Mid Level' },
+      { id: 'desig-machine-op', company_id: companyId || 'comp-joy-01', title: 'Machine Operator Grade 1', code: 'MOP', grade: 'L1 - Entry Level' },
+    ];
+
     if (isSupabaseEnabled) {
       try {
-        let q = supabase.from('designations').select('*');
-        if (companyId) q = q.eq('company_id', companyId);
-        const { data, error } = await q;
-        if (!error && data !== null) {
+        const { data, error } = await supabase
+          .from('designations')
+          .select('*')
+          .order('title', { ascending: true });
+
+        if (!error && data && data.length > 0) {
           setStorage(KEYS.DESIGNATIONS, data);
-          return data;
+          return companyId ? data.filter((d: any) => !d.company_id || d.company_id === companyId || d.company_id === 'comp-joy-01') : data;
         }
       } catch (err) {
-        console.error('[API] Failed to fetch designations from Supabase:', err);
+        console.warn('[API] Failed to fetch designations from Supabase:', err);
       }
     }
+
     const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
-    return companyId ? list.filter((d) => d.company_id === companyId) : list;
+    if (list.length === 0) {
+      setStorage(KEYS.DESIGNATIONS, defaultDesignations);
+      return defaultDesignations;
+    }
+    return companyId ? list.filter((d) => !d.company_id || d.company_id === companyId || d.company_id === 'comp-joy-01') : list;
   },
 
   async createDesignation(input: Omit<Designation, 'id'>): Promise<Designation> {
-    const newDesig: Designation = { ...input, id: `desig-${Date.now().toString(36)}` };
+    const rawCode = input.code || input.title.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6) || 'DESIG';
+    const cleanId = `desig-${rawCode.toLowerCase()}-${Date.now().toString(36).slice(-4)}`;
+    
+    const newDesig: Designation = {
+      id: cleanId,
+      title: input.title.trim(),
+      code: rawCode,
+      grade: input.grade || 'L3 - Mid Level',
+      company_id: input.company_id || 'comp-joy-01',
+    };
+
     if (isSupabaseEnabled) {
       try {
         const payload: Record<string, any> = {
           id: newDesig.id,
           title: newDesig.title,
           code: newDesig.code,
-          company_id: newDesig.company_id || 'comp-joy-01',
+          company_id: newDesig.company_id,
+          grade: newDesig.grade,
         };
-        if (newDesig.grade) payload.grade = newDesig.grade;
 
-        const { error } = await supabase.from('designations').insert(payload);
-        if (error) console.warn('[API] Designation insert to Supabase notice:', error.message || error);
+        const { error } = await supabase.from('designations').upsert(payload, { onConflict: 'id' });
+        if (error) console.warn('[API] Designation upsert to Supabase notice:', error.message || error);
       } catch (err) {
         console.warn('[API] Designation insert fallback:', err);
       }
     }
+
     const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
-    setStorage(KEYS.DESIGNATIONS, [newDesig, ...list]);
+    const updated = [newDesig, ...list.filter((d) => d.id !== newDesig.id && d.title.toLowerCase() !== newDesig.title.toLowerCase())];
+    setStorage(KEYS.DESIGNATIONS, updated);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('designation:created', { detail: newDesig }));
+    }
+
     return newDesig;
+  },
+
+  async updateDesignation(id: string, patch: Partial<Designation>): Promise<Designation> {
+    const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
+    const idx = list.findIndex((d) => d.id === id);
+    const existing = idx >= 0 ? list[idx] : { id, title: 'Staff', code: 'STF', grade: 'L3 - Mid Level', company_id: 'comp-joy-01' };
+    const updated: Designation = { ...existing, ...patch };
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('designations').update({
+          title: updated.title,
+          code: updated.code,
+          grade: updated.grade,
+          company_id: updated.company_id,
+        }).eq('id', id);
+      } catch (err) {
+        console.warn('[API] Designation update notice:', err);
+      }
+    }
+
+    if (idx >= 0) list[idx] = updated;
+    else list.unshift(updated);
+    setStorage(KEYS.DESIGNATIONS, list);
+
+    return updated;
+  },
+
+  async deleteDesignation(id: string): Promise<boolean> {
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('designations').delete().eq('id', id);
+      } catch (err) {
+        console.warn('[API] Designation delete notice:', err);
+      }
+    }
+    const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
+    setStorage(KEYS.DESIGNATIONS, list.filter((d) => d.id !== id));
+    return true;
   },
 
   // ==========================================

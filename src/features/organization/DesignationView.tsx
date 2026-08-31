@@ -6,7 +6,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { Breadcrumb } from '../../components/shell/Breadcrumb';
-import { Briefcase, Plus, Hash, Search, Award } from 'lucide-react';
+import { Briefcase, Plus, Hash, Search, Award, Edit2, Trash2, CheckCircle2, Sparkles } from 'lucide-react';
 import { Designation } from '../../types';
 import { api } from '../../services/api';
 import { useTenant } from '../../hooks/useTenant';
@@ -19,15 +19,16 @@ export const DesignationView: React.FC = () => {
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingDesig, setEditingDesig] = useState<Designation | null>(null);
 
-  // Form
+  // Form State
   const [title, setTitle] = useState('');
   const [code, setCode] = useState('');
   const [grade, setGrade] = useState('L3 - Mid Level');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const loadData = async () => {
-    if (!activeCompany) return;
-    const desgs = await api.getDesignations(activeCompany.id);
+    const desgs = await api.getDesignations(activeCompany?.id);
     setDesignations(desgs);
   };
 
@@ -35,24 +36,74 @@ export const DesignationView: React.FC = () => {
     loadData();
   }, [activeCompany?.id]);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title || !code || !activeCompany) return;
+  const handleTitleChange = (val: string) => {
+    setTitle(val);
+    if (!editingDesig) {
+      const generatedCode = 'DESG-' + val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 5);
+      setCode(generatedCode);
+    }
+  };
 
+  const handleOpenAdd = () => {
+    setEditingDesig(null);
+    setTitle('');
+    setCode('');
+    setGrade('L3 - Mid Level');
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (desig: Designation) => {
+    setEditingDesig(desig);
+    setTitle(desig.title);
+    setCode(desig.code);
+    setGrade(desig.grade || 'L3 - Mid Level');
+    setIsModalOpen(true);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+
+    setIsSubmitting(true);
     try {
-      const created = await api.createDesignation({
-        company_id: activeCompany.id,
-        title,
-        code,
-        grade,
-      });
-      setDesignations(prev => [...prev, created]);
-      showToast(`Designation '${created.title}' added!`);
+      if (editingDesig) {
+        const updated = await api.updateDesignation(editingDesig.id, {
+          title: title.trim(),
+          code: code.trim() || 'DESG',
+          grade,
+          company_id: activeCompany?.id || 'comp-joy-01',
+        });
+        setDesignations(prev => prev.map(d => d.id === updated.id ? updated : d));
+        showToast(`Designation '${updated.title}' updated successfully!`, 'success');
+      } else {
+        const created = await api.createDesignation({
+          company_id: activeCompany?.id || 'comp-joy-01',
+          title: title.trim(),
+          code: code.trim() || 'DESG',
+          grade,
+        });
+        setDesignations(prev => [created, ...prev.filter(d => d.id !== created.id)]);
+        showToast(`Designation '${created.title}' added!`, 'success');
+      }
       setIsModalOpen(false);
       setTitle('');
       setCode('');
+      setEditingDesig(null);
     } catch {
-      showToast('Failed to add designation', 'error');
+      showToast('Failed to save designation', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string, desigTitle: string) => {
+    if (!window.confirm(`Are you sure you want to remove '${desigTitle}' from the catalog?`)) return;
+    try {
+      await api.deleteDesignation(id);
+      setDesignations(prev => prev.filter(d => d.id !== id));
+      showToast(`Designation '${desigTitle}' removed.`, 'info');
+    } catch {
+      showToast('Failed to delete designation', 'error');
     }
   };
 
@@ -76,10 +127,10 @@ export const DesignationView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Designation & Job Grade Catalog</h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Standardized job titles, grade levels (L1 - L8), and position codes across {activeCompany?.legal_name}.
+            Standardized job titles, grade levels (L1 - L8), and position codes across {activeCompany?.legal_name || 'Organization'}.
           </p>
         </div>
-        <Button onClick={() => setIsModalOpen(true)} leftIcon={<Plus className="w-4 h-4" />}>
+        <Button onClick={handleOpenAdd} leftIcon={<Plus className="w-4 h-4" />}>
           Add Designation
         </Button>
       </div>
@@ -126,12 +177,13 @@ export const DesignationView: React.FC = () => {
             <TableHead>Designation Code</TableHead>
             <TableHead>Job Grade Level</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {filtered.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={4} className="text-center py-8 text-gray-400 text-xs">
+              <TableCell colSpan={5} className="text-center py-8 text-gray-400 text-xs">
                 No designations cataloged yet.
               </TableCell>
             </TableRow>
@@ -141,7 +193,7 @@ export const DesignationView: React.FC = () => {
                 <TableCell>
                   <div className="font-bold text-gray-900">{desg.title}</div>
                 </TableCell>
-                <TableCell className="font-mono text-xs">{desg.code}</TableCell>
+                <TableCell className="font-mono text-xs text-gray-600">{desg.code}</TableCell>
                 <TableCell>
                   <Badge variant="emerald" size="sm">
                     {desg.grade || 'L3 - Mid Level'}
@@ -152,6 +204,26 @@ export const DesignationView: React.FC = () => {
                     Active
                   </Badge>
                 </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(desg)}
+                      className="p-1.5 text-gray-400 hover:text-[#07563D] hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                      title="Edit designation"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(desg.id, desg.title)}
+                      className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                      title="Delete designation"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </TableCell>
               </TableRow>
             ))
           )}
@@ -161,15 +233,15 @@ export const DesignationView: React.FC = () => {
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title="Add Designation"
-        description="Catalog a new job title and assign a grade level"
+        title={editingDesig ? 'Edit Designation' : 'Add Designation'}
+        description="Catalog a job title and assign an enterprise grade level"
       >
-        <form onSubmit={handleCreate} className="space-y-4">
+        <form onSubmit={handleSave} className="space-y-4">
           <Input
             label="Designation Title"
             placeholder="e.g. Senior Software Engineer"
             value={title}
-            onChange={e => setTitle(e.target.value)}
+            onChange={e => handleTitleChange(e.target.value)}
             required
           />
 
@@ -186,10 +258,10 @@ export const DesignationView: React.FC = () => {
             <select
               value={grade}
               onChange={e => setGrade(e.target.value)}
-              className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 focus:ring-[#07563D] focus:border-[#07563D]"
+              className="w-full bg-white border border-gray-300 text-gray-900 text-xs font-semibold rounded-xl p-2.5 focus:ring-[#07563D] focus:border-[#07563D]"
             >
-              <option value="L1 - Associate Entry">L1 - Associate Entry</option>
-              <option value="L2 - Professional">L2 - Professional</option>
+              <option value="L1 - Entry Level">L1 - Entry Level</option>
+              <option value="L2 - Associate">L2 - Associate</option>
               <option value="L3 - Mid Level">L3 - Mid Level</option>
               <option value="L4 - Senior Specialist">L4 - Senior Specialist</option>
               <option value="L5 - Lead / Manager">L5 - Lead / Manager</option>
@@ -203,7 +275,9 @@ export const DesignationView: React.FC = () => {
             <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit">Save Designation</Button>
+            <Button type="submit" disabled={isSubmitting || !title.trim()}>
+              {isSubmitting ? 'Saving...' : editingDesig ? 'Update Designation' : 'Save Designation'}
+            </Button>
           </div>
         </form>
       </Modal>

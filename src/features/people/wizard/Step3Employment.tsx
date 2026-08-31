@@ -3,7 +3,8 @@ import { Department, Designation, Branch, Location, EmploymentType, WorkMode, Em
 import { vendorService } from '../../../services/vendorService';
 import { payrollCalculationEngine } from '../../../services/payroll/payrollCalculationEngine';
 import { payrollApi } from '../../../services/payrollApi';
-import { Briefcase, Building2, Calendar, MapPin, Shield, Users, DollarSign, Clock, ShieldCheck, Calculator, Sparkles, TrendingUp } from 'lucide-react';
+import { api } from '../../../services/api';
+import { Briefcase, Building2, Calendar, MapPin, Shield, Users, DollarSign, Clock, ShieldCheck, Calculator, Sparkles, TrendingUp, Plus, Check, X } from 'lucide-react';
 
 export interface Step3FormData {
   // Employment
@@ -20,6 +21,7 @@ export interface Step3FormData {
   status: EmployeeStatus;
   department_id: string;
   designation_id: string;
+  designation_title?: string;
   branch_id: string;
   location_id: string;
   work_mode: WorkMode;
@@ -120,6 +122,10 @@ export const Step3Employment: React.FC<Props> = ({
   locations = [],
 }) => {
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [isCustomDesig, setIsCustomDesig] = useState(false);
+  const [customTitle, setCustomTitle] = useState('');
+  const [customGrade, setCustomGrade] = useState('L3 - Mid Level');
+  const [isSavingDesig, setIsSavingDesig] = useState(false);
 
   useEffect(() => {
     vendorService.getVendors().then(setVendors);
@@ -366,22 +372,111 @@ export const Step3Employment: React.FC<Props> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1">
-              Designation / Official Job Title <span className="text-rose-500">*</span>
-            </label>
-            <select
-              required
-              value={formData.designation_id}
-              onChange={(e) => onChange({ designation_id: e.target.value })}
-              className="w-full px-3 py-2.5 text-xs bg-gray-50/50 hover:bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold text-gray-900"
-            >
-              <option value="">-- Select Official Designation --</option>
-              {designations.map((desig) => (
-                <option key={desig.id} value={desig.id}>
-                  {desig.title} ({desig.grade || 'Grade'})
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-gray-700">
+                Designation / Official Job Title <span className="text-rose-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsCustomDesig(!isCustomDesig)}
+                className="text-[11px] font-bold text-[#07563D] hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                {isCustomDesig ? '← Select Existing' : '+ Add New / Type Custom'}
+              </button>
+            </div>
+
+            {isCustomDesig ? (
+              <div className="space-y-2 p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl animate-in fade-in">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter designation title (e.g. Flutter Developer, Site Supervisor)"
+                    value={customTitle}
+                    onChange={(e) => setCustomTitle(e.target.value)}
+                    className="flex-1 px-3 py-2 text-xs bg-white border border-emerald-300 rounded-lg focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold text-gray-900"
+                  />
+                  <select
+                    value={customGrade}
+                    onChange={(e) => setCustomGrade(e.target.value)}
+                    className="w-36 px-2 py-2 text-xs bg-white border border-emerald-300 rounded-lg focus:outline-none font-semibold text-gray-800"
+                  >
+                    <option value="L1 - Entry Level">L1 - Entry</option>
+                    <option value="L2 - Associate">L2 - Associate</option>
+                    <option value="L3 - Mid Level">L3 - Mid Level</option>
+                    <option value="L4 - Senior">L4 - Senior</option>
+                    <option value="L5 - Lead / Specialist">L5 - Lead</option>
+                    <option value="L6 - Manager">L6 - Manager</option>
+                    <option value="L7 - Director">L7 - Director</option>
+                    <option value="L8 - Executive">L8 - Executive</option>
+                  </select>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-emerald-800 font-medium">
+                    Will be saved into organization catalog & assigned immediately
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isSavingDesig || !customTitle.trim()}
+                    onClick={async () => {
+                      if (!customTitle.trim()) return;
+                      setIsSavingDesig(true);
+                      try {
+                        const created = await api.createDesignation({
+                          title: customTitle.trim(),
+                          code: 'DESG-' + customTitle.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 5),
+                          company_id: 'comp-joy-01',
+                          grade: customGrade,
+                        });
+                        onChange({
+                          designation_id: created.id,
+                          designation_title: created.title,
+                          grade: customGrade,
+                        });
+                        setIsCustomDesig(false);
+                        setCustomTitle('');
+                      } catch (err) {
+                        console.warn('Failed to create designation:', err);
+                      } finally {
+                        setIsSavingDesig(false);
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-[#07563D] hover:bg-[#054430] text-white text-xs font-bold rounded-lg flex items-center gap-1 shadow-sm disabled:opacity-50 cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" /> Save & Assign
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <select
+                required
+                value={formData.designation_id}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '__ADD_NEW__') {
+                    setIsCustomDesig(true);
+                  } else {
+                    const match = designations.find((d) => d.id === val);
+                    onChange({
+                      designation_id: val,
+                      designation_title: match?.title || val,
+                      grade: match?.grade || formData.grade,
+                    });
+                  }
+                }}
+                className="w-full px-3 py-2.5 text-xs bg-gray-50/50 hover:bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold text-gray-900"
+              >
+                <option value="">-- Select Official Designation --</option>
+                {designations.map((desig) => (
+                  <option key={desig.id} value={desig.id}>
+                    {desig.title} ({desig.grade || 'Grade'})
+                  </option>
+                ))}
+                <option value="__ADD_NEW__" className="font-bold text-[#07563D]">
+                  ➕ + Add New Custom Designation...
                 </option>
-              ))}
-            </select>
+              </select>
+            )}
           </div>
         </div>
 

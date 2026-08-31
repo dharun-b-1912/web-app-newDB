@@ -327,6 +327,14 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
   useEffect(() => {
     if (!isOpen) return;
 
+    // Listen for dynamically created designations
+    const handleDesigCreated = (e: any) => {
+      if (e?.detail) {
+        setDesignations((prev) => [e.detail, ...prev.filter((d) => d.id !== e.detail.id)]);
+      }
+    };
+    window.addEventListener('designation:created', handleDesigCreated);
+
     const companyId = activeCompany?.id;
     Promise.all([
       api.getDepartments(companyId).catch(() => []),
@@ -356,6 +364,10 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         } catch (_) { }
       }
     });
+
+    return () => {
+      window.removeEventListener('designation:created', handleDesigCreated);
+    };
   }, [isOpen, activeCompany?.id, employeeToEdit]);
 
   const updateFormData = (fields: Partial<typeof formData>) => {
@@ -505,9 +517,9 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           vendor_end_date: formData.vendor_end_date || undefined,
           status: formData.status,
           department_id: formData.department_id,
-          department_name: selectedDept?.name || 'Engineering',
+          department_name: selectedDept?.name || formData.department_name || 'Engineering',
           designation_id: formData.designation_id,
-          designation_title: selectedDesig?.title || 'Software Engineer',
+          designation_title: formData.designation_title || selectedDesig?.title || (formData.designation_id && !formData.designation_id.startsWith('desig-') ? formData.designation_id : null) || 'Staff Specialist',
           branch_id: formData.branch_id || branches[0]?.id,
           branch_name: selectedBranch?.name || 'Headquarters',
           location_id: formData.location_id || locations[0]?.id,
