@@ -11,6 +11,7 @@ import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
+import { getSecureDocumentUrl } from '../../../lib/storage/secureStorage';
 import {
   Receipt,
   CheckCircle2,
@@ -101,12 +102,15 @@ export const ExpenseClaimsView: React.FC = () => {
     setSelectedClaim(claim);
     let url = claim.receipt_url || null;
 
-    if (url && !url.startsWith('http') && isSupabaseEnabled) {
+    if (url && isSupabaseEnabled) {
       try {
-        const cleanPath = url.replace(/^storage:\/\/employee-documents\//, '').replace(/^employee-documents\//, '');
-        const { data } = supabase.storage.from('employee-documents').getPublicUrl(cleanPath);
-        if (data?.publicUrl) {
-          url = data.publicUrl;
+        const cleanPath = url
+          .replace(/^https?:\/\/[^/]+\/storage\/v1\/object\/public\/employee-documents\//, '')
+          .replace(/^storage:\/\/employee-documents\//, '')
+          .replace(/^employee-documents\//, '');
+        const secureUrl = await getSecureDocumentUrl('employee-documents', cleanPath, 600);
+        if (secureUrl) {
+          url = secureUrl;
         }
       } catch (_) {}
     }

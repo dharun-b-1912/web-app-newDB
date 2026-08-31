@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Joy PeopleHR Enterprise — Architecture, Governance & Security Report</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+    :root {
+      --primary: #07563D;
+      --primary-light: #0d825d;
+      --primary-subtle: #eef7f3;
+      --accent: #4f46e5;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --bg-card: #ffffff;
+      --bg-body: #f8fafc;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-body);
+      color: var(--text);
+      line-height: 1.65;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 56px 64px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+    }
+
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 28px;
+      margin-bottom: 36px;
+    }
+
+    .logo-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 44px;
+      height: 44px;
+      background: var(--primary);
+      color: white;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 22px;
+      box-shadow: 0 4px 12px rgba(7, 86, 61, 0.25);
+    }
+
+    .logo-text h1 {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--primary);
+      letter-spacing: -0.5px;
+    }
+
+    .logo-text p {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .print-btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 700;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .print-btn:hover {
+      background: var(--primary-light);
+      transform: translateY(-1px);
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      background: var(--primary-subtle);
+      border: 1px solid rgba(7, 86, 61, 0.15);
+      border-radius: 14px;
+      padding: 18px 24px;
+      margin-bottom: 36px;
+    }
+
+    .meta-item label {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--primary);
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+
+    .meta-item span {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    h2 {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--primary);
+      margin-top: 36px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1.5px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    h3 {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      margin-top: 20px;
+      margin-bottom: 8px;
+    }
+
+    p,
+    li {
+      font-size: 13.5px;
+      color: #334155;
+    }
+
+    ul,
+    ol {
+      margin-left: 20px;
+      margin-bottom: 16px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 12.5px;
+    }
+
+    th,
+    td {
+      padding: 12px 14px;
+      text-align: left;
+      border: 1px solid var(--border);
+    }
+
+    th {
+      background: #f1f5f9;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    tr:nth-child(even) {
+      background: #fafafa;
+    }
+
+    .flow-box {
+      background: #0f172a;
+      color: #f8fafc;
+      border-radius: 14px;
+      padding: 22px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      margin: 20px 0;
+      overflow-x: auto;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .status-active {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .footer {
+      margin-top: 48px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+        background: white;
+      }
+
+      .container {
+        border: none;
+        box-shadow: none;
+        padding: 20px 0;
+        max-width: 100%;
+      }
+
+      .print-btn {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+    <div class="header-bar">
+      <div class="logo-badge">
+        <div class="logo-icon">W</div>
+        <div class="logo-text">
+          <h1>Joy PeopleHR Enterprise</h1>
+          <p>WorkForceOS Architecture & Security Audit Report</p>
+        </div>
+      </div>
+      <button class="print-btn" onclick="window.print()">
+        🖨️ Print / Save as PDF
+      </button>
+    </div>
+
+    <div class="meta-grid">
+      <div class="meta-item">
+        <label>Document Version</label>
+        <span>v2.4.0 (Enterprise)</span>
+      </div>
+      <div class="meta-item">
+        <label>Production Host</label>
+        <span>joypeoplehr.com</span>
+      </div>
+      <div class="meta-item">
+        <label>Security Status</label>
+        <span class="status-badge status-active">Active Hardened</span>
+      </div>
+      <div class="meta-item">
+        <label>Platforms</label>
+        <span>Web + Flutter Mobile</span>
+      </div>
+    </div>
+
+    <h2>1. Executive Summary</h2>
+    <p>
+      Joy PeopleHR (WorkForceOS Enterprise) is a comprehensive cloud Human Resource Management and Contractor Governance
+      SaaS platform. It combines direct employee payroll, organizational hierarchy, statutory compliance, and
+      third-party contractor manpower governance into a synchronized multi-platform architecture.
+    </p>
+
+    <h2>2. Architectural Comparison: HR Core vs. Vendor Governance</h2>
+    <p>
+      While both modules share similar data touchpoints (such as Attendance, Wages, and PF/ESI), their business personas
+      and financial executions are distinct:
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Functional Dimension</th>
+          <th>🏢 HR Core (Internal Employees)</th>
+          <th>🤝 Vendor Governance (Contract Staff)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Employment Status</strong></td>
+          <td>Permanent, direct company payroll.</td>
+          <td>Employed by third-party staffing vendors.</td>
+        </tr>
+        <tr>
+          <td><strong>Payroll Execution</strong></td>
+          <td>Company calculates net pay and deposits directly to staff.</td>
+          <td>Vendor pays staff; Company pays <strong>Vendor's monthly invoice</strong>.</td>
+        </tr>
+        <tr>
+          <td><strong>Attendance Purpose</strong></td>
+          <td>Calculates monthly staff pay, paid leaves, and deductions.</td>
+          <td><strong>Gate Pass & Audit:</strong> Verifies actual contractor presence to prevent billing inflation.</td>
+        </tr>
+        <tr>
+          <td><strong>PF & ESI Compliance</strong></td>
+          <td>Direct compliance filed directly to EPFO/ESIC by the company.</td>
+          <td><strong>Audit Radar:</strong> Verifies vendor filed challans before approving final invoice payout (CLRA
+            compliance).</td>
+        </tr>
+        <tr>
+          <td><strong>Settlement Flow</strong></td>
+          <td>Direct Payslips (Form 16).</td>
+          <td><strong>3-Way Match:</strong> Purchase Order + Gate Hours + Vendor Invoice.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>3. The 4-Stage Vendor Governance Lifecycle</h2>
+    <div class="flow-box">
+      STAGE 1: Onboarding & Licenses --> Labor Licenses (OCR Scanner), Form V & Site Rosters
+      STAGE 2: Operations & Time --> Gate Attendance, Shift Logs & Overtime Audits
+      STAGE 3: Settlement & 3-Way --> Purchase Orders + Actual Wages + Vendor Invoice Match
+      STAGE 4: Compliance & Audit --> PF/ESI Challan Audits, Statutory Returns & Payout Approval
+    </div>
+
+    <ul>
+      <li><strong>1. 🏢 Vendor & Workforce Hub:</strong> Vendor profiles, rate cards, OCR labor license tracker, and
+        contractor site deployments.</li>
+      <li><strong>2. ⏱️ Contractor Time & Attendance:</strong> Biometric/RFID gate check-ins and overtime discrepancy
+        audits.</li>
+      <li><strong>3. 💳 Settlement & 3-Way Match Engine:</strong> Automated validation matching (PO + Verified
+        Attendance + Vendor Invoice).</li>
+      <li><strong>4. 🛡️ Statutory & Compliance Radar:</strong> Form V returns, PF/ESI challan verification, and audit
+        trail logs.</li>
+    </ul>
+
+    <h2>4. Security Architecture & Anti-Session-Hijack Defense</h2>
+    <p>
+      To protect the SaaS production environment against session exfiltration, token theft, and cross-device copying:
+    </p>
+    <ul>
+      <li><strong>Cryptographic Device Fingerprint Binding:</strong> Generates a hybrid DJB2 + FNV-1a hardware signature
+        from User-Agent, platform, screen resolution, timezone, and language. If tokens are moved to an unauthorized
+        computer, the session is <strong>instantly purged</strong>.</li>
+      <li><strong>Ephemeral SaaS Storage:</strong> Avoids unmanaged persistent local storage in favor of tab-isolated
+        <code>sessionStorage</code> and in-memory Supabase sessions.</li>
+      <li><strong>Enterprise Security Headers:</strong> Enforces <code>X-Frame-Options: SAMEORIGIN</code>,
+        <code>X-Content-Type-Options: nosniff</code>, <code>Strict-Transport-Security</code> (HSTS), and strict Referrer
+        Policy on <code>server.js</code>.</li>
+      <li><strong>Dynamic CORS Origin Validation:</strong> Strict whitelist restricting access exclusively to
+        <code>https://joypeoplehr.com</code> and mobile application clients.</li>
+    </ul>
+
+    <h2>5. Multi-Platform Real-Time Sync (Web + Flutter)</h2>
+    <p>
+      Both the Web Enterprise App and the Flutter Mobile App connect to the same remote <strong>Supabase Enterprise
+        Cloud Database</strong> (<code>https://wmqjmyzzamgxyeuotbki.supabase.co</code>). Attendance clock-ins, leave
+      approvals, and employee profile updates replicate in real-time across both platforms.
+    </p>
+
+    <h2>6. Live Production & CI/CD Status</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th>Configuration / Target</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Live Production URL</strong></td>
+          <td><code>https://joypeoplehr.com</code></td>
+          <td><span class="status-badge status-active">Online & Verified</span></td>
+        </tr>
+        <tr>
+          <td><strong>Hosting Platform</strong></td>
+          <td>Hostinger Cloud Node.js Runtime</td>
+          <td><span class="status-badge status-active">Express Server Active</span></td>
+        </tr>
+        <tr>
+          <td><strong>CI/CD Workflow</strong></td>
+          <td>GitHub Actions (<code>.github/workflows/ci.yml</code>)</td>
+          <td><span class="status-badge status-active">Automated Build & Typecheck</span></td>
+        </tr>
+        <tr>
+          <td><strong>Health Check Endpoint</strong></td>
+          <td><code>https://joypeoplehr.com/api/health</code></td>
+          <td><span class="status-badge status-active">security_engine: active</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="footer">
+      Joy PeopleHR Enterprise Architecture Documentation • Confirmed for Production Release • &copy; 2026 Joy PeopleHR
+    </div>
+  </div>
+
+</body>
+
+</html>

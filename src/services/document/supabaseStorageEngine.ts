@@ -233,6 +233,18 @@ class SupabaseStorageEngine {
     }
     return true;
   }
+
+  /**
+   * Synchronous signed URL resolution helper
+   */
+  createSignedUrlSync(bucket: StorageBucketDomain | string, storagePath: string): string {
+    if (typeof window !== 'undefined' && (window as any)[`__blob_${storagePath}`]) {
+      return (window as any)[`__blob_${storagePath}`];
+    }
+    const clean = storagePath.replace(/^[/\\]+/, '').replace(/^storage\//, '');
+    const { data } = supabase.storage.from(bucket).getPublicUrl(clean);
+    return data?.publicUrl || storagePath;
+  }
 }
 
 export const supabaseStorageEngine = new SupabaseStorageEngine();

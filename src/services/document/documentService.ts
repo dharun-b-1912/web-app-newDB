@@ -271,9 +271,11 @@ class DocumentService {
           const matchingType = this.getDocumentTypeByCode(doc.document_type);
 
           let filePublicUrl = doc.file_url || '';
-          if (doc.storage_path && (!filePublicUrl || !filePublicUrl.startsWith('http'))) {
+          if (doc.storage_path && (!filePublicUrl || !filePublicUrl.startsWith('http') || filePublicUrl.includes('/object/public/'))) {
             try {
-              filePublicUrl = supabase.storage.from('employee-documents').getPublicUrl(doc.storage_path).data.publicUrl;
+              filePublicUrl = supabaseStorageEngine.createSignedUrlSync
+                ? supabaseStorageEngine.createSignedUrlSync('employee-documents', doc.storage_path)
+                : supabase.storage.from('employee-documents').getPublicUrl(doc.storage_path).data.publicUrl;
             } catch (_) {
               try {
                 filePublicUrl = supabase.storage.from('workforce-documents').getPublicUrl(doc.storage_path).data.publicUrl;

@@ -7,6 +7,7 @@ import { documentAuditService } from '../../../services/document/documentAuditSe
 import { documentSecurityService } from '../../../services/document/documentSecurityService';
 import { DocumentMaster } from '../../../types';
 import { supabase } from '../../../lib/supabase';
+import { getSecureDocumentUrl } from '../../../lib/storage/secureStorage';
 import {
   FileText,
   Download,
@@ -153,9 +154,9 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                   const bytes = latest.metadata.size;
                   fileSizeStr = bytes > 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${(bytes / 1024).toFixed(1)} KB`;
                 }
-                const { data: pubData } = supabase.storage.from('employee-documents').getPublicUrl(finalPath);
-                if (pubData?.publicUrl) {
-                  resolved = pubData.publicUrl;
+                const secureUrl = await getSecureDocumentUrl('employee-documents', finalPath, 600);
+                if (secureUrl) {
+                  resolved = secureUrl;
                 }
               }
             }
@@ -168,12 +169,12 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
           const storagePath = document.current_version?.storage_path || document.storage_path;
           if (storagePath) {
             try {
-              const { data: dataEmp } = supabase.storage.from('employee-documents').getPublicUrl(storagePath);
-              if (dataEmp?.publicUrl) {
-                resolved = dataEmp.publicUrl;
+              const secureUrl = await getSecureDocumentUrl('employee-documents', storagePath, 600);
+              if (secureUrl) {
+                resolved = secureUrl;
               } else {
-                const { data: dataWf } = supabase.storage.from('workforce-documents').getPublicUrl(storagePath);
-                if (dataWf?.publicUrl) resolved = dataWf.publicUrl;
+                const secureWfUrl = await getSecureDocumentUrl('workforce-documents', storagePath, 600);
+                if (secureWfUrl) resolved = secureWfUrl;
               }
             } catch (_) {}
           }

@@ -66,6 +66,36 @@ app.use((req, res, next) => {
   next();
 });
 
+// 2. Sliding-Window Rate Limiter for API Endpoints (Point 6: Rate Limiting)
+const ipRequestCounts = new Map();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 120; // 120 requests/minute per IP
+
+app.use('/api', (req, res, next) => {
+  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const clientRecord = ipRequestCounts.get(clientIp) || { count: 0, startTime: now };
+
+  if (now - clientRecord.startTime > RATE_LIMIT_WINDOW_MS) {
+    clientRecord.count = 1;
+    clientRecord.startTime = now;
+  } else {
+    clientRecord.count += 1;
+  }
+
+  ipRequestCounts.set(clientIp, clientRecord);
+
+  if (clientRecord.count > MAX_REQUESTS_PER_WINDOW) {
+    return res.status(429).json({
+      success: false,
+      error: 'Too many requests. Please slow down and try again later.',
+      retryAfterSeconds: Math.ceil((RATE_LIMIT_WINDOW_MS - (now - clientRecord.startTime)) / 1000),
+    });
+  }
+
+  next();
+});
+
 // Parse JSON request bodies
 app.use(express.json({ limit: '10mb' }));
 
