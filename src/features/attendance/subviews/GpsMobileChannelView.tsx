@@ -111,9 +111,16 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
       ]);
       setLocations(locs);
       setAssignments(asgns);
+      if (locs.length > 0 && !selectedTargetLocId) {
+        setSelectedTargetLocId(locs[0].id);
+      }
     } catch {
-      setLocations(workLocationService.getLocations());
+      const fallback = workLocationService.getLocations();
+      setLocations(fallback);
       setAssignments(workLocationService.getAllAssignments());
+      if (fallback.length > 0 && !selectedTargetLocId) {
+        setSelectedTargetLocId(fallback[0].id);
+      }
     }
 
     const evts = workLocationService.getLocationEvents();
@@ -125,11 +132,6 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
         setSelectedEmployeeId(emps[0].id);
       }
     }).catch(() => []);
-
-    const currentLocs = workLocationService.getLocations();
-    if (currentLocs.length > 0 && !selectedTargetLocId) {
-      setSelectedTargetLocId(currentLocs[0].id);
-    }
   }, [selectedEmployeeId, selectedTargetLocId]);
 
   // Acquire Real Hardware GPS Coordinates

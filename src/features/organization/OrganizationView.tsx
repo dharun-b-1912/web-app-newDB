@@ -28,11 +28,15 @@ import {
   RefreshCw,
   Eye,
   CheckCircle2,
+  Crosshair,
+  ArrowRight,
+  Navigation,
 } from 'lucide-react';
 import { useTenant } from '../../hooks/useTenant';
 import { Company, Branch, BranchType, OrganizationSummaryMetrics } from '../../types';
 import { useToast } from '../../components/ui/Toast';
 import { organizationStructureService } from '../../services/organization/organizationStructureService';
+import { workLocationService } from '../../services/location/workLocationService';
 import { hrEventBus } from '../../services/hrEventBus';
 import { cn } from '../../lib/utils';
 
@@ -166,6 +170,31 @@ export const OrganizationView: React.FC = () => {
     } catch {
       showToast('Error adding branch campus', 'error');
     }
+  };
+
+  const handleConfigureBranchGeofence = (branch: Branch) => {
+    try {
+      workLocationService.saveLocation({
+        id: `loc-${branch.code?.toLowerCase() || branch.id}`,
+        tenant_id: orgId,
+        organization_id: orgId,
+        name: branch.name,
+        code: branch.code,
+        location_type: (branch.branch_type as any) || 'OFFICE',
+        address: branch.address || `${branch.city || 'Coimbatore'}, ${branch.state || 'Tamil Nadu'}`,
+        city: branch.city || 'Coimbatore',
+        state: branch.state || 'Tamil Nadu',
+        country: branch.country || 'India',
+        postal_code: branch.postal_code || '641014',
+        latitude: 11.0844364,
+        longitude: 77.1262627,
+        geofence_radius_meters: 100,
+        is_active: true,
+      }, orgId);
+    } catch (_) {}
+
+    showToast(`Redirecting to Geofence Zone for ${branch.name}`, 'success');
+    window.dispatchEvent(new CustomEvent('platform:navigate', { detail: { tab: 'geofences' } }));
   };
 
   return (
@@ -455,6 +484,18 @@ export const OrganizationView: React.FC = () => {
                           <Clock className="w-3 h-3 text-gray-400" /> {br.timezone}
                         </span>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleConfigureBranchGeofence(br)}
+                        className="mt-3.5 w-full py-1.5 px-3 rounded-xl bg-emerald-50/80 hover:bg-emerald-100/90 text-[#07563D] text-[11px] font-bold flex items-center justify-between transition-all border border-emerald-200/60 shadow-2xs group cursor-pointer"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Crosshair className="w-3.5 h-3.5 text-[#07563D]" />
+                          Enable / Configure Geofence Zone
+                        </span>
+                        <ArrowRight className="w-3.5 h-3.5 text-emerald-700 transition-transform group-hover:translate-x-0.5" />
+                      </button>
                     </Card>
                   );
                 })}
