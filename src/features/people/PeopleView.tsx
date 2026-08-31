@@ -453,12 +453,14 @@ export const PeopleView: React.FC = () => {
       />
 
       {/* Detail Drawer */}
-      <EmployeeProfileDrawer
-        employee={selectedEmployee}
-        isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
-        onUpdated={handleEmployeeUpdated}
-      />
+      {selectedEmployee && isDrawerOpen && (
+        <EmployeeProfileDrawer
+          employee={selectedEmployee}
+          isOpen={isDrawerOpen}
+          onClose={() => setIsDrawerOpen(false)}
+          onUpdated={handleEmployeeUpdated}
+        />
+      )}
     </div>
   );
 };

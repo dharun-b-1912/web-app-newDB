@@ -55,6 +55,8 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
   onClose,
   onUpdated,
 }) => {
+  const { showToast } = useToast();
+
   const [activeTab, setActiveTab] = useState('overview');
   const [isEditing, setIsEditing] = useState(false);
   const [isEditWizardOpen, setIsEditWizardOpen] = useState(false);
@@ -75,37 +77,12 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
   // Avatar Photo Preview & Edit Modal
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const avatarInputRef = React.useRef<HTMLInputElement>(null);
-
-  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !employee) return;
-
-    try {
-      setIsUploadingAvatar(true);
-      const res = await avatarService.uploadAndActivateAvatar({
-        employeeId: employee.id,
-        imageInput: file,
-        tenantId: employee.organization_id || 'org-joy-01',
-        orgId: employee.organization_id || 'org-joy-01',
-      });
-      const updatedEmployee = { ...employee, avatar_url: res.url, avatar_version: res.version };
-      onUpdated(updatedEmployee);
-      showToast('Profile photo updated & synced across Web & Mobile.', 'success');
-    } catch (err: any) {
-      console.error('Avatar update error:', err);
-      showToast('Failed to update profile photo.', 'error');
-    } finally {
-      setIsUploadingAvatar(false);
-      if (avatarInputRef.current) avatarInputRef.current.value = '';
-    }
-  };
-
-  // Edit form state
   const [formData, setFormData] = useState<Partial<Employee>>({});
   const [initialFormData, setInitialFormData] = useState<Partial<Employee>>({});
+  const [authStatus, setAuthStatus] = useState<any>(null);
+  const [activeSessions, setActiveSessions] = useState<any[]>([]);
 
-  const { showToast } = useToast();
+  const avatarInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (employee) {
@@ -144,6 +121,15 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
       setIsEditing(false);
       setShowSensitiveData(false);
       setConcurrencyConflict(false);
+
+      const status = employeeAuthService.getEmployeeAuthStatus(employee.id, employee.organization_id, {
+        phone: employee.profile?.phone || employee.phone,
+        email: employee.work_email,
+        name: `${employee.first_name} ${employee.last_name}`,
+        role: employee.designation_title,
+      });
+      setAuthStatus(status);
+      setActiveSessions(employeeAuthService.listActiveSessions(employee.id));
 
       // Fetch dynamic Bank and Statutory Data from Supabase / Employee Record
       const loadBankAndStatutory = async () => {
@@ -203,38 +189,35 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
       };
 
       loadBankAndStatutory();
-    }
-  }, [employee]);
-
-  const [authStatus, setAuthStatus] = useState<any>(() =>
-    employee
-      ? employeeAuthService.getEmployeeAuthStatus(employee.id, employee.organization_id, {
-          phone: employee.profile?.phone || employee.phone,
-          email: employee.work_email,
-          name: `${employee.first_name} ${employee.last_name}`,
-          role: employee.designation_title,
-        })
-      : null
-  );
-  const [activeSessions, setActiveSessions] = useState<any[]>(() =>
-    employee ? employeeAuthService.listActiveSessions(employee.id) : []
-  );
-
-  useEffect(() => {
-    if (employee) {
-      const status = employeeAuthService.getEmployeeAuthStatus(employee.id, employee.organization_id, {
-        phone: employee.profile?.phone || employee.phone,
-        email: employee.work_email,
-        name: `${employee.first_name} ${employee.last_name}`,
-        role: employee.designation_title,
-      });
-      setAuthStatus(status);
-      setActiveSessions(employeeAuthService.listActiveSessions(employee.id));
     } else {
       setAuthStatus(null);
       setActiveSessions([]);
     }
   }, [employee]);
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !employee) return;
+
+    try {
+      setIsUploadingAvatar(true);
+      const res = await avatarService.uploadAndActivateAvatar({
+        employeeId: employee.id,
+        imageInput: file,
+        tenantId: employee.organization_id || 'org-joy-01',
+        orgId: employee.organization_id || 'org-joy-01',
+      });
+      const updatedEmployee = { ...employee, avatar_url: res.url, avatar_version: res.version };
+      onUpdated(updatedEmployee);
+      showToast('Profile photo updated & synced across Web & Mobile.', 'success');
+    } catch (err: any) {
+      console.error('Avatar update error:', err);
+      showToast('Failed to update profile photo.', 'error');
+    } finally {
+      setIsUploadingAvatar(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = '';
+    }
+  };
 
   if (!employee) return null;
 
