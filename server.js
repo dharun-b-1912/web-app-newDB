@@ -127,6 +127,121 @@ app.post('/api/auth/validate-session', (req, res) => {
   });
 });
 
+// Google Maps Universal Link / Shortlink Resolver
+app.post('/api/location/resolve-google-maps', async (req, res) => {
+  try {
+    const { url } = req.body || {};
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ success: false, error: 'Missing or invalid URL' });
+    }
+
+    let targetUrl = url.trim();
+
+    // If it's a shortlink (maps.app.goo.gl or goo.gl), follow redirect on the server
+    if (targetUrl.includes('goo.gl')) {
+      try {
+        const response = await fetch(targetUrl, {
+          method: 'GET',
+          redirect: 'follow',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+        });
+        targetUrl = response.url || targetUrl;
+      } catch (e) {
+        console.warn('[Shortlink follow warning]:', e);
+      }
+    }
+
+    // Extract coordinates and place name
+    let lat, lon, placeName;
+
+    // 1. Exact Pin: !3d(lat)!4d(lon)
+    const pinMatch = targetUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    if (pinMatch) {
+      lat = parseFloat(pinMatch[1]);
+      lon = parseFloat(pinMatch[2]);
+    }
+
+    // 2. Viewport: @(lat),(lon)
+    if (lat === undefined || lon === undefined) {
+      const atMatch = targetUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (atMatch) {
+        lat = parseFloat(atMatch[1]);
+        lon = parseFloat(atMatch[2]);
+      }
+    }
+
+    // 3. Query param: ?q=lat,lon or ?ll=lat,lon
+    if (lat === undefined || lon === undefined) {
+      const qMatch = targetUrl.match(/[?&](?:q|ll)=(-?\d+\.\d+)[,%20]+(-?\d+\.\d+)/i);
+      if (qMatch) {
+        lat = parseFloat(qMatch[1]);
+        lon = parseFloat(qMatch[2]);
+      }
+    }
+
+    // Extract place name from /place/<name>/
+    const placeMatch = targetUrl.match(/place\/([^/@?]+)/);
+    if (placeMatch) {
+      try {
+        placeName = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+      } catch {
+        placeName = placeMatch[1].replace(/\+/g, ' ');
+      }
+    }
+
+    if (lat === undefined || lon === undefined) {
+      return res.status(404).json({
+        success: false,
+        error: 'Could not extract latitude and longitude from the provided Google Maps link.',
+        resolvedUrl: targetUrl,
+      });
+    }
+
+    // Reverse geocode to get full physical address
+    let address = '';
+    try {
+      const geoRes = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
+        {
+          headers: { 'User-Agent': 'JoyPeopleHR-HRMS/1.0' },
+        }
+      );
+      if (geoRes.ok) {
+        const geoData = await geoRes.json();
+        if (geoData && geoData.address) {
+          const a = geoData.address;
+          const poi = a.building || a.office || a.industrial || a.commercial || a.amenity;
+          const road = a.road || a.street || a.pedestrian;
+          const area = a.suburb || a.neighbourhood || a.village;
+          const city = a.city || a.town || a.county || a.district;
+          const state = a.state;
+          const postcode = a.postcode;
+          const parts = [poi, road, area, city, state, postcode].filter(Boolean);
+          address = parts.length >= 2 ? parts.join(', ') : geoData.display_name;
+        } else if (geoData && geoData.display_name) {
+          address = geoData.display_name;
+        }
+      }
+    } catch (e) {
+      console.warn('[Reverse Geocode Error]:', e);
+    }
+
+    return res.json({
+      success: true,
+      latitude: Number(lat.toFixed(7)),
+      longitude: Number(lon.toFixed(7)),
+      name: placeName,
+      address,
+      resolvedUrl: targetUrl,
+    });
+  } catch (err) {
+    console.error('[Resolve Google Maps Error]:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Server error resolving Google Maps link' });
+  }
+});
+
 // Production Resend Email Gateway Proxy (Secure Backend-Only Dispatch)
 app.post('/api/resend/emails', async (req, res) => {
   try {

@@ -373,6 +373,35 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     try {
       const input = googleMapsUrlInput.trim();
 
+      // 1. Primary: Call backend Google Maps resolver (handles shortlinks & unshortening without CORS limits)
+      try {
+        const backendRes = await fetch('/api/location/resolve-google-maps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: input }),
+        });
+
+        if (backendRes.ok) {
+          const data = await backendRes.json();
+          if (data && data.success && data.latitude !== undefined && data.longitude !== undefined) {
+            setSelectedLocation((prev) => ({
+              ...prev,
+              latitude: data.latitude,
+              longitude: data.longitude,
+              name: data.name || prev?.name || 'Work Facility',
+              address: data.address || prev?.address || '',
+            }));
+
+            showToast(`✓ Extracted from Google Maps: ${data.name ? `${data.name} ` : ''}(${data.latitude}, ${data.longitude})`, 'success');
+            setIsProcessingGmapsLink(false);
+            return;
+          }
+        }
+      } catch (backendErr) {
+        console.warn('Backend resolver attempt:', backendErr);
+      }
+
+      // 2. Client-side parser fallback for full URLs or DMS / raw coordinates
       const parsed = parseGoogleMapsInput(input);
       if (parsed && parsed.latitude !== undefined && parsed.longitude !== undefined) {
         let addr = parsed.address || '';
@@ -393,7 +422,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
         return;
       }
 
-      // If not parsed directly as coordinates/url, attempt search
+      // 3. Address text search fallback
       const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(input)}&limit=1&addressdetails=1`);
       if (res.ok) {
         const data = await res.json();
