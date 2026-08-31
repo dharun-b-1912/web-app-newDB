@@ -342,11 +342,11 @@ class RealtimeSyncEngine {
     this.disposers.push(unsubWorkLocations);
 
     // 10. Employee Work Location Assignments
-    const unsubEmpWorkLocations = realtimeChannelManager.subscribeToTable('employee_work_locations', (payload) => {
+    const unsubEmpWorkLocations = realtimeChannelManager.subscribeToTable('employee_work_location_assignments', (payload) => {
       const row = payload.new || payload.old;
       if (row) {
         logger.sync('EMP_WORK_LOCATION_EVENT', {
-          table: 'employee_work_locations',
+          table: 'employee_work_location_assignments',
           operation: payload.eventType,
           employeeId: row.employee_id,
           status: 'RECEIVED',
