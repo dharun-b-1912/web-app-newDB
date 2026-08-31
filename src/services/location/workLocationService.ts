@@ -103,6 +103,24 @@ export interface EmployeeWorkLocationAssignment {
   updated_at: string;
 }
 
+export type LocationVerificationStatus =
+  | 'ASSIGNED_LOCATION'
+  | 'MAIN_OFFICE'
+  | 'REGISTERED_BRANCH'
+  | 'DIFFERENT_LOCATION'
+  | 'GPS_UNAVAILABLE';
+
+export interface LocationVerificationResult {
+  verificationStatus: LocationVerificationStatus;
+  matchedLocation?: WorkLocation;
+  matchedLocationName?: string;
+  matchedDistanceMeters?: number;
+  isAllowedWithoutReason: boolean;
+  requiresReason: boolean;
+  reasonPromptTitle?: string;
+  summaryMessage: string;
+}
+
 export interface AttendanceLocationEvent {
   id: string;
   tenant_id: string;
@@ -114,6 +132,9 @@ export interface AttendanceLocationEvent {
   work_location_name?: string;
   event_type: LocationEventType;
   geofence_status: GeofenceStatus;
+  verification_status?: LocationVerificationStatus;
+  location_reason?: string;
+  detected_address?: string;
   face_status?: 'FACE_MATCH' | 'FACE_MISMATCH' | 'FACE_NOT_AVAILABLE' | 'FACE_VERIFICATION_REQUIRED';
   latitude: number;
   longitude: number;
@@ -657,6 +678,117 @@ class WorkLocationService {
       reason: isInside
         ? `Within ${location.name} geofence zone (${distanceMeters}m from center; radius: ${radiusMeters}m).`
         : `Outside ${location.name} geofence zone (${distanceMeters}m away; allowed radius: ${radiusMeters}m).`,
+    };
+  }
+
+  /**
+   * Authoritative Multi-Tier Location Verification Layer for Real-World Employee Movement
+   * 1. Assigned Location (Normal / No reason needed)
+   * 2. Main Office HQ (Recognized / No reason needed)
+   * 3. Registered Branch (Recognized / No reason needed)
+   * 4. Different Location (Allowed with reason prompt, captures exact coordinates)
+   * 5. GPS Unavailable (Allowed with reason prompt)
+   */
+  verifyEmployeePunchLocation(
+    userLat?: number,
+    userLon?: number,
+    accuracyMeters: number = 20,
+    employeeId?: string,
+    tenantId = getActiveOrgId()
+  ): LocationVerificationResult {
+    // Check 1: Is GPS Available from device?
+    if (userLat === undefined || userLon === undefined || isNaN(userLat) || isNaN(userLon)) {
+      return {
+        verificationStatus: 'GPS_UNAVAILABLE',
+        isAllowedWithoutReason: false,
+        requiresReason: true,
+        reasonPromptTitle: 'GPS Signal Unavailable',
+        summaryMessage: 'GPS coordinates could not be acquired from device. Please provide an explanation (e.g. basement office, signal issue) to complete attendance.',
+      };
+    }
+
+    const allLocations = this.getLocations(tenantId, true);
+    const assignedLocations = employeeId ? this.getEmployeeAuthorizedLocations(employeeId, tenantId) : allLocations;
+
+    // Check 2: Within Assigned Location Geofence?
+    for (const loc of assignedLocations) {
+      const d = this.calculateDistanceInMeters(userLat, userLon, loc.latitude, loc.longitude);
+      const effectiveRadius = loc.geofence_radius_meters + (accuracyMeters <= 50 ? accuracyMeters * 0.4 : 0);
+      if (d <= effectiveRadius) {
+        return {
+          verificationStatus: 'ASSIGNED_LOCATION',
+          matchedLocation: loc,
+          matchedLocationName: loc.name,
+          matchedDistanceMeters: d,
+          isAllowedWithoutReason: true,
+          requiresReason: false,
+          summaryMessage: `Verified inside assigned location: ${loc.name} (${d}m from center).`,
+        };
+      }
+    }
+
+    // Check 3: At Main Office Branch (HQ)?
+    const mainOffice = allLocations.find(
+      (l) =>
+        l.code.toUpperCase().includes('HQ') ||
+        l.name.toLowerCase().includes('hq') ||
+        l.name.toLowerCase().includes('headquarter') ||
+        l.location_type === 'OFFICE'
+    );
+    if (mainOffice) {
+      const dHq = this.calculateDistanceInMeters(userLat, userLon, mainOffice.latitude, mainOffice.longitude);
+      const effectiveRadiusHq = mainOffice.geofence_radius_meters + (accuracyMeters <= 50 ? accuracyMeters * 0.4 : 0);
+      if (dHq <= effectiveRadiusHq) {
+        return {
+          verificationStatus: 'MAIN_OFFICE',
+          matchedLocation: mainOffice,
+          matchedLocationName: mainOffice.name,
+          matchedDistanceMeters: dHq,
+          isAllowedWithoutReason: true,
+          requiresReason: false,
+          summaryMessage: `Recognized at Company Main Office (HQ): ${mainOffice.name} (${dHq}m from center).`,
+        };
+      }
+    }
+
+    // Check 4: At Another Registered Branch / Site?
+    for (const loc of allLocations) {
+      const d = this.calculateDistanceInMeters(userLat, userLon, loc.latitude, loc.longitude);
+      const effectiveRadius = loc.geofence_radius_meters + (accuracyMeters <= 50 ? accuracyMeters * 0.4 : 0);
+      if (d <= effectiveRadius) {
+        return {
+          verificationStatus: 'REGISTERED_BRANCH',
+          matchedLocation: loc,
+          matchedLocationName: loc.name,
+          matchedDistanceMeters: d,
+          isAllowedWithoutReason: true,
+          requiresReason: false,
+          summaryMessage: `Recognized at Registered Branch: ${loc.name} (${d}m from center).`,
+        };
+      }
+    }
+
+    // Check 5: Different / Unknown Location (e.g. Visiting Client B, unexpected client site)
+    // Find closest location for reference distance
+    let closestLoc: WorkLocation | undefined;
+    let minD = Infinity;
+    for (const loc of allLocations) {
+      const d = this.calculateDistanceInMeters(userLat, userLon, loc.latitude, loc.longitude);
+      if (d < minD) {
+        minD = d;
+        closestLoc = loc;
+      }
+    }
+
+    return {
+      verificationStatus: 'DIFFERENT_LOCATION',
+      matchedLocation: closestLoc,
+      matchedLocationName: closestLoc ? closestLoc.name : undefined,
+      matchedDistanceMeters: minD !== Infinity ? minD : undefined,
+      isAllowedWithoutReason: false,
+      requiresReason: true,
+      reasonPromptTitle: 'Different / Client Site Location Detected',
+      summaryMessage: `You are at an unassigned/external location (${minD !== Infinity ? `${minD}m from nearest branch` : 'off-site'}). Please provide a brief reason (e.g. Client B meeting, emergency service call) to complete attendance.`,
     };
   }
 

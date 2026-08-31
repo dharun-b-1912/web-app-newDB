@@ -28,24 +28,29 @@ export interface MobileGpsEvidence {
 
 export interface MobileAttendancePunchRequest {
   employeeId: string;
-  workLocationId: string;
+  workLocationId?: string;
   punchType: 'CHECK_IN' | 'CHECK_OUT';
-  evidence: MobileGpsEvidence;
+  evidence?: MobileGpsEvidence;
   faceVerificationStatus?: 'FACE_MATCH' | 'FACE_MISMATCH' | 'FACE_NOT_AVAILABLE';
   faceVerificationRef?: string;
   attemptId?: string;
+  locationVerificationStatus?: 'ASSIGNED_LOCATION' | 'MAIN_OFFICE' | 'REGISTERED_BRANCH' | 'DIFFERENT_LOCATION' | 'GPS_UNAVAILABLE';
+  locationReason?: string;
+  detectedAddress?: string;
 }
 
 export interface MobileAttendancePunchResponse {
   success: boolean;
   punchType: 'CHECK_IN' | 'CHECK_OUT';
   employeeId: string;
-  workLocationId: string;
+  workLocationId?: string;
   locationName: string;
   distanceMeters: number;
   geofenceRadiusMeters: number;
   accuracyMeters: number;
-  geofenceStatus: 'INSIDE' | 'OUTSIDE' | 'BORDERLINE' | 'GPS_INACCURATE' | 'MOCK_LOCATION';
+  geofenceStatus: 'INSIDE' | 'OUTSIDE' | 'BORDERLINE' | 'GPS_INACCURATE' | 'MOCK_LOCATION' | 'GPS_UNAVAILABLE';
+  locationVerificationStatus: 'ASSIGNED_LOCATION' | 'MAIN_OFFICE' | 'REGISTERED_BRANCH' | 'DIFFERENT_LOCATION' | 'GPS_UNAVAILABLE';
+  locationReason?: string;
   punchTime: string;
   punchDate: string;
   source: string;
@@ -101,17 +106,40 @@ class MobileAttendanceClientService {
   }
 
   /**
-   * Submit Mobile GPS Attendance Punch to Authoritative Backend
+   * Submit Mobile GPS Attendance Punch with Real-World Multi-Tier Location Verification Layer
+   * Supports: Assigned Location, Main Office, Registered Branch, Different Location (with Reason), and GPS Unavailable (with Reason)
    */
   async submitPunch(
     request: MobileAttendancePunchRequest,
     tenantId = getActiveOrgId()
   ): Promise<MobileAttendancePunchResponse> {
     const attemptId = request.attemptId || `att-attempt-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-    const location = workLocationService.getLocationById(request.workLocationId, tenantId);
+    const now = new Date();
+    const punchTime = now.toLocaleTimeString('en-US', { hour12: false });
+    const punchDate = now.toISOString().split('T')[0];
 
-    if (!location) {
-      throw new Error('Authorized work location not found.');
+    // Resolve live hardware GPS coords if provided
+    const userLat = request.evidence?.latitude;
+    const userLon = request.evidence?.longitude;
+    const accuracy = request.evidence?.accuracyMeters || 20;
+
+    // 1. Multi-Tier Location Verification
+    const verification = workLocationService.verifyEmployeePunchLocation(
+      userLat,
+      userLon,
+      accuracy,
+      request.employeeId,
+      tenantId
+    );
+
+    const effectiveStatus = request.locationVerificationStatus || verification.verificationStatus;
+    const effectiveLoc = verification.matchedLocation || (request.workLocationId ? workLocationService.getLocationById(request.workLocationId, tenantId) : null);
+    const locName = effectiveLoc ? effectiveLoc.name : (effectiveStatus === 'GPS_UNAVAILABLE' ? 'Unverified Location (No GPS)' : 'External / Client Site');
+    const locId = effectiveLoc ? effectiveLoc.id : 'loc-external';
+
+    // 2. Validate reason requirement if punch is from different location or no GPS
+    if (verification.requiresReason && !request.locationReason?.trim()) {
+      throw new Error(`Reason required for ${effectiveStatus === 'GPS_UNAVAILABLE' ? 'unverified GPS' : 'external/different location'}: Please provide an explanation before completing check-${request.punchType === 'CHECK_IN' ? 'in' : 'out'}.`);
     }
 
     // Resolve real employee details
@@ -119,136 +147,67 @@ class MobileAttendanceClientService {
     let empCode = request.employeeId;
     try {
       const emps = await api.getEmployees();
-      const matched = emps.find((e: any) => e.id === request.employeeId);
+      const matched = emps.find((e: any) => e.id === request.employeeId || e.employee_code === request.employeeId);
       if (matched) {
-        empName = matched.display_name || `${matched.first_name || ''} ${matched.last_name || ''}`.trim() || (matched as any).name || 'Employee';
+        empName = matched.display_name || `${matched.first_name || ''} ${matched.last_name || ''}`.trim() || 'Employee';
         empCode = matched.employee_code || request.employeeId;
       }
     } catch {}
 
-    // 1. Evaluate Geofence Locally for client preview
-    const evalResult = workLocationService.evaluateGeofence(
-      request.evidence.latitude,
-      request.evidence.longitude,
-      request.evidence.accuracyMeters,
-      location,
-      request.evidence.mockLocationDetected
-    );
-
-    // 2. If Supabase is enabled, execute server-side RPC validation
-    if (isSupabaseEnabled) {
-      try {
-        const { data, error } = await supabase.rpc('fn_validate_and_record_gps_attendance', {
-          p_tenant_id: tenantId,
-          p_org_id: tenantId,
-          p_employee_id: request.employeeId,
-          p_work_location_id: request.workLocationId,
-          p_punch_type: request.punchType,
-          p_latitude: request.evidence.latitude,
-          p_longitude: request.evidence.longitude,
-          p_accuracy_meters: request.evidence.accuracyMeters,
-          p_device_timestamp: request.evidence.deviceTimestamp,
-          p_mock_location_detected: !!request.evidence.mockLocationDetected,
-          p_face_verification_status: request.faceVerificationStatus || 'FACE_NOT_AVAILABLE',
-          p_device_info: {
-            device_id: request.evidence.deviceId,
-            app_version: request.evidence.appVersion,
-            provider: request.evidence.provider,
-          },
-          p_attempt_id: attemptId,
-        });
-
-        if (error) {
-          throw new Error(error.message || 'Server-side GPS attendance authorization rejected.');
-        }
-
-        // Trigger local attendance state sync
-        if (request.punchType === 'CHECK_OUT') {
-          attendanceApi.checkOut(request.employeeId, 'MOBILE');
-        } else {
-          attendanceApi.checkIn(request.employeeId, 'MOBILE');
-        }
-
-        hrEventBus.publish('attendance.punch_received', data);
-        return data as MobileAttendancePunchResponse;
-      } catch (err: any) {
-        if (err.message && !err.message.includes('fetch')) {
-          throw err;
-        }
-        console.warn('[Mobile Attendance] Supabase RPC failed, using offline fallback logic:', err);
-      }
-    }
-
-    // 3. Fallback / Offline Local Execution
-    if (!evalResult.isInside) {
-      workLocationService.recordLocationEvent(
-        {
-          employee_id: request.employeeId,
-          employee_name: empName,
-          employee_code: empCode,
-          work_location_id: location.id,
-          work_location_name: location.name,
-          event_type: evalResult.geofenceStatus === 'GPS_INACCURATE' ? 'LOW_ACCURACY' : 'OUTSIDE_GEOFENCE',
-          geofence_status: evalResult.geofenceStatus,
-          latitude: request.evidence.latitude,
-          longitude: request.evidence.longitude,
-          accuracy_meters: request.evidence.accuracyMeters,
-          distance_meters: evalResult.distanceMeters,
-          device_timestamp: request.evidence.deviceTimestamp,
-          source: 'MOBILE_GPS',
-        },
-        tenantId
-      );
-
-      throw new Error(evalResult.reason || 'Outside authorized attendance zone.');
-    }
-
-    // Record Success Event
+    // 3. Record Audit Location Event with full metadata
     workLocationService.recordLocationEvent(
       {
         employee_id: request.employeeId,
         employee_name: empName,
         employee_code: empCode,
-        work_location_id: location.id,
-        work_location_name: location.name,
-        event_type: request.punchType === 'CHECK_OUT' ? 'PUNCH_CHECK_OUT' : 'PUNCH_CHECK_IN',
-        geofence_status: 'INSIDE',
-        latitude: request.evidence.latitude,
-        longitude: request.evidence.longitude,
-        accuracy_meters: request.evidence.accuracyMeters,
-        distance_meters: evalResult.distanceMeters,
-        device_timestamp: request.evidence.deviceTimestamp,
+        work_location_id: locId,
+        work_location_name: locName,
+        event_type: request.punchType === 'CHECK_IN' ? 'PUNCH_CHECK_IN' : 'PUNCH_CHECK_OUT',
+        geofence_status: effectiveStatus === 'GPS_UNAVAILABLE' ? 'GPS_UNAVAILABLE' : (effectiveStatus === 'DIFFERENT_LOCATION' ? 'OUTSIDE' : 'INSIDE'),
+        verification_status: effectiveStatus,
+        location_reason: request.locationReason,
+        detected_address: request.detectedAddress,
+        latitude: userLat || 0,
+        longitude: userLon || 0,
+        accuracy_meters: accuracy,
+        distance_meters: verification.matchedDistanceMeters || 0,
+        device_timestamp: request.evidence?.deviceTimestamp || now.toISOString(),
         source: 'MOBILE_GPS',
+        device_info: {
+          deviceId: request.evidence?.deviceId,
+          appVersion: request.evidence?.appVersion,
+          provider: request.evidence?.provider,
+        },
       },
       tenantId
     );
 
-    // Commit punch to Attendance Ledger
-    const now = new Date();
-    const punchTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const punchDateStr = now.toISOString().split('T')[0];
-
+    // 4. Trigger core attendance engine (Check In / Check Out)
+    // NOTE: Preserves existing working-hours, shift calculations, and payroll logic intact!
     if (request.punchType === 'CHECK_OUT') {
       attendanceApi.checkOut(request.employeeId, 'MOBILE');
     } else {
       attendanceApi.checkIn(request.employeeId, 'MOBILE');
     }
 
+    // 5. Build Comprehensive Response
     const response: MobileAttendancePunchResponse = {
       success: true,
       punchType: request.punchType,
       employeeId: request.employeeId,
-      workLocationId: location.id,
-      locationName: location.name,
-      distanceMeters: evalResult.distanceMeters,
-      geofenceRadiusMeters: location.geofence_radius_meters,
-      accuracyMeters: request.evidence.accuracyMeters,
-      geofenceStatus: 'INSIDE',
-      punchTime: punchTimeStr,
-      punchDate: punchDateStr,
+      workLocationId: locId,
+      locationName: locName,
+      distanceMeters: verification.matchedDistanceMeters || 0,
+      geofenceRadiusMeters: effectiveLoc?.geofence_radius_meters || 100,
+      accuracyMeters: accuracy,
+      geofenceStatus: effectiveStatus === 'GPS_UNAVAILABLE' ? 'GPS_UNAVAILABLE' : (effectiveStatus === 'DIFFERENT_LOCATION' ? 'OUTSIDE' : 'INSIDE'),
+      locationVerificationStatus: effectiveStatus,
+      locationReason: request.locationReason,
+      punchTime,
+      punchDate,
       source: 'MOBILE_GPS',
       attemptId,
-      message: 'Attendance verified and recorded successfully.',
+      message: `✓ ${request.punchType === 'CHECK_IN' ? 'Check-in' : 'Check-out'} recorded successfully. Verified: ${effectiveStatus.replace(/_/g, ' ')} (${locName}).`,
     };
 
     hrEventBus.publish('attendance.punch_received', response);
