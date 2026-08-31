@@ -393,10 +393,10 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
           latitude: parsed.latitude,
           longitude: parsed.longitude,
           address: addr || prev?.address || 'Verified Facility Coordinates',
-          name: prev?.name || parsed.name || 'Work Facility',
+          name: parsed.name || prev?.name || 'Work Facility',
         }));
 
-        showToast(`✓ Extracted coordinates from Google Maps: ${parsed.latitude}, ${parsed.longitude}`, 'success');
+        showToast(`✓ Extracted from Google Maps: ${parsed.name ? `${parsed.name} ` : ''}(${parsed.latitude}, ${parsed.longitude})`, 'success');
         setIsProcessingGmapsLink(false);
         return;
       }
