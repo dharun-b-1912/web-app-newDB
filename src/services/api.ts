@@ -346,7 +346,8 @@ export const api = {
           id: newDept.id,
           name: newDept.name,
           code: newDept.code,
-          company_id: newDept.company_id || 'comp-joy-01',
+          company_id: newDept.company_id || api.getActiveCompany()?.id || 'comp-01',
+          organization_id: (newDept as any).organization_id || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null),
         };
         if (newDept.branch_id) payload.branch_id = newDept.branch_id;
         if (newDept.description) payload.description = newDept.description;

@@ -37,16 +37,13 @@ class VendorWorkforceService {
   async getVendorWorkers(organizationId: string, vendorId?: string): Promise<VendorWorker[]> {
     if (isSupabaseEnabled && supabase) {
       try {
-        let query = supabase.from('vendor_workers').select('*, vendors(legal_name)').eq('organization_id', organizationId);
+        let query = supabase.from('vendor_workers').select('*').eq('organization_id', organizationId);
         if (vendorId) {
           query = query.eq('vendor_id', vendorId);
         }
         const { data, error } = await query.order('created_at', { ascending: false });
         if (!error && data) {
-          return data.map((row: any) => ({
-            ...row,
-            vendor_name: row.vendors?.legal_name || 'Workforce Partner',
-          }));
+          return data;
         }
       } catch (err) {
         console.warn('[VendorWorkforceService] getVendorWorkers error:', err);
@@ -109,7 +106,7 @@ class VendorWorkforceService {
       try {
         let query = supabase
           .from('vendor_deployments')
-          .select('*, vendors(legal_name), vendor_workers(display_name, worker_code), branches(name), departments(name), teams(name)')
+          .select('*')
           .eq('organization_id', organizationId);
 
         if (filter?.vendorId) query = query.eq('vendor_id', filter.vendorId);
@@ -118,15 +115,7 @@ class VendorWorkforceService {
 
         const { data, error } = await query.order('start_date', { ascending: false });
         if (!error && data) {
-          return data.map((row: any) => ({
-            ...row,
-            vendor_name: row.vendors?.legal_name,
-            worker_name: row.vendor_workers?.display_name,
-            worker_code: row.vendor_workers?.worker_code,
-            branch_name: row.branches?.name,
-            department_name: row.departments?.name,
-            team_name: row.teams?.name,
-          }));
+          return data;
         }
       } catch (err) {
         console.warn('[VendorWorkforceService] getDeployments error:', err);

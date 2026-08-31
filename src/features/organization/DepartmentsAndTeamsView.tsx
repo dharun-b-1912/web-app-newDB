@@ -213,6 +213,7 @@ export const DepartmentsAndTeamsView: React.FC<Props> = ({
 
     try {
       await organizationStructureService.createDepartment({
+        organization_id: organizationId,
         company_id: deptCompanyId,
         branch_id: deptBranchId || undefined,
         name: deptName,

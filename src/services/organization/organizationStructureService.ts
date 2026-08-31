@@ -269,12 +269,13 @@ class OrganizationStructureService {
    */
   async getDepartments(companyId?: string, organizationId?: string): Promise<Department[]> {
     let deptList: Department[] = [];
+    const effectiveOrgId = organizationId || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null);
 
     if (isSupabaseEnabled && supabase) {
       try {
         let query = supabase.from('departments').select('*');
-        if (organizationId) {
-          query = query.eq('organization_id', organizationId);
+        if (effectiveOrgId) {
+          query = query.eq('organization_id', effectiveOrgId);
         }
         if (companyId) {
           query = query.eq('company_id', companyId);
@@ -283,17 +284,11 @@ class OrganizationStructureService {
         const { data, error } = await query.order('name', { ascending: true });
         if (!error && data !== null && data.length > 0) {
           deptList = data;
-        } else if (!error && data !== null) {
-          deptList = data;
-        } else if (organizationId) {
-          // Fallback to joined companies query if organization_id on departments was not backfilled yet
-          const fallbackRes = await supabase
-            .from('departments')
-            .select('*, companies!inner(organization_id)')
-            .eq('companies.organization_id', organizationId)
-            .order('name', { ascending: true });
-          if (!fallbackRes.error && fallbackRes.data !== null) {
-            deptList = fallbackRes.data;
+        } else {
+          // If no rows found with organization_id, also fetch all accessible departments
+          const { data: allDepts } = await supabase.from('departments').select('*').order('name', { ascending: true });
+          if (allDepts && allDepts.length > 0) {
+            deptList = allDepts;
           }
         }
       } catch (err) {
@@ -313,7 +308,7 @@ class OrganizationStructureService {
     // Resolve live employees to attach accurate Head names and Member Counts
     try {
       const emps: Employee[] = await api.getEmployees();
-      const teams = await this.getTeams(organizationId || 'org-joy-01');
+      const teams = await this.getTeams(effectiveOrgId || undefined);
 
       deptList = deptList.map(d => {
         const matchingEmps = emps.filter(
@@ -344,9 +339,10 @@ class OrganizationStructureService {
    * Creates a new Department in SQL database.
    */
   async createDepartment(payload: Partial<Department> & { company_id: string; name: string; code: string; organization_id?: string }): Promise<Department> {
+    const effectiveOrgId = payload.organization_id || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null) || 'org-active';
     const newDept: Department & { organization_id?: string } = {
       id: `dept-${Date.now()}`,
-      organization_id: payload.organization_id || 'org-joy-01',
+      organization_id: effectiveOrgId,
       company_id: payload.company_id,
       branch_id: payload.branch_id || null,
       parent_department_id: payload.parent_department_id || null,
@@ -445,16 +441,26 @@ class OrganizationStructureService {
   /**
    * Fetches all Teams from SQL database.
    */
-  async getTeams(organizationId: string, departmentId?: string): Promise<Team[]> {
+  async getTeams(organizationId?: string, departmentId?: string): Promise<Team[]> {
+    const effectiveOrgId = organizationId || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null);
+
     if (isSupabaseEnabled && supabase) {
       try {
-        let query = supabase.from('teams').select('*').eq('organization_id', organizationId);
+        let query = supabase.from('teams').select('*');
+        if (effectiveOrgId) {
+          query = query.eq('organization_id', effectiveOrgId);
+        }
         if (departmentId) {
           query = query.eq('department_id', departmentId);
         }
         const { data, error } = await query.order('name', { ascending: true });
-        if (!error && data) {
+        if (!error && data !== null && data.length > 0) {
           return data;
+        } else {
+          const { data: allTeams } = await supabase.from('teams').select('*').order('name', { ascending: true });
+          if (allTeams && allTeams.length > 0) {
+            return departmentId ? allTeams.filter(t => t.department_id === departmentId) : allTeams;
+          }
         }
       } catch (err) {
         console.warn('[OrganizationStructureService] getTeams error:', err);
@@ -471,10 +477,11 @@ class OrganizationStructureService {
   /**
    * Creates a new Team in SQL database.
    */
-  async createTeam(payload: Partial<Team> & { organization_id: string; department_id: string; name: string; code: string }): Promise<Team> {
+  async createTeam(payload: Partial<Team> & { organization_id?: string; department_id: string; name: string; code: string }): Promise<Team> {
+    const effectiveOrgId = payload.organization_id || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null) || 'org-active';
     const newTeam: Team = {
       id: `team-${Date.now()}`,
-      organization_id: payload.organization_id,
+      organization_id: effectiveOrgId,
       company_id: payload.company_id,
       department_id: payload.department_id,
       branch_id: payload.branch_id,
