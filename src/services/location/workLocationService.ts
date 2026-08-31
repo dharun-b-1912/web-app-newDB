@@ -872,13 +872,22 @@ export function parseGoogleMapsInput(input: string): {
   if (!input || typeof input !== 'string') return null;
   const raw = input.trim();
 
-  // 1. Check known shortlink for Joy Corporate Solutions
+  // 1. Check known shortlink for Joy Corporate Solutions & Watertec
   if (raw.includes('cyya5UiZ1Brnbirz5') || raw.toLowerCase().includes('joy corporate solutions')) {
     return {
       latitude: 11.0844364,
       longitude: 77.1262627,
-      name: 'Joy Corporate Solutions Private Limited',
+      name: 'Joy Corporate Solutions Private Limited (HQ)',
       address: 'D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur, Coimbatore, Tamil Nadu 641407',
+    };
+  }
+
+  if (raw.includes('oJDgaJTNBwzXw9mC7') || raw.toLowerCase().includes('watertec') || raw.toLowerCase().includes('water tec')) {
+    return {
+      latitude: 11.0655197,
+      longitude: 77.1519614,
+      name: 'Watertec (India) - Unit 3',
+      address: 'Watertec (India) Unit 3, Arasur Industrial Area, Coimbatore, Tamil Nadu 641407',
     };
   }
 

@@ -1303,8 +1303,8 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                       Apply
                     </Button>
                   </div>
-                  <div className="flex items-center gap-1.5 pt-1 text-[11px]">
-                    <span className="text-blue-700 font-semibold">Quick Preset:</span>
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
+                    <span className="text-blue-700 font-semibold">Quick Presets:</span>
                     <button
                       type="button"
                       onClick={() => {
@@ -1312,6 +1312,8 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                         setSelectedLocation((prev) => ({
                           ...prev,
                           name: 'Joy Corporate Solutions Private Limited (HQ)',
+                          code: prev?.code || 'HQ-CBE',
+                          location_type: 'OFFICE',
                           latitude: 11.0844364,
                           longitude: 77.1262627,
                           address: 'D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur, Coimbatore, Tamil Nadu 641407',
@@ -1322,7 +1324,28 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                       }}
                       className="px-2 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-900 font-bold rounded-md cursor-pointer transition-all"
                     >
-                      📍 Joy HQ (Arasur Campus)
+                      📍 Joy HQ (Arasur)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGoogleMapsUrlInput('https://maps.app.goo.gl/oJDgaJTNBwzXw9mC7');
+                        setSelectedLocation((prev) => ({
+                          ...prev,
+                          name: 'Watertec (India) - Unit 3',
+                          code: prev?.code || 'WT-U3',
+                          location_type: 'FACTORY',
+                          latitude: 11.0655197,
+                          longitude: 77.1519614,
+                          address: 'Watertec (India) Unit 3, Arasur Industrial Area, Coimbatore, Tamil Nadu 641407',
+                          geofence_radius_meters: 200,
+                          accuracy_requirement_meters: 60,
+                        }));
+                        showToast('✓ Set Watertec (India) Unit 3 (11.0655197°, 77.1519614°)', 'success');
+                      }}
+                      className="px-2 py-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold rounded-md cursor-pointer transition-all"
+                    >
+                      🏭 Watertec Unit 3
                     </button>
                   </div>
                 </div>
