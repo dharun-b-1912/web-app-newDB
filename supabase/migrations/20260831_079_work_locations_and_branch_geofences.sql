@@ -2,7 +2,7 @@
 -- ============================================================================
 -- Joy PeopleHR Enterprise — Multi-Tenant Work Locations & Branch Geofences
 -- Creates work_locations, employee_work_location_assignments, and attendance_location_events
--- Dynamic Organization & Tenant Isolation (No static hardcoded IDs)
+-- Dynamic Organization & Tenant Isolation (Clean Schema, No Static Mock Seeds)
 -- ============================================================================
 
 -- 1. Create work_locations table
@@ -15,12 +15,12 @@ CREATE TABLE IF NOT EXISTS public.work_locations (
   code TEXT NOT NULL,
   location_type TEXT NOT NULL DEFAULT 'OFFICE',
   address TEXT DEFAULT '',
-  city TEXT DEFAULT 'Coimbatore',
-  state TEXT DEFAULT 'Tamil Nadu',
+  city TEXT DEFAULT '',
+  state TEXT DEFAULT '',
   country TEXT DEFAULT 'India',
-  postal_code TEXT DEFAULT '641014',
-  latitude NUMERIC NOT NULL DEFAULT 11.0844364,
-  longitude NUMERIC NOT NULL DEFAULT 77.1262627,
+  postal_code TEXT DEFAULT '',
+  latitude NUMERIC NOT NULL,
+  longitude NUMERIC NOT NULL,
   geofence_radius_meters INTEGER NOT NULL DEFAULT 100,
   accuracy_requirement_meters INTEGER NOT NULL DEFAULT 50,
   location_max_age_seconds INTEGER NOT NULL DEFAULT 60,
@@ -123,29 +123,3 @@ DROP POLICY IF EXISTS "Tenant location events insert" ON public.attendance_locat
 CREATE POLICY "Tenant location events insert" ON public.attendance_location_events
   FOR INSERT TO authenticated
   WITH CHECK (auth.uid() IS NOT NULL);
-
--- 8. Dynamically Link Work Locations to the Actual Registered Primary Organization
-DO $$
-DECLARE
-  v_org_id TEXT;
-BEGIN
-  SELECT id INTO v_org_id FROM public.organizations ORDER BY created_at ASC LIMIT 1;
-  
-  IF v_org_id IS NOT NULL THEN
-    INSERT INTO public.work_locations (
-      id, tenant_id, organization_id, branch_id, name, code, location_type, address, city, state, country, postal_code, latitude, longitude, geofence_radius_meters, accuracy_requirement_meters, timezone, is_active
-    ) VALUES 
-      ('loc-hq-01', v_org_id, v_org_id, 'br-hq-01', 'Joy Corporate Solutions (HQ)', 'HQ-CBE', 'OFFICE', 'D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur', 'Coimbatore', 'Tamil Nadu', 'India', '641014', 11.0844364, 77.1262627, 100, 50, 'Asia/Kolkata', true),
-      ('loc-wt-u3', v_org_id, v_org_id, 'br-wt-u3', 'Water Tec Unit 3', 'WT-U3', 'FACTORY', 'Industrial Estate, Pollachi Road', 'Coimbatore', 'Tamil Nadu', 'India', '641021', 10.9844364, 77.0162627, 250, 60, 'Asia/Kolkata', true),
-      ('loc-cn-hq', v_org_id, v_org_id, 'br-cn-hq', 'CareNow Project Site', 'CN-HQ', 'PROJECT_SITE', 'Avinashi Main Road, Peelamedu', 'Coimbatore', 'Tamil Nadu', 'India', '641004', 11.0244364, 77.0062627, 150, 50, 'Asia/Kolkata', true)
-    ON CONFLICT (id) DO UPDATE SET
-      tenant_id = v_org_id,
-      organization_id = v_org_id,
-      name = EXCLUDED.name,
-      code = EXCLUDED.code,
-      latitude = EXCLUDED.latitude,
-      longitude = EXCLUDED.longitude,
-      geofence_radius_meters = EXCLUDED.geofence_radius_meters,
-      is_active = true;
-  END IF;
-END $$;

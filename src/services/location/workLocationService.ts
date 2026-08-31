@@ -131,91 +131,7 @@ const STORAGE_KEY_LOCATIONS = 'workforceos_work_locations_v2';
 const STORAGE_KEY_ASSIGNMENTS = 'workforceos_emp_work_locations_v2';
 const STORAGE_KEY_EVENTS = 'workforceos_location_events_v2';
 
-function getSeedWorkLocations(tenantId = getActiveOrgId()): WorkLocation[] {
-  return [
-    {
-      id: 'loc-hq-01',
-      tenant_id: tenantId,
-      organization_id: tenantId,
-      name: 'Joy Corporate Solutions (HQ)',
-      code: 'HQ-CBE',
-      location_type: 'OFFICE',
-      address: 'D.No: 2 31 A9, Annur Road, Thennampalayam, Sulur, Arasur',
-      city: 'Coimbatore',
-      state: 'Tamil Nadu',
-      country: 'India',
-      postal_code: '641014',
-      latitude: 11.0844364,
-      longitude: 77.1262627,
-      geofence_radius_meters: 100,
-      accuracy_requirement_meters: 50,
-      location_max_age_seconds: 60,
-      timezone: 'Asia/Kolkata',
-      ip_ranges: [],
-      bssid_list: [],
-      qr_code_enabled: true,
-      biometric_enabled: true,
-      is_active: true,
-      version: 1,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 'loc-wt-u3',
-      tenant_id: tenantId,
-      organization_id: tenantId,
-      name: 'Water Tec Unit 3',
-      code: 'WT-U3',
-      location_type: 'FACTORY',
-      address: 'Industrial Estate, Pollachi Road',
-      city: 'Coimbatore',
-      state: 'Tamil Nadu',
-      country: 'India',
-      postal_code: '641021',
-      latitude: 10.9844364,
-      longitude: 77.0162627,
-      geofence_radius_meters: 250,
-      accuracy_requirement_meters: 60,
-      location_max_age_seconds: 60,
-      timezone: 'Asia/Kolkata',
-      ip_ranges: [],
-      bssid_list: [],
-      qr_code_enabled: true,
-      biometric_enabled: true,
-      is_active: true,
-      version: 1,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 'loc-cn-hq',
-      tenant_id: tenantId,
-      organization_id: tenantId,
-      name: 'CareNow Project Site',
-      code: 'CN-HQ',
-      location_type: 'PROJECT_SITE',
-      address: 'Avinashi Main Road, Peelamedu',
-      city: 'Coimbatore',
-      state: 'Tamil Nadu',
-      country: 'India',
-      postal_code: '641004',
-      latitude: 11.0244364,
-      longitude: 77.0062627,
-      geofence_radius_meters: 150,
-      accuracy_requirement_meters: 50,
-      location_max_age_seconds: 60,
-      timezone: 'Asia/Kolkata',
-      ip_ranges: [],
-      bssid_list: [],
-      qr_code_enabled: true,
-      biometric_enabled: true,
-      is_active: true,
-      version: 1,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-}
+const SEED_WORK_LOCATIONS: WorkLocation[] = [];
 
 class WorkLocationService {
   private getStorageKey(base: string, tenantId = getActiveOrgId()): string {
@@ -253,7 +169,7 @@ class WorkLocationService {
   // ==========================================================================
 
   getLocations(tenantId = getActiveOrgId(), onlyActive = true): WorkLocation[] {
-    const list = this.loadStore<WorkLocation[]>(STORAGE_KEY_LOCATIONS, getSeedWorkLocations(tenantId), tenantId);
+    const list = this.loadStore<WorkLocation[]>(STORAGE_KEY_LOCATIONS, SEED_WORK_LOCATIONS, tenantId);
     return onlyActive ? list.filter((l) => l.is_active) : list;
   }
 
