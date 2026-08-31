@@ -1338,10 +1338,10 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                           latitude: 11.0655197,
                           longitude: 77.1519614,
                           address: 'Watertec (India) Unit 3, Arasur Industrial Area, Coimbatore, Tamil Nadu 641407',
-                          geofence_radius_meters: 200,
-                          accuracy_requirement_meters: 60,
+                          geofence_radius_meters: 100,
+                          accuracy_requirement_meters: 50,
                         }));
-                        showToast('✓ Set Watertec (India) Unit 3 (11.0655197°, 77.1519614°)', 'success');
+                        showToast('✓ Set Watertec (India) Unit 3 (11.0655197°, 77.1519614° | Radius: 100m)', 'success');
                       }}
                       className="px-2 py-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold rounded-md cursor-pointer transition-all"
                     >
