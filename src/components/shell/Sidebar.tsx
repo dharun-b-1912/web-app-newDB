@@ -407,7 +407,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'people', label: 'Employee Management', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
         { id: 'organization', label: 'Organization Architecture', icon: Building2 },
-        { id: 'vendors', label: 'Vendors & Manpower', icon: HeartHandshake },
         { id: 'documents', label: 'Documents & E-Sign', icon: FileText },
         { id: 'assets', label: 'Asset Management', icon: Package },
         { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus, badge: onboardingCount > 0 ? onboardingCount : undefined },
@@ -415,12 +414,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
-      groupName: 'VENDOR & CONTRACTOR GOVERNANCE',
+      groupName: 'VENDOR & CONTRACTORS',
       items: [
-        { id: 'vendors', label: 'Vendor & Workforce Hub', icon: Building2, badge: 'Command' },
-        { id: 'vendor-attendance', label: 'Contractor Time & Attendance', icon: Clock },
-        { id: 'vendor-settlement-workspace', label: 'Settlement & 3-Way Match', icon: Sparkles, badge: 'Master' },
-        { id: 'vendor-dashboard', label: 'Compliance & Risk Suite', icon: ShieldCheck, badge: 'Smart 🔔' },
+        { id: 'vendors', label: 'Vendors & Workforce Hub', icon: Building2 },
+        { id: 'vendor-attendance', label: 'Contractor Attendance', icon: Clock },
+        { id: 'vendor-settlement-workspace', label: '3-Way Match & Billing', icon: Sparkles },
+        { id: 'vendor-dashboard', label: 'Compliance & Risk Audit', icon: ShieldCheck },
       ],
     },
     {
@@ -681,12 +680,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
-      groupName: 'VENDOR & CONTRACTOR GOVERNANCE',
+      groupName: 'VENDOR & CONTRACTORS',
       items: [
-        { id: 'vendors', label: 'Vendor & Workforce Hub', icon: Building2, badge: 'Command' },
-        { id: 'vendor-attendance', label: 'Contractor Time & Attendance', icon: Clock },
-        { id: 'vendor-settlement-workspace', label: 'Settlement & 3-Way Match', icon: Sparkles, badge: 'Master' },
-        { id: 'vendor-dashboard', label: 'Compliance & Risk Suite', icon: ShieldCheck, badge: 'Smart 🔔' },
+        { id: 'vendors', label: 'Vendors & Workforce Hub', icon: Building2 },
+        { id: 'vendor-attendance', label: 'Contractor Attendance', icon: Clock },
+        { id: 'vendor-settlement-workspace', label: '3-Way Match & Billing', icon: Sparkles },
+        { id: 'vendor-dashboard', label: 'Compliance & Risk Audit', icon: ShieldCheck },
       ],
     },
     {
@@ -1001,11 +1000,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
 
   const vendorGroups: NavGroup[] = [
     {
-      groupName: 'VENDOR OPERATIONS & COMPLIANCE',
+      groupName: 'VENDOR GOVERNANCE',
       items: [
-        { id: 'vendor-settlement-workspace', label: 'Settlement Workspace', icon: Sparkles, badge: 'Master' },
-        { id: 'vendor-dashboard', label: 'Vendor Dashboard & Risk', icon: LayoutDashboard },
-        { id: 'vendor-licenses', label: 'Licenses & Expiry Hub', icon: ShieldCheck, badge: 'Smart 🔔' },
+        { id: 'vendor-settlement-workspace', label: 'Settlement Workspace', icon: Sparkles },
+        { id: 'vendor-dashboard', label: 'Vendor Dashboard', icon: LayoutDashboard },
+        { id: 'vendor-licenses', label: 'Licenses & Expiry Hub', icon: ShieldCheck },
         { id: 'vendor-compliance-calendar', label: 'Compliance Calendar', icon: Calendar },
         { id: 'vendor-statutory-returns', label: 'Form V & Returns', icon: FileSpreadsheet },
       ],
@@ -1095,11 +1094,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     <aside
       className={cn(
         'relative bg-white border-r border-gray-200/80 flex flex-col h-screen transition-all duration-300 ease-in-out shrink-0 select-none z-30',
-        isCollapsed ? 'w-[72px]' : 'w-[260px]'
+        isCollapsed ? 'w-[72px]' : 'w-[276px]'
       )}
     >
       {/* Brand Header */}
-      <div className="h-[72px] px-3.5 flex items-center justify-between border-b border-gray-100 shrink-0 bg-white">
+      <div className="h-[72px] px-4 flex items-center justify-between border-b border-gray-100 shrink-0 bg-white">
         {!isCollapsed ? (
           <div className="flex items-center min-w-0 flex-1">
             <img
@@ -1128,7 +1127,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       <div
         ref={scrollContainerRef}
         onScroll={handleSidebarScroll}
-        className="flex-1 overflow-y-auto py-3 px-2 space-y-3"
+        className="flex-1 overflow-y-auto py-3 px-2.5 space-y-3"
       >
         {filteredNavGroups.map((group, idx) => {
           const hasActiveItem = group.items.some(item => isItemActive(item.id, activeNav));
@@ -1139,12 +1138,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
               {!isCollapsed && (
                 <button
                   onClick={() => toggleGroup(group.groupName)}
-                  className="w-full px-2.5 py-1.5 text-[11px] font-black text-gray-800 hover:text-[#07563D] tracking-wider uppercase flex items-center justify-between cursor-pointer rounded-lg transition-colors border-b border-gray-100/80 mb-1 bg-gray-50/40 hover:bg-emerald-50/60"
+                  className="w-full px-2.5 py-1.5 text-[10.5px] font-bold text-gray-500 hover:text-[#07563D] tracking-wider uppercase flex items-center justify-between cursor-pointer rounded-lg transition-colors hover:bg-gray-100/70 mb-0.5"
                 >
                   <span className="font-extrabold tracking-wide">{group.groupName}</span>
                   <ChevronDown
                     className={cn(
-                      'w-3.5 h-3.5 text-gray-500 transition-transform duration-200',
+                      'w-3.5 h-3.5 text-gray-400 transition-transform duration-200',
                       isGroupCollapsed && '-rotate-90'
                     )}
                   />
@@ -1169,10 +1168,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
                           onClick={() => onSelectNav?.(item.id)}
                           title={isCollapsed ? item.label : undefined}
                           className={cn(
-                            'relative w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer group',
+                            'relative w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs transition-all cursor-pointer group',
                             isActive
                               ? 'bg-emerald-50 text-[#07563D] font-bold shadow-2xs'
-                              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50/80',
+                              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50/80 font-medium',
                             isCollapsed && 'justify-center px-0'
                           )}
                         >
@@ -1188,12 +1187,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
                             )}
                           />
 
-                          {!isCollapsed && <span className="truncate text-[11px] sm:text-xs">{item.label}</span>}
+                          {!isCollapsed && (
+                            <span className="truncate flex-1 text-left text-[12px] leading-tight tracking-tight">
+                              {item.label}
+                            </span>
+                          )}
 
                           {!isCollapsed && item.badge !== undefined && (
                             <span
                               className={cn(
-                                'ml-auto text-[10px] font-bold px-1.5 py-0.2 rounded-md shrink-0',
+                                'ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0',
                                 isActive
                                   ? 'bg-emerald-100 text-[#07563D]'
                                   : 'bg-gray-100 text-gray-500 group-hover:bg-gray-200'
