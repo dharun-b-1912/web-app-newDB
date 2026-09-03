@@ -163,35 +163,13 @@ class WorkOvertimeService {
     if (!isSupabaseEnabled) return;
     try {
       const { data: outboxRows } = await supabase
-        .from('realtime_outbox')
+        .from('notification_events')
         .select('*')
-        .in('entity_type', ['overtime_requests', 'wfh_requests'])
+        .eq('organization_id', tenantId)
         .order('created_at', { ascending: true });
 
       if (outboxRows && outboxRows.length > 0) {
-        const state = this.loadState(tenantId);
-        const otMap = new Map<string, OvertimeRequest>();
-        const wfhMap = new Map<string, WfhRequest>();
-
-        state.requests.forEach((r) => otMap.set(r.id, r));
-        state.wfhRequests.forEach((w) => wfhMap.set(w.id, w));
-
-        outboxRows.forEach((row: any) => {
-          if (row.entity_type === 'overtime_requests' && row.payload?.id) {
-            otMap.set(row.payload.id, { ...(otMap.get(row.payload.id) || {}), ...row.payload });
-          } else if (row.entity_type === 'wfh_requests' && row.payload?.id) {
-            wfhMap.set(row.payload.id, { ...(wfhMap.get(row.payload.id) || {}), ...row.payload });
-          }
-        });
-
-        state.requests = Array.from(otMap.values()).sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-        state.wfhRequests = Array.from(wfhMap.values()).sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-
-        this.saveState(state, tenantId);
+        // Realtime notifications retrieved
       }
     } catch (err) {
       console.warn('[WorkOvertime] fetchFromSupabase error:', err);
@@ -528,19 +506,21 @@ class WorkOvertimeService {
 
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('realtime_outbox').insert([
+        await supabase.from('notification_events').insert([
           {
-            tenant_id: tenantId,
             organization_id: tenantId,
-            entity_type: 'overtime_requests',
-            entity_id: newRequest.id,
-            event_type: 'overtime.submitted',
-            actor_id: newRequest.employee_id,
-            payload: newRequest,
+            recipient_user_id: newRequest.employee_id && newRequest.employee_id.length === 36 ? newRequest.employee_id : undefined,
+            channel: 'IN_APP',
+            title: 'Overtime Request Submitted',
+            message: `Overtime request submitted for ${newRequest.date} (${newRequest.expected_hours}h)`,
+            action_url: '/attendance/overtime',
+            is_read: false,
+            is_sent: true,
+            sent_at: now,
           },
         ]);
       } catch (err) {
-        console.warn('[WorkOvertime] Outbox insert error:', err);
+        console.warn('[WorkOvertime] Notification insert error:', err);
       }
     }
 
@@ -592,17 +572,19 @@ class WorkOvertimeService {
         await supabase
           .from('attendance_daily')
           .update({ overtime_minutes: otMinutes, updated_at: now })
-          .match({ employee_id: req.employee_id, date: req.date });
+          .match({ employee_id: req.employee_id, attendance_date: req.date });
 
-        await supabase.from('realtime_outbox').insert([
+        await supabase.from('notification_events').insert([
           {
-            tenant_id: tenantId,
             organization_id: tenantId,
-            entity_type: 'overtime_requests',
-            entity_id: req.id,
-            event_type: 'overtime.approved',
-            actor_id: req.employee_id,
-            payload: req,
+            recipient_user_id: req.employee_id && req.employee_id.length === 36 ? req.employee_id : undefined,
+            channel: 'IN_APP',
+            title: 'Overtime Request Approved',
+            message: `Overtime request for ${req.date} approved by ${approverName}`,
+            action_url: '/attendance/overtime',
+            is_read: false,
+            is_sent: true,
+            sent_at: now,
           },
         ]);
       }
@@ -635,19 +617,21 @@ class WorkOvertimeService {
 
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('realtime_outbox').insert([
+        await supabase.from('notification_events').insert([
           {
-            tenant_id: tenantId,
             organization_id: tenantId,
-            entity_type: 'overtime_requests',
-            entity_id: req.id,
-            event_type: 'overtime.rejected',
-            actor_id: req.employee_id,
-            payload: req,
+            recipient_user_id: req.employee_id && req.employee_id.length === 36 ? req.employee_id : undefined,
+            channel: 'IN_APP',
+            title: 'Overtime Request Rejected',
+            message: `Overtime request for ${req.date} rejected: ${comment || 'Policy mismatch'}`,
+            action_url: '/attendance/overtime',
+            is_read: false,
+            is_sent: true,
+            sent_at: now,
           },
         ]);
       } catch (err) {
-        console.warn('[WorkOvertime] Outbox insert error:', err);
+        console.warn('[WorkOvertime] Notification insert error:', err);
       }
     }
 
@@ -704,19 +688,20 @@ class WorkOvertimeService {
     state.requests = [...created, ...state.requests];
     this.saveState(state, tenantId);
 
-    // Save to Supabase Outbox
     if (isSupabaseEnabled) {
       try {
-        const outboxEntries = created.map((req) => ({
-          tenant_id: tenantId,
+        const notificationEntries = created.map((req) => ({
           organization_id: tenantId,
-          entity_type: 'overtime_requests',
-          entity_id: req.id,
-          event_type: 'overtime.approved',
-          actor_id: req.employee_id,
-          payload: req,
+          recipient_user_id: req.employee_id && req.employee_id.length === 36 ? req.employee_id : undefined,
+          channel: 'IN_APP' as const,
+          title: 'Overtime Allocated',
+          message: `Bulk overtime allocated for ${req.date} (${req.expected_hours}h)`,
+          action_url: '/attendance/overtime',
+          is_read: false,
+          is_sent: true,
+          sent_at: now,
         }));
-        supabase.from('realtime_outbox').insert(outboxEntries).then(() => {});
+        supabase.from('notification_events').insert(notificationEntries).then(() => {});
       } catch (_) {}
     }
 
@@ -747,19 +732,21 @@ class WorkOvertimeService {
 
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('realtime_outbox').insert([
+        await supabase.from('notification_events').insert([
           {
-            tenant_id: tenantId,
             organization_id: tenantId,
-            entity_type: 'wfh_requests',
-            entity_id: newRequest.id,
-            event_type: 'wfh.submitted',
-            actor_id: newRequest.employee_id,
-            payload: newRequest,
+            recipient_user_id: newRequest.employee_id && newRequest.employee_id.length === 36 ? newRequest.employee_id : undefined,
+            channel: 'IN_APP',
+            title: 'WFH Request Submitted',
+            message: `WFH request submitted for ${newRequest.start_date}`,
+            action_url: '/attendance/wfh',
+            is_read: false,
+            is_sent: true,
+            sent_at: now,
           },
         ]);
       } catch (err) {
-        console.warn('[WorkOvertime] Outbox insert error:', err);
+        console.warn('[WorkOvertime] Notification insert error:', err);
       }
     }
 
@@ -806,18 +793,20 @@ class WorkOvertimeService {
       if (isSupabaseEnabled) {
         await supabase
           .from('attendance_daily')
-          .update({ status: 'WFH', updated_at: new Date().toISOString() })
-          .match({ employee_id: req.employee_id, date: req.start_date });
+          .update({ status: 'PRESENT', updated_at: new Date().toISOString() })
+          .match({ employee_id: req.employee_id, attendance_date: req.start_date });
 
-        await supabase.from('realtime_outbox').insert([
+        await supabase.from('notification_events').insert([
           {
-            tenant_id: tenantId,
             organization_id: tenantId,
-            entity_type: 'wfh_requests',
-            entity_id: req.id,
-            event_type: 'wfh.approved',
-            actor_id: req.employee_id,
-            payload: req,
+            recipient_user_id: req.employee_id && req.employee_id.length === 36 ? req.employee_id : undefined,
+            channel: 'IN_APP',
+            title: 'WFH Request Approved',
+            message: `WFH request for ${req.start_date} approved by ${approverName}`,
+            action_url: '/attendance/wfh',
+            is_read: false,
+            is_sent: true,
+            sent_at: new Date().toISOString(),
           },
         ]);
       }
@@ -848,19 +837,21 @@ class WorkOvertimeService {
 
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('realtime_outbox').insert([
+        await supabase.from('notification_events').insert([
           {
-            tenant_id: tenantId,
             organization_id: tenantId,
-            entity_type: 'wfh_requests',
-            entity_id: req.id,
-            event_type: 'wfh.rejected',
-            actor_id: req.employee_id,
-            payload: req,
+            recipient_user_id: req.employee_id && req.employee_id.length === 36 ? req.employee_id : undefined,
+            channel: 'IN_APP',
+            title: 'WFH Request Rejected',
+            message: `WFH request for ${req.start_date} rejected: ${comment || 'Physical office presence required'}`,
+            action_url: '/attendance/wfh',
+            is_read: false,
+            is_sent: true,
+            sent_at: new Date().toISOString(),
           },
         ]);
       } catch (err) {
-        console.warn('[WorkOvertime] Outbox insert error:', err);
+        console.warn('[WorkOvertime] Notification insert error:', err);
       }
     }
 

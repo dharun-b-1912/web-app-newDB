@@ -416,12 +416,21 @@ export const vendorPortalService = {
     all.unshift(newEmp);
     setStorage(STORAGE_KEYS.EMPLOYEES, all);
 
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && supabase) {
       (async () => {
         try {
-          await supabase.from('vendor_portal_workforce').insert(newEmp);
+          if (newEmp.vendor_id && newEmp.vendor_id.length === 36) {
+            await supabase.from('vendor_workers').insert({
+              organization_id: newEmp.tenant_id,
+              vendor_id: newEmp.vendor_id,
+              worker_code: newEmp.employee_code,
+              full_name: newEmp.display_name,
+              daily_wage_rate: 800,
+              status: 'ACTIVE',
+            });
+          }
         } catch (err) {
-          console.warn('[VendorPortalService] Supabase insert workforce failed:', err);
+          console.warn('[VendorPortalService] Supabase insert vendor_workers notice:', err);
         }
       })();
     }

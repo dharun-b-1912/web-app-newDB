@@ -71,18 +71,37 @@ class RecruitmentService {
 
   async getRequisitions(params?: {
     organizationId?: string;
+    companyId?: string;
     status?: string;
     departmentId?: string;
     search?: string;
   }): Promise<Requisition[]> {
     if (isSupabaseEnabled && supabase) {
       try {
-        let q = supabase.from('requisitions').select('*');
+        let q = supabase.from('job_openings').select('*');
         if (params?.organizationId) q = q.eq('organization_id', params.organizationId);
+        if (params?.companyId) q = q.eq('company_id', params.companyId);
         if (params?.status && params.status !== 'ALL') q = q.eq('status', params.status);
         if (params?.departmentId && params.departmentId !== 'ALL') q = q.eq('department_id', params.departmentId);
         const { data, error } = await q.order('created_at', { ascending: false });
-        if (!error && data) return data;
+        if (!error && data && data.length > 0) {
+          return data.map((d: any) => ({
+            id: d.id,
+            organization_id: d.organization_id,
+            company_id: d.company_id,
+            department_id: d.department_id,
+            job_title: d.title || d.job_title || 'Position',
+            requisition_code: d.requisition_code,
+            requisition_type: 'New Position',
+            priority: 'Medium',
+            number_of_positions: d.vacancies_count || 1,
+            positions_filled: 0,
+            job_description: d.job_description || '',
+            status: d.status || 'Open',
+            created_at: d.created_at,
+            updated_at: d.created_at,
+          } as Requisition));
+        }
       } catch (err) {
         console.warn('[RecruitmentService] getRequisitions SQL error:', err);
       }
@@ -147,10 +166,19 @@ class RecruitmentService {
 
     if (isSupabaseEnabled && supabase) {
       try {
-        const { data, error } = await supabase.from('requisitions').insert([newReq]).select().single();
+        const { data, error } = await supabase.from('job_openings').insert([{
+          title: newReq.job_title,
+          requisition_code: newReq.id,
+          organization_id: newReq.organization_id,
+          company_id: newReq.company_id,
+          department_id: newReq.department_id,
+          vacancies_count: newReq.number_of_positions,
+          job_description: newReq.job_description || newReq.job_title,
+          status: 'OPEN',
+        }]).select().single();
         if (!error && data) {
-          hrEventBus.emit('recruitment.requisition_created', { requisition: data });
-          return data;
+          hrEventBus.emit('recruitment.requisition_created', { requisition: newReq });
+          return newReq;
         }
       } catch (err) {
         console.warn('[RecruitmentService] createRequisition SQL fallback:', err);
@@ -204,8 +232,10 @@ class RecruitmentService {
 
     if (isSupabaseEnabled && supabase) {
       try {
-        const { data, error } = await supabase.from('requisitions').update(updates).eq('id', requisitionId).select().single();
-        if (!error && data) return data;
+        const { data, error } = await supabase.from('job_openings').update({
+          status: allApproved ? 'OPEN' : 'DRAFT',
+        }).eq('id', requisitionId).select().single();
+        if (!error && data) return { ...req, ...updates };
       } catch (err) {
         console.warn('[RecruitmentService] approveRequisitionStep SQL fallback:', err);
       }
@@ -230,10 +260,12 @@ class RecruitmentService {
 
     if (isSupabaseEnabled && supabase) {
       try {
-        const { data, error } = await supabase.from('requisitions').update(updates).eq('id', requisitionId).select().single();
+        const { data, error } = await supabase.from('job_openings').update({
+          status: 'CLOSED',
+        }).eq('id', requisitionId).select().single();
         if (!error && data) {
           hrEventBus.emit('recruitment.requisition_rejected', { requisitionId, reason });
-          return data;
+          return { ...updates, id: requisitionId } as any;
         }
       } catch (err) {
         console.warn('[RecruitmentService] rejectRequisition SQL fallback:', err);
@@ -381,17 +413,43 @@ class RecruitmentService {
   // ==========================================================================
 
   async getCandidates(params?: {
+    organizationId?: string;
     stage?: string;
     jobId?: string;
     search?: string;
   }): Promise<Candidate[]> {
     if (isSupabaseEnabled && supabase) {
       try {
-        let q = supabase.from('candidates').select('*');
-        if (params?.stage && params.stage !== 'ALL') q = q.eq('current_stage', params.stage);
-        if (params?.jobId && params.jobId !== 'ALL') q = q.eq('applied_job_id', params.jobId);
+        let q = supabase.from('job_applicants').select('*');
+        if (params?.organizationId) q = q.eq('organization_id', params.organizationId);
+        if (params?.stage && params.stage !== 'ALL') q = q.eq('stage', params.stage);
+        if (params?.jobId && params.jobId !== 'ALL') q = q.eq('job_opening_id', params.jobId);
         const { data, error } = await q.order('created_at', { ascending: false });
-        if (!error && data) return data;
+        if (!error && data && data.length > 0) {
+          return data.map((d: any) => {
+            const parts = (d.candidate_name || 'Candidate Name').split(' ');
+            const firstName = parts[0] || 'Candidate';
+            const lastName = parts.slice(1).join(' ') || 'Applicant';
+            return {
+              id: d.id,
+              organization_id: d.organization_id,
+              applied_job_id: d.job_opening_id,
+              first_name: firstName,
+              last_name: lastName,
+              display_name: d.candidate_name,
+              email: d.candidate_email,
+              phone: d.candidate_phone || '',
+              resume_url: d.resume_url || '',
+              skills: [],
+              source_type: 'Career Portal',
+              status: 'Active',
+              current_stage: (d.stage === 'APPLIED' ? 'New' : d.stage === 'OFFER_EXTENDED' ? 'Offer' : d.stage === 'HIRED' ? 'Preboarding' : d.stage) as CandidateStage,
+              rating: d.rating,
+              created_at: d.created_at,
+              updated_at: d.updated_at || d.created_at,
+            } as Candidate;
+          });
+        }
       } catch (err) {
         console.warn('[RecruitmentService] getCandidates SQL error:', err);
       }
@@ -446,10 +504,18 @@ class RecruitmentService {
 
     if (isSupabaseEnabled && supabase) {
       try {
-        const { data, error } = await supabase.from('candidates').insert([newCand]).select().single();
+        const { data, error } = await supabase.from('job_applicants').insert([{
+          organization_id: newCand.organization_id,
+          job_opening_id: newCand.applied_job_id && newCand.applied_job_id.length === 36 ? newCand.applied_job_id : undefined,
+          candidate_name: newCand.display_name,
+          candidate_email: newCand.email,
+          candidate_phone: newCand.phone,
+          resume_url: newCand.resume_url,
+          stage: 'APPLIED',
+        }]).select().single();
         if (!error && data) {
-          hrEventBus.emit('recruitment.candidate_created', { candidate: data });
-          return data;
+          hrEventBus.emit('recruitment.candidate_created', { candidate: newCand });
+          return newCand;
         }
       } catch (err) {
         console.warn('[RecruitmentService] createCandidate SQL fallback:', err);
@@ -488,10 +554,23 @@ class RecruitmentService {
 
     if (isSupabaseEnabled && supabase) {
       try {
-        const { data, error } = await supabase.from('candidates').update(updates).eq('id', candidateId).select().single();
+        const stageMap: Record<string, string> = {
+          'New': 'APPLIED',
+          'Screening': 'SCREENING',
+          'Interview': 'INTERVIEW_SCHEDULED',
+          'Offer': 'OFFER_EXTENDED',
+          'Preboarding': 'HIRED',
+          'Hired': 'HIRED',
+          'Rejected': 'REJECTED',
+        };
+        const mappedStage = stageMap[newStage] || 'APPLIED';
+        const { data, error } = await supabase.from('job_applicants').update({
+          stage: mappedStage,
+          updated_at: new Date().toISOString(),
+        }).eq('id', candidateId).select().single();
         if (!error && data) {
           hrEventBus.emit('recruitment.candidate_stage_changed', { candidateId, fromStage, toStage: newStage });
-          return data;
+          return { ...cand, ...updates };
         }
       } catch (err) {
         console.warn('[RecruitmentService] updateCandidateStage SQL error:', err);
@@ -828,7 +907,10 @@ class RecruitmentService {
 
     if (isSupabaseEnabled && supabase) {
       try {
-        await supabase.from('candidates').update(candUpdates).eq('id', candidateId);
+        await supabase.from('job_applicants').update({
+          stage: 'HIRED',
+          updated_at: new Date().toISOString(),
+        }).eq('id', candidateId);
       } catch (_) {}
     }
 
