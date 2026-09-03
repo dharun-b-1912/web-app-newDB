@@ -29,7 +29,7 @@ async function runCutoverSmoke() {
   console.log('  JOY PEOPLEHR SAAS — PHASE 10 PRODUCTION CUTOVER SMOKE TEST    ');
   console.log('================================================================\n');
 
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://wmqjmyzzamgxyeuotbki.supabase.co';
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://ysiajemrqakfngasehhi.supabase.co';
   const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
   const client = createClient(supabaseUrl, supabaseAnonKey);
 

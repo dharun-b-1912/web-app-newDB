@@ -33,7 +33,7 @@ async function run() {
   console.log('  JOY PEOPLEHR SAAS — PHASE 9 INDEPENDENT PRODUCTION VALIDATOR  ');
   console.log('================================================================\n');
 
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://wmqjmyzzamgxyeuotbki.supabase.co';
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://ysiajemrqakfngasehhi.supabase.co';
   const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
 
   // --------------------------------------------------------------------------

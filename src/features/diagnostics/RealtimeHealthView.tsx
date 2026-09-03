@@ -192,7 +192,7 @@ export const RealtimeHealthView: React.FC = () => {
             <Server className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-lg font-bold text-gray-900">{isSupabaseEnabled ? 'Connected & Active' : 'Offline / Mock'}</div>
-          <div className="text-xs text-gray-500 font-mono truncate">wmqjmyzzamgxyeuotbki.supabase.co</div>
+          <div className="text-xs text-gray-500 font-mono truncate">ysiajemrqakfngasehhi.supabase.co</div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-xs space-y-2">
