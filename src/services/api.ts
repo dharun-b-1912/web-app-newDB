@@ -515,28 +515,16 @@ export const api = {
   } | string): Employee[] {
     // 1. Authoritative in-memory cache takes precedence
     let list: Employee[] = [];
-    if (this._empCache?.data && this._empCache.data.length > 0) {
+    if (this._empCache?.data) {
       list = [...this._empCache.data];
+    } else if (isSupabaseEnabled) {
+      // In Supabase mode, start with empty list while remote query executes
+      list = [];
     } else {
       list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
-      // If storage has data, populate memory cache
       if (list.length > 0) {
         this._empCache = { data: list, timestamp: Date.now() };
       }
-    }
-
-    // Filter out any legacy mock employee records
-    if (list.length > 0 && list.some((e) => e.id === 'emp-hr-001' || e.employee_code === 'JCS-HR-001')) {
-      list = list.filter((e) => e.id !== 'emp-hr-001' && e.employee_code !== 'JCS-HR-001' && !e.id.startsWith('emp-00') && !e.id.startsWith('vemp-'));
-      setStorage(KEYS.EMPLOYEES, list);
-      if (this._empCache) {
-        this._empCache.data = list;
-      }
-    }
-
-    // If cache is still empty, trigger asynchronous rehydration from Supabase
-    if (list.length === 0 && isSupabaseEnabled && !this._empInFlight) {
-      this.getEmployees().catch(() => {});
     }
 
     if (!params) return list;
@@ -556,8 +544,7 @@ export const api = {
       );
     }
     if (filterObj && filterObj.companyId && filterObj.companyId !== 'all') {
-      const filteredByComp = list.filter((e) => e.company_id === filterObj.companyId);
-      if (filteredByComp.length > 0) list = filteredByComp;
+      list = list.filter((e) => e.company_id === filterObj.companyId);
     }
     if (filterObj && filterObj.departmentId && filterObj.departmentId !== 'all') {
       list = list.filter((e) => e.department_id === filterObj.departmentId);
@@ -603,13 +590,23 @@ export const api = {
         try {
           let q = supabase.from('employees').select('*');
           const filterObj = typeof params === 'string' ? { companyId: params } : params;
-          if (filterObj?.companyId) q = q.eq('company_id', filterObj.companyId);
+          if (filterObj?.companyId && filterObj.companyId !== 'all') q = q.eq('company_id', filterObj.companyId);
           if (filterObj?.departmentId && filterObj.departmentId !== 'all') q = q.eq('department_id', filterObj.departmentId);
           if (filterObj?.status && filterObj.status !== 'all') q = q.eq('status', filterObj.status);
           if (filterObj?.source && filterObj.source !== 'all') q = q.eq('employment_source', filterObj.source);
           if (filterObj?.vendorId && filterObj.vendorId !== 'all') q = q.eq('vendor_id', filterObj.vendorId);
           const { data, error } = await q;
+
           if (!error && data !== null) {
+            // Authoritative remote response
+            if (data.length === 0) {
+              if (isUnfiltered) {
+                setStorage(KEYS.EMPLOYEES, []);
+                this._empCache = { data: [], timestamp: Date.now() };
+              }
+              return [];
+            }
+
             // Concurrently fetch real Bank Accounts and Statutory records for all retrieved employees
             const empIds = data.map((e: any) => e.id);
             if (empIds.length > 0) {
@@ -654,17 +651,25 @@ export const api = {
               } catch (_) {}
             }
 
-            setStorage(KEYS.EMPLOYEES, data);
             if (isUnfiltered) {
+              setStorage(KEYS.EMPLOYEES, data);
               this._empCache = { data, timestamp: Date.now() };
             }
             return data;
           }
           if (error) {
-            console.warn('[API] Supabase getEmployees fallback to local store:', error.message || error);
+            console.warn('[API] Supabase getEmployees error:', error.message || error);
+            if (!isSupabaseEnabled) {
+              return this.getEmployeesSync(params);
+            }
+            return [];
           }
         } catch (err) {
           console.warn('[API] Supabase getEmployees fetch notice:', err);
+          if (!isSupabaseEnabled) {
+            return this.getEmployeesSync(params);
+          }
+          return [];
         }
       }
 

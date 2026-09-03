@@ -127,7 +127,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         auditLogs,
         dailyAttendanceList,
       ] = await Promise.all([
-        api.getEmployees(companyId ? { companyId } : undefined).then(res => res.length > 0 ? res : api.getEmployees()).catch(() => []),
+        api.getEmployees(companyId ? { companyId } : undefined).catch(() => []),
         api.getDepartments(companyId).catch(() => []),
         approvalService.getApprovalRequests().catch(() => []),
         api.getAuditLogs().catch(() => []),

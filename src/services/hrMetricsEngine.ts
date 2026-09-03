@@ -92,7 +92,7 @@ export const hrMetricsEngine = {
       leaveRequests,
       jobOpenings,
     ] = await Promise.all([
-      api.getEmployees(companyId ? { companyId } : undefined).then(res => res.length > 0 ? res : api.getEmployees()).catch(() => []),
+      api.getEmployees(companyId ? { companyId } : undefined).catch(() => []),
       api.getDepartments(companyId).catch(() => []),
       api.getBranches(companyId).catch(() => []),
       api.getLocations().catch(() => []),
@@ -146,7 +146,7 @@ export const hrMetricsEngine = {
       leaveRequests,
       jobOpenings,
     ] = await Promise.all([
-      api.getEmployees(companyId ? { companyId } : undefined).then(res => res.length > 0 ? res : api.getEmployees()).catch(() => []),
+      api.getEmployees(companyId ? { companyId } : undefined).catch(() => []),
       api.getDepartments(companyId).catch(() => []),
       attendanceApi.getDailyAttendance(todayStr),
       leaveApi.getLeaveRequests(),

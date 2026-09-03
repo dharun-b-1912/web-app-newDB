@@ -20,6 +20,17 @@ import { GlobalErrorInterceptor } from './services/observability/globalErrorInte
 // Initialize zero-leakage global observability interceptor
 GlobalErrorInterceptor.initialize();
 
+// Clean stale legacy development employee cache on startup
+if (typeof window !== 'undefined') {
+  try {
+    const raw = localStorage.getItem('workforce_employees');
+    if (raw && (raw.includes('emp-hr-001') || raw.includes('JCS-017') || raw.includes('dharun@') || raw.includes('danya@') || raw.includes('thirumalai'))) {
+      localStorage.removeItem('workforce_employees');
+      localStorage.removeItem('workforce_metrics');
+    }
+  } catch (_) {}
+}
+
 // Expose security audit runners for dev inspection
 if (typeof window !== 'undefined') {
   (window as any).__runSecurityAudit = runAllSecurityAuditTests;

@@ -40,16 +40,11 @@ export const PeopleView: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const data = await api.getEmployees();
-      if (data && data.length > 0) {
-        setEmployees(data);
-      } else {
-        const fallback = api.getEmployeesSync();
-        setEmployees(fallback);
-      }
+      const data = await api.getEmployees(activeCompany?.id ? { companyId: activeCompany.id } : undefined);
+      setEmployees(data || []);
     } catch (err) {
       console.warn('[PeopleView] Failed to load employees:', err);
-      setEmployees(api.getEmployeesSync());
+      setEmployees([]);
     }
   };
 
