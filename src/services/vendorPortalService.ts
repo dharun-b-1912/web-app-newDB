@@ -419,13 +419,15 @@ export const vendorPortalService = {
     if (isSupabaseEnabled && supabase) {
       (async () => {
         try {
-          if (newEmp.vendor_id && newEmp.vendor_id.length === 36) {
+          const resolvedOrgId = (activeVendor as any).organization_id || activeVendor.tenant_id || api.getOrganizationSync()?.id;
+          if (resolvedOrgId && resolvedOrgId.length === 36 && newEmp.vendor_id && newEmp.vendor_id.length === 36) {
             await supabase.from('vendor_workers').insert({
-              organization_id: newEmp.tenant_id,
+              organization_id: resolvedOrgId,
               vendor_id: newEmp.vendor_id,
               worker_code: newEmp.employee_code,
               full_name: newEmp.display_name,
-              daily_wage_rate: 800,
+              deployed_company_id: newEmp.current_client_id && newEmp.current_client_id.length === 36 ? newEmp.current_client_id : undefined,
+              daily_wage_rate: (payload as any).daily_wage_rate || (payload as any).wage_rate || undefined,
               status: 'ACTIVE',
             });
           }
