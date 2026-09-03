@@ -23,6 +23,7 @@ import {
 import { OvertimeRequest, OvertimeRequestStatus, CompensationType } from '../../types/workOvertime';
 import { workOvertimeService } from '../../services/workOvertimeService';
 import { api } from '../../services/api';
+import { useEmployees } from '../../hooks/useEmployees';
 
 export const OvertimeRequestsView: React.FC = () => {
   const { showToast } = useToast();
@@ -32,7 +33,7 @@ export const OvertimeRequestsView: React.FC = () => {
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
 
   const activeComp = api.getActiveCompany();
-  const employees = api.getEmployeesSync(activeComp?.id) || [];
+  const { employees } = useEmployees({ companyId: activeComp?.id });
   const currentEmp = employees[0] || {
     id: 'emp-admin-001',
     display_name: 'Dharun B',

@@ -1,0 +1,20 @@
+{
+  "pipeline": "verify:production",
+  "release": "v1.0.0-production-release",
+  "commit": "9830c3174c54fd615b0e91152174a5fb704f315c",
+  "timestamp": "2026-09-03T06:22:58.799Z",
+  "duration_seconds": 99.8,
+  "stages": {
+    "guard:governance": "PASSED",
+    "audit:schema": "PASSED",
+    "audit:tenant": "PASSED",
+    "audit:rls": "PASSED",
+    "audit:database": "PASSED",
+    "typecheck": "PASSED",
+    "test:unit-security": "PASSED",
+    "test:cutover-smoke": "PASSED",
+    "build:production": "PASSED"
+  },
+  "decision": "RELEASE_ELIGIBLE",
+  "exit_code": 0
+}

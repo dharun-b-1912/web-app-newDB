@@ -1,0 +1,26 @@
+{
+  "log_session_id": "LOG_RELAY_AUDIT_20260901_085500",
+  "events": [
+    {
+      "event_id": "RELAY_EVT_01",
+      "access_request_id": "ACC_REQ_8819A2",
+      "employee_id": "JCS-017",
+      "device_id": "ZK-COIMBATORE-001",
+      "location_id": "loc-water-tec-unit3",
+      "decision": "ALLOW",
+      "pulse_duration_ms": 5000,
+      "command_hash": "SHA256:d8b2e1a49f81...",
+      "timestamp": "2026-09-01T08:55:01Z"
+    },
+    {
+      "event_id": "RELAY_EVT_02",
+      "access_request_id": "ACC_REQ_9921B3",
+      "employee_id": "JCS-999-SUSPENDED",
+      "device_id": "ZK-COIMBATORE-001",
+      "decision": "DENY",
+      "reason": "WORKER_INACTIVE",
+      "pulse_duration_ms": 0,
+      "timestamp": "2026-09-01T08:55:05Z"
+    }
+  ]
+}

@@ -11,7 +11,7 @@ interface ToastItem {
 }
 
 interface ToastContextType {
-  showToast: (message: string, type?: ToastType) => void;
+  showToast: (message: string | { title?: string; message?: string; type?: ToastType }, type?: ToastType) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -19,9 +19,18 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const showToast = (message: string, type: ToastType = 'success') => {
+  const showToast = (messageOrObj: string | { title?: string; message?: string; type?: ToastType }, type: ToastType = 'success') => {
     const id = Date.now().toString();
-    setToasts(prev => [...prev, { id, message, type }]);
+    let msg = '';
+    let toastType = type;
+    if (typeof messageOrObj === 'object' && messageOrObj !== null) {
+      msg = messageOrObj.message || messageOrObj.title || 'Notification';
+      if (messageOrObj.type) toastType = messageOrObj.type;
+    } else {
+      msg = String(messageOrObj || '');
+    }
+
+    setToasts(prev => [...prev, { id, message: msg, type: toastType }]);
 
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));

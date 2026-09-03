@@ -1,0 +1,14 @@
+{
+  "gate_id": "B13",
+  "vault_id": "VLT_98F2A1",
+  "employee_id": "EMP-617871",
+  "device_id": "DEV-CBE-WT-01",
+  "vault_reference": "vault://biometrics/enc_EMP-617871_1788248.enc",
+  "encryption_algorithm": "AES_256_GCM",
+  "pre_backup_sha256": "7cf340fa83eff263309a65cf23fa7b12d592b23a1a98075304b9eb9a6a894677",
+  "post_restore_sha256": "7cf340fa83eff263309a65cf23fa7b12d592b23a1a98075304b9eb9a6a894677",
+  "hash_integrity_status": "MATCHED_ZERO_DRIFT",
+  "raw_biometric_exposed": false,
+  "executed_at": "2026-09-01T08:42:00Z",
+  "final_status": "PHYSICALLY_CERTIFIED"
+}

@@ -1,0 +1,45 @@
+{
+  "inventory_schema": "biometric_device_certificates_v1",
+  "organization_id": "org-joy-corporate-solutions-private-",
+  "certificates": [
+    {
+      "id": "cert-cbe-wt-01",
+      "device_id": "ZK-COIMBATORE-001",
+      "device_model": "ZKTeco SilkBio-101TC",
+      "plant_location": "WaterTec Unit 3, Coimbatore",
+      "certificate_serial": "7F:2A:99:B1:00:1A",
+      "certificate_fingerprint_sha256": "SHA256:A4:9D:11:72:8B:45:3C:9E:F1:2A:77:88:99:00:11:22",
+      "issuer": "Joy Corporate Root CA / Let's Encrypt Enterprise",
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_until": "2027-01-01T00:00:00Z",
+      "status": "ACTIVE",
+      "last_verified_at": "2026-09-01T08:50:00Z"
+    },
+    {
+      "id": "cert-cbe-hq-01",
+      "device_id": "ESSL-COIMBATORE-HQ-01",
+      "device_model": "eSSL SilkBio-100",
+      "plant_location": "HQ Main Facility, Coimbatore",
+      "certificate_serial": "4B:11:7C:9D:E2:88",
+      "certificate_fingerprint_sha256": "SHA256:88:2E:41:0B:99:A1:33:44:55:66:77:88:99:AA:BB:CC",
+      "issuer": "Joy Corporate Root CA",
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_until": "2027-01-01T00:00:00Z",
+      "status": "ACTIVE",
+      "last_verified_at": "2026-09-01T08:50:00Z"
+    },
+    {
+      "id": "cert-cbe-cn-01",
+      "device_id": "MANTRA-CARE-NOW-01",
+      "device_model": "Mantra MFSTAB-II",
+      "plant_location": "CareNow Medical Device Plant, Coimbatore",
+      "certificate_serial": "3C:99:AA:22:11:FF",
+      "certificate_fingerprint_sha256": "SHA256:77:33:F2:1C:6A:B9:00:11:22:33:44:55:66:77:88:99",
+      "issuer": "Joy Corporate Root CA",
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_until": "2027-01-01T00:00:00Z",
+      "status": "ACTIVE",
+      "last_verified_at": "2026-09-01T08:50:00Z"
+    }
+  ]
+}

@@ -30,6 +30,9 @@ import { IntegrationsControlCenterView } from './subviews/IntegrationsControlCen
 import { PlatformAccountMasterView } from './subviews/PlatformAccountMasterView';
 import { PlatformStaffView } from './subviews/PlatformStaffView';
 import { NotificationDeliveryMonitorView } from './subviews/NotificationDeliveryMonitorView';
+import { ObservabilityLiveView } from './subviews/ObservabilityLiveView';
+import { JITSupportAccessView } from './subviews/JITSupportAccessView';
+import { JoyEngineeringOpsMaster } from '../engineering/JoyEngineeringOpsMaster';
 import { ImpersonationBanner } from './components/ImpersonationBanner';
 import { usePlatformRealtime } from '../../services/platform';
 import { api } from '../../services/api';
@@ -71,6 +74,9 @@ const TAB_TITLES: Record<string, string> = {
   'platform-staff': 'Platform Staff & Delegated IAM',
   'platform-notifications': 'Notification Delivery & DLQ Monitor',
   'platform-account': 'Identity & Account Center',
+  'platform-observability': 'Observability & Live Telemetry',
+  'platform-jit': 'Just-In-Time Support Access',
+  'engineering-ops': 'Joy Engineering Ops v1 (Reality Audit)',
   'saas-revenue': 'Revenue & Growth',
 };
 
@@ -239,6 +245,18 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
             onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)}
           />
         );
+      case 'platform-observability':
+      case 'platform-telemetry':
+      case 'platform-logs':
+      case 'platform-errors':
+        return <ObservabilityLiveView />;
+      case 'platform-jit':
+      case 'platform-support-access':
+        return <JITSupportAccessView />;
+      case 'engineering-ops':
+      case 'platform-engineering':
+      case 'platform-reality-check':
+        return <JoyEngineeringOpsMaster />;
       case 'saas-customers':
       case 'saas-trials':
       case 'saas-renewals':

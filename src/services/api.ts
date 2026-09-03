@@ -39,10 +39,17 @@ const KEYS = {
   ACTIVE_COMPANY: 'workforce_active_company',
 };
 
+const _nodeApiFallback = new Map<string, string>();
+
 function getStorage<T>(key: string, defaultValue: T): T {
   try {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : defaultValue;
+    if (typeof localStorage !== 'undefined') {
+      const data = localStorage.getItem(key);
+      return data ? JSON.parse(data) : defaultValue;
+    } else {
+      const data = _nodeApiFallback.get(key);
+      return data ? JSON.parse(data) : defaultValue;
+    }
   } catch {
     return defaultValue;
   }
@@ -50,7 +57,11 @@ function getStorage<T>(key: string, defaultValue: T): T {
 
 function setStorage<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(value));
+    } else {
+      _nodeApiFallback.set(key, JSON.stringify(value));
+    }
   } catch (err) {
     console.error('Error writing to storage', err);
   }
@@ -502,12 +513,32 @@ export const api = {
     source?: string;
     vendorId?: string;
   } | string): Employee[] {
-    let list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+    // 1. Authoritative in-memory cache takes precedence
+    let list: Employee[] = [];
+    if (this._empCache?.data && this._empCache.data.length > 0) {
+      list = [...this._empCache.data];
+    } else {
+      list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+      // If storage has data, populate memory cache
+      if (list.length > 0) {
+        this._empCache = { data: list, timestamp: Date.now() };
+      }
+    }
+
     // Filter out any legacy mock employee records
     if (list.length > 0 && list.some((e) => e.id === 'emp-hr-001' || e.employee_code === 'JCS-HR-001')) {
       list = list.filter((e) => e.id !== 'emp-hr-001' && e.employee_code !== 'JCS-HR-001' && !e.id.startsWith('emp-00') && !e.id.startsWith('vemp-'));
       setStorage(KEYS.EMPLOYEES, list);
+      if (this._empCache) {
+        this._empCache.data = list;
+      }
     }
+
+    // If cache is still empty, trigger asynchronous rehydration from Supabase
+    if (list.length === 0 && isSupabaseEnabled && !this._empInFlight) {
+      this.getEmployees().catch(() => {});
+    }
+
     if (!params) return list;
 
     const filterObj = typeof params === 'string' ? { companyId: params } : params;
@@ -543,6 +574,9 @@ export const api = {
     return list;
   },
 
+  _empCache: null as { data: Employee[]; timestamp: number } | null,
+  _empInFlight: null as Promise<Employee[]> | null,
+
   async getEmployees(params?: {
     search?: string;
     departmentId?: string;
@@ -552,36 +586,145 @@ export const api = {
     source?: string;
     vendorId?: string;
   } | string): Promise<Employee[]> {
-    if (isSupabaseEnabled) {
+    const isUnfiltered = !params || (typeof params === 'object' && Object.keys(params).length === 0);
+    const now = Date.now();
+
+    // Serve from fresh 5-second memory cache for unfiltered calls to protect browser socket limit
+    if (isUnfiltered && this._empCache && now - this._empCache.timestamp < 5000) {
+      return this._empCache.data;
+    }
+
+    if (isUnfiltered && this._empInFlight) {
+      return this._empInFlight;
+    }
+
+    const fetchPromise = (async () => {
+      if (isSupabaseEnabled) {
+        try {
+          let q = supabase.from('employees').select('*');
+          const filterObj = typeof params === 'string' ? { companyId: params } : params;
+          if (filterObj?.companyId) q = q.eq('company_id', filterObj.companyId);
+          if (filterObj?.departmentId && filterObj.departmentId !== 'all') q = q.eq('department_id', filterObj.departmentId);
+          if (filterObj?.status && filterObj.status !== 'all') q = q.eq('status', filterObj.status);
+          if (filterObj?.source && filterObj.source !== 'all') q = q.eq('employment_source', filterObj.source);
+          if (filterObj?.vendorId && filterObj.vendorId !== 'all') q = q.eq('vendor_id', filterObj.vendorId);
+          const { data, error } = await q;
+          if (!error && data !== null) {
+            // Concurrently fetch real Bank Accounts and Statutory records for all retrieved employees
+            const empIds = data.map((e: any) => e.id);
+            if (empIds.length > 0) {
+              try {
+                const [bRes, sRes] = await Promise.all([
+                  supabase.from('employee_bank_accounts').select('*').in('employee_id', empIds),
+                  supabase.from('employee_statutory_details').select('*').in('employee_id', empIds),
+                ]);
+
+                const bankMap = new Map((bRes?.data || []).map((b: any) => [b.employee_id, b]));
+                const statMap = new Map((sRes?.data || []).map((s: any) => [s.employee_id, s]));
+
+                data.forEach((e: any) => {
+                  const b = bankMap.get(e.id);
+                  if (b) {
+                    e.bank = {
+                      bank_name: b.bank_name,
+                      account_number: b.account_number,
+                      ifsc: b.ifsc_code,
+                      ifsc_code: b.ifsc_code,
+                      account_type: b.account_type,
+                      account_holder_name: b.account_holder_name,
+                    };
+                  }
+                  const s = statMap.get(e.id);
+                  if (s) {
+                    e.statutory = {
+                      pan: s.pan_number,
+                      pan_number: s.pan_number,
+                      uan: s.uan_number,
+                      uan_number: s.uan_number,
+                      pf_number: s.pf_number,
+                      esi_number: s.esi_number,
+                      tax_regime: s.tax_regime,
+                      pf_applicable: s.pf_applicable,
+                      esi_applicable: s.esi_applicable,
+                      pt_applicable: s.pt_applicable,
+                      lwf_applicable: s.lwf_applicable,
+                    };
+                  }
+                });
+              } catch (_) {}
+            }
+
+            setStorage(KEYS.EMPLOYEES, data);
+            if (isUnfiltered) {
+              this._empCache = { data, timestamp: Date.now() };
+            }
+            return data;
+          }
+          if (error) {
+            console.warn('[API] Supabase getEmployees fallback to local store:', error.message || error);
+          }
+        } catch (err) {
+          console.warn('[API] Supabase getEmployees fetch notice:', err);
+        }
+      }
+
+      const syncResult = this.getEmployeesSync(params);
+      if (isUnfiltered) {
+        this._empCache = { data: syncResult, timestamp: Date.now() };
+      }
+      return syncResult;
+    })();
+
+    if (isUnfiltered) {
+      this._empInFlight = fetchPromise;
       try {
-        let q = supabase.from('employees').select('*');
-        const filterObj = typeof params === 'string' ? { companyId: params } : params;
-        if (filterObj?.companyId) q = q.eq('company_id', filterObj.companyId);
-        if (filterObj?.departmentId && filterObj.departmentId !== 'all') q = q.eq('department_id', filterObj.departmentId);
-        if (filterObj?.status && filterObj.status !== 'all') q = q.eq('status', filterObj.status);
-        if (filterObj?.source && filterObj.source !== 'all') q = q.eq('employment_source', filterObj.source);
-        if (filterObj?.vendorId && filterObj.vendorId !== 'all') q = q.eq('vendor_id', filterObj.vendorId);
-        const { data, error } = await q;
-        if (!error && data !== null) {
-          setStorage(KEYS.EMPLOYEES, data);
-          return data;
-        }
-        if (error) {
-          console.warn('[API] Supabase getEmployees fallback to local store:', error.message || error);
-        }
-      } catch (err) {
-        console.warn('[API] Supabase getEmployees fetch notice:', err);
+        const res = await fetchPromise;
+        return res;
+      } finally {
+        this._empInFlight = null;
       }
     }
 
-    return this.getEmployeesSync(params);
+    return fetchPromise;
   },
 
   async getEmployeeById(id: string): Promise<Employee | undefined> {
     if (isSupabaseEnabled) {
       try {
-        const { data, error } = await supabase.from('employees').select('*').eq('id', id).maybeSingle();
-        if (data && !error) return data;
+        const [empRes, bankRes, statRes] = await Promise.all([
+          supabase.from('employees').select('*').eq('id', id).maybeSingle(),
+          supabase.from('employee_bank_accounts').select('*').eq('employee_id', id).maybeSingle(),
+          supabase.from('employee_statutory_details').select('*').eq('employee_id', id).maybeSingle(),
+        ]);
+
+        if (empRes?.data && !empRes.error) {
+          const emp = empRes.data as any;
+          if (bankRes?.data) {
+            emp.bank = {
+              bank_name: bankRes.data.bank_name,
+              account_number: bankRes.data.account_number,
+              ifsc: bankRes.data.ifsc_code,
+              ifsc_code: bankRes.data.ifsc_code,
+              account_type: bankRes.data.account_type,
+              account_holder_name: bankRes.data.account_holder_name,
+            };
+          }
+          if (statRes?.data) {
+            emp.statutory = {
+              pan: statRes.data.pan_number,
+              pan_number: statRes.data.pan_number,
+              uan: statRes.data.uan_number,
+              uan_number: statRes.data.uan_number,
+              pf_number: statRes.data.pf_number,
+              esi_number: statRes.data.esi_number,
+              tax_regime: statRes.data.tax_regime,
+              pf_applicable: statRes.data.pf_applicable,
+              esi_applicable: statRes.data.esi_applicable,
+              pt_applicable: statRes.data.pt_applicable,
+            };
+          }
+          return emp;
+        }
       } catch (err) {
         console.error('[API] Supabase getEmployeeById error:', err);
       }
@@ -1130,6 +1273,8 @@ export const api = {
       display_name: displayName,
       profile: { ...(existing.profile || {}), ...(data.profile || {}) } as EmployeeProfile,
       employment: { ...(existing.employment || {}), ...(data.employment || {}) } as EmploymentDetails,
+      bank: (data as any).bank || (existing as any).bank,
+      statutory: (data as any).statutory || (existing as any).statutory,
       updated_at: new Date().toISOString() 
     };
 
@@ -1658,3 +1803,19 @@ export const api = {
     console.info('[API] All local storage offline cache and mock keys cleared.');
   },
 };
+
+// ============================================================================
+// Joy PeopleHR — 7 Enterprise Workforce & Operational Engines Re-exports
+// ============================================================================
+export * from './operations/workforceIdentityEngine';
+export * from './operations/shiftRotationEngine';
+export * from './operations/attendancePolicyEngine';
+export * from './operations/overtimePolicyEngine';
+export * from './operations/vendorCommercialEngine';
+export * from './operations/bankingExportEngine';
+export * from './operations/enterpriseNotificationEngine';
+export * from './operations/employeeDocumentEngine';
+export * from './operations/dailyWagePayrollEngine';
+export * from './operations/vendorGovernanceEngine';
+export * from './operations/vendorGovernancePolicyEngine';
+export * from './identity/employeeIdentityResolver';

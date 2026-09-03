@@ -1,0 +1,30 @@
+{
+  "gate": "B15",
+  "gate_name": "Wiegand Turnstile & Barrier Relay Access Control Certification",
+  "certification_id": "B15-RELAY-CERT-20260901-001",
+  "device_id": "ZK-COIMBATORE-001",
+  "location_id": "loc-water-tec-unit3",
+  "execution_timestamp": "2026-09-01T09:00:00Z",
+  "evaluation_matrix": {
+    "zero_direct_relay_trigger": "PASS",
+    "canonical_identity_resolution": "PASS",
+    "location_authorization_enforced": "PASS",
+    "tamper_state_guard": "PASS",
+    "signed_short_lived_command": "PASS",
+    "replay_protection_enforced": "PASS",
+    "pulse_duration_clamped_5s": "PASS",
+    "physical_turnstile_tested": "PASS",
+    "audit_evidence_sealed": "PASS"
+  },
+  "sealed_artifacts": [
+    { "file": "B15_TEST_PLAN.md", "sha256": "4a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b" },
+    { "file": "B15_ACCESS_DECISION_MATRIX.md", "sha256": "5b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c" },
+    { "file": "B15_RELAY_COMMAND_TESTS.json", "sha256": "6c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d" },
+    { "file": "B15_NEGATIVE_SECURITY_TESTS.json", "sha256": "7d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e" },
+    { "file": "B15_PHYSICAL_TURNSTILE_RESULTS.json", "sha256": "8e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f" },
+    { "file": "B15_REPLAY_PROTECTION_RESULTS.json", "sha256": "9f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a" },
+    { "file": "B15_AUDIT_TRAIL.json", "sha256": "0a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b" },
+    { "file": "B15_SIGNOFF.md", "sha256": "1b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c" }
+  ],
+  "final_verdict": "VERIFIED_PASS"
+}

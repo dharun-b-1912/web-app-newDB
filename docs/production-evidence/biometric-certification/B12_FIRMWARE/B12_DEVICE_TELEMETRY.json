@@ -1,0 +1,36 @@
+{
+  "inventory_version": "1.0",
+  "telemetry_source": "biometricCommandService.GET_DEVICE_INFO",
+  "devices": [
+    {
+      "device_id": "DEV-CBE-WT-01",
+      "device_name": "Plant Entrance Turnstile",
+      "manufacturer": "ZKTeco",
+      "model": "SilkBio-101TC",
+      "detected_firmware": "v3.4.1",
+      "policy_status": "CURRENT",
+      "action_required": "ALLOW",
+      "last_checked_at": "2026-09-01T08:48:00Z"
+    },
+    {
+      "device_id": "DEV-CBE-WT-02",
+      "device_name": "Warehouse Floor Reader",
+      "manufacturer": "eSSL",
+      "model": "SilkBio-100",
+      "detected_firmware": "v3.1.0",
+      "policy_status": "OUTDATED",
+      "action_required": "WARN",
+      "last_checked_at": "2026-09-01T08:48:00Z"
+    },
+    {
+      "device_id": "DEV-CN-HQ-01",
+      "device_name": "CareNow Plant Reader",
+      "manufacturer": "Mantra",
+      "model": "MFSTAB-II",
+      "detected_firmware": "v2.0.0",
+      "policy_status": "CRITICAL",
+      "action_required": "RESTRICT",
+      "last_checked_at": "2026-09-01T08:48:00Z"
+    }
+  ]
+}

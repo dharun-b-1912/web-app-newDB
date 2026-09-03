@@ -1,0 +1,90 @@
+# 07. LEGACY OBJECT REGISTER — COMPLETE CLASSIFICATION
+
+**Audit Scope:** All 317 declared tables across migrations 001–093.
+
+---
+
+## 1. Classification Summary
+- **CANONICAL (19):** Core active business objects.
+- **ACTIVE (118):** Referenced in application services, subviews, or workflows.
+- **COMPATIBILITY (109):** Auxiliary, vendor portal, or specialized schema extensions.
+- **ORPHAN CANDIDATE (71):** Tables with 0 detected client repository references.
+
+---
+
+## 2. Orphan Candidates Register (Do Not Drop Automatically)
+These tables were created in early migrations but have no direct `.from('...')` references in the `src/` client code:
+- `platform_plans` (Source: `20260814_004_platform_control_plane.sql`)
+- `platform_feature_flags` (Source: `20260814_004_platform_control_plane.sql`)
+- `platform_incidents` (Source: `20260814_004_platform_control_plane.sql`)
+- `platform_webhook_deliveries` (Source: `20260814_004_platform_control_plane.sql`)
+- `platform_impersonation_sessions` (Source: `20260814_004_platform_control_plane.sql`)
+- `plans` (Source: `20260814_005_plans_and_entitlements_schema.sql`)
+- `features` (Source: `20260814_005_plans_and_entitlements_schema.sql`)
+- `plan_features` (Source: `20260814_005_plans_and_entitlements_schema.sql`)
+- `plan_limits` (Source: `20260814_005_plans_and_entitlements_schema.sql`)
+- `security_check_runs` (Source: `20260814_006_security_center_schema.sql`)
+- `security_posture_snapshots` (Source: `20260814_006_security_center_schema.sql`)
+- `session_events` (Source: `20260814_007_platform_sessions_schema.sql`)
+- `audit_event_exports` (Source: `20260814_008_audit_events_schema.sql`)
+- `audit_event_integrity_records` (Source: `20260814_008_audit_events_schema.sql`)
+- `support_sla_policies` (Source: `20260814_009_support_center_schema.sql`)
+- `support_case_assignments` (Source: `20260814_009_support_center_schema.sql`)
+- `platform_job_attempts` (Source: `20260814_010_background_jobs_schema.sql`)
+- `platform_job_logs` (Source: `20260814_010_background_jobs_schema.sql`)
+- `event_catalog` (Source: `20260814_012_webhooks_and_event_mesh_schema.sql`)
+- `event_outbox` (Source: `20260814_012_webhooks_and_event_mesh_schema.sql`)
+- `webhook_delivery_attempts` (Source: `20260814_012_webhooks_and_event_mesh_schema.sql`)
+- `event_metrics_minute` (Source: `20260814_012_webhooks_and_event_mesh_schema.sql`)
+- `platform_setting_definitions` (Source: `20260814_013_platform_settings_and_integrations_schema.sql`)
+- `platform_api_key_scopes` (Source: `20260814_013_platform_settings_and_integrations_schema.sql`)
+- `platform_integrations` (Source: `20260814_013_platform_settings_and_integrations_schema.sql`)
+- `platform_rate_limits` (Source: `20260814_013_platform_settings_and_integrations_schema.sql`)
+- `integration_adapters` (Source: `20260814_014_integration_platform_adapter_framework.sql`)
+- `platform_permissions` (Source: `20260814_016_platform_admin_account_center_and_storage.sql`)
+- `platform_role_permissions` (Source: `20260814_016_platform_admin_account_center_and_storage.sql`)
+- `platform_staff_roles` (Source: `20260814_016_platform_admin_account_center_and_storage.sql`)
+- `platform_staff_scopes` (Source: `20260814_017_platform_delegated_iam_and_staff_hierarchy.sql`)
+- `notification_templates` (Source: `20260814_018_realtime_notifications_and_approvals_system.sql`)
+- `platform_invoice_line_items` (Source: `20260814_019_commercial_saas_lifecycle_and_test_tenant.sql`)
+- `membership_legal_entities` (Source: `20260817_023_multi_entity_organization_and_scope.sql`)
+- `employee_family_nominees` (Source: `20260817_024_employee_profile_and_statutory_schema.sql`)
+- `employee_emergency_contacts` (Source: `20260817_024_employee_profile_and_statutory_schema.sql`)
+- `app_user_sessions` (Source: `20260817_024_employee_profile_and_statutory_schema.sql`)
+- `vendor_payments` (Source: `20260817_025_vendor_master_and_employment_source.sql`)
+- `vendor_employee_assignments` (Source: `20260817_026_vendor_master_2_0.sql`)
+- `onboarding_tasks` (Source: `20260817_027_enterprise_onboarding_engine.sql`)
+- `onboarding_policy_acknowledgements` (Source: `20260817_027_enterprise_onboarding_engine.sql`)
+- `onboarding_overrides` (Source: `20260817_027_enterprise_onboarding_engine.sql`)
+- `separation_tasks` (Source: `20260818_029_enterprise_offboarding_and_separation_engine.sql`)
+- `separation_clearances` (Source: `20260818_029_enterprise_offboarding_and_separation_engine.sql`)
+- `separation_asset_recoveries` (Source: `20260818_029_enterprise_offboarding_and_separation_engine.sql`)
+- `exit_interviews` (Source: `20260818_029_enterprise_offboarding_and_separation_engine.sql`)
+- `separation_fnf_readiness` (Source: `20260818_029_enterprise_offboarding_and_separation_engine.sql`)
+- `esign_participants` (Source: `20260818_030_enterprise_documents_and_esign_engine.sql`)
+- `industry_profiles` (Source: `20260818_031_universal_asset_and_inventory_engine.sql`)
+- `asset_attribute_values` (Source: `20260818_031_universal_asset_and_inventory_engine.sql`)
+- `asset_assignments` (Source: `20260818_031_universal_asset_and_inventory_engine.sql`)
+- `asset_transfers` (Source: `20260818_031_universal_asset_and_inventory_engine.sql`)
+- `inventory_transactions` (Source: `20260818_031_universal_asset_and_inventory_engine.sql`)
+- `asset_maintenance_records` (Source: `20260818_031_universal_asset_and_inventory_engine.sql`)
+- `requisition_approvals` (Source: `20260818_033_recruitment_and_ats_2_0.sql`)
+- `job_publications` (Source: `20260818_033_recruitment_and_ats_2_0.sql`)
+- `candidate_stage_history` (Source: `20260818_033_recruitment_and_ats_2_0.sql`)
+- `candidate_notes` (Source: `20260818_033_recruitment_and_ats_2_0.sql`)
+- `interview_scorecards` (Source: `20260818_033_recruitment_and_ats_2_0.sql`)
+- `offer_compensation_components` (Source: `20260818_034_offer_management_2_0.sql`)
+- `offer_benefits` (Source: `20260818_034_offer_management_2_0.sql`)
+- `offer_approvals` (Source: `20260818_034_offer_management_2_0.sql`)
+- `offer_versions` (Source: `20260818_034_offer_management_2_0.sql`)
+- `offer_audit_logs` (Source: `20260818_034_offer_management_2_0.sql`)
+- `holidays` (Source: `20260824_042_enterprise_leave_master_system_v3.sql`)
+- `accrual_execution_logs` (Source: `20260824_042_enterprise_leave_master_system_v3.sql`)
+- `leave_audit_logs` (Source: `20260824_042_enterprise_leave_master_system_v3.sql`)
+- `storage_pools` (Source: `20260825_047_enterprise_document_storage_nodes_and_requirements.sql`)
+- `payroll_snapshot_line_items` (Source: `20260828_057_production_enterprise_payroll_core.sql`)
+- `vendor_company_relationships` (Source: `20260831_074_multi_company_vendor_relationships_and_strict_isolation.sql`)
+- `vendor_worker_deployments` (Source: `20260831_074_multi_company_vendor_relationships_and_strict_isolation.sql`)
+- `legacy_object_registry` (Source: `20260903_098_phase11_legacy_lifecycle_registry.sql`)
+
+*Governance Decision:* Retain all tables in database. Do NOT execute destructive `DROP TABLE` statements. Mark for progressive deprecation in future minor releases after customer data validation.

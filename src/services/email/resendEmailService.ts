@@ -1,7 +1,7 @@
 // src/services/email/resendEmailService.ts
 // ============================================================================
 // WorkforceOS Enterprise — Production Resend Email Gateway Service
-// Integrated with Resend API: re_48vKshK9_CujUhsn56MPkviPGPUXoacin
+// Dispatches securely via /api/resend/emails backend proxy
 // ============================================================================
 
 import { getAppBaseUrl } from '../../lib/supabase';
@@ -87,7 +87,6 @@ export interface OrganizationUserInviteEmailParams {
 }
 
 class ResendEmailService {
-  private readonly apiKey: string = (import.meta as any).env?.VITE_RESEND_API_KEY || '';
   private readonly defaultFrom: string = 'Joy PeopleHR <noreply@joypeoplehr.com>';
 
   private getApiUrl(): string {
@@ -95,7 +94,7 @@ class ResendEmailService {
   }
 
   /**
-   * Generic low-level email sender through Resend REST API
+   * Generic low-level email sender through secure server proxy (/api/resend/emails)
    */
   async sendEmail(payload: SendEmailPayload): Promise<EmailDeliveryResponse> {
     const recipients = Array.isArray(payload.to) ? payload.to : [payload.to];
@@ -118,30 +117,16 @@ class ResendEmailService {
       tags: payload.tags,
     });
 
-    const headers = {
-      Authorization: `Bearer ${this.apiKey}`,
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
 
     try {
-      let response: Response;
-      const targetUrl = this.getApiUrl();
-
-      try {
-        response = await fetch(targetUrl, {
-          method: 'POST',
-          headers,
-          body: requestBody,
-        });
-      } catch (proxyErr) {
-        // Fallback to direct URL if proxy fails
-        console.warn('[ResendService] Primary fetch failed, attempting direct fallback...', proxyErr);
-        response = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers,
-          body: requestBody,
-        });
-      }
+      const response = await fetch(this.getApiUrl(), {
+        method: 'POST',
+        headers,
+        body: requestBody,
+      });
 
       const data = await response.json().catch(() => ({ message: response.statusText }));
 

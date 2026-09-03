@@ -57,3 +57,12 @@ yarn-error.log*
 *.7z
 *.tar.gz
 
+# Flutter App (Separate Repository)
+1.FlutterApp/
+flutter_app/
+*.flutter/
+
+# Vendor Binaries & Large Setup Files
+Essl Support files/
+
+

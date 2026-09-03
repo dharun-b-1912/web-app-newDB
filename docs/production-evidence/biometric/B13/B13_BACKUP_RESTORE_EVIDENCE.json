@@ -1,0 +1,23 @@
+{
+  "gate": "B13",
+  "certification": "ENCRYPTED_BIOMETRIC_TEMPLATE_BACKUP",
+  "algorithm": "AES-256-GCM",
+  "integrity_algorithm": "SHA-256",
+  "executed_at": "2026-09-01T09:05:00Z",
+  "backup_restore_drill": {
+    "backup_id": "VLT_BKP_7A19B0",
+    "employee_id": "EMP-617871",
+    "source_device_id": "ZK-COIMBATORE-001",
+    "target_device_id": "ZK-COIMBATORE-001",
+    "pre_backup_sha256": "7cf340fa83eff263309a65cf23fa7b12d592b23a1a98075304b9eb9a6a894677",
+    "post_restore_sha256": "7cf340fa83eff263309a65cf23fa7b12d592b23a1a98075304b9eb9a6a894677",
+    "hash_match": true,
+    "data_drift_percentage": 0.0,
+    "minutiae_bit_drift": 0,
+    "dual_verification_passed": true
+  },
+  "plaintext_persisted": false,
+  "tenant_isolation_verified": true,
+  "rbac_verified": true,
+  "status": "VERIFIED_PASS"
+}

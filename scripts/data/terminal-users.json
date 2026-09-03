@@ -1,0 +1,61 @@
+{
+  "192.168.1.201": [
+    {
+      "uid": "17",
+      "userId": "17",
+      "biometric_pin": "017",
+      "name": "Dharun B",
+      "privilege": "USER",
+      "passwordConfigured": true,
+      "cardNumber": null,
+      "faceEnrolled": true,
+      "face_enrolled": true,
+      "faceCount": 1,
+      "face_count": 1,
+      "fingerprintCount": 0,
+      "fingerprints_count": 0,
+      "enabled": true,
+      "groupId": "1",
+      "timezone": "Asia/Kolkata",
+      "source": "PHYSICAL_DEVICE_ZKTECO_LIVE"
+    },
+    {
+      "uid": "27",
+      "userId": "27",
+      "biometric_pin": "27",
+      "name": "Thirumalai R K",
+      "privilege": "USER",
+      "passwordConfigured": true,
+      "cardNumber": null,
+      "faceEnrolled": true,
+      "face_enrolled": true,
+      "faceCount": 1,
+      "face_count": 1,
+      "fingerprintCount": 1,
+      "fingerprints_count": 1,
+      "enabled": true,
+      "groupId": "1",
+      "timezone": "Asia/Kolkata",
+      "source": "PHYSICAL_DEVICE_ZKTECO_LIVE"
+    },
+    {
+      "uid": "154",
+      "userId": "154",
+      "biometric_pin": "154",
+      "name": "Danya",
+      "privilege": "USER",
+      "passwordConfigured": true,
+      "cardNumber": null,
+      "faceEnrolled": false,
+      "face_enrolled": false,
+      "faceCount": 0,
+      "face_count": 0,
+      "fingerprintCount": 0,
+      "fingerprints_count": 0,
+      "enabled": true,
+      "groupId": "1",
+      "timezone": "Asia/Kolkata",
+      "source": "PHYSICAL_DEVICE_ZKTECO_LIVE"
+    }
+  ]
+}

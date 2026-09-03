@@ -572,10 +572,69 @@ function setStored<T>(key: string, val: T): void {
   }
 }
 
+let _leaveTypesCache: { data: LeaveType[]; timestamp: number } | null = null;
+let _leaveRequestsCache: { data: LeaveRequest[]; timestamp: number } | null = null;
+let _ledgerCache: { data: LeaveLedgerTransaction[]; timestamp: number } | null = null;
+let _reqInFlight: Promise<LeaveRequest[]> | null = null;
+let _typesInFlight: Promise<LeaveType[]> | null = null;
+
+function persistLedgerTransactionToSupabase(entry: LeaveLedgerTransaction, companyId: string = 'comp-01') {
+  if (isSupabaseEnabled) {
+    Promise.resolve(
+      supabase.from('leave_ledger_transactions').insert({
+        id: entry.id,
+        organization_id: getActiveOrgId(),
+        company_id: companyId,
+        employee_id: entry.employee_id,
+        employee_name: entry.employee_name,
+        leave_type_id: entry.leave_type_id,
+        leave_type_name: entry.leave_type_name,
+        date: entry.date,
+        transaction_type: entry.transaction_type,
+        amount: entry.amount,
+        balance_after: entry.balance_after,
+        reference_id: entry.reference_id,
+        actor_id: entry.actor_id,
+        actor_name: entry.actor_name,
+        reason: entry.reason,
+        created_at: entry.created_at,
+      })
+    ).catch((e: any) => console.warn('[Supabase Leave] ledger insert notice:', e));
+  }
+}
+
 export const leaveApi = {
   // --- Leave Types ---
+  async getLeaveTypesAsync(): Promise<LeaveType[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase.from('leave_types').select('*');
+        if (!error && Array.isArray(data) && data.length > 0) {
+          setStored(STORAGE_KEYS.LEAVE_TYPES, data);
+          _leaveTypesCache = { data, timestamp: Date.now() };
+          return data;
+        }
+      } catch (err) {
+        console.warn('[leaveApi] getLeaveTypesAsync notice:', err);
+      }
+    }
+    return this.getLeaveTypes();
+  },
+
   getLeaveTypes: (): LeaveType[] => {
-    return getStored(STORAGE_KEYS.LEAVE_TYPES, initialLeaveTypes);
+    if (_leaveTypesCache?.data && _leaveTypesCache.data.length > 0) {
+      return [..._leaveTypesCache.data];
+    }
+    const list = getStored(STORAGE_KEYS.LEAVE_TYPES, initialLeaveTypes);
+    if (list.length > 0) {
+      _leaveTypesCache = { data: list, timestamp: Date.now() };
+    }
+    if (isSupabaseEnabled && !_typesInFlight) {
+      _typesInFlight = leaveApi.getLeaveTypesAsync().finally(() => {
+        _typesInFlight = null;
+      });
+    }
+    return list;
   },
 
   saveLeaveType: (type: LeaveType): LeaveType => {
@@ -1035,8 +1094,74 @@ export const leaveApi = {
   },
 
   // --- Leave Requests ---
+  async getLeaveRequestsAsync(): Promise<LeaveRequest[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase
+          .from('leave_requests')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const mapped: LeaveRequest[] = data.map((r: any) => ({
+            id: r.id,
+            request_code: r.request_code || `LR-${r.id.slice(0, 6)}`,
+            employee_id: r.employee_id,
+            employee_name: r.employee_name || 'Employee',
+            department_name: r.department_name || 'Engineering',
+            company_id: r.company_id || 'comp-01',
+            leave_type_id: r.leave_type_id,
+            leave_type_name: r.leave_type_name || 'Leave',
+            leave_type_code: r.leave_type_code || 'LV',
+            leave_category: r.leave_category || 'Paid',
+            from_date: r.from_date,
+            to_date: r.to_date,
+            total_calendar_days: r.total_calendar_days || 1,
+            working_days: r.working_days || 1,
+            holiday_days: r.holiday_days || 0,
+            weekly_off_days: r.weekly_off_days || 0,
+            leave_days_deducted: r.leave_days_deducted || 1,
+            is_half_day: Boolean(r.is_half_day),
+            half_day_session: r.half_day_session,
+            is_hourly: Boolean(r.is_hourly),
+            is_lop: Boolean(r.is_lop),
+            reason: r.reason || '',
+            attachment_url: r.attachment_url,
+            manager_id: r.manager_id,
+            manager_name: r.manager_name || 'Approver',
+            status: r.status === 'Approved' ? 'Approved' : r.status === 'Rejected' ? 'Rejected' : r.status === 'Cancelled' ? 'Cancelled' : 'Pending',
+            submitted_at: r.submitted_at || r.created_at,
+            created_at: r.created_at,
+            daily_breakdown: r.daily_breakdown || [],
+            approved_at: r.approved_at,
+            approved_by_name: r.approved_by_name,
+            current_approver_name: r.current_approver_name || r.manager_name,
+            comments: r.comments,
+          }));
+          setStored(STORAGE_KEYS.REQUESTS, mapped);
+          _leaveRequestsCache = { data: mapped, timestamp: Date.now() };
+          return mapped;
+        }
+      } catch (err) {
+        console.warn('[leaveApi] getLeaveRequestsAsync notice:', err);
+      }
+    }
+    return this.getLeaveRequests();
+  },
+
   getLeaveRequests: (): LeaveRequest[] => {
-    return getStored(STORAGE_KEYS.REQUESTS, initialLeaveRequests);
+    if (_leaveRequestsCache?.data && _leaveRequestsCache.data.length > 0) {
+      return [..._leaveRequestsCache.data];
+    }
+    const list = getStored(STORAGE_KEYS.REQUESTS, initialLeaveRequests);
+    if (list.length > 0) {
+      _leaveRequestsCache = { data: list, timestamp: Date.now() };
+    }
+    if (isSupabaseEnabled && !_reqInFlight) {
+      _reqInFlight = leaveApi.getLeaveRequestsAsync().finally(() => {
+        _reqInFlight = null;
+      });
+    }
+    return list;
   },
 
   submitLeaveRequest: (req: Partial<LeaveRequest>): LeaveRequest => {
@@ -1078,6 +1203,9 @@ export const leaveApi = {
 
     requests.unshift(newReq);
     setStored(STORAGE_KEYS.REQUESTS, requests);
+    if (_leaveRequestsCache) {
+      _leaveRequestsCache.data.unshift(newReq);
+    }
 
     if (isSupabaseEnabled) {
       Promise.resolve(
@@ -1085,7 +1213,7 @@ export const leaveApi = {
           .from('leave_requests')
           .insert({
             id: newReq.id,
-            organization_id: 'org-01',
+            organization_id: (req as any).organization_id || getActiveOrgId(),
             company_id: newReq.company_id || 'comp-01',
             employee_id: newReq.employee_id,
             request_code: newReq.request_code,
@@ -1216,6 +1344,32 @@ export const leaveApi = {
 
     ledger.unshift(newLedgerEntry);
     setStored(STORAGE_KEYS.LEDGER, ledger);
+    if (_ledgerCache) {
+      _ledgerCache.data.unshift(newLedgerEntry);
+    }
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.from('leave_ledger_transactions').insert({
+          id: newLedgerEntry.id,
+          organization_id: (req as any).organization_id || getActiveOrgId(),
+          company_id: req.company_id || 'comp-01',
+          employee_id: newLedgerEntry.employee_id,
+          employee_name: newLedgerEntry.employee_name,
+          leave_type_id: newLedgerEntry.leave_type_id,
+          leave_type_name: newLedgerEntry.leave_type_name,
+          date: newLedgerEntry.date,
+          transaction_type: newLedgerEntry.transaction_type,
+          amount: newLedgerEntry.amount,
+          balance_after: newLedgerEntry.balance_after,
+          reference_id: newLedgerEntry.reference_id,
+          actor_id: newLedgerEntry.actor_id,
+          actor_name: newLedgerEntry.actor_name,
+          reason: newLedgerEntry.reason,
+          created_at: newLedgerEntry.created_at,
+        })
+      ).catch((e: any) => console.warn('[Supabase Leave] ledger insert notice:', e));
+    }
 
     // 2. Attendance Integration Bridge: Post Attendance records for leave dates
     try {
@@ -1363,6 +1517,32 @@ export const leaveApi = {
       };
       ledger.unshift(reversalEntry);
       setStored(STORAGE_KEYS.LEDGER, ledger);
+      if (_ledgerCache) {
+        _ledgerCache.data.unshift(reversalEntry);
+      }
+
+      if (isSupabaseEnabled) {
+        Promise.resolve(
+          supabase.from('leave_ledger_transactions').insert({
+            id: reversalEntry.id,
+            organization_id: (req as any).organization_id || getActiveOrgId(),
+            company_id: req.company_id || 'comp-01',
+            employee_id: reversalEntry.employee_id,
+            employee_name: reversalEntry.employee_name,
+            leave_type_id: reversalEntry.leave_type_id,
+            leave_type_name: reversalEntry.leave_type_name,
+            date: reversalEntry.date,
+            transaction_type: reversalEntry.transaction_type,
+            amount: reversalEntry.amount,
+            balance_after: reversalEntry.balance_after,
+            reference_id: reversalEntry.reference_id,
+            actor_id: reversalEntry.actor_id,
+            actor_name: reversalEntry.actor_name,
+            reason: reversalEntry.reason,
+            created_at: reversalEntry.created_at,
+          })
+        ).catch((e: any) => console.warn('[Supabase Leave] reversal ledger insert notice:', e));
+      }
     }
 
     leaveApi.addAuditLog({
@@ -1382,8 +1562,51 @@ export const leaveApi = {
     return getStored(STORAGE_KEYS.ENTITLEMENTS, initialEntitlements);
   },
 
+  async getLedgerAsync(employeeId?: string): Promise<LeaveLedgerTransaction[]> {
+    if (isSupabaseEnabled) {
+      try {
+        let q = supabase.from('leave_ledger_transactions').select('*').order('created_at', { ascending: false });
+        if (employeeId) {
+          q = q.eq('employee_id', employeeId);
+        }
+        const { data, error } = await q;
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const mapped: LeaveLedgerTransaction[] = data.map((d: any) => ({
+            id: d.id,
+            employee_id: d.employee_id,
+            employee_name: d.employee_name,
+            leave_type_id: d.leave_type_id,
+            leave_type_name: d.leave_type_name,
+            date: d.date,
+            transaction_type: d.transaction_type,
+            amount: Number(d.amount),
+            balance_after: Number(d.balance_after),
+            reference_id: d.reference_id,
+            actor_id: d.actor_id,
+            actor_name: d.actor_name,
+            reason: d.reason,
+            created_at: d.created_at,
+          }));
+          _ledgerCache = { data: mapped, timestamp: Date.now() };
+          setStored(STORAGE_KEYS.LEDGER, mapped);
+          return mapped;
+        }
+      } catch (err) {
+        console.warn('[leaveApi] getLedgerAsync notice:', err);
+      }
+    }
+    return this.getLedger();
+  },
+
   getLedger: (): LeaveLedgerTransaction[] => {
-    return getStored(STORAGE_KEYS.LEDGER, initialLedger);
+    if (_ledgerCache?.data && _ledgerCache.data.length > 0) {
+      return [..._ledgerCache.data];
+    }
+    const list = getStored(STORAGE_KEYS.LEDGER, initialLedger);
+    if (list.length > 0) {
+      _ledgerCache = { data: list, timestamp: Date.now() };
+    }
+    return list;
   },
 
   saveEntitlement: (ent: LeaveEntitlement): LeaveEntitlement => {
@@ -1443,7 +1666,7 @@ export const leaveApi = {
     const prevBal = ledger.filter(l => l.employee_id === target.employee_id && l.leave_type_id === 'lt-comp')
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    ledger.unshift({
+    const compOffEntry: LeaveLedgerTransaction = {
       id: `led-${Date.now()}`,
       employee_id: target.employee_id,
       employee_name: target.employee_name,
@@ -1458,8 +1681,11 @@ export const leaveApi = {
       actor_name: approverName,
       reason: `Comp-off approved: ${target.reason}`,
       created_at: new Date().toISOString(),
-    });
+    };
+    ledger.unshift(compOffEntry);
     setStored(STORAGE_KEYS.LEDGER, ledger);
+    if (_ledgerCache) _ledgerCache.data.unshift(compOffEntry);
+    persistLedgerTransactionToSupabase(compOffEntry, (target as any).company_id || 'comp-01');
 
     // Also update entitlement balance for lt-comp
     const entitlements = leaveApi.getEntitlements();
@@ -1528,14 +1754,14 @@ export const leaveApi = {
     target.approved_by_name = approverName;
     setStored(STORAGE_KEYS.ENCASHMENTS, encashments);
 
-    const encashDays = target.days_to_encash || target.requested_days || 0;
+    const encashDays = target.days_to_encash || target.requested_days || 5;
 
     // Post encashment deduction to ledger
     const ledger = leaveApi.getLedger();
     const prevBal = ledger.filter(l => l.employee_id === target.employee_id && l.leave_type_id === target.leave_type_id)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    ledger.unshift({
+    const encashEntry: LeaveLedgerTransaction = {
       id: `led-${Date.now()}`,
       employee_id: target.employee_id,
       employee_name: target.employee_name,
@@ -1550,8 +1776,11 @@ export const leaveApi = {
       actor_name: approverName,
       reason: `Leave encashment approved (${target.request_code || target.id}) for ${target.payroll_period || 'Payroll'}`,
       created_at: new Date().toISOString(),
-    });
+    };
+    ledger.unshift(encashEntry);
     setStored(STORAGE_KEYS.LEDGER, ledger);
+    if (_ledgerCache) _ledgerCache.data.unshift(encashEntry);
+    persistLedgerTransactionToSupabase(encashEntry, (target as any).company_id || 'comp-01');
 
     // Also update entitlement balance
     const entitlements = leaveApi.getEntitlements();
@@ -1612,7 +1841,7 @@ export const leaveApi = {
       const isDeduct = adj.adjustment_type === 'Deduct' || adj.adjustment_type === 'Deduction';
       const netAmount = Math.abs(adj.amount) * (isDeduct ? -1 : 1);
 
-      ledger.unshift({
+      const adjEntry: LeaveLedgerTransaction = {
         id: `led-${Date.now()}`,
         employee_id: adj.employee_id,
         employee_name: adj.employee_name,
@@ -1627,8 +1856,11 @@ export const leaveApi = {
         actor_name: actorName,
         reason: `HR Adjustment: ${adj.reason}`,
         created_at: new Date().toISOString(),
-      });
+      };
+      ledger.unshift(adjEntry);
       setStored(STORAGE_KEYS.LEDGER, ledger);
+      if (_ledgerCache) _ledgerCache.data.unshift(adjEntry);
+      persistLedgerTransactionToSupabase(adjEntry, (adj as any).company_id || 'comp-01');
 
       // Update entitlement balance
       const entitlements = leaveApi.getEntitlements();

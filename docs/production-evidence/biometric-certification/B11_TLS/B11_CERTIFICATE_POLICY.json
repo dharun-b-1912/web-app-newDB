@@ -1,0 +1,13 @@
+{
+  "policy_version": "2026.1",
+  "minimum_tls_version": "TLSv1.2",
+  "preferred_tls_version": "TLSv1.3",
+  "require_valid_certificate": true,
+  "reject_expired_certificate": true,
+  "reject_self_signed_certificate": true,
+  "reject_tls_downgrade": true,
+  "reject_plaintext_http": true,
+  "validate_hostname": true,
+  "certificate_rotation_warning_days": 30,
+  "enforced_by": "BiometricTLSValidator"
+}

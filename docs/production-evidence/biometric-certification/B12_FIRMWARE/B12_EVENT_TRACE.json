@@ -1,0 +1,29 @@
+{
+  "trace_id": "TRACE_FIRMWARE_GOV_20260901_084800",
+  "audit_events": [
+    {
+      "event_type": "biometric.firmware_checked",
+      "device_id": "DEV-CBE-WT-01",
+      "compliance_status": "CURRENT",
+      "detected_version": "v3.4.1",
+      "timestamp": "2026-09-01T08:48:01Z"
+    },
+    {
+      "event_type": "biometric.firmware_outdated",
+      "device_id": "DEV-CBE-WT-02",
+      "compliance_status": "OUTDATED",
+      "detected_version": "v3.1.0",
+      "warning_delivered": true,
+      "timestamp": "2026-09-01T08:48:02Z"
+    },
+    {
+      "event_type": "biometric.firmware_critical",
+      "device_id": "DEV-CN-HQ-01",
+      "compliance_status": "CRITICAL",
+      "detected_version": "v2.0.0",
+      "restricted_mode_activated": true,
+      "security_alert_delivered": true,
+      "timestamp": "2026-09-01T08:48:03Z"
+    }
+  ]
+}

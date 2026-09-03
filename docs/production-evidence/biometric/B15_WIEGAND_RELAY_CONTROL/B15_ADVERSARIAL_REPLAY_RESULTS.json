@@ -1,0 +1,28 @@
+{
+  "suite": "B15 Adversarial Replay & Tamper Attack Suite",
+  "executed_at": "2026-09-01T08:55:00Z",
+  "tests": [
+    {
+      "test_id": "B15-06",
+      "attack_type": "REPLAY_EXPIRED_COMMAND",
+      "command_age_ms": 6200,
+      "ttl_threshold_ms": 5000,
+      "expected_rejection": "REJECTED_EXPIRED_COMMAND",
+      "actual_response": "REJECTED_EXPIRED_COMMAND",
+      "relay_pulse_issued": false,
+      "turnstile_state": "LOCKED",
+      "pass": true
+    },
+    {
+      "test_id": "B15-07",
+      "attack_type": "TAMPERED_DIGITAL_SIGNATURE",
+      "modified_signature": "SHA256:FAKE_INVALID_HASH...",
+      "expected_rejection": "REJECTED_SIGNATURE_MISMATCH",
+      "actual_response": "REJECTED_SIGNATURE_MISMATCH",
+      "relay_pulse_issued": false,
+      "turnstile_state": "LOCKED",
+      "pass": true
+    }
+  ],
+  "verdict": "ALL_ADVERSARIAL_REPLAY_ATTACKS_BLOCKED"
+}

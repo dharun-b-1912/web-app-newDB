@@ -1,0 +1,31 @@
+{
+  "trace_id": "TRACE_TAMPER_20260901_085200",
+  "audit_events": [
+    {
+      "event_type": "biometric.device_tamper_detected",
+      "incident_id": "INC_TAMPER_9A81F2",
+      "device_id": "DEV-CBE-WT-01",
+      "location_id": "loc-water-tec-unit3",
+      "sensor_type": "CHASSIS_COVER_SWITCH",
+      "severity": "CRITICAL",
+      "status": "UNACKNOWLEDGED",
+      "device_restricted": true,
+      "alert_dispatched": true,
+      "timestamp": "2026-09-01T08:52:01Z"
+    },
+    {
+      "event_type": "biometric.device_tamper_investigating",
+      "incident_id": "INC_TAMPER_9A81F2",
+      "acknowledged_by": "admin-sec-01",
+      "timestamp": "2026-09-01T08:52:10Z"
+    },
+    {
+      "event_type": "biometric.device_tamper_resolved",
+      "incident_id": "INC_TAMPER_9A81F2",
+      "resolved_by": "admin-sec-01",
+      "resolution_notes": "Chassis cover secured and physically inspected.",
+      "device_restricted": false,
+      "timestamp": "2026-09-01T08:52:30Z"
+    }
+  ]
+}

@@ -36,12 +36,26 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
       const currentPath = window.location.pathname;
-      if (currentPath === '/vendor/login' || currentPath === '/vendor-login' || currentPath.startsWith('/vendor')) {
+      if (
+        currentPath === '/admin/login' ||
+        currentPath === '/company-admin' ||
+        currentPath === '/org-admin' ||
+        currentPath === '/company/login'
+      ) {
+        setAuthContextMode('admin');
+      } else if (currentPath === '/vendor/login' || currentPath === '/vendor-login' || currentPath.startsWith('/vendor')) {
         setAuthContextMode('vendor');
       } else if (currentPath === '/platform-login' || currentPath === '/superadmin') {
         setAuthContextMode('platform');
       } else if (currentPath !== '/login' && !currentPath.includes('activate') && !currentPath.includes('reset-password')) {
-        const slug = authContext === 'platform' ? '/platform-login' : authContext === 'vendor' ? '/vendor/login' : '/login';
+        const slug =
+          authContext === 'admin'
+            ? '/admin/login'
+            : authContext === 'platform'
+            ? '/platform-login'
+            : authContext === 'vendor'
+            ? '/vendor/login'
+            : '/login';
         window.history.replaceState({ route: slug }, '', slug);
       }
     }
@@ -50,7 +64,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
   const handleContextChange = (mode: AuthContextMode) => {
     setAuthContextMode(mode);
     if (typeof window !== 'undefined') {
-      const slug = mode === 'platform' ? '/platform-login' : mode === 'vendor' ? '/vendor/login' : '/login';
+      const slug =
+        mode === 'admin'
+          ? '/admin/login'
+          : mode === 'platform'
+          ? '/platform-login'
+          : mode === 'vendor'
+          ? '/vendor/login'
+          : '/login';
       window.history.replaceState({ route: slug }, '', slug);
     }
   };
@@ -61,6 +82,20 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
       <div className="mb-6 bg-white p-1.5 rounded-2xl border border-gray-200/80 shadow-xs flex items-center gap-1.5 flex-wrap justify-center">
         <button
           type="button"
+          onClick={() => handleContextChange('admin')}
+          className={cn(
+            'px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2',
+            authContext === 'admin'
+              ? 'bg-[#064E3B] text-white shadow-xs'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          )}
+        >
+          <Building2 className="w-3.5 h-3.5 text-emerald-300" />
+          <span>Company / Org Admin</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => handleContextChange('tenant')}
           className={cn(
             'px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2',
@@ -69,8 +104,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
               : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           )}
         >
-          <Building2 className="w-3.5 h-3.5" />
-          <span>Organization Workspace</span>
+          <Users className="w-3.5 h-3.5" />
+          <span>Employee & HR Portal</span>
         </button>
 
         <button
@@ -108,7 +143,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
         <div
           className={cn(
             'lg:col-span-5 text-white p-8 sm:p-10 flex flex-col justify-between relative overflow-hidden transition-colors duration-300',
-            authContext === 'platform'
+            authContext === 'admin'
+              ? 'bg-gradient-to-br from-[#064E3B] via-[#07563D] to-[#042F24]'
+              : authContext === 'platform'
               ? 'bg-[#0F172A]'
               : authContext === 'vendor'
               ? 'bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900'
@@ -131,14 +168,18 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
 
             <div className="space-y-2">
               <h1 className="text-xl font-bold tracking-tight text-white">
-                {authContext === 'platform'
+                {authContext === 'admin'
+                  ? 'Company Administration & Governance'
+                  : authContext === 'platform'
                   ? 'Platform Control Plane'
                   : authContext === 'vendor'
                   ? 'Vendor Compliance & Contractor Intelligence'
                   : 'One secure workspace for your people operations.'}
               </h1>
               <p className="text-xs text-white/70 leading-relaxed">
-                {authContext === 'platform'
+                {authContext === 'admin'
+                  ? 'Enterprise cockpit for Organization Admins: Legal Entities, Custom RBAC, Approval Workflows & Commercials.'
+                  : authContext === 'platform'
                   ? 'Manage multi-tenant infrastructure, customer lifecycle, and compliance policies.'
                   : authContext === 'vendor'
                   ? 'Direct contractor portal for KYC onboarding, CLRA licenses, worker payroll, and invoice matching.'
@@ -151,11 +192,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
           <div className="relative z-10 py-6 space-y-4">
             <div className="flex items-start gap-3">
               <div className="w-7 h-7 rounded-xl bg-white/10 flex items-center justify-center shrink-0 mt-0.5">
-                <Users className="w-4 h-4 text-emerald-300" />
+                <Building2 className="w-4 h-4 text-emerald-300" />
               </div>
               <div>
-                <div className="text-xs font-bold text-white">Workforce & Employee Management</div>
-                <div className="text-[11px] text-white/60">Unified lifecycle from onboarding to separation.</div>
+                <div className="text-xs font-bold text-white">
+                  {authContext === 'admin' ? 'Multi-Entity & Org Architecture' : 'Workforce & Employee Management'}
+                </div>
+                <div className="text-[11px] text-white/60">
+                  {authContext === 'admin'
+                    ? 'Manage legal subsidiaries, branches, and department hierarchies.'
+                    : 'Unified lifecycle from onboarding to separation.'}
+                </div>
               </div>
             </div>
 
@@ -164,8 +211,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
                 <CreditCard className="w-4 h-4 text-emerald-300" />
               </div>
               <div>
-                <div className="text-xs font-bold text-white">Payroll & Compliance Operations</div>
-                <div className="text-[11px] text-white/60">Automated salary runs, EPF, ESIC & tax filings.</div>
+                <div className="text-xs font-bold text-white">
+                  {authContext === 'admin' ? 'Governance, RBAC & Workflows' : 'Payroll & Compliance Operations'}
+                </div>
+                <div className="text-[11px] text-white/60">
+                  {authContext === 'admin'
+                    ? 'Granular permissions, approval matrices & compliance audit logs.'
+                    : 'Automated salary runs, EPF, ESIC & tax filings.'}
+                </div>
               </div>
             </div>
 

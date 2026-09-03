@@ -137,8 +137,11 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
   } | null>(null);
 
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isLoadingDataRef = useRef(false);
 
   const loadData = async () => {
+    if (isLoadingDataRef.current) return;
+    isLoadingDataRef.current = true;
     try {
       await biometricGatewayService.syncLocalAgentStatus();
       setAgents(biometricGatewayService.getGatewayAgents());
@@ -148,6 +151,8 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
       setDiagnosticLogs(biometricGatewayService.getDiagnosticLogs());
     } catch (err) {
       console.error('[BiometricIntegrationView] Error loading data:', err);
+    } finally {
+      isLoadingDataRef.current = false;
     }
   };
 
@@ -157,7 +162,7 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
     }
     debounceTimerRef.current = setTimeout(() => {
       loadData();
-    }, 50);
+    }, 2500);
   };
 
   const isPollingRef = useRef(false);
@@ -170,10 +175,9 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
     const unsubDevice = hrEventBus.subscribe('device.*', () => scheduleUpdate());
     const unsubAttendance = hrEventBus.subscribe('attendance.*', () => scheduleUpdate());
 
-    // 2. Subscribe to window custom events and cross-tab storage events
+    // 2. Subscribe to window custom events
     const handleCustomUpdate = () => scheduleUpdate();
     window.addEventListener('biometric:updated', handleCustomUpdate);
-    window.addEventListener('storage', handleCustomUpdate);
 
     const runPulse = async () => {
       if (isPollingRef.current) return;
@@ -342,15 +346,15 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
   });
 
   // Calculate High-Value KPIs
-  const onlineDevicesCount = devices.filter(d => d.status === 'Online').length;
-  const offlineDevicesCount = devices.filter(d => d.status !== 'Online').length;
-  const onlineAgentsCount = agents.filter(a => a.status === 'ONLINE').length;
-  const totalPunchesToday = punches.length;
+  const onlineDevicesCount = (devices || []).filter(d => d.status === 'Online').length;
+  const offlineDevicesCount = (devices || []).filter(d => d.status !== 'Online').length;
+  const onlineAgentsCount = (agents || []).filter(a => a.status === 'ONLINE').length;
+  const totalPunchesToday = (punches || []).length;
   
-  // Calculate unmapped users across all devices
+  // Calculate unmapped users across all devices safely
   let totalUnmappedUsers = 0;
-  for (const d of devices) {
-    const devUsers = biometricGatewayService.getDeviceUsers(d.id).users;
+  for (const d of (devices || [])) {
+    const devUsers = biometricGatewayService.getDeviceUsers(d.id)?.users || [];
     totalUnmappedUsers += devUsers.filter(u => !u.is_mapped).length;
   }
 

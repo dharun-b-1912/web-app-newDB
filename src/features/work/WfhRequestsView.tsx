@@ -20,6 +20,7 @@ import {
 import { WfhRequest, WfhMode } from '../../types/workOvertime';
 import { workOvertimeService } from '../../services/workOvertimeService';
 import { api } from '../../services/api';
+import { useEmployees } from '../../hooks/useEmployees';
 
 export const WfhRequestsView: React.FC = () => {
   const { showToast } = useToast();
@@ -28,7 +29,7 @@ export const WfhRequestsView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'PENDING' | 'MY_REQUESTS' | 'APPROVED' | 'ALL'>('PENDING');
 
   const activeComp = api.getActiveCompany();
-  const employees = api.getEmployeesSync(activeComp?.id) || [];
+  const { employees } = useEmployees({ companyId: activeComp?.id });
   const currentEmp = employees[0] || { id: 'emp-admin-001', display_name: 'Dharun B', employee_code: 'JCS-017', department_name: 'Engineering & Management' };
 
   const [selectedEmpId, setSelectedEmpId] = useState(currentEmp.id);

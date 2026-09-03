@@ -1,0 +1,15 @@
+{
+  "suite": "B14 Physical Device Tamper Detection Certification",
+  "executed_at": "2026-09-01T08:52:00Z",
+  "total_tests": 5,
+  "passed_tests": 5,
+  "failed_tests": 0,
+  "test_results": [
+    { "test_id": "B14-T01", "scenario": "PHYSICAL MICROSWITCH COVER OPEN", "expected": "UNACKNOWLEDGED + RESTRICTED", "actual": "UNACKNOWLEDGED + RESTRICTED:true", "result": "PASS" },
+    { "test_id": "B14-T02", "scenario": "OPTICAL WALL REMOVAL BREACH", "expected": "CRITICAL UNACKNOWLEDGED", "actual": "CRITICAL UNACKNOWLEDGED", "result": "PASS" },
+    { "test_id": "B14-T03", "scenario": "SECURITY ACKNOWLEDGEMENT TO INVESTIGATING", "expected": "INVESTIGATING", "actual": "INVESTIGATING", "result": "PASS" },
+    { "test_id": "B14-T04", "scenario": "ADMINISTRATIVE RESOLUTION & RESTORE", "expected": "RESOLVED + UNRESTRICTED", "actual": "RESOLVED + RESTRICTED:false", "result": "PASS" },
+    { "test_id": "B14-T05", "scenario": "SILENT AUTO-CLOSURE REJECTION", "expected": "IMMUTABLE UNACKNOWLEDGED", "actual": "UNACKNOWLEDGED", "result": "PASS" }
+  ],
+  "final_verdict": "VERIFIED_PASS"
+}

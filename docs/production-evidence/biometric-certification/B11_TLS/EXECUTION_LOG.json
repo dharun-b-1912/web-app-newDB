@@ -1,0 +1,16 @@
+{
+  "gate_id": "B11",
+  "device_id": "DEV-CBE-WT-01",
+  "device_model": "ZKTeco SilkBio-101TC",
+  "protocol": "HTTPS",
+  "tls_version": "TLSv1.3",
+  "cipher_suite": "TLS_AES_256_GCM_SHA384",
+  "ca_trusted": true,
+  "certificate_status": "VALID",
+  "expired_cert_rejected": true,
+  "invalid_ca_rejected": true,
+  "plaintext_rejected": true,
+  "reconnect_latency_ms": 24,
+  "executed_at": "2026-09-01T08:42:00Z",
+  "final_status": "PHYSICALLY_CERTIFIED"
+}

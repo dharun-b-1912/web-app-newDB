@@ -10,7 +10,16 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx src/services/__tests__/runSuite.ts",
+    "test:phase9": "tsx scripts/phase9_independent_production_validator.ts",
+    "test:cutover": "tsx scripts/phase10_cutover_smoke_runner.ts",
+    "guard:governance": "tsx scripts/governance_guard.ts",
+    "audit:schema": "tsx scripts/audit_suite.ts schema",
+    "audit:tenant": "tsx scripts/audit_suite.ts tenant",
+    "audit:rls": "tsx scripts/audit_suite.ts rls",
+    "audit:database": "tsx scripts/audit_suite.ts database",
+    "verify:production": "tsx scripts/verify_production_pipeline.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

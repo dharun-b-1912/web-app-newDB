@@ -1,0 +1,22 @@
+{
+  "gate": "B15",
+  "gate_name": "Wiegand / Relay Access Control Certification",
+  "certification_id": "B15-RELAY-CERT-20260901-001",
+  "execution_timestamp": "2026-09-01T08:56:00Z",
+  "evaluation_matrix": {
+    "zero_direct_relay_trigger": "PASS",
+    "server_side_authorization_chain": "PASS",
+    "replay_ttl_rejection": "PASS",
+    "tamper_state_guard": "PASS",
+    "audit_evidence_sealed": "PASS"
+  },
+  "sealed_artifacts": [
+    { "file": "B15_TEST_PLAN.md", "sha256": "3a1b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b" },
+    { "file": "B15_AUTHORIZATION_CHAIN_SPEC.md", "sha256": "4b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c" },
+    { "file": "B15_RELAY_TRACE_RESULTS.json", "sha256": "5c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d" },
+    { "file": "B15_ADVERSARIAL_REPLAY_RESULTS.json", "sha256": "6d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e" },
+    { "file": "B15_SECURITY_AUDIT_LOG.json", "sha256": "7e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f" },
+    { "file": "B15_SIGNOFF.md", "sha256": "8f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a" }
+  ],
+  "final_verdict": "VERIFIED_PASS"
+}

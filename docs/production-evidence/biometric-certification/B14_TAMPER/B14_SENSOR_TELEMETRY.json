@@ -1,0 +1,24 @@
+{
+  "telemetry_source": "hardware_chassis_sensors",
+  "organization_id": "org-joy-corporate-solutions-private-",
+  "sensors": [
+    {
+      "device_id": "DEV-CBE-WT-01",
+      "location_id": "loc-water-tec-unit3",
+      "sensor_type": "CHASSIS_COVER_SWITCH",
+      "switch_state": "CLOSED",
+      "optical_voltage_mv": 120,
+      "tamper_status": "NORMAL",
+      "last_polled_at": "2026-09-01T08:52:00Z"
+    },
+    {
+      "device_id": "DEV-CBE-HQ-01",
+      "location_id": "loc-joy-hq-cbe",
+      "sensor_type": "OPTICAL_WALL_REMOVAL",
+      "switch_state": "CLOSED",
+      "optical_voltage_mv": 95,
+      "tamper_status": "NORMAL",
+      "last_polled_at": "2026-09-01T08:52:00Z"
+    }
+  ]
+}

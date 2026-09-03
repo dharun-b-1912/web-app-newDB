@@ -1,0 +1,33 @@
+{
+  "policy_version": "2026.1",
+  "organization_id": "org-joy-corporate-solutions-private-",
+  "policies": [
+    {
+      "manufacturer": "ZKTeco",
+      "device_model": "SilkBio-101TC",
+      "minimum_supported_version": "2.4.0",
+      "recommended_version": "3.4.1",
+      "critical_versions": ["1.0.0", "1.1.0", "2.0.0"],
+      "status": "ACTIVE",
+      "effective_from": "2026-01-01"
+    },
+    {
+      "manufacturer": "eSSL",
+      "device_model": "SilkBio-100",
+      "minimum_supported_version": "2.0.0",
+      "recommended_version": "3.4.1",
+      "critical_versions": ["1.0.0"],
+      "status": "ACTIVE",
+      "effective_from": "2026-01-01"
+    },
+    {
+      "manufacturer": "Mantra",
+      "device_model": "MFSTAB-II",
+      "minimum_supported_version": "3.0.0",
+      "recommended_version": "3.4.1",
+      "critical_versions": ["2.0.0", "2.1.0"],
+      "status": "ACTIVE",
+      "effective_from": "2026-01-01"
+    }
+  ]
+}

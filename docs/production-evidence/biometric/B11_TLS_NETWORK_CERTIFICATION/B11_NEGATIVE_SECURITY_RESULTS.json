@@ -1,0 +1,81 @@
+{
+  "certification_id": "B11-TLS-CERT-20260901-001",
+  "executed_at": "2026-09-01T08:51:00Z",
+  "total_negative_tests": 8,
+  "passed_negative_tests": 8,
+  "tests": [
+    {
+      "test_id": "B11-T02",
+      "name": "Expired Certificate Rejection",
+      "attack_payload": { "cert_expiry": "2026-08-31T00:00:00Z" },
+      "expected_status": "REJECT",
+      "actual_status": "REJECTED_CERTIFICATE_EXPIRED",
+      "event_emitted": "biometric.tls.certificate_expired",
+      "pass": true
+    },
+    {
+      "test_id": "B11-T03",
+      "name": "Unknown / Self-Signed CA Rejection",
+      "attack_payload": { "issuer": "RogueAttackerRootCA" },
+      "expected_status": "REJECT",
+      "actual_status": "REJECTED_INVALID_CA",
+      "event_emitted": "biometric.tls.handshake_failed",
+      "pass": true
+    },
+    {
+      "test_id": "B11-T04",
+      "name": "Certificate Fingerprint Mismatch",
+      "attack_payload": { "fingerprint": "SHA256:FF:FF:FF:FF:FF:FF..." },
+      "expected_status": "REJECT",
+      "actual_status": "REJECTED_FINGERPRINT_MISMATCH",
+      "event_emitted": "biometric.tls.certificate_mismatch",
+      "pass": true
+    },
+    {
+      "test_id": "B11-T05",
+      "name": "TLS 1.0 Downgrade Rejection",
+      "attack_payload": { "requested_version": "TLSv1.0" },
+      "expected_status": "REJECT",
+      "actual_status": "REJECTED_TLS_DOWNGRADE",
+      "event_emitted": "biometric.tls.handshake_failed",
+      "pass": true
+    },
+    {
+      "test_id": "B11-T06",
+      "name": "TLS 1.1 Downgrade Rejection",
+      "attack_payload": { "requested_version": "TLSv1.1" },
+      "expected_status": "REJECT",
+      "actual_status": "REJECTED_TLS_DOWNGRADE",
+      "event_emitted": "biometric.tls.handshake_failed",
+      "pass": true
+    },
+    {
+      "test_id": "B11-T07",
+      "name": "Unauthorized Device ID Rejection",
+      "attack_payload": { "device_id": "DEV-ROGUE-999" },
+      "expected_status": "REJECT",
+      "actual_status": "REJECTED_DEVICE_UNREGISTERED",
+      "event_emitted": "biometric.tls.connection_rejected",
+      "pass": true
+    },
+    {
+      "test_id": "B11-T08",
+      "name": "Weak Cipher Negotiation Rejection",
+      "attack_payload": { "cipher": "DES-CBC3-SHA" },
+      "expected_status": "REJECT",
+      "actual_status": "REJECTED_WEAK_CIPHER",
+      "event_emitted": "biometric.tls.handshake_failed",
+      "pass": true
+    },
+    {
+      "test_id": "B11-T09",
+      "name": "Plaintext HTTP Connection Rejection",
+      "attack_payload": { "protocol": "HTTP", "port": 80 },
+      "expected_status": "REJECT",
+      "actual_status": "REJECTED_PLAINTEXT_BLOCKED",
+      "event_emitted": "biometric.tls.connection_rejected",
+      "pass": true
+    }
+  ],
+  "verdict": "ALL_NEGATIVE_SECURITY_TESTS_PASSED"
+}

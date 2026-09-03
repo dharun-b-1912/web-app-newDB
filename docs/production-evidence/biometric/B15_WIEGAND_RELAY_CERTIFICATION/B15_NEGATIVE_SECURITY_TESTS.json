@@ -1,0 +1,45 @@
+{
+  "suite": "B15 Negative Security & Policy Rejection Suite",
+  "executed_at": "2026-09-01T09:00:00Z",
+  "negative_tests": [
+    {
+      "test_id": "B15-02",
+      "attack_scenario": "UNKNOWN_IDENTITY_SCAN",
+      "input_id": "UNKNOWN_BADGE_999",
+      "expected_decision": "DENY_IDENTITY_NOT_FOUND",
+      "actual_decision": "DENY_IDENTITY_NOT_FOUND",
+      "turnstile_unlocked": false,
+      "pass": true
+    },
+    {
+      "test_id": "B15-03",
+      "attack_scenario": "UNAUTHORIZED_LOCATION_ATTEMPT",
+      "input_id": "JCS-017",
+      "location_id": "loc-unauthorized-plant",
+      "expected_decision": "DENY_LOCATION_UNAUTHORIZED",
+      "actual_decision": "DENY_LOCATION_UNAUTHORIZED",
+      "turnstile_unlocked": false,
+      "pass": true
+    },
+    {
+      "test_id": "B15-04",
+      "attack_scenario": "SUSPENDED_WORKER_ATTEMPT",
+      "input_id": "JCS-999-SUSPENDED",
+      "expected_decision": "DENY_EMPLOYMENT_INACTIVE",
+      "actual_decision": "DENY_EMPLOYMENT_INACTIVE",
+      "turnstile_unlocked": false,
+      "pass": true
+    },
+    {
+      "test_id": "B15-05",
+      "attack_scenario": "TAMPERED_DEVICE_RELAY_ATTEMPT",
+      "input_id": "JCS-017",
+      "device_tampered": true,
+      "expected_decision": "DENY_DEVICE_TAMPERED",
+      "actual_decision": "DENY_DEVICE_TAMPERED",
+      "turnstile_unlocked": false,
+      "pass": true
+    }
+  ],
+  "verdict": "ALL_NEGATIVE_SECURITY_POLICIES_ENFORCED"
+}

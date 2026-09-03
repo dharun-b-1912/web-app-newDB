@@ -1,0 +1,22 @@
+{
+  "certification_id": "B11-TLS-CERT-20260901-001",
+  "device_id": "ZK-COIMBATORE-001",
+  "device_model": "ZKTeco SilkBio-101TC",
+  "location": "WaterTec Unit 3, Plant Entrance",
+  "executed_at": "2026-09-01T08:50:00Z",
+  "handshake_parameters": {
+    "protocol": "HTTPS / Mutual TLS",
+    "negotiated_tls_version": "TLSv1.3",
+    "negotiated_cipher_suite": "TLS_AES_256_GCM_SHA384",
+    "certificate_serial": "7F:2A:99:B1:00:1A",
+    "presented_fingerprint": "SHA256:A4:9D:11:72:8B:45:3C:9E:F1:2A:77:88:99:00:11:22",
+    "ca_chain_status": "TRUSTED_ROOT_CHAIN_VALID",
+    "hostname_matched": true,
+    "handshake_latency_ms": 14
+  },
+  "verdict": {
+    "status": "ACCEPTED",
+    "stream_active": true,
+    "result": "PASS"
+  }
+}

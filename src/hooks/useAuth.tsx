@@ -60,10 +60,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           let defaultInferredRole = 'Employee';
           if (emailLower === 'superadmin@joypeoplehr.com') {
             defaultInferredRole = 'Super Admin';
-          } else if (emailLower.includes('admin') || emailLower.includes('owner')) {
-            defaultInferredRole = 'Company Admin';
-          } else if (emailLower.includes('hr')) {
-            defaultInferredRole = 'HR Head';
           }
 
           const directRole =

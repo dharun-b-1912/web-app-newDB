@@ -8,8 +8,8 @@ import { api } from '../../../services/api';
 export const TlReportsView: React.FC = () => {
   const { showToast } = useToast();
 
-  const handleExportCsv = (reportName: string) => {
-    const employees = api.getEmployeesSync();
+  const handleExportCsv = async (reportName: string) => {
+    const employees = await api.getEmployees();
     const rows = employees.length > 0
       ? employees.map(e => `${e.employee_code || e.id},"${(e.display_name || `${e.first_name} ${e.last_name}`).replace(/"/g, '""')}",${e.designation_title || 'Software Engineer'},98%,2,10,100%`).join('\n')
       : 'EMP-001,"Team Member",Engineer,100%,0,12,100%';

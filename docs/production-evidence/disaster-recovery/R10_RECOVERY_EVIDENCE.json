@@ -1,0 +1,15 @@
+{
+  "drill_id": "PITR-DRILL-20260901-095959",
+  "target_timestamp": "2026-09-01T09:59:59Z",
+  "base_backup_wal_lsn": "0/16F38A0",
+  "replay_wal_segments": 14,
+  "recovery_duration_seconds": 184,
+  "canonical_identities_verified": 3,
+  "location_authorizations_verified": 9,
+  "attendance_records_restored": 2500,
+  "financial_snapshots_verified": 1,
+  "sha256_seal_integrity": "MATCHED_ZERO_DRIFT",
+  "cross_tenant_leakage_detected": false,
+  "rls_row_security_active": true,
+  "final_verdict": "PRODUCTION_DISASTER_RECOVERY_CERTIFIED"
+}

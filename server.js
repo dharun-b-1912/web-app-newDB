@@ -66,33 +66,64 @@ app.use((req, res, next) => {
   next();
 });
 
-// 2. Sliding-Window Rate Limiter for API Endpoints (Point 6: Rate Limiting)
-const ipRequestCounts = new Map();
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 120; // 120 requests/minute per IP
+// 2. Multi-Profile Sliding-Window Rate Limiter for API Endpoints (Gate S15)
+const rateLimitStores = {
+  AUTH_LOGIN: new Map(), // 10 req/min per IP
+  BIOMETRIC_INGESTION: new Map(), // 500 req/min per Device IP
+  ADMIN_SENSITIVE: new Map(), // 20 req/min
+  STANDARD_API: new Map(), // 100 req/min per IP
+};
+
+const RATE_PROFILES = {
+  AUTH_LOGIN: { max: 10, windowMs: 60 * 1000 },
+  BIOMETRIC_INGESTION: { max: 500, windowMs: 60 * 1000 },
+  ADMIN_SENSITIVE: { max: 20, windowMs: 60 * 1000 },
+  STANDARD_API: { max: 100, windowMs: 60 * 1000 },
+};
 
 app.use('/api', (req, res, next) => {
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-  const now = Date.now();
-  const clientRecord = ipRequestCounts.get(clientIp) || { count: 0, startTime: now };
+  const path = req.path.toLowerCase();
 
-  if (now - clientRecord.startTime > RATE_LIMIT_WINDOW_MS) {
+  // Determine rate profile by route
+  let profileName = 'STANDARD_API';
+  if (path.includes('/auth/login') || path.includes('/auth/otp') || path.includes('/auth/reset')) {
+    profileName = 'AUTH_LOGIN';
+  } else if (path.includes('/biometric') || path.includes('/punch') || path.includes('/device')) {
+    profileName = 'BIOMETRIC_INGESTION';
+  } else if (path.includes('/admin') || path.includes('/payroll/approve') || path.includes('/vendor/suspend')) {
+    profileName = 'ADMIN_SENSITIVE';
+  }
+
+  const profile = RATE_PROFILES[profileName];
+  const store = rateLimitStores[profileName];
+  const now = Date.now();
+  const clientRecord = store.get(clientIp) || { count: 0, startTime: now };
+
+  if (now - clientRecord.startTime > profile.windowMs) {
     clientRecord.count = 1;
     clientRecord.startTime = now;
   } else {
     clientRecord.count += 1;
   }
 
-  ipRequestCounts.set(clientIp, clientRecord);
+  store.set(clientIp, clientRecord);
 
-  if (clientRecord.count > MAX_REQUESTS_PER_WINDOW) {
+  if (clientRecord.count > profile.max) {
+    const retryAfter = Math.ceil((profile.windowMs - (now - clientRecord.startTime)) / 1000);
+    res.setHeader('Retry-After', String(retryAfter));
+    res.setHeader('X-RateLimit-Limit', String(profile.max));
+    res.setHeader('X-RateLimit-Remaining', '0');
     return res.status(429).json({
       success: false,
-      error: 'Too many requests. Please slow down and try again later.',
-      retryAfterSeconds: Math.ceil((RATE_LIMIT_WINDOW_MS - (now - clientRecord.startTime)) / 1000),
+      error: `Too many requests for ${profileName}. Rate limit exceeded. Please retry after ${retryAfter}s.`,
+      retryAfterSeconds: retryAfter,
+      profile: profileName,
     });
   }
 
+  res.setHeader('X-RateLimit-Limit', String(profile.max));
+  res.setHeader('X-RateLimit-Remaining', String(Math.max(0, profile.max - clientRecord.count)));
   next();
 });
 

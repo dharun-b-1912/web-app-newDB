@@ -14,6 +14,7 @@ import {
   Check,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import { useEmployees } from '../../../hooks/useEmployees';
 
 export const CompOffView: React.FC = () => {
   const [grants, setGrants] = useState<CompOffGrant[]>([]);
@@ -29,7 +30,7 @@ export const CompOffView: React.FC = () => {
   }, []);
 
   const currentUser = api.getCurrentUser();
-  const employees = api.getEmployeesSync();
+  const { employees } = useEmployees();
   const currentEmp = employees.find(e => e.id === currentUser?.employee_id || e.work_email === currentUser?.email) || employees[0];
 
   const handleSubmitClaim = (e: React.FormEvent) => {

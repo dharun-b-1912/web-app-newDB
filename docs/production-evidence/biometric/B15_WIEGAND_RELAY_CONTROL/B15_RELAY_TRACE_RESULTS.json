@@ -1,0 +1,44 @@
+{
+  "suite": "B15 Physical Wiegand & Relay Authorization Suite",
+  "executed_at": "2026-09-01T08:55:00Z",
+  "results": [
+    {
+      "test_id": "B15-01",
+      "employee_id": "JCS-017",
+      "device_id": "ZK-COIMBATORE-001",
+      "location_id": "loc-water-tec-unit3",
+      "worker_active": true,
+      "location_authorized": true,
+      "vendor_compliant": true,
+      "device_tamper_normal": true,
+      "decision": "ALLOW",
+      "relay_pulse_duration_ms": 5000,
+      "turnstile_state": "UNLOCKED",
+      "result": "PASS"
+    },
+    {
+      "test_id": "B15-02",
+      "employee_id": "JCS-999-SUSPENDED",
+      "device_id": "ZK-COIMBATORE-001",
+      "worker_active": false,
+      "decision": "DENY",
+      "policy_reason": "WORKER_INACTIVE",
+      "relay_pulse_duration_ms": 0,
+      "turnstile_state": "LOCKED",
+      "result": "PASS_BLOCKED"
+    },
+    {
+      "test_id": "B15-03",
+      "employee_id": "JCS-017",
+      "device_id": "MANTRA-CARE-NOW-01",
+      "location_id": "loc-unauthorized-plant",
+      "location_authorized": false,
+      "decision": "DENY",
+      "policy_reason": "LOCATION_UNAUTHORIZED",
+      "relay_pulse_duration_ms": 0,
+      "turnstile_state": "LOCKED",
+      "result": "PASS_BLOCKED"
+    }
+  ],
+  "final_verdict": "VERIFIED_PASS"
+}

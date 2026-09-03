@@ -674,12 +674,20 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                 <label className="text-xs font-bold text-gray-700 block mb-1">Hardware Vendor</label>
                 <select
                   value={vendor}
-                  onChange={e => setVendor(e.target.value as any)}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
+                  onChange={e => {
+                    const newVendor = e.target.value as any;
+                    setVendor(newVendor);
+                    if (newVendor === 'eSSL') {
+                      setModel('AI-FACE MAGNUM');
+                      setDeviceType('Facial Recognition');
+                      setDeviceName('eSSL AI-FACE MAGNUM - Main Entrance');
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D] bg-white font-semibold text-gray-800"
                 >
-                  <option value="ZKTeco">ZKTeco (K2000, FaceDepot, SilkBio, MB20)</option>
+                  <option value="eSSL">eSSL (AI-FACE MAGNUM, SilkBio-101TC, MB160, K90)</option>
+                  <option value="ZKTeco">ZKTeco (uFace800, FaceDepot, SilkBio, MB20)</option>
                   <option value="Mantra">Mantra (MFS100, BioTrack, RD Service)</option>
-                  <option value="eSSL">eSSL (SilkBio-101TC, MB160, K90)</option>
                   <option value="Suprema">Suprema (BioStation 2, FaceStation F2)</option>
                   <option value="Matrix COSEC">Matrix COSEC (VEGA, DOOR, ARGO)</option>
                 </select>
@@ -691,8 +699,31 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
                   type="text"
                   value={model}
                   onChange={e => setModel(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D] font-semibold"
                 />
+                {vendor === 'eSSL' && (
+                  <div className="flex items-center gap-1 flex-wrap mt-1.5">
+                    <span className="text-[10px] text-gray-400 font-semibold">Presets:</span>
+                    {['AI-FACE MAGNUM', 'SilkBio-101TC', 'MB160', 'e990', 'uFace800'].map(m => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => {
+                          setModel(m);
+                          setDeviceName(`eSSL ${m} - Main Reception`);
+                        }}
+                        className={cn(
+                          "text-[10px] px-2 py-0.5 rounded-lg border transition-all cursor-pointer",
+                          model === m
+                            ? "bg-emerald-50 text-[#07563D] border-emerald-200 font-bold"
+                            : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                        )}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>

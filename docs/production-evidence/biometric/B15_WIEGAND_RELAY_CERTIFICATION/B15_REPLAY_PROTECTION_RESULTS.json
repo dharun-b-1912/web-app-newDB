@@ -1,0 +1,35 @@
+{
+  "suite": "B15 Replay Protection & Cryptographic Tamper Suite",
+  "executed_at": "2026-09-01T09:00:00Z",
+  "replay_tests": [
+    {
+      "test_id": "B15-06",
+      "attack_type": "EXPIRED_COMMAND_REPLAY",
+      "command_age_ms": 6500,
+      "ttl_threshold_ms": 5000,
+      "expected_status": "REJECTED_EXPIRED_COMMAND",
+      "actual_status": "REJECTED_EXPIRED_COMMAND",
+      "relay_unlocked": false,
+      "pass": true
+    },
+    {
+      "test_id": "B15-07",
+      "attack_type": "DOUBLE_PULSE_REPLAY_ATTACK",
+      "attempt_count": 2,
+      "expected_status": "REJECTED_REPLAY_ATTEMPT",
+      "actual_status": "REJECTED_REPLAY_ATTEMPT",
+      "relay_unlocked": false,
+      "pass": true
+    },
+    {
+      "test_id": "B15-08",
+      "attack_type": "TAMPERED_DIGITAL_SIGNATURE",
+      "modified_signature": "SHA256:FAKE_INVALID_HASH...",
+      "expected_status": "REJECTED_SIGNATURE_MISMATCH",
+      "actual_status": "REJECTED_SIGNATURE_MISMATCH",
+      "relay_unlocked": false,
+      "pass": true
+    }
+  ],
+  "verdict": "REPLAY_PROTECTION_CRYPTOGRAPHICALLY_CERTIFIED"
+}

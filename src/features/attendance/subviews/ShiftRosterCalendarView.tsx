@@ -41,6 +41,31 @@ import { getActiveOrgId } from '../../../services/attendance/biometricCommandSer
 import { api } from '../../../services/api';
 import { cn } from '../../../lib/utils';
 
+// ============================================================================
+// DYNAMIC WEEK & DATE UTILITIES (ISO compliant, Local Timezone Safe)
+// ============================================================================
+
+export const getMondayOfWeek = (inputDate: Date = new Date()): string => {
+  const d = new Date(inputDate);
+  const day = d.getDay(); // 0 is Sunday, 1 is Monday...
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(d.setDate(diff));
+  const year = monday.getFullYear();
+  const month = String(monday.getMonth() + 1).padStart(2, '0');
+  const dateNum = String(monday.getDate()).padStart(2, '0');
+  return `${year}-${month}-${dateNum}`;
+};
+
+export const getOffsetDate = (baseDateStr: string, offsetDays: number): string => {
+  const [y, m, d] = baseDateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + offsetDays);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const dateNum = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${dateNum}`;
+};
+
 export const ShiftRosterCalendarView: React.FC = () => {
   const { showToast } = useToast();
   const [shifts, setShifts] = useState<ShiftMaster[]>([]);
@@ -49,7 +74,7 @@ export const ShiftRosterCalendarView: React.FC = () => {
 
   // Navigation & View Mode State
   const [viewMode, setViewMode] = useState<'MATRIX' | 'LIST' | 'CALENDAR' | 'DEPARTMENT'>('MATRIX');
-  const [currentWeekStart, setCurrentWeekStart] = useState('2026-08-24'); // Monday 24 Aug 2026
+  const [currentWeekStart, setCurrentWeekStart] = useState<string>(() => getMondayOfWeek());
 
   // Multi-Dimension Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,8 +95,8 @@ export const ShiftRosterCalendarView: React.FC = () => {
   // Bulk Assign Drawer State (Slide-Over)
   const [isBulkDrawerOpen, setIsBulkDrawerOpen] = useState(false);
   const [bulkShiftId, setBulkShiftId] = useState('');
-  const [bulkStartDate, setBulkStartDate] = useState('2026-08-24');
-  const [bulkEndDate, setBulkEndDate] = useState('2026-08-30');
+  const [bulkStartDate, setBulkStartDate] = useState<string>(() => getMondayOfWeek());
+  const [bulkEndDate, setBulkEndDate] = useState<string>(() => getOffsetDate(getMondayOfWeek(), 6));
   const [includeSatOff, setIncludeSatOff] = useState(true);
   const [includeSunOff, setIncludeSunOff] = useState(true);
 
@@ -94,9 +119,9 @@ export const ShiftRosterCalendarView: React.FC = () => {
 
   // Copy Schedule Modal State
   const [isCopyScheduleOpen, setIsCopyScheduleOpen] = useState(false);
-  const [copySourceStart, setCopySourceStart] = useState('2026-08-24');
-  const [copySourceEnd, setCopySourceEnd] = useState('2026-08-30');
-  const [copyTargetStart, setCopyTargetStart] = useState('2026-08-31');
+  const [copySourceStart, setCopySourceStart] = useState<string>(() => getMondayOfWeek());
+  const [copySourceEnd, setCopySourceEnd] = useState<string>(() => getOffsetDate(getMondayOfWeek(), 6));
+  const [copyTargetStart, setCopyTargetStart] = useState<string>(() => getOffsetDate(getMondayOfWeek(), 7));
 
   // Import / Export Modal State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -122,14 +147,11 @@ export const ShiftRosterCalendarView: React.FC = () => {
     loadData();
   }, []);
 
-  // Compute 7 days for the active week window
+  // Compute 7 days for the active week window dynamically
   const activeDays = useMemo(() => {
     const days: string[] = [];
-    const base = new Date(currentWeekStart);
     for (let i = 0; i < 7; i++) {
-      const d = new Date(base);
-      d.setDate(base.getDate() + i);
-      days.push(d.toISOString().split('T')[0]);
+      days.push(getOffsetDate(currentWeekStart, i));
     }
     return days;
   }, [currentWeekStart]);
@@ -137,10 +159,13 @@ export const ShiftRosterCalendarView: React.FC = () => {
   // Dynamic Week Label & Week Number Calculation
   const weekInfo = useMemo(() => {
     if (!activeDays || activeDays.length < 7) {
-      return { label: 'Aug 24 – Aug 30, 2026', weekNum: 35 };
+      const now = new Date();
+      return { label: now.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), weekNum: 1 };
     }
-    const startD = new Date(activeDays[0]);
-    const endD = new Date(activeDays[6]);
+    const [sy, sm, sd] = activeDays[0].split('-').map(Number);
+    const [ey, em, ed] = activeDays[6].split('-').map(Number);
+    const startD = new Date(sy, sm - 1, sd);
+    const endD = new Date(ey, em - 1, ed);
 
     const startMonth = startD.toLocaleDateString('en-US', { month: 'short' });
     const endMonth = endD.toLocaleDateString('en-US', { month: 'short' });
@@ -148,9 +173,7 @@ export const ShiftRosterCalendarView: React.FC = () => {
     const endDay = endD.getDate();
     const year = endD.getFullYear();
 
-    const label = startMonth === endMonth
-      ? `${startMonth} ${startDay} – ${endMonth} ${endDay}, ${year}`
-      : `${startMonth} ${startDay} – ${endMonth} ${endDay}, ${year}`;
+    const label = `${startMonth} ${startDay} – ${endMonth} ${endDay}, ${year}`;
 
     // ISO week number calculation
     const target = new Date(startD.valueOf());
@@ -176,15 +199,25 @@ export const ShiftRosterCalendarView: React.FC = () => {
     }
   }, [activeDays]);
 
-  // Navigate Week
+  // Navigate Week dynamically
   const handleNavigateWeek = (direction: 'PREV' | 'NEXT') => {
-    const base = new Date(currentWeekStart);
-    base.setDate(base.getDate() + (direction === 'PREV' ? -7 : 7));
-    setCurrentWeekStart(base.toISOString().split('T')[0]);
+    const nextMonday = getOffsetDate(currentWeekStart, direction === 'PREV' ? -7 : 7);
+    setCurrentWeekStart(nextMonday);
+    setBulkStartDate(nextMonday);
+    setBulkEndDate(getOffsetDate(nextMonday, 6));
+    setCopySourceStart(nextMonday);
+    setCopySourceEnd(getOffsetDate(nextMonday, 6));
+    setCopyTargetStart(getOffsetDate(nextMonday, 7));
   };
 
   const handleGoToToday = () => {
-    setCurrentWeekStart('2026-08-24');
+    const todayMonday = getMondayOfWeek();
+    setCurrentWeekStart(todayMonday);
+    setBulkStartDate(todayMonday);
+    setBulkEndDate(getOffsetDate(todayMonday, 6));
+    setCopySourceStart(todayMonday);
+    setCopySourceEnd(getOffsetDate(todayMonday, 6));
+    setCopyTargetStart(getOffsetDate(todayMonday, 7));
   };
 
   // Helper to resolve precise timing, duration, and policy for any shift/roster entry

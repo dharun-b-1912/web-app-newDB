@@ -14,13 +14,14 @@ import {
   Check,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import { useEmployees } from '../../../hooks/useEmployees';
 
 export const AdjustmentsView: React.FC = () => {
   const [adjustments, setAdjustments] = useState<LeaveAdjustment[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const employees = api.getEmployeesSync();
+  const { employees } = useEmployees();
   // Form State
   const [selectedEmp, setSelectedEmp] = useState(() => (employees[0]?.id || 'emp-101'));
   const [selectedLeaveTypeId, setSelectedLeaveTypeId] = useState('lt-cl');

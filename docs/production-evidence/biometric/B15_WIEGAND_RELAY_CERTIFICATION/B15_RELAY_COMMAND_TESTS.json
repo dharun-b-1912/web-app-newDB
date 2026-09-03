@@ -1,0 +1,28 @@
+{
+  "suite": "B15 Signed Relay Command Suite",
+  "executed_at": "2026-09-01T09:00:00Z",
+  "tests": [
+    {
+      "test_id": "B15-01",
+      "employee_id": "JCS-017",
+      "device_id": "ZK-COIMBATORE-001",
+      "decision": "ALLOW",
+      "relay_duration_ms": 5000,
+      "turnstile_unlocked": true,
+      "status": "EXECUTED_PULSE",
+      "result": "PASS"
+    },
+    {
+      "test_id": "B15-09",
+      "employee_id": "JCS-017",
+      "device_id": "ZK-COIMBATORE-001",
+      "requested_duration_ms": 30000,
+      "clamped_duration_ms": 5000,
+      "decision": "ALLOW",
+      "turnstile_unlocked": true,
+      "status": "EXECUTED_PULSE",
+      "result": "PASS"
+    }
+  ],
+  "verdict": "RELAY_COMMANDS_VALIDATED"
+}

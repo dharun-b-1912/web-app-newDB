@@ -26,8 +26,8 @@ export const LmsReportsView: React.FC = () => {
     { id: 'lms-rep-16', name: '16. LMS Audit & Certificate Verification Log', desc: 'Audit trail of digital certificate generations and HR verifications' },
   ];
 
-  const handleExportCSV = () => {
-    const employees = api.getEmployeesSync();
+  const handleExportCSV = async () => {
+    const employees = await api.getEmployees();
     const rows = employees.length > 0
       ? employees.map(e => `${e.employee_code || e.id},"${(e.display_name || `${e.first_name} ${e.last_name}`).replace(/"/g, '""')}",${e.department_name || 'Staff'},Workplace Policy 2026,${new Date().toISOString().split('T')[0]},100%,CERT-${e.employee_code || '101'},Completed`).join('\n')
       : 'EMP-001,"Learner",Engineering,Workplace Policy 2026,2026-08-01,100%,CERT-101,Completed';

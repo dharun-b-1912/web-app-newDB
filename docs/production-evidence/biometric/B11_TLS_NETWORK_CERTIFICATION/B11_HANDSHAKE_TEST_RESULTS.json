@@ -1,0 +1,37 @@
+{
+  "suite": "B11 TLS Handshake & Authentication Suite",
+  "executed_at": "2026-09-01T08:52:00Z",
+  "tests": [
+    {
+      "test_id": "B11-01",
+      "device_id": "ZK-COIMBATORE-001",
+      "tls_version": "TLSv1.3",
+      "cipher_suite": "TLS_AES_256_GCM_SHA384",
+      "certificate_validated": true,
+      "fingerprint_matched": true,
+      "handshake_status": "ACCEPTED",
+      "result": "PASS"
+    },
+    {
+      "test_id": "B11-07",
+      "device_id": "ESSL-COIMBATORE-HQ-01",
+      "tls_version": "TLSv1.2",
+      "cipher_suite": "ECDHE-RSA-AES256-GCM-SHA384",
+      "certificate_validated": true,
+      "fingerprint_matched": true,
+      "handshake_status": "ACCEPTED",
+      "result": "PASS"
+    },
+    {
+      "test_id": "B11-08",
+      "device_id": "MANTRA-CARE-NOW-01",
+      "tls_version": "TLSv1.3",
+      "cipher_suite": "TLS_AES_256_GCM_SHA384",
+      "certificate_validated": true,
+      "fingerprint_matched": true,
+      "handshake_status": "ACCEPTED",
+      "result": "PASS"
+    }
+  ],
+  "verdict": "ALL_HANDSHAKES_AUTHENTICATED"
+}

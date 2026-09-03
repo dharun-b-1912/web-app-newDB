@@ -181,9 +181,27 @@ export const isItemActive = (itemId: string, currentNav: string): boolean => {
   // LMS mappings
   if (itemId === 'lms-dashboard' && (currentNav === 'lms' || currentNav === 'lms-dashboard')) return true;
 
+  // Workspace & Modern SaaS mappings
+  if (itemId === 'command-center' && (currentNav === 'command-center' || currentNav === 'executive-overview' || currentNav === 'dashboard')) return true;
+  if (itemId === 'resources' && (currentNav === 'resources' || currentNav === 'documents' || currentNav === 'assets')) return true;
+  if (itemId === 'approvals' && (currentNav === 'approvals' || currentNav === 'requests' || currentNav === 'admin-approvals' || currentNav === 'leave-approval')) return true;
+  if (itemId === 'admin-access' && (currentNav === 'admin-access' || currentNav === 'admin-roles' || currentNav === 'admin-users' || currentNav === 'admin-permissions' || currentNav === 'admin' || currentNav === 'rbac' || currentNav === 'roles' || currentNav === 'users')) return true;
+
   // Admin mappings
-  if (itemId === 'admin-roles' && (currentNav === 'admin' || currentNav === 'rbac' || currentNav === 'admin-roles' || currentNav === 'roles' || currentNav === 'users' || currentNav === 'permissions')) return true;
+  if (itemId === 'admin' && (currentNav === 'admin' || currentNav === 'administration' || currentNav === 'admin-dashboard')) return true;
+  if (itemId === 'admin-users' && (currentNav === 'admin-users' || currentNav === 'users')) return true;
+  if (itemId === 'admin-roles' && (currentNav === 'admin-roles' || currentNav === 'roles' || currentNav === 'rbac')) return true;
+  if (itemId === 'admin-permissions' && (currentNav === 'admin-permissions' || currentNav === 'permissions')) return true;
+  if (itemId === 'admin-workflows' && (currentNav === 'admin-workflows' || currentNav === 'workflows')) return true;
+  if (itemId === 'admin-approvals' && (currentNav === 'admin-approvals' || currentNav === 'approvals')) return true;
   if (itemId === 'admin-notifications' && (currentNav === 'admin-notifications')) return true;
+  if (itemId === 'admin-audit' && (currentNav === 'admin-audit' || currentNav === 'audit-logs')) return true;
+  if (itemId === 'admin-security' && (currentNav === 'admin-security' || currentNav === 'security')) return true;
+  if (itemId === 'admin-api' && (currentNav === 'admin-api' || currentNav === 'api')) return true;
+  if (itemId === 'admin-integrations' && (currentNav === 'admin-integrations' || currentNav === 'integrations')) return true;
+  if (itemId === 'admin-subscription' && (currentNav === 'admin-subscription' || currentNav === 'subscription')) return true;
+  if (itemId === 'admin-billing' && (currentNav === 'admin-billing' || currentNav === 'billing')) return true;
+  if (itemId === 'admin-settings' && (currentNav === 'admin-settings' || currentNav === 'settings')) return true;
   if (itemId === 'notifications' && (currentNav === 'notifications')) return true;
 
   // SaaS Platform mappings
@@ -599,60 +617,64 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     },
   ];
 
-  // ─── COMPANY ADMIN & ORGANIZATION OWNER: Executive Control, Multi-Entity, RBAC & Commercials ─
+  // ─── COMPANY ADMIN & ORGANIZATION OWNER: 7 Core Workspaces + Settings ─
   const companyAdminGroups: NavGroup[] = [
     {
-      groupName: 'EXECUTIVE COCKPIT',
+      groupName: 'HOME',
       items: [
-        { id: 'executive-overview', label: 'Executive Cockpit', icon: BarChart3 },
-        { id: 'workforce-overview', label: 'Workforce Overview', icon: LineChart },
-        { id: 'dashboard', label: 'Operations Summary', icon: LayoutDashboard },
-        { id: 'my-workspace', label: 'My Workspace', icon: Sparkles },
+        { id: 'command-center', label: 'Command Center', icon: LayoutDashboard },
+        { id: 'my-workspace', label: 'My Work', icon: CheckSquare },
       ],
     },
     {
-      groupName: 'ORGANIZATION ARCHITECTURE',
+      groupName: 'WORKFORCE',
       items: [
-        { id: 'organization', label: 'Legal Entities & Hierarchy', icon: Building2 },
-        { id: 'departments', label: 'Departments Master', icon: Layers },
-        { id: 'designations', label: 'Designation Framework', icon: Award },
-        { id: 'locations', label: 'Operating Locations', icon: MapPin },
+        { id: 'people', label: 'People', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'organization', label: 'Organization', icon: Building2 },
+        { id: 'resources', label: 'Resources', icon: Package },
       ],
     },
     {
-      groupName: 'GOVERNANCE & ACCESS',
+      groupName: 'OPERATIONS',
       items: [
-        { id: 'people', label: 'Workforce Directory', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
-        { id: 'admin-roles', label: 'RBAC & Access Control', icon: KeyRound },
-        { id: 'documents', label: 'Enterprise Documents & E-Sign', icon: FileText },
-        { id: 'assets', label: 'Company Asset Master', icon: Package },
+        { id: 'attendance', label: 'Attendance', icon: Clock },
+        { id: 'approvals', label: 'Requests & Approvals', icon: CheckCircle2, badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined },
+        { id: 'automation', label: 'Automation', icon: Workflow },
       ],
     },
     {
-      groupName: 'MANPOWER & COMMERCIALS',
+      groupName: 'PAYROLL',
       items: [
-        { id: 'vendors', label: 'Vendor & Manpower Master', icon: HeartHandshake },
-        { id: 'vendor-settlement-workspace', label: 'Settlement Workspace', icon: Sparkles, badge: 'Master' },
-        { id: 'client-billing', label: 'Client Wage Invoicing', icon: Receipt, badge: 'Master' },
-        { id: 'vendor-audit-reports', label: 'Vendor Compliance & ECR', icon: ShieldCheck },
+        { id: 'payroll-dashboard', label: 'Payroll Center', icon: CircleDollarSign },
+        { id: 'payroll-statutory', label: 'Compliance', icon: ShieldCheck },
+        { id: 'payroll-reports', label: 'Reports', icon: FileSpreadsheet },
       ],
     },
     {
-      groupName: 'FINANCIAL & PAYROLL OVERSIGHT',
+      groupName: 'MANPOWER',
       items: [
-        { id: 'payroll-dashboard', label: 'Payroll Executive Desk', icon: LayoutDashboard },
-        { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
-        { id: 'payroll-freeze', label: 'Payroll Freeze Controls', icon: SlidersHorizontal },
-        { id: 'payroll-reports', label: 'Statutory Reports & ECR', icon: FileSpreadsheet },
+        { id: 'vendors', label: 'Partners', icon: HeartHandshake },
+        { id: 'vendor-assignments', label: 'Deployment', icon: MapPin },
+        { id: 'vendor-settlement-workspace', label: 'Settlement', icon: Sparkles, badge: 'Master' },
+        { id: 'client-billing', label: 'Client Billing', icon: Receipt, badge: 'Master' },
+        { id: 'vendor-dashboard', label: 'Compliance', icon: ShieldCheck },
       ],
     },
     {
-      groupName: 'AUDIT, COMPLIANCE & ALERTS',
+      groupName: 'INSIGHTS',
       items: [
-        { id: 'calculation-audit', label: 'Financial Audit Logs', icon: ShieldCheck },
-        { id: 'approval-history', label: 'Approval Audit Trail', icon: History },
-        { id: 'trust-legal', label: 'Trust & Legal Center', icon: ShieldCheck },
-        { id: 'notifications', label: 'Notification Center', icon: Bell },
+        { id: 'workforce-overview', label: 'Workforce Analytics', icon: LineChart },
+        { id: 'analytics-reports', label: 'Executive Reports', icon: BarChart3 },
+      ],
+    },
+    {
+      groupName: 'ADMINISTRATION',
+      items: [
+        { id: 'admin-access', label: 'Access & Roles', icon: KeyRound },
+        { id: 'admin-security', label: 'Security', icon: Lock },
+        { id: 'admin-integrations', label: 'Integrations', icon: GitFork },
+        { id: 'admin-audit', label: 'Audit & Monitoring', icon: History },
+        { id: 'admin-settings', label: 'System Settings', icon: Settings },
       ],
     },
   ];

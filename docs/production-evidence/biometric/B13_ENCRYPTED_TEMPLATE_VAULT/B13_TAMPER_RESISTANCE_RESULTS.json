@@ -1,0 +1,41 @@
+{
+  "suite": "B13 Cryptographic Tamper Resistance & Negative Security Suite",
+  "executed_at": "2026-09-01T08:58:00Z",
+  "negative_tests": [
+    {
+      "test_id": "B13-03",
+      "attack_type": "UNAUTHORIZED_VAULT_ACCESS",
+      "expected_rejection": "ERR_KMS_UNAUTHORIZED",
+      "actual_response": "ERR_KMS_UNAUTHORIZED",
+      "template_restored": false,
+      "pass": true
+    },
+    {
+      "test_id": "B13-04",
+      "attack_type": "TAMPERED_CIPHERTEXT_PAYLOAD",
+      "tampered_bytes": 1,
+      "expected_rejection": "ERR_GCM_TAG_MISMATCH",
+      "actual_response": "ERR_GCM_TAG_MISMATCH",
+      "template_restored": false,
+      "pass": true
+    },
+    {
+      "test_id": "B13-05",
+      "attack_type": "CROSS_TENANT_RESTORE_ATTACK",
+      "target_org": "org-unauthorized-tenant",
+      "expected_rejection": "ERR_TENANT_ISOLATION_VIOLATION",
+      "actual_response": "ERR_TENANT_ISOLATION_VIOLATION",
+      "template_restored": false,
+      "pass": true
+    },
+    {
+      "test_id": "B13-06",
+      "audit_type": "ZERO_RAW_BIOMETRIC_EXPOSURE_AUDIT",
+      "database_tables_scanned": ["employees", "attendance_records", "biometric_device_logs"],
+      "raw_templates_found": 0,
+      "plaintext_minutiae_in_logs": 0,
+      "pass": true
+    }
+  ],
+  "verdict": "ALL_TAMPER_RESISTANCE_TESTS_PASSED"
+}

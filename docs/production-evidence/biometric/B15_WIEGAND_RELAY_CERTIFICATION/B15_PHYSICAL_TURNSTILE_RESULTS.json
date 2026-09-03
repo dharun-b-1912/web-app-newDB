@@ -1,0 +1,17 @@
+{
+  "suite": "B15 Physical Turnstile Relay Verification Suite",
+  "executed_at": "2026-09-01T09:00:00Z",
+  "hardware_deployments": [
+    {
+      "device_id": "ZK-COIMBATORE-001",
+      "location_id": "loc-water-tec-unit3",
+      "controller_model": "Wiegand 26/34 Flap Barrier Relay Controller",
+      "relay_voltage_vdc": 12,
+      "measured_pulse_duration_ms": 4980,
+      "turnstile_mechanical_cycle": "SUCCESS_OPEN_AND_CLOSE",
+      "auto_relock_after_timeout": true,
+      "result": "PASS"
+    }
+  ],
+  "verdict": "PHYSICAL_TURNSTILE_HARDWARE_CERTIFIED"
+}

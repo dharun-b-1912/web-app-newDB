@@ -146,7 +146,7 @@ export const AutoPayrollAndReportsModal: React.FC<AutoPayrollAndReportsModalProp
       showToast('✓ Downloaded Bank Payment Advice');
     } else if (reportType === 'esic') {
       const header = 'EmpCode,EmployeeName,IPNumber,GrossWages,EmployeeESIC,EmployerESIC,TotalESIC\n';
-      const rows = records.map(r => `${r.employee_code},"${r.employee_name}","3192847192",${r.total_earnings},${r.esic_employee},${r.esic_employer},${r.esic_employee + r.esic_employer}`).join('\n');
+      const rows = records.map(r => `${r.employee_code},"${r.employee_name}","${(r as any).esi_number || (r as any).statutory?.esi_number || ''}",${r.total_earnings},${r.esic_employee},${r.esic_employer},${r.esic_employee + r.esic_employer}`).join('\n');
       downloadFile(header + rows, `ESIC_Statement_${payPeriod.replace(' ', '_')}.csv`, 'text/csv');
       showToast('✓ Downloaded ESIC Monthly Statement');
     } else if (reportType === 'pt') {
@@ -156,7 +156,7 @@ export const AutoPayrollAndReportsModal: React.FC<AutoPayrollAndReportsModalProp
       showToast('✓ Downloaded Professional Tax Statement');
     } else if (reportType === 'tds') {
       const header = 'EmpCode,EmployeeName,PAN,GrossSalary,TotalDeductions,TDS_Withheld\n';
-      const rows = records.map(r => `${r.employee_code},"${r.employee_name}","ABCDE1234F",${r.total_earnings},${r.total_deductions},${r.tds_tax}`).join('\n');
+      const rows = records.map(r => `${r.employee_code},"${r.employee_name}","${(r as any).pan_number || (r as any).statutory?.pan || (r as any).statutory?.pan_number || ''}",${r.total_earnings},${r.total_deductions},${r.tds_tax}`).join('\n');
       downloadFile(header + rows, `TDS_24Q_Report_${payPeriod.replace(' ', '_')}.csv`, 'text/csv');
       showToast('✓ Downloaded TDS 24Q Withholding Register');
     } else {

@@ -1,0 +1,22 @@
+{
+  "suite": "B11 TLS Hardware Stream Certification",
+  "executed_at": "2026-09-01T08:45:00Z",
+  "total_tests": 12,
+  "passed_tests": 12,
+  "failed_tests": 0,
+  "test_results": [
+    { "test_id": "B11-T01", "scenario": "Valid TLS 1.3 certificate", "expected": "ACCEPT", "actual": "ACCEPTED", "result": "PASS" },
+    { "test_id": "B11-T02", "scenario": "Valid TLS 1.2 certificate", "expected": "ACCEPT", "actual": "ACCEPTED", "result": "PASS" },
+    { "test_id": "B11-T03", "scenario": "Registered device fingerprint binding", "expected": "ACCEPT", "actual": "ACCEPTED", "result": "PASS" },
+    { "test_id": "B11-T04", "scenario": "Device reconnect recovery", "expected": "ACCEPT", "actual": "ACCEPTED", "result": "PASS" },
+    { "test_id": "B11-T05", "scenario": "Certificate rotation with new fingerprint", "expected": "ACCEPT", "actual": "ACCEPTED", "result": "PASS" },
+    { "test_id": "B11-T06", "scenario": "Expired certificate rejection", "expected": "BLOCK", "actual": "CERTIFICATE_EXPIRED", "result": "PASS" },
+    { "test_id": "B11-T07", "scenario": "Invalid / Untrusted CA rejection", "expected": "BLOCK", "actual": "INVALID_CA", "result": "PASS" },
+    { "test_id": "B11-T08", "scenario": "Self-signed certificate rejection", "expected": "BLOCK", "actual": "INVALID_CA", "result": "PASS" },
+    { "test_id": "B11-T09", "scenario": "TLS 1.0/1.1 downgrade attempt", "expected": "BLOCK", "actual": "TLS_DOWNGRADE", "result": "PASS" },
+    { "test_id": "B11-T10", "scenario": "Plaintext HTTP connection rejection", "expected": "BLOCK", "actual": "PLAINTEXT_BLOCKED", "result": "PASS" },
+    { "test_id": "B11-T11", "scenario": "Unknown / Unregistered device rejection", "expected": "BLOCK", "actual": "UNKNOWN_DEVICE", "result": "PASS" },
+    { "test_id": "B11-T12", "scenario": "Valid certificate on wrong device mismatch", "expected": "BLOCK", "actual": "DEVICE_MISMATCH", "result": "PASS" }
+  ],
+  "final_verdict": "VERIFIED_PASS"
+}

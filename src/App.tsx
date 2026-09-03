@@ -9,8 +9,17 @@ import { AppShell } from './components/shell/AppShell';
 import { DashboardView } from './features/dashboard/DashboardView';
 import { WorkforceOverviewView } from './features/dashboard/WorkforceOverviewView';
 import { ExecutiveOverviewView } from './features/dashboard/ExecutiveOverviewView';
+import { CommandCenterView } from './features/dashboard/CommandCenterView';
 import { PeopleView } from './features/people/PeopleView';
 import { OrganizationView } from './features/organization/OrganizationView';
+import { OrganizationWorkspace } from './features/organization/OrganizationWorkspace';
+import { WorkforceWorkspace } from './features/organization/WorkforceWorkspace';
+import { ResourcesWorkspace } from './features/organization/ResourcesWorkspace';
+import { OperationsWorkspace } from './features/operations/OperationsWorkspace';
+import { RequestsApprovalsWorkspace } from './features/operations/RequestsApprovalsWorkspace';
+import { ManpowerWorkspace } from './features/manpower/ManpowerWorkspace';
+import { InsightsWorkspace } from './features/insights/InsightsWorkspace';
+import { AdministrationWorkspace } from './features/admin/AdministrationWorkspace';
 import { DepartmentView } from './features/organization/DepartmentView';
 import { DesignationView } from './features/organization/DesignationView';
 import { LocationView } from './features/organization/LocationView';
@@ -100,17 +109,13 @@ const AppContent: React.FC = () => {
     const primaryRole = getPrimaryRole(stored);
     const isPlatformRole = (['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'] as string[]).includes(primaryRole);
     if (isPlatformRole) return 'platform-dashboard';
-    if (primaryRole === 'Vendor Admin' || stored?.vendor_id || stored?.email?.toLowerCase().includes('vendor')) {
+    if (primaryRole === 'Vendor Admin' || stored?.vendor_id) {
       return 'vendor-settlement-workspace';
     }
     if (primaryRole === 'Company Admin') {
       return 'executive-overview';
     }
-    if (
-      primaryRole === 'HR Head' ||
-      primaryRole === 'HR Admin' ||
-      (stored?.email && stored.email.toLowerCase().includes('hr'))
-    ) {
+    if (primaryRole === 'HR Head' || primaryRole === 'HR Admin') {
       return 'dashboard';
     }
     if (primaryRole === 'Manager') return 'dashboard';
@@ -127,7 +132,7 @@ const AppContent: React.FC = () => {
     const isPlatformRole = ['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(primaryRole);
 
     // 0. If vendor role, ensure they are strictly on a vendor route
-    if (primaryRole === 'Vendor Admin' || (stored as any)?.vendor_id || stored?.email?.toLowerCase().includes('vendor')) {
+    if (primaryRole === 'Vendor Admin' || (stored as any)?.vendor_id) {
       if (urlState.route && (urlState.route.startsWith('vendor') || urlState.route.includes('vendor'))) {
         return urlState.route;
       }
@@ -274,7 +279,6 @@ const AppContent: React.FC = () => {
     window.location.pathname === '/superadmin' ||
     window.location.pathname === '/super-admin' ||
     window.location.pathname === '/platform-login' ||
-    window.location.pathname === '/admin/login' ||
     window.location.pathname === '/platform/login';
 
   if (isSuperAdminRoute) {
@@ -309,52 +313,86 @@ const AppContent: React.FC = () => {
 
   const renderViewContent = () => {
     switch (currentRoute) {
+      case 'command-center':
+        return <CommandCenterView onNavigate={handleNavigate} />;
       case 'dashboard':
         return <DashboardView onNavigate={handleNavigate} />;
       case 'executive-overview':
-        return <ExecutiveOverviewView onNavigate={handleNavigate} />;
-      case 'workforce-overview':
-        return <WorkforceOverviewView onNavigate={handleNavigate} />;
+        return <CommandCenterView onNavigate={handleNavigate} initialTab="overview" />;
+      case 'workforce':
+        return <WorkforceWorkspace initialTab="people" onNavigate={handleNavigate} />;
       case 'people':
-        return <PeopleView />;
+        return <WorkforceWorkspace initialTab="people" onNavigate={handleNavigate} />;
       case 'organization':
-        return <OrganizationView />;
+        return <WorkforceWorkspace initialTab="organization" onNavigate={handleNavigate} />;
       case 'departments':
-        return <DepartmentView />;
+        return <OrganizationWorkspace initialTab="departments" onNavigate={handleNavigate} />;
       case 'designations':
-        return <DesignationView />;
+        return <OrganizationWorkspace initialTab="designations" onNavigate={handleNavigate} />;
       case 'locations':
-        return <LocationView />;
+        return <WorkforceWorkspace initialTab="locations" onNavigate={handleNavigate} />;
+      case 'resources':
+      case 'documents':
+      case 'assets':
+        return <WorkforceWorkspace initialTab="resources" onNavigate={handleNavigate} />;
+      case 'operations':
+        return <OperationsWorkspace initialTab="attendance" onNavigate={handleNavigate} />;
+      case 'attendance':
+      case 'attendance-dashboard':
+        return <OperationsWorkspace initialTab="attendance" onNavigate={handleNavigate} />;
+      case 'shifts':
+      case 'roster':
+        return <OperationsWorkspace initialTab="shifts" onNavigate={handleNavigate} />;
+      case 'leave':
+      case 'leave-dashboard':
+        return <OperationsWorkspace initialTab="leave" onNavigate={handleNavigate} />;
+      case 'approvals':
+      case 'requests':
+        return <OperationsWorkspace initialTab="approvals" onNavigate={handleNavigate} />;
+      case 'admin-approvals':
+        return <RequestsApprovalsWorkspace initialTab="policies" />;
+      case 'manpower':
+        return <ManpowerWorkspace initialTab="settlement" onNavigate={handleNavigate} />;
       case 'vendors':
       case 'organization-vendors':
-        return <VendorsView />;
-      case 'assets':
-        return <AssetsView />;
+        return <ManpowerWorkspace initialTab="partners" onNavigate={handleNavigate} />;
+      case 'vendor-assignments':
+        return <ManpowerWorkspace initialTab="deployment" onNavigate={handleNavigate} />;
+      case 'vendor-settlement-workspace':
+        return <ManpowerWorkspace initialTab="settlement" onNavigate={handleNavigate} />;
+      case 'client-billing':
+        return <ManpowerWorkspace initialTab="billing" onNavigate={handleNavigate} />;
+      case 'insights':
+      case 'workforce-overview':
+        return <InsightsWorkspace initialTab="workforce" onNavigate={handleNavigate} />;
+      case 'analytics-reports':
+        return <InsightsWorkspace initialTab="reports" onNavigate={handleNavigate} />;
       case 'admin':
       case 'administration':
       case 'admin-dashboard':
+      case 'admin-access':
       case 'admin-users':
       case 'admin-roles':
       case 'admin-permissions':
-      case 'admin-workflows':
-      case 'admin-approvals':
-      case 'admin-notifications':
-      case 'admin-audit':
-      case 'admin-security':
-      case 'admin-api':
-      case 'admin-integrations':
-      case 'admin-subscription':
-      case 'admin-billing':
-      case 'admin-settings':
       case 'rbac':
       case 'users':
       case 'permissions':
-      case 'admin-policies':
-      case 'templates':
-      case 'integrations':
+        return <AdministrationWorkspace initialTab="access" onNavigate={handleNavigate} />;
+      case 'admin-security':
       case 'security':
+        return <AdministrationWorkspace initialTab="security" onNavigate={handleNavigate} />;
+      case 'admin-integrations':
+      case 'admin-api':
+      case 'integrations':
+        return <AdministrationWorkspace initialTab="integrations" onNavigate={handleNavigate} />;
+      case 'admin-audit':
       case 'audit-logs':
-        return <AdminMasterModule initialTab={currentRoute} />;
+        return <AdministrationWorkspace initialTab="audit" onNavigate={handleNavigate} />;
+      case 'admin-settings':
+      case 'admin-billing':
+      case 'admin-subscription':
+      case 'settings':
+        return <AdministrationWorkspace initialTab="settings" onNavigate={handleNavigate} />;
       case 'recruitment':
       case 'recruitment-dashboard':
       case 'recruitment-requisitions':
@@ -371,8 +409,6 @@ const AppContent: React.FC = () => {
         return <OnboardingView />;
       case 'offboarding':
         return <OffboardingView />;
-      case 'documents':
-        return <DocumentManagementView />;
       case 'career-dev':
       case 'compensation':
         return <TalentManagementView initialTab={currentRoute} />;
@@ -405,8 +441,6 @@ const AppContent: React.FC = () => {
       case 'performance-pip':
       case 'performance-reports':
         return <PerformanceMasterModule initialTab={currentRoute} />;
-      case 'attendance':
-      case 'attendance-dashboard':
       case 'attendance-employees':
       case 'employee-attendance':
       case 'employees':
@@ -417,8 +451,6 @@ const AppContent: React.FC = () => {
       case 'regularization':
       case 'exceptions':
       case 'late-early':
-      case 'shifts':
-      case 'roster':
       case 'shift-calendar':
       case 'policies':
       case 'biometric':
@@ -428,35 +460,16 @@ const AppContent: React.FC = () => {
       case 'punch-mapping':
       case 'device-logs':
       case 'face-attendance':
-      case 'face-enrollment':
-      case 'face-devices':
-      case 'face-logs':
-      case 'face-exceptions':
-      case 'gps':
-      case 'gps-attendance':
-      case 'geofences':
-      case 'staff-mapping':
-      case 'mobile-clocking':
-      case 'location-logs':
-      case 'location-exceptions':
-      case 'payroll-inputs':
-      case 'payable-days':
-      case 'lop-desk':
-      case 'ot-pay-inputs':
-      case 'payroll-freeze':
-      case 'calculation-audit':
-      case 'attendance-corrections':
-      case 'approval-history':
-      case 'attendance-activity-logs':
-      case 'calendar':
-      case 'holidays':
-      case 'manual':
-      case 'attendance-reports':
+      case 'mobile-punch':
+      case 'geofencing':
+      case 'geofence-setup':
+      case 'attendance-compliance':
+      case 'attendance-rules':
+      case 'attendance-settings':
         return (
-          <AttendanceModuleMaster
-            currentSubPath={currentRoute}
-            onNavigateSubPath={handleNavigate}
-          />
+          <ErrorBoundary>
+            <AttendanceModuleMaster currentSubPath={currentRoute} onNavigateSubPath={handleNavigate} />
+          </ErrorBoundary>
         );
       case 'work-overtime':
       case 'overtime':
@@ -465,8 +478,6 @@ const AppContent: React.FC = () => {
       case 'breaks-workhours':
       case 'breaks':
         return <WorkOvertimeMasterModule initialTab={currentRoute} />;
-      case 'leave':
-      case 'leave-dashboard':
       case 'leave-types':
       case 'leave-policies':
       case 'leave-calendar':
@@ -479,11 +490,9 @@ const AppContent: React.FC = () => {
       case 'leave-adjustments':
       case 'leave-accrual':
       case 'leave-exceptions':
-      case 'leave-reports':
         return <LeaveManagementModule initialTab={currentRoute} />;
       case 'payroll':
       case 'payroll-dashboard':
-      case 'client-billing':
       case 'client-invoicing':
       case 'billing-runs':
       case 'billing-rules':
@@ -533,7 +542,6 @@ const AppContent: React.FC = () => {
       case 'hr-communications':
       case 'helpdesk':
       case 'help-desk':
-      case 'requests':
       case 'knowledge':
       case 'knowledge-centre':
         return <EmployeeRelationsMasterModule initialTab={currentRoute} />;
@@ -553,7 +561,6 @@ const AppContent: React.FC = () => {
       case 'analytics-employee':
       case 'analytics-org':
       case 'analytics-cost':
-      case 'analytics-reports':
       case 'analytics-settings':
       case 'workforce-analytics':
       case 'attendance-analytics':
@@ -561,7 +568,6 @@ const AppContent: React.FC = () => {
       case 'reports':
         return <AnalyticsMasterModule initialTab={currentRoute} />;
       case 'workflows':
-      case 'approvals':
       case 'notifications':
       case 'scheduled-jobs':
         return <AutomationView initialTab={currentRoute} />;
@@ -647,14 +653,12 @@ const AppContent: React.FC = () => {
       case 'vendor':
       case 'vendor-portal':
       case 'vendor-settlement':
-      case 'vendor-settlement-workspace':
       case 'vendor-dashboard':
       case 'vendor-licenses':
       case 'vendor-compliance-calendar':
       case 'vendor-statutory-returns':
       case 'vendor-workforce':
       case 'vendor-employees':
-      case 'vendor-assignments':
       case 'vendor-attendance':
       case 'vendor-wages':
       case 'vendor-wage-breakdown':
@@ -691,8 +695,6 @@ const AppContent: React.FC = () => {
       case 'dpa':
       case 'security-center':
         return <LegalCenterView />;
-      case 'settings':
-        return <AdminMasterModule initialTab="settings" />;
       default: {
         const stored = api.getCurrentUser();
         const primaryRole = getPrimaryRole(stored);

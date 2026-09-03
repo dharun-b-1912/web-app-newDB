@@ -1,0 +1,36 @@
+{
+  "inventory_version": "1.0",
+  "organization_id": "org-joy-corporate-solutions-private-",
+  "devices": [
+    {
+      "device_id": "DEV-CBE-WT-01",
+      "device_name": "SilkBio Plant Entrance Turnstile",
+      "model": "ZKTeco SilkBio-101TC",
+      "location": "WaterTec Unit 3, Coimbatore",
+      "approved_tls_fingerprint": "SHA256:4A:8B:1C:9D:E2:F3...",
+      "tls_version": "TLSv1.3",
+      "status": "ONLINE",
+      "last_verified_at": "2026-09-01T08:45:00Z"
+    },
+    {
+      "device_id": "DEV-CBE-HQ-01",
+      "device_name": "HQ Main Office eSSL Terminal",
+      "model": "eSSL SilkBio-100",
+      "location": "HQ Coimbatore",
+      "approved_tls_fingerprint": "SHA256:88:2E:41:0B:99:A1...",
+      "tls_version": "TLSv1.3",
+      "status": "ONLINE",
+      "last_verified_at": "2026-09-01T08:45:00Z"
+    },
+    {
+      "device_id": "DEV-CN-HQ-01",
+      "device_name": "CareNow Plant Mantra Terminal",
+      "model": "Mantra MFSTAB-II",
+      "location": "CareNow HQ, Coimbatore",
+      "approved_tls_fingerprint": "SHA256:77:33:F2:1C:6A:B9...",
+      "tls_version": "TLSv1.2",
+      "status": "ONLINE",
+      "last_verified_at": "2026-09-01T08:45:00Z"
+    }
+  ]
+}

@@ -35,6 +35,9 @@ const SEED_OVERTIME: OvertimeRequest[] = [];
 const SEED_WFH: WfhRequest[] = [];
 const SEED_EXCEPTIONS: AttendanceException[] = [];
 
+let _dailyCache: { data: AttendanceDaily[]; timestamp: number } | null = null;
+let _dailyInFlight: Promise<AttendanceDaily[]> | null = null;
+
 function getTenantStorageKey(baseKey: string, tenantId = getActiveOrgId()): string {
   return `${baseKey}_${tenantId}`;
 }
@@ -72,8 +75,44 @@ function saveStorage<T>(baseKey: string, data: T, tenantId = getActiveOrgId()): 
 }
 
 export const attendanceApi = {
+  async getDailyAttendanceAsync(date?: string, department?: string, status?: string, search?: string): Promise<AttendanceDaily[]> {
+    if (isSupabaseEnabled) {
+      try {
+        let q = supabase.from('attendance_daily').select('*');
+        if (date) q = q.eq('date', date);
+        const { data, error } = await q;
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const currentList = loadStorage<AttendanceDaily[]>(STORAGE_KEY_DAILY, SEED_DAILY);
+          const otherDates = date ? currentList.filter(d => d.date !== date) : [];
+          const merged = [...data, ...otherDates];
+          saveStorage(STORAGE_KEY_DAILY, merged);
+          _dailyCache = { data: merged, timestamp: Date.now() };
+          return this.getDailyAttendance(date, department, status, search);
+        }
+      } catch (err) {
+        console.warn('[attendanceApi] getDailyAttendanceAsync notice:', err);
+      }
+    }
+    return this.getDailyAttendance(date, department, status, search);
+  },
+
   getDailyAttendance: (date?: string, department?: string, status?: string, search?: string): AttendanceDaily[] => {
-    let list = loadStorage<AttendanceDaily[]>(STORAGE_KEY_DAILY, SEED_DAILY);
+    let list: AttendanceDaily[] = [];
+    if (_dailyCache?.data && _dailyCache.data.length > 0) {
+      list = [..._dailyCache.data];
+    } else {
+      list = loadStorage<AttendanceDaily[]>(STORAGE_KEY_DAILY, SEED_DAILY);
+      if (list.length > 0) {
+        _dailyCache = { data: list, timestamp: Date.now() };
+      }
+    }
+
+    // Trigger background rehydration from Supabase if cache is cold
+    if (isSupabaseEnabled && !_dailyInFlight && (!_dailyCache || Date.now() - _dailyCache.timestamp > 15000)) {
+      _dailyInFlight = attendanceApi.getDailyAttendanceAsync(date).finally(() => {
+        _dailyInFlight = null;
+      });
+    }
 
     // Purge mock/legacy attendance records: only keep records strictly matching existing employees in directory
     try {
@@ -231,14 +270,33 @@ export const attendanceApi = {
       };
       list[existingIdx] = updated;
       saveStorage(STORAGE_KEY_DAILY, list);
+      if (_dailyCache) {
+        const cIdx = _dailyCache.data.findIndex(e => e.employee_id === employeeId && e.date === today);
+        if (cIdx >= 0) _dailyCache.data[cIdx] = updated;
+        else _dailyCache.data.unshift(updated);
+      }
 
       if (isSupabaseEnabled) {
+        // 1. Immutable audit punch event
+        Promise.resolve(
+          supabase
+            .from('attendance_events')
+            .insert({
+              organization_id: updated.organization_id || getActiveOrgId(),
+              employee_id: updated.employee_id,
+              type: 'CHECK_IN',
+              source: source || 'WEB',
+              timestamp: nowIso,
+            })
+        ).catch((e: any) => console.warn('[Supabase Attendance] event insert notice:', e));
+
+        // 2. Daily summary record
         Promise.resolve(
           supabase
             .from('attendance_daily')
             .upsert({
               id: updated.id,
-              organization_id: updated.organization_id || 'org-01',
+              organization_id: updated.organization_id || getActiveOrgId(),
               company_id: updated.company_id || 'comp-01',
               employee_id: updated.employee_id,
               employee_code: updated.employee_code,
@@ -263,7 +321,7 @@ export const attendanceApi = {
         employee_code: `WF-${Math.floor(1000 + Math.random() * 9000)}`,
         department: 'Engineering',
         designation: 'Specialist Engineer',
-        organization_id: 'org-01',
+        organization_id: getActiveOrgId(),
         company_id: 'cmp-01',
         date: today,
         shift_id: 'shift-gen',
@@ -284,8 +342,25 @@ export const attendanceApi = {
       };
       list.unshift(newItem);
       saveStorage(STORAGE_KEY_DAILY, list);
+      if (_dailyCache) {
+        _dailyCache.data.unshift(newItem);
+      }
 
       if (isSupabaseEnabled) {
+        // 1. Immutable audit punch event
+        Promise.resolve(
+          supabase
+            .from('attendance_events')
+            .insert({
+              organization_id: newItem.organization_id,
+              employee_id: newItem.employee_id,
+              type: 'CHECK_IN',
+              source: source || 'WEB',
+              timestamp: nowIso,
+            })
+        ).catch((e: any) => console.warn('[Supabase Attendance] event insert notice:', e));
+
+        // 2. Daily summary record
         Promise.resolve(
           supabase
             .from('attendance_daily')
@@ -344,8 +419,26 @@ export const attendanceApi = {
 
     list[idx] = updated;
     saveStorage(STORAGE_KEY_DAILY, list);
+    if (_dailyCache) {
+      const cIdx = _dailyCache.data.findIndex(e => e.employee_id === employeeId && e.date === today);
+      if (cIdx >= 0) _dailyCache.data[cIdx] = updated;
+    }
 
     if (isSupabaseEnabled) {
+      // 1. Immutable audit punch event
+      Promise.resolve(
+        supabase
+          .from('attendance_events')
+          .insert({
+            organization_id: updated.organization_id || getActiveOrgId(),
+            employee_id: updated.employee_id,
+            type: 'CHECK_OUT',
+            source: source || 'WEB',
+            timestamp: nowIso,
+          })
+      ).catch((e: any) => console.warn('[Supabase Attendance] event insert notice:', e));
+
+      // 2. Daily summary record update
       Promise.resolve(
         supabase
           .from('attendance_daily')
@@ -437,6 +530,38 @@ export const attendanceApi = {
     }
   },
 
+  async getRegularizationsAsync(): Promise<RegularizationRequest[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase
+          .from('attendance_regularization_requests')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const mapped: RegularizationRequest[] = data.map((r: any) => ({
+            id: r.id,
+            employee_id: r.employee_id,
+            employee_name: r.employee_name || 'Staff',
+            attendance_date: r.attendance_date,
+            current_status: (r.original_status as any) || 'Absent',
+            original_check_in: r.original_check_in || '--:--',
+            original_check_out: r.original_check_out || '--:--',
+            requested_check_in: r.requested_check_in,
+            requested_check_out: r.requested_check_out,
+            reason: r.reason_text || r.reason_code || 'Regularization',
+            status: r.status === 'MANAGER_PENDING' ? 'Pending Manager' : r.status === 'HR_PENDING' ? 'Pending HR' : r.status === 'APPROVED' ? 'Approved' : 'Rejected',
+            submitted_at: r.created_at,
+          }));
+          saveStorage(STORAGE_KEY_REGULARIZATIONS, mapped);
+          return mapped;
+        }
+      } catch (err) {
+        console.warn('[attendanceApi] getRegularizationsAsync notice:', err);
+      }
+    }
+    return this.getRegularizations();
+  },
+
   getRegularizations: (): RegularizationRequest[] => {
     return loadStorage<RegularizationRequest[]>(STORAGE_KEY_REGULARIZATIONS, SEED_REGULARIZATIONS);
   },
@@ -451,6 +576,22 @@ export const attendanceApi = {
     };
     list.unshift(newReq);
     saveStorage(STORAGE_KEY_REGULARIZATIONS, list);
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.from('attendance_regularization_requests').insert({
+          organization_id: getActiveOrgId(),
+          employee_id: newReq.employee_id,
+          employee_name: newReq.employee_name,
+          attendance_date: (newReq as any).date || (newReq as any).attendance_date || new Date().toISOString().split('T')[0],
+          requested_check_in: newReq.requested_check_in,
+          requested_check_out: newReq.requested_check_out,
+          reason_text: newReq.reason,
+          status: 'MANAGER_PENDING',
+        })
+      ).catch((e: any) => console.warn('[Supabase Attendance] regularization insert failed:', e));
+    }
+
     return newReq;
   },
 
@@ -465,7 +606,8 @@ export const attendanceApi = {
       // Recalculate daily attendance if approved
       if (status === 'Approved') {
         const dailyList = loadStorage<AttendanceDaily[]>(STORAGE_KEY_DAILY, SEED_DAILY);
-        const daily = dailyList.find(d => d.employee_id === item.employee_id && d.date === item.attendance_date);
+        const targetDate = (item as any).date || item.attendance_date;
+        const daily = dailyList.find(d => d.employee_id === item.employee_id && d.date === targetDate);
         if (daily) {
           daily.first_check_in = item.requested_check_in;
           daily.last_check_out = item.requested_check_out;
@@ -474,7 +616,41 @@ export const attendanceApi = {
           daily.gross_working_minutes = 540;
           daily.net_working_minutes = 495;
           saveStorage(STORAGE_KEY_DAILY, dailyList);
+          if (_dailyCache) {
+            const cIdx = _dailyCache.data.findIndex(d => d.employee_id === item.employee_id && d.date === targetDate);
+            if (cIdx >= 0) _dailyCache.data[cIdx] = daily;
+          }
         }
+      }
+    }
+
+    if (isSupabaseEnabled) {
+      const dbStatus = status === 'Approved' ? 'APPROVED' : 'REJECTED';
+      Promise.resolve(
+        supabase
+          .from('attendance_regularization_requests')
+          .update({
+            status: dbStatus,
+            manager_action_at: new Date().toISOString(),
+            manager_comment: comments || null,
+          })
+          .eq('id', id)
+      ).catch((e: any) => console.warn('[Supabase Attendance] regularization update notice:', e));
+
+      if (status === 'Approved' && item) {
+        const targetDate = (item as any).date || item.attendance_date;
+        Promise.resolve(
+          supabase
+            .from('attendance_daily')
+            .update({
+              first_check_in: item.requested_check_in,
+              last_check_out: item.requested_check_out,
+              status: 'Present',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('employee_id', item.employee_id)
+            .eq('date', targetDate)
+        ).catch((e: any) => console.warn('[Supabase Attendance] attendance_daily sync notice:', e));
       }
     }
   },

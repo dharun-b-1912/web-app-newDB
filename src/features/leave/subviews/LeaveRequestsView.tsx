@@ -17,6 +17,7 @@ import {
   Check,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import { useEmployees } from '../../../hooks/useEmployees';
 
 import { hrEventBus } from '../../../services/hrEventBus';
 
@@ -96,7 +97,7 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
         };
 
   const currentUser = api.getCurrentUser();
-  const employees = api.getEmployeesSync();
+  const { employees } = useEmployees();
   const currentEmp = employees.find(e => e.id === currentUser?.employee_id || e.work_email === currentUser?.email) || employees[0];
   const targetEmpId = currentEmp?.id || currentUser?.employee_id || 'WF-1001';
 

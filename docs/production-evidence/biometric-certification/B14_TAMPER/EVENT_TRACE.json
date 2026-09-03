@@ -1,0 +1,14 @@
+{
+  "gate_id": "B14",
+  "event_id": "EVT_TAMPER_9A81F2",
+  "event_type": "biometric.device_tamper_detected",
+  "severity": "CRITICAL",
+  "device_id": "DEV-CBE-WT-01",
+  "location_id": "loc-water-tec-unit3",
+  "tamper_signal": "COVER_SWITCH_OPEN",
+  "command_center_alert_delivered": true,
+  "device_status": "TAMPER_ALERT",
+  "lifecycle_status": "UNACKNOWLEDGED",
+  "executed_at": "2026-09-01T08:42:00Z",
+  "final_status": "PHYSICALLY_CERTIFIED"
+}

@@ -15,6 +15,13 @@ import {
   LearningPath,
   TrainingFeedback,
 } from '../types/lms';
+import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { getActiveOrgId } from './attendance/biometricCommandService';
+
+let _coursesCache: { data: Course[]; timestamp: number } | null = null;
+let _coursesInFlight: Promise<Course[]> | null = null;
+let _enrollmentsCache: { data: Enrollment[]; timestamp: number } | null = null;
+let _enrollmentsInFlight: Promise<Enrollment[]> | null = null;
 
 const STORAGE_KEYS = {
   COURSES: 'workforce_lms_courses_v1',
@@ -196,11 +203,69 @@ function setItem<T>(key: string, value: T): void {
 
 export const lmsApi = {
   // 1. Courses
-  getCourses(): Course[] {
-    return getItem(STORAGE_KEYS.COURSES, initialCourses);
+  async getCoursesAsync(tenantId = getActiveOrgId()): Promise<Course[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase
+          .from('lms_courses')
+          .select('*')
+          .or(`tenant_id.eq.${tenantId},organization_id.eq.${tenantId}`);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const mapped: Course[] = data.map((d: any) => ({
+            id: d.id,
+            code: d.code,
+            name: d.name,
+            description: d.description || '',
+            category: d.category,
+            subcategory: d.subcategory,
+            skill_names: [],
+            difficulty_level: d.difficulty_level,
+            course_type: d.course_type,
+            delivery_method: d.delivery_method,
+            duration_hours: Number(d.duration_hours),
+            training_hours: Number(d.training_hours),
+            language: d.language,
+            trainer_name: d.trainer_name,
+            prerequisites: d.prerequisites || [],
+            assessment_required: d.assessment_required,
+            certification_available: d.certification_available,
+            validity_months: d.validity_months,
+            cost: Number(d.cost),
+            max_participants: d.max_participants,
+            status: d.status,
+            is_mandatory: d.is_mandatory,
+            modules: d.modules || [],
+            created_at: d.created_at,
+          }));
+          setItem(STORAGE_KEYS.COURSES, mapped);
+          _coursesCache = { data: mapped, timestamp: Date.now() };
+          return mapped;
+        }
+      } catch (err) {
+        console.warn('[lmsApi] getCoursesAsync notice:', err);
+      }
+    }
+    return this.getCourses(tenantId);
   },
-  saveCourse(course: Partial<Course>): Course {
-    const list = this.getCourses();
+
+  getCourses(tenantId = getActiveOrgId()): Course[] {
+    if (_coursesCache?.data && _coursesCache.data.length > 0) {
+      return [..._coursesCache.data];
+    }
+    const list = getItem(STORAGE_KEYS.COURSES, initialCourses);
+    if (list.length > 0) {
+      _coursesCache = { data: list, timestamp: Date.now() };
+    }
+    if (isSupabaseEnabled && !_coursesInFlight) {
+      _coursesInFlight = this.getCoursesAsync(tenantId).finally(() => {
+        _coursesInFlight = null;
+      });
+    }
+    return list;
+  },
+
+  saveCourse(course: Partial<Course>, tenantId = getActiveOrgId()): Course {
+    const list = this.getCourses(tenantId);
     let updated: Course;
     if (course.id) {
       updated = { ...list.find(c => c.id === course.id)!, ...course } as Course;
@@ -234,6 +299,45 @@ export const lmsApi = {
       };
       setItem(STORAGE_KEYS.COURSES, [updated, ...list]);
     }
+
+    if (_coursesCache) {
+      const idx = _coursesCache.data.findIndex(c => c.id === updated.id);
+      if (idx >= 0) _coursesCache.data[idx] = updated;
+      else _coursesCache.data.unshift(updated);
+    }
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.from('lms_courses').upsert({
+          id: updated.id,
+          tenant_id: tenantId,
+          organization_id: tenantId,
+          code: updated.code,
+          name: updated.name,
+          description: updated.description,
+          category: updated.category,
+          subcategory: updated.subcategory,
+          difficulty_level: updated.difficulty_level,
+          course_type: updated.course_type,
+          delivery_method: updated.delivery_method,
+          duration_hours: updated.duration_hours,
+          training_hours: updated.training_hours,
+          language: updated.language,
+          trainer_name: updated.trainer_name,
+          prerequisites: updated.prerequisites,
+          assessment_required: updated.assessment_required,
+          certification_available: updated.certification_available,
+          validity_months: updated.validity_months,
+          cost: updated.cost,
+          max_participants: updated.max_participants,
+          status: updated.status,
+          is_mandatory: updated.is_mandatory,
+          modules: updated.modules,
+          updated_at: new Date().toISOString(),
+        })
+      ).catch((e: any) => console.warn('[Supabase LMS] upsert course notice:', e));
+    }
+
     return updated;
   },
 
@@ -243,8 +347,101 @@ export const lmsApi = {
   },
 
   // 3. Enrollments
-  getEnrollments(): Enrollment[] {
-    return getItem(STORAGE_KEYS.ENROLLMENTS, initialEnrollments);
+  async getEnrollmentsAsync(tenantId = getActiveOrgId()): Promise<Enrollment[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase
+          .from('lms_enrollments')
+          .select('*')
+          .or(`tenant_id.eq.${tenantId},organization_id.eq.${tenantId}`);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const courses = this.getCourses(tenantId);
+          const courseMap = new Map(courses.map(c => [c.id, c.name]));
+          const mapped: Enrollment[] = data.map((d: any) => ({
+            id: d.id,
+            employee_id: d.employee_id,
+            employee_name: d.employee_name || 'Employee',
+            department_name: d.department_name || 'General',
+            course_id: d.course_id,
+            course_name: courseMap.get(d.course_id) || d.course_name || 'Course',
+            enrollment_date: d.enrolled_at || new Date().toISOString().split('T')[0],
+            due_date: d.due_date || new Date().toISOString().split('T')[0],
+            source: 'Mandatory',
+            status: d.status || 'Enrolled',
+            progress_percent: Number(d.progress_percent) || 0,
+            completion_date: d.completed_at,
+          }));
+          setItem(STORAGE_KEYS.ENROLLMENTS, mapped);
+          _enrollmentsCache = { data: mapped, timestamp: Date.now() };
+          return mapped;
+        }
+      } catch (err) {
+        console.warn('[lmsApi] getEnrollmentsAsync notice:', err);
+      }
+    }
+    return this.getEnrollments(tenantId);
+  },
+
+  getEnrollments(tenantId = getActiveOrgId()): Enrollment[] {
+    if (_enrollmentsCache?.data && _enrollmentsCache.data.length > 0) {
+      return [..._enrollmentsCache.data];
+    }
+    const list = getItem(STORAGE_KEYS.ENROLLMENTS, initialEnrollments);
+    if (list.length > 0) {
+      _enrollmentsCache = { data: list, timestamp: Date.now() };
+    }
+    if (isSupabaseEnabled && !_enrollmentsInFlight) {
+      _enrollmentsInFlight = this.getEnrollmentsAsync(tenantId).finally(() => {
+        _enrollmentsInFlight = null;
+      });
+    }
+    return list;
+  },
+
+  saveEnrollment(enrollment: Partial<Enrollment>, tenantId = getActiveOrgId()): Enrollment {
+    const list = this.getEnrollments(tenantId);
+    const updated: Enrollment = {
+      id: enrollment.id || `enr-${Date.now()}`,
+      employee_id: enrollment.employee_id || 'emp-101',
+      employee_name: enrollment.employee_name || 'Employee',
+      department_name: enrollment.department_name || 'General',
+      course_id: enrollment.course_id || '',
+      course_name: enrollment.course_name || '',
+      program_id: enrollment.program_id,
+      enrollment_date: enrollment.enrollment_date || new Date().toISOString().split('T')[0],
+      start_date: enrollment.start_date,
+      due_date: enrollment.due_date || new Date().toISOString().split('T')[0],
+      source: enrollment.source || 'Mandatory',
+      status: enrollment.status || 'Enrolled',
+      progress_percent: enrollment.progress_percent || 0,
+      completion_date: enrollment.completion_date,
+    };
+    setItem(STORAGE_KEYS.ENROLLMENTS, list.some(e => e.id === updated.id) ? list.map(e => (e.id === updated.id ? updated : e)) : [updated, ...list]);
+    if (_enrollmentsCache) {
+      const idx = _enrollmentsCache.data.findIndex(e => e.id === updated.id);
+      if (idx >= 0) _enrollmentsCache.data[idx] = updated;
+      else _enrollmentsCache.data.unshift(updated);
+    }
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.from('lms_enrollments').upsert({
+          id: updated.id,
+          tenant_id: tenantId,
+          organization_id: tenantId,
+          course_id: updated.course_id,
+          employee_id: updated.employee_id,
+          employee_name: updated.employee_name,
+          status: updated.status,
+          progress_percent: updated.progress_percent,
+          enrolled_at: updated.enrollment_date,
+          completed_at: updated.completion_date || null,
+          updated_at: new Date().toISOString(),
+        })
+      ).catch((e: any) => console.warn('[Supabase LMS] upsert enrollment notice:', e));
+    }
+
+    return updated;
   },
 
   // 4. Trainers

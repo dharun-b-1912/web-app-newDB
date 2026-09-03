@@ -111,6 +111,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
 
   // Remote Enrollment Modal State
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
+  const [isPropagating, setIsPropagating] = useState(false);
 
   useEffect(() => {
     if (isOpen && device) {
@@ -172,7 +173,14 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
     const handleWindowUpdate = () => loadUsers();
     window.addEventListener('biometric:updated', handleWindowUpdate);
 
+    // Initial and periodic dynamic live fetch from Gateway (every 4 seconds)
+    biometricGatewayService.syncLiveUsersFromGateway(device.id);
+    const liveTimer = setInterval(() => {
+      biometricGatewayService.syncLiveUsersFromGateway(device.id);
+    }, 4000);
+
     return () => {
+      clearInterval(liveTimer);
       unsubStarted();
       unsubProgress();
       unsubCompleted();
@@ -241,8 +249,6 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
       showToast(err.message || 'Failed to unmap user', 'error');
     }
   };
-
-  const [isPropagating, setIsPropagating] = useState(false);
 
   const handlePropagateAllMappings = async () => {
     setIsPropagating(true);
@@ -599,6 +605,15 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                     <TableBody>
                       {users.map(u => {
                         const isSelected = selectedUserIds.has(u.device_user_id);
+                        const rawCard = u.card_number && u.card_number !== 'null' && u.card_number !== 'undefined' ? u.card_number : (u as any).credentials?.card?.uid;
+                        const activeCard = rawCard ? String(rawCard).trim() : null;
+
+                        const fpCount = Number(u.fingerprint_count || (u as any).credentials?.fingerprint?.count || 0);
+                        const isFpEnrolled = fpCount > 0 || (u as any).credentials?.fingerprint?.status === 'ENROLLED';
+
+                        const faceCred = (u as any).credentials?.face;
+                        const isFaceEnrolled = Boolean(u.face_enrolled || (u as any).has_face_enrolled || faceCred?.status === 'ENROLLED');
+                        const isFaceUnknown = !isFaceEnrolled && (faceCred?.status === 'UNKNOWN' || u.face_enrolled === null || u.face_enrolled === undefined);
 
                         return (
                           <TableRow key={u.device_user_id} className={cn('hover:bg-gray-50/50', isSelected && 'bg-blue-50/20')}>
@@ -666,29 +681,35 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                                 {u.sync_status === 'NOT_PRESENT_ON_DEVICE' ? 'Missing' : u.enabled ? 'Enabled' : 'Disabled'}
                               </Badge>
                             </TableCell>
-                            <TableCell className="font-mono text-xs text-gray-500">
-                              {u.card_number || '—'}
-                            </TableCell>
-                            <TableCell>
-                              {u.fingerprint_count !== null ? (
-                                <Badge variant="blue" className="text-[10px] gap-1">
-                                  <Fingerprint className="w-3 h-3" /> {u.fingerprint_count} Enrolled
+                            <TableCell className="font-mono text-xs text-gray-800">
+                              {activeCard ? (
+                                <Badge variant="blue" size="sm" title="Verified from: Device Query" className="text-[10px] gap-1 font-semibold bg-blue-50 text-blue-800 border-blue-200 font-mono">
+                                  🪪 #{activeCard}
                                 </Badge>
                               ) : (
-                                <span className="text-[10px] text-gray-400">Not reported</span>
+                                <span className="text-[10px] text-gray-400">No Card</span>
                               )}
                             </TableCell>
                             <TableCell>
-                              {u.face_enrolled !== null ? (
-                                u.face_enrolled ? (
-                                  <Badge variant="emerald" className="text-[10px] gap-1">
-                                    <ScanFace className="w-3 h-3" /> {u.face_count !== null ? `${u.face_count} Face` : 'Enrolled'}
-                                  </Badge>
-                                ) : (
-                                  <span className="text-[10px] text-gray-400">No Face</span>
-                                )
+                              {isFpEnrolled ? (
+                                <Badge variant="emerald" size="sm" title="Verified from: Device Query" className="text-[10px] gap-1 font-semibold bg-emerald-50 text-emerald-800 border-emerald-300">
+                                  <Fingerprint className="w-3 h-3 text-[#07563D]" /> {fpCount || 1} Enrolled
+                                </Badge>
                               ) : (
-                                <span className="text-[10px] text-gray-400">Not reported</span>
+                                <span className="text-[10px] text-gray-400">No FP</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {isFaceEnrolled ? (
+                                <Badge variant="emerald" size="sm" title="Verified from: Live Device Event" className="text-[10px] gap-1 font-semibold bg-emerald-50 text-emerald-800 border-emerald-300">
+                                  <ScanFace className="w-3 h-3 text-[#07563D]" /> 1 Face Enrolled
+                                </Badge>
+                              ) : isFaceUnknown ? (
+                                <Badge variant="gray" size="sm" title="Face template metadata is not verifiable over TCP SDK on Visible Light firmware without live event" className="text-[10px] text-gray-500 bg-gray-100 border-gray-200">
+                                  Unknown
+                                </Badge>
+                              ) : (
+                                <span className="text-[10px] text-gray-400">No Face</span>
                               )}
                             </TableCell>
                             <TableCell className="text-[11px] text-gray-500">
@@ -931,15 +952,31 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                 <div><span className="text-gray-500">Group / TZ:</span> <span>Group {selectedUserDetail.group_id || '1'} ({selectedUserDetail.timezone || 'Asia/Kolkata'})</span></div>
               </div>
 
-              {/* Card 3: Biometrics */}
+              {/* Card 3: Biometrics Evidence */}
               <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1.5">
                 <div className="font-bold text-gray-900 border-b border-gray-100 pb-1 flex items-center gap-1.5">
-                  <Fingerprint className="w-3.5 h-3.5 text-emerald-600" /> Biometrics
+                  <Fingerprint className="w-3.5 h-3.5 text-emerald-600" /> Biometrics & Evidence
                 </div>
-                <div><span className="text-gray-500">Fingerprint:</span> <span className="font-semibold">{selectedUserDetail.fingerprint_count !== null ? `${selectedUserDetail.fingerprint_count} Enrolled` : 'Not reported'}</span></div>
-                <div><span className="text-gray-500">Face:</span> <span className="font-semibold">{selectedUserDetail.face_enrolled !== null ? (selectedUserDetail.face_enrolled ? 'Enrolled' : 'No Face') : 'Not reported'}</span></div>
-                <div><span className="text-gray-500">Palm:</span> <span className="text-gray-400">Not supported</span></div>
-                <div><span className="text-gray-500">Iris:</span> <span className="text-gray-400">Not supported</span></div>
+                <div>
+                  <span className="text-gray-500">Fingerprint:</span>{' '}
+                  <span className="font-semibold">
+                    {selectedUserDetail.fingerprint_count && selectedUserDetail.fingerprint_count > 0
+                      ? `${selectedUserDetail.fingerprint_count} Enrolled (Device Query)`
+                      : 'No Fingerprints'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Face:</span>{' '}
+                  <span className="font-semibold">
+                    {selectedUserDetail.face_enrolled
+                      ? 'Enrolled (Verified Live Event)'
+                      : (selectedUserDetail as any).credentials?.face?.status === 'UNKNOWN' || selectedUserDetail.face_enrolled === null
+                      ? 'Unknown (Requires on-device registration / live punch)'
+                      : 'No Face'}
+                  </span>
+                </div>
+                <div><span className="text-gray-500">Palm:</span> <span className="text-gray-400">Not supported by model</span></div>
+                <div><span className="text-gray-500">Iris:</span> <span className="text-gray-400">Not supported by model</span></div>
               </div>
 
               {/* Card 4: Joy PeopleHR Employee Mapping */}

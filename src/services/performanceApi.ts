@@ -12,7 +12,15 @@ import {
   PromotionRecommendation,
   PIPPlan,
   CheckinRecord,
+  ReviewCycleStatus,
 } from '../types/performance';
+import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { getActiveOrgId } from './attendance/biometricCommandService';
+
+let _goalsCache: { data: Goal[]; timestamp: number } | null = null;
+let _goalsInFlight: Promise<Goal[]> | null = null;
+let _cyclesCache: { data: ReviewCycle[]; timestamp: number } | null = null;
+let _cyclesInFlight: Promise<ReviewCycle[]> | null = null;
 
 const STORAGE_KEYS = {
   GOALS: 'workforce_perf_goals_v1',
@@ -60,11 +68,66 @@ function setItem<T>(key: string, value: T): void {
 
 export const performanceApi = {
   // 1. Goals
-  getGoals(): Goal[] {
-    return getItem(STORAGE_KEYS.GOALS, initialGoals);
+  async getGoalsAsync(tenantId = getActiveOrgId()): Promise<Goal[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase
+          .from('performance_goals')
+          .select('*')
+          .or(`tenant_id.eq.${tenantId},organization_id.eq.${tenantId}`);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const mapped: Goal[] = data.map((d: any) => ({
+            id: d.id,
+            title: d.title,
+            description: d.description || '',
+            employee_id: d.employee_id,
+            employee_name: d.employee_name || '',
+            department_name: d.department_name || '',
+            team_name: d.team_name || '',
+            manager_id: d.manager_id || '',
+            manager_name: d.manager_name || '',
+            goal_type: d.goal_type as any,
+            start_date: d.start_date,
+            due_date: d.due_date,
+            priority: d.priority as any,
+            weight: Number(d.weight),
+            progress: Number(d.progress),
+            status: d.status as any,
+            target_value: Number(d.target_value),
+            current_value: Number(d.current_value),
+            unit: d.unit as any,
+            milestones: d.milestones || [],
+            created_at: d.created_at,
+          }));
+          setItem(STORAGE_KEYS.GOALS, mapped);
+          _goalsCache = { data: mapped, timestamp: Date.now() };
+          return mapped;
+        }
+      } catch (err) {
+        console.warn('[performanceApi] getGoalsAsync notice:', err);
+      }
+    }
+    return this.getGoals(tenantId);
   },
-  saveGoal(goal: Partial<Goal>): Goal {
-    const list = this.getGoals();
+
+  getGoals(tenantId = getActiveOrgId()): Goal[] {
+    if (_goalsCache?.data && _goalsCache.data.length > 0) {
+      return [..._goalsCache.data];
+    }
+    const list = getItem(STORAGE_KEYS.GOALS, initialGoals);
+    if (list.length > 0) {
+      _goalsCache = { data: list, timestamp: Date.now() };
+    }
+    if (isSupabaseEnabled && !_goalsInFlight) {
+      _goalsInFlight = this.getGoalsAsync(tenantId).finally(() => {
+        _goalsInFlight = null;
+      });
+    }
+    return list;
+  },
+
+  saveGoal(goal: Partial<Goal>, tenantId = getActiveOrgId()): Goal {
+    const list = this.getGoals(tenantId);
     let updated: Goal;
     if (goal.id) {
       updated = { ...list.find(g => g.id === goal.id)!, ...goal } as Goal;
@@ -75,11 +138,11 @@ export const performanceApi = {
         title: goal.title || 'New Goal',
         description: goal.description || '',
         employee_id: goal.employee_id || 'emp-101',
-        employee_name: goal.employee_name || 'Rajesh Kumar',
+        employee_name: goal.employee_name || 'Employee',
         department_name: goal.department_name || 'Engineering',
         team_name: goal.team_name || 'Development',
         manager_id: goal.manager_id || 'mgr-01',
-        manager_name: goal.manager_name || 'Anand Viswanathan',
+        manager_name: goal.manager_name || 'Manager',
         goal_type: goal.goal_type || 'Individual',
         start_date: goal.start_date || '2026-08-01',
         due_date: goal.due_date || '2026-09-30',
@@ -95,6 +158,43 @@ export const performanceApi = {
       };
       setItem(STORAGE_KEYS.GOALS, [updated, ...list]);
     }
+
+    if (_goalsCache) {
+      const idx = _goalsCache.data.findIndex(g => g.id === updated.id);
+      if (idx >= 0) _goalsCache.data[idx] = updated;
+      else _goalsCache.data.unshift(updated);
+    }
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.from('performance_goals').upsert({
+          id: updated.id,
+          tenant_id: tenantId,
+          organization_id: tenantId,
+          employee_id: updated.employee_id,
+          employee_name: updated.employee_name,
+          department_name: updated.department_name,
+          team_name: updated.team_name,
+          manager_id: updated.manager_id,
+          manager_name: updated.manager_name,
+          title: updated.title,
+          description: updated.description,
+          goal_type: updated.goal_type,
+          start_date: updated.start_date,
+          due_date: updated.due_date,
+          priority: updated.priority,
+          weight: updated.weight,
+          progress: updated.progress,
+          status: updated.status,
+          target_value: updated.target_value,
+          current_value: updated.current_value,
+          unit: updated.unit,
+          milestones: updated.milestones,
+          updated_at: new Date().toISOString(),
+        })
+      ).catch((e: any) => console.warn('[Supabase Performance] upsert goal notice:', e));
+    }
+
     return updated;
   },
 
@@ -133,8 +233,99 @@ export const performanceApi = {
   },
 
   // 4. Review Cycles & Ratings
-  getReviewCycles(): ReviewCycle[] {
-    return getItem(STORAGE_KEYS.CYCLES, initialCycles);
+  async getReviewCyclesAsync(tenantId = getActiveOrgId()): Promise<ReviewCycle[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase
+          .from('performance_review_cycles')
+          .select('*')
+          .or(`tenant_id.eq.${tenantId},organization_id.eq.${tenantId}`);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const mapped: ReviewCycle[] = data.map((d: any) => ({
+            id: d.id,
+            name: d.cycle_name,
+            cycle_type: d.cycle_type || 'Annual',
+            period: d.period || '2026',
+            start_date: d.start_date,
+            end_date: d.end_date,
+            self_review_deadline: d.end_date,
+            manager_review_deadline: d.end_date,
+            calibration_date: d.end_date,
+            status: (d.status === 'Draft' || d.status === 'Completed' || d.status === 'Cancelled' ? d.status : 'Open') as ReviewCycleStatus,
+            template_name: 'Standard Evaluation',
+            eligible_employees_count: 0,
+            completed_count: 0,
+            created_at: d.created_at || new Date().toISOString(),
+          }));
+          setItem(STORAGE_KEYS.CYCLES, mapped);
+          _cyclesCache = { data: mapped, timestamp: Date.now() };
+          return mapped;
+        }
+      } catch (err) {
+        console.warn('[performanceApi] getReviewCyclesAsync notice:', err);
+      }
+    }
+    return this.getReviewCycles(tenantId);
+  },
+
+  getReviewCycles(tenantId = getActiveOrgId()): ReviewCycle[] {
+    if (_cyclesCache?.data && _cyclesCache.data.length > 0) {
+      return [..._cyclesCache.data];
+    }
+    const list = getItem(STORAGE_KEYS.CYCLES, initialCycles);
+    if (list.length > 0) {
+      _cyclesCache = { data: list, timestamp: Date.now() };
+    }
+    if (isSupabaseEnabled && !_cyclesInFlight) {
+      _cyclesInFlight = this.getReviewCyclesAsync(tenantId).finally(() => {
+        _cyclesInFlight = null;
+      });
+    }
+    return list;
+  },
+
+  saveReviewCycle(cycle: Partial<ReviewCycle>, tenantId = getActiveOrgId()): ReviewCycle {
+    const list = this.getReviewCycles(tenantId);
+    const updated: ReviewCycle = {
+      id: cycle.id || `cycle-${Date.now()}`,
+      name: cycle.name || 'Annual Review Cycle',
+      cycle_type: cycle.cycle_type || 'Annual',
+      period: cycle.period || '2026',
+      start_date: cycle.start_date || new Date().toISOString().split('T')[0],
+      end_date: cycle.end_date || new Date().toISOString().split('T')[0],
+      self_review_deadline: cycle.self_review_deadline || cycle.end_date || new Date().toISOString().split('T')[0],
+      manager_review_deadline: cycle.manager_review_deadline || cycle.end_date || new Date().toISOString().split('T')[0],
+      calibration_date: cycle.calibration_date || cycle.end_date || new Date().toISOString().split('T')[0],
+      status: cycle.status || 'Open',
+      template_name: cycle.template_name || 'Standard Evaluation',
+      eligible_employees_count: cycle.eligible_employees_count || 0,
+      completed_count: cycle.completed_count || 0,
+      created_at: cycle.created_at || new Date().toISOString(),
+    };
+    setItem(STORAGE_KEYS.CYCLES, list.some(c => c.id === updated.id) ? list.map(c => (c.id === updated.id ? updated : c)) : [updated, ...list]);
+    if (_cyclesCache) {
+      const idx = _cyclesCache.data.findIndex(c => c.id === updated.id);
+      if (idx >= 0) _cyclesCache.data[idx] = updated;
+      else _cyclesCache.data.unshift(updated);
+    }
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.from('performance_review_cycles').upsert({
+          id: updated.id,
+          tenant_id: tenantId,
+          organization_id: tenantId,
+          cycle_name: updated.name,
+          cycle_type: updated.cycle_type,
+          start_date: updated.start_date,
+          end_date: updated.end_date,
+          status: updated.status,
+          updated_at: new Date().toISOString(),
+        })
+      ).catch((e: any) => console.warn('[Supabase Performance] upsert cycle notice:', e));
+    }
+
+    return updated;
   },
   getRatings(): PerformanceRating[] {
     return getItem(STORAGE_KEYS.RATINGS, initialRatings);

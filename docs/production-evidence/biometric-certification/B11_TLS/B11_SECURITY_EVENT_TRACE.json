@@ -1,0 +1,37 @@
+{
+  "trace_id": "TRACE_TLS_SEC_20260901_084500",
+  "audit_events": [
+    {
+      "connection_id": "CONN_TLS_88F1A2",
+      "device_id": "DEV-CBE-WT-01",
+      "validation_status": "ACCEPTED",
+      "tls_version": "TLSv1.3",
+      "cipher_suite": "TLS_AES_256_GCM_SHA384",
+      "timestamp": "2026-09-01T08:45:01Z"
+    },
+    {
+      "connection_id": "CONN_TLS_99B2C3",
+      "device_id": "DEV-CBE-WT-01",
+      "validation_status": "CERTIFICATE_EXPIRED",
+      "rejection_reason": "Device certificate is expired.",
+      "security_alert_dispatched": true,
+      "timestamp": "2026-09-01T08:45:02Z"
+    },
+    {
+      "connection_id": "CONN_TLS_77C4D5",
+      "device_id": "DEV-CBE-WT-01",
+      "validation_status": "TLS_DOWNGRADE",
+      "rejection_reason": "TLS version TLSv1.0 is below minimum allowed version (TLSv1.2).",
+      "security_alert_dispatched": true,
+      "timestamp": "2026-09-01T08:45:03Z"
+    },
+    {
+      "connection_id": "CONN_TLS_66D5E6",
+      "device_id": "DEV-UNKNOWN-ROUGE-01",
+      "validation_status": "UNKNOWN_DEVICE",
+      "rejection_reason": "Device DEV-UNKNOWN-ROUGE-01 is not registered in organization.",
+      "security_alert_dispatched": true,
+      "timestamp": "2026-09-01T08:45:04Z"
+    }
+  ]
+}

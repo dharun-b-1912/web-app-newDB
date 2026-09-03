@@ -1,0 +1,27 @@
+{
+  "log_session_id": "LOG_B15_AUDIT_20260901_090000",
+  "audit_trail": [
+    {
+      "event_id": "B15_EVT_001",
+      "command_id": "RELAY_CMD_81A4B0",
+      "employee_id": "JCS-017",
+      "device_id": "ZK-COIMBATORE-001",
+      "decision": "ALLOW",
+      "policy_reason": "ALL_COMPLIANCE_GATES_PASSED",
+      "relay_duration_ms": 5000,
+      "command_hash": "SHA256:d8b2e1a49f81...",
+      "turnstile_unlocked": true,
+      "timestamp": "2026-09-01T09:00:01Z"
+    },
+    {
+      "event_id": "B15_EVT_002",
+      "command_id": "RELAY_CMD_81A4B0",
+      "device_id": "ZK-COIMBATORE-001",
+      "decision": "REJECTED_REPLAY_ATTEMPT",
+      "policy_reason": "SINGLE_USE_NONCE_ALREADY_CONSUMED",
+      "relay_duration_ms": 0,
+      "turnstile_unlocked": false,
+      "timestamp": "2026-09-01T09:00:03Z"
+    }
+  ]
+}

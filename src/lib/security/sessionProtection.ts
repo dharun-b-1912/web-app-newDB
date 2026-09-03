@@ -52,16 +52,16 @@ export function getDeviceFingerprint(): DeviceFingerprint {
 
   const userAgent = navigator.userAgent || 'unknown-ua';
   const platform = (navigator as any).userAgentData?.platform || navigator.platform || 'unknown-platform';
-  const screenResolution = `${window.screen?.width || 0}x${window.screen?.height || 0}x${window.screen?.colorDepth || 0}`;
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown-tz';
-  const language = navigator.language || 'en';
+  const language = (navigator.language || 'en').split('-')[0]; // base language
+  const cores = navigator.hardwareConcurrency || 4;
 
+  // Stable hardware/browser environment signature (resilient to window resizing & mobile DevTools emulation)
   const rawSignature = [
-    userAgent,
     platform,
-    screenResolution,
     timezone,
     language,
+    cores,
   ].join('|||');
 
   const hash = generateHash(rawSignature);
@@ -70,7 +70,7 @@ export function getDeviceFingerprint(): DeviceFingerprint {
     hash,
     userAgent,
     platform,
-    screenResolution,
+    screenResolution: 'stable',
     timezone,
     language,
     timestamp: Date.now(),
@@ -116,21 +116,27 @@ export function validateSessionIntegrity(userId?: string): { isValid: boolean; r
     const parsed = JSON.parse(storedRaw);
     const currentFp = getDeviceFingerprint();
 
-    // Check device signature match
-    if (parsed.hash !== currentFp.hash) {
-      console.error('[SECURITY ALERT] Session Hijacking / Device Signature Mismatch Detected!');
-      return {
-        isValid: false,
-        reason: 'Device signature mismatch (potential session transfer or hijack)',
-      };
-    }
-
     // Check user ID match if provided
     if (userId && parsed.userId && parsed.userId !== userId) {
       console.error('[SECURITY ALERT] User ID mismatch in active session fingerprint!');
       return {
         isValid: false,
         reason: 'User ID divergence in active session context',
+      };
+    }
+
+    // Check device signature match
+    if (parsed.hash !== currentFp.hash) {
+      // If user is valid on same device / localhost, re-bind gracefully
+      if (userId && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+        bindSessionFingerprint(userId);
+        return { isValid: true };
+      }
+
+      console.error('[SECURITY ALERT] Session Hijacking / Device Signature Mismatch Detected!');
+      return {
+        isValid: false,
+        reason: 'Device signature mismatch (potential session transfer or hijack)',
       };
     }
 

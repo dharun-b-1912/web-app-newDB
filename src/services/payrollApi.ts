@@ -38,9 +38,16 @@ import { leaveApi } from './leaveApi';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
 import { hrEventBus } from './hrEventBus';
 import { getActiveOrgId } from './attendance/biometricCommandService';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { PayrollCalculationEngine, DetailedEmployeePayrollResult } from './payroll/payrollCalculationEngine';
 import { api } from './api';
+
+let _payrollRunsCache: { data: PayrollRun[]; timestamp: number } | null = null;
+let _payrollRunsInFlight: Promise<PayrollRun[]> | null = null;
+let _componentsCache: { data: SalaryComponent[]; timestamp: number } | null = null;
+let _componentsInFlight: Promise<SalaryComponent[]> | null = null;
+let _structuresCache: { data: SalaryStructure[]; timestamp: number } | null = null;
+let _structuresInFlight: Promise<SalaryStructure[]> | null = null;
 
 const STORAGE_KEYS = {
   COMPONENTS: 'workforce_payroll_components_v2',
@@ -68,11 +75,18 @@ function getTenantStorageKey(baseKey: string, tenantId = getActiveOrgId()): stri
   return `${baseKey}_${tenantId}`;
 }
 
+const _nodePayrollFallback = new Map<string, string>();
+
 function getStore<T>(baseKey: string, fallback: T, tenantId = getActiveOrgId()): T {
   try {
     const key = getTenantStorageKey(baseKey, tenantId);
-    const raw = localStorage.getItem(key);
-    if (raw) return JSON.parse(raw);
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(key);
+      if (raw) return JSON.parse(raw);
+    } else {
+      const raw = _nodePayrollFallback.get(key);
+      if (raw) return JSON.parse(raw);
+    }
     return fallback;
   } catch {
     return fallback;
@@ -82,7 +96,11 @@ function getStore<T>(baseKey: string, fallback: T, tenantId = getActiveOrgId()):
 function setStore<T>(baseKey: string, val: T, tenantId = getActiveOrgId()): void {
   try {
     const key = getTenantStorageKey(baseKey, tenantId);
-    localStorage.setItem(key, JSON.stringify(val));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(val));
+    } else {
+      _nodePayrollFallback.set(key, JSON.stringify(val));
+    }
   } catch (err) {
     console.error(`[payrollApi] Storage error for ${baseKey}:`, err);
   }
@@ -194,9 +212,59 @@ class PayrollApi {
   // 1. SALARY COMPONENTS & STRUCTURES
   // ==========================================================================
 
+  async getComponentsAsync(tenantId = getActiveOrgId()): Promise<SalaryComponent[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase
+          .from('salary_components')
+          .select('*')
+          .or(`tenant_id.eq.${tenantId},organization_id.eq.${tenantId}`);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const mapped: SalaryComponent[] = data.map((d: any) => ({
+            id: d.id,
+            tenant_id: d.tenant_id,
+            code: d.code,
+            name: d.name,
+            type: (d.component_type === 'EARNING' ? 'Earning' : d.component_type === 'EMPLOYEE_DEDUCTION' ? 'Deduction' : 'Statutory') as any,
+            category: d.category as any,
+            calculation_type: d.calculation_method as any,
+            default_value: Number(d.default_value),
+            formula_expression: d.formula_expression,
+            is_taxable: d.is_taxable,
+            is_pf_applicable: d.is_pf_applicable,
+            is_esi_applicable: d.is_esi_applicable,
+            is_pt_applicable: d.is_pt_applicable,
+            is_active: d.is_active,
+            description: d.description || '',
+            version: d.version,
+            status: d.status,
+            effective_from: d.effective_from,
+          }));
+          setStore(STORAGE_KEYS.COMPONENTS, mapped, tenantId);
+          _componentsCache = { data: mapped, timestamp: Date.now() };
+          return mapped;
+        }
+      } catch (err) {
+        console.warn('[payrollApi] getComponentsAsync notice:', err);
+      }
+    }
+    return this.getComponents(tenantId);
+  }
+
   getComponents(tenantId = getActiveOrgId()): SalaryComponent[] {
+    if (_componentsCache?.data && _componentsCache.data.length > 0) {
+      return [..._componentsCache.data];
+    }
     const list = getStore<SalaryComponent[]>(STORAGE_KEYS.COMPONENTS, [], tenantId);
-    if (list.length > 0) return list;
+    if (list.length > 0) {
+      _componentsCache = { data: list, timestamp: Date.now() };
+      return list;
+    }
+    if (isSupabaseEnabled && !_componentsInFlight) {
+      _componentsInFlight = this.getComponentsAsync(tenantId).finally(() => {
+        _componentsInFlight = null;
+      });
+    }
 
     // Seed initial standard component library for new tenants
     const initial: SalaryComponent[] = [
@@ -217,14 +285,16 @@ class PayrollApi {
   saveComponent(component: SalaryComponent, tenantId = getActiveOrgId()): SalaryComponent {
     const list = this.getComponents(tenantId);
     const idx = list.findIndex(c => c.id === component.id);
+    let saved: SalaryComponent;
     if (idx >= 0) {
-      list[idx] = {
+      saved = {
         ...component,
         version: (list[idx].version || 1) + 1,
         effective_from: component.effective_from || new Date().toISOString().split('T')[0],
       };
+      list[idx] = saved;
     } else {
-      list.push({
+      saved = {
         ...component,
         id: component.id || `cmp-${Date.now()}`,
         tenant_id: tenantId,
@@ -232,10 +302,43 @@ class PayrollApi {
         status: component.status || 'Active',
         is_active: component.is_active !== undefined ? component.is_active : true,
         effective_from: component.effective_from || new Date().toISOString().split('T')[0],
-      });
+      };
+      list.push(saved);
     }
     setStore(STORAGE_KEYS.COMPONENTS, list, tenantId);
-    return component;
+    if (_componentsCache) {
+      const cIdx = _componentsCache.data.findIndex(c => c.id === saved.id);
+      if (cIdx >= 0) _componentsCache.data[cIdx] = saved;
+      else _componentsCache.data.push(saved);
+    }
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.from('salary_components').upsert({
+          id: saved.id,
+          tenant_id: tenantId,
+          organization_id: tenantId,
+          code: saved.code,
+          name: saved.name,
+          description: saved.description,
+          component_type: saved.type === 'Earning' ? 'EARNING' : saved.type === 'Deduction' ? 'EMPLOYEE_DEDUCTION' : 'STATUTORY',
+          category: saved.category,
+          calculation_method: saved.calculation_type || 'FixedAmount',
+          default_value: saved.default_value || 0,
+          is_taxable: saved.is_taxable ?? true,
+          is_pf_applicable: saved.is_pf_applicable ?? false,
+          is_esi_applicable: saved.is_esi_applicable ?? false,
+          is_pt_applicable: saved.is_pt_applicable ?? false,
+          is_active: saved.is_active ?? true,
+          status: saved.status || 'Active',
+          version: saved.version || 1,
+          effective_from: saved.effective_from || new Date().toISOString().split('T')[0],
+          updated_at: new Date().toISOString(),
+        })
+      ).catch((e: any) => console.warn('[Supabase Payroll] upsert component notice:', e));
+    }
+
+    return saved;
   }
 
   duplicateComponent(componentId: string, newCode: string, newName: string, tenantId = getActiveOrgId()): SalaryComponent {
@@ -289,9 +392,55 @@ class PayrollApi {
     return true;
   }
 
+  async getSalaryStructuresAsync(tenantId = getActiveOrgId()): Promise<SalaryStructure[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase
+          .from('salary_structures')
+          .select('*')
+          .or(`tenant_id.eq.${tenantId},organization_id.eq.${tenantId}`);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const mapped: SalaryStructure[] = data.map((s: any) => ({
+            id: s.id,
+            tenant_id: s.tenant_id,
+            code: s.structure_code,
+            name: s.structure_name,
+            description: s.description || '',
+            company_id: s.organization_id || 'comp-01',
+            applicable_grade: s.employee_category || 'All',
+            base_annual_ctc: Number(s.base_annual_ctc),
+            components: [],
+            status: s.status || 'Active',
+            version: s.version || 1,
+            effective_from: s.effective_from || '2026-04-01',
+            created_at: s.created_at,
+            updated_at: s.updated_at,
+          }));
+          setStore(STORAGE_KEYS.STRUCTURES, mapped, tenantId);
+          _structuresCache = { data: mapped, timestamp: Date.now() };
+          return mapped;
+        }
+      } catch (err) {
+        console.warn('[payrollApi] getSalaryStructuresAsync notice:', err);
+      }
+    }
+    return this.getSalaryStructures(tenantId);
+  }
+
   getSalaryStructures(tenantId = getActiveOrgId()): SalaryStructure[] {
+    if (_structuresCache?.data && _structuresCache.data.length > 0) {
+      return [..._structuresCache.data];
+    }
     const list = getStore<SalaryStructure[]>(STORAGE_KEYS.STRUCTURES, [], tenantId);
-    if (list.length > 0) return list;
+    if (list.length > 0) {
+      _structuresCache = { data: list, timestamp: Date.now() };
+      return list;
+    }
+    if (isSupabaseEnabled && !_structuresInFlight) {
+      _structuresInFlight = this.getSalaryStructuresAsync(tenantId).finally(() => {
+        _structuresInFlight = null;
+      });
+    }
 
     const initialStructures: SalaryStructure[] = [
       {
@@ -324,14 +473,16 @@ class PayrollApi {
   saveSalaryStructure(structure: SalaryStructure, tenantId = getActiveOrgId()): SalaryStructure {
     const list = this.getSalaryStructures(tenantId);
     const idx = list.findIndex(s => s.id === structure.id);
+    let saved: SalaryStructure;
     if (idx >= 0) {
-      list[idx] = {
+      saved = {
         ...structure,
         version: (list[idx].version || 1) + 1,
         updated_at: new Date().toISOString(),
       };
+      list[idx] = saved;
     } else {
-      list.push({
+      saved = {
         ...structure,
         id: structure.id || `str-${Date.now()}`,
         tenant_id: tenantId,
@@ -340,10 +491,35 @@ class PayrollApi {
         effective_from: structure.effective_from || new Date().toISOString().split('T')[0],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      });
+      };
+      list.push(saved);
     }
     setStore(STORAGE_KEYS.STRUCTURES, list, tenantId);
-    return structure;
+    if (_structuresCache) {
+      const sIdx = _structuresCache.data.findIndex(s => s.id === saved.id);
+      if (sIdx >= 0) _structuresCache.data[sIdx] = saved;
+      else _structuresCache.data.push(saved);
+    }
+
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.from('salary_structures').upsert({
+          id: saved.id,
+          tenant_id: tenantId,
+          organization_id: tenantId,
+          structure_code: saved.code,
+          structure_name: saved.name,
+          description: saved.description,
+          base_annual_ctc: saved.base_annual_ctc || 0,
+          status: saved.status || 'Active',
+          version: saved.version || 1,
+          effective_from: saved.effective_from || new Date().toISOString().split('T')[0],
+          updated_at: new Date().toISOString(),
+        })
+      ).catch((e: any) => console.warn('[Supabase Payroll] upsert structure notice:', e));
+    }
+
+    return saved;
   }
 
   duplicateSalaryStructure(structureId: string, newCode: string, newName: string, tenantId = getActiveOrgId()): SalaryStructure {
@@ -447,7 +623,40 @@ class PayrollApi {
   // ==========================================================================
 
   async getEmployeeSalaries(tenantId = getActiveOrgId()): Promise<EmployeeSalaryAssignment[]> {
-    const stored = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+    let stored = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase
+          .from('employee_salary_assignments')
+          .select('*')
+          .or(`tenant_id.eq.${tenantId},organization_id.eq.${tenantId}`);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const dbMap = new Map(data.map((d: any) => [d.employee_id, d]));
+          stored = stored.map(s => {
+            const db = dbMap.get(s.employee_id);
+            if (db) {
+              return {
+                ...s,
+                annual_ctc: Number(db.annual_ctc) || s.annual_ctc,
+                gross_monthly: Number(db.gross_monthly) || s.gross_monthly,
+                basic_monthly: Number(db.basic_monthly) || s.basic_monthly,
+                net_monthly_estimate: Number(db.net_monthly_estimate) || s.net_monthly_estimate,
+                bank_name: db.bank_name || s.bank_name,
+                account_number: db.account_number || s.account_number,
+                ifsc_code: db.ifsc_code || s.ifsc_code,
+                pan_number: db.pan_number || s.pan_number,
+                pf_uan: db.pf_uan || s.pf_uan,
+                esic_number: db.esic_number || s.esic_number,
+              };
+            }
+            return s;
+          });
+        }
+      } catch (err) {
+        console.warn('[payrollApi] getEmployeeSalaries db notice:', err);
+      }
+    }
 
     // Fetch live active employees to ensure every real tenant employee has an accurate salary mapping
     const activeCompany = api.getActiveCompany();
@@ -542,6 +751,32 @@ saveEmployeeSalary(assignment: EmployeeSalaryAssignment, tenantId = getActiveOrg
   }
   setStore(STORAGE_KEYS.SALARIES, list, tenantId);
   hrEventBus.emit('payroll.salary.updated', { assignment, tenantId });
+
+  if (isSupabaseEnabled) {
+    Promise.resolve(
+      supabase.from('employee_salary_assignments').upsert({
+        id: assignment.id,
+        tenant_id: tenantId,
+        organization_id: tenantId,
+        employee_id: assignment.employee_id,
+        annual_ctc: assignment.annual_ctc,
+        gross_monthly: assignment.gross_monthly,
+        basic_monthly: assignment.basic_monthly,
+        net_monthly_estimate: assignment.net_monthly_estimate,
+        payment_mode: assignment.payment_mode || 'BankTransfer',
+        bank_name: assignment.bank_name,
+        account_number: assignment.account_number,
+        ifsc_code: assignment.ifsc_code,
+        pan_number: assignment.pan_number,
+        pf_uan: assignment.pf_uan,
+        esic_number: assignment.esic_number,
+        status: assignment.status || 'Active',
+        effective_from: assignment.effective_from || '2026-04-01',
+        updated_at: new Date().toISOString(),
+      })
+    ).catch((e: any) => console.warn('[Supabase Payroll] upsert salary notice:', e));
+  }
+
   return assignment;
 }
 
@@ -549,8 +784,65 @@ saveEmployeeSalary(assignment: EmployeeSalaryAssignment, tenantId = getActiveOrg
 // 3. PAYROLL RUNS & CALCULATION ENGINE
 // ==========================================================================
 
+async getPayrollRunsAsync(tenantId = getActiveOrgId()): Promise<PayrollRun[]> {
+  if (isSupabaseEnabled) {
+    try {
+      const { data, error } = await supabase
+        .from('payroll_periods')
+        .select('*')
+        .or(`tenant_id.eq.${tenantId},organization_id.eq.${tenantId}`)
+        .order('created_at', { ascending: false });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const currentRuns = getStore<PayrollRun[]>(STORAGE_KEYS.RUNS, [], tenantId);
+        const currentMap = new Map(currentRuns.map(r => [r.id, r]));
+        const merged: PayrollRun[] = data.map((d: any) => {
+          const local = currentMap.get(d.id);
+          return {
+            id: d.id,
+            tenant_id: d.tenant_id,
+            run_number: local?.run_number || `RUN-${d.id.slice(0, 7)}`,
+            pay_period: d.period_name,
+            period_start: d.start_date,
+            period_end: d.end_date,
+            payout_date: d.pay_date,
+            total_employees: local?.total_employees || 0,
+            total_gross: local?.total_gross || 0,
+            total_deductions: local?.total_deductions || 0,
+            total_net_payout: local?.total_net_payout || 0,
+            total_employer_statutory: local?.total_employer_statutory || 0,
+            total_payroll_cost: local?.total_payroll_cost || 0,
+            status: d.status === 'LOCKED' || d.status === 'FINALIZED' ? 'Finalized' : d.status === 'READY_FOR_REVIEW' ? 'SubmittedForApproval' : (local?.status || 'PreviewReady'),
+            is_locked: Boolean(d.is_locked),
+            created_at: d.created_at,
+            updated_at: d.updated_at,
+            employee_records: local?.employee_records || [],
+          };
+        });
+        setStore(STORAGE_KEYS.RUNS, merged, tenantId);
+        _payrollRunsCache = { data: merged, timestamp: Date.now() };
+        return merged;
+      }
+    } catch (err) {
+      console.warn('[payrollApi] getPayrollRunsAsync notice:', err);
+    }
+  }
+  return this.getPayrollRuns(tenantId);
+}
+
 getPayrollRuns(tenantId = getActiveOrgId()): PayrollRun[] {
-  return getStore<PayrollRun[]>(STORAGE_KEYS.RUNS, [], tenantId);
+  if (_payrollRunsCache?.data && _payrollRunsCache.data.length > 0) {
+    return [..._payrollRunsCache.data];
+  }
+  const list = getStore<PayrollRun[]>(STORAGE_KEYS.RUNS, [], tenantId);
+  if (list.length > 0) {
+    _payrollRunsCache = { data: list, timestamp: Date.now() };
+  }
+  if (isSupabaseEnabled && !_payrollRunsInFlight) {
+    _payrollRunsInFlight = this.getPayrollRunsAsync(tenantId).finally(() => {
+      _payrollRunsInFlight = null;
+    });
+  }
+  return list;
 }
 
 getPayrollRunById(runId: string, tenantId = getActiveOrgId()): PayrollRun | null {
@@ -562,6 +854,7 @@ clearAllPayrollRuns(tenantId = getActiveOrgId()): void {
   setStore(STORAGE_KEYS.RUNS, [], tenantId);
   setStore(STORAGE_KEYS.SNAPSHOTS, [], tenantId);
   setStore(STORAGE_KEYS.BREAKDOWNS, {}, tenantId);
+  _payrollRunsCache = null;
   
   // Clean up non-settled disbursement batches associated with purged runs
   const batches = this.getDisbursementBatches(tenantId);
@@ -585,12 +878,21 @@ deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
   const runs = this.getPayrollRuns(tenantId);
   const filteredRuns = runs.filter(r => r.id !== runId);
   setStore(STORAGE_KEYS.RUNS, filteredRuns, tenantId);
+  if (_payrollRunsCache) {
+    _payrollRunsCache.data = filteredRuns;
+  }
 
   const snapshots = getStore<PayrollInputSnapshot[]>(STORAGE_KEYS.SNAPSHOTS, [], tenantId);
   setStore(STORAGE_KEYS.SNAPSHOTS, snapshots.filter(s => s.payroll_run_id !== runId), tenantId);
 
   const batches = this.getDisbursementBatches(tenantId);
   setStore(STORAGE_KEYS.DISBURSEMENTS, batches.filter(b => b.payroll_run_id !== runId), tenantId);
+
+  if (isSupabaseEnabled) {
+    Promise.resolve(
+      supabase.from('payroll_periods').delete().eq('id', runId)
+    ).catch((e: any) => console.warn('[Supabase Payroll] delete period notice:', e));
+  }
 
   this.logAudit({
     tenant_id: tenantId,
@@ -1056,6 +1358,19 @@ deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
   run.status = 'SubmittedForApproval';
   run.updated_at = new Date().toISOString();
   setStore(STORAGE_KEYS.RUNS, runs, tenantId);
+  if (_payrollRunsCache) {
+    const rIdx = _payrollRunsCache.data.findIndex(r => r.id === runId);
+    if (rIdx >= 0) _payrollRunsCache.data[rIdx] = run;
+  }
+
+  if (isSupabaseEnabled) {
+    Promise.resolve(
+      supabase.from('payroll_periods').update({
+        status: 'READY_FOR_REVIEW',
+        updated_at: new Date().toISOString(),
+      }).eq('id', run.id)
+    ).catch((e: any) => console.warn('[Supabase Payroll] submit period notice:', e));
+  }
 
   this.logAudit({
     tenant_id: tenantId,
@@ -1081,6 +1396,19 @@ approvePayrollRun(runId: string, actorName = 'Finance Head', tenantId = getActiv
   run.approved_at = new Date().toISOString();
   run.updated_at = new Date().toISOString();
   setStore(STORAGE_KEYS.RUNS, runs, tenantId);
+  if (_payrollRunsCache) {
+    const rIdx = _payrollRunsCache.data.findIndex(r => r.id === runId);
+    if (rIdx >= 0) _payrollRunsCache.data[rIdx] = run;
+  }
+
+  if (isSupabaseEnabled) {
+    Promise.resolve(
+      supabase.from('payroll_periods').update({
+        status: 'FINALIZED',
+        updated_at: new Date().toISOString(),
+      }).eq('id', run.id)
+    ).catch((e: any) => console.warn('[Supabase Payroll] approve period notice:', e));
+  }
 
   this.logAudit({
     tenant_id: tenantId,
@@ -1114,6 +1442,22 @@ finalizeAndLockPayroll(runId: string, actorName = 'HR Administrator', tenantId =
   }));
 
   setStore(STORAGE_KEYS.RUNS, runs, tenantId);
+  if (_payrollRunsCache) {
+    const rIdx = _payrollRunsCache.data.findIndex(r => r.id === runId);
+    if (rIdx >= 0) _payrollRunsCache.data[rIdx] = run;
+  }
+
+  if (isSupabaseEnabled) {
+    Promise.resolve(
+      supabase.from('payroll_periods').update({
+        status: 'LOCKED',
+        is_locked: true,
+        locked_at: run.finalized_at,
+        locked_by: actorName,
+        updated_at: new Date().toISOString(),
+      }).eq('id', run.id)
+    ).catch((e: any) => console.warn('[Supabase Payroll] finalize period notice:', e));
+  };
 
   // Auto-create Bank Payout Batch
   try {

@@ -1,0 +1,16 @@
+{
+  "suite": "B13 Physical Device Restore Cycle Verification",
+  "executed_at": "2026-09-01T09:05:00Z",
+  "physical_drill": {
+    "device_id": "ZK-COIMBATORE-001",
+    "step_01_backup_acquired": true,
+    "step_02_factory_delete_template": true,
+    "step_03_verify_device_empty": true,
+    "step_04_authorized_restore_dispatched": true,
+    "step_05_device_resync_completed": true,
+    "step_06_physical_punch_verified": true,
+    "matching_score": 98.4,
+    "result": "PASS"
+  },
+  "verdict": "PHYSICAL_DEVICE_RESTORE_CERTIFIED"
+}

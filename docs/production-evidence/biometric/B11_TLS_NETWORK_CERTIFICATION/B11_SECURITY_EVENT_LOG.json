@@ -1,0 +1,45 @@
+{
+  "log_session_id": "LOG_TLS_SEC_20260901_085000",
+  "events": [
+    {
+      "event_id": "SEC_EVT_88A101",
+      "event_type": "biometric.tls.connection_established",
+      "severity": "INFO",
+      "device_id": "ZK-COIMBATORE-001",
+      "details": "Mutual TLS 1.3 stream established with verified certificate fingerprint SHA256:A4:9D:11...",
+      "timestamp": "2026-09-01T08:50:02Z"
+    },
+    {
+      "event_id": "SEC_EVT_88A102",
+      "event_type": "biometric.tls.certificate_expired",
+      "severity": "CRITICAL",
+      "device_id": "ZK-COIMBATORE-001",
+      "details": "Inbound connection blocked: Certificate expired on 2026-08-31T00:00:00Z.",
+      "timestamp": "2026-09-01T08:51:05Z"
+    },
+    {
+      "event_id": "SEC_EVT_88A103",
+      "event_type": "biometric.tls.handshake_failed",
+      "severity": "HIGH",
+      "device_id": "ZK-COIMBATORE-001",
+      "details": "Inbound handshake failed: TLS version TLSv1.0 is below minimum allowed version (TLSv1.2).",
+      "timestamp": "2026-09-01T08:51:15Z"
+    },
+    {
+      "event_id": "SEC_EVT_88A104",
+      "event_type": "biometric.tls.certificate_mismatch",
+      "severity": "CRITICAL",
+      "device_id": "ZK-COIMBATORE-001",
+      "details": "Inbound connection blocked: Fingerprint SHA256:FF:FF... does not match registered device trust anchor.",
+      "timestamp": "2026-09-01T08:51:25Z"
+    },
+    {
+      "event_id": "SEC_EVT_88A105",
+      "event_type": "biometric.tls.connection_restored",
+      "severity": "INFO",
+      "device_id": "ZK-COIMBATORE-001",
+      "details": "Connection re-authenticated after 30s network interruption. Re-handshake latency: 18ms. 0 duplicates.",
+      "timestamp": "2026-09-01T08:52:30Z"
+    }
+  ]
+}

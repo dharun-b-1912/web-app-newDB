@@ -193,6 +193,49 @@ export const UserMenu: React.FC = () => {
                   <span className="text-gray-400">→</span>
                 </button>
               </>
+            ) : currentRole === 'Company Admin' ? (
+              <>
+                <button
+                  onClick={() => {
+                    setIsOpen(false);
+                    syncUrlWithRoute('admin');
+                    window.dispatchEvent(new CustomEvent('platform:navigate', { detail: { tab: 'admin' } }));
+                  }}
+                  className="w-full text-left px-4 py-2.5 text-xs font-bold text-gray-800 hover:bg-emerald-50/70 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <ShieldCheck className="w-4 h-4 text-[#064E3B]" />
+                    Company Admin Center
+                  </span>
+                  <span className="text-gray-400 font-bold">→</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setIsOpen(false);
+                    syncUrlWithRoute('organization');
+                    window.dispatchEvent(new CustomEvent('platform:navigate', { detail: { tab: 'organization' } }));
+                  }}
+                  className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Building2 className="w-4 h-4 text-emerald-600" />
+                    Legal Entities & Hierarchy
+                  </span>
+                  <span className="text-gray-400">→</span>
+                </button>
+
+                <button
+                  onClick={handleNavigateToProfile}
+                  className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50/60 hover:text-[#07563D] flex items-center justify-between transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <UserIcon className="w-4 h-4 text-gray-500" />
+                    My Admin Profile
+                  </span>
+                  <span className="text-gray-400">→</span>
+                </button>
+              </>
             ) : (
               <>
                 <button

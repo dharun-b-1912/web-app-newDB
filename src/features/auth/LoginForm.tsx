@@ -125,20 +125,52 @@ export const LoginForm: React.FC<LoginFormProps> = ({
       {/* Title and context indicator */}
       <div>
         <h2 className="text-xl font-bold text-gray-900 tracking-tight">
-          {authContext === 'platform'
+          {authContext === 'admin'
+            ? 'Company Administration & IAM'
+            : authContext === 'platform'
             ? 'Platform Administration'
             : authContext === 'vendor'
             ? 'Vendor & Contractor Sign In'
             : 'Sign In to Workspace'}
         </h2>
         <p className="text-xs text-gray-500 mt-1">
-          {authContext === 'platform'
+          {authContext === 'admin'
+            ? 'Organization Owner & Company Admin access: Legal entities, RBAC, workflows & commercials.'
+            : authContext === 'platform'
             ? 'Authorized personnel only. All access attempts are recorded.'
             : authContext === 'vendor'
             ? 'Access your vendor self-service portal, contractor workforce & invoice matching.'
             : 'Enter your credentials to access your organization portal.'}
         </p>
       </div>
+
+      {/* 1-Click Company Admin Demo Test Box */}
+      {authContext === 'admin' && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Live Admin Demo Account
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-200/60 text-emerald-800 font-mono font-semibold">
+              Joy Corporate Solutions
+            </span>
+          </div>
+          <p className="text-[11px] text-emerald-800/80">
+            Sign in as <strong>Dharun Joy</strong> (Company Admin) to manage Legal Entities, RBAC, Approval Chains, and System Settings.
+          </p>
+          <Button
+            type="button"
+            onClick={() => {
+              setValue('identifier', 'dharun@joypeople.com');
+              setValue('password', 'demo1234');
+              onSubmit({ identifier: 'dharun@joypeople.com', password: 'demo1234' });
+            }}
+            className="w-full py-2 bg-[#064E3B] hover:bg-[#043629] text-white rounded-xl text-xs font-bold shadow-sm flex items-center justify-center gap-1.5"
+          >
+            ⚡ 1-Click Live Test Company Admin Login
+          </Button>
+        </div>
+      )}
 
       {/* 1-Click Vendor Demo Test Box */}
       {authContext === 'vendor' && (
@@ -184,7 +216,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         {/* Identifier Field */}
         <div>
           <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-            {authContext === 'platform'
+            {authContext === 'admin'
+              ? 'Administrator Work Email'
+              : authContext === 'platform'
               ? 'Staff Email'
               : authContext === 'vendor'
               ? 'Vendor Contact Email'
@@ -192,9 +226,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({
           </label>
           <div className="relative">
             <Input
-              type={authContext === 'platform' || authContext === 'vendor' ? 'email' : 'text'}
+              type={authContext === 'admin' || authContext === 'platform' || authContext === 'vendor' ? 'email' : 'text'}
               placeholder={
-                authContext === 'platform'
+                authContext === 'admin'
+                  ? 'dharun@joypeople.com'
+                  : authContext === 'platform'
                   ? 'admin@joypeople.com'
                   : authContext === 'vendor'
                   ? 'vendor@apexstaffing.in'
@@ -258,7 +294,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({
           type="submit"
           disabled={isLoading}
           className={`w-full py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all duration-200 flex items-center justify-center gap-2 ${
-            authContext === 'platform'
+            authContext === 'admin'
+              ? 'bg-[#064E3B] hover:bg-[#043629] text-white'
+              : authContext === 'platform'
               ? 'bg-[#0f172a] hover:bg-[#1e293b] text-white'
               : authContext === 'vendor'
               ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
@@ -272,7 +310,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             </span>
           ) : (
             <span className="flex items-center gap-1.5">
-              <span>Sign In as {authContext === 'vendor' ? 'Vendor' : 'User'}</span>
+              <span>
+                Sign In as{' '}
+                {authContext === 'admin'
+                  ? 'Company Admin'
+                  : authContext === 'vendor'
+                  ? 'Vendor'
+                  : 'User'}
+              </span>
               <ArrowRight className="w-3.5 h-3.5" />
             </span>
           )}

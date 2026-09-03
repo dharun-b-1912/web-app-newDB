@@ -1,0 +1,80 @@
+{
+  "suite": "B11 TLS Negative & Adversarial Attack Simulation Suite",
+  "executed_at": "2026-09-01T08:52:00Z",
+  "negative_tests": [
+    {
+      "test_id": "B11-02",
+      "attack_type": "EXPIRED_CERTIFICATE",
+      "input_cert_expiry": "2026-08-31T00:00:00Z",
+      "expected_rejection": "CERTIFICATE_EXPIRED",
+      "actual_response": "CERTIFICATE_EXPIRED",
+      "event_stream_allowed": false,
+      "result": "PASS_BLOCKED"
+    },
+    {
+      "test_id": "B11-03",
+      "attack_type": "UNTRUSTED_CA_SPOOF",
+      "input_ca": "RogueAttackerRootCA",
+      "expected_rejection": "INVALID_CA",
+      "actual_response": "INVALID_CA",
+      "event_stream_allowed": false,
+      "result": "PASS_BLOCKED"
+    },
+    {
+      "test_id": "B11-04",
+      "attack_type": "HOSTNAME_MISMATCH",
+      "input_hostname": "fake-cbe-device.local",
+      "expected_rejection": "HOSTNAME_MISMATCH",
+      "actual_response": "HOSTNAME_MISMATCH",
+      "event_stream_allowed": false,
+      "result": "PASS_BLOCKED"
+    },
+    {
+      "test_id": "B11-05",
+      "attack_type": "TLS_1_0_DOWNGRADE",
+      "requested_protocol": "TLSv1.0",
+      "expected_rejection": "TLS_DOWNGRADE",
+      "actual_response": "TLS_DOWNGRADE",
+      "event_stream_allowed": false,
+      "result": "PASS_BLOCKED"
+    },
+    {
+      "test_id": "B11-06",
+      "attack_type": "TLS_1_1_DOWNGRADE",
+      "requested_protocol": "TLSv1.1",
+      "expected_rejection": "TLS_DOWNGRADE",
+      "actual_response": "TLS_DOWNGRADE",
+      "event_stream_allowed": false,
+      "result": "PASS_BLOCKED"
+    },
+    {
+      "test_id": "B11-09",
+      "attack_type": "WEAK_CIPHER_NEGOTIATION",
+      "requested_cipher": "DES-CBC3-SHA",
+      "expected_rejection": "WEAK_CIPHER_REJECTED",
+      "actual_response": "WEAK_CIPHER_REJECTED",
+      "event_stream_allowed": false,
+      "result": "PASS_BLOCKED"
+    },
+    {
+      "test_id": "B11-10",
+      "attack_type": "UNREGISTERED_DEVICE_ACCESS",
+      "device_id": "ROGUE-DEVICE-999",
+      "expected_rejection": "DEVICE_UNREGISTERED",
+      "actual_response": "DEVICE_UNREGISTERED",
+      "event_stream_allowed": false,
+      "result": "PASS_BLOCKED"
+    },
+    {
+      "test_id": "B11-11",
+      "attack_type": "CERTIFICATE_FINGERPRINT_MISMATCH",
+      "device_id": "ZK-COIMBATORE-001",
+      "tampered_fingerprint": "SHA256:FF:FF:FF:FF:FF:FF...",
+      "expected_rejection": "DEVICE_CERTIFICATE_MISMATCH",
+      "actual_response": "DEVICE_CERTIFICATE_MISMATCH",
+      "event_stream_allowed": false,
+      "result": "PASS_BLOCKED"
+    }
+  ],
+  "verdict": "ALL_NEGATIVE_ATTACKS_BLOCKED"
+}

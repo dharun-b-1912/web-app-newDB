@@ -105,7 +105,27 @@ export const AdminMasterModule: React.FC<AdminMasterModuleProps> = ({ initialTab
 
 
 
-      {/* Subview Container */}
+      {/* Quick Subview Tabs Bar */}
+      <div className="bg-white p-1.5 rounded-2xl border border-gray-200/80 shadow-xs flex items-center gap-1 overflow-x-auto scrollbar-thin">
+        {tabs.map((t) => {
+          const Icon = t.icon;
+          const isActive = activeTab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0 ${
+                isActive
+                  ? 'bg-[#07563D] text-white shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-gray-400'}`} />
+              <span>{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
       <div className="transition-all duration-200">
         {activeTab === 'dashboard' && <AdminDashboardView onNavigateTab={tabKey => setActiveTab(tabKey)} />}
         {activeTab === 'users' && <UserManagementView />}

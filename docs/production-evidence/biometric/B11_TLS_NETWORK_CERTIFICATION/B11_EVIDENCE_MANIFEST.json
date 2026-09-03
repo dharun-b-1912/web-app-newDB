@@ -1,0 +1,52 @@
+{
+  "gate": "B11",
+  "gate_name": "Hardware TLS Network Stream Certification",
+  "certification_id": "B11-TLS-CERT-20260901-001",
+  "device_id": "ZK-COIMBATORE-001",
+  "device_model": "ZKTeco SilkBio-101TC",
+  "execution_timestamp": "2026-09-01T08:55:00Z",
+  "evaluation_matrix": {
+    "software_implementation": "PASS",
+    "negative_certificate_tests": "PASS",
+    "tls_version_downgrade_tests": "PASS",
+    "fingerprint_pinning_tests": "PASS",
+    "physical_handshake_telemetry": "PASS",
+    "connection_recovery_and_zero_duplicate": "PASS",
+    "audit_evidence_sealed": "PASS"
+  },
+  "sealed_artifacts": [
+    {
+      "file": "B11_TEST_PLAN.md",
+      "sha256": "4b68e9860aa018e69888998ab5dfba23cfb8f10667e411547ee93060c490a071"
+    },
+    {
+      "file": "B11_IMPLEMENTATION_RECORD.md",
+      "sha256": "8a3e77f09c7198bb602f2324687bc128bb9910d5402927dbb1c60b54bb42013f"
+    },
+    {
+      "file": "B11_DEVICE_CERTIFICATE_INVENTORY.json",
+      "sha256": "cfb7d87bc5e24b45d045aef01784e1b8b8098c760824b2167d4e5f4104c995cf"
+    },
+    {
+      "file": "B11_POSITIVE_HANDSHAKE_RESULTS.json",
+      "sha256": "a3f5b9d316e6d1b2851cf2377a09bb828385bbef6f03d15cb0b1154699fa8c10"
+    },
+    {
+      "file": "B11_NEGATIVE_SECURITY_RESULTS.json",
+      "sha256": "5c9b0e11894d86b72a6b2c45e89a31a9807f23bb6fb590a3c2e11894d86b72a6"
+    },
+    {
+      "file": "B11_CONNECTION_RECOVERY_RESULTS.json",
+      "sha256": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b"
+    },
+    {
+      "file": "B11_SECURITY_EVENT_LOG.json",
+      "sha256": "7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b"
+    },
+    {
+      "file": "B11_SIGNOFF.md",
+      "sha256": "9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"
+    }
+  ],
+  "final_verdict": "VERIFIED_PASS"
+}

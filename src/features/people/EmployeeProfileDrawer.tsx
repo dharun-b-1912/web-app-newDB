@@ -145,46 +145,18 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
 
             if (bRes?.data) setBankData(bRes.data);
             else if (empBank) setBankData(empBank);
-            else {
-              setBankData({
-                bank_name: 'HDFC Bank Ltd',
-                account_number: '50100492817264',
-                ifsc_code: 'HDFC0000456',
-                account_type: 'SALARY',
-                account_holder_name: `${employee.first_name} ${employee.last_name}`.trim(),
-              });
-            }
+            else setBankData(null);
 
             if (sRes?.data) setStatutoryData(sRes.data);
             else if (empStat) setStatutoryData(empStat);
-            else {
-              setStatutoryData({
-                pan_number: 'ABCDE1234F',
-                uan_number: '101298471829',
-                pf_number: 'TN/CBE/12345/001',
-                esi_number: '31001234560001001',
-                tax_regime: 'NEW',
-              });
-            }
+            else setStatutoryData(null);
           } catch (_) {
-            if (empBank) setBankData(empBank);
-            if (empStat) setStatutoryData(empStat);
+            setBankData(empBank || null);
+            setStatutoryData(empStat || null);
           }
         } else {
-          setBankData(empBank || {
-            bank_name: 'HDFC Bank Ltd',
-            account_number: '50100492817264',
-            ifsc_code: 'HDFC0000456',
-            account_type: 'SALARY',
-            account_holder_name: `${employee.first_name} ${employee.last_name}`.trim(),
-          });
-          setStatutoryData(empStat || {
-            pan_number: 'ABCDE1234F',
-            uan_number: '101298471829',
-            pf_number: 'TN/CBE/12345/001',
-            esi_number: '31001234560001001',
-            tax_regime: 'NEW',
-          });
+          setBankData(empBank || null);
+          setStatutoryData(empStat || null);
         }
       };
 
@@ -824,17 +796,24 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                   <div>
                     <span className="text-gray-400 text-[11px] block">Salary Account Number</span>
                     <span className="font-mono font-bold text-gray-900">
-                      {showSensitiveData
-                        ? (bankData?.account_number || '50100492817264')
-                        : `•••• •••• ${(bankData?.account_number?.slice(-4) || '4521')}`}
+                      {bankData?.account_number
+                        ? (showSensitiveData
+                            ? bankData.account_number
+                            : (bankData.account_number.length > 4
+                                ? `•••• •••• ${bankData.account_number.slice(-4)}`
+                                : bankData.account_number))
+                        : '— Not configured —'}
                     </span>
                   </div>
                   <div>
                     <span className="text-gray-400 text-[11px] block">Bank & IFSC</span>
                     <span className="font-bold text-gray-900">
-                      {bankData?.bank_name || 'HDFC Bank Ltd'} · {showSensitiveData
-                        ? (bankData?.ifsc_code || bankData?.ifsc || 'HDFC0000456')
-                        : `${(bankData?.ifsc_code || bankData?.ifsc || 'HDFC0').slice(0, 5)}••••`}
+                      {bankData?.bank_name || (bankData?.account_number ? 'Bank Account' : '—')}
+                      {(bankData?.ifsc_code || bankData?.ifsc) ? (
+                        <> · <span className="font-mono">{showSensitiveData
+                          ? (bankData?.ifsc_code || bankData?.ifsc)
+                          : `${(bankData?.ifsc_code || bankData?.ifsc || '').slice(0, 4)}••••`}</span></>
+                      ) : ''}
                     </span>
                   </div>
                   <div>
@@ -845,8 +824,8 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                   </div>
                   <div>
                     <span className="text-gray-400 text-[11px] block">Disbursement Routing</span>
-                    <span className="font-bold text-emerald-700 flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5" /> Direct Bank Transfer Ready
+                    <span className={bankData?.account_number ? "font-bold text-emerald-700 flex items-center gap-1" : "text-gray-400 font-medium"}>
+                      {bankData?.account_number ? <><ShieldCheck className="w-3.5 h-3.5" /> Direct Bank Transfer Ready</> : 'Pending Bank Configuration'}
                     </span>
                   </div>
                 </div>
@@ -858,23 +837,27 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                   <div>
                     <span className="text-gray-400 text-[11px] block">Permanent Account No (PAN)</span>
                     <span className="font-mono font-bold text-gray-900">
-                      {showSensitiveData
-                        ? (statutoryData?.pan_number || statutoryData?.pan || 'ABCDE1234F')
-                        : `${(statutoryData?.pan_number || statutoryData?.pan || 'ABCDE1234F').slice(0, 5)}••••${(statutoryData?.pan_number || statutoryData?.pan || 'ABCDE1234F').slice(-1)}`}
+                      {(statutoryData?.pan_number || statutoryData?.pan)
+                        ? (showSensitiveData
+                            ? (statutoryData?.pan_number || statutoryData?.pan)
+                            : `${(statutoryData?.pan_number || statutoryData?.pan || '').slice(0, 5)}••••${(statutoryData?.pan_number || statutoryData?.pan || '').slice(-1)}`)
+                        : '— Not configured —'}
                     </span>
                   </div>
                   <div>
                     <span className="text-gray-400 text-[11px] block">Universal Account No (UAN)</span>
                     <span className="font-mono font-bold text-gray-900">
-                      {showSensitiveData
-                        ? (statutoryData?.uan_number || statutoryData?.uan || '101298471829')
-                        : `${(statutoryData?.uan_number || statutoryData?.uan || '101298471829').slice(0, 4)}••••${(statutoryData?.uan_number || statutoryData?.uan || '101298471829').slice(-4)}`}
+                      {(statutoryData?.uan_number || statutoryData?.uan)
+                        ? (showSensitiveData
+                            ? (statutoryData?.uan_number || statutoryData?.uan)
+                            : `${(statutoryData?.uan_number || statutoryData?.uan || '').slice(0, 4)}••••${(statutoryData?.uan_number || statutoryData?.uan || '').slice(-4)}`)
+                        : '— Not configured —'}
                     </span>
                   </div>
                   <div>
                     <span className="text-gray-400 text-[11px] block">Tax Regime</span>
                     <span className="font-bold text-[#07563D]">
-                      {(statutoryData?.tax_regime || 'NEW') === 'NEW'
+                      {(statutoryData?.tax_regime || 'NEW').toUpperCase().includes('NEW')
                         ? 'New Tax Regime (Sec 115BAC)'
                         : 'Old Tax Regime (Exemptions)'}
                     </span>
@@ -882,19 +865,19 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                   <div>
                     <span className="text-gray-400 text-[11px] block">Provident Fund (PF) No</span>
                     <span className="font-mono font-semibold text-gray-800">
-                      {statutoryData?.pf_number || 'TN/CBE/12345/001'}
+                      {statutoryData?.pf_number || '— Not configured —'}
                     </span>
                   </div>
                   <div>
                     <span className="text-gray-400 text-[11px] block">ESI Insurance Number</span>
                     <span className="font-mono font-semibold text-gray-800">
-                      {statutoryData?.esi_number || '31001234560001001'}
+                      {statutoryData?.esi_number || '— Not applicable / Not configured —'}
                     </span>
                   </div>
                   <div>
                     <span className="text-gray-400 text-[11px] block">Compliance Status</span>
-                    <span className="text-emerald-700 font-bold flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5" /> EPF / ESIC Verified
+                    <span className={(statutoryData?.pan_number || statutoryData?.pan) ? "text-emerald-700 font-bold flex items-center gap-1" : "text-amber-600 font-bold flex items-center gap-1"}>
+                      <ShieldCheck className="w-3.5 h-3.5" /> {(statutoryData?.pan_number || statutoryData?.pan) ? 'EPF / ESIC Verified' : 'Compliance Pending'}
                     </span>
                   </div>
                 </div>

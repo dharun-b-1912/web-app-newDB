@@ -7,6 +7,7 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   className?: string;
   key?: React.Key;
   children?: React.ReactNode;
+  title?: string;
 }
 
 export const Badge = ({ className, variant = 'emerald', size = 'md', children, ...props }: BadgeProps) => {

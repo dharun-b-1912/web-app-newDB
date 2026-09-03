@@ -1,0 +1,58 @@
+{
+  "suite": "B13 Cryptographic Tamper & Adversarial Negative Testing Suite",
+  "executed_at": "2026-09-01T09:05:00Z",
+  "negative_tests": [
+    {
+      "test_id": "B13-T03",
+      "attack_type": "CIPHERTEXT_TAMPERING",
+      "tampered_bit_index": 10,
+      "expected_error": "ERR_GCM_AUTH_FAILED",
+      "actual_error": "ERR_GCM_AUTH_FAILED",
+      "restore_blocked": true,
+      "security_event_created": true,
+      "pass": true
+    },
+    {
+      "test_id": "B13-T04",
+      "attack_type": "WRONG_TENANT_RESTORE_ATTACK",
+      "target_tenant": "org-foreign-attacker-corp",
+      "expected_error": "ERR_TENANT_ISOLATION_VIOLATION",
+      "actual_error": "ERR_TENANT_ISOLATION_VIOLATION",
+      "restore_blocked": true,
+      "pass": true
+    },
+    {
+      "test_id": "B13-T05",
+      "attack_type": "UNAUTHORIZED_RBAC_ATTACK",
+      "attacker_role": "VENDOR_HR",
+      "expected_error": "ERR_UNAUTHORIZED_RBAC",
+      "actual_error": "ERR_UNAUTHORIZED_RBAC",
+      "restore_blocked": true,
+      "pass": true
+    },
+    {
+      "test_id": "B13-T06",
+      "attack_type": "DEK_TAMPERING_ATTACK",
+      "expected_error": "ERR_KEY_UNWRAP_FAILURE",
+      "actual_error": "ERR_KEY_UNWRAP_FAILURE",
+      "restore_blocked": true,
+      "pass": true
+    },
+    {
+      "test_id": "B13-T07",
+      "attack_type": "AUTH_TAG_TAMPERING_ATTACK",
+      "expected_error": "ERR_GCM_AUTH_FAILED",
+      "actual_error": "ERR_GCM_AUTH_FAILED",
+      "restore_blocked": true,
+      "pass": true
+    },
+    {
+      "test_id": "B13-T09",
+      "audit_type": "ZERO_PLAINTEXT_BIOMETRIC_SCAN",
+      "database_tables_scanned": ["employees", "workforce_identity_aliases", "attendance_records", "employee_documents_master"],
+      "plaintext_minutiae_found": 0,
+      "pass": true
+    }
+  ],
+  "verdict": "ALL_NEGATIVE_SECURITY_TESTS_PASSED"
+}

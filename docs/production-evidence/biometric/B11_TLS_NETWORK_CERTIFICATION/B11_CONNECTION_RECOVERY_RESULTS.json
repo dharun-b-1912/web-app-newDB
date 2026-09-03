@@ -1,0 +1,19 @@
+{
+  "suite": "B11 TLS Connection Interruption & Recovery Suite",
+  "executed_at": "2026-09-01T08:52:00Z",
+  "recovery_tests": [
+    {
+      "test_id": "B11-12",
+      "device_id": "ZK-COIMBATORE-001",
+      "interruption_duration_seconds": 30,
+      "reconnect_attempt_status": "TLS_REHANDSHAKE_INITIATED",
+      "rehandshake_authenticated": true,
+      "reconnect_latency_ms": 18,
+      "stream_resumed": true,
+      "offline_punches_replayed": 14,
+      "duplicate_punches_detected": 0,
+      "result": "PASS"
+    }
+  ],
+  "verdict": "RECOVERY_SEAMLESS_ZERO_DUPLICATES"
+}
