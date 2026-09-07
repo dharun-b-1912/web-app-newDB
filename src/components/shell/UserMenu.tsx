@@ -108,9 +108,29 @@ export const UserMenu: React.FC = () => {
     await logout();
   };
 
-  const displayName = user.name || (isPlatformAdmin && platformProfile ? platformProfile.display_name : 'Super Admin');
+  const displayName = user.name || (isPlatformAdmin && platformProfile ? platformProfile.display_name : (user.email ? user.email.split('@')[0] : 'User'));
   const avatarSrc = user.avatar_url || (isPlatformAdmin && platformProfile?.avatar_url ? platformProfile.avatar_url : '');
-  const effectiveRoleBadge = isPlatformAdmin ? 'Platform Super Admin' : roleTitle;
+  
+  let effectiveRoleBadge = 'Unassigned';
+  if (isPlatformAdmin) {
+    effectiveRoleBadge = 'Platform Super Admin';
+  } else if (currentRole === 'Company Admin') {
+    effectiveRoleBadge = 'Company Admin (Company)';
+  } else if (currentRole === 'HR Head') {
+    effectiveRoleBadge = 'HR Head (Company)';
+  } else if (currentRole === 'HR Admin') {
+    effectiveRoleBadge = 'HR Admin (Company)';
+  } else if (currentRole === 'Manager') {
+    effectiveRoleBadge = 'Manager (Department)';
+  } else if (currentRole === 'Team Lead') {
+    effectiveRoleBadge = 'Team Lead (Team)';
+  } else if (currentRole === 'Vendor Admin') {
+    effectiveRoleBadge = 'Vendor Operations Admin (Partner)';
+  } else if (currentRole === 'Employee') {
+    effectiveRoleBadge = 'Employee (Self)';
+  } else if (roleTitle && roleTitle !== 'Unassigned') {
+    effectiveRoleBadge = roleTitle;
+  }
 
   return (
     <div className="relative" ref={dropdownRef}>

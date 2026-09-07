@@ -873,6 +873,31 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     onClose();
   };
 
+  const handleStartOnboarding = (emp: Employee) => {
+    handleResetAndClose();
+    window.dispatchEvent(
+      new CustomEvent('platform:navigate', {
+        detail: { tab: 'onboarding', employeeId: emp.id, employee: emp },
+      })
+    );
+    showToast(`Started onboarding pipeline for ${emp.first_name} ${emp.last_name}`, 'success');
+  };
+
+  const handleOpenProfile = (emp: Employee) => {
+    handleResetAndClose();
+    window.dispatchEvent(
+      new CustomEvent('platform:open_employee_profile', {
+        detail: { employeeId: emp.id, employee: emp },
+      })
+    );
+  };
+
+  const handleAddAnother = () => {
+    setFormData(getInitialFormData());
+    setCurrentStep(1);
+    setCreatedEmployee(null);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -889,6 +914,9 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           <div className="p-6">
             <WizardSuccessScreen
               employee={createdEmployee}
+              onOpenProfile={handleOpenProfile}
+              onStartOnboarding={handleStartOnboarding}
+              onAddAnother={handleAddAnother}
               onClose={handleResetAndClose}
             />
           </div>

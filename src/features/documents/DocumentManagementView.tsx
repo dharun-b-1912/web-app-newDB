@@ -184,12 +184,9 @@ export const DocumentManagementView: React.FC = () => {
     const unsubEsign = hrEventBus.subscribe('esign.*', () => loadData());
     const unsubShare = hrEventBus.subscribe('share.*', () => loadData());
 
-    // Live subscription to Supabase document tables
+    // Live subscription to canonical employee_documents table
     const reqChannel = supabase
       .channel('hr-web-documents-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'document_requirements' }, () => {
-        loadData();
-      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_documents' }, () => {
         loadData();
       })

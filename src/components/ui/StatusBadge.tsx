@@ -16,7 +16,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
   size = 'sm',
   className,
 }) => {
-  const normalized = status.toLowerCase();
+  const safeStatus = status || 'Unknown';
+  const normalized = safeStatus.toString().toLowerCase();
 
   let resolvedVariant = variant;
   if (resolvedVariant === 'auto') {
@@ -116,7 +117,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
           <span className={cn('relative inline-flex h-1.5 w-1.5 rounded-full', styles.dot)} />
         </span>
       )}
-      <span>{status}</span>
+      <span>{safeStatus}</span>
     </span>
   );
 };

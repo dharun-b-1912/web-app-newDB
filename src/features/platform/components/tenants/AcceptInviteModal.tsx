@@ -38,21 +38,29 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
   const [enableMfa, setEnableMfa] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const passwordValid = password.length >= 8 && password === confirmPassword;
 
-  const handleSetupAccount = (e: React.FormEvent) => {
+  const handleSetupAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!passwordValid) return;
 
     setIsSubmitting(true);
-    setTimeout(() => {
+    setErrorMsg(null);
+
+    try {
+      const { platformAuthInvitationService } = await import('../../../../services/platform/platformAuthInvitationService');
+      await platformAuthInvitationService.acceptInvitation(inv.invitation_token, password, inv);
       setIsSubmitting(false);
       setIsSuccess(true);
       setTimeout(() => {
         onCompleteAuth();
       }, 1500);
-    }, 1000);
+    } catch (err: any) {
+      setIsSubmitting(false);
+      setErrorMsg(err.message || 'Failed to activate account. Please check your credentials and try again.');
+    }
   };
 
   if (!isOpen) return null;
@@ -75,6 +83,12 @@ export const AcceptInviteModal: React.FC<AcceptInviteModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {errorMsg && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-semibold">
+            {errorMsg}
+          </div>
+        )}
 
         {isSuccess ? (
           <div className="py-8 text-center space-y-3 animate-in zoom-in-95">

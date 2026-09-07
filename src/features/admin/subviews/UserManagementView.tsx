@@ -22,13 +22,21 @@ export const UserManagementView: React.FC = () => {
 
   // Modal State
   const [isInviteModalOpen, setIsInviteModalOpen] = useState<boolean>(false);
+  const [provisionMode, setProvisionMode] = useState<'direct' | 'invite'>('direct');
   const [inviteEmail, setInviteEmail] = useState<string>('');
   const [inviteName, setInviteName] = useState<string>('');
-  const [inviteRole, setInviteRole] = useState<string>('Employee');
-  const [inviteDept, setInviteDept] = useState<string>('Engineering');
+  const [invitePhone, setInvitePhone] = useState<string>('');
+  const [inviteRole, setInviteRole] = useState<string>('HR Head');
+  const [inviteDept, setInviteDept] = useState<string>('Human Resources');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  const refreshData = () => {
-    setUsers(adminApi.getUsers());
+  const refreshData = async () => {
+    try {
+      const liveUsers = await adminApi.getUsersAsync();
+      setUsers(liveUsers);
+    } catch {
+      setUsers(adminApi.getUsers());
+    }
     setInvitations(adminApi.getInvitations());
   };
 
@@ -36,26 +44,52 @@ export const UserManagementView: React.FC = () => {
     refreshData();
   }, []);
 
-  const handleSendInvite = (e: React.FormEvent) => {
+  const handleCreateOrInviteUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteEmail.trim() || !inviteName.trim()) {
       showToast('Please enter full name and email address', 'error');
       return;
     }
 
-    adminApi.sendInvitation({
-      email: inviteEmail.trim(),
-      employee_name: inviteName.trim(),
-      role_name: inviteRole,
-      company_name: 'Joy Corporate Solutions Pvt Ltd',
-      expiration_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
-    });
+    setIsSubmitting(true);
+    try {
+      if (provisionMode === 'direct') {
+        const result = await adminApi.provisionUserDirectly({
+          email: inviteEmail.trim(),
+          fullName: inviteName.trim(),
+          roleName: inviteRole,
+          department: inviteDept,
+          phone: invitePhone.trim(),
+        });
 
-    showToast(`Invitation sent successfully to ${inviteEmail}`, 'success');
-    setInviteEmail('');
-    setInviteName('');
-    setIsInviteModalOpen(false);
-    refreshData();
+        if (result.success) {
+          showToast(`Account provisioned successfully for ${inviteName}! Temporary password: joypeoplehr`, 'success');
+          setInviteEmail('');
+          setInviteName('');
+          setInvitePhone('');
+          setIsInviteModalOpen(false);
+          await refreshData();
+        } else {
+          showToast(result.error || 'Failed to provision user account', 'error');
+        }
+      } else {
+        await adminApi.sendInvitationAsync({
+          email: inviteEmail.trim(),
+          employee_name: inviteName.trim(),
+          role_name: inviteRole,
+        });
+        showToast(`Invitation dispatched to ${inviteEmail}`, 'success');
+        setInviteEmail('');
+        setInviteName('');
+        setInvitePhone('');
+        setIsInviteModalOpen(false);
+        await refreshData();
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Error executing user operation', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCancelInvitation = (id: string, email: string) => {
@@ -237,52 +271,88 @@ export const UserManagementView: React.FC = () => {
         </div>
       )}
 
-      {/* Invite Modal */}
+      {/* Create / Provision Modal */}
       <Modal
         isOpen={isInviteModalOpen}
         onClose={() => setIsInviteModalOpen(false)}
-        title="Send Staff Invitation & Role Provisioning"
+        title="Provision User Account & Role Assignment"
         size="md"
       >
-        <form onSubmit={handleSendInvite} className="space-y-4">
+        <form onSubmit={handleCreateOrInviteUser} className="space-y-4">
+          <div className="flex bg-gray-100 p-1 rounded-xl gap-1">
+            <button
+              type="button"
+              onClick={() => setProvisionMode('direct')}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                provisionMode === 'direct'
+                  ? 'bg-white text-[#07563D] shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Direct Account Creation (Immediate Login)
+            </button>
+            <button
+              type="button"
+              onClick={() => setProvisionMode('invite')}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                provisionMode === 'invite'
+                  ? 'bg-white text-[#07563D] shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Send Email Invitation
+            </button>
+          </div>
+
           <div className="space-y-1">
             <label className="block text-xs font-bold text-gray-900">Full Name *</label>
             <input
               type="text"
               required
-              placeholder="e.g. Anand Viswanathan"
+              placeholder="e.g. Priya Sharma"
               value={inviteName}
               onChange={(e) => setInviteName(e.target.value)}
               className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none"
             />
           </div>
 
-          <div className="space-y-1">
-            <label className="block text-xs font-bold text-gray-900">Work Email Address *</label>
-            <input
-              type="email"
-              required
-              placeholder="e.g. anand@joypeople.com"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-gray-900">Work Email Address *</label>
+              <input
+                type="email"
+                required
+                placeholder="e.g. priya.sharma@joycorporate.com"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-gray-900">Phone Number</label>
+              <input
+                type="tel"
+                placeholder="e.g. +91 98765 43210"
+                value={invitePhone}
+                onChange={(e) => setInvitePhone(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="block text-xs font-bold text-gray-900">Assigned Role</label>
+              <label className="block text-xs font-bold text-gray-900">Assigned Role *</label>
               <select
                 value={inviteRole}
                 onChange={(e) => setInviteRole(e.target.value)}
-                className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white"
+                className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white font-medium"
               >
-                <option value="Employee">Employee (Self-Service)</option>
-                <option value="Manager">Reporting Manager</option>
+                <option value="HR Head">HR Head / Manager (Full HR Access)</option>
                 <option value="HR Admin">HR Administrator</option>
-                <option value="HR Head">HR Head / Manager</option>
-                <option value="Payroll Admin">Payroll Officer</option>
-                <option value="Company Admin">Company Admin</option>
+                <option value="Company Admin">Company Admin (Legal Entity Lead)</option>
+                <option value="Manager">Reporting Manager</option>
+                <option value="Employee">Employee (Self-Service)</option>
               </select>
             </div>
 
@@ -291,16 +361,32 @@ export const UserManagementView: React.FC = () => {
               <select
                 value={inviteDept}
                 onChange={(e) => setInviteDept(e.target.value)}
-                className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white"
+                className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white font-medium"
               >
-                <option value="Engineering">Engineering</option>
                 <option value="Human Resources">Human Resources</option>
+                <option value="Engineering">Engineering</option>
                 <option value="Finance & Accounts">Finance & Accounts</option>
                 <option value="Operations">Operations</option>
                 <option value="Sales & Marketing">Sales & Marketing</option>
               </select>
             </div>
           </div>
+
+          {provisionMode === 'direct' ? (
+            <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200/80 text-[11px] text-[#07563D] space-y-1">
+              <div className="font-bold flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-[#07563D]" />
+                Direct Supabase Auth Provisioning
+              </div>
+              <p className="text-gray-700">
+                A real Supabase Auth user will be provisioned with temporary password <code className="font-mono font-bold text-emerald-800 bg-emerald-100/80 px-1 py-0.5 rounded">joypeoplehr</code>. The user can log in immediately and will be prompted to set a permanent password.
+              </p>
+            </div>
+          ) : (
+            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/80 text-[11px] text-amber-900">
+              An invitation email will be dispatched if email delivery is configured.
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-3">
             <Button variant="outline" size="sm" onClick={() => setIsInviteModalOpen(false)}>
@@ -309,10 +395,15 @@ export const UserManagementView: React.FC = () => {
             <Button
               size="sm"
               type="submit"
+              disabled={isSubmitting}
               className="bg-[#07563D] hover:bg-[#053e2c] text-white"
-              leftIcon={<Send className="w-3.5 h-3.5" />}
+              leftIcon={provisionMode === 'direct' ? <Plus className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
             >
-              Send Activation Invitation
+              {isSubmitting
+                ? 'Provisioning...'
+                : provisionMode === 'direct'
+                ? 'Provision User Account'
+                : 'Send Invitation'}
             </Button>
           </div>
         </form>

@@ -193,41 +193,41 @@ export const platformStaffService = {
   }): Promise<{ staff: PlatformStaffRecord[]; totalCount: number }> {
     if (isSupabaseEnabled) {
       try {
-        let query = supabase.from('platform_staff').select('*').order('created_at', { ascending: false });
+        let query = supabase.from('platform_users').select('*').order('created_at', { ascending: false });
         if (filters?.role && filters.role !== 'ALL') query = query.eq('role', filters.role);
-        if (filters?.status && filters.status !== 'ALL') query = query.eq('status', filters.status);
+        if (filters?.status && filters.status !== 'ALL') query = query.eq('is_active', filters.status === 'Active');
         const { data, error } = await query;
         if (data && !error) {
           cachedStaffList = data
             .map((d: any) => ({
               id: d.id,
-              user_id: d.user_id,
+              user_id: d.auth_user_id,
               email: d.email,
-              first_name: d.first_name || d.name?.split(' ')[0] || '',
-              last_name: d.last_name || d.name?.split(' ')[1] || '',
-              name: d.name,
-              staff_code: d.staff_code || `STF-${d.id.slice(0, 5)}`,
-              job_title: d.job_title || 'Platform Administrator',
-              department: d.department || 'Platform Operations',
-              phone: d.phone || '',
-              avatar_url: d.avatar_url || '',
+              first_name: d.full_name?.split(' ')[0] || '',
+              last_name: d.full_name?.split(' ').slice(1).join(' ') || '',
+              name: d.full_name,
+              staff_code: `STF-${d.id.slice(0, 5)}`,
+              job_title: 'Platform Administrator',
+              department: 'Platform Operations',
+              phone: '',
+              avatar_url: '',
               role_key: d.role,
               role_display_name: cachedRolesList.find((r) => r.role_key === d.role)?.display_name || d.role,
-              status: d.status,
-              mfa_enforced: d.mfa_enforced ?? true,
-              mfa_enabled: d.mfa_enabled ?? false,
-              is_root_superadmin: d.is_root_superadmin ?? (d.role === 'SUPER_ADMIN'),
-              account_start_date: d.account_start_date || d.created_at,
-              account_expiry_date: d.account_expiry_date,
-              active_sessions_count: d.status === 'Active' ? 1 : 0,
-              risk_level: d.role === 'SUPER_ADMIN' ? 'CRITICAL' : d.role === 'PLATFORM_ADMIN' ? 'HIGH' : 'LOW',
-              permissions_count: cachedRolesList.find((r) => r.role_key === d.role)?.permissions_count || 12,
-              last_login_at: d.last_login_at ? new Date(d.last_login_at).toLocaleDateString() : 'Never',
+              status: d.is_active ? 'Active' : 'Disabled',
+              mfa_enforced: true,
+              mfa_enabled: false,
+              is_root_superadmin: d.role === 'SUPER_ADMIN',
+              account_start_date: d.created_at,
+              account_expiry_date: undefined,
+              active_sessions_count: d.is_active ? 1 : 0,
+              risk_level: d.role === 'SUPER_ADMIN' ? 'CRITICAL' : 'HIGH',
+              permissions_count: 12,
+              last_login_at: 'Never',
               created_at: d.created_at,
             }));
         }
       } catch (err) {
-        console.warn('[PlatformStaffService] Failed to query platform_staff from Supabase:', err);
+        console.warn('[PlatformStaffService] Failed to query platform_users from Supabase:', err);
       }
     }
 
@@ -374,20 +374,12 @@ export const platformStaffService = {
     if (isSupabaseEnabled) {
       try {
         const { data: inserted, error: insertError } = await supabase
-          .from('platform_staff')
+          .from('platform_users')
           .insert({
             email: newRecord.email,
-            first_name: newRecord.first_name,
-            last_name: newRecord.last_name,
-            name: newRecord.name,
-            staff_code: newRecord.staff_code,
-            job_title: newRecord.job_title,
-            department: newRecord.department,
-            phone: newRecord.phone,
-            role: newRecord.role_key,
-            status: newRecord.status,
-            mfa_enforced: newRecord.mfa_enforced,
-            account_expiry_date: newRecord.account_expiry_date,
+            full_name: newRecord.name,
+            role: (newRecord.role_key as any) || 'SUPER_ADMIN',
+            is_active: newRecord.status === 'Active',
           })
           .select()
           .single();
@@ -395,14 +387,6 @@ export const platformStaffService = {
         if (inserted) {
           newRecord.id = inserted.id;
         }
-
-        // Create Invitation Record
-        await supabase.from('platform_staff_invitations').insert({
-          email: newRecord.email,
-          role_key: newRecord.role_key,
-          invitation_token_hash: rawToken,
-          status: 'pending',
-        });
       } catch (err) {
         console.warn('[PlatformStaffService] Failed to persist new staff in Supabase:', err);
       }
@@ -472,19 +456,7 @@ export const platformStaffService = {
       accountExpiryDate: target.account_expiry_date,
     });
 
-    if (isSupabaseEnabled) {
-      try {
-        await supabase.from('platform_staff_invitations').upsert({
-          email: target.email,
-          role_key: target.role_key,
-          invitation_token_hash: rawToken,
-          status: 'pending',
-          updated_at: new Date().toISOString(),
-        });
-      } catch (err) {
-        console.warn('[PlatformStaffService] Failed to update invitation record on Supabase:', err);
-      }
-    }
+    // In-memory / email dispatch already handled via resendEmailService
 
     const requestId = `req_${Math.random().toString(36).slice(2, 8)}`;
     const auditRecord: AdminActivityRecord = {
@@ -555,8 +527,8 @@ export const platformStaffService = {
     if (isSupabaseEnabled) {
       try {
         await supabase
-          .from('platform_staff')
-          .update({ role: newRoleKey, updated_at: new Date().toISOString() })
+          .from('platform_users')
+          .update({ role: newRoleKey as any, updated_at: new Date().toISOString() })
           .eq('id', staffId);
       } catch (err) {
         console.warn('[PlatformStaffService] Failed to update staff role in Supabase:', err);
@@ -627,8 +599,8 @@ export const platformStaffService = {
     if (isSupabaseEnabled) {
       try {
         await supabase
-          .from('platform_staff')
-          .update({ status: newStatus, updated_at: new Date().toISOString() })
+          .from('platform_users')
+          .update({ is_active: newStatus === 'Active', updated_at: new Date().toISOString() })
           .eq('id', staffId);
       } catch (err) {
         console.warn('[PlatformStaffService] Failed to update staff status on Supabase:', err);
@@ -773,7 +745,7 @@ export const platformStaffService = {
 
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('platform_staff').delete().eq('id', staffId);
+        await supabase.from('platform_users').delete().eq('id', staffId);
       } catch (err) {
         console.warn('[PlatformStaffService] Failed to delete staff from Supabase:', err);
       }

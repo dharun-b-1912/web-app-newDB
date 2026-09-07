@@ -9,6 +9,7 @@ import { billingCalculationEngine } from '../billing/billingCalculationEngine';
 import { platformTenantService, OrganizationRecord } from './platformTenantService';
 import { platformSubscriptionService } from './platformSubscriptionService';
 import { platformBillingService } from './platformBillingService';
+import { userAuthProvisionerService } from '../auth/userAuthProvisionerService';
 
 export interface ProvisioningFormData {
   // Step 1: Organization
@@ -150,7 +151,6 @@ export const platformProvisioningEngine = {
    */
   async checkTenantSlugAvailability(slug: string): Promise<{ available: boolean; message: string }> {
     const cleanSlug = slug.toLowerCase().trim();
-    const fullOrgId = `org-${cleanSlug}`;
     if (!cleanSlug || cleanSlug.length < 2) {
       return { available: false, message: 'Slug too short' };
     }
@@ -159,12 +159,12 @@ export const platformProvisioningEngine = {
       try {
         const { data } = await supabase
           .from('organizations')
-          .select('id, legal_name')
-          .or(`id.eq.${fullOrgId},id.eq.${cleanSlug},tenant_id.eq.${fullOrgId},tenant_id.eq.${cleanSlug}`)
+          .select('id, legal_name, slug')
+          .eq('slug', cleanSlug)
           .maybeSingle();
 
         if (data) {
-          return { available: false, message: `Tenant identifier is already used by ${data.legal_name}` };
+          return { available: false, message: `Tenant identifier "${cleanSlug}" is already used by ${data.legal_name}` };
         }
       } catch (err) {
         console.warn('[ProvisioningEngine] Slug check fallback:', err);
@@ -172,7 +172,7 @@ export const platformProvisioningEngine = {
     }
 
     const orgs = platformTenantService.getOrganizations().items;
-    const match = orgs.find((o) => o.id === fullOrgId || o.id === cleanSlug || o.tenant_id === fullOrgId || o.tenant_id === cleanSlug);
+    const match = orgs.find((o) => (o as any).slug === cleanSlug || o.id === cleanSlug || o.tenant_id === cleanSlug);
     if (match) {
       return { available: false, message: `Tenant identifier is already in use by ${match.legal_name}` };
     }
@@ -187,22 +187,6 @@ export const platformProvisioningEngine = {
     const cleanDomain = domain.toLowerCase().trim();
     if (!cleanDomain || !cleanDomain.includes('.')) {
       return { available: false, message: 'Invalid domain format' };
-    }
-
-    if (isSupabaseEnabled) {
-      try {
-        const { data } = await supabase
-          .from('organizations')
-          .select('id, legal_name')
-          .eq('domain', cleanDomain)
-          .maybeSingle();
-
-        if (data) {
-          return { available: false, message: `Domain is already associated with ${data.legal_name}` };
-        }
-      } catch (err) {
-        console.warn('[ProvisioningEngine] Domain check fallback:', err);
-      }
     }
 
     // Local check against existing organizations
@@ -227,13 +211,13 @@ export const platformProvisioningEngine = {
     if (isSupabaseEnabled) {
       try {
         const { data } = await supabase
-          .from('organizations')
-          .select('id, legal_name')
-          .eq('primary_admin_email', cleanEmail)
+          .from('user_profiles')
+          .select('id, email')
+          .eq('email', cleanEmail)
           .maybeSingle();
 
         if (data) {
-          return { available: false, message: `An administrator account with this email already exists at ${data.legal_name}` };
+          return { available: false, message: `An administrator account with this email already exists (${data.email})` };
         }
       } catch (err) {
         console.warn('[ProvisioningEngine] Email check fallback:', err);
@@ -262,50 +246,52 @@ export const platformProvisioningEngine = {
   },
 
   /**
-   * Retrieve active provisioning draft if available.
+   * Retrieve saved draft if available.
    */
   getDraft(): ProvisioningDraft | null {
     try {
       const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
+      if (!raw) return null;
+      return JSON.parse(raw) as ProvisioningDraft;
     } catch {
       return null;
     }
-    return null;
   },
 
   /**
-   * Clear active draft after successful provisioning or user discard.
+   * Clear active draft after successful provisioning or on manual discard.
    */
   clearDraft(): void {
     try {
       localStorage.removeItem(DRAFT_STORAGE_KEY);
     } catch {
-      // Ignore
+      // Ignore exceptions
     }
   },
 
   /**
-   * Execute atomic customer organization provisioning workflow.
+   * Execute End-to-End SaaS Organization Provisioning Workflow.
+   * State Machine: Validates -> Creates Organization -> Creates Company -> Activates Subscription -> Sets Default Roles -> Dispatches Invitation.
    */
   async provisionCustomer(
     formData: ProvisioningFormData,
-    onProgress?: (step: ProvisioningStepProgress) => void,
+    onProgress?: (progress: ProvisioningStepProgress) => void,
     idempotencyKey?: string
   ): Promise<ProvisioningResult> {
     const steps: ProvisioningStepProgress[] = [
       { stepIndex: 1, stepName: 'Validate Organization & Domain', status: 'PENDING' },
-      { stepIndex: 2, stepName: 'Create Tenant & Customer Profile', status: 'PENDING' },
-      { stepIndex: 3, stepName: 'Activate Subscription & Billing Profile', status: 'PENDING' },
-      { stepIndex: 4, stepName: 'Apply Feature Entitlements', status: 'PENDING' },
-      { stepIndex: 5, stepName: 'Provision Primary Admin & Audit Ledger', status: 'PENDING' },
+      { stepIndex: 2, stepName: 'Create Organization in Canonical Database', status: 'PENDING' },
+      { stepIndex: 3, stepName: 'Create Legal Entity Company in Database', status: 'PENDING' },
+      { stepIndex: 4, stepName: 'Activate SaaS Subscription & Roles', status: 'PENDING' },
+      { stepIndex: 5, stepName: 'Dispatch Company Admin Activation & Audit Ledger', status: 'PENDING' },
     ];
 
     const slug = formData.slug || this.generateTenantSlug(formData.legal_name);
-    const orgId = `org-${slug}`;
-    const subId = `sub-${slug}-01`;
-    const invNumber = `INV-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-    const invId = `inv-${slug}-01`;
+    let orgId: string = `org-${slug}`;
+    let companyId: string = `comp-${slug}`;
+    let subId: string = `sub-${slug}-01`;
+    let invNumber = `INV-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+    let invId = `inv-${slug}-01`;
     const adminFullName = `${formData.admin_first_name} ${formData.admin_last_name}`.trim();
     const provisionedAt = new Date().toISOString();
 
@@ -339,278 +325,156 @@ export const platformProvisioningEngine = {
       onProgress?.(steps[0]);
 
       const companyCheck = await this.checkCompanyNameAvailability(formData.legal_name);
-      if (!companyCheck.available) {
-        throw new Error(companyCheck.message);
-      }
+      if (!companyCheck.available) throw new Error(companyCheck.message);
 
       const slugCheck = await this.checkTenantSlugAvailability(slug);
-      if (!slugCheck.available) {
-        throw new Error(slugCheck.message);
-      }
+      if (!slugCheck.available) throw new Error(slugCheck.message);
 
       const domainCheck = await this.checkDomainAvailability(formData.domain);
-      if (!domainCheck.available) {
-        throw new Error(domainCheck.message);
-      }
+      if (!domainCheck.available) throw new Error(domainCheck.message);
 
       steps[0].status = 'COMPLETED';
       onProgress?.(steps[0]);
 
-      // Step 2: Create Organization & Profile in Database
+      // Step 2: Create Organization in Canonical Database
       steps[1].status = 'IN_PROGRESS';
       onProgress?.(steps[1]);
 
-      const orgRecord: OrganizationRecord = {
-        id: orgId,
-        tenant_id: orgId,
-        legal_name: formData.legal_name,
-        display_name: formData.display_name || formData.legal_name,
-        domain: formData.domain,
-        industry: formData.industry,
-        country: formData.country,
-        state: formData.state,
-        city: formData.city,
-        timezone: formData.timezone,
-        currency: formData.currency,
-        gstin: formData.gstin || undefined,
-        pan: formData.pan || undefined,
-        cin: formData.cin || undefined,
-        primary_admin_id: `user-${Date.now()}`,
-        primary_admin_name: adminFullName,
-        primary_admin_email: formData.admin_email,
-        primary_admin_phone: formData.admin_phone || '',
-        account_owner_name: formData.account_owner_name || '',
-        account_owner_team: formData.account_owner_team || 'Customer Success',
-        status: 'Active',
-        lifecycle_state: 'Active',
-        billing_status: 'Paid',
-        is_watchlisted: false,
-        tags: [formData.plan_name, 'New Customer', formData.country],
-        plan: formData.plan_name,
-        mrr: calc.subtotal,
-        mrr_formatted: `₹${calc.subtotal.toLocaleString('en-IN')}`,
-        billing_cycle: formData.billing_cycle,
-        created_at: provisionedAt.split('T')[0],
-        renewal_date: new Date(Date.now() + (formData.billing_cycle === 'Annual' ? 365 : 30) * 86400000).toISOString().split('T')[0],
-        auto_renew: formData.auto_renew,
-        active_employees: 1,
-        total_employees: 1,
-        seat_limit: formData.seats,
-        seat_utilization_pct: Math.round((1 / formData.seats) * 100),
-        storage_used_gb: 0.1,
-        storage_quota_gb: formData.plan_name === 'Enterprise' ? 500 : 100,
-        api_calls_this_month: 0,
-        feature_adoption_pct: 25,
-        attendance_usage_pct: 0,
-        payroll_usage_pct: 0,
-        health_score: 95,
-        health_grade: 'Healthy',
-        health_trend: 0,
-        engagement_score: 24,
-        usage_score: 23,
-        billing_score: 25,
-        support_score: 23,
-        primary_risk: 'None (Newly Provisioned Customer)',
-        last_activity_event: 'Customer provisioned with active subscription',
-        last_activity_time: 'Just now',
-        last_activity_timestamp: new Date().toLocaleString(),
-        people_summary: {
-          total_employees: 1,
-          active_employees: 1,
-          inactive_employees: 0,
-          pending_invitations: 0,
-          admins_count: 1,
-          managers_count: 0,
-        },
-        support_summary: {
-          open_tickets: 0,
-          pending_tickets: 0,
-          critical_tickets: 0,
-          sla_breaches: 0,
-          csat_score: 5.0,
-        },
-        security_summary: {
-          active_sessions_count: 1,
-          admin_users_count: 1,
-          mfa_adoption_pct: 0,
-          recent_suspicious_events: 0,
-          api_key_status: 'Active',
-        },
-        integrations: [],
-        internal_notes: [
-          {
-            id: `note-${Date.now()}`,
-            author: 'WorkForce Super Admin',
-            created_at: provisionedAt.split('T')[0],
-            text: `Customer organization provisioned on ${formData.plan_name} plan with ${formData.seats} seats.`,
-          },
-        ],
-        activity_log: [
-          {
-            id: `act-${Date.now()}`,
-            event: `Organization provisioned on ${formData.plan_name} Plan`,
-            actor: 'Super Admin',
-            timestamp: new Date().toLocaleString(),
-            category: 'Administration',
-            source: 'Provisioning Engine',
-          },
-        ],
-      };
-
       if (isSupabaseEnabled) {
         try {
-          await supabase.from('organizations').upsert([
-            {
-              id: orgId,
-              tenant_id: orgId,
-              name: formData.legal_name,
-              legal_name: formData.legal_name,
-              display_name: formData.display_name || formData.legal_name,
-              domain: formData.domain,
-              industry: formData.industry,
-              country: formData.country,
-              state: formData.state,
-              city: formData.city,
-              timezone: formData.timezone,
-              currency: formData.currency,
-              default_currency: formData.currency,
-              environment: formData.environment || 'Production Test Tenant',
-              gstin: formData.gstin || null,
-              pan: formData.pan || null,
-              cin: formData.cin || null,
-              registered_address: formData.registered_address || null,
-              primary_admin_name: adminFullName,
-              primary_admin_email: formData.admin_email,
-              primary_admin_phone: formData.admin_phone || null,
-              status: 'Active',
-              lifecycle_state: 'Active',
-              billing_status: 'Paid',
-              plan: formData.plan_name,
-              mrr: calc.subtotal,
-              billing_cycle: formData.billing_cycle,
-              seat_limit: formData.seats,
-            },
-          ]);
+          const { data: orgData, error: orgErr } = await supabase
+            .from('organizations')
+            .insert([
+              {
+                legal_name: formData.legal_name,
+                display_name: formData.display_name || formData.legal_name,
+                slug: slug,
+                organization_code: `ORG-${Math.floor(1000 + Math.random() * 9000)}`,
+                industry: formData.industry || 'Information Technology',
+                country: formData.country || 'India',
+                currency: formData.currency || 'INR',
+                timezone: formData.timezone || 'Asia/Kolkata',
+                status: 'ACTIVE',
+              },
+            ])
+            .select()
+            .single();
 
-          await supabase.from('customer_profiles').upsert([
-            {
-              organization_id: orgId,
-              legal_name: formData.legal_name,
-              display_name: formData.display_name || formData.legal_name,
-              organization_type: formData.company_type,
-              country: formData.country,
-              currency: formData.currency,
-              timezone: formData.timezone,
-              industry: formData.industry,
-              website: formData.website || null,
-              primary_contact_name: adminFullName,
-              primary_contact_email: formData.admin_email,
-              primary_contact_phone: formData.admin_phone || null,
-              verification_status: formData.gstin || formData.pan ? 'Provided' : 'Missing',
-              customer_status: 'Active',
-            },
-          ]);
+          if (orgData?.id) {
+            orgId = orgData.id;
+          }
         } catch (err) {
           console.warn('[ProvisioningEngine] Supabase org insert fallback:', err);
         }
       }
 
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 250));
       steps[1].status = 'COMPLETED';
       onProgress?.(steps[1]);
 
-      // Step 3: Activate Subscription & Invoicing
+      // Step 3: Create Legal Entity Company in Database
       steps[2].status = 'IN_PROGRESS';
       onProgress?.(steps[2]);
 
       if (isSupabaseEnabled) {
         try {
-          await supabase.from('platform_subscriptions').upsert([
-            {
-              id: subId,
-              tenant_id: orgId,
-              plan_id: formData.plan_id || `plan-${formData.plan_name.toLowerCase()}`,
-              plan_name: formData.plan_name,
-              subscription_number: `SUB-${new Date().getFullYear()}-${formData.slug.toUpperCase()}`,
-              billing_cycle: formData.billing_cycle,
-              seats_allocated: formData.seats,
-              seats_used: 1,
-              unit_price: Math.round(calc.subtotal / formData.seats),
-              subtotal: calc.subtotal,
-              discount: calc.totalDiscount,
-              tax: calc.taxAmount,
-              total_amount: calc.totalAmount,
-              currency: formData.currency,
-              status: 'Active',
-              auto_renew: formData.auto_renew,
-              current_period_start: provisionedAt,
-              current_period_end: new Date(Date.now() + (formData.billing_cycle === 'Annual' ? 365 : 30) * 86400000).toISOString(),
-              payment_provider: 'Razorpay Sandbox',
-            },
-          ]);
+          const { data: compData } = await supabase
+            .from('companies')
+            .insert([
+              {
+                organization_id: orgId,
+                legal_name: formData.legal_name,
+                trade_name: formData.display_name || formData.legal_name,
+                company_code: `CMP-${Math.floor(1000 + Math.random() * 9000)}`,
+                country: (formData.country || 'India').slice(0, 10),
+                city: formData.city || 'Chennai',
+                state: formData.state || 'Tamil Nadu',
+                postal_code: '600001',
+                gstin: formData.gstin || null,
+                pan_number: formData.pan || null,
+                cin_number: formData.cin || null,
+                registered_address: formData.registered_address || null,
+              },
+            ])
+            .select()
+            .single();
 
-          await supabase.from('platform_invoices').upsert([
-            {
-              id: invId,
-              invoice_number: invNumber,
-              tenant_id: orgId,
-              subscription_id: subId,
-              subtotal: calc.subtotal,
-              gst_rate_percent: 18.0,
-              gst_amount: calc.taxAmount,
-              total_amount: calc.totalAmount,
-              amount_paid: calc.totalAmount,
-              amount_due: 0.0,
-              currency: formData.currency,
-              status: 'Paid',
-              issue_date: provisionedAt.split('T')[0],
-              due_date: new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0],
-              paid_at: provisionedAt,
-              payment_method: 'UPI / NetBanking (Sandbox)',
-              payment_gateway_ref: `PAY-TEST-${Date.now().toString().slice(-6)}`,
-              reconciliation_status: 'Matched',
-            },
-          ]);
+          if (compData?.id) {
+            companyId = compData.id;
+          }
         } catch (err) {
-          console.warn('[ProvisioningEngine] Supabase subscription insert fallback:', err);
+          console.warn('[ProvisioningEngine] Supabase company insert fallback:', err);
         }
       }
 
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 250));
       steps[2].status = 'COMPLETED';
       onProgress?.(steps[2]);
 
-      // Step 4: Apply Feature Entitlements
+      // Step 4: Activate SaaS Subscription & Roles
       steps[3].status = 'IN_PROGRESS';
       onProgress?.(steps[3]);
 
-      if (isSupabaseEnabled && formData.enabled_features.length > 0) {
+      if (isSupabaseEnabled) {
         try {
-          const entitlementRecords = formData.enabled_features.map((featCode) => ({
-            organization_id: orgId,
-            feature_code: featCode,
-            feature_name: featCode,
-            enabled: formData.feature_overrides[featCode] !== false,
-            limit_value: formData.seats,
-            usage_value: 0,
-            source: `Subscription:${formData.plan_name}`,
-          }));
+          await supabase.from('saas_subscriptions').insert([
+            {
+              organization_id: orgId,
+              status: 'ACTIVE',
+            },
+          ]);
 
-          await supabase.from('organization_entitlements').upsert(entitlementRecords, {
-            onConflict: 'organization_id,feature_code',
-          });
+          // Create standard system roles
+          await supabase.from('roles').insert([
+            {
+              organization_id: orgId,
+              name: 'Company Administrator',
+              code: 'COMPANY_ADMIN',
+              description: 'Full administrative access to company & organization resources',
+            },
+            {
+              organization_id: orgId,
+              name: 'HR Head',
+              code: 'HR_HEAD',
+              description: 'Full HR administration and employee management access',
+            },
+            {
+              organization_id: orgId,
+              name: 'Employee',
+              code: 'EMPLOYEE',
+              description: 'Standard employee access',
+            },
+          ]);
         } catch (err) {
-          console.warn('[ProvisioningEngine] Supabase entitlement insert fallback:', err);
+          console.warn('[ProvisioningEngine] Supabase subscription & role insert fallback:', err);
         }
       }
 
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 250));
       steps[3].status = 'COMPLETED';
       onProgress?.(steps[3]);
 
-      // Step 5: Primary Admin & Audit Ledger
+      // Step 5: Dispatch Company Admin Activation & Audit Ledger
       steps[4].status = 'IN_PROGRESS';
       onProgress?.(steps[4]);
+
+      // Automatically provision the Company Admin GoTrue Auth user account
+      if (formData.admin_email) {
+        try {
+          await userAuthProvisionerService.provisionUser({
+            organizationId: orgId,
+            organizationName: formData.legal_name,
+            companyId: companyId,
+            email: formData.admin_email,
+            fullName: `${formData.admin_first_name || ''} ${formData.admin_last_name || ''}`.trim() || `${formData.legal_name} Admin`,
+            phone: formData.admin_phone,
+            roleCode: 'COMPANY_ADMIN',
+            temporaryPassword: 'joypeoplehr',
+          });
+        } catch (authErr) {
+          console.warn('[ProvisioningEngine] Company admin auth provisioning notice:', authErr);
+        }
+      }
 
       await platformAuditService.logEvent({
         actor_id: 'user-superadmin',
@@ -622,20 +486,20 @@ export const platformProvisioningEngine = {
         resource_type: 'Organization',
         resource_id: orgId,
         severity: 'High',
-        reason: `Completed end-to-end customer provisioning for ${formData.legal_name} on ${formData.plan_name} plan (${formData.seats} seats).`,
+        reason: `Completed end-to-end customer provisioning for ${formData.legal_name} on ${formData.plan_name} plan (${formData.seats} seats). Primary Admin: ${formData.admin_email}`,
       });
 
       // Clear draft on successful completion
       this.clearDraft();
 
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 250));
       steps[4].status = 'COMPLETED';
       onProgress?.(steps[4]);
 
       return {
         success: true,
         organizationId: orgId,
-        tenantSlug: formData.slug,
+        tenantSlug: slug,
         subscriptionId: subId,
         invoiceId: invId,
         primaryAdminEmail: formData.admin_email,
@@ -647,7 +511,7 @@ export const platformProvisioningEngine = {
       return {
         success: false,
         organizationId: orgId,
-        tenantSlug: formData.slug,
+        tenantSlug: slug,
         subscriptionId: subId,
         invoiceId: invId,
         primaryAdminEmail: formData.admin_email,

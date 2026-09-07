@@ -3,6 +3,7 @@ import { api } from '../api';
 import { hrEventBus } from '../hrEventBus';
 import { documentAuditService } from './documentAuditService';
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { notificationService } from '../notification/notificationService';
 
 const DOCUMENTS_STORAGE_KEY = 'workforce_document_master_v2';
 const REQUIREMENTS_STORAGE_KEY = 'workforce_document_requirements_v2';
@@ -70,39 +71,13 @@ class DocumentVerificationService {
         console.warn('[DocumentVerificationService] employee_documents verify update:', docErr);
       }
 
-      try {
-        await supabase
-          .from('document_requirements')
-          .update({
-            status: 'VERIFIED',
-            completed_at: now,
-            updated_at: now,
-          })
-          .or(`id.eq.${documentId},document_id.eq.${documentId}`);
-      } catch (reqErr) {
-        console.warn('[DocumentVerificationService] document_requirements verify update:', reqErr);
-      }
-
       // 3. Notify Flutter App via notification_events
-      try {
-        await supabase.from('notification_events').insert({
-          event_type: 'DOCUMENT_VERIFIED',
-          category: 'APPROVAL',
-          severity: 'INFO',
-          title: `Document Verified: ${docs[idx].title}`,
-          body: `Your submitted ${docs[idx].title} has been verified and approved by HR.`,
-          resource_type: 'DOCUMENT_REQUIREMENT',
-          resource_id: docs[idx].subject_id,
-          actor_name: adminName,
-          metadata: {
-            requirement_id: documentId,
-            status: 'VERIFIED',
-            employee_id: docs[idx].subject_id,
-          },
-        });
-      } catch (notifErr) {
-        console.warn('[DocumentVerificationService] notification_events verify insert:', notifErr);
-      }
+      notificationService.emitEmployeeNotification({
+        employeeId: docs[idx].subject_id,
+        title: `Document Verified: ${docs[idx].title}`,
+        message: `Your submitted ${docs[idx].title} has been verified and approved by HR.`,
+        actionUrl: '/documents',
+      }).catch(() => {});
     }
 
     documentAuditService.recordLog({
@@ -173,40 +148,13 @@ class DocumentVerificationService {
         console.warn('[DocumentVerificationService] employee_documents reject update:', docErr);
       }
 
-      try {
-        await supabase
-          .from('document_requirements')
-          .update({
-            status: 'REJECTED',
-            rejection_reason: reason,
-            updated_at: now,
-          })
-          .or(`id.eq.${documentId},document_id.eq.${documentId}`);
-      } catch (reqErr) {
-        console.warn('[DocumentVerificationService] document_requirements reject update:', reqErr);
-      }
-
       // 3. Notify Flutter App
-      try {
-        await supabase.from('notification_events').insert({
-          event_type: 'DOCUMENT_REJECTED',
-          category: 'APPROVAL',
-          severity: 'CRITICAL',
-          title: `Document Rejected: ${docs[idx].title}`,
-          body: `HR has rejected your ${docs[idx].title}. Reason: ${reason}. Please re-upload via the mobile app.`,
-          resource_type: 'DOCUMENT_REQUIREMENT',
-          resource_id: docs[idx].subject_id,
-          actor_name: adminName,
-          metadata: {
-            requirement_id: documentId,
-            status: 'REJECTED',
-            rejection_reason: reason,
-            employee_id: docs[idx].subject_id,
-          },
-        });
-      } catch (notifErr) {
-        console.warn('[DocumentVerificationService] notification_events reject insert:', notifErr);
-      }
+      notificationService.emitEmployeeNotification({
+        employeeId: docs[idx].subject_id,
+        title: `Document Rejected: ${docs[idx].title}`,
+        message: `HR has rejected your ${docs[idx].title}. Reason: ${reason}. Please re-upload via the mobile app.`,
+        actionUrl: '/documents',
+      }).catch(() => {});
     }
 
     documentAuditService.recordLog({

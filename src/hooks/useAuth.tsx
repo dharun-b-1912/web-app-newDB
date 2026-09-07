@@ -6,6 +6,7 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { User } from '../types';
 import { authService, AuthSessionUser, AuthResult, AuthContextMode } from '../services/auth/authService';
+import { roleResolutionService } from '../services/auth/roleResolutionService';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import {
   bindSessionFingerprint,
@@ -51,63 +52,71 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setAuthContext(cachedContext);
         }
 
-        const resolveDynamicSessionUser = (sbUser: any, cached: AuthSessionUser | null): AuthSessionUser => {
-          const meta = sbUser?.user_metadata || sbUser?.raw_user_meta_data || {};
-          const appMeta = sbUser?.app_metadata || sbUser?.raw_app_meta_data || {};
+        const resolveDynamicSessionUser = async (
+          sbUser: any,
+          cached: AuthSessionUser | null
+        ): Promise<AuthSessionUser> => {
+          if (sbUser) {
+            const resolvedIdentity = await roleResolutionService.resolveUserIdentity(
+              sbUser.id,
+              sbUser.email,
+              sbUser.user_metadata || sbUser.raw_user_meta_data
+            );
 
-          // Read role directly from Supabase user_metadata / app_metadata or cached session
-          const emailLower = (sbUser?.email || cached?.email || '').toLowerCase().trim();
-          let defaultInferredRole = 'Employee';
-          if (emailLower === 'superadmin@joypeoplehr.com') {
-            defaultInferredRole = 'Super Admin';
+            if (resolvedIdentity.primaryRole === 'Unassigned') {
+              authService.forceClearLocalSession();
+              return null as any;
+            }
+
+            const isPlatformStaff = resolvedIdentity.isPlatformAdmin;
+            const resolvedRole =
+              (typeof resolvedIdentity.primaryRole === 'object'
+                ? (resolvedIdentity.primaryRole as any).name
+                : resolvedIdentity.primaryRole) || 'Unassigned';
+            const orgId = resolvedIdentity.organizationId;
+            const mustChangePassword = Boolean(
+              sbUser.user_metadata?.must_change_password ||
+              sbUser.user_metadata?.require_password_change ||
+              cached?.must_change_password
+            );
+
+            const sessionUser: AuthSessionUser = {
+              id: sbUser.id,
+              auth_user_id: sbUser.id,
+              email: sbUser.email || cached?.email || '',
+              name: resolvedIdentity.fullName,
+              avatar_url: resolvedIdentity.avatarUrl || '',
+              organization_id: orgId || (isPlatformStaff ? 'platform-root' : 'org-default'),
+              tenant_id: orgId,
+              employee_id: resolvedIdentity.employeeId || undefined,
+              status: 'Active',
+              account_status: 'ACTIVE',
+              must_change_password: mustChangePassword,
+              is_platform_admin: isPlatformStaff,
+              platform_role: isPlatformStaff ? resolvedIdentity.platformRole || 'SUPER_ADMIN' : undefined,
+              role: resolvedRole,
+              roles: [
+                {
+                  id: `role-${resolvedRole.toLowerCase().replace(/\s+/g, '-')}`,
+                  organization_id: orgId || 'root',
+                  name: resolvedRole,
+                  description: `${resolvedRole} Role`,
+                  permissions: isPlatformStaff
+                    ? [{ permission_id: '*', scope_level: 'Organization' as any }]
+                    : [
+                        { permission_id: 'tenant.workspace.read', scope_level: 'Organization' as any },
+                        { permission_id: 'tenant.workspace.write', scope_level: 'Organization' as any },
+                      ],
+                },
+              ],
+              created_at: sbUser.created_at || cached?.created_at || new Date().toISOString(),
+            };
+
+            authService.saveActiveSession(sessionUser, cachedContext);
+            return sessionUser;
           }
 
-          const directRole =
-            meta.role ||
-            meta.role_display_name ||
-            appMeta.role ||
-            appMeta.role_display_name ||
-            (meta.roles && meta.roles[0]?.name) ||
-            (cached?.roles && cached.roles[0]?.name) ||
-            (cached as any)?.role ||
-            defaultInferredRole;
-
-          const isSuperAdmin = Boolean(
-            meta.is_platform_admin ||
-            appMeta.is_platform_admin ||
-            directRole === 'Super Admin' ||
-            sbUser?.email?.toLowerCase() === 'superadmin@joypeoplehr.com'
-          );
-
-          const roleName = isSuperAdmin ? 'Super Admin' : directRole;
-
-          const fallbackOrgId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-corporate-solutions-private-') : 'org-joy-corporate-solutions-private-';
-
-          const rolesList = (meta.roles && meta.roles.length > 0)
-            ? meta.roles
-            : [
-                {
-                  id: `role-${roleName.toLowerCase().replace(/\s+/g, '-')}`,
-                  name: roleName,
-                  organization_id: meta.organization_id || fallbackOrgId,
-                  description: `${roleName} Role`,
-                  permissions: [{ permission_id: '*', scope_level: (isSuperAdmin ? 'Organization' : 'Company') as any }],
-                },
-              ];
-
-          return {
-            id: sbUser?.id || cached?.id || `usr-${Date.now()}`,
-            auth_user_id: sbUser?.id || cached?.auth_user_id,
-            email: sbUser?.email || cached?.email || '',
-            name: meta.full_name || meta.name || cached?.name || (sbUser?.email ? sbUser.email.split('@')[0] : 'User'),
-            organization_id: meta.organization_id || cached?.organization_id || fallbackOrgId,
-            status: 'Active',
-            account_status: 'ACTIVE',
-            is_platform_admin: isSuperAdmin,
-            platform_role: isSuperAdmin ? 'SUPER_ADMIN' : undefined,
-            roles: rolesList,
-            created_at: sbUser?.created_at || cached?.created_at || new Date().toISOString(),
-          };
+          return cached!;
         };
 
         if (isSupabaseEnabled) {
@@ -123,26 +132,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             }
 
             bindSessionFingerprint(sessionData.session.user.id);
-            const finalUser = resolveDynamicSessionUser(sessionData.session.user, cachedUser);
-            if (isMounted) {
-              setUser(finalUser);
-              setMustChangePassword(Boolean(finalUser.must_change_password));
-            }
-          } else if (cachedUser && cachedUser.email) {
-            const integrity = validateSessionIntegrity(cachedUser.id);
-            if (!integrity.isValid) {
-              console.error('[useAuth] Cached session fingerprint mismatch. Purging.');
-              await authService.signOut();
-              if (isMounted) setUser(null);
-              return;
-            }
-
-            const finalUser = resolveDynamicSessionUser(null, cachedUser);
+            const finalUser = await resolveDynamicSessionUser(sessionData.session.user, cachedUser);
             if (isMounted) {
               setUser(finalUser);
               setMustChangePassword(Boolean(finalUser.must_change_password));
             }
           } else {
+            // No real Supabase session -> purge local cached user so fake session is never active
+            authService.forceClearLocalSession();
+
+            const isDev = import.meta.env.DEV;
+            const devAutoLogin = import.meta.env.VITE_DEV_AUTO_LOGIN === 'true' || (isDev && import.meta.env.VITE_DEV_AUTO_LOGIN !== 'false');
+            const devEmail = import.meta.env.VITE_DEV_AUTH_EMAIL || '';
+            const devPassword = import.meta.env.VITE_DEV_AUTH_PASSWORD || '';
+
+            if (isDev && devAutoLogin && devEmail && devPassword) {
+              console.log('[useAuth] JOY PeopleHR DEV AUTH MODE ACTIVE');
+              try {
+                const res = await authService.signInWithCredentials(devEmail, devPassword, cachedContext || 'tenant');
+                if (res.success && res.user && isMounted) {
+                  bindSessionFingerprint(res.user.id);
+                  setUser(res.user);
+                  setMustChangePassword(Boolean(res.mustChangePassword));
+                  return;
+                } else {
+                  console.warn('[useAuth] Dev auto-login notice:', res.errorMessage || 'DEV AUTH USER NOT READY');
+                }
+              } catch (devErr) {
+                console.warn('[useAuth] Dev auto-login error:', devErr);
+              }
+            }
+
             if (isMounted) {
               setUser(null);
             }
@@ -154,7 +174,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setUser(null);
             return;
           }
-          const finalUser = resolveDynamicSessionUser(null, cachedUser);
+          const finalUser = await resolveDynamicSessionUser(null, cachedUser);
           setUser(finalUser);
           setMustChangePassword(Boolean(finalUser.must_change_password));
         }
@@ -230,6 +250,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setIsLoading(true);
     try {
       await authService.signOut();
+      try {
+        localStorage.removeItem('workforce_active_route');
+        localStorage.removeItem('workforce_auth_context');
+      } catch (_) {}
       setUser(null);
       setMustChangePassword(false);
     } finally {
@@ -262,7 +286,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setMustChangePassword(false);
   };
 
-  const role = user?.roles?.[0]?.name || (user?.is_platform_admin ? 'Super Admin' : 'Employee');
+  const role = user?.role || user?.roles?.[0]?.name || (user?.is_platform_admin ? 'Super Admin' : 'Unassigned');
 
   return (
     <AuthContext.Provider

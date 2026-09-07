@@ -19,10 +19,11 @@ import {
   CalculationExplanation,
   RosterConflict,
 } from '../../types/shiftRoster';
-import { getActiveOrgId } from './biometricCommandService';
 import { hrEventBus } from '../hrEventBus';
-import { api } from '../api';
+import { api, isValidUUID, ensureUUID } from '../api';
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { getActiveOrgId } from './biometricCommandService';
+import { notificationService } from '../notification/notificationService';
 
 const STORAGE_KEYS = {
   SHIFTS: 'workforce_shifts_v2',
@@ -1497,40 +1498,16 @@ class AttendanceRosterService {
   private async syncShiftToDb(shift: ShiftMaster): Promise<void> {
     if (!isSupabaseEnabled || !supabase) return;
     try {
-      await supabase.from('attendance_shifts').upsert({
+      await supabase.from('shifts').upsert({
         id: shift.id,
         organization_id: shift.tenant_id,
         shift_code: shift.shift_code,
-        shift_name: shift.shift_name,
-        description: shift.description,
+        name: shift.shift_name,
         shift_type: shift.shift_type,
         start_time: shift.start_time,
         end_time: shift.end_time,
-        scheduled_duration_minutes: shift.scheduled_duration_minutes,
-        net_working_minutes: shift.net_working_minutes,
-        cross_midnight: shift.cross_midnight,
-        attendance_date_cutoff: shift.attendance_date_cutoff,
-        grace_in_minutes: shift.grace_in_minutes,
-        grace_out_minutes: shift.grace_out_minutes,
-        early_out_tolerance_minutes: shift.early_out_tolerance_minutes,
-        late_threshold_minutes: shift.late_threshold_minutes,
-        min_hours_full_day: shift.min_hours_full_day,
-        min_hours_half_day: shift.min_hours_half_day,
-        break_mode: shift.break_mode,
-        breaks: shift.breaks,
-        ot_enabled: shift.ot_enabled,
-        min_ot_threshold_minutes: shift.min_ot_threshold_minutes,
-        weekday_ot_rate: shift.weekday_ot_rate,
-        weekly_off_ot_rate: shift.weekly_off_ot_rate,
-        holiday_ot_rate: shift.holiday_ot_rate,
-        max_ot_daily_minutes: shift.max_ot_daily_minutes,
-        requires_manager_approval: shift.requires_manager_approval,
-        requires_hr_approval: shift.requires_hr_approval,
-        applies_to: shift.applies_to,
-        effective_from: shift.effective_from,
-        effective_to: shift.effective_to,
-        status: shift.status,
-        version: shift.version,
+        is_active: shift.status === 'ACTIVE',
+        created_at: shift.created_at,
         updated_at: shift.updated_at,
       });
     } catch (e) {
@@ -1568,54 +1545,36 @@ class AttendanceRosterService {
           ? `Your roster for ${dateDisplay} is set to Weekly Off (Rest Day).`
           : `Your shift for ${dateDisplay} has been assigned: ${shift?.shift_name || entry.shift_name} (${entry.shift_code}, ${startDisplay} – ${endDisplay}) at Joy Corporate Solutions Private Limited (HQ). Assigned by ${entry.assigned_by || 'HR Administrator'}.`;
 
-        // 1. Try sync to attendance_roster_entries
-        Promise.resolve(
-          supabase.from('attendance_roster_entries').upsert({
-            id: entry.id,
-            employee_id: entry.employee_id,
-            employee_code: entry.employee_code,
-            date: entry.date,
-            shift_id: entry.shift_id,
-            shift_code: entry.shift_code,
-            shift_name: entry.shift_name,
-            is_weekly_off: isOff,
-            is_override: entry.is_override,
-            start_time: startTime,
-            end_time: endTime,
-            updated_at: new Date().toISOString()
-          })
-        ).catch(() => {});
+        // 1. Sync to employee_shift_assignments (Canonical DB Table)
+        if (entry.shift_id && isValidUUID(entry.employee_id) && isValidUUID(entry.shift_id)) {
+          const entryAny = entry as any;
+          const orgId = isValidUUID(entryAny.organization_id) ? entryAny.organization_id : 'e539780b-df07-4b45-beaa-ccf1d2224be8';
+          const compId = isValidUUID(entryAny.company_id) ? entryAny.company_id : '5537b879-7299-48a4-bdfe-16e327a2d3d0';
+          try {
+            await supabase.from('employee_shift_assignments').upsert({
+              id: ensureUUID(entry.id),
+              organization_id: orgId,
+              company_id: compId,
+              employee_id: entry.employee_id,
+              shift_id: entry.shift_id,
+              effective_from: entry.date,
+              effective_to: entry.date,
+              valid_from: entry.date,
+              valid_to: entry.date,
+            });
+          } catch (e: any) {
+            console.warn('[Roster] Shift assignment sync notice:', e);
+          }
+        }
 
         // 2. Publish real-time notification_events for Mobile / Flutter
-        Promise.resolve(
-          supabase.from('notification_events').insert({
-            event_type: entry.is_override ? 'SHIFT_UPDATED' : 'SHIFT_ASSIGNED',
-            category: 'ATTENDANCE',
-            severity: 'INFO',
-            title,
-            body,
-            resource_type: 'SHIFT_ASSIGNMENT',
-            resource_id: entry.employee_id,
-            actor_name: entry.assigned_by || 'HR Administrator',
-            metadata: {
-              employee_id: entry.employee_id,
-              employee_code: entry.employee_code,
-              effective_date: entry.date,
-              shift_id: entry.shift_id,
-              shift_code: entry.shift_code,
-              shift_name: shift?.shift_name || entry.shift_name,
-              start_time: startTime,
-              end_time: endTime,
-              start_time_display: startDisplay,
-              end_time_display: endDisplay,
-              location: 'Joy Corporate Solutions Private Limited (HQ)',
-              assigned_by: entry.assigned_by || 'HR Administrator',
-              is_night_shift: isNight,
-              is_weekly_off: isOff,
-              source: 'WEB_HR_ROSTER'
-            }
-          })
-        ).catch(() => {});
+        notificationService.emitEmployeeNotification({
+          employeeId: entry.employee_id,
+          organizationId: getActiveOrgId(),
+          title,
+          message: body,
+          actionUrl: '/attendance',
+        }).catch(() => {});
       }
     } catch (e) {
       console.warn('[attendanceRosterService] syncRosterEntriesToDb error:', e);

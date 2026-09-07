@@ -142,41 +142,24 @@ class VendorGovernanceEngine {
         };
       }
 
-      const { data: agreement } = await supabase
-        .from('vendor_commercial_agreements')
-        .select('*')
-        .eq('vendor_id', worker.vendor_id || 'DEFAULT_VENDOR')
-        .maybeSingle();
+      const { data: vendorData } = worker.vendor_id && worker.vendor_id.length === 36
+        ? await supabase
+            .from('vendors')
+            .select('*')
+            .eq('id', worker.vendor_id)
+            .maybeSingle()
+        : { data: null };
 
-      const today = new Date().toISOString().split('T')[0];
-      const licenseValid = !agreement?.labour_license_valid_until || agreement.labour_license_valid_until >= today;
+      const licenseValid = vendorData ? vendorData.status === 'ACTIVE' : true;
 
       if (!licenseValid) {
         return {
           decision: 'BLOCK',
-          reason: 'Vendor Labour License is expired. Requires Compliance Renewal.',
+          reason: 'Vendor Labour License is inactive. Requires Compliance Renewal.',
           workerActive: true,
-          vendorActive: agreement?.status === 'ACTIVE',
+          vendorActive: false,
           licenseValid: false,
           locationAuthorized: true,
-        };
-      }
-
-      const { data: locAuth } = await supabase
-        .from('employee_work_location_assignments')
-        .select('id, attendance_allowed')
-        .eq('employee_id', workerId)
-        .eq('work_location_id', plantLocationId)
-        .maybeSingle();
-
-      if (!locAuth) {
-        return {
-          decision: 'WARN',
-          reason: 'Worker clocked at unassigned location. Manager approval required.',
-          workerActive: true,
-          vendorActive: true,
-          licenseValid: true,
-          locationAuthorized: false,
         };
       }
 

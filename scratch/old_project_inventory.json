@@ -1,0 +1,618 @@
+[
+  {
+    "file": "ACTIVE_TABLE_REFERENCE_MATRIX.md",
+    "line": 108,
+    "reference": "- **Old Supabase (`wmqjmyzzamgxyeuotbki`):** 0 references in runtime code and configurations.",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "D2_DEVELOPER_GUIDE.md",
+    "line": 44,
+    "reference": "VITE_SUPABASE_URL=\"https://wmqjmyzzamgxyeuotbki.supabase.co\"",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "docs/architecture/ENTERPRISE_SAAS_ARCHITECTURE_BASELINE.md",
+    "line": 6,
+    "reference": "**Backend:** Canonical Supabase Production (`https://wmqjmyzzamgxyeuotbki.supabase.co`)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "docs/architecture/JOY_PEOPLEHR_CANONICAL_SQL_BACKEND_BLUEPRINT.md",
+    "line": 5,
+    "reference": "**Target Backend:** Canonical Supabase PostgreSQL (`https://wmqjmyzzamgxyeuotbki.supabase.co`)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "docs/architecture/JOY_PEOPLEHR_ENTERPRISE_EVOLUTION_ROADMAP.md",
+    "line": 6,
+    "reference": "**Backend:** Canonical Supabase PostgreSQL (`https://wmqjmyzzamgxyeuotbki.supabase.co`)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_CANONICAL_SCHEMA_ALIGNMENT_REPORT.md",
+    "line": 5,
+    "reference": "**Decommissioned Legacy Project:** `wmqjmyzzamgxyeuotbki`",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_CANONICAL_SCHEMA_ALIGNMENT_REPORT.md",
+    "line": 15,
+    "reference": "The application now communicates strictly and exclusively with the canonical **64 PostgreSQL tables** of Supabase project `ysiajemrqakfngasehhi`. Zero legacy tables were created, zero synthetic IDs (`comp-active`, `org-active`) exist, and zero runtime requests are made to the decommissioned project (`wmqjmyzzamgxyeuotbki`).",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_CANONICAL_SCHEMA_ALIGNMENT_REPORT.md",
+    "line": 85,
+    "reference": "F. Old Supabase URL reference count: 0 active runtime references (wmqjmyzzamgxyeuotbki)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_CLEAN_ROOM_VERIFICATION_REPORT.md",
+    "line": 38,
+    "reference": "| **Source Code (`src/`)** | `wmqjmyzzamgxyeuotbki` | **0** | **CLEAN** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_CLEAN_ROOM_VERIFICATION_REPORT.md",
+    "line": 39,
+    "reference": "| **Production Build (`dist/`)** | `wmqjmyzzamgxyeuotbki` | **0** | **CLEAN** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_CLEAN_ROOM_VERIFICATION_REPORT.md",
+    "line": 40,
+    "reference": "| **Active Config (`.env`, `vite.config.ts`)** | `wmqjmyzzamgxyeuotbki` | **0** | **CLEAN** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_CLEAN_ROOM_VERIFICATION_REPORT.md",
+    "line": 41,
+    "reference": "| **Test Scripts (`scripts/`, `scratch/`)** | `wmqjmyzzamgxyeuotbki` | **0** | **CLEAN** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_COMPANY_AUTH_STORAGE_AUDIT.md",
+    "line": 5,
+    "reference": "**Decommissioned Project:** `wmqjmyzzamgxyeuotbki` (0 references)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_COMPLETE_DATA_BINDING_AUDIT.md",
+    "line": 4,
+    "reference": "**Decommissioned Old Database:** `wmqjmyzzamgxyeuotbki` (**0 Active References**)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_CRITICAL_FINDINGS.md",
+    "line": 17,
+    "reference": "| **P4** | Technical Debt / Legacy References | **0** | **CLEAN** | Active source code contains 0 queries to decommissioned project (`wmqjmyzzamgxyeuotbki`) and 0 queries to non-canonical tables. |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_CROSS_CLIENT_CRITICAL_FINDINGS.md",
+    "line": 15,
+    "reference": "| 1 | **Decommissioned Supabase URL** | Active references to `wmqjmyzzamgxyeuotbki` in Flutter configuration | 100% updated to `ysiajemrqakfngasehhi` in `EnvConfig`, Supabase CLI config, and environment files | **P0 (Critical)** | **REMEDIATED** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_DATABASE_DEPLOYMENT_REPORT.md",
+    "line": 77,
+    "reference": "1. **Old Project Untouched**: The legacy database (`wmqjmyzzamgxyeuotbki`) was not accessed, dropped, or altered.",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_DATA_SOURCE_FORENSIC_AUDIT.md",
+    "line": 53,
+    "reference": "NOT FOUND (Legacy project wmqjmyzzamgxyeuotbki is completely absent from code and environment)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_ENTERPRISE_ARCHITECTURE_AND_WORKFLOW_REPORT.html",
+    "line": 379,
+    "reference": "Cloud Database</strong> (<code>https://wmqjmyzzamgxyeuotbki.supabase.co</code>). Attendance clock-ins, leave",
+    "category": "DOCUMENTATION",
+    "action": "RETAIN_HISTORICAL",
+    "status": "HISTORICAL_AUDIT_LOG"
+  },
+  {
+    "file": "JOY_PEOPLEHR_ENTERPRISE_ARCHITECTURE_AND_WORKFLOW_REPORT.md",
+    "line": 140,
+    "reference": "│       https://wmqjmyzzamgxyeuotbki.supabase.co         │",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_ENTERPRISE_SAAS_ARCHITECTURE_BASELINE.md",
+    "line": 5,
+    "reference": "**Backend:** Canonical Supabase Production (`https://wmqjmyzzamgxyeuotbki.supabase.co`)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_EXECUTIVE_OVERVIEW_ALIGNMENT_REPORT.md",
+    "line": 5,
+    "reference": "**Decommissioned Legacy Database:** `wmqjmyzzamgxyeuotbki` (**0 active references**)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_EXECUTIVE_OVERVIEW_ALIGNMENT_REPORT.md",
+    "line": 102,
+    "reference": "J. Old Supabase request count:              0 (wmqjmyzzamgxyeuotbki completely absent)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FINAL_DATABASE_CONNECTION_VERIFICATION.md",
+    "line": 3,
+    "reference": "**Decommissioned Legacy Project:** `wmqjmyzzamgxyeuotbki`",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FINAL_DATABASE_CONNECTION_VERIFICATION.md",
+    "line": 9,
+    "reference": "- **Root Cause Discovered & Resolved:** In Vite, `.env.local` silently takes precedence over `.env`. The pre-existing `.env.local` and `.env.production` files contained hardcoded references to the legacy project `wmqjmyzzamgxyeuotbki`. Whenever Vite was started, it loaded `.env.local` into its in-memory `import.meta.env` cache, causing runtime REST, Auth, and Realtime queries to be routed to the old project.",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FINAL_DATABASE_CONNECTION_VERIFICATION.md",
+    "line": 23,
+    "reference": "| **Old Project in `import.meta.env`** | `wmqjmyzzamgxyeuotbki` -> **0 occurrences** | **ZERO** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FLUTTER_APP_INVENTORY.md",
+    "line": 6,
+    "reference": "**Decommissioned Backend Found:** `wmqjmyzzamgxyeuotbki` (**CRITICAL BLOCKER IN CONFIG**)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FLUTTER_CRITICAL_FINDINGS.md",
+    "line": 5,
+    "reference": "**Decommissioned Old Project:** `wmqjmyzzamgxyeuotbki`",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FLUTTER_CRITICAL_FINDINGS.md",
+    "line": 15,
+    "reference": "| **P0 (Blocker)** | **1** | Default Supabase URL in `env_config.dart` pointed to decommissioned project `wmqjmyzzamgxyeuotbki` | **RESOLVED** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FLUTTER_CRITICAL_FINDINGS.md",
+    "line": 28,
+    "reference": "- **Proof:** Zero active occurrences of `wmqjmyzzamgxyeuotbki` in Flutter code.",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FULL_E2E_HIERARCHY_SMOKE_TEST.md",
+    "line": 5,
+    "reference": "**Decommissioned Legacy Database:** `wmqjmyzzamgxyeuotbki` (**0 active references**)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FULL_E2E_HIERARCHY_SMOKE_TEST.md",
+    "line": 16,
+    "reference": "- **Old Project References:** **0 active references** (`wmqjmyzzamgxyeuotbki` decommissioned)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FULL_E2E_HIERARCHY_SMOKE_TEST.md",
+    "line": 225,
+    "reference": "| No old Supabase project used (`wmqjmyzzamgxyeuotbki`) | **PASS** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FULL_E2E_SMOKE_TEST_REPORT.md",
+    "line": 13,
+    "reference": "1. **Canonical Supabase Verified:** Both Web and Flutter applications connect exclusively to `https://ysiajemrqakfngasehhi.supabase.co` (`ysiajemrqakfngasehhi`). Zero runtime references to the old project `wmqjmyzzamgxyeuotbki` exist in active code.",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FULL_E2E_SMOKE_TEST_REPORT.md",
+    "line": 29,
+    "reference": "| **Decommissioned Legacy Project ID** | `wmqjmyzzamgxyeuotbki` (**0 references found**) |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FULL_E2E_SMOKE_TEST_REPORT.md",
+    "line": 127,
+    "reference": "| **Old Supabase URL check** | **PASS** | `0 requests to wmqjmyzzamgxyeuotbki` |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_FULL_E2E_SMOKE_TEST_REPORT.md",
+    "line": 204,
+    "reference": "- **Zero Legacy System Activity:** 0 requests to `wmqjmyzzamgxyeuotbki`.",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_INDEPENDENT_PRODUCTION_READINESS_CERTIFICATION.md",
+    "line": 7,
+    "reference": "**Target Environment:** Production (`https://wmqjmyzzamgxyeuotbki.supabase.co`)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_INDEPENDENT_PRODUCTION_READINESS_CERTIFICATION.md",
+    "line": 24,
+    "reference": "| **V-ENV-01** | Environment | `wmqjmyzzamgxyeuotbki` | Supabase REST API | Live HTTP handshake & project lookup | Responded in 396ms | **PASS** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_LEGACY_REFERENCE_AUDIT.md",
+    "line": 24,
+    "reference": "| Old Project ID `wmqjmyzzamgxyeuotbki`| 19 references | Test scripts & diagnostic views | `ysiajemrqakfngasehhi` | **MIGRATION REQUIRED**: Clean up legacy test script fallbacks to ensure zero stale connection references. |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_LIVE_COMPANY_PROVISION_TEST.md",
+    "line": 5,
+    "reference": "**Decommissioned Legacy URL:** `wmqjmyzzamgxyeuotbki` (0 references)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_LIVE_COMPANY_PROVISION_TEST.md",
+    "line": 117,
+    "reference": "- **Legacy Database Requests (`wmqjmyzzamgxyeuotbki`):** **0**",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_MASTER_FIELD_MAPPING_AUDIT_REPORT.md",
+    "line": 4,
+    "reference": "**Decommissioned Old Database:** `wmqjmyzzamgxyeuotbki` (**0 Active References**)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_MASTER_FIELD_MAPPING_AUDIT_REPORT.md",
+    "line": 286,
+    "reference": "- **Old Supabase Target:** `wmqjmyzzamgxyeuotbki` (0 Active References)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_OLD_SUPABASE_RUNTIME_FIX_REPORT.md",
+    "line": 8,
+    "reference": "The browser console request to `https://wmqjmyzzamgxyeuotbki.supabase.co/rest/v1/observability_events` was caused by a combination of:",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_OLD_SUPABASE_RUNTIME_FIX_REPORT.md",
+    "line": 49,
+    "reference": "- Grep search on `dist/` confirms **0 occurrences of `wmqjmyzzamgxyeuotbki`**.",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_PHASE52_LIVE_ONBOARDING_REPORT.md",
+    "line": 4,
+    "reference": "**Decommissioned Legacy Database:** `wmqjmyzzamgxyeuotbki` (**0 active references**)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_PHASE52_LIVE_ONBOARDING_REPORT.md",
+    "line": 75,
+    "reference": "| **Old Supabase References** | **PASS** | `wmqjmyzzamgxyeuotbki` count = 0 active runtime references |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_PHASE53_ONBOARDING_SMOKE_TEST.md",
+    "line": 4,
+    "reference": "**Decommissioned Legacy Database:** `wmqjmyzzamgxyeuotbki` (**0 Active References**)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_PHASE_K_HR_OPERATIONS_CERTIFICATION.md",
+    "line": 39,
+    "reference": "| **Decommissioned Project** | `wmqjmyzzamgxyeuotbki` | **ZERO REFERENCES** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_PLATFORM_AUTH_AND_PROVISIONING_FIX_REPORT.md",
+    "line": 5,
+    "reference": "**Decommissioned Legacy Database:** `wmqjmyzzamgxyeuotbki` (**0 active references**)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_PLATFORM_AUTH_AND_PROVISIONING_FIX_REPORT.md",
+    "line": 151,
+    "reference": "| **Old Supabase References** | **PASS** | `wmqjmyzzamgxyeuotbki` = 0 occurrences across `src/` |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_PLATFORM_AUTH_AND_PROVISIONING_FIX_REPORT.md",
+    "line": 175,
+    "reference": "| 0 references to legacy project `wmqjmyzzamgxyeuotbki` | **PASS** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_PLATFORM_PROVISIONING_FIX_REPORT.md",
+    "line": 5,
+    "reference": "**Decommissioned Legacy URL:** `wmqjmyzzamgxyeuotbki` (0 references)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_PLATFORM_PROVISIONING_FIX_REPORT.md",
+    "line": 131,
+    "reference": "3. **Database URL:** Verified 0 references to legacy project `wmqjmyzzamgxyeuotbki`. All connections resolve exclusively to `https://ysiajemrqakfngasehhi.supabase.co`.",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_PLATFORM_PROVISIONING_FORENSIC_AUDIT.md",
+    "line": 6,
+    "reference": "**Decommissioned Legacy URL:** `wmqjmyzzamgxyeuotbki` (0 occurrences)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_PORT3001_OLD_DATABASE_FORENSIC_REPORT.md",
+    "line": 23,
+    "reference": "| **Triggering URL** | `https://wmqjmyzzamgxyeuotbki.supabase.co/rest/v1/employee_statutory_details` |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_PORT3001_OLD_DATABASE_FORENSIC_REPORT.md",
+    "line": 43,
+    "reference": "- Grep search on `dist/`: **0 references** to `wmqjmyzzamgxyeuotbki`.",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_PRODUCTION_CUTOVER_AND_OPERATIONAL_HANDOVER.md",
+    "line": 29,
+    "reference": "| **Database Instance** | Canonical Backend | Supabase (`https://wmqjmyzzamgxyeuotbki.supabase.co`) | Live (396ms latency) |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_ROUND2_DATA_CONTRACT_REPORT.md",
+    "line": 4,
+    "reference": "**Decommissioned Database:** `wmqjmyzzamgxyeuotbki` (**0 Active References**)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_WEB_FLUTTER_RUNTIME_TEST.md",
+    "line": 139,
+    "reference": "- Search for `wmqjmyzzamgxyeuotbki` in Web: **0 occurrences**",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "JOY_PEOPLEHR_WEB_FLUTTER_RUNTIME_TEST.md",
+    "line": 140,
+    "reference": "- Search for `wmqjmyzzamgxyeuotbki` in Flutter: **0 occurrences**",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "PHASE_I_1_SECURITY_CLOSURE_REPORT.md",
+    "line": 32,
+    "reference": "| **Decommissioned Project** | `wmqjmyzzamgxyeuotbki` | **NEVER QUERIED / ZERO REFERENCES** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "PHASE_J_EMPLOYEE_SELF_SERVICE_FUNCTIONAL_CERTIFICATION.md",
+    "line": 34,
+    "reference": "| **Decommissioned Project** | `wmqjmyzzamgxyeuotbki` | **NEVER QUERIED (ZERO REFERENCES)** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "PHASE_L_HR_ADMIN_UI_E2E_CERTIFICATION.md",
+    "line": 5,
+    "reference": "**Decommissioned Project:** `wmqjmyzzamgxyeuotbki` (**NEVER TOUCHED / ZERO REFERENCES**)",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "PHASE_L_HR_ADMIN_UI_E2E_CERTIFICATION.md",
+    "line": 44,
+    "reference": "| **Decommissioned Project** | `wmqjmyzzamgxyeuotbki` | **0 REFERENCES IN ACTIVE CODE** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "PHASE_L_HR_ADMIN_UI_E2E_CERTIFICATION.md",
+    "line": 209,
+    "reference": "| **Decommissioned DB URL** | Zero references to `wmqjmyzzamgxyeuotbki` | Comprehensive source scan | **PASS (0 refs)** |",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "PHASE_L_HR_ADMIN_UI_E2E_CERTIFICATION.md",
+    "line": 386,
+    "reference": "- Zero references to decommissioned project `wmqjmyzzamgxyeuotbki`.",
+    "category": "HISTORICAL_DOCUMENTATION",
+    "action": "RETAIN_FOR_FORENSICS",
+    "status": "HISTORICAL_RECORD"
+  },
+  {
+    "file": "scratch/smoke_test_run_data.json",
+    "line": 6,
+    "reference": "\"oldProjectIdChecked\": \"wmqjmyzzamgxyeuotbki\",",
+    "category": "AUDIT_DATA_ARTIFACT",
+    "action": "SCRATCH_LOG",
+    "status": "HISTORICAL_DATA"
+  },
+  {
+    "file": "scripts/account_old_project_refs.mjs",
+    "line": 4,
+    "reference": "const targetId = 'wmqjmyzzamgxyeuotbki';",
+    "category": "DOCUMENTATION",
+    "action": "RETAIN_HISTORICAL",
+    "status": "HISTORICAL_AUDIT_LOG"
+  },
+  {
+    "file": "scripts/audit_data_bindings.mjs",
+    "line": 439,
+    "reference": "| **P4** | Technical Debt / Legacy References | **0** | **CLEAN** | Active source code contains 0 queries to decommissioned project (\\`wmqjmyzzamgxyeuotbki\\`) and 0 queries to non-canonical tables. |",
+    "category": "DOCUMENTATION",
+    "action": "RETAIN_HISTORICAL",
+    "status": "HISTORICAL_AUDIT_LOG"
+  },
+  {
+    "file": "scripts/audit_data_bindings.mjs",
+    "line": 459,
+    "reference": "**Decommissioned Old Database:** \\`wmqjmyzzamgxyeuotbki\\` (**0 Active References**)",
+    "category": "DOCUMENTATION",
+    "action": "RETAIN_HISTORICAL",
+    "status": "HISTORICAL_AUDIT_LOG"
+  },
+  {
+    "file": "scripts/audit_flutter_supabase_bindings.mjs",
+    "line": 37,
+    "reference": "const OLD_SUPABASE_PROJECT = 'wmqjmyzzamgxyeuotbki';",
+    "category": "DOCUMENTATION",
+    "action": "RETAIN_HISTORICAL",
+    "status": "HISTORICAL_AUDIT_LOG"
+  },
+  {
+    "file": "scripts/run_full_e2e_smoke_test.mjs",
+    "line": 57,
+    "reference": "oldProjectIdChecked: 'wmqjmyzzamgxyeuotbki',",
+    "category": "DOCUMENTATION",
+    "action": "RETAIN_HISTORICAL",
+    "status": "HISTORICAL_AUDIT_LOG"
+  },
+  {
+    "file": "scripts/run_full_e2e_smoke_test.mjs",
+    "line": 102,
+    "reference": "console.log(`3. Checking active source code for legacy project wmqjmyzzamgxyeuotbki...`);",
+    "category": "DOCUMENTATION",
+    "action": "RETAIN_HISTORICAL",
+    "status": "HISTORICAL_AUDIT_LOG"
+  },
+  {
+    "file": "scripts/test_phase_l_ui_e2e_certification.mjs",
+    "line": 12,
+    "reference": "const DECOMMISSIONED_PROJECT = 'wmqjmyzzamgxyeuotbki';",
+    "category": "DOCUMENTATION",
+    "action": "RETAIN_HISTORICAL",
+    "status": "HISTORICAL_AUDIT_LOG"
+  },
+  {
+    "file": "scripts/verify_field_contracts_round2.mjs",
+    "line": 291,
+    "reference": "**Decommissioned Database:** \\`wmqjmyzzamgxyeuotbki\\` (**0 Active References**)",
+    "category": "DOCUMENTATION",
+    "action": "RETAIN_HISTORICAL",
+    "status": "HISTORICAL_AUDIT_LOG"
+  }
+]

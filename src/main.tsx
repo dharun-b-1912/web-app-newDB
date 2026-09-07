@@ -16,9 +16,14 @@ import { runBiometricV3EnterpriseCertification } from './services/__tests__/biom
 import { runBiometricV4EnterpriseCertification } from './services/__tests__/biometricV4EnterpriseCertification.test';
 import { runBiometricV5EnterpriseCertification } from './services/__tests__/biometricV5EnterpriseCertification.test';
 import { GlobalErrorInterceptor } from './services/observability/globalErrorInterceptor';
+import { supabaseProject, supabaseUrl } from './lib/supabase';
 
 // Initialize zero-leakage global observability interceptor
 GlobalErrorInterceptor.initialize();
+
+if (typeof window !== 'undefined') {
+  console.log(`[WF][SUPABASE][RUNTIME] project=${supabaseProject}`);
+}
 
 // Expose security audit runners for dev inspection
 if (typeof window !== 'undefined') {

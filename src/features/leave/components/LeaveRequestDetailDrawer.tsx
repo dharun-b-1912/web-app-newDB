@@ -36,18 +36,26 @@ export const LeaveRequestDetailDrawer: React.FC<LeaveRequestDetailDrawerProps> =
 
   const approverName = user?.name || request.manager_name || 'Reporting Manager';
 
-  const handleApprove = () => {
-    leaveApi.approveLeaveRequest(request.id, approverName, 'Approved per policy.');
-    onActionComplete();
-    onClose();
-  };
-
-  const handleReject = () => {
-    const reason = prompt('Please enter rejection reason:');
-    if (reason) {
-      leaveApi.rejectLeaveRequest(request.id, approverName, reason);
+  const handleApprove = async () => {
+    try {
+      await leaveApi.approveLeaveRequest(request.id, approverName, 'Approved per policy.');
       onActionComplete();
       onClose();
+    } catch (err: any) {
+      alert(err.message || 'Error approving leave request.');
+    }
+  };
+
+  const handleReject = async () => {
+    const reason = prompt('Please enter rejection reason:');
+    if (reason) {
+      try {
+        await leaveApi.rejectLeaveRequest(request.id, approverName, reason);
+        onActionComplete();
+        onClose();
+      } catch (err: any) {
+        alert(err.message || 'Error rejecting leave request.');
+      }
     }
   };
 

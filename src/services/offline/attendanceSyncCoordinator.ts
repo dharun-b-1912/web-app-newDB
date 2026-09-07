@@ -110,19 +110,20 @@ class AttendanceSyncCoordinator {
         }
       }
 
-      // 4. Idempotent Insert into Supabase attendance_events
+      // 4. Idempotent Insert into Supabase attendance_punches
       const receivedAtServer = new Date().toISOString();
+      const punchType = event.direction === 'OUT' ? 'CHECK_OUT' : 'CHECK_IN';
 
-      const { error: insErr } = await supabase.from('attendance_events').insert({
+      const { error: insErr } = await supabase.from('attendance_punches').insert({
         organization_id: event.organization_id,
         employee_id: canonicalEmp.id,
         device_id: event.device_id,
-        direction: event.direction,
-        captured_at_device: event.captured_at_device, // Preserves original device timestamp!
-        received_at_server: receivedAtServer,
+        punch_time: event.captured_at_device || receivedAtServer,
+        punch_type: punchType,
+        verification_mode: 'BIOMETRIC',
         latitude: event.latitude,
         longitude: event.longitude,
-        idempotency_key: event.idempotency_key,
+        is_processed: false,
         created_at: receivedAtServer,
       });
 

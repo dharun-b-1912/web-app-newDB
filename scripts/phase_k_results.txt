@@ -1,0 +1,238 @@
+﻿===========================================================================
+JOY PEOPLEHR — PHASE K: HR OPERATIONS CERTIFICATION
+Canonical Supabase: ysiajemrqakfngasehhi
+===========================================================================
+
+[0] AUTHENTICATING IDENTITIES
+  [✓ PASS          ] AUTH > Company Admin Login: UID: 9341f9fb-f7f8-4d29-b00b-da839bb8204b
+  [✓ PASS          ] AUTH > HR Head Login: UID: 9f439708-1262-4e3b-8962-21e9f68e1734
+  [✓ PASS          ] AUTH > Employee A Login: UID: 4b49a236-391b-44c3-93f6-87e6d4100097
+  [✓ PASS          ] AUTH > Employee B Login: UID: 77969db3-5b96-411a-a575-a13644ba722c
+
+[1] ORGANIZATION / COMPANY CONTEXT
+  [✓ PASS          ] ORG_CONTEXT > Company Admin reads own org: org: HACK_ORG
+  [✓ PASS          ] ORG_CONTEXT > Company Admin reads own company: company: LIVE PROVISION TEST COMPANY 1788507446601
+  [✓ PASS          ] ORG_CONTEXT > HR Head reads own org: org: HACK_ORG
+  [✗ FAIL          ] ORG_CONTEXT > Employee A CANNOT update organization [NEGATIVE]: Blocked by RLS (0 rows updated)
+  [✓ PASS          ] ORG_CONTEXT > Company Admin CANNOT read foreign org [NEGATIVE]: Rows: 0
+
+[2] MASTER DATA — BRANCHES
+  [✓ PASS          ] MASTER_BRANCHES > HR reads branches: count: 0
+  [✓ PASS          ] MASTER_BRANCHES > Employee A CANNOT create branch [NEGATIVE]: Blocked: Could not find the 'is_headquarters' column of 'branches' in the schema cache
+
+[3] MASTER DATA — DEPARTMENTS
+  [✓ PASS          ] MASTER_DEPARTMENTS > Company Admin reads departments: count: 2
+  [✓ PASS          ] MASTER_DEPARTMENTS > Company Admin creates department: id: 62e3205e-515c-486c-b5a2-543cb5acfd5f
+  [✓ PASS          ] MASTER_DEPARTMENTS > Dept creation DB persistence verified: Verified: 62e3205e-515c-486c-b5a2-543cb5acfd5f
+  [✓ PASS          ] MASTER_DEPARTMENTS > Employee A CANNOT create department [NEGATIVE]: Blocked: new row violates row-level security policy for table "departments"
+
+[4] MASTER DATA — DESIGNATIONS
+  [✓ PASS          ] MASTER_DESIGNATIONS > HR Admin reads designations: count: 3
+  [✓ PASS          ] MASTER_DESIGNATIONS > Company Admin creates designation: id: 3cee6258-1561-4221-ae47-4bd1d48ef519
+  [✓ PASS          ] MASTER_DESIGNATIONS > Designation creation DB persistence verified: Verified: 3cee6258-1561-4221-ae47-4bd1d48ef519
+  [✓ PASS          ] MASTER_DESIGNATIONS > Employee A CANNOT create designation [NEGATIVE]: Blocked: new row violates row-level security policy for table "designations"
+
+[5] MASTER DATA — WORK LOCATIONS
+  [✓ PASS          ] MASTER_WORK_LOCATIONS > Company Admin reads work_locations: count: 0
+  [✓ PASS          ] MASTER_WORK_LOCATIONS > Employee A CANNOT create work_location [NEGATIVE]: Blocked: new row violates row-level security policy for table "work_locations"
+
+[6] MASTER DATA — SHIFTS
+  [✓ PASS          ] MASTER_SHIFTS > Company Admin reads shifts: count: 1
+  [✓ PASS          ] MASTER_SHIFTS > Employee A CANNOT create shift [NEGATIVE]: Blocked: new row violates row-level security policy for table "shifts"
+
+[7] MASTER DATA — LEAVE TYPES
+  [✓ PASS          ] MASTER_LEAVE_TYPES > Company Admin reads leave_types: count: 1
+  [✓ PASS          ] MASTER_LEAVE_TYPES > Employee A CANNOT create leave_type [NEGATIVE]: Blocked: new row violates row-level security policy for table "leave_types"
+
+[8] MASTER DATA — HOLIDAYS
+  [✓ PASS          ] MASTER_HOLIDAYS > Company Admin reads holidays: count: 0
+  [✓ PASS          ] MASTER_HOLIDAYS > Employee A CANNOT create holiday [NEGATIVE]: Blocked: new row violates row-level security policy for table "holidays"
+
+[9] EMPLOYEE MANAGEMENT
+  [✓ PASS          ] EMPLOYEE_MGMT > HR reads employee list: count: 2
+  [✓ PASS          ] EMPLOYEE_MGMT > HR reads Employee A record: empA: 7ea078b3-0a7e-47ce-82b7-ea9d33ab6da5, status: ACTIVE
+  [✓ PASS          ] EMPLOYEE_MGMT > Company Admin can update Employee A (admin touch): Update accepted by DB
+  [✓ PASS          ] EMPLOYEE_MGMT > Employee A CANNOT update Employee B [NEGATIVE]: Blocked by RLS (0 rows updated)
+  [✓ PASS          ] EMPLOYEE_MGMT > Employee A CANNOT change own organization_id [NEGATIVE]: Blocked: Access Denied: You cannot modify organization_id
+  [✓ PASS          ] EMPLOYEE_MGMT > Employee A CANNOT change own employee_code [NEGATIVE]: Blocked: Access Denied: You cannot modify employee_code
+
+[10] EMPLOYEE ONBOARDING
+  [✓ PASS          ] ONBOARDING > Company Admin reads employee_onboarding: count: 0
+  [✓ PASS          ] ONBOARDING > Employee A CANNOT create onboarding for Employee B [NEGATIVE]: Blocked: new row violates row-level security policy for table "employee_onboarding"
+
+[11] EMPLOYEE LIFECYCLE
+  [✓ PASS          ] LIFECYCLE > Company Admin reads employee_lifecycle_events: count: 0
+  [✓ PASS          ] LIFECYCLE > Employee A CANNOT insert lifecycle event for Employee B [NEGATIVE]: Blocked: null value in column "effective_date" of relation "employee_lifecycle_events" violates not-null constraint
+
+[12] DOCUMENTS
+  [✓ PASS          ] DOCUMENTS > HR Admin reads employee_documents: count: 3
+  [✓ PASS          ] DOCUMENTS > HR reads document_types: count: 2
+  [✓ PASS          ] DOCUMENTS > Employee A CANNOT view Employee B documents [NEGATIVE]: rows: 0
+
+[13] BANK DETAILS ADMIN
+  [✓ PASS          ] BANK_ADMIN > HR reads Employee A bank details: rows: 1, bank_name: [MASKED]
+  [✓ PASS          ] BANK_ADMIN > Employee A CANNOT read Employee B bank details [NEGATIVE]: rows: 0
+  [✓ PASS          ] BANK_ADMIN > Employee A CANNOT modify Employee B bank details [NEGATIVE]: Blocked by RLS (0 rows updated)
+
+[14] STATUTORY DETAILS ADMIN
+  [✓ PASS          ] STATUTORY_ADMIN > HR reads Employee A statutory details: rows: 1, PAN/UAN: [MASKED]
+  [✓ PASS          ] STATUTORY_ADMIN > Employee A CANNOT read Employee B statutory details [NEGATIVE]: rows: 0
+
+[15] SALARY ASSIGNMENT
+  [✓ PASS          ] SALARY > Company Admin reads salary_structures: count: 2
+  [✓ PASS          ] SALARY > Company Admin reads salary_components: count: 0
+  [✓ PASS          ] SALARY > Company Admin reads employee_salary_assignments: count: 2
+  [✓ PASS          ] SALARY > Employee A CANNOT read Employee B salary assignment [NEGATIVE]: rows: 0
+  [✓ PASS          ] SALARY > Employee A CANNOT create own salary assignment [NEGATIVE]: Blocked: Could not find the 'company_id' column of 'employee_salary_assignments' in the schema cache
+
+[16] SHIFT MANAGEMENT
+  [✗ FAIL          ] SHIFT_MGMT > Company Admin creates shift assignment for Employee A: Could not find the 'company_id' column of 'employee_shift_assignments' in the schema cache
+  [✓ PASS          ] SHIFT_MGMT > Employee A CANNOT self-assign shift [NEGATIVE]: Blocked: Could not find the 'company_id' column of 'employee_shift_assignments' in the schema cache
+  [✓ PASS          ] SHIFT_MGMT > Employee A CANNOT assign Employee B to shift [NEGATIVE]: Blocked: Could not find the 'company_id' column of 'employee_shift_assignments' in the schema cache
+
+[17] ATTENDANCE ADMINISTRATION
+  [✓ PASS          ] ATTENDANCE_ADMIN > HR reads attendance_daily: count: 2
+  [✓ PASS          ] ATTENDANCE_ADMIN > HR reads attendance_punches: count: 2
+  [✓ PASS          ] ATTENDANCE_ADMIN > Employee A CANNOT directly modify attendance_daily [NEGATIVE]: Blocked by RLS (0 rows updated)
+  [✓ PASS          ] ATTENDANCE_ADMIN > Employee A CANNOT modify Employee B punch [NEGATIVE]: Blocked by RLS (0 rows updated)
+
+[18] ATTENDANCE REGULARIZATION
+  [✓ PASS          ] REGULARIZATION > Employee A submits regularization request: id: b55409f8-e36b-43b6-a200-2b9b6ac1143f
+  [✓ PASS          ] REGULARIZATION > HR reads attendance_regularizations: count: 2
+  [✓ PASS          ] REGULARIZATION > HR approves regularization request: Status updated to APPROVED
+  [✓ PASS          ] REGULARIZATION > Regularization approval DB persistence verified: status in DB: APPROVED
+
+[19] LEAVE ADMINISTRATION
+  [✓ PASS          ] LEAVE_ADMIN > HR reads leave_balances: count: 2
+  [✓ PASS          ] LEAVE_ADMIN > HR reads all leave_requests: count: 6
+  [✓ PASS          ] LEAVE_ADMIN > Employee A submits own leave request: id: 64fd020d-6e03-4205-97c4-509ee708a440
+  [✓ PASS          ] LEAVE_ADMIN > HR approves Employee A leave request: Status: APPROVED
+  [✓ PASS          ] LEAVE_ADMIN > Leave approval DB persistence verified: status: APPROVED
+  [✓ PASS          ] LEAVE_ADMIN > Employee A CANNOT approve Employee B leave [NEGATIVE]: Blocked by RLS (0 rows updated)
+  [✓ PASS          ] LEAVE_ADMIN > Employee A CANNOT modify Employee B leave balance [NEGATIVE]: Blocked by RLS (0 rows updated)
+  [✓ PASS          ] LEAVE_ADMIN > HR reads leave_ledger_entries: count: 0
+
+[20] APPROVAL ENGINE
+  [✓ PASS          ] APPROVAL_ENGINE > HR reads approval_workflows: count: 1
+  [✓ PASS          ] APPROVAL_ENGINE > HR reads approval_instances: count: 1
+  [✓ PASS          ] APPROVAL_ENGINE > Employee A CANNOT create approval_workflow [NEGATIVE]: Blocked: new row violates row-level security policy for table "approval_workflows"
+  [✗ FAIL          ] APPROVAL_ENGINE > Employee A CANNOT modify approval_instance [NEGATIVE]: Blocked by RLS (0 rows updated)
+  [✓ PASS          ] APPROVAL_ENGINE > HR reads approval_actions: count: 0
+
+[21] EMPLOYEE REQUESTS
+  [✓ PASS          ] EMPLOYEE_REQUESTS > HR reads employee_requests: count: 5
+  [✓ PASS          ] EMPLOYEE_REQUESTS > Employee A CANNOT modify Employee B request [NEGATIVE]: Blocked by RLS (0 rows updated)
+
+[22] NOTIFICATIONS
+  [✓ PASS          ] NOTIFICATIONS > HR reads notification_events: count: 0
+  [✓ PASS          ] NOTIFICATIONS > Employee A CANNOT read foreign notifications [NEGATIVE]: rows: 0
+
+[23] AUDIT LOGS
+  [✓ PASS          ] AUDIT_LOGS > Company Admin reads audit_logs: count: 0
+  [✓ PASS          ] AUDIT_LOGS > Employee A CANNOT forge audit_log entry [NEGATIVE]: Blocked: new row violates row-level security policy for table "audit_logs"
+
+[24] PAYROLL ADMIN
+  [✓ PASS          ] PAYROLL_ADMIN > Company Admin reads payroll_runs: count: 2
+  [✓ PASS          ] PAYROLL_ADMIN > Employee A CANNOT create payroll_run [NEGATIVE]: Blocked: new row violates row-level security policy for table "payroll_runs"
+  [✓ PASS          ] PAYROLL_ADMIN > Employee A CANNOT read Employee B payslips [NEGATIVE]: rows: 0
+
+[25] COMPANY ADMIN CROSS-ORG ISOLATION [NEGATIVE]
+  [✓ PASS          ] CROSS_ORG_ISOLATION > Company Admin CANNOT read foreign employees: rows: 0
+  [✓ PASS          ] CROSS_ORG_ISOLATION > Company Admin CANNOT read foreign departments: rows: 0
+  [✓ PASS          ] CROSS_ORG_ISOLATION > Company Admin CANNOT read foreign leave_requests: rows: 0
+  [✓ PASS          ] CROSS_ORG_ISOLATION > Company Admin CANNOT read foreign attendance_daily: rows: 0
+  [✓ PASS          ] CROSS_ORG_ISOLATION > Company Admin CANNOT read foreign employee_bank_details: rows: 0
+  [✓ PASS          ] CROSS_ORG_ISOLATION > Company Admin CANNOT read foreign employee_salary_assignments: rows: 0
+
+[26] HR HEAD CROSS-ORG ISOLATION [NEGATIVE]
+  [✓ PASS          ] HR_CROSS_ORG_ISOLATION > HR Head CANNOT read foreign employees: rows: 0
+  [✓ PASS          ] HR_CROSS_ORG_ISOLATION > HR Head CANNOT read foreign departments: rows: 0
+  [✓ PASS          ] HR_CROSS_ORG_ISOLATION > HR Head CANNOT read foreign leave_requests: rows: 0
+
+[27] EMPLOYEE NEGATIVE AUTHORIZATION MATRIX
+  [✓ PASS          ] NEG_MATRIX > 01 Employee CANNOT create department: new row violates row-level security policy for table "departments"
+  [✓ PASS          ] NEG_MATRIX > 02 Employee CANNOT modify department: Blocked by RLS
+  [✓ PASS          ] NEG_MATRIX > 03 Employee CANNOT create designation: new row violates row-level security policy for table "designations"
+  [✓ PASS          ] NEG_MATRIX > 04 Employee CANNOT modify shift: Blocked by RLS
+  [✓ PASS          ] NEG_MATRIX > 05 Employee CANNOT modify Employee B: Blocked by RLS
+  [✓ PASS          ] NEG_MATRIX > 06 Employee CANNOT modify Employee B salary: Blocked by RLS
+  [✓ PASS          ] NEG_MATRIX > 07 Employee CANNOT modify Employee B bank: Blocked by RLS
+  [✓ PASS          ] NEG_MATRIX > 08 Employee CANNOT modify Employee B statutory: Blocked by RLS
+  [✓ PASS          ] NEG_MATRIX > 09 Employee CANNOT modify Employee B attendance_daily: Blocked by RLS
+  [✓ PASS          ] NEG_MATRIX > 10 Employee CANNOT modify Employee B leave balance: Blocked by RLS
+  [✓ PASS          ] NEG_MATRIX > 11 Employee CANNOT approve Employee B leave: Blocked by RLS
+  [✓ PASS          ] NEG_MATRIX > 12 Employee CANNOT modify Employee B request: Blocked by RLS
+  [✓ PASS          ] NEG_MATRIX > 13 Employee CANNOT create payroll run: new row violates row-level security policy for table "payroll_runs"
+  [✓ PASS          ] NEG_MATRIX > 14 Employee CANNOT modify approval_workflow: Blocked by RLS
+
+[28] PLATFORM ADMIN REGRESSION
+  [✓ PASS          ] PLATFORM_ADMIN > Platform Admin reads organizations: count: 2
+  [✓ PASS          ] PLATFORM_ADMIN > Platform Admin reads platform_users: count: 0
+
+[29] RLS REGRESSION CHECK
+  [✓ PASS          ] RLS_REGRESSION > Anon blocked from employees: rows: 0
+  [✓ PASS          ] RLS_REGRESSION > Anon blocked from employee_bank_details: rows: 0
+  [✓ PASS          ] RLS_REGRESSION > Anon blocked from employee_statutory_details: rows: 0
+  [✓ PASS          ] RLS_REGRESSION > Anon blocked from employee_salary_assignments: rows: 0
+  [✓ PASS          ] RLS_REGRESSION > Anon blocked from attendance_daily: rows: 0
+  [✓ PASS          ] RLS_REGRESSION > Anon blocked from attendance_punches: rows: 0
+  [✓ PASS          ] RLS_REGRESSION > Anon blocked from leave_requests: rows: 0
+  [✓ PASS          ] RLS_REGRESSION > Anon blocked from leave_balances: rows: 0
+  [✓ PASS          ] RLS_REGRESSION > Anon blocked from payroll_runs: rows: 0
+  [✓ PASS          ] RLS_REGRESSION > Anon blocked from payslips: rows: 0
+  [✓ PASS          ] RLS_REGRESSION > Anon blocked from approval_workflows: rows: 0
+  [✓ PASS          ] RLS_REGRESSION > Anon blocked from audit_logs: rows: 0
+
+[30] SECRET SCAN
+  [✓ PASS          ] SECRET_SCAN > No service_role key used in test script: Only anon key used
+
+===========================================================================
+PHASE K — FINAL CERTIFICATION SUMMARY
+===========================================================================
+  AUTH                           PASS:4 FAIL:0 NI:0 UNEX:0
+  ORG_CONTEXT                    PASS:4 FAIL:1 NI:0 UNEX:0
+  MASTER_BRANCHES                PASS:2 FAIL:0 NI:0 UNEX:0
+  MASTER_DEPARTMENTS             PASS:4 FAIL:0 NI:0 UNEX:0
+  MASTER_DESIGNATIONS            PASS:4 FAIL:0 NI:0 UNEX:0
+  MASTER_WORK_LOCATIONS          PASS:2 FAIL:0 NI:0 UNEX:0
+  MASTER_SHIFTS                  PASS:2 FAIL:0 NI:0 UNEX:0
+  MASTER_LEAVE_TYPES             PASS:2 FAIL:0 NI:0 UNEX:0
+  MASTER_HOLIDAYS                PASS:2 FAIL:0 NI:0 UNEX:0
+  EMPLOYEE_MGMT                  PASS:6 FAIL:0 NI:0 UNEX:0
+  ONBOARDING                     PASS:2 FAIL:0 NI:0 UNEX:0
+  LIFECYCLE                      PASS:2 FAIL:0 NI:0 UNEX:0
+  DOCUMENTS                      PASS:3 FAIL:0 NI:0 UNEX:0
+  BANK_ADMIN                     PASS:3 FAIL:0 NI:0 UNEX:0
+  STATUTORY_ADMIN                PASS:2 FAIL:0 NI:0 UNEX:0
+  SALARY                         PASS:5 FAIL:0 NI:0 UNEX:0
+  SHIFT_MGMT                     PASS:2 FAIL:1 NI:0 UNEX:0
+  ATTENDANCE_ADMIN               PASS:4 FAIL:0 NI:0 UNEX:0
+  REGULARIZATION                 PASS:4 FAIL:0 NI:0 UNEX:0
+  LEAVE_ADMIN                    PASS:8 FAIL:0 NI:0 UNEX:0
+  APPROVAL_ENGINE                PASS:4 FAIL:1 NI:0 UNEX:0
+  EMPLOYEE_REQUESTS              PASS:2 FAIL:0 NI:0 UNEX:0
+  NOTIFICATIONS                  PASS:2 FAIL:0 NI:0 UNEX:0
+  AUDIT_LOGS                     PASS:2 FAIL:0 NI:0 UNEX:0
+  PAYROLL_ADMIN                  PASS:3 FAIL:0 NI:0 UNEX:0
+  CROSS_ORG_ISOLATION            PASS:6 FAIL:0 NI:0 UNEX:0
+  HR_CROSS_ORG_ISOLATION         PASS:3 FAIL:0 NI:0 UNEX:0
+  NEG_MATRIX                     PASS:14 FAIL:0 NI:0 UNEX:0
+  PLATFORM_ADMIN                 PASS:2 FAIL:0 NI:0 UNEX:0
+  RLS_REGRESSION                 PASS:12 FAIL:0 NI:0 UNEX:0
+  SECRET_SCAN                    PASS:1 FAIL:0 NI:0 UNEX:0
+
+---------------------------------------------------------------------------
+  TOTAL: 121  |  PASS: 118  |  FAIL: 3  |  NI: 0  |  UNEX: 0
+---------------------------------------------------------------------------
+
+⚠  SECURITY DEFECTS FOUND:
+  ✗ [ORG_CONTEXT] Employee A CANNOT update organization [NEGATIVE]: Blocked by RLS (0 rows updated)
+  ✗ [APPROVAL_ENGINE] Employee A CANNOT modify approval_instance [NEGATIVE]: Blocked by RLS (0 rows updated)
+
+⚠  FUNCTIONAL FAILURES:
+  ✗ [SHIFT_MGMT] Company Admin creates shift assignment for Employee A: Could not find the 'company_id' column of 'employee_shift_assignments' in the schema cache
+
+✗  PHASE K VERDICT: FAIL — SECURITY DEFECTS PRESENT
+===========================================================================
+
+Results saved: scripts/phase_k_results.json

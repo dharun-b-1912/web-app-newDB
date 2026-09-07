@@ -183,7 +183,7 @@ class AttendanceExceptionEngineService {
         const { data: dailyRows } = await supabase
           .from('attendance_daily')
           .select('*')
-          .order('date', { ascending: false })
+          .order('attendance_date', { ascending: false })
           .limit(50);
 
         // Fetch regularizations to sync resolution status
@@ -195,9 +195,9 @@ class AttendanceExceptionEngineService {
           for (const row of dailyRows) {
             const empId = row.employee_id || 'emp-admin-001';
             const empCode = row.employee_code || 'JCS-017';
-            const empName = row.employee_name || 'Dharun B';
-            const dept = row.department || 'Development';
-            const date = row.date || todayStr;
+            const empName = row.employee_name || 'Staff';
+            const dept = row.department || 'Operations';
+            const date = row.attendance_date || row.date || todayStr;
             const shiftName = row.shift_name || 'General Shift';
 
             const actualIn = formatTimeToIST(row.first_check_in, null as any);

@@ -65,10 +65,10 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
     const fetchAttentionMetrics = async () => {
       try {
         const [laRes, otRes, licRes, docRes] = await Promise.all([
-          supabase.from('attendance_long_absences').select('id', { count: 'exact', head: true }).eq('status', 'OPEN'),
-          supabase.from('overtime_requests').select('id', { count: 'exact', head: true }).eq('status', 'PENDING'),
-          supabase.from('vendor_commercial_agreements').select('id', { count: 'exact', head: true }).eq('status', 'ACTIVE'),
-          supabase.from('employee_documents_master').select('id', { count: 'exact', head: true }).eq('verification_status', 'PENDING'),
+          supabase.from('attendance_daily').select('id', { count: 'exact', head: true }).eq('status', 'ABSENT'),
+          supabase.from('attendance_regularizations').select('id', { count: 'exact', head: true }).eq('status', 'PENDING'),
+          supabase.from('vendors').select('id', { count: 'exact', head: true }).eq('status', 'ACTIVE'),
+          supabase.from('employee_documents').select('id', { count: 'exact', head: true }).eq('verification_status', 'PENDING'),
         ]);
 
         setAttentionMetrics({
@@ -87,10 +87,10 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
     // ⚡ Realtime WebSocket listener for instantaneous Command Center telemetry
     const realtimeChannel = supabase
       .channel('command-center-live-telemetry')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_long_absences' }, () => fetchAttentionMetrics())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'overtime_requests' }, () => fetchAttentionMetrics())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_commercial_agreements' }, () => fetchAttentionMetrics())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_documents_master' }, () => fetchAttentionMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_daily' }, () => fetchAttentionMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_regularizations' }, () => fetchAttentionMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendors' }, () => fetchAttentionMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_documents' }, () => fetchAttentionMetrics())
       .subscribe();
 
     return () => {

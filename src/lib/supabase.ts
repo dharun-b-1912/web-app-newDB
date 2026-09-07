@@ -12,11 +12,31 @@ import { createClient } from '@supabase/supabase-js';
 // ============================================================
 
 const meta = import.meta as any;
-const supabaseUrl =
+export const supabaseUrl =
   meta.env?.VITE_SUPABASE_URL || 'https://ysiajemrqakfngasehhi.supabase.co';
 const supabaseAnonKey =
   meta.env?.VITE_SUPABASE_ANON_KEY ||
   'sb_publishable_i_pb_iFcxX0BEJFok_XfZA_gZF3W8mj';
+
+/**
+ * Canonical Supabase Project ID and Hostname (derived from active URL)
+ */
+export const supabaseHost: string = (() => {
+  try {
+    const u = new URL(supabaseUrl);
+    return u.hostname;
+  } catch (_) {
+    return 'ysiajemrqakfngasehhi.supabase.co';
+  }
+})();
+
+export const supabaseProject: string = (() => {
+  try {
+    return supabaseHost.split('.')[0] || 'ysiajemrqakfngasehhi';
+  } catch (_) {
+    return 'ysiajemrqakfngasehhi';
+  }
+})();
 
 /**
  * True when a real Supabase project is wired up.

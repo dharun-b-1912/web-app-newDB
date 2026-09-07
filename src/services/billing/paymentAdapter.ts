@@ -115,7 +115,7 @@ export const paymentAdapter = {
         // 3. Mark subscription as Active
         if (subscriptionId) {
           await supabase
-            .from('platform_subscriptions')
+            .from('saas_subscriptions')
             .update({
               status: 'Active',
             })

@@ -243,7 +243,7 @@ class AttendanceDeviationService {
         const { data: dailyRows } = await supabase
           .from('attendance_daily')
           .select('*')
-          .order('date', { ascending: false })
+          .order('attendance_date', { ascending: false })
           .limit(50);
 
         // Fetch regularizations to sync regularization status

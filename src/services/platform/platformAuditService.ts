@@ -293,32 +293,25 @@ export const platformAuditService = {
 
     if (isSupabaseEnabled) {
       try {
-        const { error } = await supabase.rpc('fn_record_audit_event', {
-          p_event_type: params.event_type || params.action,
-          p_category: category,
-          p_action: params.reason || params.action,
-          p_result: params.result || 'Success',
-          p_risk_level: riskLevel,
-          p_risk_score: riskScore,
-          p_actor_name: params.actor_name || 'WorkForce Super Admin',
-          p_actor_email: params.actor_email || 'superadmin@joypeoplehr.com',
-          p_actor_role: params.actor_role || 'Super Admin',
-          p_actor_type: params.actor_type || 'SUPER_ADMIN',
-          p_tenant_id: params.tenant_id || 'global',
-          p_tenant_name: params.tenant_name || 'Global Platform',
-          p_resource_type: params.resource_type || 'System',
-          p_resource_id: params.resource_id || null,
-          p_resource_name: params.resource_name || params.resource_id || null,
-          p_request_id: params.request_id || null,
-          p_correlation_id: params.correlation_id || null,
-          p_session_id: params.session_id || null,
-          p_before_value: params.before_value || null,
-          p_after_value: params.after_value || null,
-          p_metadata: params.metadata || {},
-        });
-        if (!error) return;
+        await supabase.from('audit_logs').insert([{
+          organization_id: (params.organization_id && params.organization_id.length === 36) ? params.organization_id : '0c621892-e938-4707-9957-13534ea32c19',
+          entity_type: params.resource_type || 'SYSTEM',
+          entity_id: params.resource_id || 'system',
+          action: params.event_type || params.action || 'AUDIT_LOG',
+          new_values: {
+            category,
+            action: params.reason || params.action,
+            result: params.result || 'Success',
+            risk_level: riskLevel,
+            risk_score: riskScore,
+            resource_type: params.resource_type,
+            resource_id: params.resource_id,
+            actor_id: params.actor_id || null,
+            actor_name: params.actor_name || null,
+          },
+        }]);
       } catch (_) {
-        // Fallback to local storage
+        // Fallback gracefully without throwing
       }
     }
   },

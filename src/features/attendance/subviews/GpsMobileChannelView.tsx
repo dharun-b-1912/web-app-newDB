@@ -373,35 +373,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     try {
       const input = googleMapsUrlInput.trim();
 
-      // 1. Primary: Call backend Google Maps resolver (handles shortlinks & unshortening without CORS limits)
-      try {
-        const backendRes = await fetch('/api/location/resolve-google-maps', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: input }),
-        });
-
-        if (backendRes.ok) {
-          const data = await backendRes.json();
-          if (data && data.success && data.latitude !== undefined && data.longitude !== undefined) {
-            setSelectedLocation((prev) => ({
-              ...prev,
-              latitude: data.latitude,
-              longitude: data.longitude,
-              name: data.name || prev?.name || 'Work Facility',
-              address: data.address || prev?.address || '',
-            }));
-
-            showToast(`✓ Extracted from Google Maps: ${data.name ? `${data.name} ` : ''}(${data.latitude}, ${data.longitude})`, 'success');
-            setIsProcessingGmapsLink(false);
-            return;
-          }
-        }
-      } catch (backendErr) {
-        console.warn('Backend resolver attempt:', backendErr);
-      }
-
-      // 2. Client-side parser fallback for full URLs or DMS / raw coordinates
+      // 1. Client-side parser for full Google Maps URLs, !3d/!4d pins, @lat,lon, DMS / raw coordinates
       const parsed = parseGoogleMapsInput(input);
       if (parsed && parsed.latitude !== undefined && parsed.longitude !== undefined) {
         let addr = parsed.address || '';
@@ -422,7 +394,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
         return;
       }
 
-      // 3. Address text search fallback
+      // 2. Direct coordinate or text search fallback using OpenStreetMap Nominatim
       const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(input)}&limit=1&addressdetails=1`);
       if (res.ok) {
         const data = await res.json();
@@ -439,24 +411,26 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
             name: prev?.name || match.name || input,
           }));
           showToast(`✓ Found location coordinates: ${cleanLat}, ${cleanLon}`, 'success');
-        } else {
-          // If search yielded no direct match, check if input has lat/lon numbers anywhere
-          const anyCoords = input.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
-          if (anyCoords) {
-            const cleanLat = Number(parseFloat(anyCoords[1]).toFixed(7));
-            const cleanLon = Number(parseFloat(anyCoords[2]).toFixed(7));
-            const cleanAddr = await reverseGeocode(cleanLat, cleanLon);
-            setSelectedLocation((prev) => ({
-              ...prev,
-              latitude: cleanLat,
-              longitude: cleanLon,
-              address: cleanAddr || prev?.address || '',
-            }));
-            showToast(`✓ Extracted coordinates: ${cleanLat}, ${cleanLon}`, 'success');
-          } else {
-            showToast('Could not resolve link. Please paste a full Google Maps link or enter Latitude, Longitude.', 'warning');
-          }
+          setIsProcessingGmapsLink(false);
+          return;
         }
+      }
+
+      // 3. Fallback: check if input has lat/lon numbers anywhere
+      const anyCoords = input.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
+      if (anyCoords) {
+        const cleanLat = Number(parseFloat(anyCoords[1]).toFixed(7));
+        const cleanLon = Number(parseFloat(anyCoords[2]).toFixed(7));
+        const cleanAddr = await reverseGeocode(cleanLat, cleanLon);
+        setSelectedLocation((prev) => ({
+          ...prev,
+          latitude: cleanLat,
+          longitude: cleanLon,
+          address: cleanAddr || prev?.address || '',
+        }));
+        showToast(`✓ Extracted coordinates: ${cleanLat}, ${cleanLon}`, 'success');
+      } else {
+        showToast('Could not resolve link. Please paste a standard Google Maps link or enter Latitude, Longitude.', 'warning');
       }
     } catch (err: any) {
       showToast('Error parsing Google Maps link. Please verify URL or coordinates.', 'error');
@@ -465,34 +439,42 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     }
   };
 
-  // Save Geofence Location Modal Handler
-  const handleSaveLocation = (e: React.FormEvent) => {
+  // Save Geofence Location Modal Handler (Async Database Persistence)
+  const handleSaveLocation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedLocation?.name || selectedLocation?.latitude === undefined || selectedLocation?.longitude === undefined) {
       showToast('Please provide location name and valid coordinates.', 'error');
       return;
     }
 
-    workLocationService.saveLocation({
-      ...selectedLocation,
-      latitude: Number(Number(selectedLocation.latitude).toFixed(7)),
-      longitude: Number(Number(selectedLocation.longitude).toFixed(7)),
-      geofence_radius_meters: Number(selectedLocation.geofence_radius_meters) || 100,
-      accuracy_requirement_meters: Number(selectedLocation.accuracy_requirement_meters) || 50,
-    });
+    try {
+      await workLocationService.saveLocation({
+        ...selectedLocation,
+        latitude: Number(Number(selectedLocation.latitude).toFixed(7)),
+        longitude: Number(Number(selectedLocation.longitude).toFixed(7)),
+        geofence_radius_meters: Number(selectedLocation.geofence_radius_meters) || 100,
+        accuracy_requirement_meters: Number(selectedLocation.accuracy_requirement_meters) || 50,
+      });
 
-    showToast(`✓ Work location "${selectedLocation.name}" configured successfully.`);
-    setIsEditingLocation(false);
-    setSelectedLocation(null);
-    loadData();
+      showToast(`✓ Work location "${selectedLocation.name}" saved successfully.`, 'success');
+      setIsEditingLocation(false);
+      setSelectedLocation(null);
+      await loadData();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to save work location to database.', 'error');
+    }
   };
 
-  // Delete Location Handler
-  const handleDeleteLocation = (id: string, name: string) => {
+  // Delete Location Handler (Async Database Persistence)
+  const handleDeleteLocation = async (id: string, name: string) => {
     if (confirm(`Are you sure you want to remove work location "${name}"?`)) {
-      workLocationService.deleteLocation(id);
-      showToast(`Work location "${name}" removed.`, 'info');
-      loadData();
+      try {
+        await workLocationService.deleteLocation(id);
+        showToast(`Work location "${name}" removed.`, 'info');
+        await loadData();
+      } catch (err: any) {
+        showToast(err.message || 'Failed to delete work location.', 'error');
+      }
     }
   };
 

@@ -6,6 +6,7 @@
 // ============================================================
 
 import { CorrelationService } from './correlationService';
+import { supabaseProject, supabaseHost } from '../../lib/supabase';
 
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'CRITICAL';
 export type LogLayer = 'WEB' | 'DB' | 'REALTIME' | 'FLUTTER' | 'SYNC' | 'AUTH' | 'STORAGE' | 'SYSTEM';
@@ -17,6 +18,8 @@ export interface StructuredLogEntry {
   layer: LogLayer;
   action: string;
   correlationId: string;
+  project?: string;
+  host?: string;
   tenantId?: string;
   organizationId?: string;
   employeeId?: string;
@@ -139,6 +142,8 @@ export class LoggerService {
       `correlation=${e.correlationId}`,
     ];
 
+    const resolvedProject = e.project || (e.layer === 'REALTIME' || e.layer === 'DB' || e.layer === 'AUTH' || e.layer === 'STORAGE' ? supabaseProject : undefined);
+    if (resolvedProject) parts.push(`project=${resolvedProject}`);
     if (e.tenantId) parts.push(`tenant=${e.tenantId}`);
     if (e.organizationId) parts.push(`org=${e.organizationId}`);
     if (e.employeeId) parts.push(`employee=${e.employeeId}`);

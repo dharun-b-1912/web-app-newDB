@@ -12,7 +12,7 @@ import {
 } from '../types';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { hrEventBus } from './hrEventBus';
-import { api } from './api';
+import { api, ensureUUID } from './api';
 import { payrollApi } from './payrollApi';
 import { vendorService } from './vendorService';
 import { employeeAuthService } from './auth/employeeAuthService';
@@ -700,8 +700,8 @@ export const onboardingService = {
     annual_ctc?: number;
     monthly_ctc?: number;
   }> {
-    const employeeId = `EMP-${Math.floor(100000 + Math.random() * 900000)}`;
-    const employeeCode = payload.identity?.employee_code || `JCS-${Math.floor(100 + Math.random() * 900)}`;
+    const employeeId = ensureUUID(payload.identity?.id || payload.id);
+    const employeeCode = payload.identity?.employee_code || payload.employee_code || `JCS-${Math.floor(100 + Math.random() * 900)}`;
     const annualCtc = Number(payload.compensation?.annual_ctc) || 1200000;
     const monthlyCtc = Math.round(annualCtc / 12);
 
@@ -856,35 +856,33 @@ export const onboardingService = {
     const emailToDispatch = newEmp.work_email || (newEmp.profile as any)?.personal_email;
     const phoneToDispatch = newEmp.profile?.phone || '+919791817437';
 
-    if (appAccessConfig.enable_app_access !== false) {
-      try {
-        const authResult = await employeeAuthService.provisionEmployeeAuth({
-          tenantId: activeOrgId,
-          employeeId: employeeId,
-          phone: phoneToDispatch,
-          email: emailToDispatch,
-          firstName: newEmp.first_name,
-          lastName: newEmp.last_name,
-          role: newEmp.designation_title || 'Employee',
-          sendSms: false,
-        });
+    if (appAccessConfig.enable_app_access !== false && emailToDispatch) {
+      const authResult = await employeeAuthService.provisionEmployeeAuth({
+        tenantId: activeOrgId,
+        employeeId: employeeId,
+        phone: phoneToDispatch,
+        email: emailToDispatch,
+        firstName: newEmp.first_name,
+        lastName: newEmp.last_name,
+        role: newEmp.designation_title || 'Employee',
+        sendSms: false,
+      });
 
-        // If employee has an email, dispatch welcome activation email via Resend
-        if (emailToDispatch) {
-          resendEmailService.sendEmployeeActivationEmail({
-            to: emailToDispatch,
-            employeeName: `${newEmp.first_name} ${newEmp.last_name}`.trim(),
-            employeeId: employeeCode,
-            loginIdentifier: employeeCode,
-            activationToken: authResult.activation_token || `act-${employeeId}`,
-            organizationName: newEmp.company_name || 'Joy Corporate Solutions',
-            authMethod: appAccessConfig.auth_method || 'Employee ID + Password',
-            requiresPasswordChange: appAccessConfig.require_password_change !== false,
-          }).catch((err) => console.warn('[OnboardingService] Resend email dispatch notice:', err));
-        }
-      } catch (err) {
-        console.warn('[OnboardingService] Auth provisioning notice:', err);
+      if (!authResult.success) {
+        throw new Error(authResult.error || 'Failed to provision Supabase GoTrue Auth user account.');
       }
+
+      // If employee has an email, dispatch welcome activation email via Resend (non-blocking)
+      resendEmailService.sendEmployeeActivationEmail({
+        to: emailToDispatch,
+        employeeName: `${newEmp.first_name} ${newEmp.last_name}`.trim(),
+        employeeId: employeeCode,
+        loginIdentifier: emailToDispatch,
+        activationToken: authResult.activation_token || `act-${employeeId}`,
+        organizationName: newEmp.company_name || 'Joy Corporate Solutions',
+        authMethod: appAccessConfig.auth_method || 'Email + Temporary Password',
+        requiresPasswordChange: appAccessConfig.require_password_change !== false,
+      }).catch((err) => console.warn('[OnboardingService] Resend email dispatch notice (optional):', err));
     }
 
     hrEventBus.publish('employee.created', {

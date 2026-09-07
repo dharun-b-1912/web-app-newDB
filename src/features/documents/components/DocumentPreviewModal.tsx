@@ -169,12 +169,9 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
           const storagePath = document.current_version?.storage_path || document.storage_path;
           if (storagePath) {
             try {
-              const secureUrl = await getSecureDocumentUrl('employee-documents', storagePath, 600);
+              const secureUrl = await getSecureDocumentUrl('employee-documents', storagePath, 3600);
               if (secureUrl) {
                 resolved = secureUrl;
-              } else {
-                const secureWfUrl = await getSecureDocumentUrl('workforce-documents', storagePath, 600);
-                if (secureWfUrl) resolved = secureWfUrl;
               }
             } catch (_) {}
           }

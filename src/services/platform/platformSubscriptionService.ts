@@ -60,7 +60,7 @@ export const platformSubscriptionService = {
     if (isSupabaseEnabled) {
       try {
         const { data: subRows, error } = await supabase
-          .from('platform_subscriptions')
+          .from('saas_subscriptions')
           .select('*')
           .order('created_at', { ascending: false });
 

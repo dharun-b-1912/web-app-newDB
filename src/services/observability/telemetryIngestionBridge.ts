@@ -26,7 +26,7 @@ export class TelemetryIngestionBridge {
   private static isInitialized = false;
   private static isIngestingInternal = false; // Anti-Recursion Loop Breaker (Gate 7)
   private static dedupCache: Set<string> = new Set(); // Idempotency Cache (Gate 6)
-  private static isRemoteTableAvailable = true;
+  private static isRemoteTableAvailable = false; // Deactivated: canonical audit logs use public.audit_logs
 
   public static initialize() {
     if (this.isInitialized) return;

@@ -7,7 +7,7 @@
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { Company, Branch, Department, Team, Location, OrganizationSummaryMetrics, Employee } from '../../types';
 import { hrEventBus } from '../hrEventBus';
-import { api } from '../api';
+import { api, isValidUUID, ensureUUID } from '../api';
 import { vendorWorkforceService } from './vendorWorkforceService';
 import { appLogger } from '../../lib/appLogger';
 
@@ -152,11 +152,11 @@ class OrganizationStructureService {
   async getBranches(companyId?: string, organizationId?: string): Promise<Branch[]> {
     if (isSupabaseEnabled && supabase) {
       try {
-        let query = supabase.from('branches').select('*, companies!inner(organization_id)');
+        let query = supabase.from('branches').select('*');
         if (companyId) {
           query = query.eq('company_id', companyId);
         } else if (organizationId) {
-          query = query.eq('companies.organization_id', organizationId);
+          query = query.eq('organization_id', organizationId);
         }
 
         const { data, error } = await query.order('created_at', { ascending: true });
@@ -183,12 +183,59 @@ class OrganizationStructureService {
   /**
    * Creates a new Branch in SQL database with adaptive resilient retry.
    */
-  async createBranch(payload: Partial<Branch> & { company_id: string; name: string; code: string }): Promise<Branch> {
+  async createBranch(payload: Partial<Branch> & { company_id?: string; name: string; code: string }): Promise<Branch> {
+    const id = ensureUUID(payload.id);
+    const branchCode = payload.code || (payload as any).branch_code || 'BR01';
+
+    let orgId = (payload as any).organization_id;
+    let compId = payload.company_id;
+
+    if (isSupabaseEnabled && supabase) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const authUid = sessionData?.session?.user?.id;
+        if (authUid) {
+          const { data: prof } = await supabase
+            .from('user_profiles')
+            .select('organization_id')
+            .eq('auth_user_id', authUid)
+            .maybeSingle();
+
+          if (prof?.organization_id) {
+            orgId = prof.organization_id;
+          }
+        }
+
+        if (orgId) {
+          // Verify company belongs to this organization
+          let compValid = false;
+          if (compId && isValidUUID(compId)) {
+            const { data: compCheck } = await supabase
+              .from('companies')
+              .select('id')
+              .eq('id', compId)
+              .eq('organization_id', orgId)
+              .maybeSingle();
+            if (compCheck?.id) compValid = true;
+          }
+          if (!compValid) {
+            const { data: comp } = await supabase
+              .from('companies')
+              .select('id')
+              .eq('organization_id', orgId)
+              .limit(1)
+              .maybeSingle();
+            if (comp?.id) compId = comp.id;
+          }
+        }
+      } catch (_) {}
+    }
+
     const newBranch: Branch = {
-      id: `br-${Date.now()}`,
-      company_id: payload.company_id,
+      id,
+      company_id: compId || '',
       name: payload.name,
-      code: payload.code,
+      code: branchCode,
       branch_type: payload.branch_type || 'OFFICE',
       country: payload.country || 'India',
       city: payload.city || 'Coimbatore',
@@ -203,33 +250,30 @@ class OrganizationStructureService {
       created_at: new Date().toISOString(),
     };
 
-    if (isSupabaseEnabled && supabase) {
+    if (isSupabaseEnabled && supabase && orgId && compId) {
       try {
-        const { data, error, status } = await supabase.from('branches').insert([newBranch]).select().single();
+        const dbPayload = {
+          id,
+          organization_id: orgId,
+          company_id: compId,
+          name: newBranch.name,
+          branch_code: branchCode,
+          city: newBranch.city || 'Coimbatore',
+          state: newBranch.state || 'Tamil Nadu',
+          country: newBranch.country || 'India',
+          timezone: newBranch.timezone || 'Asia/Kolkata',
+          phone: newBranch.contact_phone || null,
+          email: newBranch.contact_email || null,
+          is_active: newBranch.status !== 'Inactive',
+        };
+        const { data, error, status } = await supabase.from('branches').insert([dbPayload]).select().single();
         if (!error && data) {
-          appLogger.dbOperation('branches', 'INSERT', newBranch);
-          hrEventBus.emit('organization.branch_created', { branch: data });
-          return data;
+          appLogger.dbOperation('branches', 'INSERT', dbPayload);
+          const merged = { ...newBranch, ...data, code: data.branch_code };
+          hrEventBus.emit('organization.branch_created', { branch: merged });
+          return merged;
         } else if (error) {
-          appLogger.dbOperation('branches', 'INSERT', newBranch, error, status);
-
-          // Adaptive fallback: retry with basic columns if table lacks extended columns
-          const basePayload = {
-            id: newBranch.id,
-            company_id: newBranch.company_id,
-            name: newBranch.name,
-            code: newBranch.code,
-            city: newBranch.city,
-            state: newBranch.state,
-            timezone: newBranch.timezone,
-          };
-          const retryRes = await supabase.from('branches').insert([basePayload]).select().single();
-          if (!retryRes.error && retryRes.data) {
-            appLogger.info('BRANCHES', `Branch "${newBranch.name}" created with base column compatibility`, retryRes.data);
-            const merged = { ...newBranch, ...retryRes.data };
-            hrEventBus.emit('organization.branch_created', { branch: merged });
-            return merged;
-          }
+          appLogger.dbOperation('branches', 'INSERT', dbPayload, error, status);
         }
       } catch (err) {
         appLogger.warn('BRANCHES', 'createBranch caught exception, activating resilient local storage', String(err));
@@ -338,44 +382,87 @@ class OrganizationStructureService {
   /**
    * Creates a new Department in SQL database.
    */
-  async createDepartment(payload: Partial<Department> & { company_id: string; name: string; code: string; organization_id?: string }): Promise<Department> {
-    const effectiveOrgId = payload.organization_id || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null) || 'org-active';
+  async createDepartment(payload: Partial<Department> & { company_id?: string; name: string; code: string; organization_id?: string }): Promise<Department> {
+    const id = ensureUUID(payload.id);
+    let effectiveOrgId = payload.organization_id && isValidUUID(payload.organization_id) ? payload.organization_id : (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null) || '';
+    let effectiveCompId = payload.company_id && isValidUUID(payload.company_id) ? payload.company_id : '';
+
+    if (isSupabaseEnabled && supabase) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const authUid = sessionData?.session?.user?.id;
+        if (authUid) {
+          const { data: prof } = await supabase
+            .from('user_profiles')
+            .select('organization_id')
+            .eq('auth_user_id', authUid)
+            .maybeSingle();
+
+          if (prof?.organization_id) {
+            effectiveOrgId = prof.organization_id;
+          }
+        }
+
+        if (effectiveOrgId) {
+          let compValid = false;
+          if (effectiveCompId && isValidUUID(effectiveCompId)) {
+            const { data: compCheck } = await supabase
+              .from('companies')
+              .select('id')
+              .eq('id', effectiveCompId)
+              .eq('organization_id', effectiveOrgId)
+              .maybeSingle();
+            if (compCheck?.id) compValid = true;
+          }
+          if (!compValid) {
+            const { data: comp } = await supabase
+              .from('companies')
+              .select('id')
+              .eq('organization_id', effectiveOrgId)
+              .limit(1)
+              .maybeSingle();
+            if (comp?.id) effectiveCompId = comp.id;
+          }
+        }
+      } catch (_) {}
+    }
+
     const newDept: Department & { organization_id?: string } = {
-      id: `dept-${Date.now()}`,
+      id,
       organization_id: effectiveOrgId,
-      company_id: payload.company_id,
-      branch_id: payload.branch_id || null,
-      parent_department_id: payload.parent_department_id || null,
+      company_id: effectiveCompId,
+      branch_id: payload.branch_id && isValidUUID(payload.branch_id) ? payload.branch_id : null,
+      parent_department_id: payload.parent_department_id && isValidUUID(payload.parent_department_id) ? payload.parent_department_id : null,
       name: payload.name,
       code: payload.code,
       cost_center_code: payload.cost_center_code || '',
-      head_employee_id: payload.head_employee_id || null,
+      head_employee_id: payload.head_employee_id && isValidUUID(payload.head_employee_id) ? payload.head_employee_id : null,
       description: payload.description || '',
       status: payload.status || 'Active',
       employee_count: 0,
       team_count: 0,
     };
 
-    if (isSupabaseEnabled && supabase) {
+    if (isSupabaseEnabled && supabase && effectiveOrgId && effectiveCompId) {
       try {
         const dbPayload = {
-          id: newDept.id,
-          organization_id: newDept.organization_id,
-          company_id: newDept.company_id,
-          branch_id: newDept.branch_id,
+          id,
+          organization_id: effectiveOrgId,
+          company_id: effectiveCompId,
           parent_department_id: newDept.parent_department_id,
           name: newDept.name,
           code: newDept.code,
-          cost_center_code: newDept.cost_center_code,
           head_employee_id: newDept.head_employee_id,
-          description: newDept.description,
-          status: newDept.status,
+          is_active: newDept.status !== 'Inactive',
         };
-        const { data, error } = await supabase.from('departments').insert([dbPayload]).select().single();
+        const { data, error, status } = await supabase.from('departments').insert([dbPayload]).select().single();
         if (!error && data) {
+          appLogger.dbOperation('departments', 'INSERT', dbPayload);
           const merged = { ...newDept, ...data };
           hrEventBus.emit('organization.department_created', { department: merged });
           return merged;
+        } else if (error) {
+          appLogger.dbOperation('departments', 'INSERT', dbPayload, error, status);
         }
       } catch (err) {
         console.warn('[OrganizationStructureService] createDepartment fallback:', err);
@@ -439,34 +526,9 @@ class OrganizationStructureService {
   }
 
   /**
-   * Fetches all Teams from SQL database.
+   * Fetches all Teams from local store.
    */
   async getTeams(organizationId?: string, departmentId?: string): Promise<Team[]> {
-    const effectiveOrgId = organizationId || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null);
-
-    if (isSupabaseEnabled && supabase) {
-      try {
-        let query = supabase.from('teams').select('*');
-        if (effectiveOrgId) {
-          query = query.eq('organization_id', effectiveOrgId);
-        }
-        if (departmentId) {
-          query = query.eq('department_id', departmentId);
-        }
-        const { data, error } = await query.order('name', { ascending: true });
-        if (!error && data !== null && data.length > 0) {
-          return data;
-        } else {
-          const { data: allTeams } = await supabase.from('teams').select('*').order('name', { ascending: true });
-          if (allTeams && allTeams.length > 0) {
-            return departmentId ? allTeams.filter(t => t.department_id === departmentId) : allTeams;
-          }
-        }
-      } catch (err) {
-        console.warn('[OrganizationStructureService] getTeams error:', err);
-      }
-    }
-
     const current = getLocalStore<Team[]>(TEAM_STORAGE_KEY, []);
     if (departmentId) {
       return current.filter(t => t.department_id === departmentId);
@@ -475,7 +537,7 @@ class OrganizationStructureService {
   }
 
   /**
-   * Creates a new Team in SQL database.
+   * Creates a new Team in local store.
    */
   async createTeam(payload: Partial<Team> & { organization_id?: string; department_id: string; name: string; code: string }): Promise<Team> {
     const effectiveOrgId = payload.organization_id || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null) || 'org-active';
@@ -496,18 +558,6 @@ class OrganizationStructureService {
       updated_at: new Date().toISOString(),
     };
 
-    if (isSupabaseEnabled && supabase) {
-      try {
-        const { data, error } = await supabase.from('teams').insert([newTeam]).select().single();
-        if (!error && data) {
-          hrEventBus.emit('organization.team_created', { team: data });
-          return data;
-        }
-      } catch (err) {
-        console.warn('[OrganizationStructureService] createTeam fallback:', err);
-      }
-    }
-
     const current = getLocalStore<Team[]>(TEAM_STORAGE_KEY, []);
     setLocalStore(TEAM_STORAGE_KEY, [newTeam, ...current]);
 
@@ -516,20 +566,9 @@ class OrganizationStructureService {
   }
 
   /**
-   * Updates an existing Team in SQL database.
+   * Updates an existing Team in local store.
    */
   async updateTeam(id: string, updates: Partial<Team>): Promise<Team | null> {
-    if (isSupabaseEnabled && supabase) {
-      try {
-        const { data, error } = await supabase.from('teams').update(updates).eq('id', id).select().single();
-        if (!error && data) {
-          hrEventBus.emit('organization.team_created', { team: data });
-          return data;
-        }
-      } catch (err) {
-        console.warn('[OrganizationStructureService] updateTeam error:', err);
-      }
-    }
     const current = getLocalStore<Team[]>(TEAM_STORAGE_KEY, []);
     const idx = current.findIndex(t => t.id === id);
     if (idx !== -1) {

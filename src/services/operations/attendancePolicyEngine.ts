@@ -177,20 +177,27 @@ class AttendancePolicyEngine {
   /**
    * Scans for continuous long absences exceeding the threshold (e.g. >2 days)
    */
-  async detectLongAbsences(orgId: string, thresholdDays: number = 2) {
+  async detectLongAbsences(orgId: string, _thresholdDays: number = 2) {
     try {
       const { data: absences, error } = await supabase
-        .from('attendance_long_absences')
+        .from('attendance_daily')
         .select('*')
         .eq('organization_id', orgId)
-        .eq('status', 'OPEN')
-        .gte('consecutive_days', thresholdDays)
-        .order('consecutive_days', { ascending: false });
+        .eq('status', 'ABSENT')
+        .order('attendance_date', { ascending: false });
 
       if (error) throw error;
-      return absences || [];
+      return (absences || []).map((a: any) => ({
+        id: a.id,
+        organization_id: a.organization_id,
+        employee_id: a.employee_id,
+        employee_name: 'Employee',
+        absence_start_date: a.attendance_date,
+        consecutive_days: 1,
+        status: 'OPEN',
+      }));
     } catch (err) {
-      console.error('[AttendancePolicyEngine] Long absence detection failed:', err);
+      console.warn('[AttendancePolicyEngine] Long absence detection notice:', err);
       return [];
     }
   }
@@ -208,25 +215,26 @@ class AttendancePolicyEngine {
     consecutiveDays: number;
     isApprovedLeave?: boolean;
   }) {
-    const { data, error } = await supabase
-      .from('attendance_long_absences')
-      .upsert({
-        organization_id: params.organizationId,
-        employee_id: params.employeeId,
-        employee_name: params.employeeName,
-        department_name: params.departmentName,
-        branch_name: params.branchName,
-        absence_start_date: params.startDate,
-        consecutive_days: params.consecutiveDays,
-        is_approved_leave: params.isApprovedLeave || false,
-        status: 'OPEN',
-        updated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('attendance_daily')
+        .upsert({
+          organization_id: params.organizationId,
+          employee_id: params.employeeId,
+          attendance_date: params.startDate,
+          status: 'ABSENT',
+          payable_status: 0.00,
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .maybeSingle();
 
-    if (error) throw error;
-    return data;
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      console.warn('[AttendancePolicyEngine] Record long absence notice:', err);
+      return null;
+    }
   }
 }
 

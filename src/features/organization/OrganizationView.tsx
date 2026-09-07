@@ -45,7 +45,7 @@ import { DepartmentsAndTeamsView } from './DepartmentsAndTeamsView';
 import { VendorsView } from './VendorsView';
 
 export const OrganizationView: React.FC = () => {
-  const { organization, companies, reloadTenant } = useTenant();
+  const { organization, companies, activeCompany, reloadTenant } = useTenant();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<'entities' | 'org_chart' | 'departments' | 'vendors'>('entities');
 
@@ -148,11 +148,14 @@ export const OrganizationView: React.FC = () => {
 
   const handleCreateBranch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!branchName || !branchCode || !branchCompanyId) return;
+    if (!branchName || !branchCode) return;
+
+    const effectiveCompanyId = branchCompanyId || companies[0]?.id || activeCompany?.id || '';
 
     try {
       await organizationStructureService.createBranch({
-        company_id: branchCompanyId,
+        company_id: effectiveCompanyId,
+        organization_id: orgId,
         name: branchName,
         code: branchCode,
         branch_type: branchType,
@@ -160,7 +163,7 @@ export const OrganizationView: React.FC = () => {
         state: branchState || 'Tamil Nadu',
         address: branchAddress,
         timezone: 'Asia/Kolkata',
-      });
+      } as any);
       showToast('Branch campus/site registered!');
       setIsBranchModalOpen(false);
       setBranchName('');
@@ -604,22 +607,23 @@ export const OrganizationView: React.FC = () => {
         description="Register an operational branch site, factory, or campus under a legal entity"
       >
         <form onSubmit={handleCreateBranch} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1">Parent Legal Entity *</label>
-            <select
-              value={branchCompanyId}
-              onChange={e => setBranchCompanyId(e.target.value)}
-              className="w-full bg-white border border-gray-200 text-gray-900 text-xs rounded-xl p-2.5 focus:ring-[#07563D] focus:border-[#07563D]"
-              required
-            >
-              <option value="">Select legal entity...</option>
-              {companies.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.legal_name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {companies.length > 1 ? (
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Parent Legal Entity (Optional)</label>
+              <select
+                value={branchCompanyId}
+                onChange={e => setBranchCompanyId(e.target.value)}
+                className="w-full bg-white border border-gray-200 text-gray-900 text-xs rounded-xl p-2.5 focus:ring-[#07563D] focus:border-[#07563D]"
+              >
+                <option value="">Default (Primary Legal Entity)</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.legal_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-3">
             <div>

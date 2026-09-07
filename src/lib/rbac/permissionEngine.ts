@@ -477,9 +477,11 @@ export const ROLE_PROFILES: Record<string, RoleAccessProfile> = {
 
 /**
  * Returns the primary role name for a user.
+ * Authoritative evaluation with explicit priority:
+ * Super Admin > Company Admin > HR Head > HR Admin > Manager > Team Lead > Vendor Admin > Employee
  */
 export function getPrimaryRole(user: User | null): PrimaryRole {
-  if (!user) return 'Employee';
+  if (!user) return 'Unassigned';
 
   // 1. Check explicit platform admin flags
   if ((user as any).is_platform_admin === true) return 'Super Admin';
@@ -493,67 +495,50 @@ export function getPrimaryRole(user: User | null): PrimaryRole {
     return 'Super Admin';
   }
 
-  // 3. Check direct user role string (from Supabase auth metadata: user_metadata.role or (user as any).role)
-  const directRole = String((user as any).role || (user as any).role_display_name || '').trim().toLowerCase();
-  if (directRole) {
-    if (directRole.includes('vendor') || directRole.includes('contractor') || (user as any).vendor_id) return 'Vendor Admin';
-    if (directRole.includes('super') || directRole.includes('platform')) return 'Super Admin';
-    if (directRole.includes('hr head') || directRole === 'hr_head') return 'HR Head';
-    if (directRole.includes('hr admin') || directRole === 'hr_admin' || directRole.includes('payroll admin') || directRole.includes('attendance admin')) return 'HR Admin';
-    if (
-      directRole.includes('company admin') ||
-      directRole.includes('organization owner') ||
-      directRole.includes('organization admin') ||
-      directRole === 'owner' ||
-      directRole === 'company_admin' ||
-      directRole === 'admin'
-    ) {
-      return 'Company Admin';
-    }
-    if (directRole.includes('manager')) return 'Manager';
-    if (directRole.includes('lead')) return 'Team Lead';
-  }
-
-  // 4. Check user roles array (from Supabase roles or session roles)
+  // 3. Check user.roles array (from Supabase database user_roles join)
   if (user.roles && user.roles.length > 0) {
-    const roleNames = user.roles.map(r => String(r.name || '').trim().toLowerCase());
-    
-    if (roleNames.some(n => n.includes('vendor') || n.includes('contractor') || n === 'vendor admin')) {
-      return 'Vendor Admin';
-    }
-    if (roleNames.some(n => n === 'super admin' || n === 'super_admin' || n === 'superadmin' || n.includes('platform admin') || n.includes('super'))) {
+    const roleCodes = user.roles.map(r => String(r.name || '').trim().toUpperCase());
+
+    if (roleCodes.some(c => ['SUPER_ADMIN', 'SUPER ADMIN', 'SUPERADMIN', 'PLATFORM_ADMIN', 'PLATFORM ADMIN'].includes(c))) {
       return 'Super Admin';
     }
-    if (roleNames.some(n => n.includes('hr head') || n === 'hr_head')) {
-      return 'HR Head';
-    }
-    if (roleNames.some(n => n.includes('hr admin') || n === 'hr_admin' || n.includes('payroll admin') || n.includes('attendance admin'))) {
-      return 'HR Admin';
-    }
-    if (
-      roleNames.some(
-        n =>
-          n === 'company admin' ||
-          n === 'organization owner' ||
-          n === 'organization admin' ||
-          n.includes('company admin') ||
-          n.includes('organization owner') ||
-          n.includes('organization admin') ||
-          n === 'company_admin' ||
-          n === 'owner'
-      )
-    ) {
+    if (roleCodes.some(c => ['COMPANY_ADMIN', 'COMPANY ADMIN', 'ORGANIZATION_ADMIN', 'ORGANIZATION ADMIN', 'ORGANIZATION OWNER', 'OWNER', 'COMPANY_OWNER'].includes(c))) {
       return 'Company Admin';
     }
-    if (roleNames.some(n => n === 'manager' || n.includes('manager'))) {
+    if (roleCodes.some(c => ['HR_HEAD', 'HR HEAD'].includes(c))) {
+      return 'HR Head';
+    }
+    if (roleCodes.some(c => ['HR_ADMIN', 'HR ADMIN', 'PAYROLL_ADMIN', 'ATTENDANCE_ADMIN', 'PAYROLL ADMIN'].includes(c))) {
+      return 'HR Admin';
+    }
+    if (roleCodes.some(c => ['MANAGER'].includes(c) || c.includes('MANAGER'))) {
       return 'Manager';
     }
-    if (roleNames.some(n => n === 'team lead' || n === 'team_lead' || n.includes('lead'))) {
+    if (roleCodes.some(c => ['TEAM_LEAD', 'TEAM LEAD', 'LEAD'].includes(c) || c.includes('LEAD'))) {
       return 'Team Lead';
+    }
+    if (roleCodes.some(c => ['VENDOR_ADMIN', 'VENDOR ADMIN', 'VENDOR', 'CONTRACTOR'].includes(c))) {
+      return 'Vendor Admin';
+    }
+    if (roleCodes.some(c => ['EMPLOYEE', 'STAFF'].includes(c))) {
+      return 'Employee';
     }
   }
 
-  return 'Employee';
+  // 4. Check direct user role string (from Supabase auth metadata: user_metadata.role or (user as any).role)
+  const directRole = String((user as any).role || (user as any).role_display_name || '').trim().toUpperCase();
+  if (directRole) {
+    if (['SUPER_ADMIN', 'SUPER ADMIN', 'SUPERADMIN', 'PLATFORM_ADMIN', 'PLATFORM ADMIN'].includes(directRole)) return 'Super Admin';
+    if (['COMPANY_ADMIN', 'COMPANY ADMIN', 'ORGANIZATION_ADMIN', 'ORGANIZATION ADMIN', 'ORGANIZATION OWNER', 'OWNER', 'COMPANY_OWNER', 'ADMIN'].includes(directRole)) return 'Company Admin';
+    if (['HR_HEAD', 'HR HEAD'].includes(directRole)) return 'HR Head';
+    if (['HR_ADMIN', 'HR ADMIN', 'PAYROLL_ADMIN', 'ATTENDANCE_ADMIN'].includes(directRole)) return 'HR Admin';
+    if (directRole.includes('MANAGER')) return 'Manager';
+    if (directRole.includes('LEAD')) return 'Team Lead';
+    if (directRole.includes('VENDOR') || (user as any).vendor_id) return 'Vendor Admin';
+    if (['EMPLOYEE', 'STAFF'].includes(directRole)) return 'Employee';
+  }
+
+  return 'Unassigned';
 }
 
 /**

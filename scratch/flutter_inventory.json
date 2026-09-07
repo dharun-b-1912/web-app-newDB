@@ -1,0 +1,386 @@
+{
+  "screens": [
+    "flutter_app/lib/features/auth/screens/forgot_password_screen.dart",
+    "flutter_app/lib/features/auth/screens/login_screen.dart",
+    "flutter_app/lib/features/auth/screens/permission_gatekeeper_screen.dart",
+    "flutter_app/lib/features/employee/attendance/screens/attendance_screen.dart",
+    "flutter_app/lib/features/employee/claims/screens/expense_claims_screen.dart",
+    "flutter_app/lib/features/employee/communication/screens/communication_detail_screen.dart",
+    "flutter_app/lib/features/employee/communication/screens/communication_screen.dart",
+    "flutter_app/lib/features/employee/documents/screens/documents_screen.dart",
+    "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart",
+    "flutter_app/lib/features/employee/documents/screens/document_viewer_screen.dart",
+    "flutter_app/lib/features/employee/grievance/screens/complaint_screen.dart",
+    "flutter_app/lib/features/employee/helpdesk/screens/helpdesk_screen.dart",
+    "flutter_app/lib/features/employee/helpdesk/screens/ticket_detail_screen.dart",
+    "flutter_app/lib/features/employee/home/screens/employee_home_screen.dart",
+    "flutter_app/lib/features/employee/home/screens/notifications_screen.dart",
+    "flutter_app/lib/features/employee/leave/screens/leave_screen.dart",
+    "flutter_app/lib/features/employee/letters/screens/digital_letters_screen.dart",
+    "flutter_app/lib/features/employee/letters/screens/digital_letter_viewer_screen.dart",
+    "flutter_app/lib/features/employee/more/screens/more_screen.dart",
+    "flutter_app/lib/features/employee/payslips/screens/payslips_screen.dart",
+    "flutter_app/lib/features/employee/payslips/screens/payslip_detail_screen.dart",
+    "flutter_app/lib/features/employee/performance/screens/performance_screen.dart",
+    "flutter_app/lib/features/employee/profile/dialogs/switch_account_screen.dart",
+    "flutter_app/lib/features/employee/profile/screens/profile_screen.dart",
+    "flutter_app/lib/features/employee/roster/screens/shift_roster_screen.dart",
+    "flutter_app/lib/features/employee/services/screens/dynamic_service_form_screen.dart",
+    "flutter_app/lib/features/employee/services/screens/employee_services_screen.dart",
+    "flutter_app/lib/features/employee/services/screens/service_request_detail_screen.dart"
+  ],
+  "repositories": [
+    "flutter_app/lib/repositories/interfaces/auth_repository.dart",
+    "flutter_app/lib/repositories/interfaces/employee_repository.dart",
+    "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+    "flutter_app/lib/repositories/supabase/supabase_auth_repository.dart",
+    "flutter_app/lib/repositories/supabase/supabase_employee_relations_repository.dart",
+    "flutter_app/lib/repositories/supabase/supabase_employee_repository.dart",
+    "flutter_app/lib/repositories/supabase/supabase_leave_repository.dart",
+    "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart",
+    "flutter_app/lib/repositories/supabase/supabase_notification_repository.dart"
+  ],
+  "services": [
+    "flutter_app/lib/core/services/attendance_service.dart",
+    "flutter_app/lib/core/services/attendance_time_service.dart",
+    "flutter_app/lib/core/services/avatar_service.dart",
+    "flutter_app/lib/core/services/crash_reporting_service.dart",
+    "flutter_app/lib/core/services/document_upload_service.dart",
+    "flutter_app/lib/core/services/employee_identity_resolver.dart",
+    "flutter_app/lib/core/services/employee_profile_mapper.dart",
+    "flutter_app/lib/core/services/employee_realtime_service.dart",
+    "flutter_app/lib/core/services/file_download_service.dart",
+    "flutter_app/lib/core/services/file_download_stub.dart",
+    "flutter_app/lib/core/services/file_download_web.dart",
+    "flutter_app/lib/core/services/file_pick_models.dart",
+    "flutter_app/lib/core/services/file_pick_service.dart",
+    "flutter_app/lib/core/services/file_pick_stub.dart",
+    "flutter_app/lib/core/services/file_pick_web.dart",
+    "flutter_app/lib/core/services/local_notification_store.dart",
+    "flutter_app/lib/core/services/location_service.dart",
+    "flutter_app/lib/core/services/media_compression_service.dart",
+    "flutter_app/lib/core/services/notification_realtime_service.dart",
+    "flutter_app/lib/core/services/payslip_pdf_service.dart",
+    "flutter_app/lib/core/services/push_notification_service.dart",
+    "flutter_app/lib/core/services/push_sender_service.dart",
+    "flutter_app/lib/core/services/realtime_outbox_service.dart",
+    "flutter_app/lib/core/services/sensitive_data_auth_service.dart",
+    "flutter_app/lib/core/services/shift_duration_calculator.dart",
+    "flutter_app/lib/core/services/user_service.dart",
+    "flutter_app/lib/features/employee/services/screens/dynamic_service_form_screen.dart",
+    "flutter_app/lib/features/employee/services/screens/employee_services_screen.dart",
+    "flutter_app/lib/features/employee/services/screens/service_request_detail_screen.dart"
+  ],
+  "controllers": [
+    "flutter_app/lib/core/controllers/attendance_detail_controller.dart",
+    "flutter_app/lib/core/controllers/employee_controller.dart",
+    "flutter_app/lib/core/controllers/leave_controller.dart",
+    "flutter_app/lib/core/controllers/more_modules_controller.dart",
+    "flutter_app/lib/core/controllers/notification_controller.dart",
+    "flutter_app/lib/features/auth/controllers/auth_controller.dart"
+  ],
+  "tables": {
+    "employees": [
+      "flutter_app/lib/core/services/avatar_service.dart",
+      "flutter_app/lib/core/services/avatar_service.dart",
+      "flutter_app/lib/core/services/avatar_service.dart",
+      "flutter_app/lib/core/services/employee_identity_resolver.dart",
+      "flutter_app/lib/core/services/employee_identity_resolver.dart",
+      "flutter_app/lib/core/services/employee_identity_resolver.dart",
+      "flutter_app/lib/core/services/employee_identity_resolver.dart",
+      "flutter_app/lib/core/services/employee_identity_resolver.dart",
+      "flutter_app/lib/core/services/employee_identity_resolver.dart",
+      "flutter_app/lib/core/services/employee_identity_resolver.dart",
+      "flutter_app/lib/repositories/supabase/supabase_auth_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_auth_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_employee_repository.dart"
+    ],
+    "employee_avatar_assets": [
+      "flutter_app/lib/core/services/avatar_service.dart",
+      "flutter_app/lib/core/services/avatar_service.dart",
+      "flutter_app/lib/core/services/avatar_service.dart"
+    ],
+    "employee-documents": [
+      "flutter_app/lib/core/services/document_upload_service.dart",
+      "flutter_app/lib/core/services/document_upload_service.dart",
+      "flutter_app/lib/core/services/document_upload_service.dart",
+      "flutter_app/lib/core/services/document_upload_service.dart",
+      "flutter_app/lib/core/services/document_upload_service.dart",
+      "flutter_app/lib/core/services/document_upload_service.dart",
+      "flutter_app/lib/core/services/document_upload_service.dart",
+      "flutter_app/lib/core/services/document_upload_service.dart",
+      "flutter_app/lib/core/services/document_upload_service.dart",
+      "flutter_app/lib/core/services/document_upload_service.dart",
+      "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart",
+      "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart",
+      "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart",
+      "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart",
+      "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart"
+    ],
+    "employee_documents": [
+      "flutter_app/lib/core/services/document_upload_service.dart",
+      "flutter_app/lib/core/services/document_upload_service.dart",
+      "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart",
+      "flutter_app/lib/features/employee/profile/dialogs/documents_summary_dialog.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart"
+    ],
+    "user_profiles": [
+      "flutter_app/lib/core/services/employee_identity_resolver.dart",
+      "flutter_app/lib/core/services/push_notification_service.dart"
+    ],
+    "employee_statutory_details": [
+      "flutter_app/lib/core/services/employee_identity_resolver.dart",
+      "flutter_app/lib/repositories/supabase/supabase_auth_repository.dart"
+    ],
+    "employee_bank_details": [
+      "flutter_app/lib/core/services/employee_identity_resolver.dart",
+      "flutter_app/lib/repositories/supabase/supabase_auth_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_auth_repository.dart"
+    ],
+    "employee_profiles": [
+      "flutter_app/lib/core/services/employee_identity_resolver.dart"
+    ],
+    "shifts": [
+      "flutter_app/lib/core/services/employee_identity_resolver.dart"
+    ],
+    "employee_shift_assignments": [
+      "flutter_app/lib/core/services/employee_identity_resolver.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart"
+    ],
+    "organizations": [
+      "flutter_app/lib/core/services/employee_identity_resolver.dart"
+    ],
+    "work_locations": [
+      "flutter_app/lib/core/services/employee_identity_resolver.dart",
+      "flutter_app/lib/core/services/location_service.dart",
+      "flutter_app/lib/core/services/location_service.dart"
+    ],
+    "employee_device_tokens": [
+      "flutter_app/lib/core/services/push_notification_service.dart"
+    ],
+    "realtime_outbox": [
+      "flutter_app/lib/core/services/realtime_outbox_service.dart",
+      "flutter_app/lib/core/services/realtime_outbox_service.dart",
+      "flutter_app/lib/core/services/realtime_outbox_service.dart",
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_notification_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_notification_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_notification_repository.dart"
+    ],
+    "document_types": [
+      "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart",
+      "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart"
+    ],
+    "workforce-documents": [
+      "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart",
+      "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart"
+    ],
+    "notification_events": [
+      "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_notification_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_notification_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_notification_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_notification_repository.dart"
+    ],
+    "assets": [
+      "flutter_app/lib/features/employee/profile/dialogs/assets_summary_dialog.dart"
+    ],
+    "employee_emergency_contacts": [
+      "flutter_app/lib/features/employee/profile/dialogs/emergency_contact_dialog.dart"
+    ],
+    "attendance_daily": [
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart"
+    ],
+    "attendance_punches": [
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart"
+    ],
+    "leave_requests": [
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_leave_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_leave_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_leave_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_leave_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_leave_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_leave_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_notification_repository.dart"
+    ],
+    "attendance_regularizations": [
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_notification_repository.dart"
+    ],
+    "attendance_exceptions": [
+      "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart"
+    ],
+    "employee_requests": [
+      "flutter_app/lib/repositories/supabase/supabase_employee_relations_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_employee_relations_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_employee_relations_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_notification_repository.dart"
+    ],
+    "service_definitions": [
+      "flutter_app/lib/repositories/supabase/supabase_employee_relations_repository.dart"
+    ],
+    "service_requests": [
+      "flutter_app/lib/repositories/supabase/supabase_employee_relations_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_employee_relations_repository.dart"
+    ],
+    "company_announcements": [
+      "flutter_app/lib/repositories/supabase/supabase_employee_relations_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart"
+    ],
+    "communications": [
+      "flutter_app/lib/repositories/supabase/supabase_employee_relations_repository.dart"
+    ],
+    "communication_recipients": [
+      "flutter_app/lib/repositories/supabase/supabase_employee_relations_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_employee_relations_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_employee_relations_repository.dart"
+    ],
+    "company_announcement_reads": [
+      "flutter_app/lib/repositories/supabase/supabase_employee_relations_repository.dart"
+    ],
+    "leave_types": [
+      "flutter_app/lib/repositories/supabase/supabase_leave_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_leave_repository.dart"
+    ],
+    "leave_balances": [
+      "flutter_app/lib/repositories/supabase/supabase_leave_repository.dart"
+    ],
+    "document_master": [
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart"
+    ],
+    "employee_service_configs": [
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart"
+    ],
+    "digital_letters": [
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart"
+    ],
+    "payslips": [
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_notification_repository.dart"
+    ],
+    "expense_claims": [
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart"
+    ],
+    "posh_and_grievance_cases": [
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart",
+      "flutter_app/lib/repositories/supabase/supabase_more_modules_repository.dart"
+    ]
+  },
+  "storage": [
+    {
+      "bucket": "employee-documents",
+      "file": "flutter_app/lib/core/services/document_upload_service.dart"
+    },
+    {
+      "bucket": "employee-documents",
+      "file": "flutter_app/lib/core/services/document_upload_service.dart"
+    },
+    {
+      "bucket": "employee-documents",
+      "file": "flutter_app/lib/core/services/document_upload_service.dart"
+    },
+    {
+      "bucket": "employee-documents",
+      "file": "flutter_app/lib/core/services/document_upload_service.dart"
+    },
+    {
+      "bucket": "employee-documents",
+      "file": "flutter_app/lib/core/services/document_upload_service.dart"
+    },
+    {
+      "bucket": "employee-documents",
+      "file": "flutter_app/lib/core/services/document_upload_service.dart"
+    },
+    {
+      "bucket": "employee-documents",
+      "file": "flutter_app/lib/core/services/document_upload_service.dart"
+    },
+    {
+      "bucket": "employee-documents",
+      "file": "flutter_app/lib/core/services/document_upload_service.dart"
+    },
+    {
+      "bucket": "employee-documents",
+      "file": "flutter_app/lib/core/services/document_upload_service.dart"
+    },
+    {
+      "bucket": "employee-documents",
+      "file": "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart"
+    },
+    {
+      "bucket": "employee-documents",
+      "file": "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart"
+    },
+    {
+      "bucket": "employee-documents",
+      "file": "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart"
+    },
+    {
+      "bucket": "workforce-documents",
+      "file": "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart"
+    }
+  ],
+  "rpc": [
+    {
+      "rpc": "fn_get_employee_authorized_locations",
+      "file": "flutter_app/lib/core/services/location_service.dart"
+    },
+    {
+      "rpc": "send_push_notification",
+      "file": "flutter_app/lib/core/services/push_sender_service.dart"
+    },
+    {
+      "rpc": "fn_submit_document_upload",
+      "file": "flutter_app/lib/features/employee/documents/screens/document_request_detail_screen.dart"
+    },
+    {
+      "rpc": "fn_validate_and_record_gps_attendance",
+      "file": "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart"
+    },
+    {
+      "rpc": "fn_submit_attendance_regularization",
+      "file": "flutter_app/lib/repositories/supabase/supabase_attendance_repository.dart"
+    },
+    {
+      "rpc": "auto_confirm_email_for_user",
+      "file": "flutter_app/lib/repositories/supabase/supabase_auth_repository.dart"
+    }
+  ],
+  "cache": [
+    {
+      "file": "flutter_app/lib/core/controllers/notification_controller.dart",
+      "hasSP": true,
+      "hasHive": false,
+      "hasSqlite": false
+    },
+    {
+      "file": "flutter_app/lib/core/services/local_notification_store.dart",
+      "hasSP": true,
+      "hasHive": false,
+      "hasSqlite": false
+    }
+  ]
+}

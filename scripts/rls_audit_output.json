@@ -1,0 +1,1001 @@
+[
+  {
+    "cmd": "ALL",
+    "policyname": "approval_actions_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "approval_actions",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "approval_instances_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "approval_instances",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "approval_workflows_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "approval_workflows",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "asset_assignments_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "asset_assignments",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "assets_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "assets",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "attendance_daily_delete",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "attendance_daily",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "attendance_daily_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "attendance_daily",
+    "using_expr": null,
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "attendance_daily_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "attendance_daily",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "attendance_daily_update",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "attendance_daily",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "attendance_punches_delete",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "attendance_punches",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "attendance_punches_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "attendance_punches",
+    "using_expr": null,
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "attendance_punches_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "attendance_punches",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "attendance_punches_update",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "attendance_punches",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "attendance_regularizations_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "attendance_regularizations",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "audit_logs_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "audit_logs",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "background_jobs_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "background_jobs",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "biometric_devices_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "biometric_devices",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "branches_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "branches",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "companies_tenant_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "companies",
+    "using_expr": null,
+    "with_check_expr": "(((organization_id)::text = current_org_id()) OR is_platform_admin())"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "companies_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "companies",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "companies_tenant_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "companies",
+    "using_expr": "true",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "departments_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "departments",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "designations_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "designations",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "document_types_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "document_types",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "employee_addresses_delete",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_addresses",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "employee_addresses_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_addresses",
+    "using_expr": null,
+    "with_check_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "employee_addresses_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_addresses",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "employee_addresses_update",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_addresses",
+    "using_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "employee_bank_details_delete",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_bank_details",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "employee_bank_details_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_bank_details",
+    "using_expr": null,
+    "with_check_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "employee_bank_details_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_bank_details",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "employee_bank_details_update",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_bank_details",
+    "using_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "employee_documents_delete",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_documents",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "employee_documents_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_documents",
+    "using_expr": null,
+    "with_check_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "employee_documents_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_documents",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "employee_documents_update",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_documents",
+    "using_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "employee_lifecycle_events_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_lifecycle_events",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "employee_onboarding_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_onboarding",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "employee_profiles_delete",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_profiles",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "employee_profiles_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_profiles",
+    "using_expr": null,
+    "with_check_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "employee_profiles_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_profiles",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "employee_profiles_update",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_profiles",
+    "using_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "employee_requests_delete",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_requests",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "employee_requests_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_requests",
+    "using_expr": null,
+    "with_check_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "employee_requests_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_requests",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "employee_requests_update",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_requests",
+    "using_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "employee_salary_assignments_delete",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_salary_assignments",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "employee_salary_assignments_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_salary_assignments",
+    "using_expr": null,
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "employee_salary_assignments_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_salary_assignments",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "employee_salary_assignments_update",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_salary_assignments",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "employee_separations_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_separations",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "employee_shift_assignments_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_shift_assignments",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "employee_statutory_details_delete",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_statutory_details",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "employee_statutory_details_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_statutory_details",
+    "using_expr": null,
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "employee_statutory_details_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_statutory_details",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "employee_statutory_details_update",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employee_statutory_details",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "employees_delete_policy",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employees",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "employees_insert_policy",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employees",
+    "using_expr": null,
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "employees_select_policy",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employees",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (user_id = ( SELECT up.id\n   FROM user_profiles up\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "employees_update_policy",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "employees",
+    "using_expr": "(is_org_admin(organization_id) OR ((user_id = ( SELECT user_profiles.id\n   FROM user_profiles\n  WHERE (user_profiles.auth_user_id = auth.uid())\n LIMIT 1)) AND (organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id))))",
+    "with_check_expr": "(is_org_admin(organization_id) OR ((user_id = ( SELECT user_profiles.id\n   FROM user_profiles\n  WHERE (user_profiles.auth_user_id = auth.uid())\n LIMIT 1)) AND (organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id))))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "holidays_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "holidays",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "job_applicants_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "job_applicants",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "job_openings_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "job_openings",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "leave_balances_delete",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "leave_balances",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "leave_balances_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "leave_balances",
+    "using_expr": null,
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "leave_balances_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "leave_balances",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "leave_balances_update",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "leave_balances",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "leave_ledger_entries_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "leave_ledger_entries",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "leave_requests_delete",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "leave_requests",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "leave_requests_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "leave_requests",
+    "using_expr": null,
+    "with_check_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "leave_requests_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "leave_requests",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "leave_requests_update",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "leave_requests",
+    "using_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": "(is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "leave_types_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "leave_types",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "lms_courses_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "lms_courses",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "lms_enrollments_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "lms_enrollments",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "notification_events_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "notification_events",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "organizations_tenant_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "organizations",
+    "using_expr": null,
+    "with_check_expr": "(((id)::text = current_org_id()) OR is_platform_admin())"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "organizations_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "organizations",
+    "using_expr": "((id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "organizations_tenant_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "organizations",
+    "using_expr": "true",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "payroll_line_items_delete",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "payroll_line_items",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "payroll_line_items_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "payroll_line_items",
+    "using_expr": null,
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "payroll_line_items_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "payroll_line_items",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "payroll_line_items_update",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "payroll_line_items",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "payroll_runs_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "payroll_runs",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "DELETE",
+    "policyname": "payslips_delete",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "payslips",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "INSERT",
+    "policyname": "payslips_insert",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "payslips",
+    "using_expr": null,
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "payslips_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "payslips",
+    "using_expr": "(is_platform_admin() OR is_org_admin(organization_id) OR (employee_id = ( SELECT e.id\n   FROM (employees e\n     JOIN user_profiles up ON ((e.user_id = up.id)))\n  WHERE (up.auth_user_id = auth.uid())\n LIMIT 1)))",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "UPDATE",
+    "policyname": "payslips_update",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "payslips",
+    "using_expr": "is_org_admin(organization_id)",
+    "with_check_expr": "is_org_admin(organization_id)"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "performance_cycles_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "performance_cycles",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "performance_goals_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "performance_goals",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "performance_reviews_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "performance_reviews",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "permissions_select_auth",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "permissions",
+    "using_expr": "true",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "platform_plans_admin",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "platform_plans",
+    "using_expr": "is_platform_admin()",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "SELECT",
+    "policyname": "platform_plans_select",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "platform_plans",
+    "using_expr": "true",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "platform_users_policy",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "platform_users",
+    "using_expr": "is_platform_admin()",
+    "with_check_expr": null
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "posh_and_grievance_cases_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "posh_and_grievance_cases",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "role_permissions_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "role_permissions",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "roles_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "roles",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "saas_subscriptions_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "saas_subscriptions",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "salary_components_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "salary_components",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "salary_structure_components_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "salary_structure_components",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "salary_structures_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "salary_structures",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "shifts_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "shifts",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "user_profiles_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "user_profiles",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "user_roles_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "user_roles",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "vendor_invoices_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "vendor_invoices",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "vendor_workers_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "vendor_workers",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "vendors_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "vendors",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "webhook_deliveries_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "webhook_deliveries",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "webhook_endpoints_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "webhook_endpoints",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  },
+  {
+    "cmd": "ALL",
+    "policyname": "work_locations_tenant_isolation",
+    "rls_enabled": true,
+    "roles": "{authenticated}",
+    "tablename": "work_locations",
+    "using_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))",
+    "with_check_expr": "((organization_id = ( SELECT get_active_user_org_id() AS get_active_user_org_id)) OR ( SELECT is_platform_admin() AS is_platform_admin))"
+  }
+]

@@ -27,7 +27,7 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [legalEntities, setLegalEntities] = useState<Company[]>([]);
   const [activeLegalEntity, setActiveLegalEntity] = useState<Company | null>(null);
-  const [roleTitle, setRoleTitle] = useState<string>('Employee (Self)');
+  const [roleTitle, setRoleTitle] = useState<string>('Unassigned');
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const loadTenant = useCallback(async () => {

@@ -194,8 +194,8 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
         supabase
           .from('attendance_daily')
           .select('*')
-          .gte('date', startDate)
-          .lte('date', endDate)
+          .gte('attendance_date', startDate)
+          .lte('attendance_date', endDate)
       )
         .then(({ data, error }: any) => {
           if (!error && data && data.length > 0) {
@@ -203,11 +203,13 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
               const currentList = JSON.parse(localStorage.getItem('workforceos_attendance_daily_v2') || '[]');
               const merged = [...currentList];
               for (const row of data) {
-                const idx = merged.findIndex((a: any) => a.id === row.id || (a.employee_id === row.employee_id && a.date === row.date));
+                const rDate = row.attendance_date || row.date;
+                const mappedRow = { ...row, date: rDate };
+                const idx = merged.findIndex((a: any) => a.id === mappedRow.id || (a.employee_id === mappedRow.employee_id && (a.date || a.attendance_date) === rDate));
                 if (idx >= 0) {
-                  merged[idx] = { ...merged[idx], ...row };
+                  merged[idx] = { ...merged[idx], ...mappedRow };
                 } else {
-                  merged.unshift(row);
+                  merged.unshift(mappedRow);
                 }
               }
               localStorage.setItem('workforceos_attendance_daily_v2', JSON.stringify(merged));

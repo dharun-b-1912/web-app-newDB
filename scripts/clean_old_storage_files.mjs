@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://wmqjmyzzamgxyeuotbki.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndtcWpteXp6YW1neHlldW90YmtpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjQ1NjAwNywiZXhwIjoyMDg4MDMyMDA3fQ.fU9xM5T-5xJ-W_N47_o-E81a0-N7mE-l92_yR48mR4E';
+const SUPABASE_URL = 'https://ysiajemrqakfngasehhi.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_i_pb_iFcxX0BEJFok_XfZA_gZF3W8mj';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 async function cleanOldFiles() {
   const folder = 'employees/emp-admin-001/documents/doc-req-1787676092443-t30e';

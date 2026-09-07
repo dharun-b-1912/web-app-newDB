@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Avatar } from '../../components/ui/Avatar';
 import { Breadcrumb } from '../../components/shell/Breadcrumb';
+import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import {
   profileService,
   FullProfileContext,
@@ -207,6 +208,28 @@ export const MyProfileView: React.FC = () => {
     setStatutoryForm({ field: 'PAN Number', newValue: '', reason: '' });
     showToast('Statutory correction request submitted!', 'info');
     loadProfile();
+  };
+
+  // Document View Handler
+  const handleViewDocument = async (doc: any) => {
+    if (!isSupabaseEnabled || !doc.storagePath) {
+      showToast('Document file path unavailable.', 'error');
+      return;
+    }
+    try {
+      showToast('Opening secure document link...');
+      const { data, error } = await supabase.storage
+        .from('employee-documents')
+        .createSignedUrl(doc.storagePath, 900);
+
+      if (error || !data?.signedUrl) {
+        showToast('Document could not be opened.', 'error');
+        return;
+      }
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      showToast('Document access error.', 'error');
+    }
   };
 
   if (isLoading || !profile) {
@@ -924,29 +947,53 @@ export const MyProfileView: React.FC = () => {
                   <h2 className="text-base font-black text-gray-900">Official Documents Repository</h2>
                   <p className="text-xs text-gray-500">Verified KYC, appointment contracts, and statutory certificates.</p>
                 </div>
-                <Button variant="outline" size="sm" leftIcon={<Plus className="w-3.5 h-3.5" />}>
-                  Upload Document
-                </Button>
+                <Badge variant="emerald" className="text-xs font-bold">
+                  {profile.documents.length} Uploaded
+                </Badge>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {profile.documents.map((doc) => (
-                  <div key={doc.id} className="p-4 rounded-xl border border-gray-200/80 flex items-center justify-between hover:bg-gray-50/60 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#07563D] flex items-center justify-center font-bold">
-                        <FileText className="w-4 h-4" />
+              {profile.documents.length === 0 ? (
+                <div className="py-12 text-center text-gray-400 space-y-2">
+                  <FileText className="w-10 h-10 mx-auto text-gray-300" />
+                  <p className="text-sm font-semibold text-gray-700">No documents uploaded yet</p>
+                  <p className="text-xs text-gray-400">Upload your ID proof, educational certificates, or statutory documents from the mobile app.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {profile.documents.map((doc) => (
+                    <div key={doc.id} className="p-4 rounded-xl border border-gray-200/80 flex items-center justify-between hover:bg-gray-50/60 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#07563D] flex items-center justify-center font-bold shrink-0">
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-gray-900 truncate">{doc.type}</div>
+                          <div className="text-[10px] text-gray-400 font-mono truncate">{doc.fileName} • {doc.uploadedAt}</div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="text-xs font-bold text-gray-900">{doc.type}</div>
-                        <div className="text-[10px] text-gray-400 font-mono">{doc.fileName}</div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                          doc.verificationStatus === 'Verified'
+                            ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                            : 'text-amber-700 bg-amber-50 border-amber-200'
+                        }`}>
+                          {doc.verificationStatus === 'Verified' ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                          {doc.verificationStatus}
+                        </span>
+                        {doc.storagePath && (
+                          <button
+                            onClick={() => handleViewDocument(doc)}
+                            title="View / Download"
+                            className="p-1.5 rounded-lg text-gray-500 hover:text-[#07563D] hover:bg-emerald-50 transition-colors cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                      <CheckCircle2 className="w-3 h-3" /> Verified
-                    </span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

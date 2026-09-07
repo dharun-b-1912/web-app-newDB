@@ -325,8 +325,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       } catch { }
 
       try {
-        const leaveRes = await supabase.from('leave_requests').select('id', { count: 'exact' }).eq('status', 'PENDING').limit(1);
-        const docRes = await supabase.from('document_requirements').select('id', { count: 'exact' }).eq('status', 'SUBMITTED').limit(1);
+        const leaveRes = await supabase.from('leave_requests').select('id', { count: 'exact', head: true }).eq('status', 'PENDING').limit(1);
+        const docRes = await supabase.from('employee_documents').select('id', { count: 'exact', head: true }).eq('verification_status', 'PENDING').limit(1);
         const totalPending = (leaveRes.count || 0) + (docRes.count || 0);
         setPendingApprovalsCount(totalPending);
       } catch { }

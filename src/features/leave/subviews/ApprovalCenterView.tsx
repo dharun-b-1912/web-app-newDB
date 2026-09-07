@@ -87,37 +87,52 @@ export const ApprovalCenterView: React.FC<ApprovalCenterViewProps> = ({ onOpenRe
   const { user } = useAuth();
   const approverDisplayName = user?.name || 'HR Manager';
 
-  const handleInlineApprove = (reqId: string, e: React.MouseEvent) => {
+  const handleInlineApprove = async (reqId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const req = requests.find(r => r.id === reqId);
-    const targetApprover = user?.name || req?.manager_name || 'Reporting Manager';
-    leaveApi.approveLeaveRequest(reqId, targetApprover, 'Approved via Approval Desk');
-    setRequests(leaveApi.getLeaveRequests());
-    setSelectedIds(prev => prev.filter(i => i !== reqId));
-  };
-
-  const handleInlineReject = (reqId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const reason = prompt('Please enter rejection reason:');
-    if (reason) {
+    try {
       const req = requests.find(r => r.id === reqId);
       const targetApprover = user?.name || req?.manager_name || 'Reporting Manager';
-      leaveApi.rejectLeaveRequest(reqId, targetApprover, reason);
-      setRequests(leaveApi.getLeaveRequests());
+      await leaveApi.approveLeaveRequest(reqId, targetApprover, 'Approved via Approval Desk');
+      const updatedList = await leaveApi.getLeaveRequestsAsync();
+      setRequests(updatedList);
       setSelectedIds(prev => prev.filter(i => i !== reqId));
+    } catch (err: any) {
+      alert(err.message || 'Error approving leave request.');
     }
   };
 
-  const handleBulkApprove = () => {
+  const handleInlineReject = async (reqId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const reason = prompt('Please enter rejection reason:');
+    if (reason) {
+      try {
+        const req = requests.find(r => r.id === reqId);
+        const targetApprover = user?.name || req?.manager_name || 'Reporting Manager';
+        await leaveApi.rejectLeaveRequest(reqId, targetApprover, reason);
+        const updatedList = await leaveApi.getLeaveRequestsAsync();
+        setRequests(updatedList);
+        setSelectedIds(prev => prev.filter(i => i !== reqId));
+      } catch (err: any) {
+        alert(err.message || 'Error rejecting leave request.');
+      }
+    }
+  };
+
+  const handleBulkApprove = async () => {
     if (selectedIds.length === 0) return;
     if (confirm(`Approve all ${selectedIds.length} selected requests?`)) {
-      selectedIds.forEach(id => {
-        const req = requests.find(r => r.id === id);
-        const targetApprover = user?.name || req?.manager_name || 'Reporting Manager';
-        leaveApi.approveLeaveRequest(id, targetApprover, 'Bulk approved via work queue');
-      });
-      setRequests(leaveApi.getLeaveRequests());
-      setSelectedIds([]);
+      try {
+        for (const id of selectedIds) {
+          const req = requests.find(r => r.id === id);
+          const targetApprover = user?.name || req?.manager_name || 'Reporting Manager';
+          await leaveApi.approveLeaveRequest(id, targetApprover, 'Bulk approved via work queue');
+        }
+        const updatedList = await leaveApi.getLeaveRequestsAsync();
+        setRequests(updatedList);
+        setSelectedIds([]);
+      } catch (err: any) {
+        alert(err.message || 'Error processing bulk approval.');
+      }
     }
   };
 

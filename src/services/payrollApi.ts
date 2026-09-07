@@ -39,6 +39,7 @@ import { attendanceRosterService } from './attendance/attendanceRosterService';
 import { hrEventBus } from './hrEventBus';
 import { getActiveOrgId } from './attendance/biometricCommandService';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { notificationService } from './notification/notificationService';
 import { PayrollCalculationEngine, DetailedEmployeePayrollResult } from './payroll/payrollCalculationEngine';
 import { api } from './api';
 
@@ -218,27 +219,27 @@ class PayrollApi {
         const { data, error } = await supabase
           .from('salary_components')
           .select('*')
-          .or(`tenant_id.eq.${tenantId},organization_id.eq.${tenantId}`);
+          .eq('organization_id', tenantId);
         if (!error && Array.isArray(data) && data.length > 0) {
           const mapped: SalaryComponent[] = data.map((d: any) => ({
             id: d.id,
-            tenant_id: d.tenant_id,
+            tenant_id: d.organization_id || tenantId,
             code: d.code,
             name: d.name,
-            type: (d.component_type === 'EARNING' ? 'Earning' : d.component_type === 'EMPLOYEE_DEDUCTION' ? 'Deduction' : 'Statutory') as any,
-            category: d.category as any,
-            calculation_type: d.calculation_method as any,
-            default_value: Number(d.default_value),
+            type: (d.type === 'EARNING' ? 'Earning' : d.type === 'DEDUCTION' ? 'Deduction' : d.type === 'REIMBURSEMENT' ? 'Reimbursement' : 'Statutory') as any,
+            category: (d.category || 'Basic') as any,
+            calculation_type: (d.calculation_type === 'PERCENTAGE' ? 'PercentageOfBasic' : d.calculation_type === 'FORMULA' ? 'Formula' : 'FixedAmount') as any,
+            default_value: Number(d.default_value || 0),
             formula_expression: d.formula_expression,
-            is_taxable: d.is_taxable,
-            is_pf_applicable: d.is_pf_applicable,
-            is_esi_applicable: d.is_esi_applicable,
-            is_pt_applicable: d.is_pt_applicable,
-            is_active: d.is_active,
+            is_taxable: d.is_taxable ?? true,
+            is_pf_applicable: d.is_statutory ?? false,
+            is_esi_applicable: d.is_statutory ?? false,
+            is_pt_applicable: d.is_statutory ?? false,
+            is_active: d.is_active ?? true,
             description: d.description || '',
-            version: d.version,
-            status: d.status,
-            effective_from: d.effective_from,
+            version: 1,
+            status: d.is_active === false ? 'Archived' : 'Active',
+            effective_from: '2026-04-01',
           }));
           setStore(STORAGE_KEYS.COMPONENTS, mapped, tenantId);
           _componentsCache = { data: mapped, timestamp: Date.now() };
@@ -313,26 +314,31 @@ class PayrollApi {
     }
 
     if (isSupabaseEnabled) {
+      const canonicalType = saved.type === 'Earning'
+        ? 'EARNING'
+        : saved.type === 'Deduction'
+        ? 'DEDUCTION'
+        : saved.type === 'Reimbursement'
+        ? 'REIMBURSEMENT'
+        : 'STATUTORY_EMPLOYER';
+
+      const canonicalCalcType = (saved.calculation_type === 'PercentageOfBasic' || saved.calculation_type === 'PercentageOfGross' || saved.calculation_type === 'PercentageOfCTC')
+        ? 'PERCENTAGE'
+        : saved.calculation_type === 'Formula'
+        ? 'FORMULA'
+        : 'FLAT';
+
       Promise.resolve(
         supabase.from('salary_components').upsert({
           id: saved.id,
-          tenant_id: tenantId,
           organization_id: tenantId,
           code: saved.code,
           name: saved.name,
-          description: saved.description,
-          component_type: saved.type === 'Earning' ? 'EARNING' : saved.type === 'Deduction' ? 'EMPLOYEE_DEDUCTION' : 'STATUTORY',
-          category: saved.category,
-          calculation_method: saved.calculation_type || 'FixedAmount',
-          default_value: saved.default_value || 0,
+          type: canonicalType,
+          calculation_type: canonicalCalcType,
           is_taxable: saved.is_taxable ?? true,
-          is_pf_applicable: saved.is_pf_applicable ?? false,
-          is_esi_applicable: saved.is_esi_applicable ?? false,
-          is_pt_applicable: saved.is_pt_applicable ?? false,
+          is_statutory: (saved as any).is_statutory ?? (saved.type === 'Statutory' || saved.is_pf_applicable || saved.is_esi_applicable || saved.is_pt_applicable || false),
           is_active: saved.is_active ?? true,
-          status: saved.status || 'Active',
-          version: saved.version || 1,
-          effective_from: saved.effective_from || new Date().toISOString().split('T')[0],
           updated_at: new Date().toISOString(),
         })
       ).catch((e: any) => console.warn('[Supabase Payroll] upsert component notice:', e));
@@ -398,21 +404,21 @@ class PayrollApi {
         const { data, error } = await supabase
           .from('salary_structures')
           .select('*')
-          .or(`tenant_id.eq.${tenantId},organization_id.eq.${tenantId}`);
+          .eq('organization_id', tenantId);
         if (!error && Array.isArray(data) && data.length > 0) {
           const mapped: SalaryStructure[] = data.map((s: any) => ({
             id: s.id,
-            tenant_id: s.tenant_id,
-            code: s.structure_code,
-            name: s.structure_name,
+            tenant_id: s.organization_id || tenantId,
+            code: s.code || s.structure_code || '',
+            name: s.name || s.structure_name || '',
             description: s.description || '',
             company_id: s.organization_id || 'comp-01',
-            applicable_grade: s.employee_category || 'All',
-            base_annual_ctc: Number(s.base_annual_ctc),
+            applicable_grade: 'All',
+            base_annual_ctc: 0,
             components: [],
-            status: s.status || 'Active',
-            version: s.version || 1,
-            effective_from: s.effective_from || '2026-04-01',
+            status: s.is_active === false ? 'Archived' : 'Active',
+            version: 1,
+            effective_from: '2026-04-01',
             created_at: s.created_at,
             updated_at: s.updated_at,
           }));
@@ -505,15 +511,11 @@ class PayrollApi {
       Promise.resolve(
         supabase.from('salary_structures').upsert({
           id: saved.id,
-          tenant_id: tenantId,
           organization_id: tenantId,
-          structure_code: saved.code,
-          structure_name: saved.name,
-          description: saved.description,
-          base_annual_ctc: saved.base_annual_ctc || 0,
-          status: saved.status || 'Active',
-          version: saved.version || 1,
-          effective_from: saved.effective_from || new Date().toISOString().split('T')[0],
+          code: saved.code,
+          name: saved.name,
+          description: saved.description || '',
+          is_active: saved.status === 'Active',
           updated_at: new Date().toISOString(),
         })
       ).catch((e: any) => console.warn('[Supabase Payroll] upsert structure notice:', e));
@@ -753,28 +755,33 @@ saveEmployeeSalary(assignment: EmployeeSalaryAssignment, tenantId = getActiveOrg
   hrEventBus.emit('payroll.salary.updated', { assignment, tenantId });
 
   if (isSupabaseEnabled) {
-    Promise.resolve(
-      supabase.from('employee_salary_assignments').upsert({
-        id: assignment.id,
-        tenant_id: tenantId,
-        organization_id: tenantId,
-        employee_id: assignment.employee_id,
-        annual_ctc: assignment.annual_ctc,
-        gross_monthly: assignment.gross_monthly,
-        basic_monthly: assignment.basic_monthly,
-        net_monthly_estimate: assignment.net_monthly_estimate,
-        payment_mode: assignment.payment_mode || 'BankTransfer',
-        bank_name: assignment.bank_name,
-        account_number: assignment.account_number,
-        ifsc_code: assignment.ifsc_code,
-        pan_number: assignment.pan_number,
-        pf_uan: assignment.pf_uan,
-        esic_number: assignment.esic_number,
-        status: assignment.status || 'Active',
-        effective_from: assignment.effective_from || '2026-04-01',
-        updated_at: new Date().toISOString(),
-      })
-    ).catch((e: any) => console.warn('[Supabase Payroll] upsert salary notice:', e));
+    (async () => {
+      try {
+        let structureId = assignment.salary_structure_id;
+        if (!structureId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(structureId)) {
+          const { data: sList } = await supabase.from('salary_structures').select('id').limit(1);
+          if (sList && sList.length > 0) {
+            structureId = sList[0].id;
+          }
+        }
+        if (structureId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(structureId)) {
+          await supabase.from('employee_salary_assignments').upsert({
+            id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(assignment.id) ? assignment.id : undefined,
+            organization_id: tenantId,
+            employee_id: assignment.employee_id,
+            salary_structure_id: structureId,
+            annual_ctc: assignment.annual_ctc,
+            monthly_gross: assignment.gross_monthly,
+            effective_from: assignment.effective_from || new Date().toISOString().split('T')[0],
+            effective_to: (assignment as any).effective_to || null,
+            is_active: assignment.status !== 'Inactive',
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'employee_id' });
+        }
+      } catch (e: any) {
+        console.warn('[Supabase Payroll] upsert salary notice:', e);
+      }
+    })();
   }
 
   return assignment;
@@ -1478,42 +1485,25 @@ finalizeAndLockPayroll(runId: string, actorName = 'HR Administrator', tenantId =
 
     for (const rec of run.employee_records) {
       const payslipPayload = {
-        employee_code: rec.employee_code || rec.employee_id,
-        tenant_id: tenantId,
-        month: monthNum,
-        year: yearVal,
-        total_deductions: rec.total_deductions,
-        net_salary: rec.net_pay,
+        organization_id: tenantId,
+        employee_id: rec.employee_id,
+        payslip_number: `PS-${yearVal}${String(monthNum).padStart(2, '0')}-${rec.employee_code || rec.employee_id}`,
+        is_published: true,
+        published_at: new Date().toISOString(),
         created_at: new Date().toISOString()
       };
 
-      Promise.resolve(supabase.from('employee_payslips').insert(payslipPayload)).catch(() => {});
+      Promise.resolve(supabase.from('payslips').insert(payslipPayload)).catch(() => {});
 
-      Promise.resolve(supabase.from('notification_events').insert({
-        event_type: 'PAYSLIP_GENERATED',
-        category: 'PAYROLL',
-        severity: 'INFO',
-        title: `Payslip Generated — ${run.pay_period}`,
-        body: `Your ${run.pay_period} payslip of ₹${rec.net_pay.toLocaleString('en-IN')} has been generated and is ready to view & download.`,
-        resource_type: 'PAYSLIP',
-        resource_id: rec.employee_id,
-        actor_name: actorName,
-        metadata: {
-          employee_id: rec.employee_id,
-          employee_code: rec.employee_code || rec.employee_id,
-          pay_period: run.pay_period,
-          net_pay: rec.net_pay,
-          gross_earnings: rec.total_earnings,
-          basic: rec.basic,
-          hra: rec.hra,
-          special_allowance: rec.special_allowance,
-          epf: rec.epf_employee,
-          pt: rec.professional_tax,
-          tds: rec.tds_tax,
-          total_deductions: rec.total_deductions,
-          payslip_id: `payslip-${run.id}-${rec.employee_id}`,
-        },
-      })).catch(() => {});
+      notificationService.emitEmployeeNotification({
+        employeeId: rec.employee_id,
+        organizationId: getActiveOrgId(),
+        title: `Payslip Available — ${run.pay_period}`,
+        message: `Your payslip for ${run.pay_period} is now available to view & download in your app.`,
+        actionUrl: '/payslips',
+      }).catch(() => {});
+
+
     }
   } catch (syncErr) {
     console.warn('[PayrollApi] Supabase payslips sync notice:', syncErr);
@@ -2568,24 +2558,13 @@ reconcileBatch(batchId: string, actorName = 'Finance Officer', tenantId = getAct
     const items = batch.items || [];
     for (const item of items) {
       if (item.bank_status === 'Settled' || item.bank_status === 'Success' || !item.bank_status) {
-        Promise.resolve(supabase.from('notification_events').insert({
-          event_type: 'SALARY_DISBURSED',
-          category: 'PAYROLL',
-          severity: 'INFO',
+        notificationService.emitEmployeeNotification({
+          employeeId: item.employee_id,
+          organizationId: getActiveOrgId(),
           title: `Salary Credited — ${batch.pay_period}`,
-          body: `Your salary of ₹${item.amount.toLocaleString('en-IN')} for ${batch.pay_period} has been credited to your bank account (UTR: ${item.bank_reference_number || batch.bank_reference_id || 'UTR-SETTLED'}). Value Date: ${batch.reconciled_at ? new Date(batch.reconciled_at).toLocaleDateString('en-GB') : '31 Aug 2026'}.`,
-          resource_type: 'BANK_DISBURSEMENT',
-          resource_id: item.employee_id,
-          actor_name: actorName,
-          metadata: {
-            payroll_cycle: batch.pay_period,
-            amount: item.amount,
-            utr: item.bank_reference_number || batch.bank_reference_id,
-            value_date: batch.reconciled_at || new Date().toISOString(),
-            status: 'Settled',
-            batch_id: batch.id,
-          },
-        })).catch(() => {});
+          message: `Your salary for ${batch.pay_period} has been processed and credited to your registered bank account.`,
+          actionUrl: '/payslips',
+        }).catch(() => {});
       }
     }
   } catch (notifErr) {

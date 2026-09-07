@@ -252,78 +252,12 @@ class EmployeeRelationsService {
   async syncWithDatabase(): Promise<void> {
     if (!isSupabaseEnabled) return;
     try {
-      // 1. Sync announcements from company_announcements and communications safely
-      const [annRes, commRes] = await Promise.all([
-        Promise.resolve(supabase.from('company_announcements').select('*')).catch((err) => ({ data: null, error: err })),
-        Promise.resolve(supabase.from('communications').select('*')).catch((err) => ({ data: null, error: err })),
-      ]);
-
+      // Announcements and internal communications are managed via local store and notification_events broadcast mesh
       const localComms = this.getCommunications();
-      const mergedMap = new Map<string, HrCommunication>();
-
-      for (const item of localComms) {
-        mergedMap.set(item.id, item);
+      if (localComms.length > 0) {
+        localStorage.setItem(this.STORAGE_KEY_COMMUNICATIONS, JSON.stringify(localComms));
+        window.dispatchEvent(new CustomEvent('er:communications_updated'));
       }
-
-      if (annRes.data && annRes.data.length > 0) {
-        for (const ann of annRes.data) {
-          const mappedUrgency: CommunicationUrgency =
-            ann.priority === 'URGENT' ? 'EMERGENCY' : ann.priority === 'HIGH' ? 'IMPORTANT' : 'NORMAL';
-
-          mergedMap.set(ann.id, {
-            id: ann.id,
-            title: ann.title,
-            category: (ann.category as any) || 'ANNOUNCEMENT',
-            urgency: mappedUrgency,
-            content: ann.body || ann.summary || '',
-            target_audience: ann.target_scope === 'ALL' ? 'All Employees' : (ann.target_department || 'Department'),
-            published_by: ann.published_by_name || 'HR Head',
-            published_at: ann.published_at || ann.created_at || new Date().toISOString(),
-            requires_acknowledgement: false,
-            version: 1,
-            stats: {
-              target_count: ann.target_count || 0,
-              delivered_count: ann.delivered_count || 0,
-              read_count: ann.read_count || 0,
-              acknowledged_count: ann.acknowledged_count || 0,
-            },
-            attachments: [],
-          });
-        }
-      }
-
-      if (commRes.data && commRes.data.length > 0) {
-        for (const comm of commRes.data) {
-          const mappedUrgency: CommunicationUrgency =
-            comm.priority === 'URGENT' ? 'EMERGENCY' : comm.priority === 'IMPORTANT' ? 'IMPORTANT' : 'NORMAL';
-
-          mergedMap.set(comm.id, {
-            id: comm.id,
-            title: comm.title,
-            category: (comm.communication_type as any) || 'ANNOUNCEMENT',
-            urgency: mappedUrgency,
-            content: comm.body || '',
-            target_audience: comm.audience_type === 'ALL' ? 'All Employees' : 'Targeted Group',
-            published_by: comm.author_name || comm.published_by || 'HR Head',
-            published_at: comm.publish_at || comm.created_at || new Date().toISOString(),
-            requires_acknowledgement: comm.requires_acknowledgement || false,
-            version: 1,
-            stats: {
-              target_count: comm.target_count || 0,
-              delivered_count: comm.delivered_count || 0,
-              read_count: comm.read_count || 0,
-              acknowledged_count: comm.acknowledged_count || 0,
-            },
-            attachments: [],
-          });
-        }
-      }
-
-      const mergedList = Array.from(mergedMap.values()).sort(
-        (a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
-      );
-      localStorage.setItem(this.STORAGE_KEY_COMMUNICATIONS, JSON.stringify(mergedList));
-      window.dispatchEvent(new CustomEvent('er:communications_updated'));
     } catch (err) {
       console.warn('[EmployeeRelationsService] Database sync notice:', err);
     }
@@ -349,58 +283,16 @@ class EmployeeRelationsService {
     localStorage.setItem(this.STORAGE_KEY_COMMUNICATIONS, JSON.stringify(all));
     window.dispatchEvent(new CustomEvent('er:communications_updated'));
 
-    // Persist to Supabase so Flutter Mobile App receives it immediately
+    // Persist to notification_events for real-time in-app broadcast banner
     if (isSupabaseEnabled) {
-      // 1. Insert into company_announcements (read by Flutter announcements tab)
-      try {
-        supabase.from('company_announcements').insert([
-          {
-            title: item.title,
-            summary: item.content.substring(0, 150),
-            body: item.content,
-            category: item.category || 'COMPANY_NEWS',
-            priority: (item.urgency === 'EMERGENCY' || item.urgency === 'URGENT') ? 'URGENT' : (item.urgency === 'IMPORTANT' ? 'HIGH' : 'NORMAL'),
-            target_scope: item.target_audience === 'All Employees' ? 'ALL' : 'DEPARTMENT',
-            published_by_name: item.published_by || 'Haripriya (HR Head)',
-            is_pinned: item.urgency === 'EMERGENCY' || item.urgency === 'URGENT' || item.urgency === 'IMPORTANT',
-            published_at: publishedAt,
-            status: 'PUBLISHED',
-          },
-        ]).then(() => {});
-      } catch (_) {}
-
-      // 2. Insert into communications table
-      try {
-        supabase.from('communications').insert([
-          {
-            title: item.title,
-            body: item.content,
-            communication_type: item.category || 'ANNOUNCEMENT',
-            priority: (item.urgency === 'EMERGENCY' || item.urgency === 'URGENT') ? 'URGENT' : (item.urgency === 'IMPORTANT' ? 'IMPORTANT' : 'NORMAL'),
-            status: 'PUBLISHED',
-            author_name: item.published_by || 'Haripriya (HR Head)',
-            published_by: item.published_by || 'Haripriya (HR Head)',
-            publish_at: publishedAt,
-            requires_acknowledgement: item.requires_acknowledgement ?? false,
-          },
-        ]).then(() => {});
-      } catch (_) {}
-
-      // 3. Dispatch to notification_events for Flutter mobile app realtime banner
       try {
         supabase.from('notification_events').insert([
           {
-            event_type: 'COMPANY_ANNOUNCEMENT',
-            category: 'BROADCAST',
-            severity: item.urgency === 'EMERGENCY' ? 'CRITICAL' : 'INFO',
+            organization_id: (item as any).organization_id || '00000000-0000-0000-0000-000000000000',
+            channel: 'IN_APP',
             title: `Announcement: ${item.title}`,
-            body: item.content.substring(0, 120),
-            actor_name: item.published_by || 'HR Head',
-            metadata: {
-              communication_id: item.id,
-              category: item.category,
-              urgency: item.urgency,
-            },
+            message: item.content.substring(0, 200),
+            is_read: false,
           },
         ]).then(() => {});
       } catch (_) {}
@@ -409,53 +301,17 @@ class EmployeeRelationsService {
     return item;
   }
 
-  async deleteCommunication(id: string, title?: string): Promise<boolean> {
+  async deleteCommunication(id: string, _title?: string): Promise<boolean> {
     const all = this.getCommunications();
-    const itemToDelete = all.find(c => c.id === id);
-    const resolvedTitle = title || itemToDelete?.title;
-
     const updated = all.filter(c => c.id !== id);
     localStorage.setItem(this.STORAGE_KEY_COMMUNICATIONS, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('er:communications_updated'));
-
-    if (isSupabaseEnabled) {
-      try {
-        const promises: PromiseLike<any>[] = [
-          supabase.from('company_announcements').delete().eq('id', id),
-          supabase.from('communications').delete().eq('id', id),
-        ];
-
-        if (resolvedTitle) {
-          promises.push(
-            supabase.from('company_announcements').delete().eq('title', resolvedTitle),
-            supabase.from('communications').delete().eq('title', resolvedTitle),
-            supabase.from('notification_events').delete().ilike('title', `%${resolvedTitle}%`)
-          );
-        }
-
-        await Promise.allSettled(promises);
-      } catch (err) {
-        console.warn('[EmployeeRelationsService] Delete notice:', err);
-      }
-    }
     return true;
   }
 
   async clearAllCommunications(): Promise<boolean> {
     localStorage.setItem(this.STORAGE_KEY_COMMUNICATIONS, JSON.stringify([]));
     window.dispatchEvent(new CustomEvent('er:communications_updated'));
-
-    if (isSupabaseEnabled) {
-      try {
-        await Promise.allSettled([
-          supabase.from('company_announcements').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-          supabase.from('communications').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-          supabase.from('notification_events').delete().eq('event_type', 'COMPANY_ANNOUNCEMENT'),
-        ]);
-      } catch (err) {
-        console.warn('[EmployeeRelationsService] Clear all notice:', err);
-      }
-    }
     return true;
   }
 

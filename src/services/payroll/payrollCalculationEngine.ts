@@ -160,10 +160,15 @@ export class PayrollCalculationEngine {
     // ── 3. Calculate Overtime Earnings ─────────────────────────────────────────
     let otEarnings = 0;
     let otFormula = '0 OT hours';
-    if (otHours > 0) {
+    const isOvertimeSuppressed = (snapshot as any).unauthorized_checkout === true || (snapshot as any).overtime_eligible === false;
+
+    if (otHours > 0 && !isOvertimeSuppressed) {
       const otEval = StatutoryRuleEngine.evaluateOvertime(snapshot.monthly_gross_fixed, otHours, 1.5, 8, totalDays);
       otEarnings = otEval.otAmount;
       otFormula = otEval.formula;
+    } else if (isOvertimeSuppressed) {
+      otEarnings = 0;
+      otFormula = '0 OT hours (Suppressed: Recorded outside assigned work location)';
     }
 
     // ── 4. Total Gross Earnings Calculation ────────────────────────────────────

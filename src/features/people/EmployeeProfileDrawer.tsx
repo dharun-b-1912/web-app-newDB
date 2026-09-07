@@ -139,7 +139,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
         if (isSupabaseEnabled) {
           try {
             const [bRes, sRes] = await Promise.all([
-              supabase.from('employee_bank_accounts').select('*').eq('employee_id', employee.id).maybeSingle(),
+              supabase.from('employee_bank_details').select('*').eq('employee_id', employee.id).maybeSingle(),
               supabase.from('employee_statutory_details').select('*').eq('employee_id', employee.id).maybeSingle(),
             ]);
 
@@ -176,10 +176,9 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
       const res = await avatarService.uploadAndActivateAvatar({
         employeeId: employee.id,
         imageInput: file,
-        tenantId: employee.organization_id || 'org-joy-01',
         orgId: employee.organization_id || 'org-joy-01',
       });
-      const updatedEmployee = { ...employee, avatar_url: res.url, avatar_version: res.version };
+      const updatedEmployee = { ...employee, avatar_url: res.url };
       onUpdated(updatedEmployee);
       showToast('Profile photo updated & synced across Web & Mobile.', 'success');
     } catch (err: any) {

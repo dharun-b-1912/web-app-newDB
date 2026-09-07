@@ -69,60 +69,81 @@ function setStorage<T>(key: string, value: T): void {
 
 export function sanitizeEmployeeForSupabase(emp: any): Record<string, any> {
   if (!emp || typeof emp !== 'object') return {};
-  const allowedKeys = new Set([
-    'id',
-    'tenant_id',
-    'organization_id',
-    'company_id',
-    'company_name',
-    'branch_id',
-    'branch_name',
-    'department_id',
-    'department_name',
-    'designation_id',
-    'designation_title',
-    'user_id',
-    'employee_code',
-    'first_name',
-    'last_name',
-    'middle_name',
-    'display_name',
-    'work_email',
-    'avatar_url',
-    'avatar_asset_id',
-    'avatar_version',
-    'status',
-    'employment_type',
-    'employment_source',
-    'vendor_id',
-    'vendor_name',
-    'vendor_employee_code',
-    'profile',
-    'employment',
-    'shift_name',
-    'shift_start_time',
-    'shift_end_time',
-    'current_profile_media_id',
-    'media_version',
-    'record_version',
-    'updated_by',
-    'created_at',
-    'updated_at',
-    'deleted_at',
-  ]);
 
   const clean: Record<string, any> = {};
-  for (const [k, v] of Object.entries(emp)) {
-    if (allowedKeys.has(k) && v !== undefined) {
-      clean[k] = v;
-    }
-  }
+
+  if (emp.id) clean.id = ensureUUID(emp.id);
+  if (emp.organization_id && isValidUUID(emp.organization_id)) clean.organization_id = emp.organization_id;
+  if (emp.company_id && isValidUUID(emp.company_id)) clean.company_id = emp.company_id;
+  if (emp.branch_id && isValidUUID(emp.branch_id)) clean.branch_id = emp.branch_id;
+  if (emp.department_id && isValidUUID(emp.department_id)) clean.department_id = emp.department_id;
+  if (emp.designation_id && isValidUUID(emp.designation_id)) clean.designation_id = emp.designation_id;
+  if (emp.reporting_manager_id && isValidUUID(emp.reporting_manager_id)) clean.reporting_manager_id = emp.reporting_manager_id;
+  if (emp.user_id && isValidUUID(emp.user_id)) clean.user_id = emp.user_id;
+
+  if (emp.employee_code) clean.employee_code = String(emp.employee_code).trim();
+  if (emp.first_name) clean.first_name = String(emp.first_name).trim();
+  if (emp.middle_name) clean.middle_name = String(emp.middle_name).trim();
+  if (emp.last_name) clean.last_name = String(emp.last_name).trim();
+  clean.display_name = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee';
+  if (emp.work_email) clean.work_email = String(emp.work_email).trim();
+  if (emp.personal_email) clean.personal_email = String(emp.personal_email).trim();
+  if (emp.phone || emp.primary_mobile || emp.profile?.phone) clean.phone = String(emp.phone || emp.primary_mobile || emp.profile?.phone).trim();
+
+  // Gender enum normalization: 'MALE' | 'FEMALE' | 'NON_BINARY' | 'PREFER_NOT_TO_SAY'
+  const rawGender = String(emp.gender || emp.profile?.gender || 'MALE').toUpperCase().replace(/[\s-]/g, '_');
+  if (rawGender.includes('FEMALE')) clean.gender = 'FEMALE';
+  else if (rawGender.includes('NON_BINARY')) clean.gender = 'NON_BINARY';
+  else if (rawGender.includes('PREFER')) clean.gender = 'PREFER_NOT_TO_SAY';
+  else clean.gender = 'MALE';
+
+  if (emp.dob || emp.profile?.dob || emp.profile?.date_of_birth) clean.dob = emp.dob || emp.profile?.dob || emp.profile?.date_of_birth;
+  clean.doj = emp.doj || emp.employment?.doj || new Date().toISOString().split('T')[0];
+  if (emp.confirmation_date || emp.employment?.confirmation_date) clean.confirmation_date = emp.confirmation_date || emp.employment?.confirmation_date;
+
+  // Employment Type enum: 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | 'INTERN'
+  const rawType = String(emp.employment_type || emp.employment?.employment_type || 'FULL_TIME').toUpperCase().replace(/[\s-]/g, '_');
+  if (rawType.includes('PART')) clean.employment_type = 'PART_TIME';
+  else if (rawType.includes('CONTRACT')) clean.employment_type = 'CONTRACT';
+  else if (rawType.includes('INTERN')) clean.employment_type = 'INTERN';
+  else clean.employment_type = 'FULL_TIME';
+
+  // Employment Status enum: 'ACTIVE' | 'PROBATION' | 'NOTICE_PERIOD' | 'SUSPENDED' | 'TERMINATED' | 'RESIGNED'
+  const rawStatus = String(emp.status || emp.employment_status || 'ACTIVE').toUpperCase().replace(/[\s-]/g, '_');
+  if (rawStatus.includes('PROBATION')) clean.employment_status = 'PROBATION';
+  else if (rawStatus.includes('NOTICE')) clean.employment_status = 'NOTICE_PERIOD';
+  else if (rawStatus.includes('SUSPEND')) clean.employment_status = 'SUSPENDED';
+  else if (rawStatus.includes('TERMINAT')) clean.employment_status = 'TERMINATED';
+  else if (rawStatus.includes('RESIGN')) clean.employment_status = 'RESIGNED';
+  else clean.employment_status = 'ACTIVE';
+
+  if (emp.avatar_url) clean.avatar_url = emp.avatar_url;
+  if (emp.created_at) clean.created_at = emp.created_at;
+  clean.updated_at = new Date().toISOString();
+
   return clean;
 }
 
 const DEFAULT_LEGAL_ENTITIES: Company[] = [];
 
 export const DEFAULT_EMPLOYEES: Employee[] = [];
+
+export const isValidUUID = (id?: string | null): boolean => {
+  if (!id) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+};
+
+export const ensureUUID = (id?: string | null): string => {
+  if (id && isValidUUID(id)) return id;
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
 
 export const api = {
   // ==========================================
@@ -147,7 +168,7 @@ export const api = {
   async getOrganization(): Promise<Organization> {
     if (isSupabaseEnabled) {
       try {
-        const { data, error } = await supabase.from('organizations').select('*').limit(1).single();
+        const { data, error } = await supabase.from('organizations').select('*').limit(1).maybeSingle();
         if (!error && data) {
           setStorage(KEYS.ORG, data);
           return data;
@@ -175,8 +196,63 @@ export const api = {
     return updated;
   },
 
+  async provisionInitialOrganization(payload: {
+    organization_name: string;
+    organization_slug?: string;
+    organization_code?: string;
+    country?: string;
+    currency?: string;
+    timezone?: string;
+    initial_company_name?: string;
+    initial_company_code?: string;
+    user_full_name?: string;
+  }): Promise<{
+    success: boolean;
+    organization_id: string;
+    organization_name: string;
+    organization_slug: string;
+    company_id: string;
+    user_profile_id: string;
+    role_id: string;
+  }> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase.rpc('fn_provision_initial_organization', {
+          p_organization_name: payload.organization_name,
+          p_organization_slug: payload.organization_slug,
+          p_organization_code: payload.organization_code,
+          p_country: payload.country || 'IN',
+          p_currency: payload.currency || 'INR',
+          p_timezone: payload.timezone || 'Asia/Kolkata',
+          p_initial_company_name: payload.initial_company_name,
+          p_initial_company_code: payload.initial_company_code,
+          p_user_full_name: payload.user_full_name,
+        });
+        if (error) throw error;
+        if (data && (data as any).success) {
+          return data as any;
+        }
+      } catch (err) {
+        console.error('[API] Failed to provision initial organization via RPC:', err);
+        throw err;
+      }
+    }
+    const orgId = `org-${Date.now().toString(36)}`;
+    const compId = `comp-${Date.now().toString(36)}`;
+    return {
+      success: true,
+      organization_id: orgId,
+      organization_name: payload.organization_name,
+      organization_slug: payload.organization_slug || 'org-main',
+      company_id: compId,
+      user_profile_id: `usr-${Date.now().toString(36)}`,
+      role_id: `role-admin`,
+    };
+  },
+
   // ==========================================
   // Company API
+  // ==========================================
 
   async getCompanies(): Promise<Company[]> {
     if (isSupabaseEnabled) {
@@ -245,17 +321,25 @@ export const api = {
   },
 
   // ==========================================
+  // ==========================================
   // Branch API
   // ==========================================
   async getBranches(companyId?: string): Promise<Branch[]> {
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('branches').select('*');
-        if (companyId) q = q.eq('company_id', companyId);
+        if (companyId && isValidUUID(companyId)) q = q.eq('company_id', companyId);
         const { data, error } = await q;
         if (!error && data !== null) {
-          setStorage(KEYS.BRANCHES, data);
-          return data;
+          const mapped = data.map((b: any) => ({
+            ...b,
+            code: b.branch_code || b.code,
+            contact_phone: b.phone || b.contact_phone,
+            contact_email: b.email || b.contact_email,
+            status: b.is_active === false ? 'Inactive' : 'Active',
+          }));
+          setStorage(KEYS.BRANCHES, mapped);
+          return mapped;
         }
       } catch (err) {
         console.error('[API] Failed to fetch branches from Supabase:', err);
@@ -266,16 +350,57 @@ export const api = {
   },
 
   async createBranch(input: Omit<Branch, 'id' | 'created_at'>): Promise<Branch> {
+    const id = ensureUUID((input as any).id);
+    let orgId = (input as any).organization_id || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null) || '';
+    let compId = input.company_id && isValidUUID(input.company_id) ? input.company_id : (api.getActiveCompany()?.id && isValidUUID(api.getActiveCompany()?.id) ? api.getActiveCompany()!.id : '');
+    const branchCode = (input as any).branch_code || input.code || 'BR01';
+
+    if (isSupabaseEnabled && supabase) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const authUid = sessionData?.session?.user?.id;
+        if (authUid) {
+          const { data: prof } = await supabase
+            .from('user_profiles')
+            .select('organization_id')
+            .eq('auth_user_id', authUid)
+            .maybeSingle();
+          if (prof?.organization_id) orgId = prof.organization_id;
+        }
+      } catch (_) {}
+    }
+
     const newBranch: Branch = {
       ...input,
-      id: `br-${Date.now().toString(36)}`,
+      id,
+      company_id: compId,
+      code: branchCode,
       created_at: new Date().toISOString(),
     };
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && orgId && compId) {
       try {
-        const { data, error } = await supabase.from('branches').insert(newBranch).select().single();
+        const payload: Record<string, any> = {
+          id,
+          organization_id: orgId,
+          company_id: compId,
+          name: newBranch.name,
+          branch_code: branchCode,
+          city: newBranch.city || 'Coimbatore',
+          state: newBranch.state || 'Tamil Nadu',
+          country: newBranch.country || 'India',
+          timezone: newBranch.timezone || 'Asia/Kolkata',
+          phone: newBranch.contact_phone || null,
+          email: newBranch.contact_email || null,
+          is_active: newBranch.status !== 'Inactive',
+        };
+        const { data, error } = await supabase.from('branches').insert(payload).select().single();
         if (error) throw error;
-        if (data) return data;
+        if (data) {
+          const mapped = { ...newBranch, ...data, code: data.branch_code };
+          const list = getStorage<Branch[]>(KEYS.BRANCHES, []);
+          setStorage(KEYS.BRANCHES, [mapped, ...list]);
+          return mapped;
+        }
       } catch (err) {
         console.error('[API] Failed to insert branch into Supabase:', err);
         throw err;
@@ -292,12 +417,17 @@ export const api = {
   async getLocations(branchId?: string): Promise<Location[]> {
     if (isSupabaseEnabled) {
       try {
-        let q = supabase.from('locations').select('*');
-        if (branchId) q = q.eq('branch_id', branchId);
+        let q = supabase.from('work_locations').select('*');
+        if (branchId && isValidUUID(branchId)) q = q.eq('branch_id', branchId);
         const { data, error } = await q;
         if (!error && data !== null) {
-          setStorage(KEYS.LOCATIONS, data);
-          return data;
+          const mapped = data.map((l: any) => ({
+            ...l,
+            address: l.address_line1 || l.address,
+            is_active: l.is_active ?? true,
+          }));
+          setStorage(KEYS.LOCATIONS, mapped);
+          return mapped;
         }
       } catch (err) {
         console.error('[API] Failed to fetch locations from Supabase:', err);
@@ -308,11 +438,38 @@ export const api = {
   },
 
   async createLocation(input: Omit<Location, 'id'>): Promise<Location> {
-    const newLoc: Location = { ...input, id: `loc-${Date.now().toString(36)}` };
-    if (isSupabaseEnabled) {
+    const id = ensureUUID((input as any).id);
+    let orgId = (input as any).organization_id || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null) || '';
+    const newLoc: Location = { ...input, id };
+    if (isSupabaseEnabled && orgId) {
       try {
-        const { error } = await supabase.from('locations').insert(newLoc);
+        let branchId = newLoc.branch_id && isValidUUID(newLoc.branch_id) ? newLoc.branch_id : null;
+        if (!branchId) {
+          const { data: bList } = await supabase.from('branches').select('id').eq('organization_id', orgId).limit(1);
+          if (bList && bList.length > 0) {
+            branchId = bList[0].id;
+          }
+        }
+        const payload: Record<string, any> = {
+          id,
+          organization_id: orgId,
+          branch_id: branchId,
+          name: newLoc.name,
+          address_line1: (newLoc as any).address_line1 || newLoc.address || newLoc.name,
+          latitude: newLoc.latitude ?? null,
+          longitude: newLoc.longitude ?? null,
+          geofence_radius_meters: (newLoc as any).geofence_radius_meters ?? 100,
+          is_geofencing_enabled: true,
+          is_active: (newLoc as any).is_active ?? true,
+        };
+        const { data, error } = await supabase.from('work_locations').insert(payload).select().single();
         if (error) throw error;
+        if (data) {
+          const mapped = { ...newLoc, ...data, address: data.address_line1 };
+          const list = getStorage<Location[]>(KEYS.LOCATIONS, []);
+          setStorage(KEYS.LOCATIONS, [mapped, ...list]);
+          return mapped;
+        }
       } catch (err) {
         console.error('[API] Failed to insert location into Supabase:', err);
         throw err;
@@ -330,7 +487,12 @@ export const api = {
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('departments').select('*');
-        if (companyId) q = q.eq('company_id', companyId);
+        if (companyId && companyId !== 'all') {
+          if (!isValidUUID(companyId)) {
+            return [];
+          }
+          q = q.eq('company_id', companyId);
+        }
         const { data, error } = await q;
         if (!error && data !== null) {
           setStorage(KEYS.DEPARTMENTS, data);
@@ -350,22 +512,33 @@ export const api = {
   },
 
   async createDepartment(input: Omit<Department, 'id'>): Promise<Department> {
-    const newDept: Department = { ...input, id: `dept-${Date.now().toString(36)}`, employee_count: 0 };
-    if (isSupabaseEnabled) {
+    const id = ensureUUID((input as any).id);
+    let orgId = (input as any).organization_id || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null) || '';
+    let compId = input.company_id && isValidUUID(input.company_id) ? input.company_id : (api.getActiveCompany()?.id && isValidUUID(api.getActiveCompany()?.id) ? api.getActiveCompany()!.id : '');
+
+    const newDept: Department = { ...input, id, company_id: compId, employee_count: 0 };
+    if (isSupabaseEnabled && orgId && compId) {
       try {
         const payload: Record<string, any> = {
-          id: newDept.id,
+          id,
+          organization_id: orgId,
+          company_id: compId,
           name: newDept.name,
           code: newDept.code,
-          company_id: newDept.company_id || api.getActiveCompany()?.id || 'comp-01',
-          organization_id: (newDept as any).organization_id || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null),
+          parent_department_id: newDept.parent_department_id && isValidUUID(newDept.parent_department_id) ? newDept.parent_department_id : null,
+          head_employee_id: newDept.head_employee_id && isValidUUID(newDept.head_employee_id) ? newDept.head_employee_id : null,
+          is_active: newDept.status !== 'Inactive',
         };
-        if (newDept.branch_id) payload.branch_id = newDept.branch_id;
-        if (newDept.description) payload.description = newDept.description;
-        if (newDept.status) payload.status = newDept.status;
 
-        const { error } = await supabase.from('departments').insert(payload);
-        if (error) console.warn('[API] Department insert to Supabase notice:', error.message || error);
+        const { data, error } = await supabase.from('departments').insert(payload).select().single();
+        if (error) {
+          console.warn('[API] Department insert to Supabase notice:', error.message || error);
+        } else if (data) {
+          const merged = { ...newDept, ...data };
+          const list = getStorage<Department[]>(KEYS.DEPARTMENTS, []);
+          setStorage(KEYS.DEPARTMENTS, [merged, ...list]);
+          return merged;
+        }
       } catch (err) {
         console.warn('[API] Department insert fallback:', err);
       }
@@ -379,35 +552,17 @@ export const api = {
   // Designation API
   // ==========================================
   async getDesignations(companyId?: string): Promise<Designation[]> {
-    const defaultDesignations: Designation[] = [
-      { id: 'desig-se', company_id: companyId || 'comp-joy-01', title: 'Software Engineer', code: 'SE', grade: 'L3 - Mid Level' },
-      { id: 'desig-sse', company_id: companyId || 'comp-joy-01', title: 'Senior Software Engineer', code: 'SSE', grade: 'L4 - Senior' },
-      { id: 'desig-techlead', company_id: companyId || 'comp-joy-01', title: 'Technical Lead', code: 'TECHLEAD', grade: 'L5 - Lead' },
-      { id: 'desig-eng-mgr', company_id: companyId || 'comp-joy-01', title: 'Engineering Manager', code: 'EM', grade: 'L6 - Manager' },
-      { id: 'desig-hr-exec', company_id: companyId || 'comp-joy-01', title: 'HR Executive', code: 'HRE', grade: 'L2 - Associate' },
-      { id: 'desig-hr-mgr', company_id: companyId || 'comp-joy-01', title: 'HR Manager', code: 'HRM', grade: 'L5 - Lead' },
-      { id: 'desig-hr-head', company_id: companyId || 'comp-joy-01', title: 'HR Head', code: 'HRH', grade: 'L7 - Director' },
-      { id: 'desig-qa-eng', company_id: companyId || 'comp-joy-01', title: 'QA Engineer', code: 'QAE', grade: 'L3 - Mid Level' },
-      { id: 'desig-qa-lead', company_id: companyId || 'comp-joy-01', title: 'QA Specialist / Lead', code: 'QAL', grade: 'L5 - Lead' },
-      { id: 'desig-prod-mgr', company_id: companyId || 'comp-joy-01', title: 'Product Manager', code: 'PM', grade: 'L5 - Lead' },
-      { id: 'desig-ops-lead', company_id: companyId || 'comp-joy-01', title: 'Operations Lead', code: 'OPL', grade: 'L4 - Senior' },
-      { id: 'desig-md', company_id: companyId || 'comp-joy-01', title: 'Managing Director', code: 'MD', grade: 'L8 - Executive' },
-      { id: 'desig-admin', company_id: companyId || 'comp-joy-01', title: 'Administrative Assistant', code: 'ADM', grade: 'L2 - Associate' },
-      { id: 'desig-accountant', company_id: companyId || 'comp-joy-01', title: 'Accountant', code: 'ACC', grade: 'L3 - Mid Level' },
-      { id: 'desig-uiux', company_id: companyId || 'comp-joy-01', title: 'UI/UX Designer', code: 'UIUX', grade: 'L3 - Mid Level' },
-      { id: 'desig-machine-op', company_id: companyId || 'comp-joy-01', title: 'Machine Operator Grade 1', code: 'MOP', grade: 'L1 - Entry Level' },
-    ];
-
     if (isSupabaseEnabled) {
       try {
-        const { data, error } = await supabase
-          .from('designations')
-          .select('*')
-          .order('title', { ascending: true });
+        let q = supabase.from('designations').select('*').order('title', { ascending: true });
+        if (companyId && isValidUUID(companyId)) {
+          q = q.eq('company_id', companyId);
+        }
+        const { data, error } = await q;
 
         if (!error && data && data.length > 0) {
           setStorage(KEYS.DESIGNATIONS, data);
-          return companyId ? data.filter((d: any) => !d.company_id || d.company_id === companyId || d.company_id === 'comp-joy-01') : data;
+          return data;
         }
       } catch (err) {
         console.warn('[API] Failed to fetch designations from Supabase:', err);
@@ -415,37 +570,45 @@ export const api = {
     }
 
     const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
-    if (list.length === 0) {
-      setStorage(KEYS.DESIGNATIONS, defaultDesignations);
-      return defaultDesignations;
-    }
-    return companyId ? list.filter((d) => !d.company_id || d.company_id === companyId || d.company_id === 'comp-joy-01') : list;
+    return companyId && isValidUUID(companyId) ? list.filter((d) => d.company_id === companyId) : list;
   },
 
   async createDesignation(input: Omit<Designation, 'id'>): Promise<Designation> {
     const rawCode = input.code || input.title.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6) || 'DESIG';
-    const cleanId = `desig-${rawCode.toLowerCase()}-${Date.now().toString(36).slice(-4)}`;
-    
+    const id = ensureUUID((input as any).id);
+    const orgId = (input as any).organization_id || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null) || 'e539780b-df07-4b45-beaa-ccf1d2224be8';
+    const compId = input.company_id && isValidUUID(input.company_id) ? input.company_id : (api.getActiveCompany()?.id && isValidUUID(api.getActiveCompany()?.id) ? api.getActiveCompany()!.id : '5537b879-7299-48a4-bdfe-16e327a2d3d0');
+
     const newDesig: Designation = {
-      id: cleanId,
+      id,
       title: input.title.trim(),
       code: rawCode,
       grade: input.grade || 'L3 - Mid Level',
-      company_id: input.company_id || 'comp-joy-01',
+      company_id: compId,
     };
 
     if (isSupabaseEnabled) {
       try {
         const payload: Record<string, any> = {
           id: newDesig.id,
+          organization_id: orgId,
+          company_id: compId,
           title: newDesig.title,
           code: newDesig.code,
-          company_id: newDesig.company_id,
           grade: newDesig.grade,
+          is_active: true,
         };
 
-        const { error } = await supabase.from('designations').upsert(payload, { onConflict: 'id' });
-        if (error) console.warn('[API] Designation upsert to Supabase notice:', error.message || error);
+        const { data, error } = await supabase.from('designations').upsert(payload, { onConflict: 'id' }).select().single();
+        if (error) {
+          console.warn('[API] Designation upsert to Supabase notice:', error.message || error);
+        } else if (data) {
+          const merged = { ...newDesig, ...data };
+          const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
+          const updated = [merged, ...list.filter((d) => d.id !== merged.id && d.title.toLowerCase() !== merged.title.toLowerCase())];
+          setStorage(KEYS.DESIGNATIONS, updated);
+          return merged;
+        }
       } catch (err) {
         console.warn('[API] Designation insert fallback:', err);
       }
@@ -590,7 +753,12 @@ export const api = {
         try {
           let q = supabase.from('employees').select('*');
           const filterObj = typeof params === 'string' ? { companyId: params } : params;
-          if (filterObj?.companyId && filterObj.companyId !== 'all') q = q.eq('company_id', filterObj.companyId);
+          if (filterObj?.companyId && filterObj.companyId !== 'all') {
+            if (!isValidUUID(filterObj.companyId)) {
+              return [];
+            }
+            q = q.eq('company_id', filterObj.companyId);
+          }
           if (filterObj?.departmentId && filterObj.departmentId !== 'all') q = q.eq('department_id', filterObj.departmentId);
           if (filterObj?.status && filterObj.status !== 'all') q = q.eq('status', filterObj.status);
           if (filterObj?.source && filterObj.source !== 'all') q = q.eq('employment_source', filterObj.source);
@@ -612,7 +780,7 @@ export const api = {
             if (empIds.length > 0) {
               try {
                 const [bRes, sRes] = await Promise.all([
-                  supabase.from('employee_bank_accounts').select('*').in('employee_id', empIds),
+                  supabase.from('employee_bank_details').select('*').in('employee_id', empIds),
                   supabase.from('employee_statutory_details').select('*').in('employee_id', empIds),
                 ]);
 
@@ -698,7 +866,7 @@ export const api = {
       try {
         const [empRes, bankRes, statRes] = await Promise.all([
           supabase.from('employees').select('*').eq('id', id).maybeSingle(),
-          supabase.from('employee_bank_accounts').select('*').eq('employee_id', id).maybeSingle(),
+          supabase.from('employee_bank_details').select('*').eq('employee_id', id).maybeSingle(),
           supabase.from('employee_statutory_details').select('*').eq('employee_id', id).maybeSingle(),
         ]);
 
@@ -1002,45 +1170,23 @@ export const api = {
           console.warn('[API] Supabase employee insert notice (persisted to local outbox):', error.message || error);
         }
 
-        // Automatically Provision Supabase Auth & Identity Mapping on Supabase
-        const phoneNum = newEmp.profile?.phone || input.primary_mobile || input.phone || '+919791817437';
-        const role = newEmp.designation_title?.toLowerCase().includes('manager') ? 'Manager' :
-                     newEmp.designation_title?.toLowerCase().includes('lead') ? 'Team Lead' :
-                     newEmp.designation_title?.toLowerCase().includes('hr') ? 'HR Head' : 'Employee';
-
-        const { data: authResult, error: authRpcErr } = await supabase.rpc('fn_provision_employee_auth', {
-          p_tenant_id: newEmp.organization_id || 'org-joy-01',
-          p_employee_id: newEmp.id,
-          p_email: newEmp.work_email,
-          p_phone: phoneNum,
-          p_first_name: newEmp.first_name,
-          p_last_name: newEmp.last_name,
-          p_role: role,
-          p_verification_mode: 'TEST_AUTO_VERIFY',
-          p_initial_password: 'Joy@2026!'
-        });
-
-        if (authRpcErr) {
-          console.warn('[API] Auth Provisioning RPC warning:', authRpcErr);
-        } else {
-          console.log('[API] Auto-provisioned Auth identity successfully:', authResult);
-        }
-
         // 3. Upsert Bank Details
         if (input.bank || input.bank_name || input.account_number) {
           const b = input.bank || input;
           try {
-            await supabase.from('employee_bank_accounts').upsert({
-              id: `bank-${newEmp.id}`,
+            const bankId = ensureUUID(b.id || (newEmp.id ? 'b0000000-0000-0000-0000-' + newEmp.id.replace(/-/g, '').slice(0, 12) : null));
+            await supabase.from('employee_bank_details').upsert({
+              id: bankId,
+              organization_id: newEmp.organization_id,
               employee_id: newEmp.id,
               bank_name: b.bank_name || 'HDFC Bank',
-              account_number: b.account_number || '',
+              account_number: b.account_number || '1234567890',
               ifsc_code: b.ifsc || b.ifsc_code || 'HDFC0001234',
-              account_type: b.account_type || 'SALARY',
+              account_type: (b.account_type || 'SALARY').toUpperCase(),
               account_holder_name: b.account_holder_name || `${newEmp.first_name} ${newEmp.last_name}`.trim(),
-              is_primary: true,
+              is_verified: true,
               updated_at: new Date().toISOString(),
-            });
+            }, { onConflict: 'employee_id' });
           } catch (e) {
             console.warn('[API] Bank upsert warning:', e);
           }
@@ -1049,18 +1195,19 @@ export const api = {
         // 4. Upsert Statutory Details
         if (input.statutory || input.pan || input.uan) {
           const s = input.statutory || input;
-          const taxRegimeNormalized = (s.tax_regime || 'New').toString().toLowerCase() === 'old' ? 'Old' : 'New';
           try {
+            const statId = ensureUUID(s.id || (newEmp.id ? 'c0000000-0000-0000-0000-' + newEmp.id.replace(/-/g, '').slice(0, 12) : null));
             await supabase.from('employee_statutory_details').upsert({
+              id: statId,
+              organization_id: newEmp.organization_id,
               employee_id: newEmp.id,
-              pan_number: s.pan || s.pan_number || '',
-              uan_number: s.uan || s.uan_number || '',
-              pf_number: s.pf_number || '',
-              esi_number: s.esi_number || '',
-              tax_regime: taxRegimeNormalized,
-              pf_applicable: s.pf_applicable !== undefined ? s.pf_applicable : true,
-              esi_applicable: s.esi_applicable !== undefined ? s.esi_applicable : false,
-              pt_applicable: s.pt_applicable !== undefined ? s.pt_applicable : true,
+              pan_number: s.pan || s.pan_number || null,
+              uan_number: s.uan || s.uan_number || null,
+              pf_number: s.pf_number || null,
+              esi_number: s.esi_number || null,
+              is_pf_eligible: s.pf_applicable !== undefined ? Boolean(s.pf_applicable) : true,
+              is_esi_eligible: s.esi_applicable !== undefined ? Boolean(s.esi_applicable) : false,
+              is_pt_eligible: s.pt_applicable !== undefined ? Boolean(s.pt_applicable) : true,
               updated_at: new Date().toISOString(),
             }, { onConflict: 'employee_id' });
           } catch (e) {
@@ -1220,7 +1367,7 @@ export const api = {
         if ((data as any).bank || (data as any).bank_name || (data as any).account_number) {
           const b = (data as any).bank || data;
           try {
-            await supabase.from('employee_bank_accounts').upsert({
+            await supabase.from('employee_bank_details').upsert({
               id: `bank-${id}`,
               employee_id: id,
               bank_name: b.bank_name || 'HDFC Bank',
@@ -1597,9 +1744,12 @@ export const api = {
       throw new Error(`A user with email "${userData.email}" already exists.`);
     }
 
+    const activeComp = this.getActiveCompany();
+    const resolvedOrgId = userData.organization_id || activeComp?.organization_id || 'org-active';
+
     const newUser: User = {
       id: `user-${Date.now().toString().slice(-6)}`,
-      organization_id: userData.organization_id || 'org-joy-01',
+      organization_id: resolvedOrgId,
       name: userData.name,
       email: userData.email,
       phone: userData.phone || '',

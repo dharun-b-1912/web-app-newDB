@@ -162,37 +162,28 @@ export class EmployeeIdentityResolver {
     if (!employee) return [];
 
     try {
-      const { data: assignments, error } = await supabase
-        .from('employee_work_location_assignments')
-        .select(`
-          work_location_id,
-          is_primary,
-          attendance_allowed,
-          work_locations (
-            id,
-            name,
-            code,
-            latitude,
-            longitude,
-            geofence_radius_meters
-          )
-        `)
-        .eq('employee_id', employee.id);
+      let q = supabase
+        .from('work_locations')
+        .select('id, name, latitude, longitude, geofence_radius_meters, is_active')
+        .eq('is_active', true);
 
-      if (error || !assignments) return [];
+      if (employee.organization_id) {
+        q = q.eq('organization_id', employee.organization_id);
+      }
 
-      return assignments
-        .filter((a: any) => a.work_locations)
-        .map((a: any) => ({
-          id: a.work_locations.id,
-          name: a.work_locations.name,
-          code: a.work_locations.code,
-          latitude: a.work_locations.latitude,
-          longitude: a.work_locations.longitude,
-          geofence_radius_meters: a.work_locations.geofence_radius_meters || 100,
-          is_primary: a.is_primary,
-          attendance_allowed: a.attendance_allowed ?? true,
-        }));
+      const { data: locs, error } = await q;
+      if (error || !locs) return [];
+
+      return locs.map((l: any, idx: number) => ({
+        id: l.id,
+        name: l.name,
+        code: `LOC-${l.id.slice(0, 4).toUpperCase()}`,
+        latitude: Number(l.latitude),
+        longitude: Number(l.longitude),
+        geofence_radius_meters: Number(l.geofence_radius_meters) || 100,
+        is_primary: idx === 0,
+        attendance_allowed: true,
+      }));
     } catch (err) {
       console.error('[EmployeeIdentityResolver] Location fetch exception:', err);
       return [];

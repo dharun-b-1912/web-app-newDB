@@ -220,9 +220,8 @@ class DocumentService {
   async syncWithDatabase(): Promise<void> {
     if (!isSupabaseEnabled) return;
     try {
-      const [reqsRes, docsRes, empsRes] = await Promise.all([
-        supabase.from('document_requirements').select('*'),
-        supabase.from('employee_documents').select('*'),
+      const [docsRes, empsRes] = await Promise.all([
+        supabase.from('employee_documents').select('*, document_types(id, name, code)'),
         supabase.from('employees').select('*'),
       ]);
 
@@ -234,33 +233,7 @@ class DocumentService {
         }
       }
 
-      // Sync requirements
-      if (reqsRes.data && reqsRes.data.length > 0) {
-        const mappedReqs: DocumentRequirement[] = reqsRes.data.map(r => {
-          const emp = empsMap.get(r.employee_id);
-          const empName = emp ? `${emp.first_name} ${emp.last_name}` : r.employee_id;
-          return {
-            id: r.id,
-            tenant_id: r.tenant_id || 'org-joy-01',
-            organization_id: r.organization_id || 'org-joy-01',
-            employee_id: r.employee_id,
-            document_type: r.document_type,
-            title: r.title,
-            description: r.description,
-            required: r.required ?? true,
-            due_date: r.due_date,
-            status: r.status,
-            rejection_reason: r.rejection_reason,
-            requested_by: r.requested_by || 'HR Head',
-            document_id: r.document_id,
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-          };
-        });
-        this.setStore(REQUIREMENTS_STORAGE_KEY, mappedReqs);
-      }
-
-      // Build DocumentMaster records from employee_documents & document_requirements
+      // Build DocumentMaster records from employee_documents
       const masterDocs: DocumentMaster[] = [];
       const versions: DocumentVersion[] = [];
 
@@ -268,19 +241,14 @@ class DocumentService {
         for (const doc of docsRes.data) {
           const emp = empsMap.get(doc.employee_id);
           const empName = emp ? `${emp.first_name} ${emp.last_name} (${emp.employee_code || emp.id})` : doc.employee_id;
-          const matchingType = this.getDocumentTypeByCode(doc.document_type);
+          const dtMap = doc.document_types;
+          const docTypeCode = dtMap?.code || doc.document_type || 'DOCUMENT';
+          const docTypeName = dtMap?.name || doc.file_name || 'Document';
+          const matchingType = this.getDocumentTypeByCode(docTypeCode);
 
           let filePublicUrl = doc.file_url || '';
-          if (doc.storage_path && (!filePublicUrl || !filePublicUrl.startsWith('http') || filePublicUrl.includes('/object/public/'))) {
-            try {
-              filePublicUrl = supabaseStorageEngine.createSignedUrlSync
-                ? supabaseStorageEngine.createSignedUrlSync('employee-documents', doc.storage_path)
-                : supabase.storage.from('employee-documents').getPublicUrl(doc.storage_path).data.publicUrl;
-            } catch (_) {
-              try {
-                filePublicUrl = supabase.storage.from('workforce-documents').getPublicUrl(doc.storage_path).data.publicUrl;
-              } catch (_) {}
-            }
+          if (doc.storage_path) {
+            filePublicUrl = doc.storage_path;
           }
 
           const versionId = `ver-${doc.id}-1`;
@@ -288,7 +256,7 @@ class DocumentService {
             id: versionId,
             document_id: doc.id,
             version_number: 1,
-            file_name: doc.file_name || `${doc.document_type}.pdf`,
+            file_name: doc.file_name || `${docTypeName}.pdf`,
             file_size_bytes: doc.file_size_bytes || 1024 * 1024,
             mime_type: doc.mime_type || 'application/pdf',
             storage_path: doc.storage_path || '',
@@ -297,19 +265,19 @@ class DocumentService {
             malware_scan_status: 'SAFE',
             uploaded_by_id: doc.employee_id,
             uploaded_by_name: empName,
-            created_at: doc.uploaded_at || doc.created_at || new Date().toISOString(),
+            created_at: doc.created_at || new Date().toISOString(),
           };
           versions.push(curVer);
 
           masterDocs.push({
             id: doc.id,
-            tenant_id: doc.tenant_id || 'org-joy-01',
+            tenant_id: doc.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
             subject_type: 'employee',
             subject_id: doc.employee_id,
             subject_name: empName,
-            document_type_code: doc.document_type,
+            document_type_code: docTypeCode,
             category_code: matchingType?.code || 'IDENTITY',
-            title: matchingType?.name || doc.document_type,
+            title: docTypeName,
             classification: (matchingType?.default_classification as any) || 'restricted',
             status: 'active',
             verification_status: doc.verification_status?.toUpperCase() === 'VERIFIED' ? 'VERIFIED' : (doc.verification_status?.toUpperCase() === 'REJECTED' ? 'REJECTED' : 'PENDING_VERIFICATION'),
@@ -318,20 +286,21 @@ class DocumentService {
             versions: [curVer],
             version_count: 1,
             created_by: empName,
-            created_at: doc.uploaded_at || doc.created_at || new Date().toISOString(),
-            updated_at: doc.uploaded_at || doc.created_at || new Date().toISOString(),
+            created_at: doc.created_at || new Date().toISOString(),
+            updated_at: doc.updated_at || doc.created_at || new Date().toISOString(),
             file_url: filePublicUrl,
             file_name: doc.file_name,
             employee_id: doc.employee_id,
             employee_name: empName,
-            document_type: matchingType?.name || doc.document_type,
+            document_type: docTypeName,
           });
         }
       }
 
       // Also merge requirements so HR can see submitted mobile documents
-      if (reqsRes.data && reqsRes.data.length > 0) {
-        for (const req of reqsRes.data) {
+      const localReqs = this.getStore<DocumentRequirement>(REQUIREMENTS_STORAGE_KEY, []);
+      if (localReqs.length > 0) {
+        for (const req of localReqs) {
           const emp = empsMap.get(req.employee_id);
           const empName = emp ? `${emp.first_name} ${emp.last_name} (${emp.employee_code || emp.id})` : req.employee_id;
           const matchingType = this.getDocumentTypeByCode(req.document_type);
@@ -665,7 +634,7 @@ class DocumentService {
       file: optimized.file,
       classification: params.classification || 'restricted',
       isCompanyDoc: params.subjectType === 'company' || params.categoryCode === 'COMPANY_POLICY',
-    });
+    } as any);
 
     // Step 4: Construct Immutable Version Record
     const newVersion: DocumentVersion = {
@@ -831,7 +800,7 @@ class DocumentService {
       fileName: actualFileName,
       file: optimized.file,
       classification: doc.classification,
-    });
+    } as any);
 
     const newVersion: DocumentVersion = {
       id: versionId,
@@ -1000,7 +969,7 @@ class DocumentService {
       ? versions.find(v => v.document_id === documentId && v.version_number === versionNumber)
       : doc.current_version || versions.find(v => v.id === doc.current_version_id) || versions.find(v => v.document_id === documentId);
 
-    const bucket: StorageBucketDomain = supabaseStorageEngine.resolveStorageBucket(doc.classification, doc.subject_type === 'company');
+    const bucket: StorageBucketDomain = supabaseStorageEngine.resolveStorageBucket(doc.subject_type === 'company' ? 'documents' : 'documents');
     const storagePath = targetVersion?.storage_path || `tenant/${doc.tenant_id}/employee/${doc.subject_id}/documents/${doc.id}/v1/${doc.file_name || 'document.pdf'}`;
 
     return supabaseStorageEngine.createSignedUrl(bucket, storagePath, 900);
@@ -1025,23 +994,14 @@ class DocumentService {
     // 2. Clean completely from Supabase backend
     if (isSupabaseEnabled) {
       try {
-        // Delete requirement row
-        await supabase.from('document_requirements').delete().or(`id.eq.${documentId},document_id.eq.${documentId}`);
-
         // Delete employee document row
         await supabase.from('employee_documents').delete().eq('id', documentId);
 
-        // Delete associated notification events
-        await supabase.from('notification_events').delete().or(`resource_id.eq.${documentId},metadata->>requirement_id.eq.${documentId}`);
-
-        // Delete storage file if exists from both buckets
+        // Delete storage file if exists from canonical bucket
         const storagePath = targetDoc?.current_version?.storage_path;
         if (storagePath) {
           try {
             await supabase.storage.from('employee-documents').remove([storagePath]);
-          } catch (_) {}
-          try {
-            await supabase.storage.from('workforce-documents').remove([storagePath]);
           } catch (_) {}
         }
       } catch (err) {
@@ -1125,77 +1085,17 @@ class DocumentService {
     reqs.unshift(newReq);
     this.setStore(REQUIREMENTS_STORAGE_KEY, reqs);
 
-    // Persist to Supabase Postgres via RPC or direct insertion
+    // Broadcast in-app upload requirement event via canonical notification_events
     if (isSupabaseEnabled) {
       try {
-        const { data: rpcRes, error: rpcErr } = await supabase.rpc('fn_dispatch_document_request', {
-          p_employee_id: params.employeeId,
-          p_document_type: params.documentTypeCode,
-          p_title: params.title,
-          p_description: params.description || '',
-          p_due_date: params.dueDate || null,
-          p_is_mandatory: params.required !== false,
-          p_requested_by: currentUser.name || 'HR Team',
-          p_correlation_id: correlationId,
+        await supabase.from('notification_events').insert({
+          organization_id: tenantId && tenantId.length === 36 ? tenantId : '00000000-0000-0000-0000-000000000000',
+          channel: 'IN_APP',
+          title: `Action Required: Document Upload (${params.title})`,
+          message: `HR has requested you to upload: ${params.title}. Please upload before ${params.dueDate || 'due date'}.`,
+          is_read: false,
         });
-
-        if (!rpcErr && rpcRes && rpcRes.request_id) {
-          newReq.id = rpcRes.request_id;
-          console.log(`[DOC_REQUEST][DB] CREATE_SUCCESS request_id=${rpcRes.request_id} correlation=${correlationId}`);
-        } else {
-          // Fallback direct insert
-          await supabase.from('document_requirements').insert({
-            id: newReq.id,
-            tenant_id: newReq.tenant_id,
-            organization_id: newReq.organization_id,
-            employee_id: newReq.employee_id,
-            document_type: newReq.document_type,
-            title: newReq.title,
-            description: newReq.description,
-            required: newReq.required,
-            due_date: newReq.due_date,
-            status: newReq.status,
-            requested_by: newReq.requested_by,
-          });
-
-          await supabase.from('notification_events').insert({
-            event_type: 'DOCUMENT_UPLOAD_REQUESTED',
-            category: 'SYSTEM',
-            severity: 'WARNING',
-            title: `Action Required: Document Upload (${params.title})`,
-            body: `HR has requested you to upload: ${params.title}. Please upload via the mobile app before ${params.dueDate || 'due date'}.`,
-            resource_type: 'DOCUMENT_REQUIREMENT',
-            resource_id: params.employeeId,
-            actor_name: currentUser.name || 'HR Team',
-            action_url: `/documents/upload?reqId=${reqId}`,
-            metadata: {
-              target_user_id: params.employeeId,
-              requirement_id: reqId,
-              document_type: params.documentTypeCode,
-              due_date: params.dueDate,
-              correlation_id: correlationId,
-            },
-          });
-
-          await supabase.from('realtime_outbox').insert({
-            event_type: 'document.requested',
-            entity_type: 'DOCUMENT_REQUIREMENT',
-            entity_id: newReq.id,
-            organization_id: tenantId,
-            payload: {
-              requirement_id: newReq.id,
-              employee_id: newReq.employee_id,
-              title: newReq.title,
-              document_type: newReq.document_type,
-              due_date: newReq.due_date,
-              correlation_id: correlationId,
-              created_at: now,
-            },
-          });
-        }
-      } catch (err) {
-        console.warn('[DocumentService] Postgres requirement insert error:', err);
-      }
+      } catch (_) {}
     }
 
     // Publish to Realtime Event Mesh

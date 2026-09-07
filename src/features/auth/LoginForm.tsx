@@ -144,61 +144,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         </p>
       </div>
 
-      {/* 1-Click Company Admin Demo Test Box */}
-      {authContext === 'admin' && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Live Admin Demo Account
-            </span>
-            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-200/60 text-emerald-800 font-mono font-semibold">
-              Joy Corporate Solutions
-            </span>
-          </div>
-          <p className="text-[11px] text-emerald-800/80">
-            Sign in as <strong>Dharun Joy</strong> (Company Admin) to manage Legal Entities, RBAC, Approval Chains, and System Settings.
-          </p>
-          <Button
-            type="button"
-            onClick={() => {
-              setValue('identifier', 'dharun@joypeople.com');
-              setValue('password', 'demo1234');
-              onSubmit({ identifier: 'dharun@joypeople.com', password: 'demo1234' });
-            }}
-            className="w-full py-2 bg-[#064E3B] hover:bg-[#043629] text-white rounded-xl text-xs font-bold shadow-sm flex items-center justify-center gap-1.5"
-          >
-            ⚡ 1-Click Live Test Company Admin Login
-          </Button>
-        </div>
-      )}
 
-      {/* 1-Click Vendor Demo Test Box */}
-      {authContext === 'vendor' && (
-        <div className="p-3.5 bg-indigo-50 border border-indigo-200 rounded-2xl space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-600" /> Live Demo Testing Account
-            </span>
-            <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-200/60 text-indigo-800 font-mono font-semibold">
-              Apex Staffing
-            </span>
-          </div>
-          <p className="text-[11px] text-indigo-800/80">
-            Sign in as <strong>Rajesh Kumar</strong> (Vendor Admin) to test contractor onboarding, licenses, Form V, and invoices.
-          </p>
-          <Button
-            type="button"
-            onClick={() => {
-              setValue('identifier', 'vendor@apexstaffing.in');
-              setValue('password', 'demo1234');
-              onSubmit({ identifier: 'vendor@apexstaffing.in', password: 'demo1234' });
-            }}
-            className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center justify-center gap-1.5"
-          >
-            ⚡ 1-Click Live Test Vendor Login
-          </Button>
-        </div>
-      )}
 
       {/* Global Error Banner */}
       {authError && (

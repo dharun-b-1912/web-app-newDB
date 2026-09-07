@@ -1,0 +1,290 @@
+[
+  {
+    "testNumber": 1,
+    "suite": "NOTIFICATIONS",
+    "testName": "Employee A reads own notifications",
+    "expected": "Contains inserted notification",
+    "actual": "Found own notification",
+    "pass": true,
+    "detail": "Retrieved 15 notifications for Employee A"
+  },
+  {
+    "testNumber": 2,
+    "suite": "NOTIFICATIONS",
+    "testName": "Employee B reads own notifications",
+    "expected": "Reads notifications successfully",
+    "actual": "Retrieved 9 notifications",
+    "pass": true,
+    "detail": "Employee B retrieved own notifications without error"
+  },
+  {
+    "testNumber": 3,
+    "suite": "NOTIFICATIONS",
+    "testName": "A cannot read B notifications (and vice-versa)",
+    "expected": "Employee B cannot see Employee A targeted notification",
+    "actual": "Properly isolated",
+    "pass": true,
+    "detail": "Targeted notification for A was not visible to B"
+  },
+  {
+    "testNumber": 4,
+    "suite": "NOTIFICATIONS",
+    "testName": "Unread count works",
+    "expected": "Count >= 1",
+    "actual": "Unread count: 10",
+    "pass": true,
+    "detail": "Employee A unread notification count verified: 10"
+  },
+  {
+    "testNumber": 5,
+    "suite": "NOTIFICATIONS",
+    "testName": "Mark-as-read works",
+    "expected": "Update is_read to true succeeds",
+    "actual": "Updated successfully",
+    "pass": true,
+    "detail": "Notification c2344060-dbce-4ff5-8d5a-c09b2ca1da03 marked as read by recipient"
+  },
+  {
+    "testNumber": 6,
+    "suite": "NOTIFICATIONS",
+    "testName": "Reload persists state",
+    "expected": "is_read is true after reload",
+    "actual": "is_read = true",
+    "pass": true,
+    "detail": "Persisted read status in database: true"
+  },
+  {
+    "testNumber": 7,
+    "suite": "ANNOUNCEMENTS",
+    "testName": "HR/Admin creates announcement",
+    "expected": "Broadcast notification inserted into canonical notification_events",
+    "actual": "ID: 6403d473-b5a7-4a2e-bdb8-f01c5a94e658",
+    "pass": true,
+    "detail": "Created broadcast notification in notification_events (ID: 6403d473-b5a7-4a2e-bdb8-f01c5a94e658)"
+  },
+  {
+    "testNumber": 8,
+    "suite": "ANNOUNCEMENTS",
+    "testName": "Employee A sees announcement",
+    "expected": "Broadcast notification found by Employee A",
+    "actual": "Found in Employee A feed",
+    "pass": true,
+    "detail": "Employee A fetched canonical broadcast notification (IN_APP + recipient_user_id IS NULL)"
+  },
+  {
+    "testNumber": 9,
+    "suite": "ANNOUNCEMENTS",
+    "testName": "Employee B sees announcement where intended",
+    "expected": "Broadcast notification found by Employee B",
+    "actual": "Found in Employee B feed",
+    "pass": true,
+    "detail": "Employee B in same org fetched broadcast notification"
+  },
+  {
+    "testNumber": 10,
+    "suite": "ANNOUNCEMENTS",
+    "testName": "Cross-org / Unauthenticated access blocked",
+    "expected": "Zero rows returned to unauthenticated / foreign caller",
+    "actual": "Rows visible: 0",
+    "pass": true,
+    "detail": "RLS blocked foreign/unauthenticated read on notification_events"
+  },
+  {
+    "testNumber": 11,
+    "suite": "ANNOUNCEMENTS",
+    "testName": "Reload persists announcement",
+    "expected": "Announcement row reloaded identically",
+    "actual": "Verified persistent",
+    "pass": true,
+    "detail": "Reload confirmed announcement row persistence in DB"
+  },
+  {
+    "testNumber": 12,
+    "suite": "ANNOUNCEMENTS",
+    "testName": "No company_announcements query remains",
+    "expected": "0 occurrences of company_announcements in Flutter lib",
+    "actual": "0 occurrences",
+    "pass": true,
+    "detail": "Static scan confirmed complete eradication of company_announcements"
+  },
+  {
+    "testNumber": 13,
+    "suite": "SHARED_DB",
+    "testName": "Web profile mutation -> Flutter read",
+    "expected": "phone = 9884084738",
+    "actual": "phone = 9884084738",
+    "pass": true,
+    "detail": "HR updated phone in Web, Employee A read new phone: 9884084738"
+  },
+  {
+    "testNumber": 14,
+    "suite": "SHARED_DB",
+    "testName": "Web address mutation -> Flutter read",
+    "expected": "city = Metro City 6226",
+    "actual": "city = Metro City 6226",
+    "pass": true,
+    "detail": "HR updated PERMANENT address city in Web, Employee A read new city: Metro City 6226"
+  },
+  {
+    "testNumber": 15,
+    "suite": "SHARED_DB",
+    "testName": "Web shift mutation -> Flutter read",
+    "expected": "Shift assignment visible to Employee A",
+    "actual": "Shift assignment verified",
+    "pass": true,
+    "detail": "HR inserted shift assignment (valid_from) in Web, Employee A read shift assignment"
+  },
+  {
+    "testNumber": 16,
+    "suite": "SHARED_DB",
+    "testName": "Web document update -> Flutter read",
+    "expected": "Document verified by HR visible to Employee A",
+    "actual": "Verified in DB",
+    "pass": true,
+    "detail": "HR uploaded/verified document in Web, Employee A read record (ID: 8d8ce2f2-5362-47f0-837e-6ddbbe17b159)"
+  },
+  {
+    "testNumber": 17,
+    "suite": "SHARED_DB",
+    "testName": "Web leave approval -> Flutter read",
+    "expected": "status = APPROVED",
+    "actual": "status = APPROVED",
+    "pass": true,
+    "detail": "Employee A submitted leave, HR approved in Web, Employee A read APPROVED status"
+  },
+  {
+    "testNumber": 18,
+    "suite": "SHARED_DB",
+    "testName": "Web regularization approval -> Flutter read",
+    "expected": "status = APPROVED",
+    "actual": "status = APPROVED",
+    "pass": true,
+    "detail": "Employee A requested regularization, HR approved, Employee A read APPROVED status"
+  },
+  {
+    "testNumber": 19,
+    "suite": "SHARED_DB",
+    "testName": "Web payroll line item publication -> Flutter read",
+    "expected": "net_pay = 58000, gross_earnings = 65000",
+    "actual": "net_pay = 58000, gross_earnings = 65000",
+    "pass": true,
+    "detail": "HR created payroll_line_item in Web, Employee A read own payroll details (ID: a0000013-0000-0000-0000-000000000001)"
+  },
+  {
+    "testNumber": 20,
+    "suite": "SHARED_DB",
+    "testName": "Web request resolution -> Flutter read",
+    "expected": "status = RESOLVED",
+    "actual": "status = RESOLVED",
+    "pass": true,
+    "detail": "Employee A opened IT request, HR marked RESOLVED in Web, Employee A read updated status"
+  },
+  {
+    "testNumber": 21,
+    "suite": "SHARED_DB",
+    "testName": "Attendance punch recorded -> Web read",
+    "expected": "Punch record visible to HR in Web",
+    "actual": "Found punch at 2026-09-04T14:10:02.782+00:00",
+    "pass": true,
+    "detail": "Attendance punch (CHECK_IN) recorded by HR relay, verified in Web attendance log"
+  },
+  {
+    "testNumber": 22,
+    "suite": "SHARED_DB",
+    "testName": "Flutter leave request -> Web read",
+    "expected": "Pending leave visible in HR leave queue",
+    "actual": "Status: PENDING",
+    "pass": true,
+    "detail": "Employee applied for leave in mobile Flutter app, HR saw request in Web inbox"
+  },
+  {
+    "testNumber": 23,
+    "suite": "SHARED_DB",
+    "testName": "Flutter request -> Web read",
+    "expected": "Expense request visible in HR inbox",
+    "actual": "Status: OPEN",
+    "pass": true,
+    "detail": "Employee submitted expense claim via Flutter, HR viewed it in Web requests"
+  },
+  {
+    "testNumber": 24,
+    "suite": "SHARED_DB",
+    "testName": "Flutter document upload -> Web read",
+    "expected": "Document visible to HR for verification",
+    "actual": "Status: PENDING",
+    "pass": true,
+    "detail": "Employee uploaded document in Flutter app (file_name + storage_path), HR viewed in Web verification queue"
+  },
+  {
+    "testNumber": 25,
+    "suite": "SECURITY",
+    "testName": "Employee A cannot read Employee B private data",
+    "expected": "0 rows returned for Employee B private records",
+    "actual": "Docs: 0, Payslips: 0",
+    "pass": true,
+    "detail": "RLS blocked Employee A from reading Employee B private documents & payslips"
+  },
+  {
+    "testNumber": 26,
+    "suite": "SECURITY",
+    "testName": "Employee B cannot read Employee A private data",
+    "expected": "0 rows returned for Employee A private records",
+    "actual": "Docs: 0, Payslips: 0",
+    "pass": true,
+    "detail": "RLS blocked Employee B from reading Employee A private documents & payslips"
+  },
+  {
+    "testNumber": 27,
+    "suite": "SECURITY",
+    "testName": "Cross-organization / unauthenticated access blocked",
+    "expected": "0 rows returned to unauthenticated caller",
+    "actual": "Rows: 0",
+    "pass": true,
+    "detail": "RLS blocked anonymous access to canonical employees table"
+  },
+  {
+    "testNumber": 28,
+    "suite": "SECURITY",
+    "testName": "service_role absent from Web and Flutter client runtime",
+    "expected": "0 service_role keys hardcoded in client code",
+    "actual": "0 client references",
+    "pass": true,
+    "detail": "Client code uses solely anon/publishable key; zero service_role in clients"
+  },
+  {
+    "testNumber": 29,
+    "suite": "SECURITY",
+    "testName": "Old Supabase project eradicated from active runtime",
+    "expected": "0 references to wmqjmyzzamgxyeuotbki in active client code",
+    "actual": "0 references",
+    "pass": true,
+    "detail": "Active Web and Flutter runtimes point exclusively to ysiajemrqakfngasehhi"
+  },
+  {
+    "testNumber": 30,
+    "suite": "BUILD",
+    "testName": "Web build production bundle passes",
+    "expected": "dist/index.html exists and bundle valid",
+    "actual": "dist/index.html exists",
+    "pass": true,
+    "detail": "Vite production build verified: dist/index.html present"
+  },
+  {
+    "testNumber": 31,
+    "suite": "BUILD",
+    "testName": "Flutter analyze passes with 0 issues",
+    "expected": "0 errors, 0 warnings",
+    "actual": "0 issues found (ran in 3.3s)",
+    "pass": true,
+    "detail": "Flutter analyzer verified: No issues found across all lib and test files"
+  },
+  {
+    "testNumber": 32,
+    "suite": "REGRESSION",
+    "testName": "All canonical 64 tables and RLS policies preserved",
+    "expected": "64/64 tables with RLS active",
+    "actual": "64 tables verified active with RLS enabled",
+    "pass": true,
+    "detail": "Full 64-table canonical architecture intact; zero duplicate tables introduced"
+  }
+]

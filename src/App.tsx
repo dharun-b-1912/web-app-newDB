@@ -121,7 +121,7 @@ const AppContent: React.FC = () => {
     if (primaryRole === 'Manager') return 'dashboard';
     if (primaryRole === 'Team Lead') return 'tl-dashboard';
     if (primaryRole === 'Employee') return 'ess-dashboard';
-    return 'ess-dashboard';
+    return 'executive-overview';
   };
 
   // Compute the correct starting route: URL first -> localStorage saved route -> role default
@@ -158,7 +158,8 @@ const AppContent: React.FC = () => {
         r.includes('login') ||
         r.includes('activate') ||
         r.includes('invitation') ||
-        r.startsWith('auth')
+        r.startsWith('auth') ||
+        ((primaryRole === 'Company Admin' || primaryRole === 'HR Head') && (r.startsWith('ess') || r === 'ess-dashboard'))
       ) {
         return getDefaultRouteForUser();
       }
@@ -178,7 +179,8 @@ const AppContent: React.FC = () => {
           !sr.includes('login') &&
           !sr.includes('activate') &&
           !sr.includes('invitation') &&
-          !sr.startsWith('auth')
+          !sr.startsWith('auth') &&
+          !((primaryRole === 'Company Admin' || primaryRole === 'HR Head') && (sr.startsWith('ess') || sr === 'ess-dashboard'))
         ) {
           return savedRoute;
         }
@@ -253,7 +255,11 @@ const AppContent: React.FC = () => {
         const defRoute = getDefaultRouteForUser(user);
         setCurrentRoute(defRoute);
         syncUrlWithRoute(defRoute, undefined, true);
-      } else if (!canViewModule(user, currentRoute)) {
+      } else if (
+        (roleName === 'Company Admin' && (currentRoute === 'ess-dashboard' || currentRoute.startsWith('ess'))) ||
+        (roleName === 'HR Head' && (currentRoute === 'ess-dashboard' || currentRoute.startsWith('ess'))) ||
+        !canViewModule(user, currentRoute)
+      ) {
         const defRoute = getDefaultRouteForUser(user);
         setCurrentRoute(defRoute);
         syncUrlWithRoute(defRoute, undefined, true);

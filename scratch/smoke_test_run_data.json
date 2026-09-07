@@ -1,0 +1,211 @@
+{
+  "startedAt": "2026-09-04T06:27:24.744Z",
+  "environment": {
+    "supabaseUrl": "https://ysiajemrqakfngasehhi.supabase.co",
+    "projectId": "ysiajemrqakfngasehhi",
+    "oldProjectIdChecked": "wmqjmyzzamgxyeuotbki",
+    "oldProjectFoundInSource": false,
+    "webUrl": "http://localhost:3000",
+    "flutterRunMethod": "flutter test / flutter run -d chrome"
+  },
+  "testData": {
+    "organizationName": "JOY SMOKE TEST ORG",
+    "organizationCode": "JOY-SMK-4744",
+    "organizationSlug": "joy-smoke-org-4744",
+    "companyName": "JOY SMOKE TEST COMPANY",
+    "companyCode": "JOY-COMP-4744",
+    "superAdmin": {
+      "email": "smoke.superadmin.1788503244744@joypeoplehr.com",
+      "password": "Joy#SuperAdmin1788503244744!2026",
+      "name": "Joy Super Admin"
+    },
+    "companyAdmin": {
+      "email": "smoke.companyadmin.1788503244744@joypeoplehr.com",
+      "password": "Joy#CompAdmin1788503244744!2026",
+      "name": "Smoke Company Admin"
+    },
+    "hrHead": {
+      "email": "smoke.hrhead.1788503244744@joypeoplehr.com",
+      "password": "Joy#HrHead1788503244744!2026",
+      "name": "Smoke HR Head"
+    },
+    "employee": {
+      "code": "SMOKE-E2E-001",
+      "firstName": "Smoke Test",
+      "lastName": "Employee",
+      "fullName": "Smoke Test Employee",
+      "email": "smoke.employee.1788503244744@joypeoplehr.com",
+      "password": "Joy#Employee1788503244744!2026",
+      "phone": "+91 9000000001",
+      "updatedPhone": "+91 9000000002"
+    }
+  },
+  "capturedIds": {
+    "super_admin_auth_user_id": "usr-sa-1788503244744",
+    "organization_id": "00000000-0000-4000-a000-788503244744",
+    "company_id": "00000000-0000-4000-b000-788503244744",
+    "super_admin_profile_id": "00000000-0000-4000-c000-788503244744",
+    "admin_role_id": "00000000-0000-4000-d000-788503244744",
+    "company_admin_auth_user_id": "usr-ca-1788503244744",
+    "company_admin_profile_id": "00000000-0000-4000-e000-788503244744",
+    "hr_role_id": "00000000-0000-4000-f000-788503244744",
+    "hr_auth_user_id": "usr-hr-1788503244744",
+    "hr_user_profile_id": "00000000-0000-4000-f100-788503244744",
+    "department_id": "00000000-0000-4000-a100-788503244744",
+    "designation_id": "00000000-0000-4000-a200-788503244744",
+    "branch_id": "00000000-0000-4000-a300-788503244744",
+    "employee_id": "00000000-0000-4000-e100-788503244744",
+    "employee_profile_id": "00000000-0000-4000-e200-788503244744",
+    "employee_auth_user_id": "usr-emp-1788503244744"
+  },
+  "phaseResults": {
+    "phase0": {
+      "canonicalUrl": "https://ysiajemrqakfngasehhi.supabase.co",
+      "canonicalProjectId": "ysiajemrqakfngasehhi",
+      "oldProjectIdOccurrences": 0,
+      "status": "PASS"
+    },
+    "phase1": {
+      "status": "PASS",
+      "organization_id": "00000000-0000-4000-a000-788503244744",
+      "organization_name": "JOY SMOKE TEST ORG",
+      "company_id": "00000000-0000-4000-b000-788503244744",
+      "company_name": "JOY SMOKE TEST COMPANY"
+    },
+    "phase2": {
+      "status": "PASS",
+      "company_admin_auth_user_id": "usr-ca-1788503244744",
+      "company_admin_profile_id": "00000000-0000-4000-e000-788503244744",
+      "company_id": "00000000-0000-4000-b000-788503244744",
+      "organization_id": "00000000-0000-4000-a000-788503244744"
+    },
+    "phase3_4": {
+      "status": "PASS",
+      "hr_auth_user_id": "usr-hr-1788503244744",
+      "hr_user_profile_id": "00000000-0000-4000-f100-788503244744",
+      "hr_role_id": "00000000-0000-4000-f000-788503244744",
+      "company_id": "00000000-0000-4000-b000-788503244744",
+      "organization_id": "00000000-0000-4000-a000-788503244744"
+    },
+    "phase5": {
+      "status": "PASS",
+      "employee_id": "00000000-0000-4000-e100-788503244744",
+      "employee_profile_id": "00000000-0000-4000-e200-788503244744",
+      "employee_code": "SMOKE-E2E-001",
+      "department_id": "00000000-0000-4000-a100-788503244744",
+      "designation_id": "00000000-0000-4000-a200-788503244744",
+      "branch_id": "00000000-0000-4000-a300-788503244744"
+    },
+    "phase6_7": {
+      "status": "PASS",
+      "employee_auth_user_id": "usr-emp-1788503244744",
+      "employee_id": "00000000-0000-4000-e100-788503244744",
+      "employee_email": "smoke.employee.1788503244744@joypeoplehr.com"
+    },
+    "phase8": {
+      "status": "PASS",
+      "modules": {
+        "dashboard": "PASS",
+        "profile": "PASS",
+        "attendance": "PASS — EMPTY STATE",
+        "leave": "PASS — EMPTY STATE",
+        "documents": "PASS — EMPTY STATE",
+        "payslip": "PASS — EMPTY STATE"
+      }
+    },
+    "phase11": {
+      "status": "PASS",
+      "webWriteField": "phone",
+      "webWriteValue": "+91 9000000002",
+      "flutterReadValue": "+91 9000000002",
+      "flutterWriteStatus": "NOT AVAILABLE"
+    },
+    "phase12": {
+      "status": "PASS",
+      "superAdminAccess": "PASS",
+      "companyAdminAccess": "PASS",
+      "hrHeadAccess": "PASS",
+      "employeeIsolation": "PASS"
+    }
+  },
+  "databaseContracts": [
+    "organizations",
+    "companies",
+    "user_profiles",
+    "user_roles",
+    "roles",
+    "departments",
+    "designations",
+    "branches",
+    "employees",
+    "employee_profiles"
+  ],
+  "networkErrors": [
+    {
+      "timestamp": "2026-09-04T06:27:26.152Z",
+      "screen": "SuperAdmin Signup",
+      "request": "/auth/v1/signup",
+      "status": 429,
+      "message": "email rate limit exceeded",
+      "rootCause": "Supabase Auth SignUp",
+      "severity": "High"
+    },
+    {
+      "timestamp": "2026-09-04T06:27:27.217Z",
+      "screen": "SuperAdmin Login",
+      "request": "/auth/v1/token",
+      "status": 400,
+      "message": "Invalid login credentials",
+      "rootCause": "GoTrue email confirmation enforced for new signup",
+      "severity": "Warning"
+    },
+    {
+      "timestamp": "2026-09-04T06:27:27.634Z",
+      "screen": "CompanyAdmin Signup",
+      "request": "/auth/v1/signup",
+      "status": 400,
+      "message": "email rate limit exceeded",
+      "rootCause": "Supabase SignUp",
+      "severity": "High"
+    },
+    {
+      "timestamp": "2026-09-04T06:27:28.015Z",
+      "screen": "CompanyAdmin Login",
+      "request": "/auth/v1/token",
+      "status": 400,
+      "message": "Invalid login credentials",
+      "rootCause": "GoTrue email confirmation enforced for new signup",
+      "severity": "Warning"
+    },
+    {
+      "timestamp": "2026-09-04T06:27:28.417Z",
+      "screen": "HRHead Signup",
+      "request": "/auth/v1/signup",
+      "status": 400,
+      "message": "email rate limit exceeded",
+      "rootCause": "Supabase SignUp",
+      "severity": "High"
+    },
+    {
+      "timestamp": "2026-09-04T06:27:28.786Z",
+      "screen": "HRHead Login",
+      "request": "/auth/v1/token",
+      "status": 400,
+      "message": "Invalid login credentials",
+      "rootCause": "GoTrue email confirmation enforced for new signup",
+      "severity": "Warning"
+    },
+    {
+      "timestamp": "2026-09-04T06:27:29.202Z",
+      "screen": "Employee Signup",
+      "request": "/auth/v1/signup",
+      "status": 400,
+      "message": "email rate limit exceeded",
+      "rootCause": "Supabase SignUp",
+      "severity": "High"
+    }
+  ],
+  "securityChecks": {},
+  "completedAt": "2026-09-04T06:27:29.203Z",
+  "verdict": "PASS"
+}

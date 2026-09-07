@@ -1,0 +1,1779 @@
+{
+  "canonicalDbTableCount": 64,
+  "migrationTableCount": 64,
+  "appReferencedTableCount": 134,
+  "tables": [
+    {
+      "table": "api_security_metrics",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSecurityControlService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "approval_actions",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "011_approvals.sql"
+      ],
+      "appReferences": [
+        "services/notification/approvalService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "approval_instances",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "011_approvals.sql"
+      ],
+      "appReferences": [
+        "services/notification/approvalService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "approval_workflows",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "011_approvals.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "asset_assignments",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "018_assets.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "assets",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "018_assets.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "attendance_daily",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "009_attendance.sql"
+      ],
+      "appReferences": [
+        "features/attendance/subviews/AttendanceDashboardView.tsx",
+        "features/attendance/subviews/AttendanceHistoryView.tsx",
+        "features/attendance/subviews/EmployeeAttendanceView.tsx",
+        "features/dashboard/CommandCenterView.tsx",
+        "services/attendance/attendanceDeviationService.ts",
+        "services/attendance/attendanceExceptionEngineService.ts",
+        "services/attendance/attendanceRegularizationService.ts",
+        "services/attendanceApi.ts",
+        "services/operations/attendancePolicyEngine.ts",
+        "services/workOvertimeService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "attendance_daily_ledger",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/attendance/attendanceRosterService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "attendance_events",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/offline/attendanceSyncCoordinator.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "attendance_exceptions",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/attendance/attendanceExceptionEngineService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "attendance_policies",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/attendance/attendanceRosterService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "attendance_policy_audit_logs",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/attendance/attendanceRosterService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "attendance_punches",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "009_attendance.sql"
+      ],
+      "appReferences": [
+        "services/attendanceApi.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "attendance_regularization_requests",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/attendance/attendanceRegularizationService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "attendance_regularizations",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "009_attendance.sql"
+      ],
+      "appReferences": [
+        "features/dashboard/CommandCenterView.tsx",
+        "services/attendance/attendanceRegularizationService.ts",
+        "services/attendanceApi.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "attendance_roster_entries",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/attendance/attendanceRosterService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "attendance_shifts",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/attendance/attendanceRosterService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "audit_context_logs",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/organizationContextService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "audit_events",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformAuditService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "audit_logs",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "021_audit.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "auth_audit_logs",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/auth/employeeAuthService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "background_jobs",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "004_organizations.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "bank_payment_batches",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/operations/bankingExportEngine.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "bank_utr_records",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/operations/bankingExportEngine.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "biometric_devices",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "009_attendance.sql"
+      ],
+      "appReferences": [
+        "services/attendance/biometricGatewayService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "biometric_diagnostic_logs",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/attendance/biometricGatewayService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "biometric_gateway_agents",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/attendance/biometricGatewayService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "branches",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "004_organizations.sql"
+      ],
+      "appReferences": [
+        "services/api.ts",
+        "services/location/workLocationService.ts",
+        "services/organization/organizationStructureService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "companies",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "004_organizations.sql"
+      ],
+      "appReferences": [
+        "services/api.ts",
+        "services/organization/organizationStructureService.ts",
+        "services/organizationContextService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "compliance_controls",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSecurityControlService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "customer_profiles",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformProvisioningEngine.ts",
+        "services/platform/platformTenantService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "daily_wage_payroll_entries",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/operations/dailyWagePayrollEngine.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "departments",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "004_organizations.sql"
+      ],
+      "appReferences": [
+        "services/api.ts",
+        "services/organization/organizationStructureService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "designations",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "004_organizations.sql"
+      ],
+      "appReferences": [
+        "services/api.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "digital_letters",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "features/documents/components/IssueLetterModal.tsx",
+        "services/letters/digitalLetterService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "document_master",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/document/documentService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "document_types",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "016_documents.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "document_versions",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/document/documentService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "documents",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "lib/supabase.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "employee_addresses",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "006_employee_core.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "employee_auth_identities",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/auth/employeeAuthService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "employee_avatar_assets",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/avatar/avatarService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "employee_bank_details",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "006_employee_core.sql"
+      ],
+      "appReferences": [
+        "features/people/EmployeeProfileDrawer.tsx",
+        "services/api.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "employee_documents",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "016_documents.sql"
+      ],
+      "appReferences": [
+        "components/shell/Sidebar.tsx",
+        "features/dashboard/CommandCenterView.tsx",
+        "services/document/documentService.ts",
+        "services/document/documentVerificationService.ts",
+        "services/operations/employeeDocumentEngine.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "employee_grievances",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/grievance/grievanceService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "employee_id_rules",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/operations/workforceIdentityEngine.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "employee_lifecycle_events",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "007_employee_lifecycle.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "employee_onboarding",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "007_employee_lifecycle.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "employee_onboardings",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/api.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "employee_payslips",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/payrollApi.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "employee_profile_change_requests",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/profileService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "employee_profile_media",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/profile/profileMediaService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "employee_profiles",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "006_employee_core.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "employee_reporting_relationships",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/organization/orgChartService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "employee_requests",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "017_employee_requests.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "employee_salary_assignments",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "012_payroll.sql"
+      ],
+      "appReferences": [
+        "services/payrollApi.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "employee_separations",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "007_employee_lifecycle.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "employee_service_configs",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/employeeServices/employeeServiceConfigService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "employee_shift_assignments",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "008_shifts.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "employee_statutory_details",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "006_employee_core.sql"
+      ],
+      "appReferences": [
+        "features/people/EmployeeProfileDrawer.tsx",
+        "services/api.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "employee_work_location_assignments",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/identity/employeeIdentityResolver.ts",
+        "services/location/workLocationService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "employees",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "006_employee_core.sql"
+      ],
+      "appReferences": [
+        "features/diagnostics/RealtimeHealthView.tsx",
+        "services/api.ts",
+        "services/auth/authService.ts",
+        "services/auth/employeeAuthService.ts",
+        "services/avatar/avatarService.ts",
+        "services/document/documentService.ts",
+        "services/identity/employeeIdentityResolver.ts",
+        "services/location/workLocationService.ts",
+        "services/operations/vendorGovernanceEngine.ts",
+        "services/operations/workforceIdentityEngine.ts",
+        "services/organization/orgChartService.ts",
+        "services/platform/platformTenantService.ts",
+        "services/profile/profileMediaService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "event_routes",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformWebhooksMeshService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "expense_claims",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/expenses/expenseClaimService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "helpdesk_messages",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/helpdesk/helpdeskService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "helpdesk_tickets",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/helpdesk/helpdeskService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "holidays",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "010_leave.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "hr_authorizations",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/hrAuthorizationService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "integration_connections",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformIntegrationsService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "integration_devices",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformIntegrationsService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "integration_logs",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformIntegrationsService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "integration_sync_jobs",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformIntegrationsService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "interviews",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/recruitment/recruitmentService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "invoices",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformTenantService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "job_applicants",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "019_recruitment.sql"
+      ],
+      "appReferences": [
+        "services/recruitment/recruitmentService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "job_openings",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "019_recruitment.sql"
+      ],
+      "appReferences": [
+        "services/recruitment/recruitmentService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "leave_balances",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "010_leave.sql"
+      ],
+      "appReferences": [
+        "services/leaveApi.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "leave_ledger_entries",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "010_leave.sql"
+      ],
+      "appReferences": [
+        "services/leaveApi.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "leave_policies",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/leaveApi.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "leave_requests",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "010_leave.sql"
+      ],
+      "appReferences": [
+        "components/shell/Sidebar.tsx",
+        "services/leaveApi.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "leave_types",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "010_leave.sql"
+      ],
+      "appReferences": [
+        "services/leaveApi.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "lms_courses",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "015_lms.sql"
+      ],
+      "appReferences": [
+        "services/lmsApi.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "lms_enrollments",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "015_lms.sql"
+      ],
+      "appReferences": [
+        "services/lmsApi.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "locations",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/api.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "notification_events",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "020_notifications_and_webhooks.sql"
+      ],
+      "appReferences": [
+        "services/attendance/attendanceRosterService.ts",
+        "services/communications/communicationService.ts",
+        "services/document/documentService.ts",
+        "services/document/documentVerificationService.ts",
+        "services/employeeRelationsService.ts",
+        "services/notification/notificationRealtimeEngine.ts",
+        "services/notification/notificationService.ts",
+        "services/payrollApi.ts",
+        "services/workOvertimeService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "notification_outbox",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "features/platform/subviews/NotificationDeliveryMonitorView.tsx"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "notification_preferences",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/notification/notificationPreferencesService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "notifications",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/operations/enterpriseNotificationEngine.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "observability_events",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/observability/telemetryIngestionBridge.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "offers",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/recruitment/offerManagementService.ts",
+        "services/recruitment/recruitmentService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "organization_audit_logs",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/organization/orgChartService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "organization_entitlements",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/billing/entitlementEngine.ts",
+        "services/platform/platformProvisioningEngine.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "organization_invitations",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/auth/authService.ts",
+        "services/platform/platformAuthInvitationService.ts",
+        "services/platform/platformTenantService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "organizations",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "004_organizations.sql"
+      ],
+      "appReferences": [
+        "services/api.ts",
+        "services/auth/authService.ts",
+        "services/billing/paymentAdapter.ts",
+        "services/organizationContextService.ts",
+        "services/platform/platformProvisioningEngine.ts",
+        "services/platform/platformTenantService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "overtime_policies",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/operations/overtimePolicyEngine.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "payroll_line_items",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "012_payroll.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "payroll_periods",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/payroll/payrollPeriodService.ts",
+        "services/payrollApi.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "payroll_runs",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "012_payroll.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "payslips",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "012_payroll.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "performance_cycles",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "014_performance.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "performance_goals",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "014_performance.sql"
+      ],
+      "appReferences": [
+        "services/performanceApi.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "performance_review_cycles",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/performanceApi.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "performance_reviews",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "014_performance.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "permissions",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "005_identity_and_rbac.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "platform_api_keys",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSettingsService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "platform_background_jobs",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformBackgroundJobsService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "platform_config_versions",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSettingsService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "platform_invoices",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/billing/paymentAdapter.ts",
+        "services/platform/platformProvisioningEngine.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "platform_job_queues",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformBackgroundJobsService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "platform_maintenance_windows",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSettingsService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "platform_payments",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/billing/paymentAdapter.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "platform_plans",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "003_platform.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "platform_roles",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformStaffService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "platform_scheduled_cron_jobs",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformBackgroundJobsService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "platform_settings",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSettingsService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "platform_subscriptions",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/billing/paymentAdapter.ts",
+        "services/platform/platformProvisioningEngine.ts",
+        "services/platform/platformSubscriptionService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "platform_user_preferences",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformProfileService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "platform_users",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "003_platform.sql"
+      ],
+      "appReferences": [
+        "services/auth/authService.ts",
+        "services/platform/platformProfileService.ts",
+        "services/platform/platformStaffService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "platform_workers",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformBackgroundJobsService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "posh_and_grievance_cases",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "017_employee_requests.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "profile_media_cleanup_jobs",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/profile/profileMediaService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "push_subscriptions",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/notification/webPushService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "realtime_outbox",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "features/diagnostics/RealtimeHealthView.tsx",
+        "features/documents/components/IssueLetterModal.tsx",
+        "services/attendance/attendanceDeviationService.ts",
+        "services/attendance/attendanceExceptionEngineService.ts",
+        "services/attendance/attendanceRegularizationService.ts",
+        "services/attendance/attendanceRosterService.ts",
+        "services/employeeServices/employeeServiceConfigService.ts",
+        "services/expenses/expenseClaimService.ts",
+        "services/grievance/grievanceService.ts",
+        "services/leaveApi.ts",
+        "services/letters/digitalLetterService.ts",
+        "services/location/workLocationService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "role_permissions",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "005_identity_and_rbac.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "roles",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "005_identity_and_rbac.sql"
+      ],
+      "appReferences": [
+        "services/api.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "saas_subscriptions",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "004_organizations.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "salary_components",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "012_payroll.sql"
+      ],
+      "appReferences": [
+        "services/payrollApi.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "salary_structure_components",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "012_payroll.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "salary_structures",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "012_payroll.sql"
+      ],
+      "appReferences": [
+        "services/payrollApi.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "security_credentials",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSecurityControlService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "security_findings",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSecurityControlService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "security_policies",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSecurityControlService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "service_definitions",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/services/serviceCatalogService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "service_request_events",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/services/serviceCatalogService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "service_requests",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/services/serviceCatalogService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "shift_rotation_assignments",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/operations/shiftRotationEngine.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "shift_rotation_patterns",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/operations/shiftRotationEngine.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "shifts",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "008_shifts.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "subscriptions",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformTenantService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "support_access_requests",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSupportCenterService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "support_case_messages",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSupportCenterService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "support_cases",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSupportCenterService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "support_customer_activity",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSupportCenterService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "support_knowledge_articles",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSupportCenterService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "teams",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/organization/organizationStructureService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "telemetry_sources",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/platform/platformSecurityControlService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "user_profiles",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "005_identity_and_rbac.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "user_roles",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "005_identity_and_rbac.sql"
+      ],
+      "appReferences": [],
+      "status": "MATCH (DB + MIGRATION, UNUSED IN APP)"
+    },
+    {
+      "table": "users",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/api.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "v_employee_effective_configuration",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/onboardingService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "vendor_contracts",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/organization/vendorWorkforceService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "vendor_deployments",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/organization/vendorWorkforceService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "vendor_documents",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/organization/vendorWorkforceService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "vendor_invoices",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "013_vendor_manpower.sql"
+      ],
+      "appReferences": [
+        "services/engineering/productionBlockerScanner.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "vendor_portal_organizations",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/vendorPortalService.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "vendor_workers",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "013_vendor_manpower.sql"
+      ],
+      "appReferences": [
+        "services/organization/vendorWorkforceService.ts",
+        "services/vendorPortalService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "vendors",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "013_vendor_manpower.sql"
+      ],
+      "appReferences": [
+        "features/dashboard/CommandCenterView.tsx",
+        "services/operations/vendorCommercialEngine.ts",
+        "services/operations/vendorGovernanceEngine.ts",
+        "services/operations/vendorGovernancePolicyEngine.ts",
+        "services/organization/vendorWorkforceService.ts",
+        "services/vendorService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "webhook_deliveries",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "020_notifications_and_webhooks.sql"
+      ],
+      "appReferences": [
+        "services/platform/platformWebhooksMeshService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "webhook_endpoints",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "020_notifications_and_webhooks.sql"
+      ],
+      "appReferences": [
+        "services/platform/platformWebhooksMeshService.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "work_locations",
+      "inDb": true,
+      "dbStatus": 200,
+      "migrationSources": [
+        "004_organizations.sql"
+      ],
+      "appReferences": [
+        "services/biometric/tamper/tamperEventProcessor.ts",
+        "services/location/workLocationService.ts",
+        "services/operations/biometricEdgeHardwareEngine.ts"
+      ],
+      "status": "MATCH"
+    },
+    {
+      "table": "workforce_employment_relationships",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/operations/vendorGovernanceEngine.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    },
+    {
+      "table": "workforce_identity_aliases",
+      "inDb": false,
+      "dbStatus": 404,
+      "migrationSources": [],
+      "appReferences": [
+        "services/identity/employeeIdentityResolver.ts"
+      ],
+      "status": "APPLICATION MISMATCH (NONEXISTENT TABLE)"
+    }
+  ]
+}

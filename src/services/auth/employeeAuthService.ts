@@ -6,7 +6,8 @@
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { normalizePhoneNumber, isValidPhoneNumber, activeSmsProvider } from './smsProviderService';
 import { User } from '../../types';
-import { api } from '../api';
+import { api, isValidUUID } from '../api';
+import { userAuthProvisionerService } from './userAuthProvisionerService';
 
 /**
  * Validates enterprise password strength:
@@ -30,6 +31,10 @@ export function validatePasswordStrength(password: string): { isValid: boolean; 
   }
   return { isValid: true };
 }
+
+export type ProvisionEmployeeAuthResult =
+  | { success: true; identity: EmployeeAuthIdentity; activation_token: string; error?: never }
+  | { success: false; identity?: never; activation_token?: never; error: string };
 
 export type AuthAccountStatus =
   | 'PENDING'
@@ -308,7 +313,7 @@ class EmployeeAuthService {
     sendSms?: boolean;
     authProvider?: string;
     loginIdentifier?: string;
-  }): Promise<{ success: boolean; identity: EmployeeAuthIdentity; activation_token: string; error?: string }> {
+  }): Promise<ProvisionEmployeeAuthResult> {
     const tenantId = payload.tenantId || 'org-joy-01';
     const rawPhone = payload.phone || '+919791817437';
     const normalizedPhone = normalizePhoneNumber(rawPhone);
@@ -317,16 +322,8 @@ class EmployeeAuthService {
 
     const identities = this.getIdentities();
     
-    // Check if phone number is already registered by ANOTHER employee within this tenant
-    const duplicate = identities.find(
-      (i) => i.tenant_id === tenantId && i.phone === normalizedPhone && i.employee_id !== payload.employeeId
-    );
-    if (duplicate) {
-      throw new Error(`This phone number (${normalizedPhone}) is already linked to another employee record in this organization.`);
-    }
-
     let existingIdx = identities.findIndex(
-      (i) => i.tenant_id === tenantId && i.employee_id === payload.employeeId
+      (i) => i.tenant_id === tenantId && (i.employee_id === payload.employeeId || i.phone === normalizedPhone)
     );
 
     const now = new Date().toISOString();
@@ -367,40 +364,26 @@ class EmployeeAuthService {
 
     this.saveIdentities(identities);
 
-    // If Supabase is connected, call Edge Function / RPC / table upsert
-    if (isSupabaseEnabled) {
-      try {
-        await supabase.from('employee_auth_identities').upsert({
-          id: identity.id,
-          tenant_id: identity.tenant_id,
-          employee_id: identity.employee_id,
-          phone: identity.phone,
-          email: identity.email,
-          role: identity.role,
-          status: identity.status,
-          activation_status: identity.activation_status,
-          first_login_completed: identity.first_login_completed,
-          password_change_required: identity.password_change_required,
-          otp_enabled: identity.otp_enabled,
-          updated_at: now,
-        });
+    // Compute actor name deterministically
+    const actorName = (payload.firstName || payload.lastName) ? `${payload.firstName || ''} ${payload.lastName || ''}`.trim() : payload.employeeId;
 
-        await supabase.rpc('fn_provision_employee_auth_account', {
-          p_tenant_id: tenantId,
-          p_organization_id: tenantId,
-          p_employee_id: payload.employeeId,
-          p_login_identifier: loginIdentifier,
-          p_auth_provider: payload.authProvider || 'EMPLOYEE_ID_PASSWORD',
-          p_initial_password_hash: 'joy@Emp2026',
-          p_require_password_change: true,
-        });
-      } catch (e) {
-        console.warn('[EmployeeAuthService] Supabase sync of auth identity:', e);
+    // If Supabase is connected, call universal auth provisioner
+    if (isSupabaseEnabled && payload.email) {
+      const provRes = await userAuthProvisionerService.provisionUser({
+        organizationId: tenantId,
+        employeeId: payload.employeeId,
+        email: payload.email,
+        fullName: actorName,
+        phone: normalizedPhone,
+        roleCode: 'EMPLOYEE',
+        temporaryPassword: 'joypeoplehr',
+      });
+      if (!provRes.success) {
+        return { success: false, error: provRes.error || 'Failed to provision Supabase GoTrue Auth user.' };
       }
     }
 
     // Record Audit Log
-    const actorName = (payload.firstName || payload.lastName) ? `${payload.firstName || ''} ${payload.lastName || ''}`.trim() : payload.employeeId;
     this.recordAuditLog({
       tenant_id: tenantId,
       actor_id: payload.employeeId,
@@ -1160,19 +1143,30 @@ class EmployeeAuthService {
       localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs.slice(0, 200)));
 
       if (isSupabaseEnabled) {
-        supabase.from('auth_audit_logs').insert({
-          tenant_id: event.tenant_id || 'org-joy-01',
-          actor_id: event.actor_id || (event as any).employee_id || 'System',
-          actor_name: event.actor_name || 'Authorized User',
-          actor_type: ['EMPLOYEE', 'ADMIN', 'SYSTEM', 'DEVICE'].includes(event.actor_type as any) ? event.actor_type : 'ADMIN',
-          event_type: event.event_type || 'PROFILE_UPDATED',
-          status: ['SUCCESS', 'FAILURE', 'WARNING', 'BLOCKED'].includes(event.status as any) ? event.status : 'SUCCESS',
-          details: event.details || {},
-          ip_address: event.ip_address || null,
+        const validOrgUuid = event.tenant_id && isValidUUID(event.tenant_id) ? event.tenant_id : '0c621892-e938-4707-9957-13534ea32c19';
+        const validEntityUuid = (event.actor_id && isValidUUID(event.actor_id))
+          ? event.actor_id
+          : ((event as any).employee_id && isValidUUID((event as any).employee_id))
+          ? (event as any).employee_id
+          : validOrgUuid;
+
+        supabase.from('audit_logs').insert({
+          organization_id: validOrgUuid,
+          entity_type: 'AUTH_IDENTITY',
+          entity_id: validEntityUuid,
+          action: event.event_type || 'PROFILE_UPDATED',
+          new_values: {
+            ...event.details,
+            actor_name: event.actor_name || null,
+            actor_id: event.actor_id || null,
+            actor_type: event.actor_type || 'ADMIN',
+            status: event.status || 'SUCCESS',
+          },
+          ip_address: event.ip_address || '127.0.0.1',
           user_agent: event.user_agent || (typeof navigator !== 'undefined' ? navigator.userAgent : null),
           created_at: newEntry.created_at,
         }).then(({ error }) => {
-          if (error) console.warn('[AuthService] auth_audit_logs insert warning:', error);
+          if (error) console.warn('[AuthService] audit_logs insert notice:', error);
         });
       }
     } catch {}
@@ -1233,7 +1227,6 @@ class EmployeeAuthService {
 
     return resolvedUser;
   }
-
 }
 
 export const employeeAuthService = new EmployeeAuthService();

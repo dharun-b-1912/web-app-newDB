@@ -62,10 +62,10 @@ class NotificationRealtimeEngine {
           {
             event: 'INSERT',
             schema: 'public',
-            table: 'notification_deliveries',
+            table: 'notification_events',
             filter: `recipient_user_id=eq.${params.userId}`,
           },
-          (payload) => this.handleDeliveryInsert(payload)
+          (payload) => this.handleEventInsert(payload)
         )
         .subscribe((status) => {
           this.handleChannelStatus(status);

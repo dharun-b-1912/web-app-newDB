@@ -13,8 +13,8 @@ interface Props {
   attendanceState: 'NotCheckedIn' | 'CheckedIn' | 'CheckedOut' | 'OnBreak' | 'OnLeave' | 'Holiday' | 'WeeklyOff';
   todayAttendance: AttendanceDaily | null;
   workingDuration: string;
-  onCheckIn: () => void;
-  onCheckOut: () => void;
+  onCheckIn: (coords?: { latitude: number; longitude: number; accuracy?: number }) => void;
+  onCheckOut: (coords?: { latitude: number; longitude: number; accuracy?: number }, reason?: string) => void;
   isProcessing: boolean;
 }
 

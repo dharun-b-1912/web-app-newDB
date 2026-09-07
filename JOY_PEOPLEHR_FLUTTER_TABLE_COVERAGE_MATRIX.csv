@@ -1,0 +1,65 @@
+Canonical Table,Classification,Flutter Repository / Service,Flutter UI Screen,Operation,Target Columns Used
+organizations,CANONICAL,supabase_auth_repository.dart,LoginScreen,SELECT,id legal_name organization_code
+companies,CANONICAL,supabase_employee_repository.dart,ProfileScreen,SELECT,id name company_code
+branches,CANONICAL,NOT USED,None,NOT USED,None
+departments,CANONICAL,supabase_employee_repository.dart,ProfileScreen,SELECT,id name
+designations,CANONICAL,supabase_employee_repository.dart,ProfileScreen,SELECT,id title
+work_locations,CANONICAL,location_service.dart,AttendanceScreen,SELECT,id name latitude longitude geofence_radius_meters
+user_profiles,CANONICAL,supabase_auth_repository.dart,LoginScreen,SELECT UPDATE,id organization_id phone_number first_name last_name
+roles,CANONICAL,supabase_auth_repository.dart,LoginScreen,SELECT,id name
+permissions,CANONICAL,NOT USED,None,NOT USED,None
+role_permissions,CANONICAL,NOT USED,None,NOT USED,None
+user_roles,CANONICAL,supabase_auth_repository.dart,LoginScreen,SELECT,user_id role_id organization_id
+employees,CANONICAL,supabase_employee_repository.dart,ProfileScreen VirtualIdScreen,SELECT,id organization_id first_name last_name employee_code work_email status department_id designation_id
+employee_profiles,CANONICAL,supabase_employee_repository.dart,ProfileScreen EditProfileScreen,SELECT UPDATE,employee_id avatar_url phone_number personal_email date_of_birth gender
+employee_addresses,CANONICAL,supabase_employee_repository.dart,EditProfileScreen,SELECT UPSERT,employee_id address_type address_line_1 city state postal_code
+employee_bank_details,CANONICAL,supabase_employee_repository.dart,BankDetailsScreen,SELECT,employee_id bank_name account_number ifsc_code
+employee_statutory_details,CANONICAL,supabase_employee_repository.dart,BankDetailsScreen,SELECT,employee_id pan_number aadhaar_number uan esi_number
+document_types,CANONICAL,supabase_employee_repository.dart,DocumentsScreen,SELECT,id name code category is_mandatory
+employee_documents,CANONICAL,supabase_employee_repository.dart,DocumentsScreen UploadDocumentModal,SELECT INSERT,id employee_id document_type_id file_path document_number verification_status
+shifts,CANONICAL,supabase_attendance_repository.dart,RosterScreen,SELECT,id name start_time end_time
+employee_shift_assignments,CANONICAL,supabase_attendance_repository.dart,RosterScreen,SELECT,employee_id shift_id effective_date
+biometric_devices,CANONICAL,NOT USED,None,NOT USED,None
+attendance_punches,CANONICAL,supabase_attendance_repository.dart,AttendanceScreen EmployeeHomeScreen,INSERT SELECT,id employee_id punch_type punch_time latitude longitude punch_source is_geofence_verified
+attendance_daily,CANONICAL,supabase_attendance_repository.dart,AttendanceScreen,SELECT,employee_id attendance_date status total_work_minutes overtime_minutes
+attendance_regularizations,CANONICAL,supabase_attendance_repository.dart,RegularizationScreen,INSERT SELECT,id employee_id attendance_date requested_check_in requested_check_out reason status
+leave_types,CANONICAL,supabase_leave_repository.dart,LeaveScreen ApplyLeaveModal,SELECT,id name code is_paid is_active
+leave_balances,CANONICAL,supabase_leave_repository.dart,LeaveScreen,SELECT,employee_id leave_type_id balance accrued used
+leave_requests,CANONICAL,supabase_leave_repository.dart,LeaveScreen ApplyLeaveModal,INSERT SELECT,id employee_id leave_type_id start_date end_date total_days reason status
+leave_ledger_entries,CANONICAL,supabase_leave_repository.dart,LeaveScreen,SELECT,employee_id leave_type_id transaction_type days_count reason
+holidays,CANONICAL,supabase_attendance_repository.dart,RosterScreen,SELECT,id name holiday_date is_optional
+salary_components,CANONICAL,NOT USED,None,NOT USED,None
+salary_structures,CANONICAL,NOT USED,None,NOT USED,None
+salary_structure_components,CANONICAL,NOT USED,None,NOT USED,None
+employee_salary_assignments,CANONICAL,NOT USED,None,NOT USED,None
+payroll_runs,CANONICAL,supabase_more_modules_repository.dart,PayslipsScreen,SELECT,id month year status
+payroll_line_items,CANONICAL,supabase_more_modules_repository.dart,PayslipsScreen,SELECT,id gross_earnings total_deductions net_pay earnings_breakdown deductions_breakdown
+payslips,CANONICAL,supabase_more_modules_repository.dart,PayslipsScreen,SELECT,id employee_id payroll_line_item_id payslip_number storage_path is_published
+employee_lifecycle_events,CANONICAL,NOT USED,None,NOT USED,None
+employee_onboarding,CANONICAL,NOT USED,None,NOT USED,None
+employee_separations,CANONICAL,NOT USED,None,NOT USED,None
+employee_requests,CANONICAL,supabase_more_modules_repository.dart,HelpdeskScreen ClaimsScreen ServiceCatalogScreen,INSERT SELECT,id employee_id request_type details status priority
+posh_and_grievance_cases,CANONICAL,supabase_more_modules_repository.dart,GrievanceScreen,INSERT SELECT,id employee_id case_type description severity status is_anonymous
+performance_cycles,CANONICAL,supabase_more_modules_repository.dart,PerformanceScreen,SELECT,id name start_date end_date status
+performance_goals,CANONICAL,supabase_more_modules_repository.dart,PerformanceScreen GoalUpdateModal,SELECT UPDATE,id employee_id title description progress_percentage status
+performance_reviews,CANONICAL,supabase_more_modules_repository.dart,PerformanceScreen,SELECT,id employee_id review_period rating comments
+lms_courses,CANONICAL,supabase_more_modules_repository.dart,MoreScreen,SELECT,id title description duration_minutes
+lms_enrollments,CANONICAL,supabase_more_modules_repository.dart,MoreScreen,SELECT UPDATE,id employee_id course_id progress_percentage status
+job_openings,CANONICAL,NOT USED,None,NOT USED,None
+job_applicants,CANONICAL,NOT USED,None,NOT USED,None
+vendors,CANONICAL,NOT USED,None,NOT USED,None
+vendor_workers,CANONICAL,NOT USED,None,NOT USED,None
+vendor_invoices,CANONICAL,NOT USED,None,NOT USED,None
+assets,CANONICAL,supabase_more_modules_repository.dart,MoreScreen,SELECT,id asset_name asset_code asset_type
+asset_assignments,CANONICAL,supabase_more_modules_repository.dart,MoreScreen,SELECT,id employee_id asset_id assigned_date status
+notification_events,CANONICAL,supabase_notification_repository.dart,NotificationCenterScreen CommunicationScreen,SELECT UPDATE,id organization_id user_id event_type payload is_read created_at
+approval_workflows,CANONICAL,NOT USED,None,NOT USED,None
+approval_instances,CANONICAL,NOT USED,None,NOT USED,None
+approval_actions,CANONICAL,NOT USED,None,NOT USED,None
+webhook_endpoints,CANONICAL,NOT USED,None,NOT USED,None
+webhook_deliveries,CANONICAL,NOT USED,None,NOT USED,None
+platform_users,CANONICAL,NOT USED,None,NOT USED,None
+platform_plans,CANONICAL,NOT USED,None,NOT USED,None
+saas_subscriptions,CANONICAL,NOT USED,None,NOT USED,None
+background_jobs,CANONICAL,NOT USED,None,NOT USED,None
+audit_logs,CANONICAL,NOT USED,None,NOT USED,None

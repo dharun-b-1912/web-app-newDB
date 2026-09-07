@@ -8,20 +8,16 @@ import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { DocumentClassification } from '../../types';
 
 export type StorageBucketDomain =
-  | 'employee-private'
-  | 'company-documents'
-  | 'restricted-kyc'
-  | 'signed-documents'
-  | 'document-derivatives';
+  | 'employee-documents'
+  | 'employee-letters'
+  | 'employee-profile-pictures';
 
 export interface StorageUploadParams {
-  tenantId: string;
-  organizationId?: string;
-  employeeId?: string;
-  subjectType: string;
-  subjectId: string;
-  documentId: string;
-  versionNumber: number;
+  tenantId?: string;
+  organizationId: string;
+  employeeId: string;
+  documentId?: string;
+  category?: 'documents' | 'letters' | 'profile';
   fileName: string;
   file: Blob | File;
   classification?: DocumentClassification;
@@ -45,99 +41,88 @@ export interface SignedUrlResponse {
 
 class SupabaseStorageEngine {
   /**
-   * Determine the appropriate private storage bucket based on classification and subject
+   * Determine the canonical private storage bucket based on category
    */
-  resolveStorageBucket(classification?: DocumentClassification, isCompanyDoc?: boolean): StorageBucketDomain {
-    if (isCompanyDoc) {
-      return 'company-documents';
-    }
-    if (classification === 'restricted' || classification === 'highly_confidential') {
-      return 'restricted-kyc';
-    }
-    if (classification === 'confidential') {
-      return 'employee-private';
-    }
-    return 'employee-private';
+  resolveStorageBucket(category: 'documents' | 'letters' | 'profile' = 'documents'): StorageBucketDomain {
+    if (category === 'letters') return 'employee-letters';
+    if (category === 'profile') return 'employee-profile-pictures';
+    return 'employee-documents';
   }
 
   /**
    * Generate canonical deterministic tenant-isolated path
-   * Format: tenant/{tenant_id}/organization/{org_id}/employee/{employee_id}/documents/{document_id}/v{version}/{filename}
+   * Format: <organization_uuid>/<employee_uuid>/<category>/<file_uuid>.<extension>
    */
   buildStoragePath(params: {
-    tenantId: string;
-    organizationId?: string;
-    employeeId?: string;
-    subjectType: string;
-    subjectId: string;
-    documentId: string;
-    versionNumber: number;
+    organizationId: string;
+    employeeId: string;
+    category?: 'documents' | 'letters' | 'profile';
+    fileUuid?: string;
     fileName: string;
   }): string {
-    const tenant = params.tenantId || 'org-joy-01';
-    const org = params.organizationId || params.tenantId || 'org-joy-01';
-    const cleanSubject = (params.employeeId || params.subjectId || 'general').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const cleanFileName = params.fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-
-    if (params.subjectType === 'company' || params.subjectType === 'COMPANY_POLICY') {
-      return `tenant/${tenant}/organization/${org}/company-docs/${params.documentId}/v${params.versionNumber}/${cleanFileName}`;
-    }
-
-    return `tenant/${tenant}/organization/${org}/employee/${cleanSubject}/documents/${params.documentId}/v${params.versionNumber}/${cleanFileName}`;
+    const org = params.organizationId;
+    const emp = params.employeeId;
+    const cat = params.category || 'documents';
+    
+    // Generate UUID filename with proper extension
+    const ext = params.fileName.includes('.') 
+      ? params.fileName.substring(params.fileName.lastIndexOf('.'))
+      : (cat === 'profile' ? '.jpg' : '.pdf');
+      
+    const fileId = params.fileUuid || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `file-${Date.now()}`);
+    return `${org}/${emp}/${cat}/${fileId}${ext}`;
   }
 
   /**
-   * Upload binary file to private Supabase Storage bucket
+   * Upload binary file to canonical private Supabase Storage bucket
    */
   async uploadFile(params: StorageUploadParams): Promise<StorageUploadResponse> {
-    const bucket = this.resolveStorageBucket(params.classification, params.isCompanyDoc);
+    const category = params.category || 'documents';
+    const bucket = this.resolveStorageBucket(category);
     const storagePath = this.buildStoragePath({
-      tenantId: params.tenantId,
       organizationId: params.organizationId,
       employeeId: params.employeeId,
-      subjectType: params.subjectType,
-      subjectId: params.subjectId,
-      documentId: params.documentId,
-      versionNumber: params.versionNumber,
+      category,
       fileName: params.fileName,
     });
 
-    const idempotencyKey = `up-${params.documentId}-v${params.versionNumber}-${Date.now()}`;
+    const idempotencyKey = `up-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
     if (isSupabaseEnabled) {
-      try {
-        const { error } = await supabase.storage
-          .from(bucket)
-          .upload(storagePath, params.file, {
-            cacheControl: '3600',
-            upsert: true,
-          });
+      const { error } = await supabase.storage
+        .from(bucket)
+        .upload(storagePath, params.file, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: params.file.type || (category === 'profile' ? 'image/jpeg' : 'application/pdf')
+        });
 
-        if (error) {
-          // If the specialized bucket doesn't exist yet, fallback to default employee-documents bucket
-          const fallbackBucket = 'employee-documents';
-          const { error: fallbackError } = await supabase.storage
-            .from(fallbackBucket)
+      if (error) {
+        // If specific letters/profile bucket not yet active, fallback to canonical employee-documents
+        if (bucket !== 'employee-documents') {
+          const { error: fallbackErr } = await supabase.storage
+            .from('employee-documents')
             .upload(storagePath, params.file, {
               cacheControl: '3600',
               upsert: true,
+              contentType: params.file.type || 'application/pdf'
             });
 
-          if (fallbackError) {
-            console.warn('[SupabaseStorageEngine] Storage upload warning:', fallbackError.message);
+          if (fallbackErr) {
+            console.error('[SupabaseStorageEngine] Storage upload error:', fallbackErr.message);
+            throw fallbackErr;
           }
+          return {
+            storageBucket: 'employee-documents',
+            storagePath,
+            fileSizeBytes: params.file.size,
+            uploadedAt: new Date().toISOString(),
+            idempotencyKey,
+          };
         }
-      } catch (err) {
-        console.warn('[SupabaseStorageEngine] Error uploading to Supabase Storage:', err);
+        console.error('[SupabaseStorageEngine] Storage upload error:', error.message);
+        throw error;
       }
-    }
-
-    // Cache local blob URL in memory for instant zero-latency view in active session
-    if (typeof window !== 'undefined' && params.file instanceof Blob) {
-      try {
-        const localBlobUrl = URL.createObjectURL(params.file);
-        (window as any)[`__blob_${storagePath}`] = localBlobUrl;
-      } catch (_) {}
     }
 
     return {
@@ -150,76 +135,70 @@ class SupabaseStorageEngine {
   }
 
   /**
-   * Create short-lived signed URL for authorized viewing or downloading (default: 15 minutes / 900 seconds)
+   * Create short-lived signed URL for authorized viewing or downloading (default: 1 hour / 3600 seconds)
    */
   async createSignedUrl(
-    bucket: StorageBucketDomain | string,
+    bucket: StorageBucketDomain | string = 'employee-documents',
     storagePath: string,
-    expiresInSeconds: number = 900
+    expiresInSeconds: number = 3600
   ): Promise<SignedUrlResponse> {
     const expiryDate = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
 
-    // Check in-memory local session blob first
-    if (typeof window !== 'undefined' && (window as any)[`__blob_${storagePath}`]) {
-      return {
-        signedUrl: (window as any)[`__blob_${storagePath}`],
-        expiresAt: expiryDate,
-        storageBucket: bucket as StorageBucketDomain,
-        storagePath,
-      };
+    if (!storagePath) {
+      throw new Error('storagePath is required to create a signed URL');
     }
 
-    if (isSupabaseEnabled && storagePath) {
+    const cleanPath = storagePath.replace(/^[/\\]+/, '').replace(/^storage\//, '');
+
+    if (isSupabaseEnabled) {
       try {
         const { data, error } = await supabase.storage
           .from(bucket)
-          .createSignedUrl(storagePath, expiresInSeconds);
+          .createSignedUrl(cleanPath, expiresInSeconds);
 
         if (!error && data?.signedUrl) {
           return {
             signedUrl: data.signedUrl,
             expiresAt: expiryDate,
             storageBucket: bucket as StorageBucketDomain,
-            storagePath,
+            storagePath: cleanPath,
           };
         }
 
-        // Try fallback bucket if primary bucket returned error
-        const { data: fallbackData } = await supabase.storage
-          .from('employee-documents')
-          .createSignedUrl(storagePath, expiresInSeconds);
+        // Try fallback canonical bucket employee-documents
+        if (bucket !== 'employee-documents') {
+          const { data: fallbackData, error: fallbackError } = await supabase.storage
+            .from('employee-documents')
+            .createSignedUrl(cleanPath, expiresInSeconds);
 
-        if (fallbackData?.signedUrl) {
-          return {
-            signedUrl: fallbackData.signedUrl,
-            expiresAt: expiryDate,
-            storageBucket: 'employee-private',
-            storagePath,
-          };
+          if (!fallbackError && fallbackData?.signedUrl) {
+            return {
+              signedUrl: fallbackData.signedUrl,
+              expiresAt: expiryDate,
+              storageBucket: 'employee-documents',
+              storagePath: cleanPath,
+            };
+          }
         }
       } catch (err) {
-        console.warn('[SupabaseStorageEngine] Error creating signed URL:', err);
+        console.error('[SupabaseStorageEngine] Error creating signed URL:', err);
+        throw err;
       }
     }
 
-    // Default secure document placeholder viewer
-    return {
-      signedUrl: `https://workforceos-docs.internal/secure-preview?path=${encodeURIComponent(storagePath)}&token=${Math.random().toString(36).substring(2, 10)}`,
-      expiresAt: expiryDate,
-      storageBucket: bucket as StorageBucketDomain,
-      storagePath,
-    };
+    throw new Error('Supabase Storage client is not enabled or file is unavailable.');
   }
 
   /**
-   * Delete object from Supabase Storage API safely
+   * Delete object from Supabase Storage safely
    */
-  async deleteFile(bucket: StorageBucketDomain | string, storagePath: string): Promise<boolean> {
+  async deleteFile(bucket: StorageBucketDomain | string = 'employee-documents', storagePath: string): Promise<boolean> {
     if (isSupabaseEnabled && storagePath) {
       try {
+        const cleanPath = storagePath.replace(/^[/\\]+/, '').replace(/^storage\//, '');
         const { error } = await supabase.storage
           .from(bucket)
-          .remove([storagePath]);
+          .remove([cleanPath]);
 
         if (error) {
           console.warn('[SupabaseStorageEngine] Error removing object from storage:', error.message);
@@ -232,18 +211,6 @@ class SupabaseStorageEngine {
       }
     }
     return true;
-  }
-
-  /**
-   * Synchronous signed URL resolution helper
-   */
-  createSignedUrlSync(bucket: StorageBucketDomain | string, storagePath: string): string {
-    if (typeof window !== 'undefined' && (window as any)[`__blob_${storagePath}`]) {
-      return (window as any)[`__blob_${storagePath}`];
-    }
-    const clean = storagePath.replace(/^[/\\]+/, '').replace(/^storage\//, '');
-    const { data } = supabase.storage.from(bucket).getPublicUrl(clean);
-    return data?.publicUrl || storagePath;
   }
 }
 

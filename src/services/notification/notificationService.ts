@@ -56,64 +56,38 @@ export const notificationService = {
     if (isSupabaseEnabled) {
       try {
         let query = supabase
-          .from('notification_deliveries')
-          .select(`
-            id,
-            status,
-            channel,
-            created_at,
-            read_at,
-            notification_events (
-              id,
-              event_type,
-              category,
-              severity,
-              title,
-              body,
-              actor_name,
-              actor_avatar,
-              resource_type,
-              resource_id,
-              action_url,
-              metadata,
-              created_at
-            )
-          `)
+          .from('notification_events')
+          .select('*')
           .order('created_at', { ascending: false })
           .limit(limit);
 
         if (params.unreadOnly) {
-          query = query.in('status', ['PENDING', 'DELIVERED']);
+          query = query.eq('is_read', false);
         }
 
         const { data, error } = await query;
-        if (data && !error) {
-          hydratedItems = data
-            .filter((d: any) => d.notification_events)
-            .map((d: any) => {
-              const ev = d.notification_events;
-              return {
-                id: ev.id,
-                deliveryId: d.id,
-                eventType: ev.event_type,
-                category: ev.category,
-                severity: ev.severity,
-                title: ev.title,
-                body: ev.body,
-                actorName: ev.actor_name,
-                actorAvatar: ev.actor_avatar,
-                resourceType: ev.resource_type,
-                resourceId: ev.resource_id,
-                actionUrl: ev.action_url,
-                isRead: d.status === 'READ',
-                status: d.status,
-                createdAt: ev.created_at || d.created_at,
-                metadata: ev.metadata || {},
-              };
-            });
+        if (data && !error && data.length > 0) {
+          hydratedItems = data.map((ev: any) => ({
+            id: ev.id,
+            deliveryId: ev.id,
+            eventType: 'notification',
+            category: 'SYSTEM',
+            severity: 'INFO',
+            title: ev.title,
+            body: ev.message || ev.title,
+            actorName: 'System',
+            actorAvatar: '',
+            resourceType: 'Notification',
+            resourceId: ev.id,
+            actionUrl: ev.action_url || '',
+            isRead: ev.is_read || false,
+            status: ev.is_read ? 'READ' : 'DELIVERED',
+            createdAt: ev.created_at,
+            metadata: {},
+          }));
         }
       } catch (err) {
-        console.warn('[NotificationService] Supabase fetch fallback to cache', err);
+        console.warn('[NotificationService] Supabase fetch notice:', err);
       }
     }
 
@@ -213,10 +187,9 @@ export const notificationService = {
     if (isSupabaseEnabled) {
       try {
         await supabase
-          .from('notification_deliveries')
+          .from('notification_events')
           .update({
-            status: 'READ',
-            read_at: new Date().toISOString(),
+            is_read: true,
           })
           .eq('id', deliveryId);
       } catch (err) {
@@ -240,12 +213,11 @@ export const notificationService = {
     if (isSupabaseEnabled) {
       try {
         let q = supabase
-          .from('notification_deliveries')
+          .from('notification_events')
           .update({
-            status: 'READ',
-            read_at: new Date().toISOString(),
+            is_read: true,
           })
-          .in('status', ['PENDING', 'DELIVERED']);
+          .eq('is_read', false);
 
         if (userId) {
           q = q.eq('recipient_user_id', userId);
@@ -266,62 +238,134 @@ export const notificationService = {
   },
 
   /**
-   * Publish a generic WorkForceEvent to PostgreSQL, Outbox, and Realtime mesh.
+   * Resolve user_profiles.id for a given employeeId or email
    */
-  async publishEvent(event: WorkForceEvent): Promise<void> {
-    const notifId = event.eventId || crypto.randomUUID();
-    const timestamp = event.timestamp || new Date().toISOString();
+  async resolveRecipientUserProfileId(employeeId?: string, orgId?: string): Promise<string | null> {
+    if (!employeeId || !isSupabaseEnabled) return null;
+
+    try {
+      // 1. Try finding by user_profiles.employee_id
+      const { data: prof1 } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('employee_id', employeeId)
+        .maybeSingle();
+
+      if (prof1?.id) return prof1.id;
+
+      // 2. Try finding employee's user_id or email
+      const { data: emp } = await supabase
+        .from('employees')
+        .select('user_id, work_email')
+        .eq('id', employeeId)
+        .maybeSingle();
+
+      if (emp?.user_id) {
+        const { data: prof2 } = await supabase
+          .from('user_profiles')
+          .select('id')
+          .eq('auth_user_id', emp.user_id)
+          .maybeSingle();
+        if (prof2?.id) return prof2.id;
+      }
+
+      if (emp?.work_email) {
+        const { data: prof3 } = await supabase
+          .from('user_profiles')
+          .select('id')
+          .eq('email', emp.work_email)
+          .maybeSingle();
+        if (prof3?.id) return prof3.id;
+      }
+    } catch (err) {
+      console.warn('[NotificationService] resolveRecipientUserProfileId notice:', err);
+    }
+
+    return null;
+  },
+
+  /**
+   * Emit an employee-targeted notification event to PostgreSQL canonical table.
+   */
+  async emitEmployeeNotification(params: {
+    employeeId?: string;
+    recipientUserId?: string;
+    organizationId?: string;
+    title: string;
+    message: string;
+    actionUrl?: string;
+  }): Promise<string | null> {
+    const orgId = params.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+    let targetProfileId = params.recipientUserId || null;
+
+    if (!targetProfileId && params.employeeId) {
+      targetProfileId = await this.resolveRecipientUserProfileId(params.employeeId, orgId);
+    }
+
+    const notifId = crypto.randomUUID();
+    const timestamp = new Date().toISOString();
 
     const notifRecord = {
       id: notifId,
-      organization_id: event.organizationId || null,
-      event_type: event.eventType,
-      category: event.category,
-      severity: event.severity,
-      title: event.title,
-      body: event.body,
-      actor_id: event.actorId || null,
-      actor_name: event.actorName || null,
-      actor_avatar: event.actorAvatar || null,
-      resource_type: event.resourceType || null,
-      resource_id: event.resourceId || null,
-      action_url: event.actionUrl || null,
-      metadata: event.metadata || {},
-      idempotency_key: event.idempotencyKey || null,
+      organization_id: orgId,
+      recipient_user_id: targetProfileId,
+      channel: 'IN_APP',
+      title: params.title,
+      message: params.message,
+      action_url: params.actionUrl || null,
+      is_read: false,
+      is_sent: true,
+      sent_at: timestamp,
       created_at: timestamp,
     };
 
     if (isSupabaseEnabled) {
       try {
-        // 1. Insert into notification_events (idempotently)
-        await supabase.from('notification_events').upsert([notifRecord], { onConflict: 'idempotency_key' });
-
-        // 2. Insert transactional outbox event
-        await supabase.from('notification_outbox').insert([
-          {
-            organization_id: event.organizationId || null,
-            event_type: event.eventType,
-            aggregate_type: event.resourceType || 'notification',
-            aggregate_id: event.resourceId || notifId,
-            payload: event,
-            status: 'PENDING',
-            created_at: timestamp,
-          },
-        ]);
-
-        // 3. Create in-app deliveries for recipients (or broadcast to current user)
-        const recipientIds = event.recipientUserIds && event.recipientUserIds.length > 0 ? event.recipientUserIds : ['00000000-0000-0000-0000-000000000001'];
-        const deliveries = recipientIds.map((uid) => ({
-          notification_id: notifId,
-          recipient_user_id: uid,
-          channel: 'IN_APP',
-          status: 'DELIVERED',
-          delivered_at: timestamp,
-          created_at: timestamp,
-        }));
-        await supabase.from('notification_deliveries').insert(deliveries);
+        const { data, error } = await supabase.from('notification_events').insert([notifRecord]).select('id').single();
+        if (!error && data?.id) {
+          return data.id;
+        }
       } catch (err) {
-        console.warn('[NotificationService] Supabase publish fallback:', err);
+        console.warn('[NotificationService] emitEmployeeNotification error:', err);
+      }
+    }
+
+    return notifId;
+  },
+
+  /**
+   * Publish a generic WorkForceEvent to PostgreSQL, Outbox, and Realtime mesh.
+   */
+  async publishEvent(event: WorkForceEvent): Promise<void> {
+    const notifId = event.eventId || crypto.randomUUID();
+    const timestamp = event.timestamp || new Date().toISOString();
+    const orgId = event.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+
+    let resolvedRecipientId: string | null = null;
+    if (event.recipientId) {
+      resolvedRecipientId = await this.resolveRecipientUserProfileId(event.recipientId, orgId);
+    }
+
+    const notifRecord = {
+      id: notifId,
+      organization_id: orgId,
+      recipient_user_id: resolvedRecipientId,
+      channel: 'IN_APP',
+      title: event.title,
+      message: event.body,
+      action_url: event.actionUrl || null,
+      is_read: false,
+      is_sent: true,
+      sent_at: timestamp,
+      created_at: timestamp,
+    };
+
+    if (isSupabaseEnabled) {
+      try {
+        // 1. Insert into notification_events
+        await supabase.from('notification_events').insert([notifRecord]);
+      } catch (err) {
+        console.warn('[NotificationService] Supabase publish notice:', err);
       }
     }
 
@@ -331,9 +375,9 @@ export const notificationService = {
 
     localEvents.unshift(notifRecord);
     localDeliveries.unshift({
-      id: crypto.randomUUID(),
+      id: notifId,
       notification_id: notifId,
-      recipient_user_id: 'current-user',
+      recipient_user_id: resolvedRecipientId || 'current-user',
       channel: 'IN_APP',
       status: 'DELIVERED',
       delivered_at: timestamp,
@@ -361,29 +405,23 @@ export const notificationService = {
 
     if (isSupabaseEnabled) {
       try {
-        const [evRes, delivRes, outboxRes] = await Promise.all([
-          supabase.from('notification_events').select('created_at', { count: 'exact' }),
-          supabase.from('notification_deliveries').select('status, created_at, delivered_at'),
-          supabase.from('notification_outbox').select('status').eq('status', 'DEAD_LETTER'),
-        ]);
+        const { data, count } = await supabase.from('notification_events').select('is_read, is_sent, created_at, sent_at', { count: 'exact' });
 
-        totalCreated = evRes.count || 0;
-        if (delivRes.data) {
-          totalDelivered = delivRes.data.filter((d: any) => d.status === 'DELIVERED' || d.status === 'READ').length;
-          totalUnread = delivRes.data.filter((d: any) => d.status === 'PENDING' || d.status === 'DELIVERED').length;
-          totalFailed = delivRes.data.filter((d: any) => d.status === 'FAILED').length;
+        totalCreated = count || 0;
+        if (data) {
+          totalDelivered = data.filter((d: any) => d.is_sent).length;
+          totalUnread = data.filter((d: any) => !d.is_read).length;
+          totalFailed = 0;
 
-          // Compute real average delivery latency if timestamps exist
-          const latencies = delivRes.data
-            .filter((d: any) => d.delivered_at && d.created_at)
-            .map((d: any) => Math.max(0, new Date(d.delivered_at).getTime() - new Date(d.created_at).getTime()));
+          const latencies = data
+            .filter((d: any) => d.sent_at && d.created_at)
+            .map((d: any) => Math.max(0, new Date(d.sent_at).getTime() - new Date(d.created_at).getTime()));
           if (latencies.length > 0) {
             avgLatency = Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length);
           }
         }
-        dlqDepth = outboxRes.data ? outboxRes.data.length : 0;
       } catch (err) {
-        console.warn('[NotificationService] Telemetry metrics query fallback', err);
+        console.warn('[NotificationService] Telemetry metrics notice:', err);
       }
     } else {
       const localEvents = getLocalData<any[]>(STORAGE_KEYS.NOTIFICATIONS, []);

@@ -24,9 +24,10 @@ import { useToast } from '../../../components/ui/Toast';
 
 interface Props {
   employee: Employee;
-  onOpenProfile: (emp: Employee) => void;
-  onStartOnboarding: (emp: Employee) => void;
-  onAddAnother: () => void;
+  onOpenProfile?: (emp: Employee) => void;
+  onStartOnboarding?: (emp: Employee) => void;
+  onAddAnother?: () => void;
+  onClose?: () => void;
 }
 
 export const WizardSuccessScreen: React.FC<Props> = ({
@@ -34,11 +35,47 @@ export const WizardSuccessScreen: React.FC<Props> = ({
   onOpenProfile,
   onStartOnboarding,
   onAddAnother,
+  onClose,
 }) => {
   const { showToast } = useToast();
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isSendingSms, setIsSendingSms] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  const handleViewProfile = () => {
+    if (onOpenProfile) {
+      onOpenProfile(employee);
+    } else {
+      window.dispatchEvent(
+        new CustomEvent('platform:open_employee_profile', {
+          detail: { employeeId: employee.id, employee },
+        })
+      );
+      if (onClose) onClose();
+    }
+  };
+
+  const handleStartOnboardingPipeline = () => {
+    if (onStartOnboarding) {
+      onStartOnboarding(employee);
+    } else {
+      window.dispatchEvent(
+        new CustomEvent('platform:navigate', {
+          detail: { tab: 'onboarding', employeeId: employee.id, employee },
+        })
+      );
+      showToast(`Started onboarding pipeline for ${employee.first_name} ${employee.last_name}`, 'success');
+      if (onClose) onClose();
+    }
+  };
+
+  const handleAddNewEmployee = () => {
+    if (onAddAnother) {
+      onAddAnother();
+    } else if (onClose) {
+      onClose();
+    }
+  };
 
   const phone = employee.profile?.phone || '+91 98401 22334';
   const email = employee.work_email || (employee.profile as any)?.personal_email || '';
@@ -221,8 +258,8 @@ export const WizardSuccessScreen: React.FC<Props> = ({
         <Button
           size="md"
           variant="secondary"
-          onClick={() => onOpenProfile(employee)}
-          className="w-full sm:w-1/2 text-xs font-bold bg-white text-gray-800 border-gray-200 justify-center"
+          onClick={handleViewProfile}
+          className="w-full sm:w-1/2 text-xs font-bold bg-white text-gray-800 border-gray-200 justify-center cursor-pointer"
         >
           <User className="w-4 h-4 mr-1.5" />
           View Profile & Security
@@ -231,8 +268,8 @@ export const WizardSuccessScreen: React.FC<Props> = ({
         <Button
           size="md"
           variant="primary"
-          onClick={() => onStartOnboarding(employee)}
-          className="w-full sm:w-1/2 text-xs font-bold bg-[#07563D] hover:bg-[#064e37] text-white justify-center shadow-sm"
+          onClick={handleStartOnboardingPipeline}
+          className="w-full sm:w-1/2 text-xs font-bold bg-[#07563D] hover:bg-[#064e37] text-white justify-center shadow-sm cursor-pointer"
         >
           Start Onboarding
           <ArrowRight className="w-4 h-4 ml-1.5" />
@@ -242,8 +279,8 @@ export const WizardSuccessScreen: React.FC<Props> = ({
       <div>
         <button
           type="button"
-          onClick={onAddAnother}
-          className="text-xs font-bold text-[#07563D] hover:underline"
+          onClick={handleAddNewEmployee}
+          className="text-xs font-bold text-[#07563D] hover:underline cursor-pointer"
         >
           + Add Another Employee
         </button>

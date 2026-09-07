@@ -136,7 +136,7 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onSelectE
                     </TableCell>
 
                     <TableCell>
-                      <StatusBadge status={emp.status} />
+                      <StatusBadge status={emp.status || (emp as any).employment_status || 'Active'} />
                     </TableCell>
 
                     <TableCell className="text-xs text-gray-500 font-medium">
@@ -198,7 +198,7 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onSelectE
                 </div>
 
                 <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
-                  <StatusBadge status={emp.status} />
+                  <StatusBadge status={emp.status || (emp as any).employment_status || 'Active'} />
                   <span className="text-gray-400 text-[11px]">{emp.employment?.work_location || 'Coimbatore HQ'}</span>
                 </div>
               </Card>

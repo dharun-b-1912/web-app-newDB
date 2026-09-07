@@ -67,12 +67,12 @@ export const MyWorkspaceView: React.FC<Props> = ({ onNavigate }) => {
   }, [loadWorkspace]);
 
   // Check In Handler
-  const handleCheckIn = async () => {
+  const handleCheckIn = async (coords?: { latitude: number; longitude: number; accuracy?: number }) => {
     if (!user) return;
     setIsProcessingAttendance(true);
     try {
-      const record = workspaceService.punchIn(workspaceData?.employee || null, user);
-      showToast(`Checked in successfully at ${record.first_check_in}`, 'success');
+      const record = await workspaceService.punchIn(workspaceData?.employee || null, user, coords);
+      showToast(`Checked in successfully at ${record.first_check_in || 'now'}`, 'success');
       loadWorkspace();
     } catch (err: any) {
       showToast(err.message || 'Check-In failed.', 'error');
@@ -82,13 +82,16 @@ export const MyWorkspaceView: React.FC<Props> = ({ onNavigate }) => {
   };
 
   // Check Out Handler
-  const handleCheckOut = async () => {
+  const handleCheckOut = async (
+    coords?: { latitude: number; longitude: number; accuracy?: number },
+    reason?: string
+  ) => {
     if (!user) return;
     setIsProcessingAttendance(true);
     try {
-      const record = workspaceService.punchOut(workspaceData?.employee || null, user);
+      const record = await workspaceService.punchOut(workspaceData?.employee || null, user, coords, reason);
       if (record) {
-        showToast(`Checked out successfully at ${record.last_check_out}`, 'success');
+        showToast(`Checked out successfully at ${record.last_check_out || 'now'}`, 'success');
       } else {
         showToast('Checked out successfully.', 'success');
       }

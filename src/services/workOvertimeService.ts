@@ -137,8 +137,7 @@ class WorkOvertimeService {
           {
             event: '*',
             schema: 'public',
-            table: 'realtime_outbox',
-            filter: `entity_type=in.(overtime_requests,wfh_requests)`,
+            table: 'overtime_records',
           },
           () => {
             this.fetchFromSupabase(tenantId).then(() => {

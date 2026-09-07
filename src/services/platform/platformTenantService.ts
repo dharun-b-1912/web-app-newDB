@@ -444,14 +444,6 @@ export const platformTenantService = {
     if (isSupabaseEnabled) {
       try {
         await supabase.from('organizations').update(updates).eq('id', id);
-        await supabase
-          .from('customer_profiles')
-          .update({
-            legal_name: updates.legal_name || previous.legal_name,
-            display_name: updates.display_name || previous.display_name,
-            industry: updates.industry || previous.industry,
-          })
-          .eq('organization_id', id);
       } catch (err) {
         console.warn('[PlatformTenantService] Supabase update fallback:', err);
       }
@@ -825,15 +817,70 @@ export const platformTenantService = {
       ],
     };
 
-    organizationDb.unshift(newOrg);
-
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('organizations').insert([newOrg]);
+        const orgPayload = {
+          legal_name: payload.company_name,
+          display_name: payload.display_name || payload.company_name,
+          slug: rawSlug,
+          organization_code: `ORG-${Math.floor(1000 + Math.random() * 9000)}`,
+          industry: payload.industry || 'Information Technology',
+          status: 'ACTIVE',
+          currency: payload.currency || 'INR',
+          timezone: payload.timezone || 'Asia/Kolkata',
+          country: payload.country || 'India',
+        };
+
+        const { data: orgData, error: orgErr } = await supabase
+          .from('organizations')
+          .insert([orgPayload])
+          .select()
+          .single();
+
+        if (!orgErr && orgData?.id) {
+          newOrg.id = orgData.id;
+          newOrg.tenant_id = orgData.id;
+
+          // Also insert canonical company
+          await supabase.from('companies').insert([{
+            organization_id: orgData.id,
+            legal_name: payload.company_name,
+            trade_name: payload.display_name || payload.company_name,
+            company_code: `CMP-${Math.floor(1000 + Math.random() * 9000)}`,
+            country: (payload.country || 'India').slice(0, 10),
+            city: payload.city || 'Chennai',
+            state: payload.state || 'Tamil Nadu',
+            postal_code: payload.postal_code || '600001',
+            gstin: payload.gstin || null,
+          }]);
+
+          // Also insert SaaS subscription & role
+          await supabase.from('saas_subscriptions').insert([{
+            organization_id: orgData.id,
+            status: 'ACTIVE',
+          }]);
+
+          await supabase.from('roles').insert([
+            {
+              organization_id: orgData.id,
+              name: 'Company Administrator',
+              code: 'COMPANY_ADMIN',
+              description: 'Full administrative access to company & organization resources',
+            },
+            {
+              organization_id: orgData.id,
+              name: 'Employee',
+              code: 'EMPLOYEE',
+              description: 'Standard employee access',
+            },
+          ]);
+        }
       } catch (err) {
-        console.warn('[PlatformTenantService] Supabase insert fallback:', err);
+        console.warn('[PlatformTenantService] Supabase insert warning:', err);
       }
     }
+
+    organizationDb.unshift(newOrg);
 
     await platformAuditService.logEvent({
       actor_id: 'user-superadmin',
@@ -849,6 +896,15 @@ export const platformTenantService = {
     });
 
     return newOrg;
+  },
+
+  upsertLocalRecord(record: OrganizationRecord): void {
+    const idx = organizationDb.findIndex((o) => o.id === record.id || o.tenant_id === record.id);
+    if (idx >= 0) {
+      organizationDb[idx] = record;
+    } else {
+      organizationDb.unshift(record);
+    }
   },
 
   async getTenants(): Promise<OrganizationRecord[]> {

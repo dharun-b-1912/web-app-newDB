@@ -1,0 +1,866 @@
+{
+  "timestamp": "2026-09-04T11:33:04.100Z",
+  "summary": {
+    "total": 122,
+    "passCount": 122,
+    "failCount": 0,
+    "niCount": 0,
+    "unexecCount": 0
+  },
+  "results": [
+    {
+      "section": "AUTH",
+      "test": "Company Admin Login",
+      "status": "PASS",
+      "details": "UID: 9341f9fb-f7f8-4d29-b00b-da839bb8204b",
+      "timestamp": "2026-09-04T11:32:13.879Z"
+    },
+    {
+      "section": "AUTH",
+      "test": "HR Head Login",
+      "status": "PASS",
+      "details": "UID: 9f439708-1262-4e3b-8962-21e9f68e1734",
+      "timestamp": "2026-09-04T11:32:14.577Z"
+    },
+    {
+      "section": "AUTH",
+      "test": "Employee A Login",
+      "status": "PASS",
+      "details": "UID: 4b49a236-391b-44c3-93f6-87e6d4100097",
+      "timestamp": "2026-09-04T11:32:15.074Z"
+    },
+    {
+      "section": "AUTH",
+      "test": "Employee B Login",
+      "status": "PASS",
+      "details": "UID: 77969db3-5b96-411a-a575-a13644ba722c",
+      "timestamp": "2026-09-04T11:32:15.484Z"
+    },
+    {
+      "section": "ORG_CONTEXT",
+      "test": "Company Admin reads own org",
+      "status": "PASS",
+      "details": "org: Hacked By Employee",
+      "timestamp": "2026-09-04T11:32:16.107Z"
+    },
+    {
+      "section": "ORG_CONTEXT",
+      "test": "Company Admin reads own company",
+      "status": "PASS",
+      "details": "company: LIVE PROVISION TEST COMPANY 1788507446601",
+      "timestamp": "2026-09-04T11:32:17.029Z"
+    },
+    {
+      "section": "ORG_CONTEXT",
+      "test": "HR Head reads own org",
+      "status": "PASS",
+      "details": "org: Hacked By Employee",
+      "timestamp": "2026-09-04T11:32:17.541Z"
+    },
+    {
+      "section": "ORG_CONTEXT",
+      "test": "Employee A CANNOT update organization [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked by RLS (0 rows updated)",
+      "timestamp": "2026-09-04T11:32:17.947Z"
+    },
+    {
+      "section": "ORG_CONTEXT",
+      "test": "Company Admin CANNOT read foreign org [NEGATIVE]",
+      "status": "PASS",
+      "details": "Rows: 0",
+      "timestamp": "2026-09-04T11:32:18.562Z"
+    },
+    {
+      "section": "MASTER_BRANCHES",
+      "test": "HR reads branches",
+      "status": "PASS",
+      "details": "count: 0",
+      "timestamp": "2026-09-04T11:32:18.971Z"
+    },
+    {
+      "section": "MASTER_BRANCHES",
+      "test": "Employee A CANNOT create branch [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: Could not find the 'is_headquarters' column of 'branches' in the schema cache",
+      "timestamp": "2026-09-04T11:32:19.390Z"
+    },
+    {
+      "section": "MASTER_DEPARTMENTS",
+      "test": "Company Admin reads departments",
+      "status": "PASS",
+      "details": "count: 2",
+      "timestamp": "2026-09-04T11:32:19.792Z"
+    },
+    {
+      "section": "MASTER_DEPARTMENTS",
+      "test": "Company Admin creates department",
+      "status": "PASS",
+      "details": "id: 00973c3e-e235-4392-a259-b929c3d0feaf",
+      "timestamp": "2026-09-04T11:32:20.114Z"
+    },
+    {
+      "section": "MASTER_DEPARTMENTS",
+      "test": "Dept creation DB persistence verified",
+      "status": "PASS",
+      "details": "Verified: 00973c3e-e235-4392-a259-b929c3d0feaf",
+      "timestamp": "2026-09-04T11:32:20.471Z"
+    },
+    {
+      "section": "MASTER_DEPARTMENTS",
+      "test": "Employee A CANNOT create department [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: new row violates row-level security policy for table \"departments\"",
+      "timestamp": "2026-09-04T11:32:21.124Z"
+    },
+    {
+      "section": "MASTER_DESIGNATIONS",
+      "test": "HR Admin reads designations",
+      "status": "PASS",
+      "details": "count: 3",
+      "timestamp": "2026-09-04T11:32:21.505Z"
+    },
+    {
+      "section": "MASTER_DESIGNATIONS",
+      "test": "Company Admin creates designation",
+      "status": "PASS",
+      "details": "id: 7c752440-e70c-417c-b109-1ad6f7f1d71e",
+      "timestamp": "2026-09-04T11:32:21.908Z"
+    },
+    {
+      "section": "MASTER_DESIGNATIONS",
+      "test": "Designation creation DB persistence verified",
+      "status": "PASS",
+      "details": "Verified: 7c752440-e70c-417c-b109-1ad6f7f1d71e",
+      "timestamp": "2026-09-04T11:32:22.198Z"
+    },
+    {
+      "section": "MASTER_DESIGNATIONS",
+      "test": "Employee A CANNOT create designation [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: new row violates row-level security policy for table \"designations\"",
+      "timestamp": "2026-09-04T11:32:23.033Z"
+    },
+    {
+      "section": "MASTER_WORK_LOCATIONS",
+      "test": "Company Admin reads work_locations",
+      "status": "PASS",
+      "details": "count: 0",
+      "timestamp": "2026-09-04T11:32:23.647Z"
+    },
+    {
+      "section": "MASTER_WORK_LOCATIONS",
+      "test": "Employee A CANNOT create work_location [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: new row violates row-level security policy for table \"work_locations\"",
+      "timestamp": "2026-09-04T11:32:24.162Z"
+    },
+    {
+      "section": "MASTER_SHIFTS",
+      "test": "Company Admin reads shifts",
+      "status": "PASS",
+      "details": "count: 1",
+      "timestamp": "2026-09-04T11:32:24.569Z"
+    },
+    {
+      "section": "MASTER_SHIFTS",
+      "test": "Employee A CANNOT create shift [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: new row violates row-level security policy for table \"shifts\"",
+      "timestamp": "2026-09-04T11:32:25.014Z"
+    },
+    {
+      "section": "MASTER_LEAVE_TYPES",
+      "test": "Company Admin reads leave_types",
+      "status": "PASS",
+      "details": "count: 1",
+      "timestamp": "2026-09-04T11:32:25.335Z"
+    },
+    {
+      "section": "MASTER_LEAVE_TYPES",
+      "test": "Employee A CANNOT create leave_type [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: new row violates row-level security policy for table \"leave_types\"",
+      "timestamp": "2026-09-04T11:32:25.841Z"
+    },
+    {
+      "section": "MASTER_HOLIDAYS",
+      "test": "Company Admin reads holidays",
+      "status": "PASS",
+      "details": "count: 0",
+      "timestamp": "2026-09-04T11:32:26.145Z"
+    },
+    {
+      "section": "MASTER_HOLIDAYS",
+      "test": "Employee A CANNOT create holiday [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: new row violates row-level security policy for table \"holidays\"",
+      "timestamp": "2026-09-04T11:32:26.458Z"
+    },
+    {
+      "section": "EMPLOYEE_MGMT",
+      "test": "HR reads employee list",
+      "status": "PASS",
+      "details": "count: 2",
+      "timestamp": "2026-09-04T11:32:26.858Z"
+    },
+    {
+      "section": "EMPLOYEE_MGMT",
+      "test": "HR reads Employee A record",
+      "status": "PASS",
+      "details": "empA: 7ea078b3-0a7e-47ce-82b7-ea9d33ab6da5, status: ACTIVE",
+      "timestamp": "2026-09-04T11:32:27.179Z"
+    },
+    {
+      "section": "EMPLOYEE_MGMT",
+      "test": "Company Admin can update Employee A (admin touch)",
+      "status": "PASS",
+      "details": "Update accepted by DB",
+      "timestamp": "2026-09-04T11:32:27.574Z"
+    },
+    {
+      "section": "EMPLOYEE_MGMT",
+      "test": "Employee A CANNOT update Employee B [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked by RLS (0 rows updated)",
+      "timestamp": "2026-09-04T11:32:27.983Z"
+    },
+    {
+      "section": "EMPLOYEE_MGMT",
+      "test": "Employee A CANNOT change own organization_id [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: Access Denied: You cannot modify organization_id",
+      "timestamp": "2026-09-04T11:32:28.394Z"
+    },
+    {
+      "section": "EMPLOYEE_MGMT",
+      "test": "Employee A CANNOT change own employee_code [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: Access Denied: You cannot modify employee_code",
+      "timestamp": "2026-09-04T11:32:29.009Z"
+    },
+    {
+      "section": "ONBOARDING",
+      "test": "Company Admin reads employee_onboarding",
+      "status": "PASS",
+      "details": "count: 0",
+      "timestamp": "2026-09-04T11:32:29.408Z"
+    },
+    {
+      "section": "ONBOARDING",
+      "test": "Employee A CANNOT create onboarding for Employee B [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: new row violates row-level security policy for table \"employee_onboarding\"",
+      "timestamp": "2026-09-04T11:32:29.931Z"
+    },
+    {
+      "section": "LIFECYCLE",
+      "test": "Company Admin reads employee_lifecycle_events",
+      "status": "PASS",
+      "details": "count: 0",
+      "timestamp": "2026-09-04T11:32:30.227Z"
+    },
+    {
+      "section": "LIFECYCLE",
+      "test": "Employee A CANNOT insert lifecycle event for Employee B [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: null value in column \"effective_date\" of relation \"employee_lifecycle_events\" violates not-null constraint",
+      "timestamp": "2026-09-04T11:32:30.544Z"
+    },
+    {
+      "section": "DOCUMENTS",
+      "test": "HR Admin reads employee_documents",
+      "status": "PASS",
+      "details": "count: 3",
+      "timestamp": "2026-09-04T11:32:30.953Z"
+    },
+    {
+      "section": "DOCUMENTS",
+      "test": "HR reads document_types",
+      "status": "PASS",
+      "details": "count: 2",
+      "timestamp": "2026-09-04T11:32:31.362Z"
+    },
+    {
+      "section": "DOCUMENTS",
+      "test": "Employee A CANNOT view Employee B documents [NEGATIVE]",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:31.671Z"
+    },
+    {
+      "section": "BANK_ADMIN",
+      "test": "HR reads Employee A bank details",
+      "status": "PASS",
+      "details": "rows: 1, bank_name: [MASKED]",
+      "timestamp": "2026-09-04T11:32:31.979Z"
+    },
+    {
+      "section": "BANK_ADMIN",
+      "test": "Employee A CANNOT read Employee B bank details [NEGATIVE]",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:32.316Z"
+    },
+    {
+      "section": "BANK_ADMIN",
+      "test": "Employee A CANNOT modify Employee B bank details [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked by RLS (0 rows updated)",
+      "timestamp": "2026-09-04T11:32:32.649Z"
+    },
+    {
+      "section": "STATUTORY_ADMIN",
+      "test": "HR reads Employee A statutory details",
+      "status": "PASS",
+      "details": "rows: 1, PAN/UAN: [MASKED]",
+      "timestamp": "2026-09-04T11:32:32.962Z"
+    },
+    {
+      "section": "STATUTORY_ADMIN",
+      "test": "Employee A CANNOT read Employee B statutory details [NEGATIVE]",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:33.277Z"
+    },
+    {
+      "section": "SALARY",
+      "test": "Company Admin reads salary_structures",
+      "status": "PASS",
+      "details": "count: 2",
+      "timestamp": "2026-09-04T11:32:33.623Z"
+    },
+    {
+      "section": "SALARY",
+      "test": "Company Admin reads salary_components",
+      "status": "PASS",
+      "details": "count: 0",
+      "timestamp": "2026-09-04T11:32:33.925Z"
+    },
+    {
+      "section": "SALARY",
+      "test": "Company Admin reads employee_salary_assignments",
+      "status": "PASS",
+      "details": "count: 2",
+      "timestamp": "2026-09-04T11:32:34.341Z"
+    },
+    {
+      "section": "SALARY",
+      "test": "Employee A CANNOT read Employee B salary assignment [NEGATIVE]",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:34.655Z"
+    },
+    {
+      "section": "SALARY",
+      "test": "Employee A CANNOT create own salary assignment [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: Could not find the 'company_id' column of 'employee_salary_assignments' in the schema cache",
+      "timestamp": "2026-09-04T11:32:35.049Z"
+    },
+    {
+      "section": "SHIFT_MGMT",
+      "test": "Company Admin creates shift assignment for Employee A",
+      "status": "PASS",
+      "details": "id: 27aadc4e-dbf2-4b68-a8d3-f3643d322101",
+      "timestamp": "2026-09-04T11:32:35.460Z"
+    },
+    {
+      "section": "SHIFT_MGMT",
+      "test": "Shift assignment DB persistence verified",
+      "status": "PASS",
+      "details": "Verified: 27aadc4e-dbf2-4b68-a8d3-f3643d322101",
+      "timestamp": "2026-09-04T11:32:35.969Z"
+    },
+    {
+      "section": "SHIFT_MGMT",
+      "test": "Employee A CANNOT self-assign shift [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: new row violates row-level security policy for table \"employee_shift_assignments\"",
+      "timestamp": "2026-09-04T11:32:36.687Z"
+    },
+    {
+      "section": "SHIFT_MGMT",
+      "test": "Employee A CANNOT assign Employee B to shift [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: new row violates row-level security policy for table \"employee_shift_assignments\"",
+      "timestamp": "2026-09-04T11:32:36.998Z"
+    },
+    {
+      "section": "ATTENDANCE_ADMIN",
+      "test": "HR reads attendance_daily",
+      "status": "PASS",
+      "details": "count: 2",
+      "timestamp": "2026-09-04T11:32:37.506Z"
+    },
+    {
+      "section": "ATTENDANCE_ADMIN",
+      "test": "HR reads attendance_punches",
+      "status": "PASS",
+      "details": "count: 2",
+      "timestamp": "2026-09-04T11:32:38.020Z"
+    },
+    {
+      "section": "ATTENDANCE_ADMIN",
+      "test": "Employee A CANNOT directly modify attendance_daily [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked by RLS (0 rows updated)",
+      "timestamp": "2026-09-04T11:32:38.394Z"
+    },
+    {
+      "section": "ATTENDANCE_ADMIN",
+      "test": "Employee A CANNOT modify Employee B punch [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked by RLS (0 rows updated)",
+      "timestamp": "2026-09-04T11:32:38.734Z"
+    },
+    {
+      "section": "REGULARIZATION",
+      "test": "Employee A submits regularization request",
+      "status": "PASS",
+      "details": "id: 06442ac2-723b-49c8-a604-855536f9ea5a",
+      "timestamp": "2026-09-04T11:32:39.039Z"
+    },
+    {
+      "section": "REGULARIZATION",
+      "test": "HR reads attendance_regularizations",
+      "status": "PASS",
+      "details": "count: 2",
+      "timestamp": "2026-09-04T11:32:39.403Z"
+    },
+    {
+      "section": "REGULARIZATION",
+      "test": "HR approves regularization request",
+      "status": "PASS",
+      "details": "Status updated to APPROVED",
+      "timestamp": "2026-09-04T11:32:39.698Z"
+    },
+    {
+      "section": "REGULARIZATION",
+      "test": "Regularization approval DB persistence verified",
+      "status": "PASS",
+      "details": "status in DB: APPROVED",
+      "timestamp": "2026-09-04T11:32:40.067Z"
+    },
+    {
+      "section": "LEAVE_ADMIN",
+      "test": "HR reads leave_balances",
+      "status": "PASS",
+      "details": "count: 2",
+      "timestamp": "2026-09-04T11:32:40.786Z"
+    },
+    {
+      "section": "LEAVE_ADMIN",
+      "test": "HR reads all leave_requests",
+      "status": "PASS",
+      "details": "count: 6",
+      "timestamp": "2026-09-04T11:32:41.094Z"
+    },
+    {
+      "section": "LEAVE_ADMIN",
+      "test": "Employee A submits own leave request",
+      "status": "PASS",
+      "details": "id: f2e52fcf-ba63-4dda-991d-c860ab817a04",
+      "timestamp": "2026-09-04T11:32:41.402Z"
+    },
+    {
+      "section": "LEAVE_ADMIN",
+      "test": "HR approves Employee A leave request",
+      "status": "PASS",
+      "details": "Status: APPROVED",
+      "timestamp": "2026-09-04T11:32:41.708Z"
+    },
+    {
+      "section": "LEAVE_ADMIN",
+      "test": "Leave approval DB persistence verified",
+      "status": "PASS",
+      "details": "status: APPROVED",
+      "timestamp": "2026-09-04T11:32:42.025Z"
+    },
+    {
+      "section": "LEAVE_ADMIN",
+      "test": "Employee A CANNOT approve Employee B leave [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked by RLS (0 rows updated)",
+      "timestamp": "2026-09-04T11:32:42.758Z"
+    },
+    {
+      "section": "LEAVE_ADMIN",
+      "test": "Employee A CANNOT modify Employee B leave balance [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked by RLS (0 rows updated)",
+      "timestamp": "2026-09-04T11:32:43.548Z"
+    },
+    {
+      "section": "LEAVE_ADMIN",
+      "test": "HR reads leave_ledger_entries",
+      "status": "PASS",
+      "details": "count: 0",
+      "timestamp": "2026-09-04T11:32:43.855Z"
+    },
+    {
+      "section": "APPROVAL_ENGINE",
+      "test": "HR reads approval_workflows",
+      "status": "PASS",
+      "details": "count: 1",
+      "timestamp": "2026-09-04T11:32:44.483Z"
+    },
+    {
+      "section": "APPROVAL_ENGINE",
+      "test": "HR reads approval_instances",
+      "status": "PASS",
+      "details": "count: 1",
+      "timestamp": "2026-09-04T11:32:44.789Z"
+    },
+    {
+      "section": "APPROVAL_ENGINE",
+      "test": "Employee A CANNOT create approval_workflow [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: new row violates row-level security policy for table \"approval_workflows\"",
+      "timestamp": "2026-09-04T11:32:45.289Z"
+    },
+    {
+      "section": "APPROVAL_ENGINE",
+      "test": "Employee A CANNOT modify approval_instance [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked by RLS (0 rows updated)",
+      "timestamp": "2026-09-04T11:32:45.799Z"
+    },
+    {
+      "section": "APPROVAL_ENGINE",
+      "test": "HR reads approval_actions",
+      "status": "PASS",
+      "details": "count: 0",
+      "timestamp": "2026-09-04T11:32:46.215Z"
+    },
+    {
+      "section": "EMPLOYEE_REQUESTS",
+      "test": "HR reads employee_requests",
+      "status": "PASS",
+      "details": "count: 5",
+      "timestamp": "2026-09-04T11:32:46.522Z"
+    },
+    {
+      "section": "EMPLOYEE_REQUESTS",
+      "test": "Employee A CANNOT modify Employee B request [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked by RLS (0 rows updated)",
+      "timestamp": "2026-09-04T11:32:46.998Z"
+    },
+    {
+      "section": "NOTIFICATIONS",
+      "test": "HR reads notification_events",
+      "status": "PASS",
+      "details": "count: 0",
+      "timestamp": "2026-09-04T11:32:47.336Z"
+    },
+    {
+      "section": "NOTIFICATIONS",
+      "test": "Employee A CANNOT read foreign notifications [NEGATIVE]",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:47.695Z"
+    },
+    {
+      "section": "AUDIT_LOGS",
+      "test": "Company Admin reads audit_logs",
+      "status": "PASS",
+      "details": "count: 0",
+      "timestamp": "2026-09-04T11:32:48.010Z"
+    },
+    {
+      "section": "AUDIT_LOGS",
+      "test": "Employee A CANNOT forge audit_log entry [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: new row violates row-level security policy for table \"audit_logs\"",
+      "timestamp": "2026-09-04T11:32:48.322Z"
+    },
+    {
+      "section": "PAYROLL_ADMIN",
+      "test": "Company Admin reads payroll_runs",
+      "status": "PASS",
+      "details": "count: 2",
+      "timestamp": "2026-09-04T11:32:48.636Z"
+    },
+    {
+      "section": "PAYROLL_ADMIN",
+      "test": "Employee A CANNOT create payroll_run [NEGATIVE]",
+      "status": "PASS",
+      "details": "Blocked: new row violates row-level security policy for table \"payroll_runs\"",
+      "timestamp": "2026-09-04T11:32:48.994Z"
+    },
+    {
+      "section": "PAYROLL_ADMIN",
+      "test": "Employee A CANNOT read Employee B payslips [NEGATIVE]",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:49.304Z"
+    },
+    {
+      "section": "CROSS_ORG_ISOLATION",
+      "test": "Company Admin CANNOT read foreign employees",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:49.617Z"
+    },
+    {
+      "section": "CROSS_ORG_ISOLATION",
+      "test": "Company Admin CANNOT read foreign departments",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:49.998Z"
+    },
+    {
+      "section": "CROSS_ORG_ISOLATION",
+      "test": "Company Admin CANNOT read foreign leave_requests",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:50.307Z"
+    },
+    {
+      "section": "CROSS_ORG_ISOLATION",
+      "test": "Company Admin CANNOT read foreign attendance_daily",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:50.630Z"
+    },
+    {
+      "section": "CROSS_ORG_ISOLATION",
+      "test": "Company Admin CANNOT read foreign employee_bank_details",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:50.979Z"
+    },
+    {
+      "section": "CROSS_ORG_ISOLATION",
+      "test": "Company Admin CANNOT read foreign employee_salary_assignments",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:51.298Z"
+    },
+    {
+      "section": "HR_CROSS_ORG_ISOLATION",
+      "test": "HR Head CANNOT read foreign employees",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:51.639Z"
+    },
+    {
+      "section": "HR_CROSS_ORG_ISOLATION",
+      "test": "HR Head CANNOT read foreign departments",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:52.056Z"
+    },
+    {
+      "section": "HR_CROSS_ORG_ISOLATION",
+      "test": "HR Head CANNOT read foreign leave_requests",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:32:52.455Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "01 Employee CANNOT create department",
+      "status": "PASS",
+      "details": "new row violates row-level security policy for table \"departments\"",
+      "timestamp": "2026-09-04T11:32:52.867Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "02 Employee CANNOT modify department",
+      "status": "PASS",
+      "details": "Blocked by RLS",
+      "timestamp": "2026-09-04T11:32:53.164Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "03 Employee CANNOT create designation",
+      "status": "PASS",
+      "details": "new row violates row-level security policy for table \"designations\"",
+      "timestamp": "2026-09-04T11:32:53.584Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "04 Employee CANNOT modify shift",
+      "status": "PASS",
+      "details": "Blocked by RLS",
+      "timestamp": "2026-09-04T11:32:53.905Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "05 Employee CANNOT modify Employee B",
+      "status": "PASS",
+      "details": "Blocked by RLS",
+      "timestamp": "2026-09-04T11:32:54.402Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "06 Employee CANNOT modify Employee B salary",
+      "status": "PASS",
+      "details": "Blocked by RLS",
+      "timestamp": "2026-09-04T11:32:54.813Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "07 Employee CANNOT modify Employee B bank",
+      "status": "PASS",
+      "details": "Blocked by RLS",
+      "timestamp": "2026-09-04T11:32:55.127Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "08 Employee CANNOT modify Employee B statutory",
+      "status": "PASS",
+      "details": "Blocked by RLS",
+      "timestamp": "2026-09-04T11:32:55.488Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "09 Employee CANNOT modify Employee B attendance_daily",
+      "status": "PASS",
+      "details": "Blocked by RLS",
+      "timestamp": "2026-09-04T11:32:55.837Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "10 Employee CANNOT modify Employee B leave balance",
+      "status": "PASS",
+      "details": "Blocked by RLS",
+      "timestamp": "2026-09-04T11:32:56.237Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "11 Employee CANNOT approve Employee B leave",
+      "status": "PASS",
+      "details": "Blocked by RLS",
+      "timestamp": "2026-09-04T11:32:56.963Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "12 Employee CANNOT modify Employee B request",
+      "status": "PASS",
+      "details": "Blocked by RLS",
+      "timestamp": "2026-09-04T11:32:57.289Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "13 Employee CANNOT create payroll run",
+      "status": "PASS",
+      "details": "new row violates row-level security policy for table \"payroll_runs\"",
+      "timestamp": "2026-09-04T11:32:57.901Z"
+    },
+    {
+      "section": "NEG_MATRIX",
+      "test": "14 Employee CANNOT modify approval_workflow",
+      "status": "PASS",
+      "details": "Blocked by RLS",
+      "timestamp": "2026-09-04T11:32:58.301Z"
+    },
+    {
+      "section": "PLATFORM_ADMIN",
+      "test": "Platform Admin reads organizations",
+      "status": "PASS",
+      "details": "count: 2",
+      "timestamp": "2026-09-04T11:32:59.624Z"
+    },
+    {
+      "section": "PLATFORM_ADMIN",
+      "test": "Platform Admin reads platform_users",
+      "status": "PASS",
+      "details": "count: 0",
+      "timestamp": "2026-09-04T11:32:59.931Z"
+    },
+    {
+      "section": "RLS_REGRESSION",
+      "test": "Anon blocked from employees",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:33:00.378Z"
+    },
+    {
+      "section": "RLS_REGRESSION",
+      "test": "Anon blocked from employee_bank_details",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:33:00.719Z"
+    },
+    {
+      "section": "RLS_REGRESSION",
+      "test": "Anon blocked from employee_statutory_details",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:33:01.039Z"
+    },
+    {
+      "section": "RLS_REGRESSION",
+      "test": "Anon blocked from employee_salary_assignments",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:33:01.409Z"
+    },
+    {
+      "section": "RLS_REGRESSION",
+      "test": "Anon blocked from attendance_daily",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:33:01.753Z"
+    },
+    {
+      "section": "RLS_REGRESSION",
+      "test": "Anon blocked from attendance_punches",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:33:02.082Z"
+    },
+    {
+      "section": "RLS_REGRESSION",
+      "test": "Anon blocked from leave_requests",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:33:02.437Z"
+    },
+    {
+      "section": "RLS_REGRESSION",
+      "test": "Anon blocked from leave_balances",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:33:02.754Z"
+    },
+    {
+      "section": "RLS_REGRESSION",
+      "test": "Anon blocked from payroll_runs",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:33:03.128Z"
+    },
+    {
+      "section": "RLS_REGRESSION",
+      "test": "Anon blocked from payslips",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:33:03.429Z"
+    },
+    {
+      "section": "RLS_REGRESSION",
+      "test": "Anon blocked from approval_workflows",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:33:03.742Z"
+    },
+    {
+      "section": "RLS_REGRESSION",
+      "test": "Anon blocked from audit_logs",
+      "status": "PASS",
+      "details": "rows: 0",
+      "timestamp": "2026-09-04T11:33:04.096Z"
+    },
+    {
+      "section": "SECRET_SCAN",
+      "test": "No service_role key used in test script",
+      "status": "PASS",
+      "details": "Only anon key used",
+      "timestamp": "2026-09-04T11:33:04.096Z"
+    }
+  ]
+}

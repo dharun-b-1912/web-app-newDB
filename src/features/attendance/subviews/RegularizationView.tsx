@@ -115,7 +115,7 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
   const metrics = useMemo(() => {
     return {
       allRequests: requests.length,
-      managerQueue: requests.filter((r) => r.status === 'MANAGER_PENDING').length,
+      managerQueue: requests.filter((r) => r.status === 'MANAGER_PENDING' || (r.status as any) === 'PENDING').length,
       hrSignoff: requests.filter((r) => r.status === 'HR_PENDING').length,
       approved: requests.filter((r) => r.status === 'APPROVED').length,
       rejected: requests.filter((r) => r.status === 'REJECTED').length,
@@ -125,7 +125,8 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
   // Filtered List
   const filteredRequests = useMemo(() => {
     return requests.filter((r) => {
-      if (activeTab === 'MANAGER_PENDING' && r.status !== 'MANAGER_PENDING') return false;
+      const isPending = r.status === 'MANAGER_PENDING' || (r.status as any) === 'PENDING';
+      if (activeTab === 'MANAGER_PENDING' && !isPending) return false;
       if (activeTab === 'HR_PENDING' && r.status !== 'HR_PENDING') return false;
       if (activeTab === 'APPROVED' && r.status !== 'APPROVED') return false;
       if (activeTab === 'REJECTED' && r.status !== 'REJECTED') return false;
@@ -150,7 +151,7 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
     try {
       const res = await attendanceRegularizationService.approveRequest(
         req.id,
-        user?.id || 'emp-hr-001',
+        user?.id,
         user?.name || 'Haripriya (HR Head)',
         actionComment || 'Approved: Attendance regularized & recalculated.'
       );
@@ -163,7 +164,7 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
 
       setSelectedRequest(null);
       setActionComment('');
-      loadData();
+      await loadData();
     } catch (err: any) {
       showToast(err.message || 'Error processing approval.', 'error');
     } finally {
@@ -177,7 +178,7 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
     try {
       await attendanceRegularizationService.rejectRequest(
         req.id,
-        user?.id || 'emp-hr-001',
+        user?.id,
         user?.name || 'Haripriya (HR Head)',
         actionComment || 'Rejected: Justification insufficient under attendance policy.'
       );
@@ -185,7 +186,7 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
       showToast(`Regularization request rejected for ${req.employee_name}.`, 'error');
       setSelectedRequest(null);
       setActionComment('');
-      loadData();
+      await loadData();
     } catch (err: any) {
       showToast(err.message || 'Error processing rejection.', 'error');
     } finally {

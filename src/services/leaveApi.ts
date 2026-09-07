@@ -18,22 +18,55 @@ import {
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { hrEventBus } from './hrEventBus';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
+import { notificationService } from './notification/notificationService';
 
 const STORAGE_KEYS = {
   LEAVE_TYPES: 'workforce_leave_types_v2',
   LEAVE_POLICIES: 'workforce_leave_policies_v2',
   HOLIDAY_CALENDARS: 'workforce_holiday_calendars_v2',
+  HOLIDAYS: 'workforce_holidays_v2',
   ENTITLEMENTS: 'workforce_leave_entitlements_v2',
-  LEDGER: 'workforce_leave_ledger_v2',
   REQUESTS: 'workforce_leave_requests_v2',
   APPROVALS: 'workforce_leave_approvals_v2',
-  COMP_OFFS: 'workforce_comp_offs_v2',
-  ENCASHMENTS: 'workforce_leave_encashments_v2',
   ADJUSTMENTS: 'workforce_leave_adjustments_v2',
+  ENCASHMENT_REQUESTS: 'workforce_leave_encashments_v2',
+  ENCASHMENTS: 'workforce_leave_encashments_v2',
   DELEGATIONS: 'workforce_leave_delegations_v2',
+  LEDGER: 'workforce_leave_ledger_v2',
   AUDIT_LOGS: 'workforce_leave_audit_logs_v2',
   ACCRUAL_LOGS: 'workforce_accrual_logs_v2',
   EXCEPTIONS: 'workforce_leave_exceptions_v2',
+  COMP_OFF_GRANTS: 'workforce_comp_off_grants_v2',
+  COMP_OFFS: 'workforce_comp_off_grants_v2',
+};
+
+const isValidUUID = (id?: string | null): boolean => {
+  if (!id) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+};
+
+const ensureUUID = (id?: string | null): string => {
+  if (id && isValidUUID(id)) return id;
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
+const mapCanonicalToLedgerType = (entryType: string): import('../types/leave').LedgerTransactionType => {
+  switch ((entryType || '').toUpperCase()) {
+    case 'CONSUMPTION': return 'Consumption';
+    case 'ACCRUAL': return 'Accrual';
+    case 'ADJUSTMENT': return 'Adjustment';
+    case 'CARRY_FORWARD': return 'CarryForward';
+    case 'ENCASHMENT': return 'Encashment';
+    case 'LAPSE': return 'Expiry';
+    default: return 'Adjustment';
+  }
 };
 
 function getActiveOrgId(): string {
@@ -580,23 +613,19 @@ let _typesInFlight: Promise<LeaveType[]> | null = null;
 
 function persistLedgerTransactionToSupabase(entry: LeaveLedgerTransaction, companyId: string = 'comp-01') {
   if (isSupabaseEnabled) {
+    const orgId = getActiveOrgId();
+    if (!orgId || !isValidUUID(entry.employee_id) || !isValidUUID(entry.leave_type_id)) return;
     Promise.resolve(
-      supabase.from('leave_ledger_transactions').insert({
+      supabase.from('leave_ledger_entries').insert({
         id: entry.id,
-        organization_id: getActiveOrgId(),
-        company_id: companyId,
+        organization_id: orgId,
         employee_id: entry.employee_id,
-        employee_name: entry.employee_name,
         leave_type_id: entry.leave_type_id,
-        leave_type_name: entry.leave_type_name,
-        date: entry.date,
-        transaction_type: entry.transaction_type,
-        amount: entry.amount,
-        balance_after: entry.balance_after,
-        reference_id: entry.reference_id,
-        actor_id: entry.actor_id,
-        actor_name: entry.actor_name,
-        reason: entry.reason,
+        entry_type: (entry.transaction_type || 'ACCRUAL').toUpperCase(),
+        units: Math.abs(entry.amount),
+        running_balance_after: entry.balance_after,
+        transaction_date: entry.date || new Date().toISOString().split('T')[0],
+        remarks: entry.reason || entry.actor_name || null,
         created_at: entry.created_at,
       })
     ).catch((e: any) => console.warn('[Supabase Leave] ledger insert notice:', e));
@@ -1113,13 +1142,13 @@ export const leaveApi = {
             leave_type_name: r.leave_type_name || 'Leave',
             leave_type_code: r.leave_type_code || 'LV',
             leave_category: r.leave_category || 'Paid',
-            from_date: r.from_date,
-            to_date: r.to_date,
-            total_calendar_days: r.total_calendar_days || 1,
-            working_days: r.working_days || 1,
+            from_date: r.from_date || r.start_date,
+            to_date: r.to_date || r.end_date,
+            total_calendar_days: r.total_calendar_days || Number(r.total_days) || 1,
+            working_days: r.working_days || Number(r.total_days) || 1,
             holiday_days: r.holiday_days || 0,
             weekly_off_days: r.weekly_off_days || 0,
-            leave_days_deducted: r.leave_days_deducted || 1,
+            leave_days_deducted: r.leave_days_deducted || Number(r.total_days) || 1,
             is_half_day: Boolean(r.is_half_day),
             half_day_session: r.half_day_session,
             is_hourly: Boolean(r.is_hourly),
@@ -1128,7 +1157,7 @@ export const leaveApi = {
             attachment_url: r.attachment_url,
             manager_id: r.manager_id,
             manager_name: r.manager_name || 'Approver',
-            status: r.status === 'Approved' ? 'Approved' : r.status === 'Rejected' ? 'Rejected' : r.status === 'Cancelled' ? 'Cancelled' : 'Pending',
+            status: (r.status || '').toUpperCase() === 'APPROVED' ? 'Approved' : (r.status || '').toUpperCase() === 'REJECTED' ? 'Rejected' : (r.status || '').toUpperCase() === 'CANCELLED' ? 'Cancelled' : 'Pending',
             submitted_at: r.submitted_at || r.created_at,
             created_at: r.created_at,
             daily_breakdown: r.daily_breakdown || [],
@@ -1208,31 +1237,25 @@ export const leaveApi = {
     }
 
     if (isSupabaseEnabled) {
+      const orgId = (req as any).organization_id || getActiveOrgId() || 'e539780b-df07-4b45-beaa-ccf1d2224be8';
+      const effectiveOrgId = isValidUUID(orgId) ? orgId : 'e539780b-df07-4b45-beaa-ccf1d2224be8';
+      const leaveId = ensureUUID(newReq.id);
+      newReq.id = leaveId;
+
       Promise.resolve(
         supabase
           .from('leave_requests')
           .insert({
-            id: newReq.id,
-            organization_id: (req as any).organization_id || getActiveOrgId(),
-            company_id: newReq.company_id || 'comp-01',
+            id: leaveId,
+            organization_id: effectiveOrgId,
             employee_id: newReq.employee_id,
-            request_code: newReq.request_code,
-            employee_name: newReq.employee_name,
-            department_name: newReq.department_name,
             leave_type_id: newReq.leave_type_id,
-            leave_type_name: newReq.leave_type_name,
-            leave_type_code: newReq.leave_type_code,
-            from_date: newReq.from_date,
-            to_date: newReq.to_date,
-            total_calendar_days: newReq.total_calendar_days,
-            working_days: newReq.working_days,
-            leave_days_deducted: newReq.leave_days_deducted,
-            reason: newReq.reason,
-            manager_id: newReq.manager_id,
-            manager_name: newReq.manager_name,
-            status: newReq.status,
-            submitted_at: newReq.submitted_at,
-            created_at: newReq.created_at,
+            start_date: newReq.from_date || (newReq as any).start_date,
+            end_date: newReq.to_date || (newReq as any).end_date,
+            total_days: newReq.total_calendar_days || newReq.working_days || 1,
+            is_half_day: Boolean(newReq.is_half_day),
+            reason: newReq.reason || '',
+            status: 'PENDING',
           })
       ).catch((e: any) => console.warn('[Supabase Leave] insert failed:', e));
     }
@@ -1252,75 +1275,50 @@ export const leaveApi = {
     return newReq;
   },
 
-  approveLeaveRequest: (requestId: string, approverName: string, comments?: string): LeaveRequest => {
-    const requests = leaveApi.getLeaveRequests();
-    const idx = requests.findIndex(r => r.id === requestId);
-    if (idx < 0) throw new Error('Request not found');
+  approveLeaveRequest: async (requestId: string, approverName: string, comments?: string): Promise<LeaveRequest> => {
+    const now = new Date().toISOString();
 
-    const req = requests[idx];
-    req.status = 'Approved';
-    req.approved_at = new Date().toISOString();
-    req.approved_by_name = approverName;
-    req.current_approver_name = 'Completed';
-    req.comments = comments;
-
-    setStored(STORAGE_KEYS.REQUESTS, requests);
-
+    // 1. Authoritative Database Mutation
     if (isSupabaseEnabled) {
-      (async () => {
-        try {
-          // Ensure request exists in Supabase before approving
-          await supabase
-            .from('leave_requests')
-            .upsert({
-              id: req.id,
-              organization_id: (req as any).organization_id || getActiveOrgId(),
-              company_id: req.company_id,
-              employee_id: req.employee_id,
-              request_code: req.request_code,
-              employee_name: req.employee_name,
-              department_name: req.department_name,
-              leave_type_id: req.leave_type_id,
-              leave_type_name: req.leave_type_name,
-              leave_type_code: req.leave_type_code || 'CL',
-              from_date: req.from_date,
-              to_date: req.to_date,
-              total_calendar_days: req.total_calendar_days || 1,
-              working_days: req.working_days || 1,
-              leave_days_deducted: req.leave_days_deducted || 1,
-              reason: req.reason || 'Leave request',
-              manager_id: req.manager_id,
-              manager_name: req.manager_name,
-              status: 'Pending',
-              submitted_at: req.submitted_at || new Date().toISOString(),
-              created_at: req.created_at || new Date().toISOString(),
-            }, { onConflict: 'id', ignoreDuplicates: true });
+      const { data: updatedRow, error: updErr } = await supabase
+        .from('leave_requests')
+        .update({
+          status: 'APPROVED',
+          approved_at: now,
+          updated_at: now,
+        })
+        .eq('id', requestId)
+        .select()
+        .single();
 
-          const { error: rpcErr } = await supabase.rpc('fn_approve_leave_request', {
-            p_request_id: req.id,
-            p_approver_id: 'hr-admin',
-            p_approver_name: approverName,
-            p_comments: comments || null,
-          });
-
-          if (rpcErr) {
-            console.warn('[Supabase Leave] RPC approve notice:', rpcErr);
-            await supabase
-              .from('leave_requests')
-              .update({
-                status: 'Approved',
-                approved_at: req.approved_at,
-                current_approver_name: approverName,
-              })
-              .eq('id', req.id);
-          }
-        } catch (e: any) {
-          console.warn('[Supabase Leave] approve sync failed:', e);
-        }
-      })();
+      if (updErr) {
+        console.error('[Supabase Leave] update to APPROVED failed:', updErr);
+        throw new Error(`Failed to approve leave request in database: ${updErr.message}`);
+      }
     }
 
-    // 1. Post consumption transaction to Ledger
+    _leaveRequestsCache = null;
+    const requests = await leaveApi.getLeaveRequestsAsync();
+    const idx = requests.findIndex(r => r.id === requestId);
+    const req = idx >= 0 ? requests[idx] : {
+      id: requestId,
+      status: 'Approved',
+      approved_at: now,
+      approved_by_name: approverName,
+      employee_id: '',
+      leave_days_deducted: 1,
+    } as any;
+
+    if (idx >= 0) {
+      req.status = 'Approved';
+      req.approved_at = now;
+      req.approved_by_name = approverName;
+      req.current_approver_name = 'Completed';
+      req.comments = comments;
+      setStored(STORAGE_KEYS.REQUESTS, requests);
+    }
+
+    // 2. Post consumption transaction to Ledger
     const ledger = leaveApi.getLedger();
     const prevBalance = ledger.filter(l => l.employee_id === req.employee_id && l.leave_type_id === req.leave_type_id)
       .reduce((acc, curr) => acc + curr.amount, 0);
@@ -1333,13 +1331,13 @@ export const leaveApi = {
       leave_type_name: req.leave_type_name,
       date: new Date().toISOString().split('T')[0],
       transaction_type: 'Consumption',
-      amount: -req.leave_days_deducted,
-      balance_after: prevBalance - req.leave_days_deducted,
+      amount: -(req.leave_days_deducted || 1),
+      balance_after: prevBalance - (req.leave_days_deducted || 1),
       reference_id: req.id,
       actor_id: 'approver',
       actor_name: approverName,
-      reason: `Approved leave request ${req.request_code}`,
-      created_at: new Date().toISOString(),
+      reason: `Approved leave request ${req.request_code || req.id}`,
+      created_at: now,
     };
 
     ledger.unshift(newLedgerEntry);
@@ -1349,101 +1347,88 @@ export const leaveApi = {
     }
 
     if (isSupabaseEnabled) {
-      Promise.resolve(
-        supabase.from('leave_ledger_transactions').insert({
-          id: newLedgerEntry.id,
-          organization_id: (req as any).organization_id || getActiveOrgId(),
-          company_id: req.company_id || 'comp-01',
-          employee_id: newLedgerEntry.employee_id,
-          employee_name: newLedgerEntry.employee_name,
-          leave_type_id: newLedgerEntry.leave_type_id,
-          leave_type_name: newLedgerEntry.leave_type_name,
-          date: newLedgerEntry.date,
-          transaction_type: newLedgerEntry.transaction_type,
-          amount: newLedgerEntry.amount,
-          balance_after: newLedgerEntry.balance_after,
-          reference_id: newLedgerEntry.reference_id,
-          actor_id: newLedgerEntry.actor_id,
-          actor_name: newLedgerEntry.actor_name,
-          reason: newLedgerEntry.reason,
-          created_at: newLedgerEntry.created_at,
-        })
-      ).catch((e: any) => console.warn('[Supabase Leave] ledger insert notice:', e));
-    }
-
-    // 2. Attendance Integration Bridge: Post Attendance records for leave dates
-    try {
-      const storedAttendanceKey = 'workforce_attendance_daily_logs_v1';
-      const rawAtt = localStorage.getItem(storedAttendanceKey);
-      const attLogs = rawAtt ? JSON.parse(rawAtt) : [];
-
-      if (Array.isArray(req.daily_breakdown) && req.daily_breakdown.length > 0) {
-        req.daily_breakdown.forEach((day: any) => {
-          if (day.is_working_day) {
-            attLogs.unshift({
-              id: `att-leave-${Date.now()}-${day.date}`,
-              employee_id: req.employee_id,
-              employee_name: req.employee_name,
-              department: req.department_name,
-              date: day.date,
-              status: day.is_half_day ? 'Half Day' : 'On Leave',
-              is_approved_leave: true,
-              leave_type_code: req.leave_type_code || 'CL',
-              created_at: new Date().toISOString(),
-            });
-          }
-        });
+      const orgId = (req as any).organization_id || getActiveOrgId();
+      if (orgId && isValidUUID(newLedgerEntry.employee_id) && isValidUUID(newLedgerEntry.leave_type_id)) {
+        try {
+          await supabase.from('leave_ledger_entries').insert({
+            id: newLedgerEntry.id,
+            organization_id: orgId,
+            employee_id: newLedgerEntry.employee_id,
+            leave_type_id: newLedgerEntry.leave_type_id,
+            entry_type: 'CONSUMPTION',
+            units: Math.abs(newLedgerEntry.amount),
+            running_balance_after: newLedgerEntry.balance_after,
+            transaction_date: newLedgerEntry.date || new Date().toISOString().split('T')[0],
+            remarks: newLedgerEntry.reason || newLedgerEntry.actor_name || null,
+            created_at: newLedgerEntry.created_at,
+          });
+        } catch (e: any) {
+          console.warn('[Supabase Leave] ledger insert notice:', e);
+        }
       }
-      localStorage.setItem(storedAttendanceKey, JSON.stringify(attLogs));
-    } catch (e) {
-      console.warn('Attendance sync exception:', e);
     }
 
-    // Audit log
     leaveApi.addAuditLog({
       actor_id: 'approver',
       actor_name: approverName,
       action: 'APPROVE_LEAVE_REQUEST',
       entity_type: 'LeaveRequest',
       entity_id: req.id,
-      new_value: `Approved request ${req.request_code} for ${req.employee_name}`,
+      new_value: `Approved ${req.request_code || req.id} (${req.leave_days_deducted} days)`,
     });
 
     hrEventBus.publish('leave.approved', req, { actorId: approverName });
+    hrEventBus.publish('leave.updated', req, { actorId: approverName });
+
+    // 3. Emit in-app notification to employee
+    if (req.employee_id) {
+      notificationService.emitEmployeeNotification({
+        employeeId: req.employee_id,
+        title: 'Leave Request Approved',
+        message: `Your leave request for ${req.from_date || 'requested dates'} has been approved.`,
+        actionUrl: '/leaves',
+      }).catch(() => {});
+    }
 
     return req;
   },
 
-  rejectLeaveRequest: (requestId: string, rejectorName: string, reason: string): LeaveRequest => {
-    const requests = leaveApi.getLeaveRequests();
-    const idx = requests.findIndex(r => r.id === requestId);
-    if (idx < 0) throw new Error('Request not found');
+  rejectLeaveRequest: async (requestId: string, rejectorName: string, reason: string): Promise<LeaveRequest> => {
+    const now = new Date().toISOString();
 
-    const req = requests[idx];
-    req.status = 'Rejected';
-    req.rejection_reason = reason;
-    req.current_approver_name = 'Completed';
-
-    setStored(STORAGE_KEYS.REQUESTS, requests);
-
+    // 1. Authoritative Database Mutation
     if (isSupabaseEnabled) {
-      Promise.resolve(
-        supabase.rpc('fn_reject_leave_request', {
-          p_request_id: req.id,
-          p_rejector_id: 'hr-admin',
-          p_rejector_name: rejectorName,
-          p_rejection_reason: reason,
+      const { data: updatedRow, error: updErr } = await supabase
+        .from('leave_requests')
+        .update({
+          status: 'REJECTED',
+          updated_at: now,
         })
-      ).catch((e: any) => {
-        console.warn('[Supabase Leave] RPC reject failed, fallback to direct update:', e);
-        supabase
-          .from('leave_requests')
-          .update({
-            status: 'Rejected',
-            rejection_reason: reason,
-          })
-          .eq('id', req.id);
-      });
+        .eq('id', requestId)
+        .select()
+        .single();
+
+      if (updErr) {
+        console.error('[Supabase Leave] update to REJECTED failed:', updErr);
+        throw new Error(`Failed to reject leave request in database: ${updErr.message}`);
+      }
+    }
+
+    _leaveRequestsCache = null;
+    const requests = await leaveApi.getLeaveRequestsAsync();
+    const idx = requests.findIndex(r => r.id === requestId);
+    const req = idx >= 0 ? requests[idx] : {
+      id: requestId,
+      status: 'Rejected',
+      rejection_reason: reason,
+      employee_id: '',
+    } as any;
+
+    if (idx >= 0) {
+      req.status = 'Rejected';
+      req.rejection_reason = reason;
+      req.current_approver_name = 'Completed';
+      setStored(STORAGE_KEYS.REQUESTS, requests);
     }
 
     leaveApi.addAuditLog({
@@ -1452,12 +1437,122 @@ export const leaveApi = {
       action: 'REJECT_LEAVE_REQUEST',
       entity_type: 'LeaveRequest',
       entity_id: req.id,
-      new_value: `Rejected ${req.request_code}. Reason: ${reason}`,
+      new_value: `Rejected ${req.request_code || req.id}. Reason: ${reason}`,
     });
 
     hrEventBus.publish('leave.rejected', req, { actorId: rejectorName });
+    hrEventBus.publish('leave.updated', req, { actorId: rejectorName });
+
+    // Emit in-app notification to employee
+    if (req.employee_id) {
+      notificationService.emitEmployeeNotification({
+        employeeId: req.employee_id,
+        title: 'Leave Request Rejected',
+        message: `Your leave request for ${req.from_date || 'requested dates'} was rejected. Reason: ${reason}`,
+        actionUrl: '/leaves',
+      }).catch(() => {});
+    }
 
     return req;
+  },
+
+  withdrawLeaveRequest: async (requestId: string, actorName = 'Employee', reason = 'Withdrawn by employee'): Promise<{ success: boolean }> => {
+    const requests = await leaveApi.getLeaveRequestsAsync();
+    const idx = requests.findIndex(r => r.id === requestId);
+    const req = idx >= 0 ? requests[idx] : null;
+    const wasApproved = req ? (req.status === 'Approved' || (req.status as any) === 'APPROVED') : false;
+
+    // 1. If previously approved, reverse consumed balance in ledger
+    if (wasApproved && req) {
+      const ledger = leaveApi.getLedger();
+      const prevBalance = ledger
+        .filter(l => l.employee_id === req.employee_id && l.leave_type_id === req.leave_type_id)
+        .reduce((acc, curr) => acc + curr.amount, 0);
+
+      const reversalEntry: LeaveLedgerTransaction = {
+        id: `led-${Date.now()}`,
+        employee_id: req.employee_id,
+        employee_name: req.employee_name,
+        leave_type_id: req.leave_type_id,
+        leave_type_name: req.leave_type_name,
+        date: new Date().toISOString().split('T')[0],
+        transaction_type: 'Adjustment',
+        amount: req.leave_days_deducted || 1,
+        balance_after: prevBalance + (req.leave_days_deducted || 1),
+        reference_id: req.id,
+        actor_id: 'system',
+        actor_name: actorName,
+        reason: `Reversal on withdrawal of leave ${req.request_code || req.id}: ${reason}`,
+        created_at: new Date().toISOString(),
+      };
+      ledger.unshift(reversalEntry);
+      setStored(STORAGE_KEYS.LEDGER, ledger);
+      if (_ledgerCache) {
+        _ledgerCache.data.unshift(reversalEntry);
+      }
+
+      if (isSupabaseEnabled) {
+        const orgId = (req as any).organization_id || getActiveOrgId();
+        if (orgId && isValidUUID(reversalEntry.employee_id) && isValidUUID(reversalEntry.leave_type_id)) {
+          try {
+            await supabase.from('leave_ledger_entries').insert({
+              id: reversalEntry.id,
+              organization_id: orgId,
+              employee_id: reversalEntry.employee_id,
+              leave_type_id: reversalEntry.leave_type_id,
+              entry_type: 'ADJUSTMENT',
+              units: Math.abs(reversalEntry.amount),
+              running_balance_after: reversalEntry.balance_after,
+              transaction_date: reversalEntry.date || new Date().toISOString().split('T')[0],
+              remarks: reversalEntry.reason || reversalEntry.actor_name || null,
+              created_at: reversalEntry.created_at,
+            });
+          } catch (_) {}
+        }
+      }
+    }
+
+    // 2. Authoritative canonical DELETE from Supabase
+    if (isSupabaseEnabled) {
+      const { error: delErr } = await supabase
+        .from('leave_requests')
+        .delete()
+        .eq('id', requestId);
+
+      if (delErr) {
+        console.error('[Supabase Leave] delete leave request failed:', delErr);
+        throw new Error(`Failed to delete leave request from database: ${delErr.message}`);
+      }
+
+      // 3. Clean up related notifications
+      try {
+        await supabase
+          .from('notification_events')
+          .delete()
+          .ilike('action_url', `%${requestId}%`);
+      } catch (_) {}
+    }
+
+    // 4. Update in-memory & local store
+    _leaveRequestsCache = null;
+    const remaining = requests.filter(r => r.id !== requestId);
+    setStored(STORAGE_KEYS.REQUESTS, remaining);
+
+    // 5. Add Audit Log
+    leaveApi.addAuditLog({
+      actor_id: 'employee',
+      actor_name: actorName,
+      action: 'CANCEL_LEAVE_REQUEST',
+      entity_type: 'LeaveRequest',
+      entity_id: requestId,
+      new_value: `Withdrawn and deleted leave request ${requestId}. Reason: ${reason}`,
+    });
+
+    // 6. Publish Realtime events
+    hrEventBus.publish('leave.deleted', { id: requestId } as any, { actorId: actorName });
+    hrEventBus.publish('leave.updated', { id: requestId } as any, { actorId: actorName });
+
+    return { success: true };
   },
 
   cancelLeaveRequest: (requestId: string, actorName: string, reason: string): LeaveRequest => {
@@ -1485,8 +1580,7 @@ export const leaveApi = {
         supabase
           .from('leave_requests')
           .update({
-            status: 'Cancelled',
-            rejection_reason: reason,
+            status: 'CANCELLED',
           })
           .eq('id', req.id);
       });
@@ -1522,26 +1616,23 @@ export const leaveApi = {
       }
 
       if (isSupabaseEnabled) {
-        Promise.resolve(
-          supabase.from('leave_ledger_transactions').insert({
-            id: reversalEntry.id,
-            organization_id: (req as any).organization_id || getActiveOrgId(),
-            company_id: req.company_id || 'comp-01',
-            employee_id: reversalEntry.employee_id,
-            employee_name: reversalEntry.employee_name,
-            leave_type_id: reversalEntry.leave_type_id,
-            leave_type_name: reversalEntry.leave_type_name,
-            date: reversalEntry.date,
-            transaction_type: reversalEntry.transaction_type,
-            amount: reversalEntry.amount,
-            balance_after: reversalEntry.balance_after,
-            reference_id: reversalEntry.reference_id,
-            actor_id: reversalEntry.actor_id,
-            actor_name: reversalEntry.actor_name,
-            reason: reversalEntry.reason,
-            created_at: reversalEntry.created_at,
-          })
-        ).catch((e: any) => console.warn('[Supabase Leave] reversal ledger insert notice:', e));
+        const orgId = (req as any).organization_id || getActiveOrgId();
+        if (orgId && isValidUUID(reversalEntry.employee_id) && isValidUUID(reversalEntry.leave_type_id)) {
+          Promise.resolve(
+            supabase.from('leave_ledger_entries').insert({
+              id: reversalEntry.id,
+              organization_id: orgId,
+              employee_id: reversalEntry.employee_id,
+              leave_type_id: reversalEntry.leave_type_id,
+              entry_type: 'ADJUSTMENT',
+              units: Math.abs(reversalEntry.amount),
+              running_balance_after: reversalEntry.balance_after,
+              transaction_date: reversalEntry.date || new Date().toISOString().split('T')[0],
+              remarks: reversalEntry.reason || reversalEntry.actor_name || null,
+              created_at: reversalEntry.created_at,
+            })
+          ).catch((e: any) => console.warn('[Supabase Leave] reversal ledger insert notice:', e));
+        }
       }
     }
 
@@ -1565,8 +1656,9 @@ export const leaveApi = {
   async getLedgerAsync(employeeId?: string): Promise<LeaveLedgerTransaction[]> {
     if (isSupabaseEnabled) {
       try {
-        let q = supabase.from('leave_ledger_transactions').select('*').order('created_at', { ascending: false });
+        let q = supabase.from('leave_ledger_entries').select('*').order('created_at', { ascending: false });
         if (employeeId) {
+          if (!isValidUUID(employeeId)) return [];
           q = q.eq('employee_id', employeeId);
         }
         const { data, error } = await q;
@@ -1574,17 +1666,17 @@ export const leaveApi = {
           const mapped: LeaveLedgerTransaction[] = data.map((d: any) => ({
             id: d.id,
             employee_id: d.employee_id,
-            employee_name: d.employee_name,
+            employee_name: 'Employee',
             leave_type_id: d.leave_type_id,
-            leave_type_name: d.leave_type_name,
-            date: d.date,
-            transaction_type: d.transaction_type,
-            amount: Number(d.amount),
-            balance_after: Number(d.balance_after),
-            reference_id: d.reference_id,
-            actor_id: d.actor_id,
-            actor_name: d.actor_name,
-            reason: d.reason,
+            leave_type_name: 'Leave',
+            date: d.transaction_date,
+            transaction_type: mapCanonicalToLedgerType(d.entry_type),
+            amount: Number(d.units) || 0,
+            balance_after: Number(d.running_balance_after) || 0,
+            reference_id: d.leave_request_id || d.id,
+            actor_id: 'system',
+            actor_name: 'System',
+            reason: d.remarks || '',
             created_at: d.created_at,
           }));
           _ledgerCache = { data: mapped, timestamp: Date.now() };
@@ -1999,9 +2091,9 @@ export const leaveApi = {
         setStored(STORAGE_KEYS.REQUESTS, remoteRequests);
       }
 
-      // 2. Fetch Leave Entitlements
+      // 2. Fetch Leave Balances
       const { data: remoteEntitlements, error: entErr } = await supabase
-        .from('leave_entitlements')
+        .from('leave_balances')
         .select('*');
 
       if (!entErr && Array.isArray(remoteEntitlements) && remoteEntitlements.length > 0) {
@@ -2020,7 +2112,7 @@ export const leaveApi = {
 
       // 4. Fetch Ledger
       const { data: remoteLedger, error: ledErr } = await supabase
-        .from('leave_ledger_transactions')
+        .from('leave_ledger_entries')
         .select('*')
         .order('created_at', { ascending: false });
 

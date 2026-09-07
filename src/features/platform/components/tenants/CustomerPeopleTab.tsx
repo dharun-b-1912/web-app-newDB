@@ -34,6 +34,7 @@ import {
   OrganizationInvitation,
   UserRole,
 } from '../../../../services/platform/platformAuthInvitationService';
+import { userAuthProvisionerService, ProvisionableRole } from '../../../../services/auth/userAuthProvisionerService';
 import { AcceptInviteModal } from './AcceptInviteModal';
 import { Button } from '../../../../components/ui/Button';
 import { useToast } from '../../../../components/ui/Toast';
@@ -187,17 +188,21 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
   const handleSendAuthLink = async (user: CustomerUserItem) => {
     setIsSendingAuth((prev) => ({ ...prev, [user.id]: true }));
     try {
-      const result = await platformAuthInvitationService.dispatchAuthLink({
+      const canonicalRole = platformAuthInvitationService.mapRoleToCanonicalCode(user.role) as ProvisionableRole;
+      const result = await userAuthProvisionerService.provisionUser({
         email: user.email,
         fullName: user.name,
         organizationId: org.id,
         organizationName: org.legal_name,
+        roleCode: canonicalRole || 'COMPANY_ADMIN',
+        phone: user.phone,
+        temporaryPassword: 'joypeoplehr',
       });
 
       if (result.success) {
-        showToast(`Authentication & password setup link dispatched to ${user.email} in realtime!`, 'success');
+        showToast(`Account provisioned & credentials synced for ${user.email}!`, 'success');
       } else {
-        showToast(`Resend notice: ${result.error || result.message || 'Failed to dispatch'}`, 'error');
+        showToast(`Provisioning notice: ${result.error || result.message || 'Failed to provision'}`, 'error');
       }
     } catch (err: any) {
       showToast(err.message || 'Failed to dispatch authentication link', 'error');

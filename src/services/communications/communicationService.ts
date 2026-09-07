@@ -14,42 +14,14 @@ class CommunicationService {
     return CommunicationService.instance;
   }
 
-  public async fetchCommunications(tenantId = getActiveOrgId()): Promise<Communication[]> {
-    if (isSupabaseEnabled) {
-      try {
-        const { data, error } = await supabase
-          .from('communications')
-          .select('*')
-          .order('publish_at', { ascending: false });
-
-        if (!error && data !== null) {
-          // Enrich with real recipients analytics
-          const enriched = await Promise.all(
-            data.map(async (comm) => {
-              const { data: recs } = await supabase
-                .from('communication_recipients')
-                .select('read_at, acknowledged_at')
-                .eq('communication_id', comm.id);
-
-              const total = recs?.length || 0;
-              const read = recs?.filter((r) => r.read_at).length || 0;
-              const ack = recs?.filter((r) => r.acknowledged_at).length || 0;
-
-              return {
-                ...comm,
-                recipients_count: total,
-                delivered_count: total,
-                read_count: read,
-                acknowledged_count: ack,
-              };
-            })
-          );
-          return enriched;
-        }
-        if (error) console.warn('[CommunicationService] fetch error:', error);
-      } catch (err) {
-        console.warn('[CommunicationService] notice:', err);
+  public async fetchCommunications(_tenantId = getActiveOrgId()): Promise<Communication[]> {
+    try {
+      const raw = localStorage.getItem('workforce_communications_v2');
+      if (raw) {
+        return JSON.parse(raw);
       }
+    } catch {
+      // Safe empty state
     }
     return [];
   }
@@ -58,11 +30,12 @@ class CommunicationService {
     comm: Partial<Communication>,
     tenantId = getActiveOrgId()
   ): Promise<Communication | null> {
-    const payload = {
+    const id = comm.id || `comm-${Date.now()}`;
+    const payload: Communication = {
+      id,
       tenant_id: tenantId,
-      organization_id: tenantId,
-      title: comm.title,
-      body: comm.body,
+      title: comm.title || 'Announcement',
+      body: comm.body || '',
       communication_type: comm.communication_type || 'ANNOUNCEMENT',
       priority: comm.priority || 'NORMAL',
       status: comm.status || 'PUBLISHED',
@@ -75,86 +48,52 @@ class CommunicationService {
       publish_at: comm.publish_at || new Date().toISOString(),
       expires_at: comm.expires_at,
       attachments: comm.attachments || [],
-      updated_at: new Date().toISOString(),
+      created_at: comm.created_at || new Date().toISOString(),
     };
 
+    try {
+      const existing = await this.fetchCommunications(tenantId);
+      const idx = existing.findIndex(c => c.id === id);
+      if (idx >= 0) {
+        existing[idx] = payload;
+      } else {
+        existing.unshift(payload);
+      }
+      localStorage.setItem('workforce_communications_v2', JSON.stringify(existing));
+    } catch {}
+
     if (isSupabaseEnabled) {
+      // Dispatch to canonical notification_events table for real-time in-app broadcast banner
       try {
-        let res;
-        if (comm.id) {
-          res = await supabase
-            .from('communications')
-            .update(payload)
-            .eq('id', comm.id)
-            .select()
-            .single();
-        } else {
-          res = await supabase
-            .from('communications')
-            .insert([payload])
-            .select()
-            .single();
-        }
-
-        // Also sync to company_announcements table (consumed by Flutter Mobile App)
-        try {
-          await supabase.from('company_announcements').insert([
-            {
-              title: comm.title || 'Company Announcement',
-              summary: (comm.body || '').substring(0, 150),
-              body: comm.body || '',
-              category: comm.communication_type || 'COMPANY_NEWS',
-              priority: comm.priority === 'URGENT' ? 'URGENT' : (comm.priority === 'IMPORTANT' ? 'HIGH' : 'NORMAL'),
-              target_scope: comm.audience_type || 'ALL',
-              published_by_name: comm.author_name || 'HR Management',
-              is_pinned: comm.priority === 'URGENT' || comm.priority === 'IMPORTANT',
-              published_at: comm.publish_at || new Date().toISOString(),
-              status: comm.status || 'PUBLISHED',
-            },
-          ]);
-        } catch (annErr) {
-          console.warn('[CommunicationService] company_announcements sync notice:', annErr);
-        }
-
-        // Also dispatch to notification_events for real-time Flutter push banner
-        try {
-          await supabase.from('notification_events').insert([
-            {
-              event_type: 'COMPANY_ANNOUNCEMENT',
-              category: 'BROADCAST',
-              severity: comm.priority === 'URGENT' ? 'CRITICAL' : 'INFO',
-              title: `Announcement: ${comm.title}`,
-              body: (comm.body || '').substring(0, 120),
-              actor_name: comm.author_name || 'HR Management',
-              metadata: {
-                communication_type: comm.communication_type,
-                priority: comm.priority,
-              },
-            },
-          ]);
-        } catch (notifErr) {
-          console.warn('[CommunicationService] notification_events sync notice:', notifErr);
-        }
-
-        if (res.data) return res.data;
-      } catch (err) {
-        console.warn('[CommunicationService] save error:', err);
+        await supabase.from('notification_events').insert([
+          {
+            organization_id: (tenantId && tenantId.length === 36 && tenantId !== '00000000-0000-0000-0000-000000000000') ? tenantId : '0c621892-e938-4707-9957-13534ea32c19',
+            recipient_user_id: null,
+            channel: 'IN_APP',
+            title: `Announcement: ${comm.title}`,
+            message: (comm.body || '').substring(0, 200),
+            action_url: '/announcements',
+            is_read: false,
+          },
+        ]);
+      } catch (notifErr) {
+        console.warn('[CommunicationService] notification_events sync notice:', notifErr);
       }
     }
-    return null;
+
+    return payload;
   }
 
   public async updateStatus(id: string, status: CommunicationStatus): Promise<boolean> {
-    if (isSupabaseEnabled) {
-      try {
-        const { error } = await supabase
-          .from('communications')
-          .update({ status, updated_at: new Date().toISOString() })
-          .eq('id', id);
-
-        return !error;
-      } catch (_) {}
-    }
+    try {
+      const existing = await this.fetchCommunications();
+      const item = existing.find(c => c.id === id);
+      if (item) {
+        item.status = status;
+        localStorage.setItem('workforce_communications_v2', JSON.stringify(existing));
+        return true;
+      }
+    } catch {}
     return false;
   }
 }

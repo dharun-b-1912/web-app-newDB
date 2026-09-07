@@ -7,9 +7,9 @@ import { getPrimaryRole } from '../lib/rbac/permissionEngine';
 export interface EffectiveUserContext {
   userId: string;
   organizations: Organization[];
-  activeOrganization: Organization;
+  activeOrganization: Organization | null;
   authorizedLegalEntities: Company[];
-  activeLegalEntity: Company;
+  activeLegalEntity: Company | null;
   roleTitle: string;
   isPlatformAdmin: boolean;
 }
@@ -41,43 +41,29 @@ class OrganizationContextService {
       return null;
     }
 
-    const reservedPrefixes = new Set([
-      'www', 'app', 'api', 'admin', 'auth', 'mail', 'mfa', 'portal', 'root',
-      'security', 'staging', 'static', 'status', 'superadmin', 'support', 'test', 'platform'
-    ]);
-
-    // Handle *.joypeoplehr.com
-    if (hostname.endsWith('.joypeoplehr.com')) {
-      const parts = hostname.replace('.joypeoplehr.com', '').split('.');
+    const parts = hostname.split('.');
+    if (parts.length >= 3) {
       const sub = parts[0];
-      if (sub && !reservedPrefixes.has(sub)) {
+      if (sub !== 'www' && sub !== 'app' && sub !== 'api' && sub !== 'auth') {
         return sub;
       }
     }
-
-    // Handle *.localhost for local development testing
-    if (hostname.endsWith('.localhost')) {
-      const parts = hostname.replace('.localhost', '').split('.');
-      const sub = parts[0];
-      if (sub && !reservedPrefixes.has(sub)) {
-        return sub;
-      }
-    }
-
     return null;
   }
 
   /**
-   * Resolves the authoritative multi-entity organization context for the authenticated user.
+   * Resolves the authoritative multi-tenant context for a user session.
+   * Validates organization and legal entity hierarchy directly against DB.
    */
   async resolveUserContext(user: User): Promise<EffectiveUserContext> {
-    const roleName = getPrimaryRole(user);
-    const isPlatformAdmin = roleName === 'Super Admin';
+    const primaryRole = getPrimaryRole(user);
+    const isPlatformAdmin = primaryRole === 'Super Admin' || user.role === 'Super Admin' || (user as any).is_platform_admin === true;
+    const roleName = primaryRole !== 'Unassigned' ? primaryRole : ((user as any).roleCode || (user as any).primaryRole || user.role || 'Unassigned');
 
     let allOrgs: Organization[] = [];
     let allEntities: Company[] = [];
 
-    // 1. Fetch live from Supabase tables
+    // 1. Fetch live organizations and legal entities directly from Supabase
     if (isSupabaseEnabled) {
       try {
         const [orgRes, compRes] = await Promise.all([
@@ -85,41 +71,38 @@ class OrganizationContextService {
           supabase.from('companies').select('*'),
         ]);
         if (orgRes.data && orgRes.data.length > 0) {
-          allOrgs = orgRes.data;
+          allOrgs = orgRes.data as Organization[];
         }
         if (compRes.data && compRes.data.length > 0) {
-          allEntities = compRes.data;
+          allEntities = compRes.data as Company[];
         }
       } catch (err) {
         console.warn('[OrgContextService] Supabase context query notice:', err);
       }
     }
 
-    // 2. Determine Active Organization via Subdomain or Saved Preference
-    const subdomainSlug = this.detectSubdomainSlug();
-    let activeOrg: Organization | undefined;
+    // 2. Determine Active Organization via User DB Profile, Subdomain or Saved Preference
+    let activeOrg: Organization | null = null;
+    const userOrgId = user.organization_id || (user as any).organizationId;
 
-    if (subdomainSlug) {
-      activeOrg = allOrgs.find((o) => {
-        const oSlug = (o.slug || '').toLowerCase();
-        const oId = (o.id || '').toLowerCase().replace(/^org-/, '');
-        return oSlug === subdomainSlug || oId === subdomainSlug;
-      });
+    if (userOrgId) {
+      activeOrg = allOrgs.find((o) => o.id === userOrgId) || null;
     }
 
     if (!activeOrg) {
+      const subdomainSlug = this.detectSubdomainSlug();
+      if (subdomainSlug) {
+        activeOrg = allOrgs.find((o) => {
+          const oSlug = (o.slug || '').toLowerCase();
+          const oId = (o.id || '').toLowerCase().replace(/^org-/, '');
+          return oSlug === subdomainSlug || oId === subdomainSlug;
+        }) || null;
+      }
+    }
+
+    if (!activeOrg && allOrgs.length > 0) {
       const savedOrgId = localStorage.getItem(STORAGE_KEYS.ACTIVE_ORG_ID);
-      activeOrg = allOrgs.find((o) => o.id === savedOrgId) || allOrgs[0] || ({
-        id: user.organization_id || 'org-active',
-        name: 'Organization',
-        slug: 'organization',
-        status: 'Active',
-        plan: 'Enterprise',
-        default_currency: 'INR',
-        timezone: 'Asia/Kolkata',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      } as Organization);
+      activeOrg = allOrgs.find((o) => o.id === savedOrgId) || allOrgs[0] || null;
     }
 
     // 3. Filter authorized Legal Entities by Role Scope
@@ -129,37 +112,23 @@ class OrganizationContextService {
       authorizedEntities = allEntities.filter((e) => e.organization_id === activeOrg?.id);
     }
 
-    if (authorizedEntities.length === 0) {
-      authorizedEntities = allEntities.length > 0
-        ? allEntities
-        : [
-            {
-              id: 'comp-active',
-              organization_id: activeOrg?.id || 'org-active',
-              legal_name: activeOrg?.name || 'Company',
-              trade_name: activeOrg?.name || 'Company',
-              statutory_registration_no: '',
-              tax_id: '',
-              country: 'India',
-              city: '',
-              currency: 'INR',
-              timezone: 'Asia/Kolkata',
-              created_at: new Date().toISOString(),
-            } as Company,
-          ];
-    }
-
     // 4. Determine Active Legal Entity
-    const savedEntityId = localStorage.getItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID);
-    let activeLegalEntity =
-      authorizedEntities.find((e) => e.id === savedEntityId) || authorizedEntities[0];
+    let activeLegalEntity: Company | null = null;
+    if (authorizedEntities.length > 0) {
+      const savedEntityId = localStorage.getItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID);
+      activeLegalEntity = authorizedEntities.find((e) => e.id === savedEntityId) || authorizedEntities[0] || null;
+    }
 
     // Persist verified context back to local session pointer
     if (activeOrg?.id) {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_ORG_ID, activeOrg.id);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.ACTIVE_ORG_ID);
     }
     if (activeLegalEntity?.id) {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID, activeLegalEntity.id);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID);
     }
 
     return {
@@ -185,8 +154,8 @@ class OrganizationContextService {
     }
 
     const beforeState = {
-      organizationId: currentContext.activeOrganization.id,
-      legalEntityId: currentContext.activeLegalEntity.id,
+      organizationId: currentContext.activeOrganization?.id || null,
+      legalEntityId: currentContext.activeLegalEntity?.id || null,
     };
 
     localStorage.setItem(STORAGE_KEYS.ACTIVE_ORG_ID, targetOrg.id);
@@ -197,12 +166,12 @@ class OrganizationContextService {
     this.logContextAudit(user, {
       action: 'ORGANIZATION_SWITCHED',
       organizationId: targetOrg.id,
-      legalEntityId: newContext.activeLegalEntity.id,
+      legalEntityId: newContext.activeLegalEntity?.id || null,
       details: `Switched active organization to ${targetOrg.name}`,
       beforeState,
       afterState: {
-        organizationId: newContext.activeOrganization.id,
-        legalEntityId: newContext.activeLegalEntity.id,
+        organizationId: newContext.activeOrganization?.id || null,
+        legalEntityId: newContext.activeLegalEntity?.id || null,
       },
     });
 
@@ -222,8 +191,8 @@ class OrganizationContextService {
     }
 
     const beforeState = {
-      organizationId: currentContext.activeOrganization.id,
-      legalEntityId: currentContext.activeLegalEntity.id,
+      organizationId: currentContext.activeOrganization?.id || null,
+      legalEntityId: currentContext.activeLegalEntity?.id || null,
     };
 
     localStorage.setItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID, targetEntity.id);
@@ -233,12 +202,12 @@ class OrganizationContextService {
 
     this.logContextAudit(user, {
       action: 'LEGAL_ENTITY_SWITCHED',
-      organizationId: currentContext.activeOrganization.id,
+      organizationId: currentContext.activeOrganization?.id || null,
       legalEntityId: targetEntity.id,
       details: `Switched active legal entity to ${targetEntity.legal_name}`,
       beforeState,
       afterState: {
-        organizationId: newContext.activeOrganization.id,
+        organizationId: newContext.activeOrganization?.id || null,
         legalEntityId: targetEntity.id,
       },
     });
@@ -253,17 +222,20 @@ class OrganizationContextService {
    * Formats clean, unpolluted role titles according to enterprise governance standard.
    */
   formatCleanRoleTitle(rawRole: string): string {
-    const normalized = String(rawRole || '').toLowerCase().trim();
-    if (normalized.includes('vendor') || normalized.includes('contractor')) return 'Vendor Operations Admin';
+    if (!rawRole) return 'Unassigned';
+    const normalized = String(rawRole || '').toLowerCase().replace(/_/g, ' ').replace(/-/g, ' ').trim();
+    if (normalized.includes('vendor') || normalized.includes('contractor')) return 'Vendor Operations Admin (Partner)';
     if (normalized.includes('super') || normalized.includes('platform')) return 'Platform Super Admin';
     if (normalized.includes('assistant')) return 'Assistant Admin (Delegated Ops)';
-    if (normalized.includes('company admin')) return 'Company Admin (Company)';
+    if (normalized.includes('company admin') || normalized.includes('owner') || normalized.includes('executive')) return 'Company Admin (Company)';
     if (normalized.includes('hr head')) return 'HR Head (Company)';
     if (normalized.includes('hr admin') || normalized === 'hr') return 'HR Admin (Company)';
+    if (normalized.includes('payroll')) return 'Payroll Admin (Company)';
+    if (normalized.includes('attendance')) return 'Attendance Admin (Company)';
     if (normalized.includes('manager')) return 'Manager (Department)';
     if (normalized.includes('lead')) return 'Team Lead (Team)';
-    if (normalized.includes('employee') || !rawRole) return 'Employee (Self)';
-    return 'Employee (Self)';
+    if (normalized.includes('employee')) return 'Employee (Self)';
+    return 'Unassigned';
   }
 
   /**

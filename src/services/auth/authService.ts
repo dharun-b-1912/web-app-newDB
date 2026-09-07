@@ -10,6 +10,7 @@ import {
   clearSessionFingerprint,
 } from '../../lib/security/sessionProtection';
 import { User, Organization, ScopeLevel } from '../../types';
+import { roleResolutionService } from './roleResolutionService';
 
 export type AuthContextMode = 'tenant' | 'admin' | 'platform' | 'vendor';
 
@@ -157,126 +158,17 @@ export const authService = {
       };
     }
 
-    // Direct Company / Organisation Admin Quick Authentication
-    if (
-      context === 'admin' ||
-      cleanId.toLowerCase() === 'dharun@joypeople.com' ||
-      cleanId.toLowerCase() === 'admin@joypeople.com' ||
-      cleanId.toLowerCase() === 'companyadmin@joypeople.com'
-    ) {
-      const companyAdminUser: AuthSessionUser = {
-        id: 'usr-dharun-admin-01',
-        auth_user_id: 'usr-dharun-admin-01',
-        email: cleanId || 'dharun@joypeople.com',
-        name: 'Dharun Joy (Company Admin)',
-        organization_id: 'org-joy-corporate-solutions-private-',
-        tenant_id: 'org-joy-corporate-solutions-private-',
-        employee_id: 'JOY-ADM-001',
-        status: 'Active',
-        account_status: 'ACTIVE',
-        is_platform_admin: false,
-        roles: [
-          {
-            id: 'role-company-admin',
-            organization_id: 'org-joy-corporate-solutions-private-',
-            name: 'Company Admin',
-            description: 'Company & Organisation Administrator',
-            permissions: [{ permission_id: '*', scope_level: 'Organization' as ScopeLevel }],
-          },
-        ],
-        created_at: new Date().toISOString(),
-      };
-
-      this.saveActiveSession(companyAdminUser, 'admin');
-      await this.logAuditEvent('LOGIN_SUCCESS', {
-        userId: companyAdminUser.id,
-        email: companyAdminUser.email,
-        context: 'admin',
-        role: 'Company Admin',
-        tenantId: companyAdminUser.organization_id,
-      });
-
-      return {
-        success: true,
-        user: companyAdminUser,
-        destinationRoute: 'executive-overview',
-        mustChangePassword: false,
-      };
-    }
-
-    // Direct Vendor Portal Authentication
-    if (context === 'vendor' || cleanId.toLowerCase().includes('vendor')) {
-      const vendorUser: AuthSessionUser = {
-        id: 'usr-vendor-apex-01',
-        auth_user_id: 'usr-vendor-apex-01',
-        email: cleanId || 'vendor@apexstaffing.in',
-        name: 'Rajesh Kumar (Apex Staffing Partner)',
-        organization_id: 'org-joy-corporate-solutions-private-',
-        tenant_id: 'org-joy-corporate-solutions-private-',
-        status: 'Active',
-        account_status: 'ACTIVE',
-        is_platform_admin: false,
-        roles: [
-          {
-            id: 'role-vendor-admin',
-            organization_id: 'org-joy-corporate-solutions-private-',
-            name: 'Vendor Admin',
-            description: 'Vendor Operations Admin',
-            permissions: [{ permission_id: '*', scope_level: 'Organization' as ScopeLevel }],
-          },
-        ],
-        created_at: new Date().toISOString(),
-      };
-
-      this.saveActiveSession(vendorUser, 'vendor');
-      await this.logAuditEvent('LOGIN_SUCCESS', {
-        userId: vendorUser.id,
-        email: vendorUser.email,
-        context: 'vendor',
-        role: 'Vendor Admin',
-        tenantId: vendorUser.organization_id,
-      });
-
-      return {
-        success: true,
-        user: vendorUser,
-        destinationRoute: 'vendor-settlement-workspace',
-        mustChangePassword: false,
-      };
-    }
-
     try {
       // 1. Supabase Authentication
       if (isSupabaseEnabled) {
-        let { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
           email: cleanId,
           password: password,
         });
 
-        // If user was newly invited / created outside Supabase Auth, auto-provision their Supabase auth account
-        if (authError && !authData?.user) {
-          try {
-            const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
-              email: cleanId,
-              password: password,
-              options: {
-                data: {
-                  full_name: cleanId.split('@')[0],
-                  role: 'Employee',
-                  account_status: 'ACTIVE',
-                },
-              },
-            });
-            if (signUpData?.user) {
-              authData = { user: signUpData.user, session: signUpData.session } as any;
-              authError = null;
-            }
-          } catch (autoProvErr) {
-            console.warn('[AuthService] Auto-provision notice:', autoProvErr);
-          }
-        }
+        const authUser = authData?.user;
 
-        if (authError || !authData?.user) {
+        if (authError || !authUser) {
           this.recordFailedAttempt(cleanId);
           await this.logAuditEvent('LOGIN_FAILED', {
             identifier: cleanId,
@@ -286,45 +178,44 @@ export const authService = {
 
           return {
             success: false,
-            errorMessage: 'Unable to sign in with the provided credentials. Please verify and try again.',
+            errorMessage: authError?.message || 'Unable to sign in with the provided credentials. Please verify and try again.',
             errorCode: 'INVALID_CREDENTIALS',
           };
         }
 
         this.resetRateLimit(cleanId);
-
-        const authUser = authData.user;
         const userMeta = authUser.user_metadata || {};
         const appMeta = authUser.app_metadata || {};
 
-        // 2. Multi-Tenant & Platform Staff Verification from Supabase Database
-        let staffProfile: any = null;
-        try {
-          const { data: staffRow } = await supabase
-            .from('platform_staff')
-            .select('*')
-            .or(`auth_user_id.eq.${authUser.id},email.eq.${authUser.email?.toLowerCase()}`)
-            .maybeSingle();
-          if (staffRow) {
-            staffProfile = staffRow;
-          }
-        } catch {
-          // ignore table query fallback
-        }
-
-        const isPlatformStaff = Boolean(
-          staffProfile ||
-          userMeta.is_platform_admin ||
-          appMeta.is_platform_admin ||
-          userMeta.platform_role ||
-          userMeta.role === 'superadmin' ||
-          appMeta.role === 'super_admin' ||
-          authUser.email?.toLowerCase().includes('superadmin') ||
-          authUser.email?.endsWith('@joypeoplehr.com')
+        // 2. Authoritative Database-Driven Role & Profile Resolution
+        const resolvedIdentity = await roleResolutionService.resolveUserIdentity(
+          authUser.id,
+          authUser.email,
+          authUser.user_metadata
         );
 
+        if (resolvedIdentity.primaryRole === 'Unassigned') {
+          await this.logAuditEvent('LOGIN_FAILED', {
+            userId: authUser.id,
+            identifier: cleanId,
+            context,
+            reason: 'Account authenticated but not provisioned with any application role',
+          });
+          return {
+            success: false,
+            errorMessage: 'Your account is authenticated but has not been provisioned for JOY PeopleHR. Please contact your organization administrator or support.',
+            errorCode: 'UNPROVISIONED_ACCOUNT',
+          };
+        }
+
+        const isPlatformStaff = resolvedIdentity.isPlatformAdmin;
+        const resolvedRole = (typeof resolvedIdentity.primaryRole === 'object' ? (resolvedIdentity.primaryRole as any).name : resolvedIdentity.primaryRole) || 'Employee';
+        const orgId = resolvedIdentity.organizationId;
+        const mustChangePassword = Boolean(userMeta.must_change_password || userMeta.require_password_change);
+        let accountStatus: AccountStatus = 'ACTIVE';
+
         // Enforce Dual Context Rules
-        if (context === 'platform') {
+        if ((context as string) === 'platform') {
           if (!isPlatformStaff) {
             await this.logAuditEvent('LOGIN_FAILED', {
               userId: authUser.id,
@@ -343,16 +234,10 @@ export const authService = {
 
         // 3. Resolve Tenant & Employee Profile for Tenant Context
         let tenantRecord: Organization | undefined = undefined;
-        let roleTitle = staffProfile?.role_display_name || staffProfile?.job_title || 'Employee';
-        let mustChangePassword = Boolean(userMeta.must_change_password || userMeta.require_password_change);
-        let accountStatus: AccountStatus = 'ACTIVE';
 
-        let orgId = userMeta.organization_id || userMeta.tenant_id;
-        let empRow: any = null;
-
-        if (context === 'tenant') {
+        if (context === 'tenant' && orgId && orgId !== 'platform-root') {
           // Check Organization Status in Supabase
-          if (orgId) {
+          try {
             const { data: orgRow } = await supabase
               .from('organizations')
               .select('*')
@@ -370,100 +255,30 @@ export const authService = {
                 };
               }
             }
-          }
-
-          // Check Employee Status in Supabase
-          try {
-            const { data: foundEmp } = await supabase
-              .from('employees')
-              .select('*')
-              .or(`work_email.eq.${authUser.email?.toLowerCase()},personal_email.eq.${authUser.email?.toLowerCase()},user_id.eq.${authUser.id}`)
-              .maybeSingle();
-
-            if (foundEmp) {
-              empRow = foundEmp;
-              if (foundEmp.status === 'Terminated' || foundEmp.status === 'Inactive') {
-                await supabase.auth.signOut();
-                return {
-                  success: false,
-                  errorMessage: 'Your account is currently inactive. Contact your organization administrator.',
-                  errorCode: 'ACCOUNT_INACTIVE',
-                };
-              }
-              if (foundEmp.designation_title) {
-                roleTitle = foundEmp.designation_title;
-              }
-              if (!orgId && (foundEmp.organization_id || foundEmp.tenant_id)) {
-                orgId = foundEmp.organization_id || foundEmp.tenant_id;
-              }
-            }
           } catch (_) {}
-        }
-
-        // Resolve Assigned Role Name
-        let resolvedRole = 'Employee';
-        if (isPlatformStaff) {
-          resolvedRole = staffProfile?.role_display_name || staffProfile?.role_key || userMeta.platform_role || 'Super Admin';
-        } else if (empRow) {
-          const sysRole = empRow.system_role || empRow.role;
-          if (sysRole && !['Organization Owner', 'owner'].includes(sysRole)) {
-            resolvedRole = sysRole;
-          } else {
-            resolvedRole = 'Employee';
-          }
-        } else if (userMeta.role && userMeta.role !== 'Organization Owner' && userMeta.role !== 'owner') {
-          resolvedRole = userMeta.role;
-        } else {
-          resolvedRole = 'Employee';
-        }
-
-        if (!isPlatformStaff && !empRow) {
-          // Check local stored invitations for exact invited role
-          try {
-            const localInvs = JSON.parse(localStorage.getItem('workforce_organization_invitations') || '[]');
-            const matched = localInvs.find((i: any) => i.email?.toLowerCase() === (authUser.email || cleanId)?.toLowerCase().trim());
-            if (matched?.role) {
-              resolvedRole = matched.role;
-              if (matched.organization_id) orgId = matched.organization_id;
-            }
-          } catch (_) {}
-
-          // Check organization_invitations table for exact invited role
-          if (isSupabaseEnabled) {
-            try {
-              const { data: invData } = await supabase
-                .from('organization_invitations')
-                .select('role, full_name, organization_id')
-                .eq('email', authUser.email?.toLowerCase().trim())
-                .maybeSingle();
-              if (invData?.role) {
-                resolvedRole = invData.role;
-                if (invData.organization_id) orgId = invData.organization_id;
-              }
-            } catch (_) {}
-          }
         }
 
         const sessionUser: AuthSessionUser = {
           id: authUser.id,
           auth_user_id: authUser.id,
           email: authUser.email || cleanId,
-          name: staffProfile?.name || `${staffProfile?.first_name || ''} ${staffProfile?.last_name || ''}`.trim() || userMeta.full_name || userMeta.name || authUser.email?.split('@')[0] || 'Super Admin',
-          avatar_url: staffProfile?.avatar_url || userMeta.avatar_url || '',
+          name: resolvedIdentity.fullName,
+          avatar_url: resolvedIdentity.avatarUrl || '',
           organization_id: orgId || (isPlatformStaff ? 'platform-root' : 'org-default'),
           tenant_id: orgId,
-          employee_id: userMeta.employee_id || undefined,
+          employee_id: resolvedIdentity.employeeId || undefined,
           status: 'Active',
           account_status: accountStatus,
           must_change_password: mustChangePassword,
           is_platform_admin: isPlatformStaff,
-          platform_role: isPlatformStaff ? resolvedRole : undefined,
+          platform_role: isPlatformStaff ? resolvedIdentity.platformRole || 'SUPER_ADMIN' : undefined,
+          role: resolvedRole,
           roles: [
             {
               id: `role-${resolvedRole.toLowerCase().replace(/\s+/g, '-')}`,
               organization_id: orgId || 'root',
               name: resolvedRole,
-              description: resolvedRole,
+              description: `${resolvedRole} Role`,
               permissions: isPlatformStaff
                 ? [{ permission_id: '*', scope_level: 'Organization' as ScopeLevel }]
                 : [
@@ -488,7 +303,7 @@ export const authService = {
         });
 
         // 5. Compute Authorized Post-Login Route
-        const destinationRoute = this.resolvePostLoginRoute(resolvedRole, context);
+        const destinationRoute = resolvedIdentity.destinationRoute || this.resolvePostLoginRoute(resolvedRole, context);
 
         return {
           success: true,
@@ -784,48 +599,49 @@ export const authService = {
    * Helper: Resolve authorized post-login route based on role & context
    */
   resolvePostLoginRoute(roleName: string, context: AuthContextMode): string {
-    if (context === 'platform') {
+    const normRole = (roleName || '').toLowerCase().trim();
+
+    if (context === 'platform' || normRole.includes('super admin') || normRole.includes('platform')) {
       return 'platform-dashboard';
     }
 
-    if (context === 'vendor') {
+    if (context === 'vendor' || normRole.includes('vendor') || normRole.includes('contractor')) {
       return 'vendor-settlement-workspace';
     }
 
-    if (context === 'admin') {
-      return 'executive-overview';
-    }
-
-    const normRole = roleName.toLowerCase();
-    if (normRole.includes('vendor') || normRole.includes('contractor')) {
-      return 'vendor-settlement-workspace';
-    }
-    if (normRole.includes('super admin') || normRole.includes('platform')) {
-      return 'platform-dashboard';
-    }
     if (
+      context === 'admin' ||
       normRole === 'company admin' ||
+      normRole.includes('company admin') ||
       normRole.includes('organisation admin') ||
-      normRole.includes('organization admin')
+      normRole.includes('organization admin') ||
+      normRole.includes('owner')
     ) {
       return 'executive-overview';
     }
-    if (
-      normRole.includes('owner') ||
-      normRole.includes('admin') ||
-      normRole.includes('hr') ||
-      normRole.includes('manager')
-    ) {
+
+    if (normRole === 'hr head' || normRole === 'hr admin' || normRole.includes('hr')) {
       return 'dashboard';
     }
+
+    if (normRole.includes('manager')) {
+      return 'dashboard';
+    }
+
     if (normRole.includes('team lead') || normRole.includes('lead')) {
       return 'tl-dashboard';
     }
+
     if (normRole === 'employee' || normRole.includes('staff')) {
       return 'ess-dashboard';
     }
+
     if (normRole.includes('payroll')) {
       return 'payroll';
+    }
+
+    if (normRole === 'unassigned' || !normRole) {
+      return 'unauthorized';
     }
 
     return 'dashboard';

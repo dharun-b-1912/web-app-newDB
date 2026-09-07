@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
@@ -63,15 +64,12 @@ export const ProfilePhotoPreviewModal: React.FC<Props> = ({
       const res = await avatarService.uploadAndActivateAvatar({
         employeeId: employee.id,
         imageInput: processed.dataUrl,
-        tenantId: employee.organization_id || 'org-joy-01',
         orgId: employee.organization_id || 'org-joy-01',
-        currentVersion: (employee as any).avatar_version || 1,
       });
 
       const updated = {
         ...employee,
         avatar_url: res.url,
-        avatar_version: res.version,
       };
       onUpdated(updated);
       showToast('Profile photo updated in high-definition & synced.', 'success');
@@ -130,15 +128,12 @@ export const ProfilePhotoPreviewModal: React.FC<Props> = ({
         const res = await avatarService.uploadAndActivateAvatar({
           employeeId: employee.id,
           imageInput: dataUrl,
-          tenantId: employee.organization_id || 'org-joy-01',
           orgId: employee.organization_id || 'org-joy-01',
-          currentVersion: (employee as any).avatar_version || 1,
         });
 
         const updated = {
           ...employee,
           avatar_url: res.url,
-          avatar_version: res.version,
         };
         onUpdated(updated);
         showToast('Photo captured and synced successfully.', 'success');
@@ -155,13 +150,11 @@ export const ProfilePhotoPreviewModal: React.FC<Props> = ({
       setIsSaving(true);
       await avatarService.removeAvatar({
         employeeId: employee.id,
-        tenantId: employee.organization_id || 'org-joy-01',
         orgId: employee.organization_id || 'org-joy-01',
       });
       const updated = {
         ...employee,
         avatar_url: '',
-        avatar_version: ((employee as any).avatar_version || 1) + 1,
       };
       setPendingPreviewUrl(null);
       onUpdated(updated);

@@ -13,6 +13,8 @@ import { User, Role, ScopeLevel } from '../../types';
 import { api } from '../../services/api';
 import { useToast } from '../../components/ui/Toast';
 import { usePermission } from '../../hooks/usePermission';
+import { useTenant } from '../../hooks/useTenant';
+import { userAuthProvisionerService, ProvisionableRole } from '../../services/auth/userAuthProvisionerService';
 
 // Master Permission Matrix Catalog
 const PERMISSION_MODULES = [
@@ -116,6 +118,7 @@ export const RbacView: React.FC = () => {
   const [testDeptId, setTestDeptId] = useState('dept-eng');
   const [rlsResult, setRlsResult] = useState<any | null>(null);
 
+  const { organization, activeLegalEntity } = useTenant();
   const { showToast } = useToast();
 
   const loadData = () => {
@@ -214,14 +217,48 @@ export const RbacView: React.FC = () => {
       return;
     }
 
+    // Map selected role to canonical role code
+    const selectedRoleObj = roles.find((r) => newUserForm.roleIds.includes(r.id));
+    const rawRoleName = (selectedRoleObj?.name || 'HR Head').toUpperCase();
+    let canonicalRoleCode: ProvisionableRole = 'HR_HEAD';
+    if (rawRoleName.includes('COMPANY') || rawRoleName.includes('OWNER') || rawRoleName.includes('ADMIN')) {
+      canonicalRoleCode = rawRoleName.includes('HR') ? 'HR_HEAD' : 'COMPANY_ADMIN';
+    } else if (rawRoleName.includes('HR')) {
+      canonicalRoleCode = 'HR_HEAD';
+    } else if (rawRoleName.includes('MANAGER')) {
+      canonicalRoleCode = 'MANAGER';
+    } else if (rawRoleName.includes('EMPLOYEE')) {
+      canonicalRoleCode = 'EMPLOYEE';
+    }
+
+    const targetOrgId = organization?.id || activeLegalEntity?.organization_id || 'org-active';
+    const targetCompId = activeLegalEntity?.id || 'comp-active';
+
     try {
+      const provResult = await userAuthProvisionerService.provisionUser({
+        email: newUserForm.email.trim(),
+        fullName: newUserForm.name.trim(),
+        roleCode: canonicalRoleCode,
+        organizationId: targetOrgId,
+        companyId: targetCompId,
+        phone: newUserForm.phone.trim(),
+        temporaryPassword: 'joypeoplehr',
+      });
+
+      if (!provResult.success) {
+        showToast(provResult.error || 'Failed to provision user', 'error');
+        return;
+      }
+
       await api.createUser({
         name: newUserForm.name.trim(),
         email: newUserForm.email.trim(),
         phone: newUserForm.phone.trim(),
         roleIds: newUserForm.roleIds,
+        organization_id: targetOrgId,
       });
-      showToast(`User account created for ${newUserForm.name}!`);
+
+      showToast(`Account provisioned successfully for ${newUserForm.name}! Temp password: joypeoplehr (mandatory change on first login)`, 'success');
       setIsCreateUserModalOpen(false);
       setNewUserForm({ name: '', email: '', phone: '', roleIds: [] });
       loadData();
@@ -876,7 +913,7 @@ export const RbacView: React.FC = () => {
           </div>
 
           <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-[11px] text-[#07563D]">
-            <strong>Tenant Scope Protection</strong>: This user will automatically be bound to <strong>Joy Corporate Solutions Pvt Ltd</strong> (`org-joy-01`). No manual tenant selection is required.
+            <strong>Tenant Scope Protection</strong>: This user will automatically be bound to <strong>{organization?.legal_name || activeLegalEntity?.legal_name || 'Current Organization'}</strong> (<code className="font-mono">{organization?.id || activeLegalEntity?.organization_id || 'Active Tenant'}</code>). No manual tenant selection is required.
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
@@ -884,7 +921,7 @@ export const RbacView: React.FC = () => {
               Cancel
             </Button>
             <Button onClick={handleCreateUser}>
-              Provision & Send Invitation
+              Provision Account Directly
             </Button>
           </div>
         </div>

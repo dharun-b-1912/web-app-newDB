@@ -102,26 +102,17 @@ class VendorWorkforceService {
    * Fetches all Deployments for an organization, branch, or worker.
    */
   async getDeployments(organizationId: string, filter?: { vendorId?: string; workerId?: string; branchId?: string }): Promise<VendorDeployment[]> {
-    if (isSupabaseEnabled && supabase) {
-      try {
-        let query = supabase
-          .from('vendor_deployments')
-          .select('*')
-          .eq('organization_id', organizationId);
-
-        if (filter?.vendorId) query = query.eq('vendor_id', filter.vendorId);
-        if (filter?.workerId) query = query.eq('worker_id', filter.workerId);
-        if (filter?.branchId) query = query.eq('branch_id', filter.branchId);
-
-        const { data, error } = await query.order('start_date', { ascending: false });
-        if (!error && data) {
-          return data;
-        }
-      } catch (err) {
-        console.warn('[VendorWorkforceService] getDeployments error:', err);
-      }
+    try {
+      const raw = localStorage.getItem('workforce_vendor_deployments');
+      const list: VendorDeployment[] = raw ? JSON.parse(raw) : [];
+      let filtered = list.filter(d => d.organization_id === organizationId);
+      if (filter?.vendorId) filtered = filtered.filter(d => d.vendor_id === filter.vendorId);
+      if (filter?.workerId) filtered = filtered.filter(d => d.worker_id === filter.workerId);
+      if (filter?.branchId) filtered = filtered.filter(d => d.branch_id === filter.branchId);
+      return filtered;
+    } catch {
+      return [];
     }
-    return [];
   }
 
   /**
@@ -152,17 +143,11 @@ class VendorWorkforceService {
       updated_at: new Date().toISOString(),
     };
 
-    if (isSupabaseEnabled && supabase) {
-      try {
-        const { data, error } = await supabase.from('vendor_deployments').insert([newDeploy]).select().single();
-        if (!error && data) {
-          hrEventBus.emit('vendor.deployment_created', { deployment: data });
-          return data;
-        }
-      } catch (err) {
-        console.warn('[VendorWorkforceService] createDeployment fallback:', err);
-      }
-    }
+    try {
+      const raw = localStorage.getItem('workforce_vendor_deployments');
+      const list: VendorDeployment[] = raw ? JSON.parse(raw) : [];
+      localStorage.setItem('workforce_vendor_deployments', JSON.stringify([newDeploy, ...list]));
+    } catch (_) {}
 
     hrEventBus.emit('vendor.deployment_created', { deployment: newDeploy });
     return newDeploy;
@@ -172,30 +157,26 @@ class VendorWorkforceService {
    * Fetches vendor contracts.
    */
   async getContracts(vendorId: string): Promise<VendorContract[]> {
-    if (isSupabaseEnabled && supabase) {
-      try {
-        const { data, error } = await supabase.from('vendor_contracts').select('*').eq('vendor_id', vendorId).order('start_date', { ascending: false });
-        if (!error && data) return data;
-      } catch (err) {
-        console.warn('[VendorWorkforceService] getContracts error:', err);
-      }
+    try {
+      const raw = localStorage.getItem('workforce_vendor_contracts');
+      const list: VendorContract[] = raw ? JSON.parse(raw) : [];
+      return list.filter(c => c.vendor_id === vendorId);
+    } catch {
+      return [];
     }
-    return [];
   }
 
   /**
    * Fetches vendor compliance documents.
    */
   async getDocuments(vendorId: string): Promise<VendorDocument[]> {
-    if (isSupabaseEnabled && supabase) {
-      try {
-        const { data, error } = await supabase.from('vendor_documents').select('*').eq('vendor_id', vendorId).order('uploaded_at', { ascending: false });
-        if (!error && data) return data;
-      } catch (err) {
-        console.warn('[VendorWorkforceService] getDocuments error:', err);
-      }
+    try {
+      const raw = localStorage.getItem('workforce_vendor_documents');
+      const list: VendorDocument[] = raw ? JSON.parse(raw) : [];
+      return list.filter(d => d.vendor_id === vendorId);
+    } catch {
+      return [];
     }
-    return [];
   }
 }
 

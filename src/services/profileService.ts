@@ -218,6 +218,8 @@ class ProfileService {
       updated_at: '2024-01-01T00:00:00Z',
     };
 
+    let finalProfile: FullProfileContext | null = null;
+
     if (cached) {
       try {
         const parsed: FullProfileContext = JSON.parse(cached);
@@ -228,7 +230,7 @@ class ProfileService {
           (parsed.contact?.workEmail && user.email && parsed.contact.workEmail.toLowerCase() === user.email.toLowerCase());
 
         if (isUserMatch && parsed.personal) {
-          return {
+          finalProfile = {
             ...parsed,
             user,
             organization: orgContext.activeOrganization,
@@ -240,117 +242,159 @@ class ProfileService {
       }
     }
 
-    const defaultProfile: FullProfileContext = {
-      user,
-      employee: baseEmployee,
-      organization: orgContext.activeOrganization,
-      legalEntity: orgContext.activeLegalEntity,
-      personal: {
-        legalFirstName: firstName,
-        legalMiddleName: '',
-        legalLastName: lastName,
-        preferredName: displayName,
-        dateOfBirth: '1995-01-01',
-        gender: 'Prefer not to say',
-        maritalStatus: 'Single',
-        nationality: 'Indian',
-        bloodGroup: 'O+',
-        preferredLanguage: 'English',
-      },
-      contact: {
-        workEmail: user.email,
-        personalEmail: user.email,
-        primaryMobile: user.phone || '+91 98401 00000',
-        alternateMobile: '',
-        isEmailVerified: true,
-        isMobileVerified: true,
-      },
-      address: {
-        currentAddress: {
-          line1: 'Joy Tech Park, Avinashi Road',
-          line2: 'Peelamedu',
-          city: 'Coimbatore',
-          state: 'Tamil Nadu',
-          postalCode: '641004',
-          country: 'India',
+    if (!finalProfile) {
+      finalProfile = {
+        user,
+        employee: baseEmployee,
+        organization: orgContext.activeOrganization,
+        legalEntity: orgContext.activeLegalEntity,
+        personal: {
+          legalFirstName: firstName,
+          legalMiddleName: '',
+          legalLastName: lastName,
+          preferredName: displayName,
+          dateOfBirth: '1995-01-01',
+          gender: 'Prefer not to say',
+          maritalStatus: 'Single',
+          nationality: 'Indian',
+          bloodGroup: 'O+',
+          preferredLanguage: 'English',
         },
-        permanentAddress: {
-          line1: 'Joy Tech Park, Avinashi Road',
-          line2: 'Peelamedu',
-          city: 'Coimbatore',
-          state: 'Tamil Nadu',
-          postalCode: '641004',
-          country: 'India',
+        contact: {
+          workEmail: user.email,
+          personalEmail: user.email,
+          primaryMobile: user.phone || '+91 98401 00000',
+          alternateMobile: '',
+          isEmailVerified: true,
+          isMobileVerified: true,
         },
-        sameAsPermanent: true,
-      },
-      employment: {
-        employeeId: baseEmployee.id,
-        employeeCode: empCode,
-        legalEntityName: orgContext.activeLegalEntity.legal_name,
-        departmentName: baseEmployee.department_name || 'Platform Management',
-        designationTitle: primaryRole,
-        employmentType: 'Full Time',
-        joiningDate: '01 Jan 2024',
-        confirmationDate: '01 Jul 2024',
-        workLocation: 'Coimbatore HQ, Joy Tech Park',
-        reportingManagerName: isPlatformAdmin ? 'Board of Directors' : 'Executive Management',
-        hrbpName: 'HR Operations Desk',
-        status: 'Active',
-      },
-      bank: {
-        id: `bank-${user.id || '01'}`,
-        bankName: 'HDFC Bank',
-        accountNumberMasked: '•••• •••• 4521',
-        accountHolderName: displayName,
-        ifscCode: 'HDFC0001234',
-        branchName: 'Peelamedu, Coimbatore',
-        paymentMethod: 'Bank Transfer (NEFT/RTGS)',
-        isPrimary: true,
-      },
-      statutory: {
-        panMasked: 'ABCDE••••F',
-        uanMasked: '1012 •••• 7890',
-        pfNumber: 'TN/CBE/1234567/001',
-        pfStatus: 'Active',
-        pfJoiningDate: '01 Jan 2024',
-        esiNumberMasked: '3312 •••• 0001',
-        esiStatus: 'Not Applicable (Exempted)',
-        taxRegime: 'New',
-      },
-      nominees: [],
-      emergencyContacts: [],
-      documents: [],
-      sessions: [
-        {
-          id: 'sess-current',
-          deviceName: 'Desktop (Chrome on Windows)',
-          browserName: 'Google Chrome',
-          ipAddress: '192.168.1.100 (Internal)',
-          locationName: 'Coimbatore, India',
-          lastActive: 'Active Now',
-          isCurrent: true,
+        address: {
+          currentAddress: {
+            line1: 'Joy Tech Park, Avinashi Road',
+            line2: 'Peelamedu',
+            city: 'Coimbatore',
+            state: 'Tamil Nadu',
+            postalCode: '641004',
+            country: 'India',
+          },
+          permanentAddress: {
+            line1: 'Joy Tech Park, Avinashi Road',
+            line2: 'Peelamedu',
+            city: 'Coimbatore',
+            state: 'Tamil Nadu',
+            postalCode: '641004',
+            country: 'India',
+          },
+          sameAsPermanent: true,
         },
-      ],
-      notificationPreferences: {
-        email: { leave: true, attendance: true, payroll: true, approvals: true, security: true },
-        sms: { leave: false, attendance: false, payroll: true, approvals: true, security: true },
-        whatsapp: { leave: true, attendance: false, payroll: true, approvals: true, security: true },
-        inApp: { leave: true, attendance: true, payroll: true, approvals: true, security: true },
-      },
-      recentActivity: [
-        {
-          id: `act-${Date.now()}`,
-          action: 'PROFILE_LOADED',
-          details: 'Profile workspace authenticated session initialized.',
-          timestamp: 'Just now',
-          actorName: displayName,
+        employment: {
+          employeeId: baseEmployee.id,
+          employeeCode: empCode,
+          legalEntityName: orgContext.activeLegalEntity.legal_name,
+          departmentName: baseEmployee.department_name || 'Platform Management',
+          designationTitle: primaryRole,
+          employmentType: 'Full Time',
+          joiningDate: '01 Jan 2024',
+          confirmationDate: '01 Jul 2024',
+          workLocation: 'Coimbatore HQ, Joy Tech Park',
+          reportingManagerName: isPlatformAdmin ? 'Board of Directors' : 'Executive Management',
+          hrbpName: 'HR Operations Desk',
+          status: 'Active',
         },
-      ],
-    };
+        bank: {
+          id: `bank-${user.id || '01'}`,
+          bankName: 'HDFC Bank',
+          accountNumberMasked: '•••• •••• 4521',
+          accountHolderName: displayName,
+          ifscCode: 'HDFC0001234',
+          branchName: 'Peelamedu, Coimbatore',
+          paymentMethod: 'Bank Transfer (NEFT/RTGS)',
+          isPrimary: true,
+        },
+        statutory: {
+          panMasked: 'ABCDE••••F',
+          uanMasked: '1012 •••• 7890',
+          pfNumber: 'TN/CBE/1234567/001',
+          pfStatus: 'Active',
+          pfJoiningDate: '01 Jan 2024',
+          esiNumberMasked: '3312 •••• 0001',
+          esiStatus: 'Not Applicable (Exempted)',
+          taxRegime: 'New',
+        },
+        nominees: [],
+        emergencyContacts: [],
+        documents: [],
+        sessions: [
+          {
+            id: 'sess-current',
+            deviceName: 'Desktop (Chrome on Windows)',
+            browserName: 'Google Chrome',
+            ipAddress: '192.168.1.100 (Internal)',
+            locationName: 'Coimbatore, India',
+            lastActive: 'Active Now',
+            isCurrent: true,
+          },
+        ],
+        notificationPreferences: {
+          email: { leave: true, attendance: true, payroll: true, approvals: true, security: true },
+          sms: { leave: false, attendance: false, payroll: true, approvals: true, security: true },
+          whatsapp: { leave: true, attendance: false, payroll: true, approvals: true, security: true },
+          inApp: { leave: true, attendance: true, payroll: true, approvals: true, security: true },
+        },
+        recentActivity: [
+          {
+            id: `act-${Date.now()}`,
+            action: 'PROFILE_LOADED',
+            details: 'Profile workspace authenticated session initialized.',
+            timestamp: 'Just now',
+            actorName: displayName,
+          },
+        ],
+      };
+    }
 
-    localStorage.setItem(storageKey, JSON.stringify(defaultProfile));
-    return defaultProfile;
+    // Always hydrate live documents from public.employee_documents
+    if (isSupabaseEnabled) {
+      try {
+        let empId = user.employee_id || finalProfile.employee?.id;
+        if (!empId) {
+          const { data: profileRow } = await supabase
+            .from('user_profiles')
+            .select('employee_id')
+            .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+            .maybeSingle();
+          empId = profileRow?.employee_id;
+        }
+
+        if (empId) {
+          const { data: docs, error: docErr } = await supabase
+            .from('employee_documents')
+            .select('*, document_types(id, name, code)')
+            .eq('employee_id', empId)
+            .order('created_at', { ascending: false });
+
+          if (!docErr && docs) {
+            finalProfile.documents = docs.map((d: any) => ({
+              id: d.id,
+              type: d.document_types?.name || d.file_name || 'Personal Document',
+              fileName: d.file_name || 'document.pdf',
+              fileUrl: d.storage_path || '',
+              fileSizeBytes: d.file_size_bytes ?? 0,
+              uploadedAt: d.created_at
+                ? new Date(d.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                : 'Recently',
+              verificationStatus: d.verification_status?.toUpperCase() === 'VERIFIED' ? 'Verified' : (d.verification_status?.toUpperCase() === 'REJECTED' ? 'Rejected' : 'Pending'),
+              category: 'Other',
+            } as DocumentRecord));
+          }
+        }
+      } catch (err) {
+        console.warn('[ProfileService] Live document fetch notice:', err);
+      }
+    }
+
+    localStorage.setItem(storageKey, JSON.stringify(finalProfile));
+    return finalProfile;
   }
 
   /**

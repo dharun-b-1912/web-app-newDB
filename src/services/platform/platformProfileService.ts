@@ -151,7 +151,7 @@ export const platformProfileService = {
         const activeUserId = authUserData?.user?.id;
 
         const query = supabase
-          .from('platform_profiles')
+          .from('platform_users')
           .select('*');
 
         const { data, error } = activeUserId
@@ -163,48 +163,20 @@ export const platformProfileService = {
             id: data.id,
             auth_user_id: data.auth_user_id || activeUserId,
             email: data.email || activeEmail,
-            first_name: data.first_name || '',
-            last_name: data.last_name || '',
-            display_name: data.display_name || `${data.first_name || ''} ${data.last_name || ''}`.trim() || 'Super Admin',
-            job_title: data.job_title || 'Platform Administrator',
-            department: data.department || 'Platform Operations',
-            phone: data.phone || '',
-            avatar_url: data.avatar_url || '',
-            timezone: data.timezone || 'Asia/Kolkata (IST)',
-            locale: data.locale || 'en-US',
-            is_primary_email_verified: data.is_primary_email_verified ?? true,
-            last_profile_update_at: data.last_profile_update_at || new Date().toISOString(),
+            first_name: data.full_name?.split(' ')[0] || '',
+            last_name: data.full_name?.split(' ').slice(1).join(' ') || '',
+            display_name: data.full_name || 'Super Admin',
+            job_title: 'Platform Administrator',
+            department: 'Platform Operations',
+            phone: '',
+            avatar_url: '',
+            timezone: 'Asia/Kolkata (IST)',
+            locale: 'en-US',
+            is_primary_email_verified: true,
+            last_profile_update_at: data.updated_at || new Date().toISOString(),
             created_at: data.created_at || new Date().toISOString(),
           };
           localStorage.setItem('workforce_platform_profile', JSON.stringify(cachedProfile));
-        } else if (activeEmail) {
-          // Check platform_staff table fallback
-          const { data: staffData } = await supabase
-            .from('platform_staff')
-            .select('*')
-            .or(`auth_user_id.eq.${activeUserId},email.eq.${activeEmail}`)
-            .maybeSingle();
-
-          if (staffData) {
-            cachedProfile = {
-              id: staffData.id,
-              auth_user_id: staffData.auth_user_id || activeUserId,
-              email: staffData.email || activeEmail,
-              first_name: staffData.first_name || '',
-              last_name: staffData.last_name || '',
-              display_name: staffData.name || `${staffData.first_name || ''} ${staffData.last_name || ''}`.trim() || 'Super Admin',
-              job_title: staffData.job_title || 'Platform Super Admin',
-              department: staffData.department || 'Platform Operations',
-              phone: staffData.phone || '',
-              avatar_url: staffData.avatar_url || '',
-              timezone: 'Asia/Kolkata (IST)',
-              locale: 'en-US',
-              is_primary_email_verified: true,
-              last_profile_update_at: new Date().toISOString(),
-              created_at: staffData.created_at || new Date().toISOString(),
-            };
-            localStorage.setItem('workforce_platform_profile', JSON.stringify(cachedProfile));
-          }
         }
       } catch (err) {
         console.warn('[PlatformProfileService] Supabase profile fetch warning:', err);
@@ -259,20 +231,12 @@ export const platformProfileService = {
           payload.id = updated.id;
         }
 
-        const { data: updateRes, error: updateErr } = await supabase
-          .from('platform_profiles')
-          .update(payload)
-          .eq('email', updated.email)
-          .select();
-
-        if (updateErr || !updateRes || updateRes.length === 0) {
-          await supabase.from('platform_profiles').upsert(payload, { onConflict: 'email' });
-        }
-
-        // Sync staff name
         await supabase
-          .from('platform_staff')
-          .update({ name: updated.display_name, updated_at: new Date().toISOString() })
+          .from('platform_users')
+          .update({
+            full_name: updated.display_name,
+            updated_at: new Date().toISOString(),
+          })
           .eq('email', updated.email);
       } catch (err) {
         console.warn('[PlatformProfileService] Error persisting profile update:', err);
@@ -357,21 +321,7 @@ export const platformProfileService = {
 
     cachedProfile.avatar_url = finalAvatarUrl;
     cachedProfile.last_profile_update_at = new Date().toISOString();
-
-    if (isSupabaseEnabled) {
-      try {
-        await supabase
-          .from('platform_profiles')
-          .update({
-            avatar_url: finalAvatarUrl,
-            last_profile_update_at: cachedProfile.last_profile_update_at,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('email', cachedProfile.email);
-      } catch (err) {
-        console.warn('[PlatformProfileService] Failed to update avatar_url column:', err);
-      }
-    }
+    localStorage.setItem('workforce_platform_profile', JSON.stringify(cachedProfile));
 
     await platformAuditService.logEvent({
       action: 'profile.avatar_changed',
@@ -389,17 +339,7 @@ export const platformProfileService = {
   async removeAvatar(): Promise<void> {
     cachedProfile.avatar_url = '';
     cachedProfile.last_profile_update_at = new Date().toISOString();
-
-    if (isSupabaseEnabled) {
-      try {
-        await supabase
-          .from('platform_profiles')
-          .update({ avatar_url: '', updated_at: new Date().toISOString() })
-          .eq('email', cachedProfile.email);
-      } catch (err) {
-        console.warn('[PlatformProfileService] Failed to remove avatar:', err);
-      }
-    }
+    localStorage.setItem('workforce_platform_profile', JSON.stringify(cachedProfile));
 
     await platformAuditService.logEvent({
       action: 'profile.avatar_removed',

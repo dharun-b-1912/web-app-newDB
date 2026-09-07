@@ -9,6 +9,9 @@ import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { hrEventBus } from './hrEventBus';
 import { logger } from './diagnostics/loggerService';
 import { realtimeChannelManager } from './realtime/realtimeChannelManager';
+import { leaveApi } from './leaveApi';
+import { attendanceRegularizationService } from './attendance/attendanceRegularizationService';
+import { notificationService } from './notification/notificationService';
 
 class RealtimeSyncEngine {
   private isInitialized: boolean = false;
@@ -76,25 +79,36 @@ class RealtimeSyncEngine {
     });
     this.disposers.push(unsubEmployees);
 
-    // 2. Realtime Outbox Mesh (Canonical Domain Events)
-    const unsubOutbox = realtimeChannelManager.subscribeToTable('realtime_outbox', (payload) => {
+    // 2. Attendance Regularizations (Canonical Table)
+    const unsubRegularization = realtimeChannelManager.subscribeToTable('attendance_regularizations', (payload) => {
+      logger.sync('REGULARIZATION_EVENT', {
+        table: 'attendance_regularizations',
+        operation: payload.eventType,
+        status: payload.new?.status,
+        metadata: { requestId: payload.new?.id || payload.old?.id },
+      } as any);
+
+      // Invalidate and refresh cache in background
+      attendanceRegularizationService.fetchRequestsFromDb().catch(() => {});
+
+      const row = payload.new || payload.old;
+      const status = (payload.new?.status || '').toUpperCase();
+
       if (payload.eventType === 'INSERT') {
-        const outboxRecord = payload.new;
-        if (outboxRecord?.event_type) {
-          logger.sync('OUTBOX_EVENT', {
-            action: outboxRecord.event_type,
-            organizationId: outboxRecord.organization_id,
-            status: 'RECEIVED',
-          });
-          hrEventBus.publish(outboxRecord.event_type, outboxRecord.payload, {
-            organizationId: outboxRecord.organization_id,
-            actorId: outboxRecord.actor_id,
-            eventId: outboxRecord.id,
-          });
+        hrEventBus.publish('regularization.submitted', row, { actorId: 'supabase-realtime' });
+      } else if (payload.eventType === 'UPDATE') {
+        if (status === 'APPROVED') {
+          hrEventBus.publish('regularization.approved', row, { actorId: 'supabase-realtime' });
+        } else if (status === 'REJECTED') {
+          hrEventBus.publish('regularization.rejected', row, { actorId: 'supabase-realtime' });
+        } else {
+          hrEventBus.publish('regularization.updated', row, { actorId: 'supabase-realtime' });
         }
+      } else if (payload.eventType === 'DELETE') {
+        hrEventBus.publish('regularization.updated', row, { actorId: 'supabase-realtime' });
       }
     });
-    this.disposers.push(unsubOutbox);
+    this.disposers.push(unsubRegularization);
 
     // 3. Daily Attendance (Flutter Mobile & Biometric Live Punches)
     const unsubAttendance = realtimeChannelManager.subscribeToTable('attendance_daily', (payload) => {
@@ -159,35 +173,42 @@ class RealtimeSyncEngine {
     });
     this.disposers.push(unsubAttendance);
 
-    // 4. Leave Requests
+    // 4. Leave Requests (Canonical Table)
     const unsubLeave = realtimeChannelManager.subscribeToTable('leave_requests', (payload) => {
+      // Revalidate in-memory/async leave cache
+      leaveApi.getLeaveRequestsAsync().catch(() => {});
+
+      const status = (payload.new?.status || '').toUpperCase();
       if (payload.eventType === 'INSERT') {
         hrEventBus.publish('leave.submitted', payload.new, { actorId: 'supabase-realtime' });
       } else if (payload.eventType === 'UPDATE') {
-        if (payload.new.status === 'Approved') {
+        if (status === 'APPROVED') {
           hrEventBus.publish('leave.approved', payload.new, { actorId: 'supabase-realtime' });
-        } else if (payload.new.status === 'Rejected') {
+        } else if (status === 'REJECTED') {
           hrEventBus.publish('leave.rejected', payload.new, { actorId: 'supabase-realtime' });
         } else {
           hrEventBus.publish('leave.submitted', payload.new, { actorId: 'supabase-realtime' });
         }
+        hrEventBus.publish('leave.updated', payload.new, { actorId: 'supabase-realtime' });
+      } else if (payload.eventType === 'DELETE') {
+        hrEventBus.publish('leave.deleted', payload.old, { actorId: 'supabase-realtime' });
       }
     });
     this.disposers.push(unsubLeave);
 
-    // 4b. Leave Entitlements
-    const unsubLeaveEnt = realtimeChannelManager.subscribeToTable('leave_entitlements', (payload) => {
+    // 4b. Leave Balances (Canonical Table)
+    const unsubLeaveEnt = realtimeChannelManager.subscribeToTable('leave_balances', (payload) => {
       hrEventBus.publish('leave.entitlement_updated', payload.new || payload.old, { actorId: 'supabase-realtime' });
     });
     this.disposers.push(unsubLeaveEnt);
 
-    // 4c. Leave Ledger
-    const unsubLeaveLed = realtimeChannelManager.subscribeToTable('leave_ledger_transactions', (payload) => {
+    // 4c. Leave Ledger (Canonical Table)
+    const unsubLeaveLed = realtimeChannelManager.subscribeToTable('leave_ledger_entries', (payload) => {
       hrEventBus.publish('leave.ledger_updated', payload.new || payload.old, { actorId: 'supabase-realtime' });
     });
     this.disposers.push(unsubLeaveLed);
 
-    // 4d. Leave Types (Realtime Sync with Flutter Mobile App & Master Config)
+    // 4d. Leave Types (Realtime Sync with Mobile App & Master Config)
     const unsubLeaveTypes = realtimeChannelManager.subscribeToTable('leave_types', (payload) => {
       const row = payload.new || payload.old;
       if (!row) return;
@@ -224,97 +245,45 @@ class RealtimeSyncEngine {
     });
     this.disposers.push(unsubLeaveTypes);
 
-    // 5. Document Master
-    const unsubDocuments = realtimeChannelManager.subscribeToTable('document_master', (payload) => {
-      const row = payload.new || payload.old;
-      if (!row) return;
-
-      const keys = ['workforce_document_master_v2', 'workforce_document_master_v2_org-joy-01'];
-      try {
-        const activeOrg = localStorage.getItem('workforce_active_org_id');
-        if (activeOrg) keys.push(`workforce_document_master_v2_${activeOrg}`);
-      } catch {}
-
-      if (payload.eventType === 'DELETE') {
-        for (const k of keys) {
-          try {
-            const list = JSON.parse(localStorage.getItem(k) || '[]');
-            localStorage.setItem(k, JSON.stringify(list.filter((d: any) => d.id !== row.id)));
-          } catch {}
-        }
-        hrEventBus.publish('document.deleted', row, { actorId: 'supabase-realtime' });
-      } else {
-        for (const k of keys) {
-          try {
-            const list = JSON.parse(localStorage.getItem(k) || '[]');
-            const idx = list.findIndex((d: any) => d.id === row.id);
-            if (idx >= 0) list[idx] = { ...list[idx], ...row };
-            else list.unshift(row);
-            localStorage.setItem(k, JSON.stringify(list));
-          } catch {}
-        }
-        if (payload.eventType === 'INSERT') {
-          hrEventBus.publish('document.created', row, { actorId: 'supabase-realtime' });
-        } else if (payload.eventType === 'UPDATE') {
-          if (row.verification_status === 'VERIFIED') {
-            hrEventBus.publish('document.verified', row, { actorId: 'supabase-realtime' });
-          } else if (row.verification_status === 'REJECTED') {
-            hrEventBus.publish('document.rejected', row, { actorId: 'supabase-realtime' });
-          } else {
-            hrEventBus.publish('document.updated', row, { actorId: 'supabase-realtime' });
-          }
-        }
-      }
-    });
-    this.disposers.push(unsubDocuments);
-
-    // 6. Employee Profile Media
-    const unsubMedia = realtimeChannelManager.subscribeToTable('employee_profile_media', (payload) => {
-      const row = payload.new;
-      if (row && payload.eventType === 'INSERT' && row.status === 'ACTIVE') {
-        hrEventBus.publish('employee.profile_photo.updated', {
-          tenant_id: row.tenant_id,
-          organization_id: row.organization_id,
-          employee_id: row.employee_id,
-          media_id: row.id,
-          media_version: row.media_version,
-          occurred_at: row.created_at,
-        }, { actorId: 'supabase-realtime' });
-      }
-    });
-    this.disposers.push(unsubMedia);
-
-    // 7. Attendance Shift Roster Entries (Sync with Mobile App & Multi-Device)
-    const unsubRoster = realtimeChannelManager.subscribeToTable('attendance_roster_entries', (payload) => {
+    // 5. Employee Shift Assignments (Canonical Table replacing roster)
+    const unsubShiftAssignments = realtimeChannelManager.subscribeToTable('employee_shift_assignments', (payload) => {
       const row = payload.new || payload.old;
       if (row) {
-        logger.sync('ROSTER_REALTIME_EVENT', {
-          table: 'attendance_roster_entries',
+        logger.sync('SHIFT_ASSIGNMENT_REALTIME_EVENT', {
+          table: 'employee_shift_assignments',
           operation: payload.eventType,
           employeeId: row.employee_id,
           status: 'RECEIVED',
         });
         hrEventBus.publish('roster.updated', row, { actorId: 'supabase-realtime' });
+        hrEventBus.publish('shift.assigned', row, { actorId: 'supabase-realtime' });
       }
     });
-    this.disposers.push(unsubRoster);
+    this.disposers.push(unsubShiftAssignments);
 
-    // 8. Document Requirements (Realtime Document Requests to Employee Mobile)
-    const unsubDocReq = realtimeChannelManager.subscribeToTable('document_requirements', (payload) => {
+    // 6. Employee Documents (Canonical Table)
+    const unsubDocReq = realtimeChannelManager.subscribeToTable('employee_documents', (payload) => {
       const row = payload.new || payload.old;
       if (row) {
         logger.sync('DOCUMENT_REQUIREMENT_EVENT', {
-          table: 'document_requirements',
+          table: 'employee_documents',
           operation: payload.eventType,
           employeeId: row.employee_id,
           status: 'RECEIVED',
         });
-        hrEventBus.publish('document.updated', row, { actorId: 'supabase-realtime' });
+        const status = (row.verification_status || row.status || '').toUpperCase();
+        if (status === 'VERIFIED') {
+          hrEventBus.publish('document.verified', row, { actorId: 'supabase-realtime' });
+        } else if (status === 'REJECTED') {
+          hrEventBus.publish('document.rejected', row, { actorId: 'supabase-realtime' });
+        } else {
+          hrEventBus.publish('document.updated', row, { actorId: 'supabase-realtime' });
+        }
       }
     });
     this.disposers.push(unsubDocReq);
 
-    // 9. Work Locations & Geofences Master
+    // 7. Work Locations & Geofences Master (Canonical Table)
     const unsubWorkLocations = realtimeChannelManager.subscribeToTable('work_locations', (payload) => {
       const row = payload.new || payload.old;
       if (row) {
@@ -341,61 +310,56 @@ class RealtimeSyncEngine {
     });
     this.disposers.push(unsubWorkLocations);
 
-    // 10. Employee Work Location Assignments
-    const unsubEmpWorkLocations = realtimeChannelManager.subscribeToTable('employee_work_location_assignments', (payload) => {
+    // 8. Payslips (Canonical Table)
+    const unsubPayslips = realtimeChannelManager.subscribeToTable('payslips', (payload) => {
       const row = payload.new || payload.old;
       if (row) {
-        logger.sync('EMP_WORK_LOCATION_EVENT', {
-          table: 'employee_work_location_assignments',
+        logger.sync('PAYSLIP_REALTIME_EVENT', {
+          table: 'payslips',
           operation: payload.eventType,
           employeeId: row.employee_id,
           status: 'RECEIVED',
         });
-        try {
-          const k = `workforceos_emp_work_locations_v2_${row.organization_id || 'org-joy-01'}`;
-          const list = JSON.parse(localStorage.getItem(k) || '[]');
-          if (payload.eventType === 'DELETE') {
-            localStorage.setItem(k, JSON.stringify(list.filter((a: any) => a.id !== row.id)));
-          } else {
-            const idx = list.findIndex((a: any) => a.id === row.id);
-            if (idx >= 0) list[idx] = { ...list[idx], ...row };
-            else list.push(row);
-            localStorage.setItem(k, JSON.stringify(list));
-          }
-        } catch (_) {}
-        hrEventBus.publish('location.assignment_updated', row, { actorId: 'supabase-realtime' });
+        hrEventBus.publish('payroll.payslip_published', row, { actorId: 'supabase-realtime' });
       }
     });
-    this.disposers.push(unsubEmpWorkLocations);
+    this.disposers.push(unsubPayslips);
 
-    // 11. Attendance Location Events & GPS Audit Logs
-    const unsubLocEvents = realtimeChannelManager.subscribeToTable('attendance_location_events', (payload) => {
-      const row = payload.new;
-      if (row && payload.eventType === 'INSERT') {
-        logger.sync('LOCATION_AUDIT_EVENT', {
-          table: 'attendance_location_events',
+    // 9. Employee Requests (Canonical Table)
+    const unsubEmployeeRequests = realtimeChannelManager.subscribeToTable('employee_requests', (payload) => {
+      const row = payload.new || payload.old;
+      if (row) {
+        logger.sync('EMPLOYEE_REQUEST_EVENT', {
+          table: 'employee_requests',
           operation: payload.eventType,
           employeeId: row.employee_id,
-          metadata: { eventId: row.id },
           status: 'RECEIVED',
         });
-        try {
-          const k = `workforceos_location_events_v2_${row.organization_id || 'org-joy-01'}`;
-          const list = JSON.parse(localStorage.getItem(k) || '[]');
-          list.unshift(row);
-          if (list.length > 500) list.length = 500;
-          localStorage.setItem(k, JSON.stringify(list));
-        } catch (_) {}
-        hrEventBus.publish('attendance.location_event_created', row, { actorId: 'supabase-realtime' });
+        hrEventBus.publish('employee_request.updated', row, { actorId: 'supabase-realtime' });
       }
     });
-    this.disposers.push(unsubLocEvents);
+    this.disposers.push(unsubEmployeeRequests);
+
+    // 10. Notification Events (Canonical Table)
+    const unsubNotificationEvents = realtimeChannelManager.subscribeToTable('notification_events', (payload) => {
+      const row = payload.new || payload.old;
+      if (row) {
+        logger.sync('NOTIFICATION_REALTIME_EVENT', {
+          table: 'notification_events',
+          operation: payload.eventType,
+          type: row.event_type,
+          status: 'RECEIVED',
+          metadata: { recipientId: row.recipient_user_id },
+        } as any);
+        hrEventBus.publish('notification.received', row, { actorId: 'supabase-realtime' });
+      }
+    });
+    this.disposers.push(unsubNotificationEvents);
   }
 
   private setupAutoSyncPolling(): void {
     if (this.pollingTimer) clearInterval(this.pollingTimer);
     this.pollingTimer = null;
-    // WebSockets via realtimeChannelManager provide live instant sync with zero excess egress.
   }
 
   public destroy(): void {
@@ -415,3 +379,4 @@ class RealtimeSyncEngine {
 }
 
 export const realtimeSyncEngine = new RealtimeSyncEngine();
+

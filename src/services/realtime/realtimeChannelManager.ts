@@ -6,7 +6,7 @@
 // ============================================================
 
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { supabase, isSupabaseEnabled, supabaseProject } from '../../lib/supabase';
 import { logger } from '../diagnostics/loggerService';
 import { CorrelationService } from '../diagnostics/correlationService';
 import { hrEventBus } from '../hrEventBus';
@@ -214,23 +214,25 @@ class RealtimeChannelManager {
           info.error = undefined;
           this.setGlobalStatus('SUBSCRIBED');
           logger.realtime('SUBSCRIBED', {
+            project: supabaseProject,
             table,
             status: 'SUBSCRIBED',
             message: `Channel ${channelName} is live and subscribed`,
           });
         } else if (status === 'CLOSED') {
           info.status = 'DISCONNECTED';
-          logger.realtime('CLOSED', { table, status: 'CLOSED' });
+          logger.realtime('CLOSED', { project: supabaseProject, table, status: 'CLOSED' });
         } else if (status === 'CHANNEL_ERROR') {
           info.status = 'CHANNEL_ERROR';
           info.error = err?.message || 'Subscription failed';
           logger.error('REALTIME', 'CHANNEL_ERROR', err, {
+            project: supabaseProject,
             table,
             message: `Channel ${channelName} encountered error: ${err?.message}`,
           });
         } else if (status === 'TIMED_OUT') {
           info.status = 'TIMED_OUT';
-          logger.realtime('TIMED_OUT', { table, status: 'TIMED_OUT' });
+          logger.realtime('TIMED_OUT', { project: supabaseProject, table, status: 'TIMED_OUT' });
         }
         this.notifyStatusListeners();
       });

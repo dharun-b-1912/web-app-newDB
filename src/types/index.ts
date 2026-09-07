@@ -215,6 +215,9 @@ export interface Location {
   floor?: string;
   area?: string;
   address: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  geofence_radius_meters?: number;
   is_active?: boolean;
   created_at?: string;
 }

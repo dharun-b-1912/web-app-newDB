@@ -8,6 +8,7 @@ import { hrEventBus } from './hrEventBus';
 import { profileService, FullProfileContext } from './profileService';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
 import { getActiveOrgId } from './attendance/biometricCommandService';
+import { supabase, isSupabaseEnabled } from '../lib/supabase';
 
 export interface PendingTaskItem {
   id: string;
@@ -231,19 +232,59 @@ export const workspaceService = {
     };
   },
 
-  // Interactive Punch In
-  punchIn(employee: Employee | null, user: User): AttendanceDaily {
+  // Interactive Punch In via Server-Side Authoritative RPC
+  async punchIn(
+    employee: Employee | null, 
+    user: User, 
+    coords?: { latitude: number; longitude: number; accuracy?: number }
+  ): Promise<AttendanceDaily> {
     const empId = employee?.id || user.employee_id || user.id;
     const empName = employee ? `${employee.first_name} ${employee.last_name}` : user.name;
+
+    if (isSupabaseEnabled && coords?.latitude !== undefined && coords?.longitude !== undefined) {
+      const { data: punchRes, error: rpcErr } = await supabase.rpc('fn_record_attendance_punch', {
+        p_latitude: coords.latitude,
+        p_longitude: coords.longitude,
+        p_accuracy: coords.accuracy || 20.0,
+        p_punch_type: 'IN',
+        p_reason: null,
+        p_device_info: { client: 'WEB_ESS' },
+      });
+
+      if (rpcErr) {
+        throw new Error(rpcErr.message || 'Check-In failed.');
+      }
+    }
 
     const record = attendanceApi.checkIn(empId, empName, 'WEB');
     hrEventBus.publish('attendance.recorded', record, { actorId: user.id });
     return record;
   },
 
-  // Interactive Punch Out
-  punchOut(employee: Employee | null, user: User): AttendanceDaily | null {
+  // Interactive Punch Out via Server-Side Authoritative RPC
+  async punchOut(
+    employee: Employee | null, 
+    user: User, 
+    coords?: { latitude: number; longitude: number; accuracy?: number },
+    reason?: string
+  ): Promise<AttendanceDaily | null> {
     const empId = employee?.id || user.employee_id || user.id;
+
+    if (isSupabaseEnabled && coords?.latitude !== undefined && coords?.longitude !== undefined) {
+      const { data: punchRes, error: rpcErr } = await supabase.rpc('fn_record_attendance_punch', {
+        p_latitude: coords.latitude,
+        p_longitude: coords.longitude,
+        p_accuracy: coords.accuracy || 20.0,
+        p_punch_type: 'OUT',
+        p_reason: reason ? reason.trim() : null,
+        p_device_info: { client: 'WEB_ESS' },
+      });
+
+      if (rpcErr) {
+        throw new Error(rpcErr.message || 'Check-Out failed.');
+      }
+    }
+
     const record = attendanceApi.checkOut(empId);
     if (record) {
       hrEventBus.publish('attendance.updated', record, { actorId: user.id });

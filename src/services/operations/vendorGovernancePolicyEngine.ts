@@ -257,12 +257,12 @@ class VendorGovernancePolicyEngine {
 
     try {
       await supabase
-        .from('vendor_commercial_agreements')
+        .from('vendors')
         .update({
           status: params.targetStatus,
           updated_at: new Date().toISOString(),
         })
-        .eq('vendor_id', params.vendorId);
+        .eq('id', params.vendorId);
 
       await enterpriseNotificationEngine.dispatchEvent({
         organizationId: params.organizationId,

@@ -156,14 +156,18 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         supabase
           .from('attendance_daily')
           .select('*')
-          .eq('date', selectedDate)
+          .eq('attendance_date', selectedDate)
       )
         .then(({ data, error }: any) => {
           if (!error && Array.isArray(data)) {
             try {
+              const mappedData = data.map((d: any) => ({
+                ...d,
+                date: d.attendance_date || d.date,
+              }));
               const currentList = JSON.parse(localStorage.getItem('workforceos_attendance_daily_v2') || '[]');
-              const otherDatesList = currentList.filter((a: any) => a.date !== selectedDate);
-              const merged = [...data, ...otherDatesList];
+              const otherDatesList = currentList.filter((a: any) => (a.date || a.attendance_date) !== selectedDate);
+              const merged = [...mappedData, ...otherDatesList];
               
               const getAttendanceKeys = () => {
                 const s = new Set([

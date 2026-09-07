@@ -1,13 +1,14 @@
 // src/services/location/workLocationService.ts
 // ============================================================================
 // Joy PeopleHR — Enterprise Multi-Tenant Work Location & Geofence Service
-// Features: Dynamic Location Master, Employee Location Assignments, Configurable Radii,
-// Haversine Spherical Distance Math, Geofence Decision Engine, Violation Tracking
+// Canonical Supabase Project: ysiajemrqakfngasehhi
+// PostgreSQL Table: public.work_locations (id, organization_id, branch_id, name, address_line1, latitude, longitude, geofence_radius_meters, is_geofencing_enabled, is_active)
 // ============================================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { getActiveOrgId } from '../attendance/biometricCommandService';
 import { hrEventBus } from '../hrEventBus';
+import { ensureUUID, isValidUUID } from '../api';
 
 export type LocationType =
   | 'OFFICE'
@@ -64,6 +65,7 @@ export interface WorkLocation {
   id: string;
   tenant_id: string;
   organization_id: string;
+  branch_id?: string;
   name: string;
   code: string;
   location_type: LocationType;
@@ -156,7 +158,7 @@ const SEED_WORK_LOCATIONS: WorkLocation[] = [];
 
 class WorkLocationService {
   private getStorageKey(base: string, tenantId = getActiveOrgId()): string {
-    return `${base}_${tenantId}`;
+    return `${base}_${tenantId || 'global'}`;
   }
 
   private loadStore<T>(baseKey: string, fallback: T, tenantId = getActiveOrgId()): T {
@@ -181,8 +183,72 @@ class WorkLocationService {
       const key = this.getStorageKey(baseKey, tenantId);
       localStorage.setItem(key, JSON.stringify(data));
     } catch (e) {
-      console.warn('Failed to save to localStorage', e);
+      console.warn('[WorkLocationService] Failed to save to localStorage:', e);
     }
+  }
+
+  /**
+   * Resolves canonical active organization ID from auth session or context.
+   */
+  public async resolveActiveOrgId(overrideOrgId?: string): Promise<string> {
+    if (overrideOrgId && isValidUUID(overrideOrgId)) {
+      return overrideOrgId;
+    }
+
+    const contextOrg = getActiveOrgId();
+    if (contextOrg && isValidUUID(contextOrg)) {
+      return contextOrg;
+    }
+
+    if (isSupabaseEnabled) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const authUser = sessionData?.session?.user;
+        if (authUser) {
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('organization_id')
+            .eq('auth_user_id', authUser.id)
+            .maybeSingle();
+
+          if (profile?.organization_id && isValidUUID(profile.organization_id)) {
+            return profile.organization_id;
+          }
+        }
+      } catch (err) {
+        console.warn('[WorkLocationService] Org resolution error:', err);
+      }
+    }
+
+    return '0c621892-e938-4707-9957-13534ea32c19'; // Canonical Joy Corporate Solutions Org ID fallback
+  }
+
+  /**
+   * Resolves a valid branch ID for the given organization.
+   */
+  public async resolveBranchId(orgId: string, overrideBranchId?: string): Promise<string> {
+    if (overrideBranchId && isValidUUID(overrideBranchId)) {
+      return overrideBranchId;
+    }
+
+    if (isSupabaseEnabled) {
+      try {
+        const { data: branches, error } = await supabase
+          .from('branches')
+          .select('id')
+          .eq('organization_id', orgId)
+          .order('created_at', { ascending: true })
+          .limit(1);
+
+        if (!error && branches && branches.length > 0) {
+          return branches[0].id;
+        }
+      } catch (err) {
+        console.warn('[WorkLocationService] Branch resolution error:', err);
+      }
+    }
+
+    return 'fc1782e6-fb46-47e8-a428-9da95e5a4f6f'; // Canonical Carenow Branch ID fallback
   }
 
   // ==========================================================================
@@ -194,26 +260,35 @@ class WorkLocationService {
     return onlyActive ? list.filter((l) => l.is_active) : list;
   }
 
-  async fetchLocationsFromDb(tenantId = getActiveOrgId()): Promise<WorkLocation[]> {
+  async fetchLocationsFromDb(tenantId?: string): Promise<WorkLocation[]> {
+    const effectiveOrgId = await this.resolveActiveOrgId(tenantId);
+
     if (!isSupabaseEnabled) {
-      return this.getLocations(tenantId, false);
+      return this.getLocations(effectiveOrgId, false);
     }
+
     try {
-      // 1. Fetch work_locations from DB
+      // Fetch work_locations from DB with RLS
       const { data, error } = await supabase
         .from('work_locations')
         .select('*')
         .order('name', { ascending: true });
 
-      if (!error && data !== null && data.length > 0) {
+      if (error) {
+        console.error('[Supabase WorkLocation] fetch error:', error);
+        throw error;
+      }
+
+      if (data !== null) {
         const locations: WorkLocation[] = data.map((d: any) => ({
           id: d.id,
-          tenant_id: d.tenant_id || tenantId,
-          organization_id: d.organization_id || tenantId,
+          tenant_id: d.organization_id || effectiveOrgId,
+          organization_id: d.organization_id || effectiveOrgId,
+          branch_id: d.branch_id,
           name: d.name,
-          code: d.code,
+          code: d.code || `LOC-${d.id.slice(0, 4).toUpperCase()}`,
           location_type: d.location_type || 'OFFICE',
-          address: d.address || '',
+          address: d.address_line1 || d.address || '',
           city: d.city,
           state: d.state,
           country: d.country,
@@ -233,47 +308,15 @@ class WorkLocationService {
           created_at: d.created_at || new Date().toISOString(),
           updated_at: d.updated_at || new Date().toISOString(),
         }));
-        this.saveStore(STORAGE_KEY_LOCATIONS, locations, tenantId);
-        return locations;
-      }
 
-      // 2. If table empty, also check branches table to bridge existing branches automatically
-      const { data: branchData } = await supabase.from('branches').select('*');
-      if (branchData && branchData.length > 0) {
-        const bridgedLocs: WorkLocation[] = branchData.map((b: any, idx: number) => ({
-          id: `loc-${b.code?.toLowerCase() || b.id}`,
-          tenant_id: tenantId,
-          organization_id: tenantId,
-          name: b.name,
-          code: b.code || `LOC-${idx + 1}`,
-          location_type: (b.branch_type as LocationType) || 'OFFICE',
-          address: b.address || `${b.city || 'Coimbatore'}, ${b.state || 'TN'}`,
-          city: b.city || 'Coimbatore',
-          state: b.state || 'Tamil Nadu',
-          country: b.country || 'India',
-          postal_code: b.postal_code || '641014',
-          latitude: b.latitude ? Number(b.latitude) : 11.0844364 + idx * 0.04,
-          longitude: b.longitude ? Number(b.longitude) : 77.1262627 + idx * 0.03,
-          geofence_radius_meters: 100,
-          accuracy_requirement_meters: 50,
-          location_max_age_seconds: 60,
-          timezone: b.timezone || 'Asia/Kolkata',
-          ip_ranges: [],
-          bssid_list: [],
-          qr_code_enabled: true,
-          biometric_enabled: true,
-          is_active: true,
-          version: 1,
-          created_at: b.created_at || new Date().toISOString(),
-          updated_at: b.updated_at || new Date().toISOString(),
-        }));
-        this.saveStore(STORAGE_KEY_LOCATIONS, bridgedLocs, tenantId);
-        return bridgedLocs;
+        this.saveStore(STORAGE_KEY_LOCATIONS, locations, effectiveOrgId);
+        return locations;
       }
     } catch (err) {
       console.warn('[Supabase WorkLocation] fetchLocationsFromDb fallback:', err);
     }
-    return this.getLocations(tenantId, false);
+
+    return this.getLocations(effectiveOrgId, false);
   }
 
   getLocationById(id: string, tenantId = getActiveOrgId()): WorkLocation | null {
@@ -281,202 +324,235 @@ class WorkLocationService {
     return list.find((l) => l.id === id) || null;
   }
 
-  saveLocation(location: Partial<WorkLocation>, tenantId = getActiveOrgId()): WorkLocation {
+  async saveLocation(location: Partial<WorkLocation>, tenantId?: string): Promise<WorkLocation> {
     // Validate coordinates
     if (location.latitude !== undefined && location.longitude !== undefined) {
-      if (!isValidGeoPoint({ latitude: location.latitude, longitude: location.longitude })) {
-        throw new Error(`Invalid geographic coordinates: (${location.latitude}, ${location.longitude}). Latitude must be between -90 and 90, Longitude between -180 and 180.`);
+      if (!isValidGeoPoint({ latitude: Number(location.latitude), longitude: Number(location.longitude) })) {
+        throw new Error(`Invalid coordinates: (${location.latitude}, ${location.longitude}). Latitude must be -90 to 90, Longitude must be -180 to 180.`);
       }
     }
 
-    const list = this.getLocations(tenantId, false);
+    if (location.geofence_radius_meters !== undefined && Number(location.geofence_radius_meters) <= 0) {
+      throw new Error('Geofence radius must be a positive number greater than 0 meters.');
+    }
+
+    const effectiveOrgId = await this.resolveActiveOrgId(tenantId || location.organization_id);
+    const effectiveBranchId = await this.resolveBranchId(effectiveOrgId, location.branch_id);
+
     const now = new Date().toISOString();
+    const targetId = ensureUUID(location.id);
 
-    if (location.id) {
-      const idx = list.findIndex((l) => l.id === location.id);
-      if (idx >= 0) {
-        const updated: WorkLocation = {
-          ...list[idx],
-          ...location,
-          version: (list[idx].version || 1) + 1,
-          updated_at: now,
-        };
-        list[idx] = updated;
-        this.saveStore(STORAGE_KEY_LOCATIONS, list, tenantId);
-
-        if (isSupabaseEnabled) {
-          Promise.resolve(
-            supabase.from('work_locations').upsert({
-              id: updated.id,
-              tenant_id: tenantId,
-              organization_id: tenantId,
-              name: updated.name,
-              code: updated.code,
-              location_type: updated.location_type,
-              address: updated.address,
-              city: updated.city,
-              state: updated.state,
-              country: updated.country,
-              postal_code: updated.postal_code,
-              latitude: updated.latitude,
-              longitude: updated.longitude,
-              geofence_radius_meters: updated.geofence_radius_meters,
-              accuracy_requirement_meters: updated.accuracy_requirement_meters,
-              location_max_age_seconds: updated.location_max_age_seconds,
-              timezone: updated.timezone,
-              is_active: updated.is_active,
-              version: updated.version,
-              updated_at: now,
-            })
-          ).catch((e: any) => console.warn('[Supabase WorkLocation] update failed:', e));
-        }
-
-        hrEventBus.publish('location.updated', updated);
-        return updated;
-      }
-    }
-
-    // Create New Location
-    const created: WorkLocation = {
-      id: location.id || `loc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      tenant_id: tenantId,
-      organization_id: tenantId,
-      name: location.name || 'New Work Location',
-      code: location.code || `LOC-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+    const record: WorkLocation = {
+      id: targetId,
+      tenant_id: effectiveOrgId,
+      organization_id: effectiveOrgId,
+      branch_id: effectiveBranchId,
+      name: (location.name || 'New Work Location').trim(),
+      code: location.code || `LOC-${targetId.slice(0, 4).toUpperCase()}`,
       location_type: location.location_type || 'OFFICE',
-      address: location.address || '',
-      city: location.city || '',
-      state: location.state || '',
+      address: location.address || (location as any).address_line1 || location.name || 'Office Address',
+      city: location.city || 'Coimbatore',
+      state: location.state || 'Tamil Nadu',
       country: location.country || 'India',
-      postal_code: location.postal_code || '',
-      latitude: location.latitude ?? 11.0844364,
-      longitude: location.longitude ?? 77.1262627,
-      geofence_radius_meters: location.geofence_radius_meters ?? 100.00,
-      accuracy_requirement_meters: location.accuracy_requirement_meters ?? 50.00,
-      location_max_age_seconds: location.location_max_age_seconds ?? 60,
+      postal_code: location.postal_code || '641014',
+      latitude: Number(location.latitude ?? 11.0844364),
+      longitude: Number(location.longitude ?? 77.1262627),
+      geofence_radius_meters: Number(location.geofence_radius_meters ?? 100),
+      accuracy_requirement_meters: Number(location.accuracy_requirement_meters ?? 50),
+      location_max_age_seconds: Number(location.location_max_age_seconds ?? 60),
       timezone: location.timezone || 'Asia/Kolkata',
       is_active: location.is_active ?? true,
-      version: 1,
-      created_at: now,
+      version: (location.version || 0) + 1,
+      created_at: location.created_at || now,
       updated_at: now,
     };
 
-    list.push(created);
-    this.saveStore(STORAGE_KEY_LOCATIONS, list, tenantId);
-
     if (isSupabaseEnabled) {
-      Promise.resolve(
-        supabase.from('work_locations').upsert({
-          id: created.id,
-          tenant_id: tenantId,
-          organization_id: tenantId,
-          name: created.name,
-          code: created.code,
-          location_type: created.location_type,
-          address: created.address,
-          city: created.city,
-          state: created.state,
-          country: created.country,
-          postal_code: created.postal_code,
-          latitude: created.latitude,
-          longitude: created.longitude,
-          geofence_radius_meters: created.geofence_radius_meters,
-          accuracy_requirement_meters: created.accuracy_requirement_meters,
-          location_max_age_seconds: created.location_max_age_seconds,
-          timezone: created.timezone,
-          is_active: created.is_active,
-          version: created.version,
-          created_at: now,
-          updated_at: now,
-        })
-      ).catch((e: any) => console.warn('[Supabase WorkLocation] insert failed:', e));
+      const dbPayload = {
+        id: record.id,
+        organization_id: effectiveOrgId,
+        branch_id: effectiveBranchId,
+        name: record.name,
+        address_line1: record.address,
+        latitude: record.latitude,
+        longitude: record.longitude,
+        geofence_radius_meters: record.geofence_radius_meters,
+        is_geofencing_enabled: true,
+        is_active: record.is_active,
+        updated_at: now,
+      };
+
+      const { data, error } = await supabase
+        .from('work_locations')
+        .upsert(dbPayload)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[Supabase WorkLocation] Persistence Error:', error);
+        if (error.code === '23505') {
+          throw new Error(`A work location with the name "${record.name}" already exists.`);
+        }
+        if (error.code === '42501') {
+          throw new Error('Access denied: You do not have permission to manage work locations.');
+        }
+        throw new Error(error.message || 'Failed to persist work location to database.');
+      }
+
+      if (data) {
+        record.id = data.id;
+        record.created_at = data.created_at || record.created_at;
+        record.updated_at = data.updated_at || record.updated_at;
+      }
     }
 
-    hrEventBus.publish('location.created', created);
-    return created;
+    // Update local cache
+    const list = this.getLocations(effectiveOrgId, false);
+    const existingIndex = list.findIndex((l) => l.id === record.id);
+    if (existingIndex >= 0) {
+      list[existingIndex] = record;
+    } else {
+      list.push(record);
+    }
+    this.saveStore(STORAGE_KEY_LOCATIONS, list, effectiveOrgId);
+
+    hrEventBus.publish('location.saved', record);
+    return record;
   }
 
-  toggleLocationActive(id: string, active: boolean, tenantId = getActiveOrgId()): boolean {
-    const list = this.getLocations(tenantId, false);
-    const item = list.find((l) => l.id === id);
-    if (!item) return false;
-    item.is_active = active;
-    item.updated_at = new Date().toISOString();
-    this.saveStore(STORAGE_KEY_LOCATIONS, list, tenantId);
+  async toggleLocationActive(id: string, active: boolean, tenantId?: string): Promise<boolean> {
+    const effectiveOrgId = await this.resolveActiveOrgId(tenantId);
+    const now = new Date().toISOString();
 
     if (isSupabaseEnabled) {
-      Promise.resolve(
-        supabase.from('work_locations').update({ is_active: active, updated_at: item.updated_at }).eq('id', id)
-      ).catch((e: any) => console.warn('[Supabase WorkLocation] toggleActive failed:', e));
+      const { error } = await supabase
+        .from('work_locations')
+        .update({ is_active: active, updated_at: now })
+        .eq('id', ensureUUID(id));
+
+      if (error) {
+        console.error('[Supabase WorkLocation] toggleActive error:', error);
+        throw new Error(error.message || 'Failed to update location status.');
+      }
     }
 
-    hrEventBus.publish('location.updated', item);
+    const list = this.getLocations(effectiveOrgId, false);
+    const item = list.find((l) => l.id === id);
+    if (item) {
+      item.is_active = active;
+      item.updated_at = now;
+      this.saveStore(STORAGE_KEY_LOCATIONS, list, effectiveOrgId);
+      hrEventBus.publish('location.updated', item);
+    }
     return true;
   }
 
-  deleteLocation(id: string, tenantId = getActiveOrgId()): boolean {
-    let list = this.getLocations(tenantId, false);
-    const initialLen = list.length;
-    list = list.filter((l) => l.id !== id);
-    if (list.length !== initialLen) {
-      this.saveStore(STORAGE_KEY_LOCATIONS, list, tenantId);
+  async deleteLocation(id: string, tenantId?: string): Promise<boolean> {
+    const effectiveOrgId = await this.resolveActiveOrgId(tenantId);
 
-      if (isSupabaseEnabled) {
-        Promise.resolve(supabase.from('work_locations').delete().eq('id', id)).catch((e: any) =>
-          console.warn('[Supabase WorkLocation] delete failed:', e)
-        );
+    if (isSupabaseEnabled) {
+      const { error } = await supabase
+        .from('work_locations')
+        .delete()
+        .eq('id', ensureUUID(id));
+
+      if (error) {
+        console.error('[Supabase WorkLocation] delete error:', error);
+        if (error.code === '23503') {
+          throw new Error('This location is currently referenced by other active records and cannot be deleted.');
+        }
+        throw new Error(error.message || 'Failed to delete work location.');
       }
-
-      hrEventBus.publish('location.deleted', { id });
-      return true;
     }
-    return false;
+
+    let list = this.getLocations(effectiveOrgId, false);
+    list = list.filter((l) => l.id !== id);
+    this.saveStore(STORAGE_KEY_LOCATIONS, list, effectiveOrgId);
+
+    hrEventBus.publish('location.deleted', { id });
+    return true;
   }
 
   // ==========================================================================
-  // 2. EMPLOYEE LOCATION ASSIGNMENTS
+  // 2. EMPLOYEE LOCATION ASSIGNMENTS (STAFF MAPPING)
   // ==========================================================================
 
-  async fetchAssignmentsFromDb(tenantId = getActiveOrgId()): Promise<EmployeeWorkLocationAssignment[]> {
-    if (!isSupabaseEnabled) {
-      return this.getAllAssignments(tenantId);
-    }
-    try {
-      const { data, error } = await supabase
-        .from('employee_work_location_assignments')
-        .select('*')
-        .eq('is_active', true);
+  async fetchAssignmentsFromDb(tenantId?: string): Promise<EmployeeWorkLocationAssignment[]> {
+    const effectiveOrgId = await this.resolveActiveOrgId(tenantId);
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase
+          .from('employee_work_location_assignments')
+          .select('*')
+          .eq('is_active', true);
 
-      if (!error && data !== null) {
-        const assignments: EmployeeWorkLocationAssignment[] = data.map((d: any) => ({
-          id: d.id,
-          tenant_id: d.tenant_id || tenantId,
-          organization_id: d.organization_id || tenantId,
-          employee_id: d.employee_id,
-          work_location_id: d.work_location_id,
-          is_primary: d.is_primary ?? true,
-          attendance_allowed: d.attendance_allowed ?? true,
-          effective_from: d.effective_from || new Date().toISOString().split('T')[0],
-          is_active: d.is_active ?? true,
-          created_at: d.created_at || new Date().toISOString(),
-          updated_at: d.updated_at || new Date().toISOString(),
-        }));
-        this.saveStore(STORAGE_KEY_ASSIGNMENTS, assignments, tenantId);
-        return assignments;
+        if (!error && Array.isArray(data)) {
+          const mapped: EmployeeWorkLocationAssignment[] = data.map((d: any) => ({
+            id: d.id,
+            tenant_id: d.organization_id || effectiveOrgId,
+            organization_id: d.organization_id || effectiveOrgId,
+            employee_id: d.employee_id,
+            work_location_id: d.work_location_id,
+            is_primary: Boolean(d.is_primary),
+            attendance_allowed: Boolean(d.attendance_allowed),
+            effective_from: d.effective_from,
+            effective_to: d.effective_to,
+            is_active: Boolean(d.is_active),
+            created_at: d.created_at,
+            updated_at: d.updated_at,
+          }));
+          this.saveStore(STORAGE_KEY_ASSIGNMENTS, mapped, effectiveOrgId);
+          return mapped;
+        }
+      } catch (err) {
+        console.warn('[Supabase WorkLocation] fetchAssignmentsFromDb error:', err);
       }
-    } catch (err) {
-      console.warn('[Supabase WorkLocation] fetchAssignmentsFromDb fallback:', err);
     }
-    return this.getAllAssignments(tenantId);
+    return this.getAllAssignments(effectiveOrgId);
+  }
+
+  async fetchMyAssignedLocationsFromDb(): Promise<WorkLocation[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase.rpc('fn_get_my_assigned_work_locations');
+        if (!error && Array.isArray(data) && data.length > 0) {
+          return data.map((d: any) => ({
+            id: d.id,
+            tenant_id: d.organization_id,
+            organization_id: d.organization_id,
+            branch_id: d.branch_id,
+            name: d.name,
+            code: `LOC-${d.id.slice(0, 4).toUpperCase()}`,
+            location_type: 'OFFICE' as LocationType,
+            address: d.address_line1 || '',
+            latitude: Number(d.latitude),
+            longitude: Number(d.longitude),
+            geofence_radius_meters: Number(d.geofence_radius_meters) || 100,
+            accuracy_requirement_meters: 50,
+            location_max_age_seconds: 60,
+            timezone: 'Asia/Kolkata',
+            is_active: Boolean(d.is_active),
+            version: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }));
+        }
+      } catch (err) {
+        console.warn('[WorkLocationService] fetchMyAssignedLocationsFromDb fallback:', err);
+      }
+    }
+    return this.getLocations(getActiveOrgId(), true);
   }
 
   getEmployeeAuthorizedLocations(employeeId: string, tenantId = getActiveOrgId()): WorkLocation[] {
     const allLocations = this.getLocations(tenantId, true);
     const assignments = this.loadStore<EmployeeWorkLocationAssignment[]>(STORAGE_KEY_ASSIGNMENTS, [], tenantId);
-    const empAssignments = assignments.filter((a) => (a.employee_id === employeeId || a.employee_id === String(employeeId)) && a.is_active && a.attendance_allowed);
+    const empAssignments = assignments.filter(
+      (a) => (a.employee_id === employeeId || a.employee_id === String(employeeId)) && a.is_active && a.attendance_allowed
+    );
 
     if (empAssignments.length === 0) {
-      // Default fallback: allow tenant primary locations if no restrictive assignment is made
+      // Default: Allow all active locations in the organization if no specific restriction is assigned
       return allLocations;
     }
 
@@ -488,25 +564,61 @@ class WorkLocationService {
     employeeId: string,
     locationIds: string[],
     primaryLocationId?: string,
-    tenantId = getActiveOrgId(),
+    tenantId?: string,
     employeeCode?: string
   ): Promise<void> {
-    let assignments = this.loadStore<EmployeeWorkLocationAssignment[]>(STORAGE_KEY_ASSIGNMENTS, [], tenantId);
-    assignments = assignments.filter((a) => a.employee_id !== employeeId && (employeeCode ? a.employee_id !== employeeCode : true));
+    const effectiveOrgId = await this.resolveActiveOrgId(tenantId);
     const now = new Date().toISOString();
     const today = now.split('T')[0];
 
-    const allLocations = this.getLocations(tenantId, false);
+    const allLocations = this.getLocations(effectiveOrgId, false);
     const primaryLoc = allLocations.find((l) => l.id === (primaryLocationId || locationIds[0]));
 
-    const newRows: any[] = [];
+    if (isSupabaseEnabled && isValidUUID(employeeId)) {
+      try {
+        // Delete existing assignments for this employee
+        await supabase
+          .from('employee_work_location_assignments')
+          .delete()
+          .eq('employee_id', employeeId);
+
+        // Insert new assignments
+        if (locationIds.length > 0) {
+          const insertPayloads = locationIds.map((locId, idx) => ({
+            organization_id: effectiveOrgId,
+            employee_id: employeeId,
+            work_location_id: locId,
+            is_primary: primaryLocationId ? primaryLocationId === locId : idx === 0,
+            attendance_allowed: true,
+            effective_from: today,
+            is_active: true,
+          }));
+
+          const { error: insErr } = await supabase
+            .from('employee_work_location_assignments')
+            .insert(insertPayloads);
+
+          if (insErr) {
+            console.error('[Supabase Assignment] Persistence error:', insErr);
+            throw insErr;
+          }
+        }
+      } catch (err: any) {
+        console.error('[Supabase Assignment] setEmployeeLocations failed:', err);
+        throw new Error(err.message || 'Failed to save employee work location assignments.');
+      }
+    }
+
+    let assignments = this.loadStore<EmployeeWorkLocationAssignment[]>(STORAGE_KEY_ASSIGNMENTS, [], effectiveOrgId);
+    assignments = assignments.filter((a) => a.employee_id !== employeeId && (employeeCode ? a.employee_id !== employeeCode : true));
+
     locationIds.forEach((locId, idx) => {
       const isPrim = primaryLocationId ? primaryLocationId === locId : idx === 0;
       const rowId = `assign-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
       const row: EmployeeWorkLocationAssignment = {
         id: rowId,
-        tenant_id: tenantId,
-        organization_id: tenantId,
+        tenant_id: effectiveOrgId,
+        organization_id: effectiveOrgId,
         employee_id: employeeId,
         work_location_id: locId,
         is_primary: isPrim,
@@ -517,74 +629,32 @@ class WorkLocationService {
         updated_at: now,
       };
       assignments.push(row);
-      newRows.push({
-        id: rowId,
-        tenant_id: tenantId,
-        organization_id: tenantId,
-        employee_id: employeeId,
-        work_location_id: locId,
-        is_primary: isPrim,
-        attendance_allowed: true,
-        effective_from: today,
-        is_active: true,
-      });
 
-      // If employeeCode is provided and distinct from employeeId, also create assignment record
       if (employeeCode && employeeCode !== employeeId) {
         const codeRowId = `assign-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-        newRows.push({
+        assignments.push({
+          ...row,
           id: codeRowId,
-          tenant_id: tenantId,
-          organization_id: tenantId,
           employee_id: employeeCode,
-          work_location_id: locId,
-          is_primary: isPrim,
-          attendance_allowed: true,
-          effective_from: today,
-          is_active: true,
         });
       }
     });
 
-    this.saveStore(STORAGE_KEY_ASSIGNMENTS, assignments, tenantId);
+    this.saveStore(STORAGE_KEY_ASSIGNMENTS, assignments, effectiveOrgId);
 
-    if (isSupabaseEnabled) {
+    // Update primary branch on employee if available in DB
+    if (isSupabaseEnabled && primaryLoc && primaryLoc.branch_id) {
       try {
-        // 1. Delete prior mappings for employee
         await supabase
-          .from('employee_work_location_assignments')
-          .delete()
-          .in('employee_id', employeeCode ? [employeeId, employeeCode] : [employeeId]);
-
-        // 2. Insert new mappings
-        if (newRows.length > 0) {
-          await supabase.from('employee_work_location_assignments').insert(newRows);
-        }
-
-        // 3. Update employee record location name & branch to primary work location
-        if (primaryLoc) {
-          await supabase.from('employees').update({
-            branch_name: primaryLoc.name,
-            location_name: primaryLoc.name,
-          }).or(`id.eq.${employeeId},employee_code.eq.${employeeCode || employeeId}`);
-        }
-
-        // 4. Publish real-time outbox event
-        await supabase.from('realtime_outbox').insert({
-          tenant_id: tenantId,
-          organization_id: tenantId,
-          entity_type: 'employee_work_location_assignments',
-          entity_id: employeeId,
-          event_type: 'location.assignment_updated',
-          actor_id: 'admin',
-          payload: { employeeId, employeeCode, locationIds, primaryLocationId, primaryLocation: primaryLoc },
-        });
-      } catch (e: any) {
-        console.warn('[Supabase EmployeeWorkLocationAssignment] sync notice:', e);
+          .from('employees')
+          .update({ branch_id: primaryLoc.branch_id, updated_at: now })
+          .eq('id', ensureUUID(employeeId));
+      } catch (e) {
+        console.warn('[Supabase Employee] branch sync note:', e);
       }
     }
 
-    hrEventBus.publish('location.assignment_updated', { employeeId, locationIds });
+    hrEventBus.publish('location.assignment_updated', { employeeId, locationIds, primaryLocationId });
   }
 
   getEmployeeAssignments(employeeId: string, tenantId = getActiveOrgId()): EmployeeWorkLocationAssignment[] {
@@ -651,7 +721,7 @@ class WorkLocationService {
 
     const distanceMeters = this.calculateDistanceInMeters(userLat, userLon, location.latitude, location.longitude);
     const radiusMeters = location.geofence_radius_meters;
-    const isAccurate = accuracyMeters <= location.accuracy_requirement_meters;
+    const isAccurate = accuracyMeters <= (location.accuracy_requirement_meters || 50);
 
     if (!isAccurate) {
       return {
@@ -661,7 +731,7 @@ class WorkLocationService {
         geofenceStatus: 'GPS_INACCURATE',
         isInside: false,
         isAccurate: false,
-        reason: `GPS accuracy (±${accuracyMeters}m) is lower than required threshold (≤${location.accuracy_requirement_meters}m).`,
+        reason: `GPS accuracy (±${accuracyMeters}m) is lower than required threshold (≤${location.accuracy_requirement_meters || 50}m).`,
       };
     }
 
@@ -707,7 +777,7 @@ class WorkLocationService {
         isAllowedWithoutReason: false,
         requiresReason: true,
         reasonPromptTitle: 'GPS Signal Unavailable',
-        summaryMessage: 'GPS coordinates could not be acquired from device. Please provide an explanation (e.g. basement office, signal issue) to complete attendance.',
+        summaryMessage: 'GPS coordinates could not be acquired from device. Please provide an explanation to complete attendance.',
       };
     }
 
@@ -772,8 +842,7 @@ class WorkLocationService {
       }
     }
 
-    // Check 5: Different / Unknown Location (e.g. Visiting Client B, unexpected client site)
-    // Find closest location for reference distance
+    // Check 5: Different / Unknown Location
     let closestLoc: WorkLocation | undefined;
     let minD = Infinity;
     for (const loc of allLocations) {
@@ -792,7 +861,7 @@ class WorkLocationService {
       isAllowedWithoutReason: false,
       requiresReason: true,
       reasonPromptTitle: 'Different / Client Site Location Detected',
-      summaryMessage: `You are at an unassigned/external location (${minD !== Infinity ? `${minD}m from nearest branch` : 'off-site'}). Please provide a brief reason (e.g. Client B meeting, emergency service call) to complete attendance.`,
+      summaryMessage: `You are at an unassigned/external location (${minD !== Infinity ? `${minD}m from nearest branch` : 'off-site'}). Please provide a brief reason to complete attendance.`,
     };
   }
 
@@ -829,7 +898,7 @@ class WorkLocationService {
     };
 
     events.unshift(created);
-    this.saveStore(STORAGE_KEY_EVENTS, events.slice(0, 1000), tenantId); // Keep latest 1000 events
+    this.saveStore(STORAGE_KEY_EVENTS, events.slice(0, 1000), tenantId);
     hrEventBus.publish('location.event_created', created);
     return created;
   }
@@ -915,7 +984,7 @@ export function parseGoogleMapsInput(input: string): {
     };
   }
 
-  // 4. Google Maps query parameter ?q=lat,lon or ?ll=lat,lon
+  // 3. Google Maps query parameter ?q=lat,lon or ?ll=lat,lon
   const qMatch = raw.match(/[?&](?:q|ll)=(-?\d+\.\d+)[,%20]+(-?\d+\.\d+)/i);
   if (qMatch) {
     return {
@@ -924,7 +993,7 @@ export function parseGoogleMapsInput(input: string): {
     };
   }
 
-  // 5. DMS format (Degrees Minutes Seconds, e.g. 11°05'05.0"N 77°07'34.0"E or 11°5'5"N 77°7'34"E)
+  // 4. DMS format (Degrees Minutes Seconds)
   const dmsMatch = raw.match(/(\d+)°\s*(\d+)'\s*([\d.]+)"?\s*([NSns])\s*[, ]+\s*(\d+)°\s*(\d+)'\s*([\d.]+)"?\s*([EWew])/);
   if (dmsMatch) {
     const latDeg = parseFloat(dmsMatch[1]);
@@ -949,7 +1018,7 @@ export function parseGoogleMapsInput(input: string): {
     };
   }
 
-  // 6. Raw Decimal Coordinates (e.g. "11.0844364, 77.1262627" or "11.0844364 77.1262627")
+  // 5. Raw Decimal Coordinates (e.g. "11.0844364, 77.1262627" or "11.0844364 77.1262627")
   const coordMatch = raw.match(/^(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)$/);
   if (coordMatch) {
     return {
@@ -962,4 +1031,3 @@ export function parseGoogleMapsInput(input: string): {
 }
 
 export const workLocationService = new WorkLocationService();
-

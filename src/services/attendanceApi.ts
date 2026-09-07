@@ -79,14 +79,38 @@ export const attendanceApi = {
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('attendance_daily').select('*');
-        if (date) q = q.eq('date', date);
+        if (date) q = q.eq('attendance_date', date);
         const { data, error } = await q;
         if (!error && Array.isArray(data) && data.length > 0) {
-          const currentList = loadStorage<AttendanceDaily[]>(STORAGE_KEY_DAILY, SEED_DAILY);
-          const otherDates = date ? currentList.filter(d => d.date !== date) : [];
-          const merged = [...data, ...otherDates];
-          saveStorage(STORAGE_KEY_DAILY, merged);
-          _dailyCache = { data: merged, timestamp: Date.now() };
+          const mapped: AttendanceDaily[] = data.map((d: any) => ({
+            id: d.id,
+            employee_id: d.employee_id,
+            employee_code: 'EMP',
+            employee_name: 'Employee',
+            department: 'Operations',
+            designation: 'Staff',
+            organization_id: d.organization_id,
+            company_id: 'cmp-01',
+            date: d.attendance_date,
+            shift_id: d.shift_id || 'shift-gen',
+            shift_name: 'General Shift',
+            expected_check_in: '09:30 AM',
+            expected_check_out: '06:30 PM',
+            status: d.status === 'PRESENT' ? 'Present' : d.status === 'ABSENT' ? 'Absent' : 'Half Day',
+            first_check_in: d.first_check_in,
+            last_check_out: d.last_check_out,
+            gross_working_minutes: d.total_work_minutes || 0,
+            total_break_minutes: d.break_minutes || 0,
+            net_working_minutes: (d.total_work_minutes || 0) - (d.break_minutes || 0),
+            late_minutes: d.late_entry_minutes || 0,
+            early_checkout_minutes: d.early_exit_minutes || 0,
+            overtime_minutes: d.overtime_minutes || 0,
+            source: 'BIOMETRIC',
+            created_at: d.created_at,
+            updated_at: d.updated_at,
+          }));
+          _dailyCache = { data: mapped, timestamp: Date.now() };
+          saveStorage(STORAGE_KEY_DAILY, mapped);
           return this.getDailyAttendance(date, department, status, search);
         }
       } catch (err) {
@@ -277,18 +301,18 @@ export const attendanceApi = {
       }
 
       if (isSupabaseEnabled) {
-        // 1. Immutable audit punch event
+        // 1. Immutable audit punch
         Promise.resolve(
           supabase
-            .from('attendance_events')
+            .from('attendance_punches')
             .insert({
-              organization_id: updated.organization_id || getActiveOrgId(),
+              organization_id: updated.organization_id && updated.organization_id.length === 36 ? updated.organization_id : '00000000-0000-0000-0000-000000000000',
               employee_id: updated.employee_id,
-              type: 'CHECK_IN',
-              source: source || 'WEB',
-              timestamp: nowIso,
+              punch_type: 'CHECK_IN',
+              verification_mode: source === 'BIOMETRIC' ? 'BIOMETRIC' : 'MANUAL',
+              punch_time: nowIso,
             })
-        ).catch((e: any) => console.warn('[Supabase Attendance] event insert notice:', e));
+        ).catch((e: any) => console.warn('[Supabase Attendance] punch insert notice:', e));
 
         // 2. Daily summary record
         Promise.resolve(
@@ -296,20 +320,14 @@ export const attendanceApi = {
             .from('attendance_daily')
             .upsert({
               id: updated.id,
-              organization_id: updated.organization_id || getActiveOrgId(),
-              company_id: updated.company_id || 'comp-01',
+              organization_id: updated.organization_id && updated.organization_id.length === 36 ? updated.organization_id : '00000000-0000-0000-0000-000000000000',
               employee_id: updated.employee_id,
-              employee_code: updated.employee_code,
-              employee_name: updated.employee_name,
-              department: updated.department,
-              designation: updated.designation,
-              date: updated.date,
-              status: updated.status,
+              attendance_date: today,
               first_check_in: updated.first_check_in,
-              source: updated.source,
-              updated_at: updated.updated_at,
+              status: (updated.status || 'PRESENT').toUpperCase(),
+              updated_at: nowIso,
             })
-        ).catch((e: any) => console.warn('[Supabase Attendance] checkIn sync failed:', e));
+        ).catch((e: any) => console.warn('[Supabase Attendance] checkIn upsert failed:', e));
       }
 
       return updated;
@@ -347,18 +365,18 @@ export const attendanceApi = {
       }
 
       if (isSupabaseEnabled) {
-        // 1. Immutable audit punch event
+        // 1. Immutable audit punch
         Promise.resolve(
           supabase
-            .from('attendance_events')
+            .from('attendance_punches')
             .insert({
-              organization_id: newItem.organization_id,
+              organization_id: newItem.organization_id && newItem.organization_id.length === 36 ? newItem.organization_id : '00000000-0000-0000-0000-000000000000',
               employee_id: newItem.employee_id,
-              type: 'CHECK_IN',
-              source: source || 'WEB',
-              timestamp: nowIso,
+              punch_type: 'CHECK_IN',
+              verification_mode: source === 'BIOMETRIC' ? 'BIOMETRIC' : 'MANUAL',
+              punch_time: nowIso,
             })
-        ).catch((e: any) => console.warn('[Supabase Attendance] event insert notice:', e));
+        ).catch((e: any) => console.warn('[Supabase Attendance] punch insert notice:', e));
 
         // 2. Daily summary record
         Promise.resolve(
@@ -366,18 +384,11 @@ export const attendanceApi = {
             .from('attendance_daily')
             .upsert({
               id: newItem.id,
-              organization_id: newItem.organization_id,
-              company_id: newItem.company_id,
+              organization_id: newItem.organization_id && newItem.organization_id.length === 36 ? newItem.organization_id : '00000000-0000-0000-0000-000000000000',
               employee_id: newItem.employee_id,
-              employee_code: newItem.employee_code,
-              employee_name: newItem.employee_name,
-              department: newItem.department,
-              designation: newItem.designation,
-              date: newItem.date,
-              status: newItem.status,
+              attendance_date: today,
+              status: (newItem.status || 'PRESENT').toUpperCase(),
               first_check_in: newItem.first_check_in,
-              source: newItem.source,
-              created_at: newItem.created_at,
               updated_at: newItem.updated_at,
             })
         ).catch((e: any) => console.warn('[Supabase Attendance] checkIn insert failed:', e));
@@ -425,18 +436,18 @@ export const attendanceApi = {
     }
 
     if (isSupabaseEnabled) {
-      // 1. Immutable audit punch event
+      // 1. Immutable audit punch
       Promise.resolve(
         supabase
-          .from('attendance_events')
+          .from('attendance_punches')
           .insert({
-            organization_id: updated.organization_id || getActiveOrgId(),
+            organization_id: updated.organization_id && updated.organization_id.length === 36 ? updated.organization_id : '00000000-0000-0000-0000-000000000000',
             employee_id: updated.employee_id,
-            type: 'CHECK_OUT',
-            source: source || 'WEB',
-            timestamp: nowIso,
+            punch_type: 'CHECK_OUT',
+            verification_mode: source === 'BIOMETRIC' ? 'BIOMETRIC' : 'MANUAL',
+            punch_time: nowIso,
           })
-      ).catch((e: any) => console.warn('[Supabase Attendance] event insert notice:', e));
+      ).catch((e: any) => console.warn('[Supabase Attendance] checkOut punch insert notice:', e));
 
       // 2. Daily summary record update
       Promise.resolve(
@@ -534,22 +545,22 @@ export const attendanceApi = {
     if (isSupabaseEnabled) {
       try {
         const { data, error } = await supabase
-          .from('attendance_regularization_requests')
+          .from('attendance_regularizations')
           .select('*')
           .order('created_at', { ascending: false });
         if (!error && Array.isArray(data) && data.length > 0) {
           const mapped: RegularizationRequest[] = data.map((r: any) => ({
             id: r.id,
             employee_id: r.employee_id,
-            employee_name: r.employee_name || 'Staff',
+            employee_name: 'Staff',
             attendance_date: r.attendance_date,
-            current_status: (r.original_status as any) || 'Absent',
-            original_check_in: r.original_check_in || '--:--',
-            original_check_out: r.original_check_out || '--:--',
+            current_status: 'Absent',
+            original_check_in: '--:--',
+            original_check_out: '--:--',
             requested_check_in: r.requested_check_in,
             requested_check_out: r.requested_check_out,
-            reason: r.reason_text || r.reason_code || 'Regularization',
-            status: r.status === 'MANAGER_PENDING' ? 'Pending Manager' : r.status === 'HR_PENDING' ? 'Pending HR' : r.status === 'APPROVED' ? 'Approved' : 'Rejected',
+            reason: r.reason || 'Regularization',
+            status: r.status === 'PENDING' ? 'Pending Manager' : r.status === 'APPROVED' ? 'Approved' : 'Rejected',
             submitted_at: r.created_at,
           }));
           saveStorage(STORAGE_KEY_REGULARIZATIONS, mapped);
@@ -578,18 +589,20 @@ export const attendanceApi = {
     saveStorage(STORAGE_KEY_REGULARIZATIONS, list);
 
     if (isSupabaseEnabled) {
-      Promise.resolve(
-        supabase.from('attendance_regularization_requests').insert({
-          organization_id: getActiveOrgId(),
-          employee_id: newReq.employee_id,
-          employee_name: newReq.employee_name,
-          attendance_date: (newReq as any).date || (newReq as any).attendance_date || new Date().toISOString().split('T')[0],
-          requested_check_in: newReq.requested_check_in,
-          requested_check_out: newReq.requested_check_out,
-          reason_text: newReq.reason,
-          status: 'MANAGER_PENDING',
-        })
-      ).catch((e: any) => console.warn('[Supabase Attendance] regularization insert failed:', e));
+      const orgId = getActiveOrgId();
+      if (orgId && req.employee_id && req.employee_id.length === 36) {
+        Promise.resolve(
+          supabase.from('attendance_regularizations').insert({
+            organization_id: orgId,
+            employee_id: newReq.employee_id,
+            attendance_date: (newReq as any).date || (newReq as any).attendance_date || new Date().toISOString().split('T')[0],
+            requested_check_in: newReq.requested_check_in,
+            requested_check_out: newReq.requested_check_out,
+            reason: newReq.reason,
+            status: 'PENDING',
+          })
+        ).catch((e: any) => console.warn('[Supabase Attendance] regularization insert notice:', e));
+      }
     }
 
     return newReq;
@@ -626,31 +639,36 @@ export const attendanceApi = {
 
     if (isSupabaseEnabled) {
       const dbStatus = status === 'Approved' ? 'APPROVED' : 'REJECTED';
-      Promise.resolve(
-        supabase
-          .from('attendance_regularization_requests')
-          .update({
-            status: dbStatus,
-            manager_action_at: new Date().toISOString(),
-            manager_comment: comments || null,
-          })
-          .eq('id', id)
-      ).catch((e: any) => console.warn('[Supabase Attendance] regularization update notice:', e));
+      if (id.length === 36) {
+        Promise.resolve(
+          supabase
+            .from('attendance_regularizations')
+            .update({
+              status: dbStatus,
+              approved_at: new Date().toISOString(),
+              rejection_reason: status === 'Rejected' ? comments : null,
+            })
+            .eq('id', id)
+        ).catch((e: any) => console.warn('[Supabase Attendance] regularization update notice:', e));
+      }
 
       if (status === 'Approved' && item) {
         const targetDate = (item as any).date || item.attendance_date;
-        Promise.resolve(
-          supabase
-            .from('attendance_daily')
-            .update({
-              first_check_in: item.requested_check_in,
-              last_check_out: item.requested_check_out,
-              status: 'Present',
-              updated_at: new Date().toISOString(),
-            })
-            .eq('employee_id', item.employee_id)
-            .eq('date', targetDate)
-        ).catch((e: any) => console.warn('[Supabase Attendance] attendance_daily sync notice:', e));
+        if (item.employee_id && item.employee_id.length === 36) {
+          Promise.resolve(
+            supabase
+              .from('attendance_daily')
+              .update({
+                first_check_in: item.requested_check_in,
+                last_check_out: item.requested_check_out,
+                status: 'PRESENT',
+                is_regularized: true,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('employee_id', item.employee_id)
+              .eq('attendance_date', targetDate)
+          ).catch((e: any) => console.warn('[Supabase Attendance] attendance_daily sync notice:', e));
+        }
       }
     }
   },

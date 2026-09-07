@@ -12,7 +12,8 @@ export type PrimaryRole =
   | 'Recruiter'
   | 'Payroll Admin'
   | 'Finance'
-  | 'Compliance Admin';
+  | 'Compliance Admin'
+  | 'Unassigned';
 
 export type PermissionAction =
   | 'view'

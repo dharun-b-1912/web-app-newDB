@@ -43,6 +43,7 @@ export interface WorkForceEvent {
   title: string;
   body: string;
   organizationId?: string;
+  recipientId?: string;
   recipientUserIds?: string[];
   actorId?: string;
   actorName?: string;
