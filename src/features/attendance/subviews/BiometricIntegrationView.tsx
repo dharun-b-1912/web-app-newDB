@@ -187,23 +187,35 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
     // STEP 1: Render UI immediately from localStorage — zero network calls
     loadData();
 
-    // STEP 2: Defer punch sync by 2s — tab is visible and responsive before any network call
-    timers.push(setTimeout(() => {
-      if (!destroyed) biometricGatewayService.syncLivePunchesFromGateway();
-    }, 2000));
+    // Only attempt background polling if the connector was not detected as offline
+    let livePollTimer: ReturnType<typeof setInterval> | null = null;
+    let slowTimer: ReturnType<typeof setInterval> | null = null;
 
-    // STEP 3: Defer heavy gateway sync by 5s — connector health, telemetry
-    timers.push(setTimeout(() => {
-      if (!destroyed) runSlowSync();
-    }, 5000));
+    if (!biometricGatewayService.isGatewayOffline()) {
+      // STEP 2: Defer punch sync by 2s — tab is visible and responsive before any network call
+      timers.push(setTimeout(() => {
+        if (!destroyed && !biometricGatewayService.isGatewayOffline()) {
+          biometricGatewayService.syncLivePunchesFromGateway();
+        }
+      }, 2000));
 
-    // Poll every 30s after initial defer — ref-guarded, skips in-flight ticks
-    const livePollTimer = setInterval(safeSyncAndLoad, 30000);
+      // STEP 3: Defer heavy gateway sync by 5s — connector health, telemetry
+      timers.push(setTimeout(() => {
+        if (!destroyed && !biometricGatewayService.isGatewayOffline()) {
+          runSlowSync();
+        }
+      }, 5000));
 
-    // Slow gateway sync every 120s — connector health check, not UI-blocking
-    const slowTimer = setInterval(() => {
-      if (!destroyed) runSlowSync();
-    }, 120000);
+      // Poll every 30s after initial defer — ref-guarded, skips in-flight ticks
+      livePollTimer = setInterval(safeSyncAndLoad, 30000);
+
+      // Slow gateway sync every 120s — connector health check, not UI-blocking
+      slowTimer = setInterval(() => {
+        if (!destroyed && !biometricGatewayService.isGatewayOffline()) {
+          runSlowSync();
+        }
+      }, 120000);
+    }
 
     // Event subscriptions update local UI state only (never re-trigger network sync)
     const unsubBiometric = hrEventBus.subscribe('biometric.*', () => {
@@ -220,8 +232,8 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
       destroyed = true;
       timers.forEach(clearTimeout);
       if (loadDebounce) clearTimeout(loadDebounce);
-      clearInterval(livePollTimer);
-      clearInterval(slowTimer);
+      if (livePollTimer) clearInterval(livePollTimer);
+      if (slowTimer) clearInterval(slowTimer);
       unsubBiometric();
       unsubDevice();
       unsubAttendance();
@@ -234,6 +246,7 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
   // Quick Socket Test
   const handleTestConnection = async (device: BiometricDevice, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    biometricGatewayService.resetGatewayOfflineStatus();
     setTestingDeviceId(device.id);
     try {
       const res = await biometricGatewayService.testDeviceConnection(device.id);
@@ -253,6 +266,7 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
   // Sync All Devices
   const handleSyncAllDevices = async () => {
     setIsSyncingAll(true);
+    biometricGatewayService.resetGatewayOfflineStatus();
     try {
       const res = await biometricGatewayService.syncAllDevices();
       if (res.successfulDevices > 0) {

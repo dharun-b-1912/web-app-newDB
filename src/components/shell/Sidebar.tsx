@@ -313,8 +313,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
   const [onboardingCount, setOnboardingCount] = useState<number>(0);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
 
+  const isRefreshingRef = useRef(false);
+  const refreshCountsDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const refreshCounts = useCallback(async () => {
-    if (!isPlatformAdmin) {
+    if (isRefreshingRef.current || isPlatformAdmin) return;
+    isRefreshingRef.current = true;
+    try {
       try {
         const activeComp = api.getActiveCompany();
         const emps = await api.getEmployees(activeComp?.id);
@@ -333,22 +338,38 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         const totalPending = (leaveRes.count || 0) + (docRes.count || 0);
         setPendingApprovalsCount(totalPending);
       } catch { }
+    } finally {
+      isRefreshingRef.current = false;
     }
   }, [isPlatformAdmin, filterAccessibleEmployees]);
 
   useEffect(() => {
     refreshCounts();
 
-    const unsub = hrEventBus.subscribe('*', () => {
-      refreshCounts();
-    });
+    const debouncedRefresh = () => {
+      if (refreshCountsDebounceTimer.current) clearTimeout(refreshCountsDebounceTimer.current);
+      refreshCountsDebounceTimer.current = setTimeout(() => {
+        refreshCounts();
+      }, 500);
+    };
 
-    const handleEmployeeCreated = () => refreshCounts();
+    const unsubEmp = hrEventBus.subscribe('employee.*', debouncedRefresh);
+    const unsubLeave = hrEventBus.subscribe('leave.*', debouncedRefresh);
+    const unsubOnb = hrEventBus.subscribe('onboarding.*', debouncedRefresh);
+    const unsubAppr = hrEventBus.subscribe('approval.*', debouncedRefresh);
+    const unsubDoc = hrEventBus.subscribe('document.*', debouncedRefresh);
+
+    const handleEmployeeCreated = () => debouncedRefresh();
     window.addEventListener('employee:created', handleEmployeeCreated);
     window.addEventListener('storage', handleEmployeeCreated);
 
     return () => {
-      unsub();
+      if (refreshCountsDebounceTimer.current) clearTimeout(refreshCountsDebounceTimer.current);
+      unsubEmp();
+      unsubLeave();
+      unsubOnb();
+      unsubAppr();
+      unsubDoc();
       window.removeEventListener('employee:created', handleEmployeeCreated);
       window.removeEventListener('storage', handleEmployeeCreated);
     };

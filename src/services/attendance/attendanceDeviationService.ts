@@ -192,34 +192,12 @@ class AttendanceDeviationService {
     this.isRealtimeSubscribed = true;
 
     try {
-      const channelName = `deviations_mesh_${tenantId}`;
-      const existingChannel = supabase.getChannels().find((ch) => ch.topic === `realtime:${channelName}`);
-      if (existingChannel) {
-        supabase.removeChannel(existingChannel);
-      }
-
-      const channel = supabase.channel(channelName);
-
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'realtime_outbox',
-            filter: `entity_type=eq.attendance_deviations`,
-          },
-          (payload) => {
-            this.fetchDeviationsFromDb(tenantId).then(() => {
-              hrEventBus.publish('deviation.updated', payload.new as any);
-            });
-          }
-        )
-        .subscribe((status) => {
-          if (status !== 'SUBSCRIBED' && status !== 'TIMED_OUT') {
-            this.isRealtimeSubscribed = false;
-          }
+      this.isRealtimeSubscribed = true;
+      hrEventBus.subscribe('attendance.*', () => {
+        this.fetchDeviationsFromDb(tenantId).then(() => {
+          hrEventBus.publish('deviation.updated', { tenant_id: tenantId } as any);
         });
+      });
     } catch (e) {
       console.warn('[AttendanceDeviation] Realtime notice:', e);
       this.isRealtimeSubscribed = false;
@@ -256,26 +234,6 @@ class AttendanceDeviationService {
               deviationsMap.set(getEmpDateKey(dev), dev);
             }
           }
-        }
-
-        // Also check outbox for dynamically posted deviation events
-        const { data: outboxRows } = await supabase
-          .from('realtime_outbox')
-          .select('*')
-          .eq('entity_type', 'attendance_deviations')
-          .order('created_at', { ascending: false })
-          .limit(50);
-
-        if (outboxRows && outboxRows.length > 0) {
-          outboxRows.forEach((row: any) => {
-            if (row.payload && row.payload.attendance_date) {
-              const dev = row.payload as AttendanceDeviation;
-              const key = getEmpDateKey(dev);
-              if (!deviationsMap.has(key)) {
-                deviationsMap.set(key, dev);
-              }
-            }
-          });
         }
       } catch (err) {
         console.warn('[AttendanceDeviation] DB evaluation notice:', err);

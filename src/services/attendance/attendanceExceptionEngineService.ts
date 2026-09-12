@@ -133,34 +133,12 @@ class AttendanceExceptionEngineService {
     this.isRealtimeSubscribed = true;
 
     try {
-      const channelName = `exceptions_mesh_${tenantId}`;
-      const existingChannel = supabase.getChannels().find((ch) => ch.topic === `realtime:${channelName}`);
-      if (existingChannel) {
-        supabase.removeChannel(existingChannel);
-      }
-
-      const channel = supabase.channel(channelName);
-
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'realtime_outbox',
-            filter: `entity_type=eq.attendance_exceptions`,
-          },
-          (payload) => {
-            this.fetchExceptionsFromDb(tenantId).then(() => {
-              hrEventBus.publish('exception.created', payload.new as any);
-            });
-          }
-        )
-        .subscribe((status) => {
-          if (status !== 'SUBSCRIBED' && status !== 'TIMED_OUT') {
-            this.isRealtimeSubscribed = false;
-          }
+      this.isRealtimeSubscribed = true;
+      hrEventBus.subscribe('attendance.*', () => {
+        this.fetchExceptionsFromDb(tenantId).then(() => {
+          hrEventBus.publish('exception.created', { tenant_id: tenantId } as any);
         });
+      });
     } catch (e) {
       console.warn('[AttendanceException] Realtime notice:', e);
       this.isRealtimeSubscribed = false;

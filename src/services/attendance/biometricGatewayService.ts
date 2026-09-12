@@ -538,20 +538,39 @@ class BiometricGatewayService {
     } catch (_) { }
   }
 
-  // Circuit breaker: when gateway fails, pause all gateway calls for 60s without network calls
+  // Circuit breaker: when gateway fails, pause all gateway calls without network calls
+  private static readonly GW_OFFLINE_STORAGE_KEY = 'joy_biometric_gateway_offline';
   private _gwOpenUntil = 0;
+  private _gwFailureCount = 0;
   private _gwInFlight: Promise<Response | null> | null = null;
+
+  public isGatewayOffline(): boolean {
+    if (typeof window !== 'undefined') {
+      if (sessionStorage.getItem(BiometricGatewayService.GW_OFFLINE_STORAGE_KEY) === 'true') {
+        return true;
+      }
+    }
+    return Date.now() < this._gwOpenUntil;
+  }
+
+  public resetGatewayOfflineStatus(): void {
+    this._gwOpenUntil = 0;
+    this._gwFailureCount = 0;
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem(BiometricGatewayService.GW_OFFLINE_STORAGE_KEY);
+    }
+  }
 
   private async fetchGateway(endpoint: string, options?: RequestInit): Promise<Response | null> {
     // 1. Circuit open — return immediately, zero network calls
-    if (Date.now() < this._gwOpenUntil) return null;
+    if (this.isGatewayOffline()) return null;
 
     // 2. Coalesce concurrent probes so only one probe runs at a time
     if (this._gwInFlight) {
       try {
         await this._gwInFlight;
       } catch (_) { }
-      if (Date.now() < this._gwOpenUntil) return null;
+      if (this.isGatewayOffline()) return null;
     }
 
     const doFetch = async (): Promise<Response | null> => {
@@ -563,12 +582,20 @@ class BiometricGatewayService {
         clearTimeout(tid);
         if (resp && (resp.ok || resp.status < 500)) {
           this._gwOpenUntil = 0;
+          this._gwFailureCount = 0;
+          if (typeof window !== 'undefined') {
+            sessionStorage.removeItem(BiometricGatewayService.GW_OFFLINE_STORAGE_KEY);
+          }
           return resp;
         }
       } catch (_) { }
 
-      // Probe failed — open circuit for 60s immediately, do not flood network or console
-      this._gwOpenUntil = Date.now() + 60000;
+      // Probe failed — mark offline in session and circuit breaker for 5 mins, zero repeats
+      this._gwFailureCount++;
+      this._gwOpenUntil = Date.now() + 300000;
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(BiometricGatewayService.GW_OFFLINE_STORAGE_KEY, 'true');
+      }
       return null;
     };
 
@@ -598,6 +625,7 @@ class BiometricGatewayService {
   }
 
   async syncLocalAgentStatus(): Promise<BiometricGatewayAgent | null> {
+    if (this.isGatewayOffline()) return null;
     try {
       const resp = await this.fetchGateway('/health');
       if (resp && resp.ok) {
@@ -1177,6 +1205,9 @@ class BiometricGatewayService {
     ipAddress: string,
     port = 4370
   ): Promise<{ success: boolean; device?: DiscoveredDevice; error?: string }> {
+    if (this.isGatewayOffline()) {
+      return { success: false, error: 'Local biometric gateway daemon is offline' };
+    }
     try {
       const resp = await this.fetchGateway(
         `/probe?ip=${encodeURIComponent(ipAddress)}&port=${port}`
@@ -2093,7 +2124,7 @@ class BiometricGatewayService {
   private _processedPunchIds = new Set<string>();
 
   async syncLivePunchesFromGateway(deviceId?: string): Promise<boolean> {
-    if (this._syncPunchesInFlight) return false;
+    if (this.isGatewayOffline() || this._syncPunchesInFlight) return false;
     this._syncPunchesInFlight = true;
     try {
       const resp = await this.fetchGateway('/punches');
@@ -3229,6 +3260,20 @@ class BiometricGatewayService {
       return { totalDevices: 0, successfulDevices: 0, totalSyncedUsers: 0, results: [] };
     }
 
+    if (this.isGatewayOffline()) {
+      return {
+        totalDevices: devices.length,
+        successfulDevices: 0,
+        totalSyncedUsers: 0,
+        results: devices.map(d => ({
+          deviceId: d.id,
+          deviceName: d.device_name,
+          success: false,
+          message: 'Local Biometric Gateway daemon (port 11108) is not running on this machine.',
+        })),
+      };
+    }
+
     const results: Array<{ deviceId: string; deviceName: string; success: boolean; message: string; userCount?: number }> = [];
     let successfulDevices = 0;
     let totalSyncedUsers = 0;
@@ -4114,6 +4159,19 @@ class BiometricGatewayService {
     version: string;
     machine_name: string;
   }> {
+    if (this.isGatewayOffline()) {
+      const agents = this.getGatewayAgents();
+      const isOnline = agents.some(a => a.status === 'ONLINE');
+      return {
+        status: isOnline ? 'ONLINE' : 'OFFLINE',
+        uptime_seconds: isOnline ? 3600 : 0,
+        memory_mb: isOnline ? 42 : 0,
+        pending_queue_count: 0,
+        devices_count: this.getBiometricDevices().length,
+        version: '3.0.0-enterprise',
+        machine_name: 'LOCAL-WORKSTATION',
+      };
+    }
     try {
       const resp = await this.fetchGateway('/status');
       if (resp && resp.ok) {

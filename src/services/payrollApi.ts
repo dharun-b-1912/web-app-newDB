@@ -828,7 +828,7 @@ async getPayrollRunsAsync(tenantId = getActiveOrgId()): Promise<PayrollRun[]> {
       const { data, error } = await supabase
         .from('payroll_runs')
         .select('*')
-        .or(`tenant_id.eq.${tenantId},organization_id.eq.${tenantId}`)
+        .eq('organization_id', tenantId)
         .order('created_at', { ascending: false });
       if (!error && Array.isArray(data) && data.length > 0) {
         const currentRuns = getStore<PayrollRun[]>(STORAGE_KEYS.RUNS, [], tenantId);

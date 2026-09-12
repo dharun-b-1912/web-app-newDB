@@ -50,6 +50,8 @@ class RealtimeChannelManager {
   private statusListeners: Set<(status: RealtimeStatus, channels: ChannelSubscriptionInfo[]) => void> = new Set();
   private isInitialized: boolean = false;
   private reconnectTimer: any = null;
+  private lastVisibilityCheck: number = 0;
+  private lastReconcilePublish: number = 0;
 
   public initialize(): void {
     if (this.isInitialized) return;
@@ -78,7 +80,10 @@ class RealtimeChannelManager {
 
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
-          logger.realtime('TAB_ACTIVE', { message: 'Tab returned to foreground, checking realtime health...' });
+          const now = Date.now();
+          if (now - this.lastVisibilityCheck < 15000) return; // 15s throttle
+          this.lastVisibilityCheck = now;
+          logger.realtime('TAB_ACTIVE', { message: 'Tab returned to foreground, checking realtime status...' });
           this.verifyHealthAndReconcile();
         }
       });
@@ -291,12 +296,14 @@ class RealtimeChannelManager {
   }
 
   public verifyHealthAndReconcile(): void {
-    const hasActiveSubscription = Array.from(this.channels.values()).some((c) => c.info.status === 'SUBSCRIBED');
-    if (!hasActiveSubscription && this.channels.size > 0) {
-      this.reconnectAll();
-    } else {
-      hrEventBus.publish('sync.reconcile_requested', { reason: 'tab_focus_reconcile' });
-    }
+    const now = Date.now();
+    if (now - this.lastReconcilePublish < 30000) return; // 30s rate limit on reconciles
+    this.lastReconcilePublish = now;
+
+    // Do NOT aggressively destroy or recreate channels on tab focus.
+    // Supabase client natively manages socket reconnection and heartbeats.
+    // Only broadcast lightweight reconcile signal for background updates.
+    hrEventBus.publish('sync.reconcile_requested', { reason: 'tab_focus_reconcile' });
   }
 }
 

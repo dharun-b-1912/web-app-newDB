@@ -60,10 +60,22 @@ export const MyWorkspaceView: React.FC<Props> = ({ onNavigate }) => {
 
   // Idempotent Real-time Event Subscription
   useEffect(() => {
-    const unsub = hrEventBus.subscribe('*', () => {
-      loadWorkspace();
-    });
-    return () => unsub();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedLoad = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => loadWorkspace(), 300);
+    };
+
+    const unsub1 = hrEventBus.subscribe('workspace.*', debouncedLoad);
+    const unsub2 = hrEventBus.subscribe('attendance.*', debouncedLoad);
+    const unsub3 = hrEventBus.subscribe('employee.*', debouncedLoad);
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsub1();
+      unsub2();
+      unsub3();
+    };
   }, [loadWorkspace]);
 
   // Check In Handler
