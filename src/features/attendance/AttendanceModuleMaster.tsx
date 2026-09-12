@@ -74,22 +74,12 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
   const [selectedEmployeeProfileId, setSelectedEmployeeProfileId] = useState<string | null>(null);
   const [selectedProfileDate, setSelectedProfileDate] = useState<string | undefined>(undefined);
 
-  const [activeTab, setActiveTab] = useState<string>(() => {
-    if (!currentSubPath || currentSubPath === 'attendance' || currentSubPath === 'dashboard') {
-      return 'attendance-dashboard';
-    }
-    return currentSubPath;
-  });
+  const [localTab, setLocalTab] = useState<string>('attendance-dashboard');
 
-  useEffect(() => {
-    if (currentSubPath) {
-      setActiveTab(
-        currentSubPath === 'attendance' || currentSubPath === 'dashboard'
-          ? 'attendance-dashboard'
-          : currentSubPath
-      );
-    }
-  }, [currentSubPath]);
+  // Derive activeTab directly from currentSubPath prop for instant, synchronous subview switching without 1-tick delay or refresh
+  const activeTab = (currentSubPath && currentSubPath !== 'attendance' && currentSubPath !== 'dashboard')
+    ? currentSubPath
+    : localTab;
 
   // Read initial filter state from URL if available
   const parseFiltersFromUrl = (): GlobalAttendanceFilterState => {
@@ -173,7 +163,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
   ];
 
   const handleSelectTab = (tabId: string) => {
-    setActiveTab(tabId);
+    setLocalTab(tabId);
     if (onNavigateSubPath) {
       onNavigateSubPath(tabId);
     } else {
@@ -187,7 +177,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       ...newFilters,
     };
     setActiveFilters(merged);
-    setActiveTab(targetTab);
+    setLocalTab(targetTab);
     syncFiltersToUrl(merged, targetTab);
     if (onNavigateSubPath) {
       onNavigateSubPath(targetTab);

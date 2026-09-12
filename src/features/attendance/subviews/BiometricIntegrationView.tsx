@@ -72,10 +72,28 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
 }) => {
   const { showToast } = useToast();
 
-  // Core Data State
-  const [agents, setAgents] = useState<BiometricGatewayAgent[]>([]);
-  const [devices, setDevices] = useState<BiometricDevice[]>([]);
-  const [punches, setPunches] = useState<RawBiometricPunch[]>([]);
+  // Core Data State - initialized synchronously from local/memory cache so first render has full data immediately
+  const [agents, setAgents] = useState<BiometricGatewayAgent[]>(() => {
+    try {
+      return biometricGatewayService.getGatewayAgents();
+    } catch {
+      return [];
+    }
+  });
+  const [devices, setDevices] = useState<BiometricDevice[]>(() => {
+    try {
+      return biometricGatewayService.getBiometricDevices();
+    } catch {
+      return [];
+    }
+  });
+  const [punches, setPunches] = useState<RawBiometricPunch[]>(() => {
+    try {
+      return biometricGatewayService.getRawPunches(50);
+    } catch {
+      return [];
+    }
+  });
   const [selectedWorkspaceDevice, setSelectedWorkspaceDevice] = useState<BiometricDevice | null>(null);
 
   // Search & Filter
@@ -107,7 +125,7 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
     confidence: string;
   }>>([]);
 
-  // Telemetry
+  // Telemetry - initialized from persisted telemetry cache or known agent status to prevent initial "OFFLINE" flash
   const [connectorTelemetry, setConnectorTelemetry] = useState<{
     status: 'ONLINE' | 'OFFLINE';
     uptime_seconds: number;
@@ -116,14 +134,25 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
     devices_count: number;
     version: string;
     machine_name: string;
-  }>({
-    status: 'OFFLINE',
-    uptime_seconds: 0,
-    memory_mb: 0,
-    pending_queue_count: 0,
-    devices_count: 0,
-    version: '3.0.0-enterprise',
-    machine_name: 'FACTORY-CONNECTOR',
+  }>(() => {
+    try {
+      const saved = localStorage.getItem('joy_connector_last_telemetry');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch {}
+    const initialAgents = biometricGatewayService.getGatewayAgents();
+    const isOnline = initialAgents.some((a) => a.status === 'ONLINE');
+    return {
+      status: isOnline ? 'ONLINE' : 'OFFLINE',
+      uptime_seconds: isOnline ? 3600 : 0,
+      memory_mb: isOnline ? 42 : 0,
+      pending_queue_count: 0,
+      devices_count: biometricGatewayService.getBiometricDevices().length,
+      version: '3.0.0-enterprise',
+      machine_name: initialAgents[0]?.agent_name || 'FACTORY-GATEWAY',
+    };
   });
 
   // Pairing & Installer Data
@@ -135,7 +164,7 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
   const [isCheckingConnection, setIsCheckingConnection] = useState(false);
 
   // Fast path: read from in-memory/localStorage — always instant, no network
-  const loadData = async () => {
+  const loadData = () => {
     try {
       const currentAgents = biometricGatewayService.getGatewayAgents();
       const currentDevs = biometricGatewayService.getBiometricDevices();
@@ -151,9 +180,20 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
   // Slow path: connector health only — NO subnet scan, NO heavy ops
   const runSlowSync = async () => {
     try {
+      if (biometricGatewayService.isGatewayOffline()) {
+        const tele = await biometricGatewayService.getConnectorTelemetry();
+        setConnectorTelemetry(tele);
+        try {
+          localStorage.setItem('joy_connector_last_telemetry', JSON.stringify(tele));
+        } catch {}
+        return;
+      }
       await biometricGatewayService.syncLocalAgentStatus();
       const tele = await biometricGatewayService.getConnectorTelemetry();
       setConnectorTelemetry(tele);
+      try {
+        localStorage.setItem('joy_connector_last_telemetry', JSON.stringify(tele));
+      } catch {}
     } catch (_) {}
   };
 

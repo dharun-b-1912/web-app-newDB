@@ -228,6 +228,11 @@ class RealtimeChannelManager {
           info.status = 'DISCONNECTED';
           logger.realtime('CLOSED', { project: supabaseProject, table, status: 'CLOSED' });
         } else if (status === 'CHANNEL_ERROR') {
+          // Normal WebSocket closure (code 1000) during channel teardown or tab sleep is NOT an error
+          if (err?.message?.includes('1000') || err?.message?.includes('Normal Closure')) {
+            info.status = 'DISCONNECTED';
+            return;
+          }
           info.status = 'CHANNEL_ERROR';
           info.error = err?.message || 'Subscription failed';
           logger.error('REALTIME', 'CHANNEL_ERROR', err, {
