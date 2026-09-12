@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy, useTransition } from 'react';
 import { api } from './services/api';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { TenantProvider } from './hooks/useTenant';
@@ -196,13 +196,17 @@ const AppContent: React.FC = () => {
     }
   }, [currentRoute]);
 
+  const [, startTransition] = useTransition();
+
   // Sync with browser back/forward buttons
   useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
       const urlState = parseRouteFromUrl();
       const routeToSet = urlState.route || (e.state && e.state.route) || getDefaultRouteForUser();
       if (routeToSet) {
-        setCurrentRoute(routeToSet);
+        startTransition(() => {
+          setCurrentRoute(routeToSet);
+        });
         try {
           localStorage.setItem('workforce_active_route', routeToSet);
         } catch { }
@@ -225,7 +229,9 @@ const AppContent: React.FC = () => {
   const handleNavigate = (route: string) => {
     if (!route) return;
     syncUrlWithRoute(route, undefined, false);
-    setCurrentRoute(route);
+    startTransition(() => {
+      setCurrentRoute(route);
+    });
     try {
       localStorage.setItem('workforce_active_route', route);
     } catch { }

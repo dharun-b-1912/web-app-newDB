@@ -174,9 +174,10 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
 
   const handleSelectTab = (tabId: string) => {
     setActiveTab(tabId);
-    syncFiltersToUrl(activeFilters, tabId);
     if (onNavigateSubPath) {
       onNavigateSubPath(tabId);
+    } else {
+      syncFiltersToUrl(activeFilters, tabId);
     }
   };
 

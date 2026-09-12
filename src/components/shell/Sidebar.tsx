@@ -283,9 +283,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (activeItemRef.current) {
-        activeItemRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        activeItemRef.current.scrollIntoView({ block: 'nearest', behavior: 'auto' });
       }
-    }, 120);
+    }, 80);
     return () => clearTimeout(timer);
   }, [activeNav, primaryRole]);
 
