@@ -1,0 +1,32 @@
+============================================================
+JOY PeopleHR — QA Build (v1.0.3+184)
+============================================================
+Environment : QA
+Channel     : INTERNAL
+Build Number: 184
+Version     : 1.0.3
+Commit SHA  : 3ca2d06 (main)
+Release Date: 2026-09-12
+
+HIGHLIGHTS & KEY DELIVERABLES:
+- Unified Multi-Mode Attendance Engine: One employee = One attendance record per day.
+- Attendance Source Locking: Biometric first locks to BIOMETRIC, Mobile first locks to MOBILE.
+- Dynamic Working Timer: Computes duration dynamically from server first_check_in.
+- eSSL AI-FACE MAGNUM Integration: Sub-second real-time ingestion via port 11108.
+- Privacy-Hardened Crashlytics: Zero-PII sanitization for tokens, passwords, biometric templates.
+
+LATEST COMMIT:
+feat(snapshot): save full project state [2026-09-07 16:51:00 IST] - security hardening, Flutter repositories, enterprise RLS, and storage migrations
+
+TARGET TEST FOCUS:
+• Unified Multi-Mode Attendance Engine (Biometric + Mobile GPS)
+• Attendance Source Locking Invariant (Single session per day)
+• Dynamic Live Working Timer from hardware timestamp
+• eSSL AI-FACE MAGNUM ADMS Realtime push integration
+
+KNOWN ISSUES / WORKAROUNDS:
+• None
+
+DISTRIBUTION:
+• Managed by Firebase App Distribution (Group: joy-qa)
+============================================================

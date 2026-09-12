@@ -31,10 +31,12 @@ import { VendorOnboardingWizardModal } from './VendorOnboardingWizardModal';
 import { CompanyWorkspaceSwitcher } from '../components/CompanyWorkspaceSwitcher';
 import { ConnectNewClientModal } from '../components/ConnectNewClientModal';
 
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
+
 interface VendorSettlementWorkspaceViewProps {
-  activeVendor: VendorOrganization;
-  activePeriod: string;
-  onNavigateTab: (tabId: string) => void;
+  activeVendor?: VendorOrganization | null;
+  activePeriod?: string;
+  onNavigateTab?: (tabId: string) => void;
 }
 
 export const VendorSettlementWorkspaceView: React.FC<VendorSettlementWorkspaceViewProps> = ({
@@ -49,17 +51,31 @@ export const VendorSettlementWorkspaceView: React.FC<VendorSettlementWorkspaceVi
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
 
-  const activeRelationship = vendorPortalService.getActiveRelationship();
-  const employees = vendorPortalService.getEmployees(activeVendor?.id);
-  const attendance = vendorPortalService.getMonthlyAttendance(activePeriod, activeVendor?.id);
-  const wageBreakdowns = vendorPortalService.getEmployeeWageBreakdowns(activePeriod, activeVendor?.id);
-  const payable = vendorPortalService.getVendorPayableBreakdown(activePeriod, activeVendor?.id);
-  const pos = vendorPortalService.getPurchaseOrders(activeVendor?.id);
-  const invoices = vendorPortalService.getInvoices(activeVendor?.id);
-  const challans = vendorPortalService.getStatutoryChallans(activePeriod, activeVendor?.id);
+  let ctxVendor: VendorOrganization | null = null;
+  let ctxRelationship: any = null;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+    ctxRelationship = ctx.activeRelationship;
+  } catch {}
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
+  const effectivePeriod = activePeriod || '2026-08';
+  const activeRelationship = ctxRelationship || vendorPortalService.getActiveRelationship();
+  const employees = vendorPortalService.getEmployees(effectiveVendor?.id);
+  const attendance = vendorPortalService.getMonthlyAttendance(effectivePeriod, effectiveVendor?.id);
+  const wageBreakdowns = vendorPortalService.getEmployeeWageBreakdowns(effectivePeriod, effectiveVendor?.id);
+  const payable = vendorPortalService.getVendorPayableBreakdown(effectivePeriod, effectiveVendor?.id);
+  const pos = vendorPortalService.getPurchaseOrders(effectiveVendor?.id);
+  const invoices = vendorPortalService.getInvoices(effectiveVendor?.id);
+  const challans = vendorPortalService.getStatutoryChallans(effectivePeriod, effectiveVendor?.id);
   const activePo = pos[0];
-  const activeInvoice = invoices.find((i) => i.payroll_period === activePeriod);
-  const status = vendorPortalService.getPayrollVerificationStatus(activePeriod, activeVendor?.id);
+  const activeInvoice = invoices.find((i) => i.payroll_period === effectivePeriod);
+  const status = vendorPortalService.getPayrollVerificationStatus(effectivePeriod, effectiveVendor?.id);
+
+  const handleNavigate = (tabId: string) => {
+    if (onNavigateTab) onNavigateTab(tabId);
+  };
 
   // Settlement 8-Stage Operational Flow with contextual HRMS & Payroll icons
   const stages = [
@@ -250,19 +266,19 @@ export const VendorSettlementWorkspaceView: React.FC<VendorSettlementWorkspaceVi
               <Sparkles className="w-3.5 h-3.5 text-violet-400" /> AI OCR Scanner
             </button>
             <button
-              onClick={() => onNavigateTab('licenses')}
+              onClick={() => handleNavigate('licenses')}
               className="px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition flex items-center gap-1.5 font-semibold"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Licenses & Expiry Hub
             </button>
             <button
-              onClick={() => onNavigateTab('compliance-calendar')}
+              onClick={() => handleNavigate('compliance-calendar')}
               className="px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition flex items-center gap-1.5 font-semibold"
             >
               <Calendar className="w-3.5 h-3.5 text-amber-400" /> Compliance Calendar
             </button>
             <button
-              onClick={() => onNavigateTab('statutory-returns')}
+              onClick={() => handleNavigate('statutory-returns')}
               className="px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition flex items-center gap-1.5 font-semibold"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-blue-400" /> Form V & Returns
@@ -305,7 +321,7 @@ export const VendorSettlementWorkspaceView: React.FC<VendorSettlementWorkspaceVi
             return (
               <div
                 key={stage.id}
-                onClick={() => onNavigateTab(stage.tab)}
+                onClick={() => handleNavigate(stage.tab)}
                 className="group bg-white rounded-2xl border border-gray-200/80 p-5 shadow-xs hover:shadow-md hover:border-indigo-400 transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between"
               >
                 <div className="flex items-start justify-between mb-3">

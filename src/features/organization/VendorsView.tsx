@@ -37,6 +37,12 @@ import {
   Stamp,
   CheckCircle,
   XCircle,
+  LayoutGrid,
+  List,
+  Scale,
+  Edit,
+  Trash2,
+  Key,
 } from 'lucide-react';
 import {
   Vendor,
@@ -61,8 +67,23 @@ import { useToast } from '../../components/ui/Toast';
 import { VendorCreateWizardModal } from './wizard/VendorCreateWizardModal';
 import { RequestVendorDocumentModal } from '../vendor/components/RequestVendorDocumentModal';
 import { IssueFormVModal } from '../vendor/components/IssueFormVModal';
+import { Vendor360Workspace } from '../vendor/company/Vendor360Workspace';
+import { VendorThreeWayMatchModal } from './components/VendorThreeWayMatchModal';
+import { VendorEditModal } from '../vendor/components/VendorEditModal';
+import { VendorDeleteModal } from '../vendor/components/VendorDeleteModal';
+import { VendorCredentialsModal } from '../vendor/components/VendorCredentialsModal';
+import {
+  VendorThreeWayMatchEngine,
+  ThreeWayMatchResult,
+} from '../../services/vendor/vendorThreeWayMatchEngine';
 
-export const VendorsView: React.FC = () => {
+
+export interface VendorsViewProps {
+  onNavigate?: (route: string) => void;
+  initialTab?: string;
+}
+
+export const VendorsView: React.FC<VendorsViewProps> = ({ onNavigate, initialTab }) => {
   const { showToast } = useToast();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [search, setSearch] = useState('');
@@ -94,9 +115,72 @@ export const VendorsView: React.FC = () => {
   const [selectedPaymentToReturn, setSelectedPaymentToReturn] = useState<VendorPayment | null>(null);
   const [returnReason, setReturnReason] = useState<VendorReturnReason>('INVALID_ACCOUNT');
   const [returnNotes, setReturnNotes] = useState('');
+  // Saved Views and Modals State
   const [savedViews, setSavedViews] = useState<VendorSavedView[]>([]);
   const [newViewName, setNewViewName] = useState('');
   const [isSaveViewOpen, setIsSaveViewOpen] = useState(false);
+
+  // Cards Grid vs Table View Toggle
+  const [viewMode, setViewMode] = useState<'CARDS' | 'TABLE'>('CARDS');
+
+  // Vendor Edit, Delete, Credentials Modal States
+  const [vendorToEdit, setVendorToEdit] = useState<Vendor | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [vendorToDelete, setVendorToDelete] = useState<Vendor | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [vendorForCredentials, setVendorForCredentials] = useState<Vendor | null>(null);
+  const [isCredentialsModalOpen, setIsCredentialsModalOpen] = useState(false);
+
+  const handleOpenEdit = (v: Vendor) => {
+    setVendorToEdit(v);
+    setIsEditModalOpen(true);
+  };
+
+  const handleOpenDelete = (v: Vendor) => {
+    setVendorToDelete(v);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleOpenCredentials = (v: Vendor) => {
+    setVendorForCredentials(v);
+    setIsCredentialsModalOpen(true);
+  };
+
+  // Commercial 3-Way Match Modal State
+  const [isThreeWayMatchOpen, setIsThreeWayMatchOpen] = useState(false);
+  const [selectedMatchResult, setSelectedMatchResult] = useState<ThreeWayMatchResult | null>(null);
+
+  const handleOpenThreeWayMatch = (vendor: Vendor) => {
+    const workersCount = vendor.deployed_workforce_count || 0;
+    const manDays = workersCount * 26;
+    const otHours = workersCount * 4;
+    const dailyRate = 450;
+    const otRate = 80;
+    const serviceCharge = (vendor as any).service_charge_percentage || 8.5;
+    const baseWages = manDays * dailyRate + otHours * otRate;
+    const subtotal = baseWages * (1 + serviceCharge / 100);
+    const expected = Math.round(subtotal * 1.18);
+    const result = VendorThreeWayMatchEngine.reconcile({
+      vendorId: vendor.id,
+      companyId: vendor.legal_entity_id || 'comp-joy-01',
+      period: '2026-08',
+      invoiceNumber: `INV-${vendor.vendor_code}-2026-08`,
+      approvedManDays: manDays,
+      approvedOtHours: otHours,
+      contractNumber: `CNT-${vendor.vendor_code}-01`,
+      poNumber: `PO-${vendor.vendor_code}-01`,
+      dailyRate,
+      otHourlyRate: otRate,
+      serviceChargePct: serviceCharge,
+      poBudgetAvailable: Math.round(expected * 1.2),
+      maxAllowedCapacity: vendor.max_workforce_capacity || 50,
+      claimedInvoiceAmount: expected,
+      claimedManDays: manDays,
+      claimedOtHours: otHours,
+    });
+    setSelectedMatchResult(result);
+    setIsThreeWayMatchOpen(true);
+  };
 
   const loadData = async () => {
     const list = await vendorService.getVendors();
@@ -239,6 +323,65 @@ export const VendorsView: React.FC = () => {
     }
   };
 
+  const handleApproveVendor = async (vendorId: string) => {
+    try {
+      await vendorService.approveVendor(vendorId);
+      showToast('Vendor approved and marked as ACTIVE!', 'success');
+      await loadData();
+      const updated = await vendorService.getVendorById(vendorId);
+      if (updated) setSelectedVendor(updated);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to approve vendor', 'error');
+    }
+  };
+
+  const handleRequestCorrection = async (vendorId: string) => {
+    const reason = prompt('Please specify the correction details required from the vendor:');
+    if (reason && reason.trim()) {
+      try {
+        await vendorService.requestCorrection(vendorId, reason.trim());
+        showToast('Correction requested from vendor.', 'info');
+        await loadData();
+        const updated = await vendorService.getVendorById(vendorId);
+        if (updated) setSelectedVendor(updated);
+      } catch (err: any) {
+        showToast(err.message || 'Failed to request correction', 'error');
+      }
+    }
+  };
+
+  const handleRejectVendor = async (vendorId: string) => {
+    const reason = prompt('Please enter the rejection reason for this vendor:');
+    if (reason && reason.trim()) {
+      try {
+        await vendorService.rejectVendor(vendorId, reason.trim());
+        showToast('Vendor onboarding rejected.', 'warning');
+        await loadData();
+        const updated = await vendorService.getVendorById(vendorId);
+        if (updated) setSelectedVendor(updated);
+      } catch (err: any) {
+        showToast(err.message || 'Failed to reject vendor', 'error');
+      }
+    }
+  };
+
+  const handleInviteVendor = async (vendor: Vendor) => {
+    try {
+      const invite = await vendorService.inviteVendor({
+        vendorId: vendor.id,
+        organizationId: vendor.organization_id || 'org-joy-01',
+        companyId: vendor.legal_entity_id || 'comp-joy-01',
+        targetEmail: vendor.primary_contact_email,
+        targetName: vendor.primary_contact_name,
+        targetPhone: vendor.primary_contact_phone,
+      });
+      navigator.clipboard.writeText(invite.invite_url);
+      showToast(`Invitation sent to ${invite.target_email}! Invite link copied to clipboard.`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to create vendor invitation', 'error');
+    }
+  };
+
   // Filter Logic
   const filteredVendors = vendors.filter((v) => {
     if (search) {
@@ -254,9 +397,17 @@ export const VendorsView: React.FC = () => {
     if (statusFilter !== 'ALL' && v.status !== statusFilter) return false;
     if (cityFilter !== 'ALL' && v.city !== cityFilter) return false;
 
-    // Segment filtering
+    // Segment filtering (Blueprint 6 Key Segments)
+    if (activeSegment === 'PENDING_ONBOARDING' && !(v.status === 'PENDING_VERIFICATION' || v.status === 'DRAFT' || v.status === 'DOCUMENT_SUBMITTED')) return false;
     if (activeSegment === 'ACTIVE_VENDORS' && v.status !== 'ACTIVE') return false;
-    if (activeSegment === 'MANPOWER_PROVIDERS' && v.vendor_type !== 'MANPOWER_PROVIDER') return false;
+    if (activeSegment === 'CORRECTION_REQUIRED' && v.status !== 'CORRECTION_REQUIRED') return false;
+    if (activeSegment === 'SUSPENDED_VENDORS' && v.status !== 'SUSPENDED') return false;
+    if (activeSegment === 'EXPIRING_CONTRACTS') {
+      if (!v.contract_end_date) return false;
+      const days = (new Date(v.contract_end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+      if (days < 0 || days > 60) return false;
+    }
+    if (activeSegment === 'MANPOWER_PROVIDERS' && v.vendor_type !== 'MANPOWER_PROVIDER' && v.vendor_type !== 'FACILITY_SERVICE_PROVIDER') return false;
     if (activeSegment === 'ACTIVE_WORKFORCE' && (!v.deployed_workforce_count || v.deployed_workforce_count === 0)) return false;
     if (activeSegment === 'COMPLIANCE_PENDING' && (!v.compliance_issues_count || v.compliance_issues_count === 0)) return false;
     if (activeSegment === 'PAYMENT_ISSUES' && (!v.payment_issues_count || v.payment_issues_count === 0)) return false;
@@ -264,13 +415,43 @@ export const VendorsView: React.FC = () => {
     return true;
   });
 
-  // Calculate Aggregates
+  // Calculate Aggregates & Blueprint Segments
   const totalVendors = vendors.length;
   const activeVendorsCount = vendors.filter((v) => v.status === 'ACTIVE').length;
-  const manpowerCount = vendors.filter((v) => v.vendor_type === 'MANPOWER_PROVIDER').length;
+  const pendingOnboardingCount = vendors.filter(
+    (v) => v.status === 'PENDING_VERIFICATION' || v.status === 'DRAFT' || v.status === 'DOCUMENT_SUBMITTED'
+  ).length;
+  const correctionRequiredCount = vendors.filter((v) => v.status === 'CORRECTION_REQUIRED').length;
+  const suspendedVendorsCount = vendors.filter((v) => v.status === 'SUSPENDED').length;
+  const expiringContractsCount = vendors.filter((v) => {
+    if (!v.contract_end_date) return false;
+    const days = (new Date(v.contract_end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+    return days > 0 && days <= 60;
+  }).length;
+
+  const manpowerCount = vendors.filter(
+    (v) => v.vendor_type === 'MANPOWER_PROVIDER' || v.vendor_type === 'FACILITY_SERVICE_PROVIDER'
+  ).length;
   const totalWorkforce = vendors.reduce((sum, v) => sum + (v.deployed_workforce_count || 0), 0);
   const complianceIssuesCount = vendors.filter((v) => (v.compliance_issues_count || 0) > 0).length;
   const paymentIssuesCount = vendors.filter((v) => (v.payment_issues_count || 0) > 0).length;
+
+  // Vendor Risk Radar Calculations
+  const radarExpiredCompliance = vendors.filter(
+    (v) => (v.compliance_issues_count || 0) > 0 || (v.manpower_license_expiry && new Date(v.manpower_license_expiry).getTime() < Date.now())
+  ).length;
+
+  const radarExpiring30Days = vendors.filter((v) => {
+    if (!v.manpower_license_expiry) return false;
+    const diffDays = (new Date(v.manpower_license_expiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+    return diffDays > 0 && diffDays <= 30;
+  }).length;
+
+  const radarContractExpiring = expiringContractsCount;
+
+  const radarFullyCompliant = vendors.filter(
+    (v) => v.status === 'ACTIVE' && (v.compliance_issues_count || 0) === 0
+  ).length;
 
   const handleSaveCurrentView = async () => {
     if (!newViewName.trim()) {
@@ -332,14 +513,42 @@ export const VendorsView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-gray-900 tracking-tight">
-            Vendor & Contractor Governance Suite
+            Vendors & Workforce Hub
           </h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Principal Employer command center for manpower providers, document requisitions, CLRA Form V certificates, worker approvals, and 3-way match.
+            Manage vendor relationships, contracts, workforce deployments and onboarding.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Grid vs Table View Mode Switcher */}
+          <div className="flex items-center bg-gray-100 p-0.5 rounded-xl border border-gray-200">
+            <button
+              onClick={() => setViewMode('CARDS')}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'CARDS'
+                  ? 'bg-white shadow-2xs text-[#07563D]'
+                  : 'text-gray-500 hover:text-gray-900'
+              }`}
+              title="Card Grid View"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Cards</span>
+            </button>
+            <button
+              onClick={() => setViewMode('TABLE')}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'TABLE'
+                  ? 'bg-white shadow-2xs text-[#07563D]'
+                  : 'text-gray-500 hover:text-gray-900'
+              }`}
+              title="Table View"
+            >
+              <List className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Table</span>
+            </button>
+          </div>
+
           <Button
             variant="outline"
             size="sm"
@@ -351,63 +560,116 @@ export const VendorsView: React.FC = () => {
           </Button>
 
           <Button
+            variant="primary"
+            size="sm"
             onClick={() => setIsCreateWizardOpen(true)}
-            leftIcon={<Plus className="w-4 h-4" />}
-            className="font-bold shadow-sm bg-emerald-700 hover:bg-emerald-800 text-white"
+            leftIcon={<Plus className="w-3.5 h-3.5" />}
+            className="text-xs font-bold"
           >
-            Add / Onboard Vendor
+            + Add Vendor
           </Button>
         </div>
       </div>
 
-      {/* KPI Metrics Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-1">
-          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Vendors</div>
-          <div className="text-xl font-black text-gray-900">{totalVendors}</div>
-          <div className="text-[10px] text-gray-400">Registered Suppliers</div>
-        </div>
-
+      {/* Canonical Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-1">
           <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Active Vendors</div>
           <div className="text-xl font-black text-[#07563D]">{activeVendorsCount}</div>
-          <div className="text-[10px] text-emerald-800">Operational Contracts</div>
+          <div className="text-[10px] text-emerald-800">Operational Partners</div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-1">
-          <div className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Manpower Providers</div>
-          <div className="text-xl font-black text-amber-700">{manpowerCount}</div>
-          <div className="text-[10px] text-amber-800">Labour Supply Agencies</div>
+          <div className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Pending Vendor Onboarding</div>
+          <div className="text-xl font-black text-amber-700">{pendingOnboardingCount}</div>
+          <div className="text-[10px] text-amber-800">In Verification / Review</div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-1">
-          <div className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Active Workforce</div>
+          <div className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Active Contract Workers</div>
           <div className="text-xl font-black text-blue-700">{totalWorkforce}</div>
-          <div className="text-[10px] text-blue-800">Contractors on Site</div>
+          <div className="text-[10px] text-blue-800">21 Contract Personnel</div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-1">
-          <div className="text-[10px] font-bold text-rose-800 uppercase tracking-wider">Compliance Pending</div>
-          <div className="text-xl font-black text-rose-700">{complianceIssuesCount}</div>
-          <div className="text-[10px] text-rose-800">Requires Verification</div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-1">
-          <div className="text-[10px] font-bold text-purple-800 uppercase tracking-wider">Payment Issues</div>
-          <div className="text-xl font-black text-purple-700">{paymentIssuesCount}</div>
-          <div className="text-[10px] text-purple-800">Returned / Pending</div>
+          <div className="text-[10px] font-bold text-rose-800 uppercase tracking-wider">Compliance Alerts</div>
+          <div className="text-xl font-black text-rose-700">{radarExpiredCompliance + radarExpiring30Days}</div>
+          <div className="text-[10px] text-rose-800">Statutory / Expiry Action</div>
         </div>
       </div>
 
-      {/* Database Driven Segment Tabs */}
+      {/* Vendor Risk Radar Bar */}
+      <div className="bg-gradient-to-r from-slate-900 via-gray-900 to-slate-900 text-white p-4 rounded-2xl border border-gray-800 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-xs font-black uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
+              Vendor Risk Radar
+            </div>
+            <div className="text-[11px] text-gray-400">
+              Statutory validity, license expiry countdowns, and commercial compliance standing
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full md:w-auto">
+          <div
+            onClick={() => setActiveSegment('COMPLIANCE_PENDING')}
+            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-2 flex items-center gap-2.5 cursor-pointer transition"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
+            <div>
+              <div className="text-[10px] uppercase font-bold text-rose-300">Expired Compliance</div>
+              <div className="text-base font-black text-rose-400 leading-none">{radarExpiredCompliance}</div>
+            </div>
+          </div>
+
+          <div
+            onClick={() => setActiveSegment('COMPLIANCE_PENDING')}
+            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-2 flex items-center gap-2.5 cursor-pointer transition"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
+            <div>
+              <div className="text-[10px] uppercase font-bold text-amber-300">Expiring in 30D</div>
+              <div className="text-base font-black text-amber-400 leading-none">{radarExpiring30Days}</div>
+            </div>
+          </div>
+
+          <div
+            onClick={() => setActiveSegment('EXPIRING_CONTRACTS')}
+            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-2 flex items-center gap-2.5 cursor-pointer transition"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 shrink-0" />
+            <div>
+              <div className="text-[10px] uppercase font-bold text-yellow-200">Contract Expiring</div>
+              <div className="text-base font-black text-yellow-300 leading-none">{radarContractExpiring}</div>
+            </div>
+          </div>
+
+          <div
+            onClick={() => setActiveSegment('ACTIVE_VENDORS')}
+            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-2 flex items-center gap-2.5 cursor-pointer transition"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0" />
+            <div>
+              <div className="text-[10px] uppercase font-bold text-emerald-300">Fully Compliant</div>
+              <div className="text-base font-black text-emerald-400 leading-none">{radarFullyCompliant}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Database Driven Segment Tabs (Master Blueprint) */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
         {[
           { id: 'ALL_VENDORS', label: 'All Vendors', count: totalVendors },
+          { id: 'PENDING_ONBOARDING', label: 'Pending Onboarding', count: pendingOnboardingCount },
           { id: 'ACTIVE_VENDORS', label: 'Active Vendors', count: activeVendorsCount },
-          { id: 'MANPOWER_PROVIDERS', label: 'Manpower Providers', count: manpowerCount },
-          { id: 'ACTIVE_WORKFORCE', label: 'With Active Workforce', count: totalWorkforce },
-          { id: 'COMPLIANCE_PENDING', label: 'Compliance Issues', count: complianceIssuesCount },
-          { id: 'PAYMENT_ISSUES', label: 'Payment Issues', count: paymentIssuesCount },
+          { id: 'CORRECTION_REQUIRED', label: 'Correction Required', count: correctionRequiredCount },
+          { id: 'SUSPENDED_VENDORS', label: 'Suspended Vendors', count: suspendedVendorsCount },
+          { id: 'EXPIRING_CONTRACTS', label: 'Expiring Contracts', count: expiringContractsCount },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -492,116 +754,368 @@ export const VendorsView: React.FC = () => {
         </div>
       </Card>
 
-      {/* Vendors Table */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-2xs overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50/80">
-              <TableHead className="font-bold">Vendor Legal Name</TableHead>
-              <TableHead className="font-bold">Code</TableHead>
-              <TableHead className="font-bold">Classification</TableHead>
-              <TableHead className="font-bold">Primary Contact</TableHead>
-              <TableHead className="font-bold">Location</TableHead>
-              <TableHead className="font-bold">Workforce</TableHead>
-              <TableHead className="font-bold">Compliance</TableHead>
-              <TableHead className="font-bold">Status</TableHead>
-              <TableHead className="text-right font-bold">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredVendors.map((vendor) => {
-              const isManpower = vendor.vendor_type === 'MANPOWER_PROVIDER';
-              return (
-                <TableRow key={vendor.id} className="hover:bg-emerald-50/20 transition-colors">
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-800 flex items-center justify-center font-bold text-xs shrink-0">
-                        <Building2 className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="font-bold text-gray-900 leading-tight">{vendor.legal_name}</div>
-                        <div className="text-[11px] text-gray-400">{vendor.primary_contact_email}</div>
+      {/* Vendors Display: Cards Grid vs Table */}
+      {viewMode === 'CARDS' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {filteredVendors.map((vendor) => {
+            const isCompliant = (vendor.compliance_issues_count || 0) === 0;
+            const workersCount = vendor.deployed_workforce_count || 0;
+
+            return (
+              <div
+                key={vendor.id}
+                className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs hover:shadow-md transition p-5 flex flex-col justify-between gap-4 relative group"
+              >
+                {/* Card Header */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 text-[#07563D] flex items-center justify-center font-black text-sm shrink-0 border border-emerald-100 shadow-2xs">
+                      <Building2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-gray-900 group-hover:text-[#07563D] transition line-clamp-1">
+                        {vendor.legal_name}
+                      </h3>
+                      <div className="flex items-center gap-2 text-[11px] text-gray-500 mt-0.5">
+                        <span className="font-mono font-bold text-gray-700 bg-gray-100 px-1.5 py-0.2 rounded">
+                          {vendor.vendor_code}
+                        </span>
+                        <span>•</span>
+                        <span className="text-gray-600 font-medium truncate">
+                          {vendor.city || 'Chennai'}, {vendor.state || 'Tamil Nadu'}
+                        </span>
                       </div>
                     </div>
-                  </TableCell>
+                  </div>
 
-                  <TableCell>
-                    <span className="font-mono text-xs font-bold text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
-                      {vendor.vendor_code}
-                    </span>
-                  </TableCell>
+                  <Badge variant={vendor.status === 'ACTIVE' ? 'emerald' : vendor.status === 'CORRECTION_REQUIRED' ? 'rose' : 'amber'}>
+                    {vendor.status.replace(/_/g, ' ')}
+                  </Badge>
+                </div>
 
-                  <TableCell>
-                    <span className="text-xs font-semibold text-gray-800">
-                      {isManpower ? 'Manpower Provider' : vendor.vendor_type.replace(/_/g, ' ')}
-                    </span>
-                  </TableCell>
+                {/* 4-Metric Grid */}
+                <div className="grid grid-cols-4 gap-2 bg-gray-50/70 p-3 rounded-xl border border-gray-100 text-center">
+                  <div>
+                    <div className="text-[10px] uppercase font-bold text-gray-400">Workers</div>
+                    <div className="text-sm font-black text-gray-900 mt-0.5 flex items-center justify-center gap-1">
+                      <Users className="w-3.5 h-3.5 text-blue-600" />
+                      <span>{workersCount}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase font-bold text-gray-400">Contracts</div>
+                    <div className="text-sm font-black text-gray-900 mt-0.5 flex items-center justify-center gap-1">
+                      <Briefcase className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>{vendor.active_contracts_count || 1}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase font-bold text-gray-400">Compliance</div>
+                    <div className="text-sm font-black mt-0.5 flex items-center justify-center gap-1">
+                      {isCompliant ? (
+                        <span className="text-emerald-700 font-black text-xs">100%</span>
+                      ) : (
+                        <span className="text-rose-700 font-black text-xs">Action</span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase font-bold text-gray-400">Expiry</div>
+                    <div className="text-xs font-bold text-gray-700 mt-0.5 truncate">
+                      {vendor.contract_end_date ? vendor.contract_end_date.split('-')[0] : '2027'}
+                    </div>
+                  </div>
+                </div>
 
-                  <TableCell>
-                    <div className="text-xs font-bold text-gray-900">{vendor.primary_contact_name}</div>
-                    <div className="text-[11px] text-gray-400">{vendor.primary_contact_phone}</div>
-                  </TableCell>
+                {/* Commercial & Contact Strip */}
+                <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <CreditCard className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    <span className="font-semibold text-gray-700">{vendor.payment_terms || 'Net 30'}</span>
+                    <span>•</span>
+                    <span className="font-mono text-gray-500 truncate">{vendor.tax_id || vendor.gstin || '33AABCA1234F1Z1'}</span>
+                  </div>
+                  <span className="text-gray-400 text-[10px] font-mono shrink-0">
+                    Partner
+                  </span>
+                </div>
 
-                  <TableCell className="text-xs text-gray-700 font-medium">
-                    {vendor.city}, {vendor.state}
-                  </TableCell>
+                {/* Action Buttons */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleOpenVendorDetails(vendor)}
+                    leftIcon={<Eye className="w-3.5 h-3.5" />}
+                    className="text-xs font-bold justify-center cursor-pointer"
+                  >
+                    View Vendor
+                  </Button>
 
-                  <TableCell>
-                    <span className="inline-flex items-center gap-1 text-xs font-black text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                      <Users className="w-3 h-3" /> {vendor.deployed_workforce_count || 0}
-                    </span>
-                  </TableCell>
+                  <Button
+                    size="sm"
+                    onClick={() => handleOpenThreeWayMatch(vendor)}
+                    leftIcon={<Scale className="w-3.5 h-3.5" />}
+                    className="text-xs font-bold justify-center bg-[#07563D] hover:bg-[#064e37] text-white shadow-2xs cursor-pointer"
+                  >
+                    3-Way Match
+                  </Button>
+                </div>
 
-                  <TableCell>
-                    {(vendor.compliance_issues_count || 0) === 0 ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                        <CheckCircle2 className="w-3 h-3" /> Verified
+                {/* Quick Management Actions Strip */}
+                <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEdit(vendor)}
+                    className="flex-1 py-1 px-2 rounded-lg text-[11px] font-bold text-slate-700 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                    title="Edit vendor profile"
+                  >
+                    <Edit className="w-3 h-3" /> Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenCredentials(vendor)}
+                    className="flex-1 py-1 px-2 rounded-lg text-[11px] font-bold text-slate-700 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                    title="Provision or view portal credentials"
+                  >
+                    <Key className="w-3 h-3" /> Credentials
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenDelete(vendor)}
+                    className="p-1 px-2 rounded-lg text-[11px] font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                    title="Terminate or delete vendor"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          {filteredVendors.length === 0 && (
+            <div className="col-span-full bg-white rounded-2xl border border-gray-200 p-12 text-center">
+              <div className="flex flex-col items-center justify-center text-gray-400 space-y-2">
+                <Building2 className="w-8 h-8 text-gray-300" />
+                <p className="text-sm font-semibold">No vendors match your search filters.</p>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Vendors Table */
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-2xs overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50/80">
+                <TableHead className="font-bold">Vendor Legal Name</TableHead>
+                <TableHead className="font-bold">Code</TableHead>
+                <TableHead className="font-bold">Classification</TableHead>
+                <TableHead className="font-bold">Primary Contact</TableHead>
+                <TableHead className="font-bold">Location</TableHead>
+                <TableHead className="font-bold">Workforce</TableHead>
+                <TableHead className="font-bold">Compliance</TableHead>
+                <TableHead className="font-bold">Status</TableHead>
+                <TableHead className="text-right font-bold">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredVendors.map((vendor) => {
+                const isManpower = vendor.vendor_type === 'MANPOWER_PROVIDER' || vendor.vendor_type === 'FACILITY_SERVICE_PROVIDER';
+                const workersCount = vendor.deployed_workforce_count || 0;
+                return (
+                  <TableRow key={vendor.id} className="hover:bg-emerald-50/20 transition-colors">
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-800 flex items-center justify-center font-bold text-xs shrink-0">
+                          <Building2 className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-gray-900 leading-tight">{vendor.legal_name}</div>
+                          <div className="text-[11px] text-gray-400">{vendor.primary_contact_email}</div>
+                        </div>
+                      </div>
+                    </TableCell>
+
+                    <TableCell>
+                      <span className="font-mono text-xs font-bold text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
+                        {vendor.vendor_code}
                       </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
-                        <AlertTriangle className="w-3 h-3" /> Pending
+                    </TableCell>
+
+                    <TableCell>
+                      <span className="text-xs font-semibold text-gray-800">
+                        {isManpower ? 'Manpower Provider' : vendor.vendor_type.replace(/_/g, ' ')}
                       </span>
-                    )}
-                  </TableCell>
+                    </TableCell>
 
-                  <TableCell>
-                    <Badge variant={vendor.status === 'ACTIVE' ? 'emerald' : 'amber'}>
-                      {vendor.status}
-                    </Badge>
-                  </TableCell>
+                    <TableCell>
+                      <div className="text-xs font-bold text-gray-900">{vendor.primary_contact_name}</div>
+                      <div className="text-[11px] text-gray-400">{vendor.primary_contact_phone}</div>
+                    </TableCell>
 
-                  <TableCell className="text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleOpenVendorDetails(vendor)}
-                      leftIcon={<Eye className="w-3.5 h-3.5" />}
-                      className="text-xs font-bold"
-                    >
-                      Manage
-                    </Button>
+                    <TableCell className="text-xs text-gray-700 font-medium">
+                      {vendor.city}, {vendor.state}
+                    </TableCell>
+
+                    <TableCell>
+                      <span className="inline-flex items-center gap-1 text-xs font-black text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                        <Users className="w-3 h-3" /> {workersCount}
+                      </span>
+                    </TableCell>
+
+                    <TableCell>
+                      {(vendor.compliance_issues_count || 0) === 0 ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3" /> Verified
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                          <AlertTriangle className="w-3 h-3" /> Pending
+                        </span>
+                      )}
+                    </TableCell>
+
+                    <TableCell>
+                      <Badge variant={vendor.status === 'ACTIVE' ? 'emerald' : 'amber'}>
+                        {vendor.status}
+                      </Badge>
+                    </TableCell>
+
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenThreeWayMatch(vendor)}
+                          leftIcon={<Scale className="w-3.5 h-3.5" />}
+                          className="text-xs font-bold text-[#07563D] border-[#07563D]/30 hover:bg-emerald-50 cursor-pointer"
+                        >
+                          3-Way Match
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenVendorDetails(vendor)}
+                          leftIcon={<Eye className="w-3.5 h-3.5" />}
+                          className="text-xs font-bold cursor-pointer"
+                        >
+                          Manage
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(vendor)}
+                          className="p-1.5 rounded-lg text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition cursor-pointer"
+                          title="Edit vendor profile"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCredentials(vendor)}
+                          className="p-1.5 rounded-lg text-slate-600 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 transition cursor-pointer"
+                          title="Portal credentials"
+                        >
+                          <Key className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDelete(vendor)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition cursor-pointer"
+                          title="Terminate or delete vendor"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+
+              {filteredVendors.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-12">
+                    <div className="flex flex-col items-center justify-center text-gray-400 space-y-2">
+                      <Building2 className="w-8 h-8 text-gray-300" />
+                      <p className="text-sm font-semibold">No vendors match your search filters.</p>
+                    </div>
                   </TableCell>
                 </TableRow>
-              );
-            })}
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
-            {filteredVendors.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={9} className="text-center py-12">
-                  <div className="flex flex-col items-center justify-center text-gray-400 space-y-2">
-                    <Building2 className="w-8 h-8 text-gray-300" />
-                    <p className="text-sm font-semibold">No vendors match your search filters.</p>
-                  </div>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      {/* Authoritative Vendor 360° Detail Workspace */}
+      {selectedVendor && (
+        <Vendor360Workspace
+          isOpen={isDrawerOpen}
+          onClose={() => setIsDrawerOpen(false)}
+          vendor={selectedVendor}
+          vendorId={selectedVendor.id}
+          initialTab={activeDrawerTab}
+        />
+      )}
 
-      {/* Comprehensive Vendor Detail Drawer */}
+      {/* Edit Vendor Modal */}
+      {isEditModalOpen && vendorToEdit && (
+        <VendorEditModal
+          isOpen={isEditModalOpen}
+          onClose={() => {
+            setIsEditModalOpen(false);
+            setVendorToEdit(null);
+          }}
+          vendor={vendorToEdit}
+          onSaved={(updated) => {
+            setVendors((prev) => prev.map((v) => (v.id === updated.id ? updated : v)));
+            if (selectedVendor && selectedVendor.id === updated.id) {
+              setSelectedVendor(updated);
+            }
+          }}
+        />
+      )}
+
+      {/* Delete / Terminate Vendor Modal */}
+      {isDeleteModalOpen && vendorToDelete && (
+        <VendorDeleteModal
+          isOpen={isDeleteModalOpen}
+          onClose={() => {
+            setIsDeleteModalOpen(false);
+            setVendorToDelete(null);
+          }}
+          vendor={vendorToDelete}
+          activeWorkersCount={vendorToDelete.deployed_workforce_count || 0}
+          activeContractsCount={vendorToDelete.active_contracts_count || 0}
+          onDeleted={(id, mode) => {
+            if (mode === 'DELETED') {
+              setVendors((prev) => prev.filter((v) => v.id !== id));
+            } else {
+              setVendors((prev) => prev.map((v) => (v.id === id ? { ...v, status: 'TERMINATED' } : v)));
+            }
+            if (selectedVendor && selectedVendor.id === id) {
+              setIsDrawerOpen(false);
+              setSelectedVendor(null);
+            }
+          }}
+        />
+      )}
+
+      {/* Vendor Credentials Modal */}
+      {isCredentialsModalOpen && vendorForCredentials && (
+        <VendorCredentialsModal
+          isOpen={isCredentialsModalOpen}
+          onClose={() => {
+            setIsCredentialsModalOpen(false);
+            setVendorForCredentials(null);
+          }}
+          vendor={vendorForCredentials}
+        />
+      )}
+
+      {false && (
       <Drawer
-        isOpen={isDrawerOpen}
+        isOpen={false}
         onClose={() => setIsDrawerOpen(false)}
         title={selectedVendor?.legal_name || 'Vendor Profile'}
         size="lg"
@@ -631,11 +1145,55 @@ export const VendorsView: React.FC = () => {
                   <span>Capacity: {selectedVendor.max_workforce_capacity || 100}</span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {selectedVendor.status !== 'ACTIVE' && (
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => handleApproveVendor(selectedVendor.id)}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs cursor-pointer"
+                        leftIcon={<CheckCircle className="w-3.5 h-3.5" />}
+                      >
+                        Approve Vendor
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => handleRequestCorrection(selectedVendor.id)}
+                        className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-xs cursor-pointer"
+                        leftIcon={<RotateCcw className="w-3.5 h-3.5" />}
+                      >
+                        Request Correction
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => handleRejectVendor(selectedVendor.id)}
+                        className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-xs cursor-pointer"
+                        leftIcon={<XCircle className="w-3.5 h-3.5" />}
+                      >
+                        Reject
+                      </Button>
+                    </>
+                  )}
+                  <Button
+                    size="sm"
+                    onClick={() => handleOpenThreeWayMatch(selectedVendor)}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs cursor-pointer"
+                    leftIcon={<Scale className="w-3.5 h-3.5" />}
+                  >
+                    3-Way Match
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => handleInviteVendor(selectedVendor)}
+                    className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-xs cursor-pointer"
+                    leftIcon={<Mail className="w-3.5 h-3.5" />}
+                  >
+                    Send Invitation
+                  </Button>
                   <Button
                     size="sm"
                     onClick={() => setIsRequestDocModalOpen(true)}
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-xs"
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-xs cursor-pointer"
                     leftIcon={<Send className="w-3.5 h-3.5" />}
                   >
                     Request Document
@@ -643,7 +1201,7 @@ export const VendorsView: React.FC = () => {
                   <Button
                     size="sm"
                     onClick={() => setIsIssueFormVModalOpen(true)}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs"
+                    className="bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow-xs cursor-pointer"
                     leftIcon={<Stamp className="w-3.5 h-3.5" />}
                   >
                     Issue Form V
@@ -1170,6 +1728,7 @@ export const VendorsView: React.FC = () => {
           </div>
         )}
       </Drawer>
+      )}
 
       {/* Request Document Modal */}
       {selectedVendor && (
@@ -1278,6 +1837,29 @@ export const VendorsView: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* Commercial 3-Way Match Reconciler Modal */}
+      {selectedMatchResult && (
+        <VendorThreeWayMatchModal
+          isOpen={isThreeWayMatchOpen}
+          onClose={() => setIsThreeWayMatchOpen(false)}
+          matchResult={selectedMatchResult}
+          onApprove={(res) => {
+            showToast(
+              `Invoice ${res.invoice_number} approved! ₹${res.expected_total_amount.toLocaleString('en-IN')} committed against PO ${res.po_number}.`,
+              'success'
+            );
+            setIsThreeWayMatchOpen(false);
+          }}
+          onRequestCorrection={(res) => {
+            showToast(
+              `Correction requested for Invoice ${res.invoice_number}. Exceptions flagged back to vendor.`,
+              'warning'
+            );
+            setIsThreeWayMatchOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 };

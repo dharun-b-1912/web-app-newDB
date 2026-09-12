@@ -11,6 +11,7 @@ import {
 } from '../../lib/security/sessionProtection';
 import { User, Organization, ScopeLevel } from '../../types';
 import { roleResolutionService } from './roleResolutionService';
+import { VendorCredentialService } from '../vendor/vendorCredentialService';
 
 export type AuthContextMode = 'tenant' | 'admin' | 'platform' | 'vendor';
 
@@ -23,6 +24,8 @@ export type AccountStatus =
   | 'LOCKED'
   | 'DISABLED';
 
+import { AuthContext } from '../../types/authContext';
+
 export interface AuthSessionUser extends User {
   auth_user_id?: string;
   tenant_id?: string;
@@ -30,6 +33,7 @@ export interface AuthSessionUser extends User {
   must_change_password?: boolean;
   is_platform_admin?: boolean;
   platform_role?: string;
+  authContext?: AuthContext;
 }
 
 export interface AuthResult {
@@ -40,6 +44,7 @@ export interface AuthResult {
   mustChangePassword?: boolean;
   errorMessage?: string;
   errorCode?: string;
+  authContext?: AuthContext;
 }
 
 export type AuthAuditEventType =
@@ -159,6 +164,77 @@ export const authService = {
     }
 
     try {
+      // 0. Vendor Authentication Layer
+      // Scoped exclusively to Vendor credentials & portal authorization
+      if (context === 'vendor' || VendorCredentialService.hasVendorCredentials(cleanId)) {
+        const vendorAuth = VendorCredentialService.authenticateVendor(cleanId, password);
+        if (vendorAuth.success && vendorAuth.authContext) {
+          this.resetRateLimit(cleanId);
+          const vCtx = vendorAuth.authContext;
+          const orgId = vCtx.tenant?.organizationId || 'org-test-enterprise-global-001';
+          const sessionUser: AuthSessionUser = {
+            id: vCtx.userId,
+            auth_user_id: vCtx.authUserId,
+            email: vCtx.identity.email || cleanId,
+            name: vCtx.identity.fullName || 'Vendor Admin',
+            avatar_url: vCtx.identity.avatarUrl || '',
+            organization_id: orgId,
+            tenant_id: orgId,
+            status: 'Active',
+            account_status: 'ACTIVE',
+            must_change_password: false,
+            is_platform_admin: false,
+            role: 'Vendor Admin',
+            roles: [
+              {
+                id: 'role-vendor-admin',
+                organization_id: orgId,
+                name: 'Vendor Admin',
+                description: 'Vendor Admin Role',
+                permissions: [
+                  { permission_id: 'vendor.portal.access', scope_level: 'Organization' as ScopeLevel },
+                ],
+              },
+            ],
+            authContext: vCtx,
+            created_at: new Date().toISOString(),
+          };
+
+          this.saveActiveSession(sessionUser, 'vendor');
+
+          await this.logAuditEvent('LOGIN_SUCCESS', {
+            userId: sessionUser.id,
+            email: sessionUser.email,
+            context: 'vendor',
+            role: 'Vendor Admin',
+            tenantId: orgId,
+          });
+
+          const destinationRoute = vCtx.defaultRoute || 'vendor-settlement-workspace';
+
+          return {
+            success: true,
+            user: sessionUser,
+            destinationRoute,
+            mustChangePassword: false,
+            authContext: vCtx,
+          };
+        } else if (context === 'vendor') {
+          this.recordFailedAttempt(cleanId);
+          await this.logAuditEvent('LOGIN_FAILED', {
+            identifier: cleanId,
+            context,
+            reason: vendorAuth.errorMessage || 'Invalid vendor credentials',
+          });
+
+          return {
+            success: false,
+            errorMessage: vendorAuth.errorMessage || 'Invalid vendor credentials or portal account not found.',
+            errorCode: 'INVALID_CREDENTIALS',
+          };
+        }
+      }
+
       // 1. Supabase Authentication
       if (isSupabaseEnabled) {
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -287,6 +363,7 @@ export const authService = {
                   ],
             },
           ],
+          authContext: resolvedIdentity.authContext,
           created_at: authUser.created_at || new Date().toISOString(),
         };
 
@@ -302,8 +379,11 @@ export const authService = {
           tenantId: orgId,
         });
 
-        // 5. Compute Authorized Post-Login Route
-        const destinationRoute = resolvedIdentity.destinationRoute || this.resolvePostLoginRoute(resolvedRole, context);
+        // 5. Compute Authorized Post-Login Route from Authoritative PortalAccessResolver
+        const destinationRoute =
+          resolvedIdentity.authContext?.defaultRoute ||
+          resolvedIdentity.destinationRoute ||
+          this.resolvePostLoginRoute(resolvedRole, context);
 
         return {
           success: true,
@@ -311,6 +391,7 @@ export const authService = {
           tenant: tenantRecord,
           destinationRoute,
           mustChangePassword,
+          authContext: resolvedIdentity.authContext,
         };
       }
 

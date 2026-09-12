@@ -3,6 +3,7 @@ import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { useToast } from '../../../components/ui/Toast';
 import { offboardingService } from '../../../services/offboardingService';
+import { payrollApi } from '../../../services/payrollApi';
 import {
   EmployeeSeparation,
   ClearanceStatus,
@@ -20,6 +21,7 @@ import {
   AlertTriangle,
   FileText,
   Laptop,
+  Calculator,
   CreditCard,
   DollarSign,
   ShieldCheck,
@@ -71,6 +73,44 @@ export const SeparationDetailDrawer: React.FC<SeparationDetailDrawerProps> = ({
   const emp = separation.employee;
   const fullName = emp ? `${emp.first_name} ${emp.last_name}` : 'Employee';
   const progressPct = separation.progress_percentage || 0;
+  const fnfSettlement = separation ? payrollApi.getFnFSettlements().find(s => s.separation_id === separation.id || s.employee_id === separation.employee_id) : null;
+
+  const handleGenerateFnF = () => {
+    try {
+      const lwd = separation.actual_last_working_date || separation.approved_last_working_date || separation.expected_last_working_date || new Date().toISOString().split('T')[0];
+      const resDate = separation.resignation_date || new Date().toISOString().split('T')[0];
+      const rDate = new Date(resDate);
+      const lDate = new Date(lwd);
+      const served = Math.max(0, Math.round((lDate.getTime() - rDate.getTime()) / (1000 * 60 * 60 * 24)));
+      const required = separation.notice_period_days || 30;
+      const leaveDays = separation.fnf_readiness?.leave_encashment_days || 12;
+      const assetDeds = (separation.assets || []).reduce((sum, a) => {
+        if (a.recovery_status === 'DAMAGED' || a.recovery_status === 'MISSING') {
+          return sum + (Number(a.financial_recovery_amount) || 0);
+        }
+        return sum;
+      }, 0);
+
+      payrollApi.calculateFnFSettlement(
+        separation.employee_id,
+        resDate,
+        lwd,
+        required,
+        served,
+        leaveDays,
+        'HR Administrator',
+        undefined,
+        {
+          separation_id: separation.id,
+          asset_recovery_deduction: assetDeds,
+        }
+      );
+      showToast('✓ Generated F&F Settlement Draft in Core Payroll Engine', 'success');
+      onRefresh();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to generate F&F', 'error');
+    }
+  };
 
   // Clearance handler
   const handleUpdateClearance = async (clearanceId: string, status: ClearanceStatus) => {
@@ -658,53 +698,133 @@ export const SeparationDetailDrawer: React.FC<SeparationDetailDrawerProps> = ({
             </div>
           )}
 
-          {/* TAB 6: F&F READINESS */}
+          {/* TAB 6: F&F READINESS & PAYROLL SETTLEMENT */}
           {activeTab === 'fnf' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-extrabold text-gray-900">Full & Final Settlement Inputs</h3>
-                <Badge variant={separation.fnf_readiness?.status === 'APPROVED' ? 'emerald' : 'amber'}>
-                  {separation.fnf_readiness?.status || 'INPUTS_PENDING'}
-                </Badge>
-              </div>
-
-              <div className="p-5 bg-gray-50 border border-gray-200 rounded-2xl space-y-4">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div className="p-3 bg-white rounded-xl border border-gray-100">
-                    <span className="text-gray-400 block font-medium">Worked Days</span>
-                    <span className="font-extrabold text-gray-900 text-sm mt-0.5 block">
-                      {separation.fnf_readiness?.worked_days || 22} Days
-                    </span>
-                  </div>
-                  <div className="p-3 bg-white rounded-xl border border-gray-100">
-                    <span className="text-gray-400 block font-medium">Loss of Pay (LOP)</span>
-                    <span className="font-extrabold text-red-600 text-sm mt-0.5 block">
-                      {separation.fnf_readiness?.lop_days || 0} Days
-                    </span>
-                  </div>
-                  <div className="p-3 bg-white rounded-xl border border-gray-100">
-                    <span className="text-gray-400 block font-medium">Leave Encashment</span>
-                    <span className="font-extrabold text-emerald-700 text-sm mt-0.5 block">
-                      {separation.fnf_readiness?.leave_encashment_days || 12} Days
-                    </span>
-                  </div>
-                  <div className="p-3 bg-white rounded-xl border border-gray-100">
-                    <span className="text-gray-400 block font-medium">Est. Net Settlement</span>
-                    <span className="font-extrabold text-[#07563D] text-sm mt-0.5 block">
-                      ${separation.fnf_readiness?.net_payable_estimated || 7350}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-start gap-2.5">
-                  <DollarSign className="w-4 h-4 text-blue-700 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">Payroll Integration Source of Truth:</span> Offboarding provides
-                    attendance reconciliation, leave encashment days, and asset deductions. Final disbursement is executed
-                    by the core Payroll Engine.
-                  </div>
+                <h3 className="text-sm font-extrabold text-gray-900">Full & Final Settlement Engine</h3>
+                <div className="flex items-center gap-2">
+                  {fnfSettlement ? (
+                    <Badge variant="emerald" className="font-bold">
+                      SETTLEMENT: {fnfSettlement.payment_status.toUpperCase()}
+                    </Badge>
+                  ) : (
+                    <Badge variant={separation.fnf_readiness?.status === 'APPROVED' ? 'emerald' : 'amber'}>
+                      {separation.fnf_readiness?.status || 'INPUTS_PENDING'}
+                    </Badge>
+                  )}
                 </div>
               </div>
+
+              {fnfSettlement ? (
+                <div className="p-5 bg-gradient-to-br from-emerald-50/70 to-white border border-emerald-200 rounded-2xl space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block">
+                        Core Payroll Net Payout
+                      </span>
+                      <span className="text-2xl font-black text-[#07563D] mt-0.5 block font-mono">
+                        ₹ {fnfSettlement.net_settlement_payable.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <Badge variant={fnfSettlement.payment_status === 'Disbursed' ? 'emerald' : 'info'} className="text-xs font-bold">
+                      {fnfSettlement.payment_status}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="p-3 bg-white rounded-xl border border-emerald-100">
+                      <span className="text-gray-400 block font-medium">Unpaid Salary</span>
+                      <span className="font-bold text-gray-900 mt-0.5 block font-mono">
+                        ₹ {fnfSettlement.unpaid_salary_amount.toLocaleString('en-IN')}
+                      </span>
+                      <span className="text-[10px] text-gray-400">({fnfSettlement.unpaid_salary_days} Days)</span>
+                    </div>
+                    <div className="p-3 bg-white rounded-xl border border-emerald-100">
+                      <span className="text-gray-400 block font-medium">Leave Encashment</span>
+                      <span className="font-bold text-gray-900 mt-0.5 block font-mono">
+                        ₹ {fnfSettlement.leave_encashment_amount.toLocaleString('en-IN')}
+                      </span>
+                      <span className="text-[10px] text-gray-400">({fnfSettlement.earned_leave_balance_days} Days)</span>
+                    </div>
+                    <div className="p-3 bg-white rounded-xl border border-emerald-100">
+                      <span className="text-gray-400 block font-medium">Gratuity</span>
+                      <span className="font-bold text-gray-900 mt-0.5 block font-mono">
+                        ₹ {fnfSettlement.gratuity_amount.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-white rounded-xl border border-rose-100">
+                      <span className="text-gray-400 block font-medium">Total Deductions</span>
+                      <span className="font-bold text-rose-600 mt-0.5 block font-mono">
+                        - ₹ {fnfSettlement.total_deductions_settlement.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-emerald-100/60 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                      Authoritative Settlement Record linked in Core Payroll Module
+                    </span>
+                    <Button
+                      size="sm"
+                      onClick={handleGenerateFnF}
+                      className="bg-[#07563D] hover:bg-[#064e37] text-white text-[11px] h-7 px-2 font-bold cursor-pointer"
+                    >
+                      Recalculate
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-5 bg-gray-50 border border-gray-200 rounded-2xl space-y-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="p-3 bg-white rounded-xl border border-gray-100">
+                      <span className="text-gray-400 block font-medium">Notice Served</span>
+                      <span className="font-extrabold text-gray-900 text-sm mt-0.5 block">
+                        {separation.notice_period_days || 30} Days
+                      </span>
+                    </div>
+                    <div className="p-3 bg-white rounded-xl border border-gray-100">
+                      <span className="text-gray-400 block font-medium">Notice Shortfall</span>
+                      <span className="font-extrabold text-red-600 text-sm mt-0.5 block">
+                        {separation.notice_buyout_days || 0} Days
+                      </span>
+                    </div>
+                    <div className="p-3 bg-white rounded-xl border border-gray-100">
+                      <span className="text-gray-400 block font-medium">Leave Encashment</span>
+                      <span className="font-extrabold text-emerald-700 text-sm mt-0.5 block">
+                        {separation.fnf_readiness?.leave_encashment_days || 12} Days
+                      </span>
+                    </div>
+                    <div className="p-3 bg-white rounded-xl border border-gray-100">
+                      <span className="text-gray-400 block font-medium">Asset Deductions</span>
+                      <span className="font-extrabold text-rose-700 text-sm mt-0.5 block">
+                        ₹ {(separation.assets || []).reduce((sum, a) => (a.recovery_status === 'DAMAGED' || a.recovery_status === 'MISSING' ? sum + (Number(a.financial_recovery_amount) || 0) : sum), 0)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-center justify-between gap-2.5">
+                    <div className="flex items-start gap-2">
+                      <DollarSign className="w-4 h-4 text-blue-700 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold">Automated Cross-Module Hand-off:</span>
+                        <p className="text-[11px] text-blue-800 mt-0.5">
+                          Click below to automatically dispatch these verified exit inputs directly into the Payroll FnF Settlement calculation sheet.
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={handleGenerateFnF}
+                      className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold shrink-0 cursor-pointer shadow-xs"
+                    >
+                      <Calculator className="w-3.5 h-3.5 mr-1" />
+                      Generate Draft FnF
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

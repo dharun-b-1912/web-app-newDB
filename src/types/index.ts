@@ -579,7 +579,9 @@ export interface Employee {
   avatar_asset_id?: string | null;
   avatar_version?: number;
   status: EmployeeStatus;
+  employment_status?: string;
   employment_type: EmploymentType;
+  reporting_manager_id?: string | null;
   employment_source?: EmploymentSource;
   vendor_id?: string;
   vendor_name?: string;
@@ -1338,12 +1340,21 @@ export type VendorType =
   | 'OTHER';
 
 export type VendorStatus =
+  | 'INVITED'
   | 'DRAFT'
-  | 'PENDING_VERIFICATION'
+  | 'ONBOARDING'
+  | 'SUBMITTED'
+  | 'UNDER_REVIEW'
+  | 'CORRECTION_REQUIRED'
+  | 'RESUBMITTED'
+  | 'APPROVED'
   | 'ACTIVE'
+  | 'PENDING_VERIFICATION'
   | 'SUSPENDED'
   | 'EXPIRED'
   | 'TERMINATED'
+  | 'ARCHIVED'
+  | 'REJECTED'
   | 'INACTIVE';
 
 export type VendorContractStatus =
@@ -1370,6 +1381,8 @@ export type VendorPaymentStatus =
 
 export type VendorReturnReason =
   | 'INVALID_ACCOUNT'
+  | 'IFSC_DISCREPANCY'
+  | 'BENEFICIARY_MISMATCH'
   | 'BANK_REJECTION'
   | 'ACCOUNT_CLOSED'
   | 'DUPLICATE_PAYMENT'
@@ -1420,10 +1433,24 @@ export interface Vendor {
   swift_code?: string;
   bank_branch?: string;
   notes?: string;
+  constitution_type?: string;
+  is_gst_applicable?: boolean;
+  gst_exemption_reason?: string;
+  msme_registered?: string;
+  udyam_registration_number?: string;
+  correction_reason?: string;
+  onboarding_step?: number;
+  compliance_completed?: boolean;
   deployed_workforce_count?: number;
   active_contracts_count?: number;
   compliance_issues_count?: number;
   pending_payments_count?: number;
+  suspension_reason?: string;
+  suspension_effective_date?: string;
+  suspension_comments?: string;
+  archived_at?: string;
+  archived_by?: string;
+  archive_reason?: string;
   created_by?: string;
   created_at?: string;
   updated_at?: string;
@@ -1436,12 +1463,16 @@ export interface VendorContract {
   legal_entity_name?: string;
   contract_number: string;
   contract_type: string;
+  title?: string;
   start_date: string;
   end_date: string;
   renewal_date?: string;
+  auto_renew?: boolean;
   notice_period_days: number;
   payment_terms: string;
   currency: string;
+  rate_card_type?: string;
+  service_charge_percentage?: number;
   status: VendorContractStatus;
   document_id?: string;
   notes?: string;
@@ -1814,8 +1845,11 @@ export interface SeparationClearance {
   status: ClearanceStatus;
   due_date?: string;
   comments?: string;
+  notes?: string;
   completed_at?: string;
+  cleared_at?: string;
   completed_by?: string;
+  cleared_by?: string;
   created_at: string;
   updated_at: string;
 }

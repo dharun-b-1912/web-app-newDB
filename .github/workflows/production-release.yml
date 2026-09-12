@@ -1,0 +1,81 @@
+name: "JOY PeopleHR — Production Release Candidate & Deployment"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Semantic Version Tag (e.g., 1.0.3)'
+        required: true
+        default: '1.0.3'
+      confirm_production:
+        description: 'Type "CONFIRM_PRODUCTION_RELEASE" to proceed'
+        required: true
+
+jobs:
+  production-release:
+    name: "Production Release Gate & Packaging"
+    runs-on: ubuntu-latest
+    environment: production # Requires GitHub Environment Approval Gate
+    steps:
+      - name: Validate Confirmation Guard
+        run: |
+          if [ "${{ github.event.inputs.confirm_production }}" != "CONFIRM_PRODUCTION_RELEASE" ]; then
+            echo "::error::Production release confirmation failed. Aborting."
+            exit 1
+          fi
+
+      - name: Checkout Tagged Release
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Strict Quality Gate Verification
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx vitest run src/services/__tests__/masterAttendanceEngine.test.ts
+
+      - name: Strict Flutter Verification
+        working-directory: ./flutter_app
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Build Production Signed AppBundle (.aab)
+        working-directory: ./flutter_app
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_PROPERTIES: ${{ secrets.KEY_PROPERTIES }}
+        run: |
+          flutter build appbundle --release \
+            --dart-define=APP_ENV=production \
+            --dart-define=APP_VERSION=${{ github.event.inputs.version_tag }} \
+            --dart-define=APP_BUILD_CODE=${{ github.run_number }} \
+            --dart-define=GIT_COMMIT_SHA=${{ github.sha }}
+
+      - name: Generate Production Release Manifest
+        run: node scripts/generate_release_notes.cjs PRODUCTION
+
+      - name: Upload Production Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: joy-peoplehr-production-v${{ github.event.inputs.version_tag }}-b${{ github.run_number }}
+          path: |
+            flutter_app/build/app/outputs/bundle/release/app-release.aab
+            RELEASE_NOTES.txt

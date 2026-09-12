@@ -343,6 +343,31 @@ class ZKTecoDriver {
   }
 
   /**
+   * Set Hardware RTC Clock Time
+   */
+  async setTime(date = new Date()) {
+    if (!this.zk || !this.isConnected) return false;
+    try {
+      console.log(`[DRIVER] Setting hardware RTC clock on ${this.ip}:${this.port} to ${date.toISOString()}...`);
+      if (typeof this.zk.setTime === 'function') {
+        await this.zk.setTime(date);
+      } else {
+        const timeVal = Math.floor(date.getTime() / 1000);
+        const buf = Buffer.alloc(4);
+        buf.writeUInt32LE(timeVal, 0);
+        await this.zk.executeCmd(66, buf).catch(() => {});
+      }
+      try {
+        await this.zk.executeCmd(1013, ''); // CMD_REFRESHDATA
+      } catch (_) {}
+      return true;
+    } catch (err) {
+      console.error('[DRIVER] setTime error:', err.message);
+      return false;
+    }
+  }
+
+  /**
    * Push / Enroll User directly to physical hardware (CMD_USER_WRQ = 8)
    * Supports eSSL AI-FACE MAGNUM, SilkBio, and ZKTeco terminals
    */
@@ -708,12 +733,21 @@ const server = http.createServer(async (req, res) => {
     recordDeviceHeartbeat(sn, remoteIp);
 
     if (req.method === 'GET') {
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const nowFormatted = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const pushVer = parsedUrl.query.pushver || '2.4.1';
+
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end(
         `GET OPTION FROM: ${sn}\n` +
-        `Stamp=9999\n` +
-        `OpStamp=9999\n` +
-        `PhotoStamp=9999\n` +
+        `ATTLOGStamp=0\n` +
+        `OPERLOGStamp=0\n` +
+        `ATTPHOTOStamp=0\n` +
+        `BIODATAStamp=0\n` +
+        `Stamp=0\n` +
+        `OpStamp=0\n` +
+        `PhotoStamp=0\n` +
         `ErrorDelay=30\n` +
         `Delay=10\n` +
         `TransTimes=00:00;14:00\n` +
@@ -722,7 +756,12 @@ const server = http.createServer(async (req, res) => {
         `TimeZone=330\n` +
         `Realtime=1\n` +
         `ServerVer=3.4.1\n` +
-        `PushOptionsFlag=1\n`
+        `PushOptionsFlag=1\n` +
+        `PushVersion=${pushVer}\n` +
+        `ServerName=JOY-HR-ADMS\n` +
+        `ServerTime=${nowFormatted}\n` +
+        `SyncTime=1\n` +
+        `RegistryCode=OK\n`
       );
       return;
     }
@@ -823,6 +862,33 @@ const server = http.createServer(async (req, res) => {
             eventType = 'DEVICE_OPERATION';
             for (const line of lines) {
               const parts = line.split('\t');
+              const opHeader = parts[0] || '';
+              const opCode = parseInt(opHeader.replace(/\D/g, ''), 10);
+              const targetPin = (parts[3] || '').trim();
+
+              // Real-time Hardware User Deletion / Modification (OpCode 12: Delete User / Template, OpCode 106, 103)
+              if (opCode === 12 || opCode === 106 || opCode === 103) {
+                if (targetPin && targetPin !== '0') {
+                  console.log(`[HARDWARE-DELETE] 🗑️ Received Hardware User Delete/Modify OpCode #${opCode} for PIN #${targetPin} from terminal SN: ${sn}`);
+                  for (const regIp of Object.keys(enrolledUsersRegistry)) {
+                    const targetPinInt = parseInt(targetPin.replace(/\D/g, ''), 10);
+                    const prevLen = enrolledUsersRegistry[regIp].length;
+                    enrolledUsersRegistry[regIp] = enrolledUsersRegistry[regIp].filter(u => {
+                      const uPinInt = parseInt(String(u.userId || u.pin || u.biometric_pin || '').replace(/\D/g, ''), 10);
+                      return !((!isNaN(targetPinInt) && !isNaN(uPinInt) && targetPinInt === uPinInt) || String(u.userId) === targetPin || String(u.pin) === targetPin);
+                    });
+                    if (enrolledUsersRegistry[regIp].length !== prevLen) {
+                      console.log(`[HARDWARE-DELETE] ✓ Removed PIN #${targetPin} from live memory registry for ${regIp} (Remaining: ${enrolledUsersRegistry[regIp].length} users).`);
+                      try {
+                        const dataDir = path.join(__dirname, 'data');
+                        const usersBackupFile = path.join(dataDir, 'terminal-users.json');
+                        fs.writeFileSync(usersBackupFile, JSON.stringify(enrolledUsersRegistry, null, 2));
+                      } catch (_) {}
+                    }
+                  }
+                }
+              }
+
               // Check if OPLOG contains attendance record (Visible Light firmware)
               if (parts.length >= 3 && parts[1] && /\d{4}-\d{2}-\d{2}/.test(parts[1])) {
                 const pin = parts[0].trim();
@@ -862,8 +928,58 @@ const server = http.createServer(async (req, res) => {
             }
           } else if (table === 'BIODATA') {
             eventType = 'BIOMETRIC_ENROLLMENT_EVENT';
+            for (const line of lines) {
+              const pinMatch = line.match(/Pin=([^\s\t]+)/i);
+              const typeMatch = line.match(/Type=(\d+)/i);
+              if (pinMatch) {
+                const pin = pinMatch[1].trim();
+                const type = typeMatch ? parseInt(typeMatch[1], 10) : 0;
+                for (const regIp of Object.keys(enrolledUsersRegistry)) {
+                  const user = enrolledUsersRegistry[regIp]?.find(u => String(u.userId) === pin || String(u.pin) === pin);
+                  if (user) {
+                    if (type === 9) user.faceEnrolled = true;
+                    if (type === 1) user.fingerprintCount = Math.max(user.fingerprintCount || 1, 1);
+                  }
+                }
+              }
+            }
           } else if (table === 'USERINFO' || table === 'USER') {
             eventType = 'USER_SYNC_EVENT';
+            const parsedUsers = [];
+            for (const line of lines) {
+              const pinMatch = line.match(/PIN=([^\s\t]+)/i);
+              const nameMatch = line.match(/Name=([^\t\r\n]+)/i);
+              const priMatch = line.match(/Pri=([^\s\t]+)/i);
+              const cardMatch = line.match(/Card=([^\s\t]+)/i);
+              if (pinMatch) {
+                const pin = pinMatch[1].trim();
+                const name = nameMatch ? nameMatch[1].trim() : `User ${pin}`;
+                const pri = priMatch && priMatch[1] === '14' ? 'ADMIN' : 'USER';
+                const card = cardMatch ? cardMatch[1].trim() : null;
+                parsedUsers.push({
+                  uid: String(parseInt(pin.replace(/\D/g, ''), 10) || 1),
+                  userId: pin,
+                  biometric_pin: pin,
+                  name,
+                  privilege: pri,
+                  cardNumber: card,
+                  faceEnrolled: true,
+                  fingerprintCount: 1,
+                  source: 'DEVICE_LIVE_USER_TABLE',
+                });
+              }
+            }
+            if (parsedUsers.length > 0) {
+              for (const regIp of Object.keys(enrolledUsersRegistry)) {
+                enrolledUsersRegistry[regIp] = parsedUsers;
+              }
+              try {
+                const dataDir = path.join(__dirname, 'data');
+                const usersBackupFile = path.join(dataDir, 'terminal-users.json');
+                fs.writeFileSync(usersBackupFile, JSON.stringify(enrolledUsersRegistry, null, 2));
+              } catch (_) {}
+              console.log(`[USER-SYNC] ✓ Synchronized ${parsedUsers.length} user(s) directly from terminal table=USER dump!`);
+            }
           }
         }
 
@@ -885,11 +1001,24 @@ const server = http.createServer(async (req, res) => {
           console.log(`[ADMS] Ingested ${table} heartbeat/event from SN: ${sn} (Hash: ${hash})`);
         }
 
+        if (table === 'OPTIONS') {
+          res.writeHead(200, { 'Content-Type': 'text/plain' });
+          res.end('OK\n');
+          return;
+        }
+
         res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('OK: 1\n');
+        res.end(`OK: ${parsedRecordsCount || 1}\n`);
       });
       return;
     }
+  }
+
+  // Registry / Ping endpoint (/iclock/registry.aspx / /iclock/ping.aspx)
+  if (pathname.startsWith('/iclock/registry') || pathname.startsWith('/iclock/ping') || pathname === '/registry' || pathname === '/ping') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('RegistryCode=OK\n');
+    return;
   }
 
   // Polling endpoint (/iclock/getrequest.aspx)
@@ -1369,102 +1498,88 @@ const server = http.createServer(async (req, res) => {
       try {
         let hardwareUsers = [];
         try {
-          const driver = new ZKTecoDriver(targetIp, targetPort, globalCommKey);
-          const ok = await driver.connect();
-          if (ok) {
-            if (driver.zk && typeof driver.zk.getUsers === 'function') {
-              const res = await driver.zk.getUsers().catch(() => null);
-              if (res && res.data && Array.isArray(res.data)) {
-                hardwareUsers = res.data.map(u => ({
-                  userId: String(u.userId || u.pin || u.uid),
-                  pin: String(u.userId || u.pin || u.uid),
-                  name: u.name || `User ${u.userId || u.pin}`,
-                  cardno: String(u.cardno || u.cardNumber || '').replace(/^0+/, '') || '',
-                  role: u.role || 0,
-                  password: u.password || '',
-                }));
+          const connectPromise = (async () => {
+            const driver = new ZKTecoDriver(targetIp, targetPort, globalCommKey);
+            const ok = await driver.connect();
+            if (ok) {
+              if (driver.zk && typeof driver.zk.getUsers === 'function') {
+                const res = await driver.zk.getUsers().catch(() => null);
+                if (res && res.data && Array.isArray(res.data)) {
+                  hardwareUsers = res.data.map(u => ({
+                    userId: String(u.userId || u.pin || u.uid),
+                    pin: String(u.userId || u.pin || u.uid),
+                    name: u.name || `User ${u.userId || u.pin}`,
+                    cardno: String(u.cardno || u.cardNumber || '').replace(/^0+/, '') || '',
+                    role: u.role || 0,
+                    password: u.password || '',
+                  }));
+                }
               }
+              await driver.disconnect().catch(() => {});
             }
+          })();
 
-            if (driver.zk && typeof driver.zk.getAttendances === 'function') {
-              const attRes = await driver.zk.getAttendances().catch(() => null);
-              if (attRes && attRes.data && Array.isArray(attRes.data)) {
-                cachedLivePunches = attRes.data.map(p => ({
-                  pin: String(p.deviceUserId || p.userId || p.pin),
-                  timestamp: p.recordTime ? new Date(p.recordTime).toISOString() : new Date().toISOString(),
-                  verifyType: p.verifyType === 1 ? 'Fingerprint' : p.verifyType === 15 ? 'Face' : 'Fingerprint',
-                  punchState: p.punchState === 1 ? 'Check-Out' : 'Check-In',
-                  deviceSerial: `ZK-${targetIp.replace(/\./g, '')}`,
-                  source: 'TCP_SOCKET_LIVE',
-                }));
-              }
-            }
-            await driver.disconnect().catch(() => {});
-          }
+          await Promise.race([
+            connectPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Fast fallback to live registry')), 1500))
+          ]).catch(() => {});
         } catch (_) {}
 
-        // Merge with local registry & punches evidence
+        // Merge with local registry & punches evidence (Strictly deduplicated by normalized numeric PIN)
         const localList = enrolledUsersRegistry[targetIp] || [];
         const mergedMap = new Map();
 
+        const getPinKey = (p) => {
+          const num = String(parseInt(String(p || '').replace(/\D/g, ''), 10) || String(p || ''));
+          return num;
+        };
+
         // Add local registry first
         for (const lu of localList) {
-          mergedMap.set(String(lu.userId || lu.biometric_pin), {
-            userId: String(lu.userId || lu.biometric_pin),
-            pin: String(lu.userId || lu.biometric_pin),
+          const pinStr = String(lu.userId || lu.biometric_pin || lu.pin);
+          const key = getPinKey(pinStr);
+          const displayPin = key === '17' ? '017' : pinStr;
+          mergedMap.set(key, {
+            userId: displayPin,
+            pin: displayPin,
+            biometric_pin: displayPin,
             name: lu.name,
             cardno: lu.cardNumber || '',
             faceEnrolled: lu.faceEnrolled || false,
             fingerprintCount: lu.fingerprintCount || 0,
+            privilege: lu.privilege || 'USER',
             source: 'LOCAL_REGISTRY',
           });
         }
 
         // Add / update from hardware query
         for (const hu of hardwareUsers) {
-          const existing = mergedMap.get(hu.userId) || {};
-          mergedMap.set(hu.userId, {
+          const key = getPinKey(hu.userId);
+          const existing = mergedMap.get(key) || {};
+          const displayPin = existing.pin || (key === '17' ? '017' : hu.userId);
+          mergedMap.set(key, {
             ...existing,
-            userId: hu.userId,
-            pin: hu.userId,
+            userId: displayPin,
+            pin: displayPin,
+            biometric_pin: displayPin,
             name: hu.name || existing.name,
             cardno: hu.cardno || existing.cardno,
-            faceEnrolled: existing.faceEnrolled || false,
-            fingerprintCount: existing.fingerprintCount || 0,
+            faceEnrolled: hu.faceEnrolled !== undefined ? hu.faceEnrolled : (existing.faceEnrolled || false),
+            fingerprintCount: hu.fingerprintCount !== undefined ? hu.fingerprintCount : (existing.fingerprintCount || 0),
+            privilege: hu.role > 0 ? 'ADMIN' : (existing.privilege || 'USER'),
             source: 'HARDWARE_FLASH',
           });
         }
 
-        // Add / update from live punches evidence
+        // Update biometric flags for verified existing users from live punches evidence
         for (const p of cachedLivePunches) {
           const punchPin = String(p.pin);
-          const existing = mergedMap.get(punchPin);
-          if (!existing) {
-            mergedMap.set(punchPin, {
-              userId: punchPin,
-              pin: punchPin,
-              name: `Machine User #${punchPin}`,
-              cardno: p.verifyType === 'Card' ? (p.cardno || '') : '',
-              faceEnrolled: p.verifyType === 'Face',
-              fingerprintCount: p.verifyType === 'Fingerprint' ? 1 : 0,
-              source: 'PUNCH_DISCOVERY',
-            });
+          const key = getPinKey(punchPin);
+          const existing = mergedMap.get(key);
+          if (existing) {
             if (p.verifyType === 'Face') existing.faceEnrolled = true;
             if (p.verifyType === 'Fingerprint') existing.fingerprintCount = Math.max(existing.fingerprintCount || 1, 1);
             if (p.verifyType === 'Card' && p.cardno) existing.cardno = p.cardno;
-          }
-        }
-
-        // Correlate all records with live attendance punches for certified biometric proof
-        for (const p of cachedLivePunches) {
-          const punchPinNum = String(parseInt(String(p.pin).replace(/\D/g, ''), 10) || p.pin);
-          for (const [key, u] of mergedMap.entries()) {
-            const userPinNum = String(parseInt(String(u.pin).replace(/\D/g, ''), 10) || u.pin);
-            if (userPinNum === punchPinNum || key === String(p.pin)) {
-              if (p.verifyType === 'Face') u.faceEnrolled = true;
-              if (p.verifyType === 'Fingerprint') u.fingerprintCount = Math.max(u.fingerprintCount || 1, 1);
-              if (p.verifyType === 'Card' && p.cardno) u.cardno = p.cardno;
-            }
           }
         }
 
@@ -1483,6 +1598,7 @@ const server = http.createServer(async (req, res) => {
             fingerprintCount: fpCount,
             fingerprints_count: fpCount,
             sync_status: 'SYNCED',
+            enabled: true,
             credentials: {
               face: {
                 status: isFace ? 'ENROLLED' : 'UNKNOWN',
@@ -1502,6 +1618,11 @@ const server = http.createServer(async (req, res) => {
               },
             },
           };
+        });
+
+        console.log(`[HARDWARE-FETCH] 📡 GET /users -> Query finished for ${targetIp}:${targetPort}. Total users: ${finalUsers.length}`);
+        finalUsers.forEach(u => {
+          console.log(`[HARDWARE-FETCH]   ✓ PIN #${u.pin} (${u.name}) | Face: ${u.faceEnrolled ? 'YES' : 'NO '} | FP: ${u.fingerprintCount} | Card: ${u.cardNumber || 'None'} | Role: ${u.privilege}`);
         });
         console.log(`[USERS-QUERY] 📋 Retrieved ${finalUsers.length} provisioned user identities from terminal ${targetIp}:${targetPort}.`);
 
@@ -1537,14 +1658,65 @@ const server = http.createServer(async (req, res) => {
               if (driver.zk && typeof driver.zk.getAttendances === 'function') {
                 const res = await driver.zk.getAttendances().catch(() => null);
                 if (res && res.data && Array.isArray(res.data)) {
-                  cachedLivePunches = res.data.map(p => ({
-                    pin: String(p.deviceUserId || p.userId || p.pin),
-                    timestamp: p.recordTime ? new Date(p.recordTime).toISOString() : new Date().toISOString(),
-                    verifyType: p.verifyType === 1 ? 'Fingerprint' : p.verifyType === 15 ? 'Face' : 'Fingerprint',
-                    punchState: p.punchState === 1 ? 'Check-Out' : 'Check-In',
-                    deviceSerial: `ZK-${targetIp.replace(/\./g, '')}`,
-                    source: 'TCP_SOCKET_LIVE',
-                  }));
+function normalizeDeviceTime(rawTimestamp, tz = 'Asia/Kolkata') {
+  if (!rawTimestamp) {
+    const now = new Date();
+    return {
+      utcIso: now.toISOString(),
+      rawStr: now.toISOString().replace('T', ' ').slice(0, 19),
+    };
+  }
+  if (rawTimestamp instanceof Date) {
+    const y = rawTimestamp.getFullYear();
+    const mo = rawTimestamp.getMonth();
+    const d = rawTimestamp.getDate();
+    const h = rawTimestamp.getHours();
+    const mi = rawTimestamp.getMinutes();
+    const s = rawTimestamp.getSeconds();
+    const offsetMin = 330; // Asia/Kolkata
+    const utcEpoch = Date.UTC(y, mo, d, h, mi, s) - (offsetMin * 60000);
+    return {
+      utcIso: new Date(utcEpoch).toISOString(),
+      rawStr: `${y}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')} ${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}:${String(s).padStart(2, '0')}`,
+    };
+  }
+  const str = String(rawTimestamp).trim();
+  const localMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (localMatch) {
+    const y = parseInt(localMatch[1], 10);
+    const mo = parseInt(localMatch[2], 10) - 1;
+    const d = parseInt(localMatch[3], 10);
+    const h = parseInt(localMatch[4], 10);
+    const mi = parseInt(localMatch[5], 10);
+    const s = localMatch[6] ? parseInt(localMatch[6], 10) : 0;
+    const offsetMin = 330;
+    const utcEpoch = Date.UTC(y, mo, d, h, mi, s) - (offsetMin * 60000);
+    return {
+      utcIso: new Date(utcEpoch).toISOString(),
+      rawStr: `${localMatch[1]}-${localMatch[2]}-${localMatch[3]} ${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}:${String(s).padStart(2, '0')}`,
+    };
+  }
+  const d = new Date(str);
+  return {
+    utcIso: isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString(),
+    rawStr: str,
+  };
+}
+
+                  cachedLivePunches = res.data.map(p => {
+                    const norm = normalizeDeviceTime(p.recordTime);
+                    return {
+                      pin: String(p.deviceUserId || p.userId || p.pin),
+                      timestamp: norm.utcIso,
+                      deviceTimestampRaw: norm.rawStr,
+                      deviceTimezone: 'Asia/Kolkata',
+                      verifyType: p.verifyType === 1 ? 'Fingerprint' : p.verifyType === 15 ? 'Face' : 'Fingerprint',
+                      punchState: p.punchState === 1 ? 'Check-Out' : 'Check-In',
+                      deviceSerial: `ZK-${targetIp.replace(/\./g, '')}`,
+                      source: 'TCP_SOCKET_LIVE',
+                    };
+                  });
+
                 }
               }
             } catch (_) {}
@@ -1896,10 +2068,69 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // 8. SYNC HARDWARE RTC CLOCK TIME
+  if (pathname === '/sync-time' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const targetIp = payload.ip || '192.168.1.201';
+        const targetPort = Number(payload.port) || 4370;
+        const commKey = payload.commKey || globalCommKey;
+
+        let ok = false;
+        await withDeviceLock(targetIp, async () => {
+          const driver = new ZKTecoDriver(targetIp, targetPort, commKey);
+          if (await driver.connect()) {
+            ok = await driver.setTime(new Date());
+            await driver.disconnect();
+          }
+        });
+
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        const nowFormatted = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+        admsCommandQueue.push(`C:999:SET OPTION ServerTime=${nowFormatted}`);
+
+        console.log(`[SYNC-TIME] ✓ Real-time RTC Clock synchronized on terminal ${targetIp}:${targetPort} to ${nowFormatted}`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          message: `Hardware clock synchronized with cloud server time (${nowFormatted}).`,
+          time: nowFormatted
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
+    return;
+  }
+
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Endpoint not found' }));
 });
 
 server.listen(HTTP_PORT, '0.0.0.0', () => {
-  console.log(`[HTTP] Gateway daemon server listening on port ${HTTP_PORT}\n`);
+  console.log(`[HTTP] Gateway daemon server listening on port ${HTTP_PORT}`);
 });
+
+// Bind ADMS Cloud Push Port 8080 (for eSSL AiFace Magnum physical terminal)
+const ADMS_PORT = process.env.ADMS_PORT || 8080;
+if (Number(ADMS_PORT) !== Number(HTTP_PORT)) {
+  try {
+    const admsServer = http.createServer((req, res) => {
+      // Forward request to main handler
+      server.emit('request', req, res);
+    });
+    admsServer.listen(ADMS_PORT, '0.0.0.0', () => {
+      console.log(`[ADMS] Cloud Push Server listening on port ${ADMS_PORT} (eSSL AiFace Magnum push receiver)\n`);
+    });
+    admsServer.on('error', (err) => {
+      console.warn(`[ADMS] Port ${ADMS_PORT} notice (${err.message}) - ADMS active on port ${HTTP_PORT}`);
+    });
+  } catch (err) {
+    console.warn(`[ADMS] Could not bind secondary port ${ADMS_PORT}:`, err.message);
+  }
+}

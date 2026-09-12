@@ -43,6 +43,8 @@ import {
 import { cn } from '../../../lib/utils';
 import { useToast } from '../../../components/ui/Toast';
 import { hrEventBus } from '../../../services/hrEventBus';
+import { LiveDataPayrollVerificationService } from '../../../services/payroll/liveDataPayrollVerificationService';
+import { FileSpreadsheet } from 'lucide-react';
 
 interface SalaryManagementViewProps {
   initialSubTab?: string;
@@ -381,7 +383,7 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
     payrollApi.saveEmployeeSalary(updated);
     loadData();
     setIsRevisionModalOpen(false);
-    showToast(`✓ Revised salary for ${selectedEmpSal.employee_name} to ₹${revNewCtc.toLocaleString('en-IN')}/yr.`);
+    showToast(`✓ Revised salary for ${selectedEmpSal.employee_name} to ₹${(revNewCtc || 0).toLocaleString('en-IN')}/yr.`);
   };
 
   const handleBulkAssign = () => {
@@ -475,6 +477,22 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
             size="sm"
             variant="outline"
             onClick={() => {
+              const res = LiveDataPayrollVerificationService.seed21WorkersIntoPlatform();
+              if (res.success) {
+                showToast(`✓ Seeded & Mapped Daily Wage Structure (₹600/day) to 21 Workers!`, 'success');
+                loadData();
+              }
+            }}
+            className="bg-purple-50 hover:bg-purple-100 border-purple-300 text-purple-900 font-semibold px-3 py-1.5 h-8 text-xs rounded-xl"
+            title="Maps 21 workers (CE0017-CE0039) to Daily Wage Structure (Basic ₹420, HRA ₹180, OT ₹75/hr)"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 mr-1 text-purple-700" /> ⚡ Seed 21 Workers Structure
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
               handleRunSimulation();
               setIsRuleSimModalOpen(true);
             }}
@@ -541,7 +559,7 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
                         {str.code}
                       </span>
                       <h4 className="font-bold text-gray-900 text-sm mt-2 tracking-tight">{str.name}</h4>
-                      <p className="text-xs text-gray-500 mt-0.5">{str.applicable_grade} • Base CTC: ₹{str.base_annual_ctc.toLocaleString('en-IN')}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{str.applicable_grade} • Base CTC: ₹{(str.base_annual_ctc || 0).toLocaleString('en-IN')}</p>
                     </div>
                     <span className={cn(
                       "px-2.5 py-0.5 rounded-full text-[11px] font-semibold inline-flex items-center gap-1.5 shrink-0",
@@ -561,7 +579,7 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
                         <span className="font-bold font-mono text-gray-900">
                           {c.calculation_type === 'PercentageOfGross' ? `${c.value}% of Gross` :
                            c.calculation_type === 'PercentageOfBasic' ? `${c.value}% of Basic` :
-                           `₹ ${c.value.toLocaleString('en-IN')}`}
+                           `₹ ${(c.value || 0).toLocaleString('en-IN')}`}
                         </span>
                       </div>
                     ))}
@@ -635,7 +653,7 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
                     <td className="px-4 py-3.5 font-mono text-gray-900 font-medium">
                       {comp.calculation_type === 'PercentageOfGross' ? `${comp.default_value}% of Gross` :
                        comp.calculation_type === 'PercentageOfBasic' ? `${comp.default_value}% of Basic` :
-                       comp.calculation_type === 'FixedAmount' ? `₹ ${comp.default_value.toLocaleString('en-IN')}` :
+                       comp.calculation_type === 'FixedAmount' ? `₹ ${(comp.default_value || 0).toLocaleString('en-IN')}` :
                        comp.calculation_type === 'Formula' ? comp.formula_expression :
                        comp.calculation_type}
                     </td>
@@ -733,13 +751,13 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
                         <HelpCircle className="w-3 h-3" /> Why this rule?
                       </button>
                     </td>
-                    <td className="px-4 py-3.5 font-mono font-bold text-gray-900">₹ {sal.annual_ctc.toLocaleString('en-IN')}</td>
-                    <td className="px-4 py-3.5 font-mono text-gray-800">₹ {sal.gross_monthly.toLocaleString('en-IN')}</td>
-                    <td className="px-4 py-3.5 font-mono text-gray-800">₹ {sal.basic_monthly.toLocaleString('en-IN')}</td>
-                    <td className="px-4 py-3.5 font-mono font-black text-[#07563D]">₹ {sal.net_monthly_estimate.toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3.5 font-mono font-bold text-gray-900">₹ {(sal.annual_ctc || 0).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3.5 font-mono text-gray-800">₹ {(sal.gross_monthly || 0).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3.5 font-mono text-gray-800">₹ {(sal.basic_monthly || 0).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3.5 font-mono font-black text-[#07563D]">₹ {(sal.net_monthly_estimate || 0).toLocaleString('en-IN')}</td>
                     <td className="px-4 py-3.5 font-mono text-gray-600">
-                      <div>{sal.bank_name}</div>
-                      <div className="text-[10px] text-gray-400 font-mono">•••• {sal.account_number.slice(-4)} • {sal.ifsc_code}</div>
+                      <div>{sal.bank_name || 'Primary Bank'}</div>
+                      <div className="text-[10px] text-gray-400 font-mono">•••• {(sal.account_number || '••••••••').slice(-4)} • {sal.ifsc_code || 'N/A'}</div>
                     </td>
                     <td className="px-5 py-3.5 text-right">
                       <Button
@@ -1164,7 +1182,7 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
 
             <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
               <span className="font-bold text-emerald-950 block">Assigned Structure: {selectedEmpSal.salary_structure_name || 'Corporate Standard'}</span>
-              <span className="text-emerald-800 text-[11px]">Monthly Gross: ₹{selectedEmpSal.gross_monthly.toLocaleString('en-IN')}</span>
+              <span className="text-emerald-800 text-[11px]">Monthly Gross: ₹{(selectedEmpSal.gross_monthly || 0).toLocaleString('en-IN')}</span>
             </div>
 
             <div className="flex justify-end pt-2">
@@ -1188,7 +1206,7 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
             <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
               <span className="font-bold text-emerald-900 block">{selectedEmpSal.employee_name} ({selectedEmpSal.employee_code})</span>
               <span className="text-emerald-700 text-[11px] font-mono">
-                Current CTC: ₹{selectedEmpSal.annual_ctc.toLocaleString('en-IN')}/yr (₹{selectedEmpSal.gross_monthly.toLocaleString('en-IN')}/mo)
+                Current CTC: ₹{(selectedEmpSal.annual_ctc || 0).toLocaleString('en-IN')}/yr (₹{(selectedEmpSal.gross_monthly || 0).toLocaleString('en-IN')}/mo)
               </span>
             </div>
 
@@ -1202,7 +1220,7 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono font-bold text-gray-900 placeholder:text-gray-400"
               />
               <span className="text-[10px] text-gray-400 mt-1 block">
-                Calculated Monthly Gross: ₹{Math.round(revNewCtc / 12).toLocaleString('en-IN')}/mo
+                Calculated Monthly Gross: ₹{(Math.round(revNewCtc / 12) || 0).toLocaleString('en-IN')}/mo
               </span>
             </div>
 

@@ -1,6 +1,8 @@
 import {
   VendorOrganization,
   VendorEmployee,
+  VendorEmployeeStatus,
+  InvoiceStatus,
   VendorAttendanceRecord,
   VendorAttendanceCorrectionRequest,
   EmployeeWageBreakdown,
@@ -18,7 +20,11 @@ import {
   WorkerDeployment,
 } from '../types/vendorPortal';
 import { api } from './api';
+import { VendorContract } from '../types';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { hrEventBus } from './hrEventBus';
+import { VendorOnboardingSubmission } from '../types/vendorEcosystem';
+import { VendorComplianceApplicabilityEngine } from './vendor/vendorComplianceApplicabilityEngine';
 
 const STORAGE_KEYS = {
   VENDORS: 'wf_vendor_portal_orgs',
@@ -37,135 +43,35 @@ const STORAGE_KEYS = {
   PAYROLL_STATUS: 'wf_vendor_portal_payroll_status',
 };
 
-// Initial Seed Generators ensuring clean data exists on initial launch if empty
-const SEED_ORGANIZATION: VendorOrganization = {
-  id: 'vnd-apex-01',
-  tenant_id: 'org-joy-corporate-solutions-private-',
-  name: 'Apex Staffing Solutions Pvt Ltd',
-  trade_name: 'Apex Workforce Solutions',
-  code: 'VND-APX-01',
-  vendor_type: 'MANPOWER_STAFFING',
-  company_type: 'Pvt Ltd',
-  registration_number: 'U74999TN2020PTC135892',
-  contact_person: 'Rajesh Kumar',
-  email: 'vendor@apexstaffing.in',
-  phone: '+91 98765 43210',
-  gstin: '33AAACA1234F1Z8',
-  pan: 'AAACA1234F',
-  address: 'Plot 42, SIDCO Industrial Estate, Phase 2, Coimbatore',
-  city: 'Coimbatore',
-  state: 'Tamil Nadu',
-  postal_code: '641021',
-  status: 'Active',
-  service_charge_percentage: 8.5,
-  is_gst_applicable: true,
-  bank_name: 'HDFC Bank',
-  account_number: '50200088192841',
-  ifsc_code: 'HDFC0001234',
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-08-31T00:00:00Z',
-};
-
-const DEFAULT_RELATIONSHIPS: VendorCompanyRelationship[] = [
-  {
-    id: 'rel-apex-joy-01',
-    relationship_id: 'REL-001',
-    vendor_id: 'vnd-apex-01',
-    vendor_name: 'Apex Staffing Solutions Pvt Ltd',
-    company_id: 'comp-joy-01',
-    company_name: 'Joy Manufacturing Pvt Ltd',
-    company_code: 'JCS-MFG-01',
-    site_location: 'Coimbatore Manufacturing Complex (Plant 1 & 2)',
-    status: 'ACTIVE',
-    approval_status: 'COMPANY_APPROVED',
-    access_enabled: true,
-    active_workers_count: 100,
-    compliance_score: 95,
-    contract_start_date: '2026-01-01',
-    contract_end_date: '2026-12-31',
-    sow_number: 'SOW-JCS-2026-089',
-    master_po_number: 'PO-2026-08-001',
-    primary_hr_contact_name: 'Senthil Nathan (CHRO)',
-    primary_hr_contact_email: 'senthil.nathan@joymfg.com',
-    created_at: '2026-01-01T00:00:00Z',
-    approved_at: '2026-01-05T10:00:00Z',
-    approved_by: 'Senthil Nathan',
-  },
-  {
-    id: 'rel-apex-titan-02',
-    relationship_id: 'REL-002',
-    vendor_id: 'vnd-apex-01',
-    vendor_name: 'Apex Staffing Solutions Pvt Ltd',
-    company_id: 'comp-titan-02',
-    company_name: 'Titan Tech Industries Ltd',
-    company_code: 'TTI-CORP-02',
-    site_location: 'Hosur Electronic Park Unit 4',
-    status: 'ACTIVE',
-    approval_status: 'COMPANY_APPROVED',
-    access_enabled: true,
-    active_workers_count: 50,
-    compliance_score: 88,
-    contract_start_date: '2026-03-01',
-    contract_end_date: '2027-02-28',
-    sow_number: 'SOW-TTI-2026-112',
-    master_po_number: 'PO-TTI-2026-042',
-    primary_hr_contact_name: 'Meenakshi Sundaram (Head HR)',
-    primary_hr_contact_email: 'meenakshi@titantech.in',
-    created_at: '2026-03-01T00:00:00Z',
-    approved_at: '2026-03-04T14:30:00Z',
-    approved_by: 'Meenakshi Sundaram',
-  },
-  {
-    id: 'rel-apex-delta-03',
-    relationship_id: 'REL-003',
-    vendor_id: 'vnd-apex-01',
-    vendor_name: 'Apex Staffing Solutions Pvt Ltd',
-    company_id: 'comp-delta-03',
-    company_name: 'Delta Engineering Corp',
-    company_code: 'DEC-ENG-03',
-    site_location: 'Chennai Heavy Fabrication Yard',
-    status: 'PENDING_APPROVAL',
-    approval_status: 'KYC_UNDER_REVIEW',
-    access_enabled: false,
-    active_workers_count: 200,
-    compliance_score: 72,
-    contract_start_date: '2026-09-01',
-    contract_end_date: '2027-08-31',
-    sow_number: 'SOW-DEC-2026-004',
-    primary_hr_contact_name: 'Karthik Raja (Compliance Lead)',
-    primary_hr_contact_email: 'karthik.raja@deltaeng.com',
-    created_at: '2026-08-20T11:00:00Z',
-  },
-  {
-    id: 'rel-apex-omega-04',
-    relationship_id: 'REL-004',
-    vendor_id: 'vnd-apex-01',
-    vendor_name: 'Apex Staffing Solutions Pvt Ltd',
-    company_id: 'comp-omega-04',
-    company_name: 'Omega Logistics & Freight Solutions',
-    company_code: 'OLF-LOG-04',
-    site_location: 'Tirupur Automated Warehouse & Logistics Hub',
-    status: 'SUSPENDED',
-    approval_status: 'REJECTED',
-    access_enabled: false,
-    active_workers_count: 75,
-    compliance_score: 45,
-    contract_start_date: '2025-06-01',
-    contract_end_date: '2026-05-31',
-    sow_number: 'SOW-OLF-2025-099',
-    primary_hr_contact_name: 'Prakash Nair (VP Operations)',
-    primary_hr_contact_email: 'prakash@omegalogistics.in',
-    created_at: '2025-06-01T00:00:00Z',
-  },
-];
-
-const DEFAULT_ORGANIZATIONS: VendorOrganization[] = [SEED_ORGANIZATION];
+// Empty defaults for authentic live operation
+const DEFAULT_ORGANIZATIONS: VendorOrganization[] = [];
+const DEFAULT_RELATIONSHIPS: VendorCompanyRelationship[] = [];
 const DEFAULT_EMPLOYEES: VendorEmployee[] = [];
 const DEFAULT_PURCHASE_ORDERS: VendorPurchaseOrder[] = [];
 
+const memStore: Record<string, string> = {};
+
+function safeGetItem(key: string): string | null {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem(key);
+    }
+  } catch (_) {}
+  return memStore[key] || null;
+}
+
+function safeSetItem(key: string, value: string): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, value);
+    }
+  } catch (_) {}
+  memStore[key] = value;
+}
+
 function getStorage<T>(key: string, defaultValue: T): T {
   try {
-    const item = localStorage.getItem(key);
+    const item = safeGetItem(key);
     return item ? JSON.parse(item) : defaultValue;
   } catch {
     return defaultValue;
@@ -174,11 +80,22 @@ function getStorage<T>(key: string, defaultValue: T): T {
 
 function setStorage<T>(key: string, data: T): void {
   try {
-    localStorage.setItem(key, JSON.stringify(data));
+    safeSetItem(key, JSON.stringify(data));
   } catch (e) {
     console.error(`Failed writing to storage ${key}`, e);
   }
 }
+
+function safeDispatchEvent(name: string, detail?: any): void {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    try {
+      window.dispatchEvent(new CustomEvent(name, { detail }));
+    } catch (_) {}
+  }
+}
+
+const DEFAULT_LICENSES: (import('../types/vendorPortal').VendorLicense & { valid_until?: string })[] = [];
+const DEFAULT_STATUTORY_RETURNS: import('../types/vendorPortal').StatutoryReturn[] = [];
 
 export const vendorPortalService = {
   // ==========================================
@@ -186,34 +103,31 @@ export const vendorPortalService = {
   // ==========================================
   getVendors(): VendorOrganization[] {
     const orgs = getStorage<VendorOrganization[]>(STORAGE_KEYS.VENDORS, DEFAULT_ORGANIZATIONS);
-    if (!orgs || orgs.length === 0) {
-      setStorage(STORAGE_KEYS.VENDORS, DEFAULT_ORGANIZATIONS);
-      return DEFAULT_ORGANIZATIONS;
-    }
-    return orgs;
+    return orgs || [];
   },
 
   getActiveVendorId(): string {
-    const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_VENDOR_ID);
+    const saved = safeGetItem(STORAGE_KEYS.ACTIVE_VENDOR_ID);
     if (saved) return saved;
     const orgs = this.getVendors();
-    const fallback = orgs[0]?.id || SEED_ORGANIZATION.id;
-    localStorage.setItem(STORAGE_KEYS.ACTIVE_VENDOR_ID, fallback);
+    const fallback = orgs[0]?.id || '';
+    if (fallback) safeSetItem(STORAGE_KEYS.ACTIVE_VENDOR_ID, fallback);
     return fallback;
   },
 
   setActiveVendorId(vendorId: string): void {
-    localStorage.setItem(STORAGE_KEYS.ACTIVE_VENDOR_ID, vendorId);
-    window.dispatchEvent(new CustomEvent('wf-vendor-changed', { detail: { vendorId } }));
+    safeSetItem(STORAGE_KEYS.ACTIVE_VENDOR_ID, vendorId);
+    safeDispatchEvent('wf-vendor-changed', { vendorId });
   },
 
-  getActiveVendor(): VendorOrganization {
+  getActiveVendor(): VendorOrganization | null {
     const activeId = this.getActiveVendorId();
     const vendors = this.getVendors();
-    const found = vendors.find((v) => v.id === activeId);
-    if (found) return found;
-    if (vendors.length > 0) return vendors[0];
-    return SEED_ORGANIZATION;
+    if (activeId) {
+      const found = vendors.find((v) => v.id === activeId);
+      if (found) return found;
+    }
+    return vendors.length > 0 ? vendors[0] : null;
   },
 
   addVendorOrganization(org: VendorOrganization): void {
@@ -235,39 +149,153 @@ export const vendorPortalService = {
     }
   },
 
+  activateVendor(vendorId: string): void {
+    const orgs = this.getVendors();
+    const found = orgs.find((o) => o.id === vendorId);
+    if (found) {
+      found.status = 'Active';
+      setStorage(STORAGE_KEYS.VENDORS, orgs);
+      safeDispatchEvent('wf-vendor-changed', { vendorId });
+    }
+  },
+
+  updateVendorOrganization(vendorId: string, updates: Partial<VendorOrganization>): void {
+    const orgs = this.getVendors();
+    const idx = orgs.findIndex((o) => o.id === vendorId || o.code === vendorId);
+    if (idx !== -1) {
+      orgs[idx] = { ...orgs[idx], ...updates, updated_at: new Date().toISOString() };
+      setStorage(STORAGE_KEYS.VENDORS, orgs);
+      safeDispatchEvent('wf-vendor-changed', { vendorId });
+    }
+  },
+
+  deleteVendorOrganization(vendorId: string): void {
+    const orgs = this.getVendors();
+    const filtered = orgs.filter((o) => o.id !== vendorId && o.code !== vendorId);
+    setStorage(STORAGE_KEYS.VENDORS, filtered);
+    safeDispatchEvent('wf-vendor-changed', { vendorId });
+  },
+
+  submitVendorOnboarding(submission: VendorOnboardingSubmission): {
+    success: boolean;
+    complianceResult: ReturnType<typeof VendorComplianceApplicabilityEngine.evaluateSubmission>;
+    error?: string;
+  } {
+    const complianceResult = VendorComplianceApplicabilityEngine.evaluateSubmission(submission);
+    if (!complianceResult.isReadyForSubmission) {
+      return {
+        success: false,
+        complianceResult,
+        error: `SUBMISSION_REJECTED: Mandatory submission requirements missing: ${complianceResult.missingRequirements.join(', ')}`,
+      };
+    }
+
+    const orgs = this.getVendors();
+    let target = orgs.find((o) => o.id === submission.vendor_id);
+    if (!target) {
+      target = {
+        id: submission.vendor_id,
+        tenant_id: 'org-joy-01',
+        name: submission.business_profile.legal_name,
+        trade_name: submission.business_profile.trade_name || submission.business_profile.legal_name,
+        code: `VEN-${Date.now().toString().slice(-6)}`,
+        vendor_type: submission.business_profile.vendor_type,
+        company_type: submission.business_profile.constitution_type,
+        contact_person: submission.business_profile.contact_person,
+        email: submission.business_profile.email,
+        phone: submission.business_profile.mobile,
+        pan: submission.tax_details.pan,
+        gstin: submission.tax_details.gstin || '',
+        address: submission.business_profile.registered_address,
+        city: submission.business_profile.city,
+        state: submission.business_profile.state,
+        postal_code: submission.business_profile.postal_code,
+        status: 'Submitted',
+        service_charge_percentage: submission.commercial_agreement.service_charge_percentage,
+        is_gst_applicable: submission.tax_details.is_gst_applicable,
+        bank_name: submission.bank_details.bank_name,
+        account_number: submission.bank_details.account_number,
+        ifsc_code: submission.bank_details.ifsc_code,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      orgs.push(target);
+    } else {
+      target.name = submission.business_profile.legal_name;
+      target.trade_name = submission.business_profile.trade_name || target.name;
+      target.company_type = submission.business_profile.constitution_type;
+      target.pan = submission.tax_details.pan;
+      target.gstin = submission.tax_details.gstin || '';
+      target.is_gst_applicable = submission.tax_details.is_gst_applicable;
+      target.bank_name = submission.bank_details.bank_name;
+      target.account_number = submission.bank_details.account_number;
+      target.ifsc_code = submission.bank_details.ifsc_code;
+      target.status = 'Submitted';
+      target.updated_at = new Date().toISOString();
+    }
+
+    setStorage(STORAGE_KEYS.VENDORS, orgs);
+    window.dispatchEvent(new CustomEvent('wf-vendor-changed', { detail: { vendorId: submission.vendor_id } }));
+
+    hrEventBus.emit('vendor.submitted', {
+      vendor_id: submission.vendor_id,
+      legal_name: submission.business_profile.legal_name,
+      compliance_ready: complianceResult.isCompliant,
+      timestamp: new Date().toISOString(),
+    });
+
+    return {
+      success: true,
+      complianceResult,
+    };
+  },
+
   // ==========================================
   // 1.1 MULTI-COMPANY RELATIONSHIPS & CONTEXT
   // ==========================================
   getVendorCompanyRelationships(vendorId?: string): VendorCompanyRelationship[] {
     const targetVendorId = vendorId || this.getActiveVendorId();
     const list = getStorage<VendorCompanyRelationship[]>(STORAGE_KEYS.RELATIONSHIPS, DEFAULT_RELATIONSHIPS);
-    if (!localStorage.getItem(STORAGE_KEYS.RELATIONSHIPS)) {
+    if (!safeGetItem(STORAGE_KEYS.RELATIONSHIPS)) {
       setStorage(STORAGE_KEYS.RELATIONSHIPS, DEFAULT_RELATIONSHIPS);
     }
-    return list.filter((r) => r.vendor_id === targetVendorId);
+    let filtered = list.filter((r) => r.vendor_id === targetVendorId);
+    if (filtered.length === 0) {
+      const defaults = DEFAULT_RELATIONSHIPS.filter((r) => r.vendor_id === targetVendorId);
+      if (defaults.length > 0) {
+        const merged = [...list, ...defaults];
+        setStorage(STORAGE_KEYS.RELATIONSHIPS, merged);
+        filtered = defaults;
+      }
+    }
+    return filtered;
   },
 
   getActiveRelationshipId(): string {
-    const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_RELATIONSHIP_ID);
+    const saved = safeGetItem(STORAGE_KEYS.ACTIVE_RELATIONSHIP_ID);
     if (saved) return saved;
     const rels = this.getVendorCompanyRelationships();
-    const active = rels.find((r) => r.status === 'ACTIVE') || rels[0] || DEFAULT_RELATIONSHIPS[0];
-    localStorage.setItem(STORAGE_KEYS.ACTIVE_RELATIONSHIP_ID, active.id);
-    return active.id;
+    const active = rels.find((r) => r.status === 'ACTIVE') || rels[0];
+    if (active) {
+      safeSetItem(STORAGE_KEYS.ACTIVE_RELATIONSHIP_ID, active.id);
+      return active.id;
+    }
+    return '';
   },
 
   setActiveRelationshipId(relationshipId: string): void {
-    localStorage.setItem(STORAGE_KEYS.ACTIVE_RELATIONSHIP_ID, relationshipId);
-    window.dispatchEvent(new CustomEvent('wf-vendor-relationship-changed', { detail: { relationshipId } }));
+    safeSetItem(STORAGE_KEYS.ACTIVE_RELATIONSHIP_ID, relationshipId);
+    safeDispatchEvent('wf-vendor-relationship-changed', { relationshipId });
   },
 
-  getActiveRelationship(): VendorCompanyRelationship {
+  getActiveRelationship(): VendorCompanyRelationship | null {
     const activeRelId = this.getActiveRelationshipId();
     const rels = this.getVendorCompanyRelationships();
-    const found = rels.find((r) => r.id === activeRelId);
-    if (found) return found;
-    const activeFallback = rels.find((r) => r.status === 'ACTIVE') || rels[0] || DEFAULT_RELATIONSHIPS[0];
-    return activeFallback;
+    if (activeRelId) {
+      const found = rels.find((r) => r.id === activeRelId);
+      if (found) return found;
+    }
+    return rels.find((r) => r.status === 'ACTIVE') || rels[0] || null;
   },
 
   requestCompanyConnection(payload: {
@@ -277,35 +305,45 @@ export const vendorPortalService = {
     sow_number?: string;
     primary_hr_contact_name: string;
     primary_hr_contact_email: string;
+    status?: 'ACTIVE' | 'PENDING_APPROVAL';
+    autoApprove?: boolean;
   }): VendorCompanyRelationship {
     const activeVendor = this.getActiveVendor();
+    const vendorId = activeVendor?.id || 'vnd-generic';
+    const vendorName = activeVendor?.name || 'Vendor Organization';
     const all = getStorage<VendorCompanyRelationship[]>(STORAGE_KEYS.RELATIONSHIPS, DEFAULT_RELATIONSHIPS);
     const nextIndex = all.length + 1;
+    const isApproved = payload.status === 'ACTIVE' || payload.autoApprove === true;
     const newRel: VendorCompanyRelationship = {
-      id: `rel-${activeVendor.id}-${Date.now()}`,
+      id: `rel-${vendorId}-${Date.now()}`,
       relationship_id: `REL-${String(nextIndex).padStart(3, '0')}`,
-      vendor_id: activeVendor.id,
-      vendor_name: activeVendor.name,
+      vendor_id: vendorId,
+      vendor_name: vendorName,
       company_id: `comp-${Date.now().toString(36)}`,
       company_name: payload.company_name,
       company_code: payload.company_code || `CLIENT-${nextIndex}`,
       site_location: payload.site_location || 'Main Industrial Site',
-      status: 'PENDING_APPROVAL',
-      approval_status: 'CONNECTION_REQUESTED',
-      access_enabled: false,
+      status: isApproved ? 'ACTIVE' : 'PENDING_APPROVAL',
+      approval_status: isApproved ? 'COMPANY_APPROVED' : 'KYC_UNDER_REVIEW',
+      access_enabled: isApproved,
       active_workers_count: 0,
-      compliance_score: 50,
+      compliance_score: 100,
       contract_start_date: new Date().toISOString().split('T')[0],
       contract_end_date: new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0],
       sow_number: payload.sow_number,
       primary_hr_contact_name: payload.primary_hr_contact_name,
       primary_hr_contact_email: payload.primary_hr_contact_email,
       created_at: new Date().toISOString(),
+      approved_at: isApproved ? new Date().toISOString() : undefined,
+      approved_by: isApproved ? 'Authorized HR Head' : undefined,
     };
 
     all.unshift(newRel);
     setStorage(STORAGE_KEYS.RELATIONSHIPS, all);
-    window.dispatchEvent(new CustomEvent('wf-vendor-relationship-changed', { detail: { relationshipId: newRel.id } }));
+    if (isApproved) {
+      this.setActiveRelationshipId(newRel.id);
+    }
+    safeDispatchEvent('wf-vendor-relationship-changed', { relationshipId: newRel.id });
 
     this.logAudit({
       entity_type: 'ONBOARDING',
@@ -328,7 +366,7 @@ export const vendorPortalService = {
       all[idx].approved_at = new Date().toISOString();
       all[idx].approved_by = approvedBy;
       setStorage(STORAGE_KEYS.RELATIONSHIPS, all);
-      window.dispatchEvent(new CustomEvent('wf-vendor-relationship-changed', { detail: { relationshipId: relId } }));
+      safeDispatchEvent('wf-vendor-relationship-changed', { relationshipId: relId });
 
       this.logAudit({
         entity_type: 'ONBOARDING',
@@ -347,7 +385,7 @@ export const vendorPortalService = {
       all[idx].status = 'SUSPENDED';
       all[idx].access_enabled = false;
       setStorage(STORAGE_KEYS.RELATIONSHIPS, all);
-      window.dispatchEvent(new CustomEvent('wf-vendor-relationship-changed', { detail: { relationshipId: relId } }));
+      safeDispatchEvent('wf-vendor-relationship-changed', { relationshipId: relId });
 
       this.logAudit({
         entity_type: 'ONBOARDING',
@@ -359,56 +397,222 @@ export const vendorPortalService = {
     }
   },
 
+  getCompanyRelationship(relId: string): VendorCompanyRelationship | undefined {
+    const all = getStorage<VendorCompanyRelationship[]>(STORAGE_KEYS.RELATIONSHIPS, DEFAULT_RELATIONSHIPS);
+    return all.find((r) => r.id === relId || r.relationship_id === relId);
+  },
+
+  updateCompanyRelationship(
+    relId: string,
+    updates: Partial<VendorCompanyRelationship> & { serviceChargePercentage?: number; paymentTerms?: string }
+  ): VendorCompanyRelationship | undefined {
+    const all = getStorage<VendorCompanyRelationship[]>(STORAGE_KEYS.RELATIONSHIPS, DEFAULT_RELATIONSHIPS);
+    const idx = all.findIndex((r) => r.id === relId || r.relationship_id === relId);
+    if (idx === -1) return undefined;
+
+    const normalized: VendorCompanyRelationship = {
+      ...all[idx],
+      ...updates,
+      service_charge_percentage:
+        updates.serviceChargePercentage !== undefined
+          ? updates.serviceChargePercentage
+          : updates.service_charge_percentage !== undefined
+          ? updates.service_charge_percentage
+          : all[idx].service_charge_percentage,
+      payment_terms: updates.paymentTerms || updates.payment_terms || all[idx].payment_terms,
+      updated_at: new Date().toISOString(),
+    };
+
+    all[idx] = normalized;
+    setStorage(STORAGE_KEYS.RELATIONSHIPS, all);
+    safeDispatchEvent('wf-vendor-relationship-changed', { relationshipId: relId });
+    return normalized;
+  },
+
+  terminateCompanyRelationship(relId: string, reason?: string): void {
+    const all = getStorage<VendorCompanyRelationship[]>(STORAGE_KEYS.RELATIONSHIPS, DEFAULT_RELATIONSHIPS);
+    const idx = all.findIndex((r) => r.id === relId);
+    if (idx !== -1) {
+      all[idx].status = 'TERMINATED';
+      all[idx].access_enabled = false;
+      all[idx].updated_at = new Date().toISOString();
+      setStorage(STORAGE_KEYS.RELATIONSHIPS, all);
+      safeDispatchEvent('wf-vendor-relationship-changed', { relationshipId: relId });
+
+      this.logAudit({
+        entity_type: 'ONBOARDING',
+        entity_id: relId,
+        action: 'COMPANY_RELATIONSHIP_TERMINATED',
+        new_value: 'TERMINATED',
+        remarks: reason || `Client relationship ${all[idx].company_name} terminated. Access revoked.`,
+      });
+
+      hrEventBus.emit('vendor.relationship_terminated', {
+        relationship_id: relId,
+        vendor_id: all[idx].vendor_id,
+        company_id: all[idx].company_id,
+        reason,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  },
+
+  createVendorCompanyRelationship(params: {
+    id?: string;
+    relationship_id?: string;
+    vendor_id: string;
+    company_id: string;
+    company_name: string;
+    company_code?: string;
+    site_location?: string;
+    contract_start_date?: string;
+    contract_end_date?: string;
+    service_charge_percentage?: number;
+    rate_card_type?: string;
+    payment_terms?: string;
+    max_workforce_capacity?: number;
+    primary_hr_contact_name?: string;
+    primary_hr_contact_email?: string;
+  }): VendorCompanyRelationship {
+    const all = getStorage<VendorCompanyRelationship[]>(STORAGE_KEYS.RELATIONSHIPS, DEFAULT_RELATIONSHIPS);
+    const vendor = this.getVendors().find((v) => v.id === params.vendor_id);
+    const nextIndex = all.length + 1;
+
+    const newRel: VendorCompanyRelationship = {
+      id: params.id || `rel-${params.vendor_id}-${params.company_id}-${Date.now()}`,
+      relationship_id: params.relationship_id || `REL-${String(nextIndex).padStart(3, '0')}`,
+      vendor_id: params.vendor_id,
+      vendor_name: vendor?.name || 'Vendor Organization',
+      company_id: params.company_id,
+      company_name: params.company_name,
+      company_code: params.company_code || `COMP-${params.company_id.slice(-6).toUpperCase()}`,
+      site_location: params.site_location || 'Authorized Company Premises',
+      status: 'ACTIVE',
+      approval_status: 'COMPANY_APPROVED',
+      access_enabled: true,
+      active_workers_count: 0,
+      compliance_score: 100,
+      contract_start_date: params.contract_start_date || new Date().toISOString().split('T')[0],
+      contract_end_date: params.contract_end_date || new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0],
+      service_charge_percentage: params.service_charge_percentage || 8.5,
+      rate_card_type: params.rate_card_type || 'Per Head Per Month',
+      payment_terms: params.payment_terms || 'Net 30',
+      max_workforce_capacity: params.max_workforce_capacity || 50,
+      primary_hr_contact_name: params.primary_hr_contact_name || 'HR Head',
+      primary_hr_contact_email: params.primary_hr_contact_email || 'hr@joycorporate.com',
+      created_at: new Date().toISOString(),
+      approved_at: new Date().toISOString(),
+      approved_by: 'Company Admin',
+    };
+
+    all.unshift(newRel);
+    setStorage(STORAGE_KEYS.RELATIONSHIPS, all);
+    safeDispatchEvent('wf-vendor-relationship-changed', { relationshipId: newRel.id });
+
+    hrEventBus.emit('vendor.relationship_created', {
+      relationship_id: newRel.id,
+      vendor_id: params.vendor_id,
+      company_id: params.company_id,
+      timestamp: new Date().toISOString(),
+    });
+
+    return newRel;
+  },
+
+  switchCustomerRelationship(relationshipId: string): {
+    success: boolean;
+    switched: boolean;
+    cachesFlushed: boolean;
+    relationship: VendorCompanyRelationship;
+  } {
+    const all = getStorage<VendorCompanyRelationship[]>(STORAGE_KEYS.RELATIONSHIPS, DEFAULT_RELATIONSHIPS);
+    const target = all.find((r) => r.id === relationshipId || r.relationship_id === relationshipId);
+    if (!target) {
+      throw new Error(`Customer relationship ${relationshipId} not found`);
+    }
+
+    // 1. Clear caches and transient selected entity state
+    safeSetItem(STORAGE_KEYS.ACTIVE_RELATIONSHIP_ID, target.id);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('wf_vendor_portal_selected_worker_id');
+      localStorage.removeItem('wf_vendor_portal_selected_invoice_id');
+      localStorage.removeItem('wf_vendor_portal_selected_site_id');
+      localStorage.removeItem('wf_vendor_portal_cached_summary');
+    }
+
+    // 2. Dispatch events for scoping subscriptions and UI reloads
+    safeDispatchEvent('wf-vendor-relationship-changed', { relationshipId: target.id, relationship: target });
+    safeDispatchEvent('wf-vendor-cache-cleared', { previousContextCleared: true, newRelationshipId: target.id });
+
+    hrEventBus.emit('vendor.customer_switched', {
+      vendor_id: target.vendor_id,
+      relationship_id: target.id,
+      company_id: target.company_id,
+      company_name: target.company_name,
+      timestamp: new Date().toISOString(),
+    });
+    hrEventBus.emit('vendor.relationship.switched', {
+      vendor_id: target.vendor_id,
+      relationship_id: target.id,
+      targetRelationshipId: target.id,
+      company_id: target.company_id,
+      timestamp: new Date().toISOString(),
+    });
+
+    return {
+      success: true,
+      switched: true,
+      cachesFlushed: true,
+      relationship: target,
+    };
+  },
+
   // ==========================================
   // 2. VENDOR EMPLOYEES & DATA ISOLATION
   // ==========================================
   getEmployees(vendorId?: string): VendorEmployee[] {
     const targetVendorId = vendorId || this.getActiveVendorId();
-    const all = getStorage<VendorEmployee[]>(STORAGE_KEYS.EMPLOYEES, DEFAULT_EMPLOYEES);
-    if (!localStorage.getItem(STORAGE_KEYS.EMPLOYEES)) {
-      setStorage(STORAGE_KEYS.EMPLOYEES, DEFAULT_EMPLOYEES);
-    }
-    return all.filter((e) => e.vendor_id === targetVendorId);
+    const all = getStorage<VendorEmployee[]>(STORAGE_KEYS.EMPLOYEES, []);
+    return targetVendorId ? all.filter((e) => e.vendor_id === targetVendorId) : all;
   },
 
   addEmployee(payload: Partial<VendorEmployee>): VendorEmployee {
     const activeVendor = this.getActiveVendor();
-    const all = getStorage<VendorEmployee[]>(STORAGE_KEYS.EMPLOYEES, DEFAULT_EMPLOYEES);
-    
+    const all = getStorage<VendorEmployee[]>(STORAGE_KEYS.EMPLOYEES, []);
     const newEmp: VendorEmployee = {
-      id: `vemp-${Date.now()}`,
-      tenant_id: activeVendor.tenant_id,
-      vendor_id: activeVendor.id,
-      vendor_name: activeVendor.name,
-      employee_code: payload.employee_code || `APX-EMP-${Math.floor(100 + Math.random() * 900)}`,
-      first_name: payload.first_name || 'New',
-      last_name: payload.last_name || 'Staff',
-      display_name: `${payload.first_name || 'New'} ${payload.last_name || 'Staff'}`.trim(),
-      gender: payload.gender || 'Male',
-      dob: payload.dob || '1998-01-01',
-      mobile: payload.mobile || '+91 98000 00000',
-      email: payload.email || 'staff@contractor.in',
-      address: payload.address || 'Coimbatore, Tamil Nadu',
+      id: payload.id || `vemp-${Date.now()}`,
+      tenant_id: payload.tenant_id || activeVendor?.tenant_id || 'org-joy-01',
+      vendor_id: payload.vendor_id || activeVendor?.id || '',
+      vendor_name: payload.vendor_name || activeVendor?.name || 'Vendor Organization',
+      employee_code: payload.employee_code || `EMP-${Date.now().toString().slice(-6)}`,
+      first_name: payload.first_name || '',
+      last_name: payload.last_name || '',
+      display_name: payload.display_name || `${payload.first_name || ''} ${payload.last_name || ''}`.trim() || 'Worker',
+      gender: payload.gender || '',
+      dob: payload.dob || '',
+      mobile: payload.mobile || '',
+      email: payload.email || '',
+      address: payload.address || '',
       joining_date: payload.joining_date || new Date().toISOString().split('T')[0],
       employment_type: payload.employment_type || 'Contract',
       worker_category: payload.worker_category || 'Skilled',
-      skill_category: payload.skill_category || 'Operations Specialist',
-      department: payload.department || 'Production',
-      designation: payload.designation || 'Specialist',
-      status: 'PENDING_COMPANY_APPROVAL',
-      uan: payload.uan || '100984716999',
-      pf_number: payload.pf_number || 'TN/CBE/0091827/999',
-      esic_number: payload.esic_number || '51000847291000999',
-      pan: payload.pan || 'AAAAA0000A',
-      aadhaar_masked: payload.aadhaar_masked || 'XXXX-XXXX-1122',
-      bank_name: payload.bank_name || 'State Bank of India',
-      account_number: payload.account_number || '39281726351',
-      ifsc: payload.ifsc || 'SBIN0001234',
-      current_client_id: 'comp-joy-01',
-      current_client_name: 'Joy Corporate Solutions Pvt Ltd',
-      work_location: payload.work_location || 'Coimbatore Plant 1',
-      project_name: payload.project_name || 'Core Operations',
-      shift_name: payload.shift_name || 'Day Shift',
+      skill_category: payload.skill_category || '',
+      department: payload.department || '',
+      designation: payload.designation || '',
+      status: payload.status || 'PENDING_COMPANY_APPROVAL',
+      uan: payload.uan || '',
+      pf_number: payload.pf_number || '',
+      esic_number: payload.esic_number || '',
+      pan: payload.pan || '',
+      aadhaar_masked: payload.aadhaar_masked || '',
+      bank_name: payload.bank_name || '',
+      account_number: payload.account_number || '',
+      ifsc: payload.ifsc || '',
+      current_client_id: payload.current_client_id || '',
+      current_client_name: payload.current_client_name || '',
+      work_location: payload.work_location || '',
+      project_name: payload.project_name || '',
+      shift_name: payload.shift_name || '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -448,7 +652,7 @@ export const vendorPortalService = {
     return newEmp;
   },
 
-  updateEmployeeStatus(empId: string, status: VendorEmployee['status'], remarks?: string): void {
+  updateVendorEmployeeStatus(empId: string, status: VendorEmployee['status'], remarks?: string): void {
     const all = getStorage<VendorEmployee[]>(STORAGE_KEYS.EMPLOYEES, DEFAULT_EMPLOYEES);
     const idx = all.findIndex((e) => e.id === empId);
     if (idx !== -1) {
@@ -471,43 +675,42 @@ export const vendorPortalService = {
   // ==========================================
   // 3. ATTENDANCE & CORRECTION REQUESTS
   // ==========================================
+  getAttendance(arg1?: string, arg2?: string): VendorAttendanceRecord[] {
+    let period = '2026-08';
+    let vendorId: string | undefined = undefined;
+
+    if (arg1 && arg1.match(/^\d{4}-\d{2}$/)) {
+      period = arg1;
+      vendorId = arg2;
+    } else if (arg2 && arg2.match(/^\d{4}-\d{2}$/)) {
+      period = arg2;
+      vendorId = arg1;
+    } else if (arg1) {
+      vendorId = arg1;
+    }
+    return this.getMonthlyAttendance(period, vendorId);
+  },
+
   getMonthlyAttendance(period: string = '2026-08', vendorId?: string): VendorAttendanceRecord[] {
-    const employees = this.getEmployees(vendorId);
     const targetVendorId = vendorId || this.getActiveVendorId();
     const stored = getStorage<VendorAttendanceRecord[]>(STORAGE_KEYS.ATTENDANCE, []);
+    return stored.filter((r) => r.vendor_id === targetVendorId && r.month === period);
+  },
 
-    // If records for this period already exist, return them
-    const existing = stored.filter((r) => r.vendor_id === targetVendorId && r.month === period);
-    if (existing.length > 0) return existing;
-
-    // Generate dynamic baseline from actual employees
-    const generated: VendorAttendanceRecord[] = employees.map((emp, i) => {
-      const totalDays = 26;
-      const lop = i === 1 ? 1 : 0;
-      const present = totalDays - lop;
-      const ot = i === 0 ? 12 : i === 1 ? 8 : i === 2 ? 4 : 0;
-      return {
-        id: `att-${emp.id}-${period}`,
-        tenant_id: emp.tenant_id,
-        vendor_id: emp.vendor_id,
-        employee_id: emp.id,
-        employee_name: emp.display_name,
-        employee_code: emp.employee_code,
-        month: period,
-        total_working_days: totalDays,
-        present_days: present,
-        absent_days: 0,
-        leave_days: 0,
-        lop_days: lop,
-        ot_hours: ot,
-        payable_days: present,
-        status: 'VERIFIED',
-      };
-    });
-
-    const merged = [...stored.filter((r) => !(r.vendor_id === targetVendorId && r.month === period)), ...generated];
-    setStorage(STORAGE_KEYS.ATTENDANCE, merged);
-    return generated;
+  getAttendanceMuster(vendorId: string, month: string = '2026-08') {
+    const records = this.getMonthlyAttendance(month, vendorId);
+    const totalApprovedManDays = records.reduce((s, r) => s + (r.present_days || 0), 0);
+    const totalOtHours = records.reduce((s, r) => s + (r.ot_hours || 0), 0);
+    const isLocked = records.length > 0 && records.every((r) => r.status === 'LOCKED' || r.status === 'VERIFIED');
+    return {
+      month,
+      vendorId,
+      records,
+      totalApprovedManDays,
+      totalOtHours,
+      isLocked,
+      status: records.length > 0 ? (isLocked ? 'LOCKED' : (records[0]?.status || 'PENDING_REVIEW')) : 'NO_RECORDS',
+    };
   },
 
   getAttendanceCorrections(vendorId?: string): VendorAttendanceCorrectionRequest[] {
@@ -526,13 +729,14 @@ export const vendorPortalService = {
     supporting_doc_name?: string;
   }): VendorAttendanceCorrectionRequest {
     const activeVendor = this.getActiveVendor();
-    const emp = this.getEmployees(activeVendor.id).find((e) => e.id === payload.employee_id);
-    const currentAtt = this.getMonthlyAttendance(payload.month, activeVendor.id).find((a) => a.employee_id === payload.employee_id);
+    const vendorId = activeVendor?.id || '';
+    const emp = this.getEmployees(vendorId).find((e) => e.id === payload.employee_id);
+    const currentAtt = this.getMonthlyAttendance(payload.month, vendorId).find((a) => a.employee_id === payload.employee_id);
 
     const newReq: VendorAttendanceCorrectionRequest = {
       id: `corr-${Date.now()}`,
-      tenant_id: activeVendor.tenant_id,
-      vendor_id: activeVendor.id,
+      tenant_id: activeVendor?.tenant_id || 'org-joy-01',
+      vendor_id: vendorId,
       employee_id: payload.employee_id,
       employee_name: emp ? emp.display_name : 'Staff',
       employee_code: emp ? emp.employee_code : 'N/A',
@@ -544,9 +748,9 @@ export const vendorPortalService = {
       original_ot_hours: currentAtt ? currentAtt.ot_hours : 0,
       requested_ot_hours: payload.requested_ot_hours,
       reason: payload.reason,
-      supporting_doc_name: payload.supporting_doc_name || 'Biometric_Punch_Audit_Log.pdf',
+      supporting_doc_name: payload.supporting_doc_name || '',
       status: 'SUBMITTED',
-      requested_by: activeVendor.contact_person,
+      requested_by: activeVendor?.contact_person || 'Vendor User',
       requested_at: new Date().toISOString(),
     };
 
@@ -609,14 +813,13 @@ export const vendorPortalService = {
     const attendance = this.getMonthlyAttendance(period, vendorId);
     const employees = this.getEmployees(vendorId);
 
-    return employees.map((emp) => {
-      const att = attendance.find((a) => a.employee_id === emp.id) || {
-        total_working_days: 26,
-        present_days: 26,
-        lop_days: 0,
-        payable_days: 26,
-        ot_hours: 0,
-      };
+    if (attendance.length === 0 || employees.length === 0) {
+      return [];
+    }
+
+    return (employees as VendorEmployee[]).reduce((acc: EmployeeWageBreakdown[], emp) => {
+      const att = attendance.find((a) => a.employee_id === emp.id);
+      if (!att) return acc;
 
       // Real formulas based on worker category
       const monthlyGross =
@@ -657,11 +860,11 @@ export const vendorPortalService = {
       const employerLwf = 20;
       const totalEmployerStatutory = employerPf + employerEsi + employerLwf;
 
-      return {
+      acc.push({
         employee_id: emp.id,
         employee_name: emp.display_name,
         employee_code: emp.employee_code,
-        client_name: emp.current_client_name || 'Joy Corporate Solutions Pvt Ltd',
+        client_name: emp.current_client_name || '',
         working_days: att.total_working_days,
         present_days: att.present_days,
         lop_days: att.lop_days,
@@ -686,8 +889,9 @@ export const vendorPortalService = {
         employer_esi: employerEsi,
         employer_lwf: employerLwf,
         total_employer_statutory: totalEmployerStatutory,
-      };
-    });
+      });
+      return acc;
+    }, []);
   },
 
   // ==========================================
@@ -695,7 +899,66 @@ export const vendorPortalService = {
   // ==========================================
   getVendorPayableBreakdown(period: string = '2026-08', vendorId?: string): VendorPayableBreakdown {
     const activeVendor = vendorId ? this.getVendors().find((v) => v.id === vendorId) || this.getActiveVendor() : this.getActiveVendor();
+    if (!activeVendor) {
+      return {
+        period,
+        vendor_id: '',
+        vendor_name: '',
+        client_company_id: '',
+        client_company_name: '',
+        headcount: 0,
+        total_gross_wages: 0,
+        total_ot_wages: 0,
+        total_allowances_incentives: 0,
+        wage_subtotal: 0,
+        total_employer_pf: 0,
+        total_employer_esi: 0,
+        total_employer_lwf: 0,
+        statutory_subtotal: 0,
+        service_charge_percentage: 0,
+        service_charge_amount: 0,
+        other_contractual_charges: 0,
+        commercials_subtotal: 0,
+        total_before_tax: 0,
+        gst_percentage: 0,
+        gst_amount: 0,
+        gross_payable_value: 0,
+        previous_recoveries: 0,
+        penalties: 0,
+        net_vendor_payable: 0,
+      };
+    }
     const wages = this.getEmployeeWageBreakdowns(period, activeVendor.id);
+
+    if (wages.length === 0) {
+      return {
+        period,
+        vendor_id: activeVendor.id,
+        vendor_name: activeVendor.name,
+        client_company_id: '',
+        client_company_name: '',
+        headcount: 0,
+        total_gross_wages: 0,
+        total_ot_wages: 0,
+        total_allowances_incentives: 0,
+        wage_subtotal: 0,
+        total_employer_pf: 0,
+        total_employer_esi: 0,
+        total_employer_lwf: 0,
+        statutory_subtotal: 0,
+        service_charge_percentage: activeVendor.service_charge_percentage || 0,
+        service_charge_amount: 0,
+        other_contractual_charges: 0,
+        commercials_subtotal: 0,
+        total_before_tax: 0,
+        gst_percentage: activeVendor.is_gst_applicable ? 18 : 0,
+        gst_amount: 0,
+        gross_payable_value: 0,
+        previous_recoveries: 0,
+        penalties: 0,
+        net_vendor_payable: 0,
+      };
+    }
 
     const totalGrossWages = wages.reduce((sum, w) => sum + w.gross_payable, 0);
     const totalOtWages = wages.reduce((sum, w) => sum + w.ot_wages, 0);
@@ -709,7 +972,7 @@ export const vendorPortalService = {
 
     const serviceChargePercentage = activeVendor.service_charge_percentage || 8.5;
     const serviceChargeAmount = Math.round(wageSubtotal * (serviceChargePercentage / 100));
-    const otherContractualCharges = 5000;
+    const otherContractualCharges = 0;
     const commercialsSubtotal = serviceChargeAmount + otherContractualCharges;
 
     const totalBeforeTax = wageSubtotal + statutorySubtotal + commercialsSubtotal;
@@ -757,20 +1020,21 @@ export const vendorPortalService = {
     const targetVendorId = vendorId || this.getActiveVendorId();
     const map = getStorage<Record<string, PayrollVerificationStatus>>(STORAGE_KEYS.PAYROLL_STATUS, {});
     const key = `${targetVendorId}_${period}`;
-    return map[key] || 'VENDOR_VERIFIED';
+    return map[key] || 'ATTENDANCE_OPEN';
   },
 
   updatePayrollVerificationStatus(period: string, status: PayrollVerificationStatus, remarks?: string): void {
     const activeVendor = this.getActiveVendor();
+    const vendorId = activeVendor?.id || 'default';
     const map = getStorage<Record<string, PayrollVerificationStatus>>(STORAGE_KEYS.PAYROLL_STATUS, {});
-    const key = `${activeVendor.id}_${period}`;
-    const oldStatus = map[key] || 'ATTENDANCE_LOCKED';
+    const key = `${vendorId}_${period}`;
+    const oldStatus = map[key] || 'ATTENDANCE_OPEN';
     map[key] = status;
     setStorage(STORAGE_KEYS.PAYROLL_STATUS, map);
 
     this.logAudit({
       entity_type: 'PAYROLL',
-      entity_id: `${activeVendor.id}_${period}`,
+      entity_id: `${vendorId}_${period}`,
       action: `PAYROLL_STATUS_${status}`,
       previous_value: oldStatus,
       new_value: status,
@@ -783,11 +1047,8 @@ export const vendorPortalService = {
   // ==========================================
   getPurchaseOrders(vendorId?: string): VendorPurchaseOrder[] {
     const targetVendorId = vendorId || this.getActiveVendorId();
-    const list = getStorage<VendorPurchaseOrder[]>(STORAGE_KEYS.PURCHASE_ORDERS, DEFAULT_PURCHASE_ORDERS);
-    if (!localStorage.getItem(STORAGE_KEYS.PURCHASE_ORDERS)) {
-      setStorage(STORAGE_KEYS.PURCHASE_ORDERS, DEFAULT_PURCHASE_ORDERS);
-    }
-    return list.filter((po) => po.vendor_id === targetVendorId);
+    const list = getStorage<VendorPurchaseOrder[]>(STORAGE_KEYS.PURCHASE_ORDERS, []);
+    return targetVendorId ? list.filter((po) => po.vendor_id === targetVendorId) : list;
   },
 
   acknowledgePurchaseOrder(poId: string, acknowledgedBy: string): void {
@@ -813,34 +1074,74 @@ export const vendorPortalService = {
   // ==========================================
   // 8. INVOICE MANAGEMENT & 3-WAY MATCHING
   // ==========================================
-  getInvoices(vendorId?: string): VendorInvoice[] {
+  getInvoices(vendorId?: string, relationshipId?: string): VendorInvoice[] {
     const targetVendorId = vendorId || this.getActiveVendorId();
     const list = getStorage<VendorInvoice[]>(STORAGE_KEYS.INVOICES, []);
-    return list.filter((inv) => inv.vendor_id === targetVendorId);
+    let filtered = list.filter((inv) =>
+      !targetVendorId || inv.vendor_id === targetVendorId
+    );
+    if (relationshipId && relationshipId !== 'all') {
+      filtered = filtered.filter((inv) => (inv as any).relationship_id === relationshipId || inv.client_company_id === relationshipId);
+    }
+    return filtered;
   },
 
   submitInvoice(payload: {
-    po_id: string;
-    payroll_period: string;
+    vendor_id?: string;
+    po_id?: string;
+    payroll_period?: string;
+    period?: string;
     invoice_number: string;
-    invoice_date: string;
-    due_date: string;
-    taxable_amount: number;
-    cgst_amount: number;
-    sgst_amount: number;
-    igst_amount: number;
-    total_invoice_amount: number;
+    invoice_date?: string;
+    due_date?: string;
+    taxable_amount?: number;
+    cgst_amount?: number;
+    sgst_amount?: number;
+    igst_amount?: number;
+    total_invoice_amount?: number;
+    total_amount?: number;
+    file_name?: string;
+    po_number?: string;
     attached_invoice_pdf?: string;
   }): { invoice: VendorInvoice; matchResult: ThreeWayMatchResult } {
-    const activeVendor = this.getActiveVendor();
-    const pos = this.getPurchaseOrders(activeVendor.id);
-    const po = pos.find((p) => p.id === payload.po_id) || pos[0];
-    const payable = this.getVendorPayableBreakdown(payload.payroll_period, activeVendor.id);
+    const targetVendor = payload.vendor_id ? (this.getVendors().find(v => v.id === payload.vendor_id) || this.getActiveVendor()) : this.getActiveVendor();
+    const vendorId = targetVendor?.id || '';
+    const period = payload.payroll_period || payload.period || '2026-08';
+    const totalAmount = payload.total_invoice_amount ?? payload.total_amount ?? 0;
+    const pos = this.getPurchaseOrders(vendorId);
+    const allPos = getStorage<VendorPurchaseOrder[]>(STORAGE_KEYS.PURCHASE_ORDERS, DEFAULT_PURCHASE_ORDERS);
+    const po = pos.find((p) => (payload.po_id && p.id === payload.po_id) || (payload.po_number && p.po_number === payload.po_number))
+      || allPos.find((p) => (payload.po_id && p.id === payload.po_id) || (payload.po_number && p.po_number === payload.po_number));
+    const payable = this.getVendorPayableBreakdown(period, vendorId);
+
+    let benchmarkPayable = payable.net_vendor_payable;
+    const monthlyAtt = this.getMonthlyAttendance(period, vendorId);
+    const deps = this.getDeployments(vendorId);
+    if (deps.length > 0 && monthlyAtt.length > 0) {
+      let depBaseWages = 0;
+      let depOtWages = 0;
+      for (const att of monthlyAtt) {
+        const dep = deps.find((d) => d.worker_id === att.employee_id);
+        if (!dep) continue;
+        const dailyRate = (dep as any).daily_wage_rate || 0;
+        const otRate = (dep as any).ot_hourly_rate || (dailyRate > 0 ? dailyRate / 8 : 0);
+        depBaseWages += (att.present_days || 0) * dailyRate;
+        depOtWages += (att.ot_hours || 0) * otRate;
+      }
+      const servicePct = targetVendor.service_charge_percentage || 8.5;
+      const subtotal = depBaseWages + depOtWages;
+      const fee = subtotal * (servicePct / 100);
+      const gst = (subtotal + fee) * 0.18;
+      const deploymentExpected = Math.round(subtotal + fee + gst);
+      if (Math.abs(totalAmount - deploymentExpected) <= 25) {
+        benchmarkPayable = deploymentExpected;
+      }
+    }
 
     // 3-Way Match Check
-    const diff = payload.total_invoice_amount - payable.net_vendor_payable;
-    const variancePct = payable.net_vendor_payable > 0 ? (Math.abs(diff) / payable.net_vendor_payable) * 100 : 0;
-    const isPoSufficient = (po?.remaining_balance || 0) >= payload.total_invoice_amount;
+    const diff = totalAmount - benchmarkPayable;
+    const variancePct = benchmarkPayable > 0 ? (Math.abs(diff) / benchmarkPayable) * 100 : 0;
+    const isPoSufficient = (po?.remaining_balance || 0) >= totalAmount;
     const isPayrollMatch = Math.abs(diff) <= 10; // Within rounding tolerance
 
     const matchStatus = !isPoSufficient
@@ -853,7 +1154,7 @@ export const vendorPortalService = {
 
     const exceptionNotes: string[] = [];
     if (!isPoSufficient) {
-      exceptionNotes.push(`Claimed invoice amount exceeds PO available balance by ₹${(payload.total_invoice_amount - (po?.remaining_balance || 0)).toLocaleString()}`);
+      exceptionNotes.push(`Claimed invoice amount exceeds PO available balance by ₹${(totalAmount - (po?.remaining_balance || 0)).toLocaleString()}`);
     }
     if (!isPayrollMatch) {
       exceptionNotes.push(`Invoice claimed value differs from system-approved payroll payable by ₹${Math.abs(diff).toLocaleString()}`);
@@ -861,29 +1162,29 @@ export const vendorPortalService = {
 
     const newInvoice: VendorInvoice = {
       id: `inv-${Date.now()}`,
-      tenant_id: activeVendor.tenant_id,
-      vendor_id: activeVendor.id,
-      vendor_name: activeVendor.name,
-      client_company_id: po ? po.client_company_id : 'comp-joy-01',
-      client_company_name: po ? po.client_company_name : 'Joy Corporate Solutions Pvt Ltd',
-      po_id: po ? po.id : 'po-vnd-001',
-      po_number: po ? po.po_number : 'PO-JCS-2026-VND-089',
-      payroll_period: payload.payroll_period,
+      tenant_id: targetVendor.tenant_id,
+      vendor_id: targetVendor.id,
+      vendor_name: targetVendor.name,
+      client_company_id: po ? po.client_company_id : '',
+      client_company_name: po ? po.client_company_name : '',
+      po_id: po ? po.id : '',
+      po_number: po ? po.po_number : (payload.po_number || ''),
+      payroll_period: period,
       invoice_number: payload.invoice_number,
-      invoice_date: payload.invoice_date,
-      due_date: payload.due_date,
-      gstin: activeVendor.gstin,
-      taxable_amount: payload.taxable_amount,
-      cgst_amount: payload.cgst_amount,
-      sgst_amount: payload.sgst_amount,
-      igst_amount: payload.igst_amount,
-      total_invoice_amount: payload.total_invoice_amount,
+      invoice_date: payload.invoice_date || new Date().toISOString().split('T')[0],
+      due_date: payload.due_date || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+      gstin: targetVendor?.gstin || '',
+      taxable_amount: payload.taxable_amount || totalAmount,
+      cgst_amount: payload.cgst_amount || 0,
+      sgst_amount: payload.sgst_amount || 0,
+      igst_amount: payload.igst_amount || 0,
+      total_invoice_amount: totalAmount,
       status: matchStatus === 'EXCEPTION' ? 'ON_HOLD' : 'SUBMITTED',
       match_status: matchStatus,
       variance_amount: diff,
       exception_reason: exceptionNotes.join('; ') || undefined,
-      attached_invoice_pdf: payload.attached_invoice_pdf || 'Tax_Invoice_Signed.pdf',
-      submitted_by: activeVendor.contact_person,
+      attached_invoice_pdf: payload.attached_invoice_pdf || payload.file_name || '',
+      submitted_by: targetVendor?.contact_person || 'Vendor Admin',
       submitted_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -898,7 +1199,7 @@ export const vendorPortalService = {
       const allPos = getStorage<VendorPurchaseOrder[]>(STORAGE_KEYS.PURCHASE_ORDERS, DEFAULT_PURCHASE_ORDERS);
       const pIdx = allPos.findIndex((p) => p.id === po.id);
       if (pIdx !== -1) {
-        allPos[pIdx].consumed_amount += payload.total_invoice_amount;
+        allPos[pIdx].consumed_amount += totalAmount;
         allPos[pIdx].remaining_balance = Math.max(0, allPos[pIdx].contract_value - allPos[pIdx].consumed_amount);
         setStorage(STORAGE_KEYS.PURCHASE_ORDERS, allPos);
       }
@@ -937,53 +1238,7 @@ export const vendorPortalService = {
   getStatutoryChallans(period: string = '2026-08', vendorId?: string): VendorStatutoryChallan[] {
     const targetVendorId = vendorId || this.getActiveVendorId();
     const stored = getStorage<VendorStatutoryChallan[]>(STORAGE_KEYS.CHALLANS, []);
-    const filtered = stored.filter((c) => c.vendor_id === targetVendorId && c.period === period);
-    if (filtered.length > 0) return filtered;
-
-    const payable = this.getVendorPayableBreakdown(period, targetVendorId);
-    const pfBase = payable.total_gross_wages;
-
-    const defaults: VendorStatutoryChallan[] = [
-      {
-        id: `challan-pf-${period}`,
-        tenant_id: 'org-joy-01',
-        vendor_id: targetVendorId,
-        period,
-        type: 'PF',
-        headcount: payable.headcount,
-        wage_base: pfBase,
-        employee_share: Math.round(pfBase * 0.12),
-        employer_share: payable.total_employer_pf,
-        admin_charges: Math.round(pfBase * 0.005),
-        total_remitted: Math.round(pfBase * 0.12) + payable.total_employer_pf + Math.round(pfBase * 0.005),
-        trrn_or_challan_no: `TRRN-${period.replace('-', '')}-991823`,
-        payment_date: `${period}-15`,
-        bank_ref: 'HDFC-EPFO-881920',
-        status: 'REMITTED',
-        receipt_doc_url: 'EPFO_Electronic_Challan_Receipt.pdf',
-      },
-      {
-        id: `challan-esi-${period}`,
-        tenant_id: 'org-joy-01',
-        vendor_id: targetVendorId,
-        period,
-        type: 'ESI',
-        headcount: payable.headcount,
-        wage_base: pfBase,
-        employee_share: Math.round(pfBase * 0.0075),
-        employer_share: payable.total_employer_esi,
-        total_remitted: Math.round(pfBase * 0.0075) + payable.total_employer_esi,
-        trrn_or_challan_no: `ESIC-CBE-${period.replace('-', '')}-4412`,
-        payment_date: `${period}-15`,
-        bank_ref: 'SBI-ESIC-991283',
-        status: 'REMITTED',
-        receipt_doc_url: 'ESIC_Monthly_Contribution_Challan.pdf',
-      },
-    ];
-
-    const merged = [...stored.filter((c) => !(c.vendor_id === targetVendorId && c.period === period)), ...defaults];
-    setStorage(STORAGE_KEYS.CHALLANS, merged);
-    return defaults;
+    return stored.filter((c) => c.vendor_id === targetVendorId && c.period === period);
   },
 
   // ==========================================
@@ -1042,6 +1297,14 @@ export const vendorPortalService = {
     }
   },
 
+  getSettlements(vendorId?: string, relationshipId?: string): VendorInvoicePayment[] {
+    return this.getPayments(vendorId);
+  },
+
+  getContracts(vendorId?: string, relationshipId?: string): VendorContract[] {
+    return [];
+  },
+
   // ==========================================
   // 11. AUDIT LOGS
   // ==========================================
@@ -1052,6 +1315,7 @@ export const vendorPortalService = {
   },
 
   logAudit(entry: {
+    vendor_id?: string;
     entity_type: VendorAuditLog['entity_type'];
     entity_id: string;
     action: string;
@@ -1061,16 +1325,17 @@ export const vendorPortalService = {
   }): void {
     const activeVendor = this.getActiveVendor();
     const user = api.getCurrentUser();
+    const targetVendorId = entry.vendor_id || activeVendor?.id || 'vnd-default';
     const newLog: VendorAuditLog = {
       id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      tenant_id: activeVendor.tenant_id,
-      vendor_id: activeVendor.id,
+      tenant_id: activeVendor?.tenant_id || 'org-joy-01',
+      vendor_id: targetVendorId,
       entity_type: entry.entity_type,
       entity_id: entry.entity_id,
       action: entry.action,
       previous_value: entry.previous_value,
       new_value: entry.new_value,
-      performed_by: user?.name || activeVendor.contact_person || 'Vendor Operations Head',
+      performed_by: user?.name || activeVendor?.contact_person || 'Vendor Operations Head',
       performed_at: new Date().toISOString(),
       role: user?.roles?.[0]?.name || 'Vendor Admin',
       remarks: entry.remarks,
@@ -1089,26 +1354,29 @@ export const vendorPortalService = {
   getLicenses(vendorId?: string): import('../types/vendorPortal').VendorLicense[] {
     const targetVendorId = vendorId || this.getActiveVendorId();
     const all = getStorage<import('../types/vendorPortal').VendorLicense[]>('wf_vendor_portal_licenses', []);
-    
-    // Auto calculate days until expiry and status
+    const matches = all.filter((l) => l.vendor_id === targetVendorId);
     const now = new Date();
-    return all
-      .filter((l) => l.vendor_id === targetVendorId)
-      .map((lic) => {
-        const expiry = new Date(lic.expiry_date);
-        const diffDays = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        let status = lic.status;
-        if (diffDays <= 0) {
-          status = 'EXPIRED';
-        } else if (diffDays <= 7) {
-          status = 'CRITICAL';
-        } else if (diffDays <= 30) {
-          status = 'EXPIRING_SOON';
-        } else if (status !== 'UNDER_RENEWAL') {
-          status = 'ACTIVE';
-        }
-        return { ...lic, days_until_expiry: diffDays, status };
-      });
+
+    return matches.map((lic) => {
+      const expiry = new Date(lic.expiry_date);
+      const diffDays = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      let status = lic.status;
+      if (diffDays <= 0) {
+        status = 'EXPIRED';
+      } else if (diffDays <= 7) {
+        status = 'CRITICAL';
+      } else if (diffDays <= 30) {
+        status = 'EXPIRING_SOON';
+      } else if (status !== 'UNDER_RENEWAL') {
+        status = 'ACTIVE';
+      }
+      return {
+        ...lic,
+        valid_until: lic.valid_until || lic.expiry_date,
+        days_until_expiry: diffDays,
+        status,
+      };
+    });
   },
 
   addLicense(payload: Partial<import('../types/vendorPortal').VendorLicense>): import('../types/vendorPortal').VendorLicense {
@@ -1126,20 +1394,20 @@ export const vendorPortalService = {
 
     const newLic: import('../types/vendorPortal').VendorLicense = {
       id: `lic-${Date.now()}`,
-      tenant_id: activeVendor.tenant_id,
-      vendor_id: activeVendor.id,
-      vendor_name: activeVendor.name,
+      tenant_id: activeVendor?.tenant_id || 'org-joy-01',
+      vendor_id: activeVendor?.id || '',
+      vendor_name: activeVendor?.name || 'Vendor Organization',
       license_type: payload.license_type || 'Contract Labour License',
-      license_number: payload.license_number || `CL-${Math.floor(1000 + Math.random() * 9000)}`,
+      license_number: payload.license_number || '',
       issued_date: payload.issued_date || new Date().toISOString().split('T')[0],
       expiry_date: payload.expiry_date || expiry.toISOString().split('T')[0],
-      max_worker_capacity: payload.max_worker_capacity || 50,
-      issuing_authority: payload.issuing_authority || 'Joint Commissioner of Labour',
-      work_location: payload.work_location || 'Coimbatore Industrial Cluster',
+      max_worker_capacity: payload.max_worker_capacity || 0,
+      issuing_authority: payload.issuing_authority || '',
+      work_location: payload.work_location || '',
       status: payload.status || status,
       days_until_expiry: diffDays,
-      document_name: payload.document_name || 'License_Copy.pdf',
-      document_url: payload.document_url || 'https://sample.pdf',
+      document_name: payload.document_name || '',
+      document_url: payload.document_url || '',
       reminders_enabled: payload.reminders_enabled ?? true,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -1194,18 +1462,18 @@ export const vendorPortalService = {
 
     const newReturn: import('../types/vendorPortal').StatutoryReturn = {
       id: `ret-${Date.now()}`,
-      tenant_id: activeVendor.tenant_id,
-      vendor_id: activeVendor.id,
-      vendor_name: activeVendor.name,
+      tenant_id: activeVendor?.tenant_id || 'org-joy-01',
+      vendor_id: activeVendor?.id || '',
+      vendor_name: activeVendor?.name || 'Vendor Organization',
       form_type: payload.form_type || 'Form XXIV (Half-Yearly Return)',
       return_period: payload.return_period || '2026-H1',
       due_date: payload.due_date || '2026-07-31',
       filing_date: payload.filing_date || new Date().toISOString().split('T')[0],
-      acknowledgement_number: payload.acknowledgement_number || `ACK-${Math.floor(100000 + Math.random() * 900000)}`,
+      acknowledgement_number: payload.acknowledgement_number || '',
       status: payload.status || 'SUBMITTED',
-      document_name: payload.document_name || 'Return_Filing_Proof.pdf',
-      document_url: payload.document_url || 'https://sample.pdf',
-      remarks: payload.remarks || 'Statutory return filed on time with competent labour authority',
+      document_name: payload.document_name || '',
+      document_url: payload.document_url || '',
+      remarks: payload.remarks || '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -1224,6 +1492,10 @@ export const vendorPortalService = {
     return newReturn;
   },
 
+  submitStatutoryReturn(payload: Partial<import('../types/vendorPortal').StatutoryReturn>): import('../types/vendorPortal').StatutoryReturn {
+    return this.addStatutoryReturn(payload);
+  },
+
   issueFormV(payload: {
     vendor_id?: string;
     client_company_name: string;
@@ -1234,21 +1506,23 @@ export const vendorPortalService = {
     scope_of_work: string;
   }): import('../types/vendorPortal').StatutoryReturn {
     const targetVendor = payload.vendor_id ? this.getVendors().find(v => v.id === payload.vendor_id) || this.getActiveVendor() : this.getActiveVendor();
+    const vendorId = targetVendor?.id || '';
+    const vendorName = targetVendor?.name || 'Vendor Organization';
     const all = getStorage<import('../types/vendorPortal').StatutoryReturn[]>('wf_vendor_portal_returns', []);
 
     const newFormV: import('../types/vendorPortal').StatutoryReturn = {
       id: `formv-${Date.now()}`,
-      tenant_id: targetVendor.tenant_id,
-      vendor_id: targetVendor.id,
-      vendor_name: targetVendor.name,
+      tenant_id: targetVendor?.tenant_id || 'org-joy-01',
+      vendor_id: vendorId,
+      vendor_name: vendorName,
       form_type: 'Form V (Principal Employer Certificate)',
       return_period: `${payload.valid_from} to ${payload.valid_to}`,
       due_date: payload.valid_to,
       filing_date: new Date().toISOString().split('T')[0],
-      acknowledgement_number: `PE-FORM-V-${Math.floor(1000 + Math.random() * 9000)}`,
+      acknowledgement_number: `PE-FORM-V-${Date.now().toString().slice(-6)}`,
       status: 'VERIFIED',
-      document_name: `Form_V_${targetVendor.code}.pdf`,
-      document_url: 'https://sample.pdf',
+      document_name: targetVendor?.code ? `Form_V_${targetVendor.code}.pdf` : 'Form_V.pdf',
+      document_url: '',
       remarks: `Form V Certificate issued by Principal Employer ${payload.client_company_name} for ${payload.max_workers} contract workers`,
       verified_by: 'Principal Employer Authorized Signatory',
       verified_at: new Date().toISOString(),
@@ -1275,89 +1549,8 @@ export const vendorPortalService = {
   // ==========================================
   getComplianceCalendarTasks(period?: string, vendorId?: string): import('../types/vendorPortal').ComplianceCalendarTask[] {
     const targetVendorId = vendorId || this.getActiveVendorId();
-    const activeVendor = this.getVendors().find(v => v.id === targetVendorId) || this.getActiveVendor();
     const stored = getStorage<import('../types/vendorPortal').ComplianceCalendarTask[]>('wf_vendor_portal_cal_tasks', []);
-
-    if (stored.length > 0) {
-      return stored.filter((t) => !vendorId || t.vendor_id === targetVendorId);
-    }
-
-    // Default auto-generated statutory calendar
-    const defaultTasks: import('../types/vendorPortal').ComplianceCalendarTask[] = [
-      {
-        id: `tsk-pf-${targetVendorId}`,
-        tenant_id: activeVendor.tenant_id,
-        vendor_id: targetVendorId,
-        vendor_name: activeVendor.name,
-        title: 'Monthly PF Remittance & ECR Filing',
-        category: 'PF',
-        frequency: 'MONTHLY',
-        due_date: '2026-09-15',
-        status: 'PENDING',
-        assigned_to_role: 'Vendor Admin',
-        reminder_days_before: [15, 7, 3, 1],
-        created_at: new Date().toISOString(),
-      },
-      {
-        id: `tsk-esi-${targetVendorId}`,
-        tenant_id: activeVendor.tenant_id,
-        vendor_id: targetVendorId,
-        vendor_name: activeVendor.name,
-        title: 'Monthly ESIC Online Payment & Contribution',
-        category: 'ESI',
-        frequency: 'MONTHLY',
-        due_date: '2026-09-15',
-        status: 'SUBMITTED',
-        assigned_to_role: 'Vendor Admin',
-        reminder_days_before: [15, 7, 3, 1],
-        created_at: new Date().toISOString(),
-      },
-      {
-        id: `tsk-wage-${targetVendorId}`,
-        tenant_id: activeVendor.tenant_id,
-        vendor_id: targetVendorId,
-        vendor_name: activeVendor.name,
-        title: 'Contractor Wage Register Submission (Form XVII)',
-        category: 'WAGE_REGISTER',
-        frequency: 'MONTHLY',
-        due_date: '2026-09-07',
-        status: 'PENDING',
-        assigned_to_role: 'Company HR',
-        reminder_days_before: [7, 3, 1],
-        created_at: new Date().toISOString(),
-      },
-      {
-        id: `tsk-half-yearly-${targetVendorId}`,
-        tenant_id: activeVendor.tenant_id,
-        vendor_id: targetVendorId,
-        vendor_name: activeVendor.name,
-        title: 'CLRA Half-Yearly Return (Form XXIV)',
-        category: 'HALF_YEARLY_RETURN',
-        frequency: 'HALF_YEARLY',
-        due_date: '2026-07-31',
-        status: 'VERIFIED',
-        assigned_to_role: 'Compliance Officer',
-        reminder_days_before: [30, 15, 7, 1],
-        created_at: new Date().toISOString(),
-      },
-      {
-        id: `tsk-annual-${targetVendorId}`,
-        tenant_id: activeVendor.tenant_id,
-        vendor_id: targetVendorId,
-        vendor_name: activeVendor.name,
-        title: 'Contract Labour Annual Return (Form XXV)',
-        category: 'ANNUAL_RETURN',
-        frequency: 'YEARLY',
-        due_date: '2027-01-31',
-        status: 'PENDING',
-        assigned_to_role: 'Compliance Officer',
-        reminder_days_before: [60, 30, 15, 7, 1],
-        created_at: new Date().toISOString(),
-      },
-    ];
-
-    setStorage('wf_vendor_portal_cal_tasks', defaultTasks);
-    return defaultTasks;
+    return stored.filter((t) => !vendorId || t.vendor_id === targetVendorId);
   },
 
   updateCalendarTaskStatus(taskId: string, status: import('../types/vendorPortal').ComplianceCalendarTask['status']): void {
@@ -1463,6 +1656,8 @@ export const vendorPortalService = {
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const nextYear = new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0];
 
+    const activeVendorName = this.getActiveVendor()?.name || 'Vendor Organization';
+
     if (name.includes('migrant') || name.includes('ismw')) {
       return {
         detected_document_type: 'Migrant Labour License',
@@ -1470,7 +1665,7 @@ export const vendorPortalService = {
         extracted_license_number: `TN/ML/2026/${randomSuffix}`,
         extracted_issue_date: new Date().toISOString().split('T')[0],
         extracted_expiry_date: nextYear,
-        extracted_holder_name: this.getActiveVendor().name,
+        extracted_holder_name: activeVendorName,
         extracted_issuing_authority: 'Office of the Assistant Commissioner of Labour (ISMW Licensing)',
         raw_text_snippet: `INTER-STATE MIGRANT WORKMEN (REGULATION OF EMPLOYMENT AND CONDITIONS OF SERVICE) ACT, 1979 - LICENSE NO: TN/ML/2026/${randomSuffix} VALID UPTO ${nextYear}`,
       };
@@ -1483,7 +1678,7 @@ export const vendorPortalService = {
         extracted_license_number: `FL-CBE-2026-${randomSuffix}`,
         extracted_issue_date: new Date().toISOString().split('T')[0],
         extracted_expiry_date: nextYear,
-        extracted_holder_name: this.getActiveVendor().name,
+        extracted_holder_name: activeVendorName,
         extracted_issuing_authority: 'Directorate of Industrial Safety and Health (DISH)',
         raw_text_snippet: `FACTORIES ACT, 1948 - RENEWED FACTORY LICENSE FL-CBE-2026-${randomSuffix} HP INSTALLED: 150HP WORKERS: 100`,
       };
@@ -1496,7 +1691,7 @@ export const vendorPortalService = {
         extracted_license_number: `PSARA/TN/POL/2026/${randomSuffix}`,
         extracted_issue_date: new Date().toISOString().split('T')[0],
         extracted_expiry_date: nextYear,
-        extracted_holder_name: this.getActiveVendor().name,
+        extracted_holder_name: activeVendorName,
         extracted_issuing_authority: 'Controlling Authority & ADGP Tamil Nadu',
         raw_text_snippet: `PRIVATE SECURITY AGENCIES (REGULATION) ACT, 2005 - LICENSE VALID FOR OPERATION IN ALL DISTRICTS`,
       };
@@ -1509,7 +1704,7 @@ export const vendorPortalService = {
       extracted_license_number: `TN/CL/2026/${randomSuffix}`,
       extracted_issue_date: new Date().toISOString().split('T')[0],
       extracted_expiry_date: nextYear,
-      extracted_holder_name: this.getActiveVendor().name,
+      extracted_holder_name: activeVendorName,
       extracted_issuing_authority: 'Joint Commissioner of Labour (Contract Labour Cell)',
       raw_text_snippet: `CONTRACT LABOUR (REGULATION AND ABOLITION) ACT, 1970 - FORM VI (RULE 25(1)) - LICENSE NUMBER: TN/CL/2026/${randomSuffix} MAX WORKERS: 50`,
     };
@@ -1520,58 +1715,58 @@ export const vendorPortalService = {
   // ==========================================
   createVendorOnboarding(payload: Partial<VendorOrganization>): VendorOrganization {
     const orgs = this.getVendors();
-    const vendorCode = payload.code || `VND-${payload.name?.substring(0, 3).toUpperCase() || 'NEW'}-${Math.floor(100 + Math.random() * 900)}`;
+    const vendorCode = payload.code || `VND-${Date.now().toString().slice(-6)}`;
     const newVendor: VendorOrganization = {
-      id: `vnd-${Date.now()}`,
-      tenant_id: 'org-joy-corporate-solutions-private-',
-      name: payload.name || 'New Vendor Entity',
-      trade_name: payload.trade_name || payload.name || 'New Vendor Partner',
+      id: payload.id || `vnd-${Date.now()}`,
+      tenant_id: payload.tenant_id || 'org-joy-01',
+      name: payload.name || '',
+      trade_name: payload.trade_name || payload.name || '',
       code: vendorCode,
       vendor_type: payload.vendor_type || 'MANPOWER_STAFFING',
-      company_type: payload.company_type || 'Pvt Ltd',
-      registration_number: payload.registration_number || `U74999TZ2026PTC${Math.floor(10000 + Math.random() * 90000)}`,
-      contact_person: payload.contact_person || 'Managing Director',
-      email: payload.email || 'compliance@vendorpartner.in',
-      phone: payload.phone || '+91 98765 43210',
-      gstin: payload.gstin || '33AAAAA0000A1Z5',
-      pan: payload.pan || 'AAAAA0000A',
-      address: payload.address || 'Industrial Estate, Phase 2, Coimbatore',
-      city: payload.city || 'Coimbatore',
-      state: payload.state || 'Tamil Nadu',
-      postal_code: payload.postal_code || '641001',
-      status: 'Active',
-      service_charge_percentage: payload.service_charge_percentage || 8.5,
-      is_gst_applicable: payload.is_gst_applicable ?? true,
-      bank_name: payload.bank_details?.bank_name || payload.bank_name || 'HDFC Bank',
-      account_number: payload.bank_details?.account_number || payload.account_number || '50200012345678',
-      ifsc_code: payload.bank_details?.ifsc || payload.ifsc_code || 'HDFC0001234',
-      bank_details: payload.bank_details || {
-        bank_name: 'HDFC Bank',
-        account_holder_name: payload.name || 'New Vendor Entity',
-        account_number: '50200012345678',
-        ifsc: 'HDFC0001234',
-        is_verified: true,
-      },
-      authorized_person: payload.authorized_person || {
-        name: payload.contact_person || 'Managing Director',
-        designation: 'Managing Partner',
-        pan: payload.pan || 'AAAAA0000A',
-        aadhaar_masked: 'XXXX-XXXX-8822',
-        mobile: payload.phone || '+91 98765 43210',
-        email: payload.email || 'compliance@vendorpartner.in',
-        is_verified: true,
-      },
-      agreement_details: payload.agreement_details || {
-        agreement_number: `AGR-${vendorCode}-2026`,
-        client_company_name: 'Joy Corporate Solutions Pvt Ltd',
-        start_date: new Date().toISOString().split('T')[0],
-        end_date: new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0],
-        contract_value: 2500000,
-        scope_of_work: 'Provision of Skilled Technical & Facility Staffing',
-        work_location: 'Coimbatore Plant & Client Sites',
-        status: 'ACTIVE',
-      },
-      compliance_score: 92,
+      company_type: payload.company_type || undefined,
+      registration_number: payload.registration_number || '',
+      contact_person: payload.contact_person || '',
+      email: payload.email || '',
+      phone: payload.phone || '',
+      gstin: payload.gstin || '',
+      pan: payload.pan || '',
+      address: payload.address || '',
+      city: payload.city || '',
+      state: payload.state || '',
+      postal_code: payload.postal_code || '',
+      status: payload.status || 'Active',
+      service_charge_percentage: payload.service_charge_percentage || 0,
+      is_gst_applicable: payload.is_gst_applicable ?? false,
+      bank_name: payload.bank_details?.bank_name || payload.bank_name || '',
+      account_number: payload.bank_details?.account_number || payload.account_number || '',
+      ifsc_code: payload.bank_details?.ifsc || payload.ifsc_code || '',
+      bank_details: payload.bank_details ? {
+        bank_name: payload.bank_details.bank_name || '',
+        account_holder_name: payload.bank_details.account_holder_name || payload.name || '',
+        account_number: payload.bank_details.account_number || '',
+        ifsc: payload.bank_details.ifsc || '',
+        is_verified: payload.bank_details.is_verified ?? false,
+      } : undefined,
+      authorized_person: payload.authorized_person ? {
+        name: payload.authorized_person.name || payload.contact_person || '',
+        designation: payload.authorized_person.designation || '',
+        pan: payload.authorized_person.pan || payload.pan || '',
+        aadhaar_masked: payload.authorized_person.aadhaar_masked || '',
+        mobile: payload.authorized_person.mobile || payload.phone || '',
+        email: payload.authorized_person.email || payload.email || '',
+        is_verified: payload.authorized_person.is_verified ?? false,
+      } : undefined,
+      agreement_details: payload.agreement_details ? {
+        agreement_number: payload.agreement_details.agreement_number || '',
+        client_company_name: payload.agreement_details.client_company_name || '',
+        start_date: payload.agreement_details.start_date || '',
+        end_date: payload.agreement_details.end_date || '',
+        contract_value: payload.agreement_details.contract_value || 0,
+        scope_of_work: payload.agreement_details.scope_of_work || '',
+        work_location: payload.agreement_details.work_location || '',
+        status: payload.agreement_details.status || 'ACTIVE',
+      } : undefined,
+      compliance_score: payload.compliance_score || 0,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -1595,39 +1790,7 @@ export const vendorPortalService = {
   // 14. DOCUMENT REQUISITION & AUDIT (HR & COMPANY ADMIN)
   // ==========================================
   getDocumentRequests(vendorId?: string): VendorDocumentRequest[] {
-    const list = getStorage<VendorDocumentRequest[]>('wf_vendor_portal_doc_requests', [
-      {
-        id: 'doc-req-01',
-        tenant_id: 'org-joy-corporate-solutions-private-',
-        vendor_id: 'vnd-apex-01',
-        vendor_name: 'Apex Staffing Solutions Pvt Ltd',
-        document_type: 'Contract Labour License Renewal (CLRA Form VI)',
-        description: 'Please upload the renewed Contract Labour License issued by the Joint Labour Commissioner for 2026-2027.',
-        due_date: '2026-09-15',
-        priority: 'CRITICAL',
-        status: 'REQUESTED',
-        requested_by_name: 'HR Compliance Head (Joy PeopleHR)',
-        requested_at: '2026-08-31T10:00:00Z',
-      },
-      {
-        id: 'doc-req-02',
-        tenant_id: 'org-joy-corporate-solutions-private-',
-        vendor_id: 'vnd-apex-01',
-        vendor_name: 'Apex Staffing Solutions Pvt Ltd',
-        document_type: 'Monthly EPFO ECR & Contribution Challan',
-        description: 'Electronic Challan cum Return (ECR) for August 2026 wage cycle along with TRRN confirmation payment slip.',
-        due_date: '2026-09-15',
-        priority: 'HIGH',
-        status: 'SUBMITTED',
-        requested_by_name: 'Company Finance Admin',
-        requested_at: '2026-08-25T14:30:00Z',
-        submitted_file_name: 'EPFO_ECR_August_2026_TRRN89210.pdf',
-        submitted_at: '2026-08-30T16:45:00Z',
-      },
-    ]);
-    if (!localStorage.getItem('wf_vendor_portal_doc_requests')) {
-      setStorage('wf_vendor_portal_doc_requests', list);
-    }
+    const list = getStorage<VendorDocumentRequest[]>('wf_vendor_portal_doc_requests', []);
     if (vendorId) {
       return list.filter((r) => r.vendor_id === vendorId);
     }
@@ -1643,7 +1806,10 @@ export const vendorPortalService = {
     requested_by_name?: string;
   }): VendorDocumentRequest {
     const vendors = this.getVendors();
-    const vendor = vendors.find((v) => v.id === payload.vendor_id) || vendors[0] || SEED_ORGANIZATION;
+    const vendor = vendors.find((v) => v.id === payload.vendor_id);
+    if (!vendor) {
+      throw new Error('Vendor not found for document request');
+    }
     const all = this.getDocumentRequests();
 
     const newReq: VendorDocumentRequest = {
@@ -1699,62 +1865,24 @@ export const vendorPortalService = {
     }
   },
 
-  updateVendorEmployeeStatus(
+  updateEmployeeStatus(
     empId: string,
     status: VendorEmployee['status'],
     remarks?: string
   ): void {
-    const all = getStorage<VendorEmployee[]>(STORAGE_KEYS.EMPLOYEES, DEFAULT_EMPLOYEES);
-    const idx = all.findIndex((e) => e.id === empId);
-    if (idx !== -1) {
-      all[idx].status = status;
-      setStorage(STORAGE_KEYS.EMPLOYEES, all);
-
-      this.logAudit({
-        entity_type: 'WORKFORCE',
-        entity_id: empId,
-        action: `WORKER_STATUS_UPDATED_${status}`,
-        new_value: status,
-        remarks: remarks || `Contract worker ${all[idx].display_name} status updated to ${status} by Company HR`,
-      });
-    }
+    return this.updateVendorEmployeeStatus(empId, status, remarks);
   },
 
   // ==========================================
   // 15. PRINCIPAL EMPLOYER FORM V ISSUANCE
   // ==========================================
+  getFormVs(vendorId?: string): PrincipalEmployerFormV[] {
+    return this.getPrincipalEmployerFormVs(vendorId);
+  },
+
   getPrincipalEmployerFormVs(vendorId?: string): PrincipalEmployerFormV[] {
-    const list = getStorage<PrincipalEmployerFormV[]>('wf_vendor_portal_form_v', [
-      {
-        id: 'form-v-01',
-        tenant_id: 'org-joy-corporate-solutions-private-',
-        vendor_id: 'vnd-apex-01',
-        vendor_name: 'Apex Staffing Solutions Pvt Ltd',
-        certificate_number: 'FORM-V/JCS/2026/042',
-        issue_date: '2026-08-01',
-        principal_employer_name: 'Joy Corporate Solutions Pvt Ltd',
-        principal_employer_address: '42 SIDCO Industrial Complex, Coimbatore, TN - 641021',
-        principal_employer_registration_no: 'RC/TN/CBE/CLRA/2022/9918',
-        contractor_name: 'Apex Staffing Solutions Pvt Ltd',
-        contractor_address: 'Plot 42, SIDCO Industrial Estate, Phase 2, Coimbatore',
-        nature_of_work: 'Assembly Line Support, Material Handling & Quality Testing',
-        max_contract_labour_capacity: 50,
-        duration_from: '2026-08-01',
-        duration_to: '2027-07-31',
-        site_location: 'Coimbatore Manufacturing Complex (Unit 1 & 2)',
-        issued_by_name: 'Senthil Nathan',
-        issued_by_designation: 'Head of Human Resources & Labour Compliance',
-        status: 'ISSUED',
-        created_at: '2026-08-01T09:00:00Z',
-      },
-    ]);
-    if (!localStorage.getItem('wf_vendor_portal_form_v')) {
-      setStorage('wf_vendor_portal_form_v', list);
-    }
-    if (vendorId) {
-      return list.filter((f) => f.vendor_id === vendorId);
-    }
-    return list;
+    const list = getStorage<PrincipalEmployerFormV[]>('wf_vendor_portal_form_v', []);
+    return vendorId ? list.filter((f) => f.vendor_id === vendorId) : list;
   },
 
   issuePrincipalEmployerFormV(payload: {
@@ -1768,7 +1896,10 @@ export const vendorPortalService = {
     issued_by_designation?: string;
   }): PrincipalEmployerFormV {
     const vendors = this.getVendors();
-    const vendor = vendors.find((v) => v.id === payload.vendor_id) || vendors[0] || SEED_ORGANIZATION;
+    const vendor = vendors.find((v) => v.id === payload.vendor_id);
+    if (!vendor) {
+      throw new Error('Vendor not found for Form V issuance');
+    }
     const all = this.getPrincipalEmployerFormVs();
 
     const certNum = `FORM-V/JCS/2026/${Math.floor(100 + Math.random() * 900)}`;
@@ -1779,18 +1910,18 @@ export const vendorPortalService = {
       vendor_name: vendor.name,
       certificate_number: certNum,
       issue_date: new Date().toISOString().split('T')[0],
-      principal_employer_name: 'Joy Corporate Solutions Pvt Ltd',
-      principal_employer_address: '42 SIDCO Industrial Complex, Coimbatore, TN - 641021',
-      principal_employer_registration_no: 'RC/TN/CBE/CLRA/2022/9918',
+      principal_employer_name: (payload as any).principal_employer_name || api.getOrganizationSync()?.name || '',
+      principal_employer_address: (payload as any).principal_employer_address || (api.getOrganizationSync() as any)?.address || '',
+      principal_employer_registration_no: (payload as any).principal_employer_registration_no || '',
       contractor_name: vendor.name,
-      contractor_address: vendor.address,
+      contractor_address: vendor.address || '',
       nature_of_work: payload.nature_of_work,
       max_contract_labour_capacity: payload.max_workers,
       duration_from: payload.duration_from,
       duration_to: payload.duration_to,
       site_location: payload.site_location,
-      issued_by_name: payload.issued_by_name || 'HR Head',
-      issued_by_designation: payload.issued_by_designation || 'Head of HR & Legal Compliance',
+      issued_by_name: payload.issued_by_name || api.getCurrentUser()?.name || '',
+      issued_by_designation: payload.issued_by_designation || '',
       status: 'ISSUED',
       created_at: new Date().toISOString(),
     };
@@ -1806,7 +1937,190 @@ export const vendorPortalService = {
       remarks: `Form V Certificate ${certNum} issued to contractor ${vendor.name} for ${payload.max_workers} contract workers`,
     });
 
+    hrEventBus.publish('vendor.form_v_issued', newFormV);
+
     return newFormV;
   },
-};
 
+  // ==========================================
+  // 16. HELPER EXTENSIONS FOR LAUNCH WORKFLOWS
+  // ==========================================
+  getEmployeeById(id: string): VendorEmployee | undefined {
+    return this.getEmployees().find((e) => e.id === id);
+  },
+
+  getDeployments(vendorId?: string, relationshipId?: string): WorkerDeployment[] {
+    const targetVendorId = vendorId || this.getActiveVendorId();
+    const list = getStorage<WorkerDeployment[]>('wf_vendor_portal_deployments', []);
+    let filtered = list.filter((d) => d.vendor_id === targetVendorId);
+    if (relationshipId) {
+      filtered = filtered.filter((d) => d.relationship_id === relationshipId);
+    }
+    return filtered;
+  },
+
+  getDeploymentsByRelationship(relationshipId: string): WorkerDeployment[] {
+    const list = getStorage<WorkerDeployment[]>('wf_vendor_portal_deployments', []);
+    return list.filter((d) => d.relationship_id === relationshipId);
+  },
+
+  updateDeployment(deploymentId: string, updates: Partial<WorkerDeployment>): WorkerDeployment | undefined {
+    const list = getStorage<WorkerDeployment[]>('wf_vendor_portal_deployments', []);
+    const idx = list.findIndex((d) => d.id === deploymentId);
+    if (idx !== -1) {
+      list[idx] = { ...list[idx], ...updates, updated_at: new Date().toISOString() };
+      setStorage('wf_vendor_portal_deployments', list);
+      return list[idx];
+    }
+    return undefined;
+  },
+
+  updateDeploymentStatus(deploymentId: string, status: WorkerDeployment['status'], remarks?: string): WorkerDeployment | undefined {
+    return this.updateDeployment(deploymentId, { status });
+  },
+
+  assignWorkerDeployment(payload: Partial<WorkerDeployment>): WorkerDeployment {
+    const activeVendor = this.getActiveVendor();
+    const list = getStorage<WorkerDeployment[]>('wf_vendor_portal_deployments', []);
+    const newDep: WorkerDeployment = {
+      id: `dep-${Date.now()}`,
+      worker_id: payload.worker_id || '',
+      vendor_id: payload.vendor_id || activeVendor?.id || '',
+      company_id: payload.company_id || '',
+      relationship_id: payload.relationship_id || '',
+      company_name: payload.company_name || '',
+      site_name: payload.site_name || '',
+      department_name: payload.department_name || '',
+      designation: payload.designation || '',
+      start_date: payload.start_date || new Date().toISOString().split('T')[0],
+      end_date: payload.end_date,
+      daily_wage_rate: payload.daily_wage_rate || 0,
+      overtime_eligible: payload.overtime_eligible ?? true,
+      status: payload.status || 'ACTIVE',
+      gate_pass_valid_till: payload.gate_pass_valid_till,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ...(payload as any),
+    };
+    list.unshift(newDep);
+    setStorage('wf_vendor_portal_deployments', list);
+    hrEventBus.publish('vendor.worker_deployed', newDep);
+    return newDep;
+  },
+
+  recordAttendance(record: Partial<VendorAttendanceRecord>): VendorAttendanceRecord {
+    const targetVendorId = record.vendor_id || this.getActiveVendorId();
+    const all = getStorage<VendorAttendanceRecord[]>(STORAGE_KEYS.ATTENDANCE, []);
+    const newRec: VendorAttendanceRecord = {
+      id: record.id || `att-${Date.now()}`,
+      tenant_id: record.tenant_id || 'org-joy-01',
+      vendor_id: targetVendorId,
+      employee_id: record.employee_id || '',
+      employee_name: record.employee_name || '',
+      employee_code: record.employee_code || '',
+      month: record.month || '2026-08',
+      total_working_days: record.total_working_days || 0,
+      present_days: record.present_days || 0,
+      absent_days: record.absent_days || 0,
+      leave_days: record.leave_days || 0,
+      lop_days: record.lop_days || 0,
+      ot_hours: record.ot_hours || 0,
+      payable_days: record.payable_days || 0,
+      status: record.status || 'PENDING_REVIEW',
+      ...(record as any),
+    };
+    const idx = all.findIndex((a) => a.id === newRec.id || (a.employee_id === newRec.employee_id && a.month === newRec.month));
+    if (idx !== -1) all[idx] = newRec;
+    else all.unshift(newRec);
+    setStorage(STORAGE_KEYS.ATTENDANCE, all);
+    return newRec;
+  },
+
+  runThreeWayMatch(params: {
+    vendor_id: string;
+    company_id: string;
+    period: string;
+    po_number: string;
+    claimed_amount: number;
+    invoice_id?: string;
+    invoice_number?: string;
+  }): ThreeWayMatchResult {
+    const pos = this.getPurchaseOrders(params.vendor_id);
+    const allPos = getStorage<VendorPurchaseOrder[]>(STORAGE_KEYS.PURCHASE_ORDERS, DEFAULT_PURCHASE_ORDERS);
+    const po = pos.find((p) => p.po_number === params.po_number) || allPos.find((p) => p.po_number === params.po_number);
+    const payable = this.getVendorPayableBreakdown(params.period, params.vendor_id);
+    let benchmarkPayable = payable.net_vendor_payable;
+
+    const monthlyAtt = this.getMonthlyAttendance(params.period, params.vendor_id);
+    const deps = this.getDeployments(params.vendor_id);
+    if (deps.length > 0 && monthlyAtt.length > 0) {
+      let depBaseWages = 0;
+      let depOtWages = 0;
+      for (const att of monthlyAtt) {
+        const dep = deps.find((d) => d.worker_id === att.employee_id);
+        if (!dep) continue;
+        const dailyRate = (dep as any).daily_wage_rate || 0;
+        const otRate = (dep as any).ot_hourly_rate || (dailyRate > 0 ? dailyRate / 8 : 0);
+        depBaseWages += (att.present_days || 0) * dailyRate;
+        depOtWages += (att.ot_hours || 0) * otRate;
+      }
+      const vendor = this.getVendors().find((v) => v.id === params.vendor_id) || this.getActiveVendor();
+      const servicePct = vendor?.service_charge_percentage || 0;
+      const subtotal = depBaseWages + depOtWages;
+      const fee = subtotal * (servicePct / 100);
+      const gst = (subtotal + fee) * 0.18;
+      const deploymentExpected = Math.round(subtotal + fee + gst);
+      if (Math.abs(params.claimed_amount - deploymentExpected) <= 25) {
+        benchmarkPayable = deploymentExpected;
+      }
+    }
+
+    const diff = params.claimed_amount - benchmarkPayable;
+    const variancePct = benchmarkPayable > 0 ? (Math.abs(diff) / benchmarkPayable) * 100 : 0;
+    const isPoSufficient = (po?.remaining_balance || 0) >= params.claimed_amount;
+    const isPayrollMatch = Math.abs(diff) <= 10;
+
+    const matchStatus = !isPoSufficient ? 'EXCEPTION' : isPayrollMatch ? 'MATCHED' : variancePct <= 2 ? 'PARTIALLY_MATCHED' : 'MISMATCHED';
+
+    return {
+      invoice_id: params.invoice_id || `inv-${Date.now()}`,
+      invoice_number: params.invoice_number || `INV-${params.period}`,
+      po_number: params.po_number,
+      period: params.period,
+      po_available_balance: po?.remaining_balance || 0,
+      approved_payroll_payable: benchmarkPayable,
+      vendor_invoice_claimed: params.claimed_amount,
+      difference_amount: diff,
+      variance_percentage: variancePct,
+      is_po_limit_sufficient: isPoSufficient,
+      is_payroll_matched: isPayrollMatch,
+      match_status: matchStatus,
+      exception_notes: !isPoSufficient ? ['PO balance insufficient'] : [],
+    };
+  },
+
+  verifyInvoice(invoiceId: string, params: { verified_by: string; verified_amount: number }): void {
+    const all = getStorage<VendorInvoice[]>(STORAGE_KEYS.INVOICES, []);
+    const idx = all.findIndex((i) => i.id === invoiceId);
+    if (idx !== -1) {
+      all[idx].status = 'FINANCE_REVIEW';
+      all[idx].finance_reviewer = params.verified_by;
+      all[idx].reviewed_at = new Date().toISOString();
+      all[idx].updated_at = new Date().toISOString();
+      setStorage(STORAGE_KEYS.INVOICES, all);
+      hrEventBus.publish('vendor.invoice_verified', all[idx]);
+    }
+  },
+
+  approveInvoice(invoiceId: string, params: { approved_by: string }): void {
+    const all = getStorage<VendorInvoice[]>(STORAGE_KEYS.INVOICES, []);
+    const idx = all.findIndex((i) => i.id === invoiceId);
+    if (idx !== -1) {
+      all[idx].status = 'APPROVED';
+      (all[idx] as any).approved_by = params.approved_by;
+      all[idx].updated_at = new Date().toISOString();
+      setStorage(STORAGE_KEYS.INVOICES, all);
+      hrEventBus.publish('vendor.invoice_approved', all[idx]);
+    }
+  },
+};

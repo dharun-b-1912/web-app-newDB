@@ -22,6 +22,7 @@ import {
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { hrEventBus } from './hrEventBus';
 import { api } from './api';
+import { payrollApi } from './payrollApi';
 
 const SEPARATIONS_KEY = 'workforce_employee_separations_v1';
 const SEPARATION_TASKS_KEY = 'workforce_separation_tasks_v1';
@@ -1018,6 +1019,70 @@ class OffboardingService {
       this.setStore(EMPLOYEES_KEY, employees);
     }
 
+    // 1. Auto-dispatch FnF settlement into payroll
+    try {
+      const salList = await payrollApi.getEmployeeSalaries(sep.organization_id);
+      const empSal = salList.find(s => s.employee_id === sep.employee_id);
+      const gross = empSal?.gross_monthly || 75000;
+      const basic = empSal?.basic_monthly || Math.round(gross * 0.5);
+
+      const lwd = sep.actual_last_working_date || sep.approved_last_working_date || sep.expected_last_working_date || todayStr;
+      const resDate = sep.resignation_date || todayStr;
+
+      const lwdObj = new Date(lwd);
+      const unpaidDays = isNaN(lwdObj.getDate()) ? 20 : lwdObj.getDate();
+
+      const resObj = new Date(resDate);
+      const diffMs = lwdObj.getTime() - resObj.getTime();
+      const servedDays = Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+      const requiredDays = sep.notice_period_days || 30;
+
+      const assetDeductions = (sep.assets || []).reduce((sum, a) => {
+        if (a.recovery_status === 'DAMAGED' || a.recovery_status === 'MISSING') {
+          return sum + (Number(a.financial_recovery_amount) || 0);
+        }
+        return sum;
+      }, 0);
+
+      const leaveDays = sep.fnf_readiness?.leave_encashment_days || 12;
+
+      payrollApi.calculateFnFSettlement(
+        sep.employee_id,
+        resDate,
+        lwd,
+        requiredDays,
+        servedDays,
+        leaveDays,
+        currentUser.name || 'HR Administrator',
+        sep.organization_id || 'default',
+        {
+          separation_id: separationId,
+          asset_recovery_deduction: assetDeductions,
+          unpaid_salary_days: unpaidDays,
+        }
+      );
+
+      if (isSupabaseEnabled) {
+        Promise.resolve(
+          supabase.rpc('fn_auto_dispatch_separation_fnf', {
+            p_separation_id: separationId
+          })
+        ).catch(e => console.warn('[Offboarding] fn_auto_dispatch_separation_fnf notice:', e));
+      }
+    } catch (fnfErr) {
+      console.warn('[Offboarding] Auto FnF calculation notice:', fnfErr);
+    }
+
+    // 2. Sync Employee Status to Supabase -> RESIGNED / EXITED
+    if (isSupabaseEnabled) {
+      Promise.resolve(
+        supabase.from('employees').update({
+          employment_status: 'RESIGNED',
+          updated_at: now
+        }).eq('id', sep.employee_id)
+      ).catch(e => console.warn('[Offboarding] supabase employee exit notice:', e));
+    }
+
     // Audit & Events
     this.logAudit(
       separationId,
@@ -1030,8 +1095,22 @@ class OffboardingService {
 
     hrEventBus.publish('access.revoked', { employeeId: sep.employee_id, accessStatus: 'REVOKED' });
     hrEventBus.publish('employee.exited', { employeeId: sep.employee_id, separationId, effectiveDate: todayStr });
+    hrEventBus.publish('fnf.ready', { separationId, employeeId: sep.employee_id });
 
     return this.getSeparationById(separationId)!;
+  }
+
+  // --------------------------------------------------------------------------
+  // Pending FnF Clearances Queue
+  // --------------------------------------------------------------------------
+  getPendingFnFClearances(): EmployeeSeparation[] {
+    const separations = this.getStore<EmployeeSeparation>(SEPARATIONS_KEY, []);
+    return separations.filter(s => 
+      s.status === 'CLEARANCE' || 
+      s.status === 'READY_TO_EXIT' || 
+      s.status === 'FNF_PROCESSING' || 
+      s.status === 'COMPLETED'
+    );
   }
 
   // --------------------------------------------------------------------------

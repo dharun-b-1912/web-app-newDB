@@ -13,9 +13,11 @@ import {
 import { vendorPortalService } from '../../../services/vendorPortalService';
 import { VendorOrganization, VendorEmployee, VendorEmployeeStatus } from '../../../types/vendorPortal';
 
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
+
 interface VendorEmployeesViewProps {
-  activeVendor: VendorOrganization;
-  onRefresh: () => void;
+  activeVendor?: VendorOrganization | null;
+  onRefresh?: () => void;
 }
 
 export const VendorEmployeesView: React.FC<VendorEmployeesViewProps> = ({
@@ -23,6 +25,26 @@ export const VendorEmployeesView: React.FC<VendorEmployeesViewProps> = ({
   onRefresh,
 }) => {
   const { showToast } = useToast();
+  
+  // Safe resolution from VendorPortalContext
+  let ctxVendor: VendorOrganization | null = null;
+  let ctxRelationship: any = null;
+  let ctxRefresh: (() => void) | undefined = undefined;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+    ctxRelationship = ctx.activeRelationship;
+    ctxRefresh = ctx.refreshContext;
+  } catch {
+    // Context may not be present in isolated test harnesses
+  }
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
+  const triggerRefresh = () => {
+    if (onRefresh) onRefresh();
+    if (ctxRefresh) ctxRefresh();
+  };
+
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
@@ -45,7 +67,14 @@ export const VendorEmployeesView: React.FC<VendorEmployeesViewProps> = ({
   const [esicNumber, setEsicNumber] = useState('');
   const [workLocation, setWorkLocation] = useState('Coimbatore Plant 1 - Line B');
 
-  const employees = vendorPortalService.getEmployees(activeVendor.id);
+  const allEmployees = effectiveVendor?.id ? vendorPortalService.getEmployees(effectiveVendor.id) : [];
+
+  // Scoped to active client relationship if one is specifically selected
+  const employees = allEmployees.filter((emp) => {
+    if (!ctxRelationship) return true;
+    const relCompanyId = ctxRelationship.company_id || ctxRelationship.id;
+    return !emp.current_client_id || emp.current_client_id === relCompanyId;
+  });
 
   // Extract unique departments for filter dropdown
   const uniqueDepts = Array.from(new Set(employees.map((e) => e.department).filter(Boolean)));
@@ -85,6 +114,9 @@ export const VendorEmployeesView: React.FC<VendorEmployeesViewProps> = ({
       return;
     }
 
+    const clientId = ctxRelationship?.company_id || 'comp-joy-01';
+    const clientName = ctxRelationship?.company_name || 'Joy Corporate Solutions Pvt Ltd';
+
     vendorPortalService.addEmployee({
       first_name: firstName,
       last_name: lastName,
@@ -98,8 +130,8 @@ export const VendorEmployeesView: React.FC<VendorEmployeesViewProps> = ({
       pan,
       esic_number: esicNumber,
       work_location: workLocation,
-      current_client_id: 'comp-joy-01',
-      current_client_name: 'Joy Corporate Solutions Pvt Ltd',
+      current_client_id: clientId,
+      current_client_name: clientName,
     });
 
     showToast('Employee onboarding request submitted to Client HR for authorization!', 'success');
@@ -111,7 +143,7 @@ export const VendorEmployeesView: React.FC<VendorEmployeesViewProps> = ({
     setUan('');
     setPan('');
     setEsicNumber('');
-    onRefresh();
+    triggerRefresh();
   };
 
   const handleRequestExit = () => {
@@ -124,7 +156,7 @@ export const VendorEmployeesView: React.FC<VendorEmployeesViewProps> = ({
     showToast(`Exit request submitted for ${selectedEmpForExit.display_name}`, 'warning');
     setSelectedEmpForExit(null);
     setExitReason('');
-    onRefresh();
+    triggerRefresh();
   };
 
   const getStatusBadge = (status: VendorEmployeeStatus) => {
@@ -149,16 +181,21 @@ export const VendorEmployeesView: React.FC<VendorEmployeesViewProps> = ({
       <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900 tracking-tight">
-            Assigned Workforce Directory
+            Assigned Workforce
           </h2>
           <p className="text-xs text-gray-500 mt-1">
-            Manage contract personnel assigned exclusively to {activeVendor.name} with strict client deployment rules.
+            Contract workers assigned to your authorized client workspaces.
           </p>
         </div>
 
-        <Button variant="primary" size="sm" onClick={() => setIsAddModalOpen(true)}>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => setIsAddModalOpen(true)}
+          className="rounded-xl bg-[#07563D] hover:bg-[#064e37] text-white font-bold"
+        >
           <UserPlus className="w-4 h-4 mr-1.5" />
-          Request Employee Onboarding
+          + Request Worker Onboarding
         </Button>
       </div>
 
@@ -176,14 +213,14 @@ export const VendorEmployeesView: React.FC<VendorEmployeesViewProps> = ({
             onClick={() => setStatusFilter(tab.id)}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
               statusFilter === tab.id
-                ? 'bg-indigo-600 text-white shadow-xs'
+                ? 'bg-[#07563D] text-white shadow-xs'
                 : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
             }`}
           >
             <span>{tab.label}</span>
             <span
               className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                statusFilter === tab.id ? 'bg-indigo-800 text-white' : 'bg-gray-100 text-gray-700'
+                statusFilter === tab.id ? 'bg-[#053d2b] text-white' : 'bg-gray-100 text-gray-700'
               }`}
             >
               {tab.count}
@@ -271,7 +308,7 @@ export const VendorEmployeesView: React.FC<VendorEmployeesViewProps> = ({
               <TableRow key={emp.id} className="hover:bg-gray-50/50">
                 <TableCell>
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center font-bold text-indigo-700 text-xs">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center font-bold text-[#07563D] text-xs">
                       {emp.first_name[0]}
                       {emp.last_name[0]}
                     </div>
@@ -285,7 +322,7 @@ export const VendorEmployeesView: React.FC<VendorEmployeesViewProps> = ({
                 <TableCell>
                   <div>
                     <span className="text-xs font-semibold text-gray-900 block">{emp.designation}</span>
-                    <span className="text-[11px] text-indigo-600 font-medium">{emp.worker_category}</span>
+                    <span className="text-[11px] text-emerald-800 font-medium">{emp.worker_category}</span>
                   </div>
                 </TableCell>
 

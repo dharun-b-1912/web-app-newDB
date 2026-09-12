@@ -1,7 +1,8 @@
-export type DataScope = 'COMPANY' | 'HR' | 'MANAGER' | 'TEAM' | 'SELF';
+export type DataScope = 'ORGANIZATION' | 'COMPANY' | 'HR' | 'MANAGER' | 'TEAM' | 'SELF';
 
 export type PrimaryRole =
   | 'Super Admin'
+  | 'Organization Admin'
   | 'Company Admin'
   | 'Vendor Admin'
   | 'HR Head'
@@ -68,6 +69,9 @@ export type ModuleId =
   // Clocking & Devices (Biometric Channel)
   | 'biometric'
   | 'biometric-devices'
+  | 'attendance-rules'
+  | 'biometric-rules'
+  | 'rules-engine'
   | 'device-enrollment'
   | 'device-sync'
   | 'punch-mapping'

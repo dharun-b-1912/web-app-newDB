@@ -9,6 +9,7 @@ import {
   Building2,
   Copy,
   Plus,
+  Clock,
 } from 'lucide-react';
 import { useToast } from '../../../components/ui/Toast';
 import { payrollApi } from '../../../services/payrollApi';
@@ -16,12 +17,13 @@ import { PayslipTemplateConfig, PayslipComponentConfigItem } from '../../../type
 import { cn } from '../../../lib/utils';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
+import { OTPolicyConfigurationView } from './OTPolicyConfigurationView';
 
 export const PayrollSettingsView: React.FC = () => {
   const { showToast } = useToast();
 
   // Active subnav tab
-  const [activeTab, setActiveTab] = useState<'payslip_builder' | 'components_master' | 'banking' | 'cycle'>('payslip_builder');
+  const [activeTab, setActiveTab] = useState<'ot_policy' | 'payslip_builder' | 'components_master' | 'banking' | 'cycle'>('ot_policy');
 
   // Selected Template State
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>('factory_std');
@@ -169,6 +171,18 @@ export const PayrollSettingsView: React.FC = () => {
       {/* 2. Subnav Ribbon */}
       <div className="bg-white p-2 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center gap-2 overflow-x-auto">
         <button
+          onClick={() => setActiveTab('ot_policy')}
+          className={cn(
+            "px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap",
+            activeTab === 'ot_policy' ? "bg-[#07563D] text-white shadow-2xs" : "text-gray-600 hover:bg-gray-100"
+          )}
+        >
+          <Clock className="w-4 h-4" />
+          <span>Overtime (OT) Policy Engine</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+        </button>
+
+        <button
           onClick={() => setActiveTab('payslip_builder')}
           className={cn(
             "px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap",
@@ -212,6 +226,11 @@ export const PayrollSettingsView: React.FC = () => {
           <span>Pay Cycle & Cutoff Rules</span>
         </button>
       </div>
+
+      {/* ========================================================================= */}
+      {/* TAB 0: OVERTIME (OT) POLICY CONFIGURATION & DEDICATED CALCULATION ENGINE */}
+      {/* ========================================================================= */}
+      {activeTab === 'ot_policy' && <OTPolicyConfigurationView />}
 
       {/* ========================================================================= */}
       {/* TAB 1: PAYSLIP TEMPLATE DESIGNER & BRANDING */}
@@ -665,10 +684,23 @@ export const PayrollSettingsView: React.FC = () => {
       {/* TAB 4: PAY CYCLE & CUTOFF RULES */}
       {/* ========================================================================= */}
       {activeTab === 'cycle' && (
-        <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-2xs space-y-4">
-          <div className="border-b border-gray-100 pb-3">
-            <h3 className="text-sm font-bold text-gray-900">Monthly Payroll Execution Calendar & Cutoff Policies</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Deterministic cutoff rules for attendance synchronization and LOP calculation</p>
+        <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-2xs space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">Monthly Payroll Execution Calendar & Cutoff Policies</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Deterministic cutoff rules for attendance synchronization, standard monthly working days, and wage basis</p>
+            </div>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                showToast('✓ Applied Plant / Factory Policy (25 Fixed Days, ₹600/Day Base, ₹75/Hr OT Rate)', 'success');
+              }}
+              className="bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-[#07563D] font-bold text-xs"
+            >
+              🏭 Apply Plant 21-Worker Policy (25 Days, ₹600/Day, ₹75/Hr OT)
+            </Button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
@@ -679,15 +711,49 @@ export const PayrollSettingsView: React.FC = () => {
             </div>
 
             <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-1">
-              <span className="text-[10px] font-bold text-gray-400 uppercase font-mono">Attendance Cutoff Date</span>
-              <div className="text-sm font-black text-gray-900 font-mono">25th of Every Month</div>
-              <p className="text-[11px] text-gray-500">Biometric punches freeze for calculation</p>
+              <span className="text-[10px] font-bold text-gray-400 uppercase font-mono">Standard Working Days Basis</span>
+              <div className="text-sm font-black text-emerald-800 font-mono">25.0 Fixed Days / Month</div>
+              <p className="text-[11px] text-gray-500">Scheduled base working days per worker</p>
             </div>
 
             <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-1">
               <span className="text-[10px] font-bold text-gray-400 uppercase font-mono">Disbursement Day</span>
               <div className="text-sm font-black text-[#07563D] font-mono">Last Working Day (31st)</div>
               <p className="text-[11px] text-gray-500">Bank transfer file staged for Maker signoff</p>
+            </div>
+          </div>
+
+          {/* Plant & Manufacturing Specific Wage Formula Policy */}
+          <div className="p-5 rounded-2xl bg-emerald-50/50 border border-emerald-200/80 space-y-3">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-emerald-700" />
+              <h4 className="text-xs font-bold text-emerald-900">Plant & Manufacturing Wage Calculation Policy (21 Workers Dataset)</h4>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-3 bg-white rounded-xl border border-emerald-100">
+                <span className="text-[10px] font-bold text-gray-400 uppercase block">Daily Standard Base</span>
+                <span className="text-base font-black text-gray-900 font-mono block mt-0.5">₹ 600.00 / day</span>
+                <span className="text-[10px] text-gray-500">25 Days = ₹15,000/mo</span>
+              </div>
+
+              <div className="p-3 bg-white rounded-xl border border-emerald-100">
+                <span className="text-[10px] font-bold text-gray-400 uppercase block">Basic Wages (Fixed)</span>
+                <span className="text-base font-black text-emerald-700 font-mono block mt-0.5">₹ 420.00 / day</span>
+                <span className="text-[10px] text-gray-500">70% of Daily Wage</span>
+              </div>
+
+              <div className="p-3 bg-white rounded-xl border border-emerald-100">
+                <span className="text-[10px] font-bold text-gray-400 uppercase block">HRA (Fixed)</span>
+                <span className="text-base font-black text-emerald-700 font-mono block mt-0.5">₹ 180.00 / day</span>
+                <span className="text-[10px] text-gray-500">30% of Daily Wage</span>
+              </div>
+
+              <div className="p-3 bg-white rounded-xl border border-emerald-100">
+                <span className="text-[10px] font-bold text-gray-400 uppercase block">Hourly Overtime (OT)</span>
+                <span className="text-base font-black text-purple-700 font-mono block mt-0.5">₹ 75.00 / hour</span>
+                <span className="text-[10px] text-gray-500">Formula: ₹600 / 8 hrs</span>
+              </div>
             </div>
           </div>
         </div>

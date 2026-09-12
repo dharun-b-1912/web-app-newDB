@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { PayrollDashboardView } from './subviews/PayrollDashboardView';
 import { SalaryManagementView } from './subviews/SalaryManagementView';
 import { PayrollProcessingView } from './subviews/PayrollProcessingView';
@@ -15,8 +15,11 @@ import { ESIComplianceView } from './subviews/ESIComplianceView';
 import { EPFOComplianceView } from './subviews/EPFOComplianceView';
 import { PayslipModal } from './components/PayslipModal';
 import { AutoPayrollAndReportsModal } from './components/AutoPayrollAndReportsModal';
-import { PayrollContextBar, PayrollStageKey } from './components/PayrollContextBar';
+import { PayrollStageKey } from './components/PayrollContextBar';
+import { PayrollWorkflowStepper } from './components/PayrollWorkflowStepper';
+import { PayrollStatusBadge } from './components/PayrollStatusBadge';
 import { payrollApi } from '../../services/payrollApi';
+import { payrollPeriodService, PayrollPeriod } from '../../services/payroll/payrollPeriodService';
 import { Payslip } from '../../types/payroll';
 import { cn } from '../../lib/utils';
 
@@ -34,8 +37,6 @@ import {
   CreditCard,
   Receipt,
   Zap,
-  Sparkles,
-  Layers,
 } from 'lucide-react';
 
 import { api } from '../../services/api';
@@ -134,114 +135,131 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
     return 'calculate';
   };
 
+  const [payrollPeriods, setPayrollPeriods] = useState<PayrollPeriod[]>([]);
+  const [activePeriod, setActivePeriod] = useState<string>('September 2026');
+
+  useEffect(() => {
+    payrollPeriodService.getPayrollPeriods().then((periods) => {
+      setPayrollPeriods(periods);
+      const todayStr = new Date().toISOString().split('T')[0];
+      const cur = periods.find(p => todayStr >= p.start_date && todayStr <= p.end_date) || periods[0];
+      if (cur) setActivePeriod(cur.period_name);
+    });
+  }, []);
+
+  const selectedPeriodObj = useMemo(() => {
+    return payrollPeriods.find(p => p.period_name === activePeriod);
+  }, [payrollPeriods, activePeriod]);
+
+  const activeCompany = api.getActiveCompany();
+
   return (
-    <div className="p-6 space-y-6 max-w-[1600px] mx-auto min-h-screen pb-20 select-none">
-      {/* Top Banner */}
-      <div className="bg-gradient-to-r from-[#07563D] via-[#096a4b] to-[#0a7352] p-6 rounded-3xl text-white shadow-lg flex flex-col lg:flex-row lg:items-center justify-between gap-5 relative overflow-hidden">
-        <div className="relative z-10">
-          <div className="flex items-center gap-2 text-emerald-200 text-xs font-bold uppercase tracking-wider">
-            <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
-            <span>Joy PeopleHR — HR & Payroll SaaS</span>
+    <div className="p-4 sm:p-6 space-y-4 max-w-[1600px] mx-auto min-h-screen pb-20 select-none">
+      {/* 1. Compact Enterprise Payroll Header */}
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-200/90 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 flex-wrap text-xs text-gray-500 font-medium">
+            <span className="font-bold text-[#07563D]">Payroll</span>
+            <span>/</span>
+            <span className="text-gray-700 font-semibold">{activePeriod}</span>
             <span>•</span>
-            <span>Payroll Operating System 2.0</span>
+            <span className="text-gray-600">{(activeCompany as any)?.name || activeCompany?.legal_name || activeCompany?.trade_name || 'Joy Corporate Solutions Pvt Ltd'}</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight mt-1">Payroll Command Center</h1>
-          <p className="text-xs sm:text-sm text-emerald-100/90 mt-1 max-w-2xl leading-relaxed">
-            Multi-tenant enterprise payroll engine supporting direct employees, contract workforce, statutory compliance returns, attendance-linked LOP calculations, and bank payouts.
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
+              {activePeriod} Payroll
+            </h1>
+            <PayrollStatusBadge status={selectedPeriodObj?.status === 'CALCULATED' ? 'CALCULATED' : 'READY'} size="sm" />
+          </div>
+
+          <p className="text-xs text-gray-500">
+            Monthly payroll cycle ({selectedPeriodObj?.start_date || '01 Sep'} – {selectedPeriodObj?.end_date || '30 Sep'}) • All Direct & Contract Staff
           </p>
         </div>
 
-        <div className="relative z-10 flex items-center gap-3 shrink-0 flex-wrap">
+        {/* Header Right Controls */}
+        <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+          {/* Cycle Selector */}
+          <div className="flex items-center gap-1.5 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200 text-xs">
+            <span className="text-gray-400 font-medium text-[11px]">Cycle:</span>
+            <select
+              value={activePeriod}
+              onChange={(e) => setActivePeriod(e.target.value)}
+              className="bg-transparent font-bold text-gray-900 focus:outline-none cursor-pointer text-xs"
+            >
+              {payrollPeriods.length > 0 ? (
+                payrollPeriods.map((p) => (
+                  <option key={p.id} value={p.period_name}>
+                    {p.period_name} ({p.status === 'CALCULATED' ? 'Locked' : p.status === 'PROCESSING' ? 'In Progress' : 'Open'})
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="September 2026">September 2026 (Active Run)</option>
+                  <option value="August 2026">August 2026 (Locked)</option>
+                </>
+              )}
+            </select>
+          </div>
+
+          {/* Headcount pill */}
+          <span className="text-xs font-bold text-gray-700 bg-gray-100 px-3 py-1.5 rounded-xl border border-gray-200/80 font-mono">
+            {employeeCount} Staff
+          </span>
+
+          {/* Quick Auto Run Modal trigger */}
           <button
             onClick={() => setIsAutoModalOpen(true)}
-            className="px-4 py-2.5 rounded-2xl bg-white text-[#07563D] hover:bg-emerald-50 font-black text-xs shadow-md flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+            className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-[#07563D] border border-emerald-200/80 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+            title="1-Click Automated Full-Cycle Run & Report Generator"
           >
-            <Zap className="w-4 h-4 text-emerald-700 fill-emerald-600 animate-pulse" />
-            <span>⚡ 1-Click Auto Run & Reports</span>
+            <Zap className="w-3.5 h-3.5 text-emerald-600 fill-emerald-600 animate-pulse" />
+            <span>⚡ 1-Click Auto Run</span>
           </button>
-
-          <div className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/15 text-right shrink-0">
-            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Active Pay Cycle</span>
-            <span className="text-sm font-black font-mono">August 2026 (Monthly)</span>
-          </div>
         </div>
       </div>
 
-      {/* Global Universal Payroll Context & Guided Lifecycle Bar */}
-      <PayrollContextBar
+      {/* 2. Compact 9-Stage Lifecycle Stepper */}
+      <PayrollWorkflowStepper
         currentStage={getStageFromTab(activeTab)}
-        employeeCount={employeeCount}
-        unitLocation="All Locations"
-        payrollGroup="All Direct & Contract Staff"
-        onNavigateTab={tabKey => setActiveTab(tabKey)}
+        onNavigateTab={(tabKey) => setActiveTab(tabKey)}
       />
 
-      {/* Navigation Filter & Category Tabs Bar */}
-      <div className="bg-white/95 backdrop-blur-sm p-2 rounded-2xl border border-gray-200/90 shadow-2xs space-y-2">
-        <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-2 px-1 flex-wrap">
-          {/* Category Switcher */}
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] font-bold uppercase text-gray-400 mr-1.5 tracking-wider">Group:</span>
-            {[
-              { id: 'all', label: 'All Modules' },
-              { id: 'operations', label: '⚡ Monthly Cycle' },
-              { id: 'reports', label: '📊 Reports & Statutory' },
-              { id: 'rules', label: '⚙️ Rules & Setup' },
-            ].map((cat) => (
+      {/* 3. Sub-View Breadcrumb Navigation (Visible only when viewing non-dashboard submodules) */}
+      {activeTab !== 'dashboard' && (
+        <div className="flex items-center justify-between gap-2 bg-gray-50/90 px-3 py-2 rounded-xl border border-gray-200/80 text-xs overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className="font-bold text-[#07563D] hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <span>← Back to Dashboard</span>
+            </button>
+            <span className="text-gray-300">|</span>
+            <span className="text-gray-500">
+              Module: <strong className="text-gray-900">{tabs.find((t) => t.id === activeTab)?.label || activeTab}</strong>
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            {tabs.map((t) => (
               <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.id as TabCategory)}
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
                 className={cn(
-                  "px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
-                  selectedCategory === cat.id
-                    ? "bg-emerald-50 text-[#07563D] border border-emerald-200/80 shadow-2xs"
-                    : "text-gray-500 hover:text-gray-800 hover:bg-gray-100/60"
+                  'px-2 py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer',
+                  activeTab === t.id
+                    ? 'bg-[#07563D] text-white font-bold'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
                 )}
               >
-                {cat.label}
+                {t.label}
               </button>
             ))}
           </div>
-
-          <div className="text-[11px] text-gray-400 font-medium hidden sm:block">
-            {filteredTabs.length} active navigation tabs
-          </div>
         </div>
-
-        {/* Tab Pills with Smooth Scroll and Hidden Scrollbar */}
-        <div
-          className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scrollbar-none scroll-smooth pt-0.5"
-          style={{ WebkitOverflowScrolling: 'touch' }}
-          onWheel={(e) => {
-            if (e.deltaY !== 0) {
-              e.currentTarget.scrollLeft += e.deltaY * 0.9;
-            }
-          }}
-        >
-          {filteredTabs.map(tab => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer select-none shrink-0",
-                  isActive
-                    ? "bg-[#07563D] text-white shadow-xs"
-                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-100/80"
-                )}
-              >
-                <Icon className="w-3.5 h-3.5 shrink-0" />
-                <span>{tab.label}</span>
-                {tab.highlight && !isActive && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      )}
 
       {/* Main Subview Container */}
       <div className="transition-all duration-200">

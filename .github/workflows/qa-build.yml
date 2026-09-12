@@ -1,0 +1,91 @@
+name: "JOY PeopleHR — QA Build & Firebase App Distribution"
+
+on:
+  push:
+    branches: [ qa ]
+  workflow_dispatch:
+    inputs:
+      release_channel:
+        description: 'Release Channel'
+        required: true
+        default: 'QA'
+        type: choice
+        options:
+          - QA
+          - INTERNAL
+          - DEV
+
+jobs:
+  build-and-distribute-qa:
+    name: "Build QA APK & Distribute to Firebase"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Install Web & Root Tools
+        run: npm ci
+
+      - name: Run Web Quality Gates
+        run: |
+          npx tsc --noEmit
+          npx vitest run src/services/__tests__/masterAttendanceEngine.test.ts
+
+      - name: Run Flutter Quality Gates
+        working-directory: ./flutter_app
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Generate Structured Release Notes
+        run: node scripts/generate_release_notes.cjs QA
+
+      - name: Build QA Release APK
+        working-directory: ./flutter_app
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          flutter build apk --release \
+            --dart-define=APP_ENV=qa \
+            --dart-define=APP_VERSION=1.0.3 \
+            --dart-define=APP_BUILD_CODE=${{ github.run_number }} \
+            --dart-define=GIT_COMMIT_SHA=${{ github.sha }}
+
+      - name: Distribute QA APK to Firebase App Distribution
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: ${{ secrets.FIREBASE_ANDROID_APP_ID }}
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+          groups: joy-qa, joy-developers
+          file: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          releaseNotesFile: RELEASE_NOTES.txt
+
+      - name: Archive QA Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: joy-peoplehr-qa-build-${{ github.run_number }}
+          path: |
+            flutter_app/build/app/outputs/flutter-apk/app-release.apk
+            RELEASE_NOTES.txt

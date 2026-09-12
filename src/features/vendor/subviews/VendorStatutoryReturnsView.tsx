@@ -19,16 +19,35 @@ import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
 import { vendorPortalService } from '../../../services/vendorPortalService';
-import { StatutoryReturn, StatutoryReturnType } from '../../../types/vendorPortal';
+import { StatutoryReturn, StatutoryReturnType, VendorOrganization } from '../../../types/vendorPortal';
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
 
-export const VendorStatutoryReturnsView: React.FC = () => {
+interface VendorStatutoryReturnsViewProps {
+  activeVendor?: VendorOrganization | null;
+}
+
+export const VendorStatutoryReturnsView: React.FC<VendorStatutoryReturnsViewProps> = ({
+  activeVendor,
+}) => {
+  let ctxVendor: VendorOrganization | null = null;
+  let ctxRelationship: any = null;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+    ctxRelationship = ctx.activeRelationship;
+  } catch {}
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
+
   const [returns, setReturns] = useState<StatutoryReturn[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isFormVModalOpen, setIsFormVModalOpen] = useState(false);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
 
   // Form V State
-  const [clientCompany, setClientCompany] = useState('Joy Corporate Solutions Pvt Ltd');
+  const [clientCompany, setClientCompany] = useState(
+    ctxRelationship?.company_name || 'Joy Corporate Solutions Pvt Ltd'
+  );
   const [maxWorkers, setMaxWorkers] = useState(50);
   const [validFrom, setValidFrom] = useState(new Date().toISOString().split('T')[0]);
   const [validTo, setValidTo] = useState(new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0]);
@@ -43,14 +62,14 @@ export const VendorStatutoryReturnsView: React.FC = () => {
   const [remarks, setRemarks] = useState('Statutory return submitted online with Labour Commissioner Portal');
 
   const loadData = () => {
-    setReturns(vendorPortalService.getStatutoryReturns());
+    setReturns(vendorPortalService.getStatutoryReturns(effectiveVendor?.id));
   };
 
   useEffect(() => {
     loadData();
     window.addEventListener('wf-vendor-changed', loadData);
     return () => window.removeEventListener('wf-vendor-changed', loadData);
-  }, []);
+  }, [effectiveVendor?.id]);
 
   const handleIssueFormV = (e: React.FormEvent) => {
     e.preventDefault();

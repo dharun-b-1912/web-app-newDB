@@ -101,6 +101,8 @@ import { api } from '../../services/api';
 import { onboardingService } from '../../services/onboardingService';
 import { hrEventBus } from '../../services/hrEventBus';
 import { supabase } from '../../lib/supabase';
+import { canUseFeature } from '../../services/tenant/featureEntitlementService';
+import { moduleRegistryService } from '../../services/platform/moduleRegistryService';
 
 export interface SidebarProps {
   activeNav: string;
@@ -121,7 +123,7 @@ interface NavGroup {
   items: NavItem[];
 }
 
-export const isItemActive = (itemId: string, currentNav: string): boolean => {
+const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (!currentNav) return false;
   if (itemId === currentNav) return true;
 
@@ -130,15 +132,16 @@ export const isItemActive = (itemId: string, currentNav: string): boolean => {
 
   // Payroll module mappings
   if (itemId === 'payroll-dashboard' && (currentNav === 'payroll' || currentNav === 'payroll-dashboard')) return true;
+  if (itemId === 'client-billing' && (currentNav === 'client-billing' || currentNav === 'payroll-billing' || currentNav === 'billing' || currentNav === 'invoicing')) return true;
   if (itemId === 'payroll-processing' && (currentNav === 'payroll-processing' || currentNav === 'processing' || currentNav === 'payroll-runs')) return true;
   if (itemId === 'payroll-salary' && (currentNav === 'payroll-salary' || currentNav === 'salary')) return true;
   if (itemId === 'payroll-earnings' && (currentNav === 'payroll-earnings' || currentNav === 'earnings')) return true;
   if (itemId === 'payroll-deductions' && (currentNav === 'payroll-deductions' || currentNav === 'deductions')) return true;
   if (itemId === 'payroll-statutory' && (currentNav === 'payroll-statutory' || currentNav === 'statutory')) return true;
-  if (itemId === 'payroll-claims' && (currentNav === 'payroll-claims' || currentNav === 'claims' || currentNav === 'expense-desk')) return true;
+  if (itemId === 'payroll-claims' && (currentNav === 'payroll-claims' || currentNav === 'claims' || currentNav === 'expense-desk' || currentNav === 'payroll-expenses')) return true;
   if (itemId === 'payroll-disbursement' && (currentNav === 'payroll-disbursement' || currentNav === 'disbursement' || currentNav === 'bank-disbursement')) return true;
-  if (itemId === 'payroll-documents' && (currentNav === 'payroll-documents' || currentNav === 'documents')) return true;
-  if (itemId === 'payroll-fnf' && (currentNav === 'payroll-fnf' || currentNav === 'fnf')) return true;
+  if (itemId === 'payroll-documents' && (currentNav === 'payroll-documents' || currentNav === 'payslips' || currentNav === 'digital-payslips')) return true;
+  if (itemId === 'payroll-fnf' && (currentNav === 'payroll-fnf' || currentNav === 'fnf' || currentNav === 'settlement')) return true;
   if (itemId === 'payroll-reports' && (currentNav === 'payroll-reports' || currentNav === 'reports')) return true;
   if (itemId === 'payroll-settings' && (currentNav === 'payroll-settings')) return true;
 
@@ -153,6 +156,7 @@ export const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'roster' && (currentNav === 'roster' || currentNav === 'shift-calendar')) return true;
   if (itemId === 'policies' && (currentNav === 'policies')) return true;
   if (itemId === 'biometric' && (currentNav === 'biometric' || currentNav === 'biometric-devices' || currentNav === 'device-enrollment' || currentNav === 'device-sync' || currentNav === 'device-logs')) return true;
+  if (itemId === 'attendance-rules' && (currentNav === 'attendance-rules' || currentNav === 'rules' || currentNav === 'biometric-rules' || currentNav === 'rules-engine')) return true;
   if (itemId === 'gps' && (currentNav === 'gps' || currentNav === 'gps-attendance' || currentNav === 'geofences' || currentNav === 'mobile-clocking')) return true;
   if (itemId === 'face-attendance' && (currentNav === 'face-attendance' || currentNav === 'face-enrollment' || currentNav === 'face-devices')) return true;
   if (itemId === 'calculation-audit' && (currentNav === 'calculation-audit' || currentNav === 'payroll-inputs' || currentNav === 'payable-days' || currentNav === 'lop-desk' || currentNav === 'payroll-freeze')) return true;
@@ -232,7 +236,6 @@ export const isItemActive = (itemId: string, currentNav: string): boolean => {
 
   // Specific prefix mappings for sub-modules that don't have separate parent nav items
   if (itemId === 'leave' && currentNav.startsWith('leave-')) return true;
-  if (itemId === 'payroll-dashboard' && currentNav.startsWith('payroll-')) return true;
 
   return false;
 };
@@ -380,6 +383,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     {
       groupName: 'PRODUCT',
       items: [
+        { id: 'platform-launch-scope', label: 'Launch Scope (Sep 26)', icon: Target },
+        { id: 'platform-modules', label: 'Module Registry', icon: Layers },
+        { id: 'platform-roadmap', label: 'Development Roadmap', icon: Workflow },
         { id: 'platform-features', label: 'Feature Flags', icon: SlidersHorizontal },
         { id: 'platform-plans', label: 'Plans & Entitlements', icon: Layers },
       ],
@@ -494,6 +500,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'CLOCKING & DEVICES',
       items: [
         { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
+        { id: 'attendance-rules', label: 'Attendance Rules', icon: SlidersHorizontal },
         { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
         { id: 'face-attendance', label: 'Face Recognition', icon: ScanFace },
         { id: 'geofences', label: 'Geofence Boundaries', icon: Crosshair },
@@ -756,6 +763,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'CLOCKING & DEVICES',
       items: [
         { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
+        { id: 'attendance-rules', label: 'Biometric Rules & Automation', icon: SlidersHorizontal },
+        { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
+        { id: 'face-attendance', label: 'Face Recognition', icon: ScanFace },
+        { id: 'geofences', label: 'Geofence Boundaries', icon: Crosshair },
       ],
     },
     {
@@ -920,6 +931,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'CLOCKING & DEVICES',
       items: [
         { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
+        { id: 'attendance-rules', label: 'Biometric Rules & Automation', icon: SlidersHorizontal },
+        { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
+        { id: 'face-attendance', label: 'Face Recognition', icon: ScanFace },
+        { id: 'geofences', label: 'Geofence Boundaries', icon: Crosshair },
       ],
     },
     {
@@ -1067,16 +1082,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     return hrHeadGroups; // fallback
   })();
 
-  // Tenant-level feature toggle: For Joy Manpower / current tenant, Recruitment & ATS, Career Development, Performance, L&D, Analytics, and Travel & Expense are disabled,
-  // while remaining fully preserved and configurable in the SaaS platform for future tenants.
-  const isRecruitmentEnabledForTenant = false;
-  const isPerformanceEnabledForTenant = false;
-  const isLndEnabledForTenant = false;
-  const isAnalyticsEnabledForTenant = false;
-  const isTravelExpenseEnabledForTenant = false;
+  // Dynamic tenant-level feature entitlement resolution
+  const isRecruitmentEnabledForTenant = canUseFeature('recruitment');
+  const isPerformanceEnabledForTenant = canUseFeature('performance');
+  const isLndEnabledForTenant = canUseFeature('lms');
+  const isAnalyticsEnabledForTenant = canUseFeature('analytics');
+  const isTravelExpenseEnabledForTenant = canUseFeature('travel_expense');
 
   const filteredNavGroups = navGroups
     .filter(group => {
+      // 1. Centralized Module Registry Group Visibility
+      if (!moduleRegistryService.isNavGroupVisible(group.groupName, primaryRole)) {
+        return false;
+      }
+
       if (!isPlatformAdmin && primaryRole !== 'Vendor Admin') {
         if (group.groupName === 'RECRUITMENT & ATS' && !isRecruitmentEnabledForTenant) return false;
         if (group.groupName === 'PERFORMANCE' && !isPerformanceEnabledForTenant) return false;
@@ -1090,6 +1109,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ...group,
       items: group.items.filter(item => {
         if (primaryRole === 'Vendor Admin') return true;
+
+        // 2. Centralized Module Registry Item Visibility & Dependency Check
+        if (!moduleRegistryService.isNavItemVisible(item.id, primaryRole)) {
+          return false;
+        }
+
         if (!isPlatformAdmin) {
           if (!isRecruitmentEnabledForTenant && (item.id === 'recruitment' || item.id.startsWith('recruitment-') || item.id === 'career-dev')) {
             return false;
@@ -1192,25 +1217,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
                           className={cn(
                             'relative w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs transition-all cursor-pointer group',
                             isActive
-                              ? 'bg-emerald-50 text-[#07563D] font-bold shadow-2xs'
-                              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50/80 font-medium',
+                              ? 'bg-emerald-50/90 text-[#07563D] font-bold border border-emerald-200/90 shadow-xs ring-1 ring-emerald-500/10'
+                              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/70 font-medium',
                             isCollapsed && 'justify-center px-0'
                           )}
                         >
                           {/* Left Active Bar */}
                           {isActive && !isCollapsed && (
-                            <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-[#07563D] rounded-r-full" />
+                            <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-[#07563D] rounded-r-full shadow-xs" />
                           )}
 
                           <Icon
                             className={cn(
                               'w-4 h-4 shrink-0 transition-colors',
-                              isActive ? 'text-[#07563D]' : 'text-gray-400 group-hover:text-gray-600'
+                              isActive ? 'text-[#07563D] stroke-[2.4]' : 'text-gray-400 group-hover:text-gray-600'
                             )}
                           />
 
                           {!isCollapsed && (
-                            <span className="truncate flex-1 text-left text-[12px] leading-tight tracking-tight">
+                            <span className={cn(
+                              'truncate flex-1 text-left text-[12px] leading-tight tracking-tight',
+                              isActive ? 'font-bold text-[#07563D]' : 'font-medium text-gray-700'
+                            )}>
                               {item.label}
                             </span>
                           )}

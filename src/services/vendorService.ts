@@ -15,6 +15,9 @@ import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { hrEventBus } from './hrEventBus';
 import { api } from './api';
 import { vendorPortalService } from './vendorPortalService';
+import { VendorOnboardingLifecycleEngine } from './vendor/vendorOnboardingLifecycleEngine';
+import { VendorInvitationService } from './vendor/vendorInvitationService';
+import { VendorCredentialService } from './vendor/vendorCredentialService';
 
 const VENDOR_STORAGE_KEY = 'workforce_vendors_master';
 const VENDOR_CONTRACTS_KEY = 'workforce_vendor_contracts';
@@ -24,15 +27,20 @@ const VENDOR_ASSIGNMENTS_KEY = 'workforce_vendor_assignments';
 const VENDOR_SAVED_VIEWS_KEY = 'workforce_vendor_saved_views';
 const VENDOR_AUDIT_KEY = 'workforce_vendor_audit';
 
-// Pure Realtime Definitions - Initialized empty for production multi-tenant database
+// Pure Realtime Definitions - Empty by default for real database operation
 const INITIAL_VENDORS: Vendor[] = [];
 const INITIAL_CONTRACTS: VendorContract[] = [];
 const INITIAL_DOCS: VendorDocument[] = [];
 const INITIAL_PAYMENTS: VendorPayment[] = [];
 const INITIAL_ASSIGNMENTS: VendorEmployeeAssignment[] = [];
 
+const memoryStore: Record<string, any> = {};
+
 function getStorage<T>(key: string, defaultValue: T): T {
   try {
+    if (typeof localStorage === 'undefined') {
+      return (memoryStore[key] as T) || defaultValue;
+    }
     const raw = localStorage.getItem(key);
     if (!raw) {
       return defaultValue;
@@ -45,6 +53,10 @@ function getStorage<T>(key: string, defaultValue: T): T {
 
 function setStorage<T>(key: string, val: T): void {
   try {
+    if (typeof localStorage === 'undefined') {
+      memoryStore[key] = val;
+      return;
+    }
     localStorage.setItem(key, JSON.stringify(val));
   } catch (err) {
     console.error(`[VendorService] Storage write error for ${key}:`, err);
@@ -68,7 +80,20 @@ export const vendorService = {
         if (params?.vendorType && params.vendorType !== 'ALL') q = q.eq('vendor_type', params.vendorType);
         if (params?.legalEntityId && params.legalEntityId !== 'ALL') q = q.eq('legal_entity_id', params.legalEntityId);
         const { data, error } = await q;
-        if (!error && data !== null) return data;
+        if (!error && data !== null) {
+          let result = data;
+          if (params?.search) {
+            const searchLower = params.search.toLowerCase();
+            result = result.filter(
+              (v: any) =>
+                (v.legal_name || '').toLowerCase().includes(searchLower) ||
+                (v.trade_name || '').toLowerCase().includes(searchLower) ||
+                (v.vendor_code || '').toLowerCase().includes(searchLower) ||
+                (v.primary_contact_email || '').toLowerCase().includes(searchLower)
+            );
+          }
+          return result;
+        }
       } catch (err) {
         console.warn('[VendorService] Supabase getVendors failed:', err);
       }
@@ -132,12 +157,63 @@ export const vendorService = {
   // 2. Get Vendor by ID with Relationships
   async getVendorById(id: string): Promise<Vendor | undefined> {
     const list = await this.getVendors();
-    return list.find((v) => v.id === id);
+    const found = list.find((v) => v.id === id);
+    if (found) return found;
+    const stored = getStorage<Vendor[]>(VENDOR_STORAGE_KEY, INITIAL_VENDORS);
+    return stored.find((v) => v.id === id);
   },
 
-  // 3. Create Vendor with Auto-Generated VEN-00000X Code & Audit
-  async createVendor(data: Partial<Vendor>): Promise<Vendor> {
+  // 2.5 Duplicate Vendor Protection (GSTIN, PAN, Legal Name, Registration Number)
+  checkDuplicateVendor(params: {
+    gstin?: string;
+    pan?: string;
+    legalName?: string;
+    registrationNumber?: string;
+    excludeId?: string;
+  }): { isDuplicate: boolean; matchedField?: string; matchedValue?: string; existingVendor?: Vendor } {
     const list = getStorage<Vendor[]>(VENDOR_STORAGE_KEY, INITIAL_VENDORS);
+    const gstin = params.gstin?.trim().toUpperCase();
+    const pan = params.pan?.trim().toUpperCase();
+    const legalName = params.legalName?.trim().toLowerCase();
+    const regNo = params.registrationNumber?.trim().toUpperCase();
+
+    for (const v of list) {
+      if (params.excludeId && v.id === params.excludeId) continue;
+      if (gstin && v.gstin && v.gstin.trim().toUpperCase() === gstin) {
+        return { isDuplicate: true, matchedField: 'GSTIN', matchedValue: gstin, existingVendor: v };
+      }
+      if (pan && v.pan && v.pan.trim().toUpperCase() === pan) {
+        return { isDuplicate: true, matchedField: 'PAN', matchedValue: pan, existingVendor: v };
+      }
+      if (regNo && v.registration_number && v.registration_number.trim().toUpperCase() === regNo) {
+        return { isDuplicate: true, matchedField: 'Registration Number', matchedValue: regNo, existingVendor: v };
+      }
+      if (legalName && v.legal_name && v.legal_name.trim().toLowerCase() === legalName) {
+        return { isDuplicate: true, matchedField: 'Legal Name', matchedValue: v.legal_name, existingVendor: v };
+      }
+    }
+
+    return { isDuplicate: false };
+  },
+
+  // 3. Create Vendor with Auto-Generated VEN-00000X Code & Duplicate Protection
+  async createVendor(data: Partial<Vendor>, options?: { allowDuplicate?: boolean }): Promise<Vendor> {
+    const list = getStorage<Vendor[]>(VENDOR_STORAGE_KEY, INITIAL_VENDORS);
+
+    // Duplicate Check Barrier
+    if (!options?.allowDuplicate) {
+      const dup = this.checkDuplicateVendor({
+        gstin: data.gstin,
+        pan: data.pan,
+        legalName: data.legal_name,
+        registrationNumber: data.registration_number,
+      });
+      if (dup.isDuplicate && dup.existingVendor) {
+        throw new Error(
+          `DUPLICATE_VENDOR_DETECTED: A vendor with identical ${dup.matchedField} ('${dup.matchedValue}') already exists: ${dup.existingVendor.legal_name} (${dup.existingVendor.vendor_code}). Please use 'Create New Relationship' instead of duplicating the vendor master.`
+        );
+      }
+    }
 
     // Auto-generate next unique code VEN-00000X
     const existingNums = list
@@ -148,7 +224,7 @@ export const vendorService = {
     const nextCode = `VEN-${String(maxNum + 1).padStart(6, '0')}`;
 
     const newVendor: Vendor = {
-      id: `e2000000-0000-0000-0000-${Date.now().toString(16).padStart(12, '0').slice(-12)}`,
+      id: (data as any).id || `e2000000-0000-0000-0000-${Date.now().toString(16).padStart(12, '0').slice(-12)}`,
       organization_id: data.organization_id || 'a0000000-0000-0000-0000-000000000001',
       legal_entity_id: data.legal_entity_id || 'c1000000-0000-0000-0000-000000000001',
       legal_entity_name: data.legal_entity_name || 'Joy Corporate Solutions Pvt Ltd',
@@ -245,13 +321,25 @@ export const vendorService = {
     return newVendor;
   },
 
-  // 4. Update Vendor
+  // 4. Update Vendor with System Field Protection
   async updateVendor(id: string, data: Partial<Vendor>): Promise<Vendor> {
     const list = getStorage<Vendor[]>(VENDOR_STORAGE_KEY, INITIAL_VENDORS);
     const idx = list.findIndex((v) => v.id === id);
     if (idx === -1) throw new Error('Vendor not found');
 
     const oldVal = list[idx];
+
+    // Field Ownership: Protected system fields cannot be modified
+    if (data.vendor_code !== undefined && data.vendor_code !== oldVal.vendor_code) {
+      throw new Error(`SYSTEM_FIELD_LOCKED: Field 'vendor_code' is system-generated and cannot be modified.`);
+    }
+    if (data.created_at !== undefined && data.created_at !== oldVal.created_at) {
+      throw new Error(`SYSTEM_FIELD_LOCKED: Field 'created_at' is immutable.`);
+    }
+    if (data.created_by !== undefined && data.created_by !== oldVal.created_by) {
+      throw new Error(`SYSTEM_FIELD_LOCKED: Field 'created_by' is immutable.`);
+    }
+
     const updated = { ...oldVal, ...data, updated_at: new Date().toISOString() };
 
     if (isSupabaseEnabled) {
@@ -264,6 +352,24 @@ export const vendorService = {
 
     list[idx] = updated;
     setStorage(VENDOR_STORAGE_KEY, list);
+
+    // Sync to vendorPortalService
+    try {
+      vendorPortalService.updateVendorOrganization(id, {
+        name: updated.legal_name,
+        trade_name: updated.trade_name,
+        contact_person: `${updated.primary_contact_name || ''}${updated.primary_contact_designation ? ` (${updated.primary_contact_designation})` : ''}`,
+        email: updated.primary_contact_email,
+        phone: updated.primary_contact_phone,
+        gstin: updated.gstin || updated.tax_id || '',
+        pan: updated.pan || '',
+        address: updated.address_line1 || '',
+        city: updated.city || 'Chennai',
+        state: updated.state || 'Tamil Nadu',
+        status: updated.status === 'ACTIVE' ? 'Active' : updated.status === 'TERMINATED' ? 'Suspended' : 'Pending Verification',
+      });
+    } catch (_) {}
+
     await this.logAudit(id, 'VENDOR_UPDATED', oldVal, updated);
 
     if (oldVal.status !== updated.status) {
@@ -271,6 +377,82 @@ export const vendorService = {
     }
     hrEventBus.publish('vendor.updated', updated);
     return updated;
+  },
+
+  // 5. Delete or Gracefully Terminate Vendor with Dependency Guardrails
+  async deleteVendor(
+    id: string,
+    options?: { hardDelete?: boolean; reason?: string }
+  ): Promise<{ success: boolean; mode: 'DELETED' | 'TERMINATED'; message: string }> {
+    const list = getStorage<Vendor[]>(VENDOR_STORAGE_KEY, INITIAL_VENDORS);
+    const vendor = list.find((v) => v.id === id);
+    if (!vendor) {
+      throw new Error('Vendor not found');
+    }
+
+    const assignments = getStorage<VendorEmployeeAssignment[]>(VENDOR_ASSIGNMENTS_KEY, INITIAL_ASSIGNMENTS);
+    const contracts = getStorage<VendorContract[]>(VENDOR_CONTRACTS_KEY, INITIAL_CONTRACTS);
+
+    const activeAssignments = assignments.filter((a) => a.vendor_id === id && a.status === 'ACTIVE');
+    const activeContracts = contracts.filter((c) => c.vendor_id === id && c.status === 'ACTIVE');
+    const hasWorkforce = (vendor.deployed_workforce_count || 0) > 0 || activeAssignments.length > 0;
+    const hasContracts = (vendor.active_contracts_count || 0) > 0 || activeContracts.length > 0;
+
+    // Safety Guardrail: Prevent hard delete if there is historical or active workforce / contracts
+    if (options?.hardDelete && (hasWorkforce || hasContracts)) {
+      throw new Error(
+        `Cannot permanently delete vendor ${vendor.legal_name} (${vendor.vendor_code}). Active deployed workforce (${activeAssignments.length || vendor.deployed_workforce_count}) or active contracts (${activeContracts.length}) exist. Please use Graceful Termination to preserve compliance and muster roll records.`
+      );
+    }
+
+    if (options?.hardDelete) {
+      // Clean permanent removal for drafts / zero dependency vendors
+      const filtered = list.filter((v) => v.id !== id);
+      setStorage(VENDOR_STORAGE_KEY, filtered);
+
+      if (isSupabaseEnabled) {
+        try {
+          await supabase.from('vendors').delete().eq('id', id);
+        } catch (err) {
+          console.warn('[VendorService] Supabase delete vendor error:', err);
+        }
+      }
+
+      vendorPortalService.deleteVendorOrganization(id);
+      await VendorCredentialService.revokeCredentials(id, 'Vendor permanently deleted');
+      await this.logAudit(id, 'VENDOR_DELETED', vendor, null);
+      hrEventBus.emit('vendor.deleted', { vendorId: id, vendorCode: vendor.vendor_code });
+
+      return {
+        success: true,
+        mode: 'DELETED',
+        message: `Vendor ${vendor.legal_name} (${vendor.vendor_code}) was permanently deleted from directory.`,
+      };
+    }
+
+    // Default: Graceful Termination / Soft Delete
+    const updated = await this.updateVendor(id, {
+      status: 'TERMINATED',
+      notes: options?.reason
+        ? `${vendor.notes ? vendor.notes + ' | ' : ''}Terminated on ${new Date().toISOString().split('T')[0]}: ${options.reason}`
+        : vendor.notes,
+    });
+
+    // Revoke portal credentials immediately
+    await VendorCredentialService.revokeCredentials(id, options?.reason || 'Vendor contract terminated');
+
+    await this.logAudit(id, 'VENDOR_TERMINATED', vendor, updated);
+    hrEventBus.emit('vendor.terminated', {
+      vendorId: id,
+      vendorCode: vendor.vendor_code,
+      reason: options?.reason,
+    });
+
+    return {
+      success: true,
+      mode: 'TERMINATED',
+      message: `Vendor ${vendor.legal_name} (${vendor.vendor_code}) was gracefully terminated and portal credentials revoked.`,
+    };
   },
 
   // 5. Activation Validation Rule (Section 44)
@@ -307,10 +489,218 @@ export const vendorService = {
     };
   },
 
+  async updateVendorStatus(id: string, status: VendorStatus, reason?: string): Promise<Vendor> {
+    const current = await this.getVendorById(id);
+    if (current) {
+      if (current.status === 'ARCHIVED' && status === 'ACTIVE') {
+        throw new Error(
+          'ILLEGAL_STATUS_TRANSITION: Direct transition from ARCHIVED to ACTIVE is prohibited. Controlled reactivation workflow required.'
+        );
+      }
+      VendorOnboardingLifecycleEngine.assertTransition(id, current.status as any, status as any);
+    }
+
+    const payload: Partial<Vendor> = { status };
+    if (status === 'CORRECTION_REQUIRED' && reason) {
+      payload.correction_reason = reason;
+    }
+
+    const updated = await this.updateVendor(id, payload);
+
+    // Sync to vendorPortalService
+    if (status === 'ACTIVE' || status === 'APPROVED') {
+      vendorPortalService.activateVendor(id);
+    }
+
+    const eventName = VendorOnboardingLifecycleEngine.getDomainEventForStatus(status as any);
+    hrEventBus.emit(eventName, {
+      vendor_id: id,
+      organization_id: updated.organization_id,
+      legal_entity_id: updated.legal_entity_id,
+      status,
+      reason,
+      timestamp: new Date().toISOString(),
+    });
+
+    return updated;
+  },
+
+  // 5.1 Suspend Vendor (Section 9)
+  async suspendVendor(
+    id: string,
+    options: { reason: string; effectiveDate?: string; comments?: string; performedBy?: string }
+  ): Promise<Vendor> {
+    if (!options.reason) {
+      throw new Error('Suspension reason is mandatory.');
+    }
+    const current = await this.getVendorById(id);
+    if (!current) throw new Error('Vendor not found');
+
+    const updated = await this.updateVendor(id, {
+      status: 'SUSPENDED',
+      suspension_reason: options.reason,
+      suspension_effective_date: options.effectiveDate || new Date().toISOString().split('T')[0],
+      suspension_comments: options.comments,
+    });
+
+    // Suspend company relationships in vendorPortalService
+    const rels = vendorPortalService.getVendorCompanyRelationships(id);
+    rels.forEach((r) => vendorPortalService.suspendCompanyRelationship(r.id, options.reason));
+
+    await this.logAudit(id, 'VENDOR_SUSPENDED', current, updated);
+    hrEventBus.emit('vendor.suspended', {
+      vendor_id: id,
+      reason: options.reason,
+      effective_date: options.effectiveDate,
+      timestamp: new Date().toISOString(),
+    });
+
+    return updated;
+  },
+
+  // 5.2 Reactivate Vendor
+  async reactivateVendor(id: string, options?: { reason?: string; performedBy?: string }): Promise<Vendor> {
+    const current = await this.getVendorById(id);
+    if (!current) throw new Error('Vendor not found');
+
+    const updated = await this.updateVendor(id, {
+      status: 'ACTIVE',
+      suspension_reason: undefined,
+      suspension_effective_date: undefined,
+      suspension_comments: undefined,
+    });
+
+    // Reactivate relationships
+    const rels = vendorPortalService.getVendorCompanyRelationships(id);
+    rels.forEach((r) => vendorPortalService.approveCompanyRelationship(r.id, options?.performedBy || 'Company Admin'));
+
+    await this.logAudit(id, 'VENDOR_REACTIVATED', current, updated);
+    hrEventBus.emit('vendor.reactivated', {
+      vendor_id: id,
+      reason: options?.reason,
+      timestamp: new Date().toISOString(),
+    });
+
+    return updated;
+  },
+
+  // 5.3 Soft Delete / Archive Vendor (Section 10)
+  async archiveVendor(
+    id: string,
+    options: { reason: string; archivedBy?: string }
+  ): Promise<Vendor> {
+    const current = await this.getVendorById(id);
+    if (!current) throw new Error('Vendor not found');
+
+    const updated = await this.updateVendor(id, {
+      status: 'ARCHIVED',
+      archived_at: new Date().toISOString(),
+      archived_by: options.archivedBy || 'Company Admin',
+      archive_reason: options.reason,
+    });
+
+    // Revoke portal access
+    await VendorCredentialService.revokeCredentials(id, `Archived: ${options.reason}`);
+
+    await this.logAudit(id, 'VENDOR_ARCHIVED', current, updated);
+    hrEventBus.emit('vendor.archived', {
+      vendor_id: id,
+      reason: options.reason,
+      timestamp: new Date().toISOString(),
+    });
+
+    return updated;
+  },
+
+  // 5.4 Attach Vendor to Company / Create Relationship (Section 5)
+  async createCompanyRelationship(params: {
+    vendorId: string;
+    companyId: string;
+    companyName: string;
+    siteLocation?: string;
+    contractStartDate?: string;
+    contractEndDate?: string;
+    serviceChargePercentage?: number;
+    rateCardType?: string;
+    paymentTerms?: string;
+    maxWorkforceCapacity?: number;
+    primaryHrContactName?: string;
+    primaryHrContactEmail?: string;
+  }): Promise<import('../types/vendorPortal').VendorCompanyRelationship> {
+    const rel = vendorPortalService.createVendorCompanyRelationship({
+      vendor_id: params.vendorId,
+      company_id: params.companyId,
+      company_name: params.companyName,
+      site_location: params.siteLocation,
+      contract_start_date: params.contractStartDate,
+      contract_end_date: params.contractEndDate,
+      service_charge_percentage: params.serviceChargePercentage,
+      rate_card_type: params.rateCardType,
+      payment_terms: params.paymentTerms,
+      max_workforce_capacity: params.maxWorkforceCapacity,
+      primary_hr_contact_name: params.primaryHrContactName,
+      primary_hr_contact_email: params.primaryHrContactEmail,
+    });
+
+    await this.logAudit(params.vendorId, 'RELATIONSHIP_CREATED', null, rel);
+    return rel;
+  },
+
+  async inviteVendor(params: {
+    vendorId: string;
+    organizationId: string;
+    companyId: string;
+    targetEmail: string;
+    targetName: string;
+    targetPhone?: string;
+    createdBy?: string;
+  }) {
+    return VendorInvitationService.createInvitation(params);
+  },
+
+  async requestCorrection(vendorId: string, reason: string, fieldsToCorrect?: string[]): Promise<Vendor> {
+    return this.updateVendorStatus(vendorId, 'CORRECTION_REQUIRED', reason);
+  },
+
+  async approveVendor(vendorId: string, approverName = 'Company Admin'): Promise<Vendor> {
+    const updated = await this.updateVendorStatus(vendorId, 'APPROVED');
+    // Now activate to operational state
+    return this.updateVendorStatus(vendorId, 'ACTIVE');
+  },
+
+  async rejectVendor(vendorId: string, reason: string): Promise<Vendor> {
+    return this.updateVendorStatus(vendorId, 'REJECTED', reason);
+  },
+
   // 6. Contracts Management
   async getVendorContracts(vendorId: string): Promise<VendorContract[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase.from('vendor_contracts').select('*').eq('vendor_id', vendorId);
+        if (!error && data !== null && data.length > 0) return data;
+      } catch (err) {
+        console.warn('[VendorService] Supabase getVendorContracts failed:', err);
+      }
+    }
     const contracts = getStorage<VendorContract[]>(VENDOR_CONTRACTS_KEY, INITIAL_CONTRACTS);
     return contracts.filter((c) => c.vendor_id === vendorId);
+  },
+
+  async createVendorContract(vendorId: string, data: Partial<VendorContract>): Promise<VendorContract> {
+    return this.createContract({
+      vendor_id: vendorId,
+      contract_number: data.contract_number || `CNT-${Date.now()}`,
+      contract_type: data.contract_type || 'Master Service Agreement (MSA)',
+      start_date: data.start_date || new Date().toISOString().split('T')[0],
+      end_date: data.end_date || new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0],
+      notice_period_days: data.notice_period_days || 30,
+      payment_terms: data.payment_terms || 'Net 30',
+      currency: data.currency || 'INR',
+      status: data.status || 'ACTIVE',
+      service_charge_percentage: data.service_charge_percentage || 8.5,
+      rate_card_type: data.rate_card_type || 'Per Head Per Month',
+      ...data,
+    });
   },
 
   async createContract(data: Omit<VendorContract, 'id' | 'created_at' | 'updated_at'>): Promise<VendorContract> {
@@ -322,14 +712,31 @@ export const vendorService = {
       updated_at: new Date().toISOString(),
     };
 
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('vendor_contracts').insert(newContract);
+      } catch (err) {
+        console.warn('[VendorService] Supabase insert contract failed:', err);
+      }
+    }
+
     setStorage(VENDOR_CONTRACTS_KEY, [newContract, ...list]);
     await this.logAudit(data.vendor_id, 'CONTRACT_CREATED', null, newContract);
     hrEventBus.publish('vendor.contract_created', newContract);
+    hrEventBus.publish('vendor.contract_signed', newContract);
     return newContract;
   },
 
   // 7. Compliance Documents
   async getVendorDocuments(vendorId: string): Promise<VendorDocument[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase.from('vendor_documents').select('*').eq('vendor_id', vendorId);
+        if (!error && data !== null && data.length > 0) return data;
+      } catch (err) {
+        console.warn('[VendorService] Supabase getVendorDocuments failed:', err);
+      }
+    }
     const docs = getStorage<VendorDocument[]>(VENDOR_DOCS_KEY, INITIAL_DOCS);
     return docs.filter((d) => d.vendor_id === vendorId);
   },
@@ -341,6 +748,14 @@ export const vendorService = {
       id: `vdoc-${Date.now().toString(36)}`,
       uploaded_at: new Date().toISOString(),
     };
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('vendor_documents').insert(newDoc);
+      } catch (err) {
+        console.warn('[VendorService] Supabase insert document failed:', err);
+      }
+    }
 
     setStorage(VENDOR_DOCS_KEY, [newDoc, ...list]);
     await this.logAudit(data.vendor_id, 'DOCUMENT_UPLOADED', null, newDoc);
@@ -360,6 +775,14 @@ export const vendorService = {
       notes: notes || list[idx].notes,
     };
 
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('vendor_documents').update(updated).eq('id', docId);
+      } catch (err) {
+        console.warn('[VendorService] Supabase update document failed:', err);
+      }
+    }
+
     list[idx] = updated;
     setStorage(VENDOR_DOCS_KEY, list);
     await this.logAudit(updated.vendor_id, 'DOCUMENT_VERIFIED', list[idx], updated);
@@ -369,6 +792,14 @@ export const vendorService = {
 
   // 8. Payment Ledger & Returned Payments Workflow (Section 16, 17)
   async getVendorPayments(vendorId: string): Promise<VendorPayment[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase.from('vendor_payments').select('*').eq('vendor_id', vendorId);
+        if (!error && data !== null && data.length > 0) return data;
+      } catch (err) {
+        console.warn('[VendorService] Supabase getVendorPayments failed:', err);
+      }
+    }
     const payments = getStorage<VendorPayment[]>(VENDOR_PAYMENTS_KEY, INITIAL_PAYMENTS);
     return payments.filter((p) => p.vendor_id === vendorId);
   },
@@ -382,9 +813,18 @@ export const vendorService = {
       updated_at: new Date().toISOString(),
     };
 
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('vendor_payments').insert(newPayment);
+      } catch (err) {
+        console.warn('[VendorService] Supabase insert payment failed:', err);
+      }
+    }
+
     setStorage(VENDOR_PAYMENTS_KEY, [newPayment, ...list]);
     await this.logAudit(data.vendor_id, 'PAYMENT_RECORDED', null, newPayment);
     hrEventBus.publish('vendor.payment_created', newPayment);
+    hrEventBus.publish('vendor.payment_disbursed', newPayment);
     return newPayment;
   },
 
@@ -409,6 +849,14 @@ export const vendorService = {
       updated_at: new Date().toISOString(),
     };
 
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('vendor_payments').update(updated).eq('id', paymentId);
+      } catch (err) {
+        console.warn('[VendorService] Supabase update payment failed:', err);
+      }
+    }
+
     list[idx] = updated;
     setStorage(VENDOR_PAYMENTS_KEY, list);
     await this.logAudit(updated.vendor_id, 'PAYMENT_RETURNED', oldVal, updated);
@@ -429,21 +877,44 @@ export const vendorService = {
       updated_at: new Date().toISOString(),
     };
 
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('vendor_payments').update(updated).eq('id', paymentId);
+      } catch (err) {
+        console.warn('[VendorService] Supabase update payment failed:', err);
+      }
+    }
+
     list[idx] = updated;
     setStorage(VENDOR_PAYMENTS_KEY, list);
     await this.logAudit(updated.vendor_id, 'PAYMENT_RESOLVED', oldVal, updated);
     hrEventBus.publish('vendor.payment_created', updated);
+    hrEventBus.publish('vendor.payment_disbursed', updated);
     return updated;
   },
 
   // 9. Vendor Workforce & Assignments (JOIN Canonical Employees)
   async getVendorWorkforce(vendorId: string): Promise<VendorEmployeeAssignment[]> {
-    const assignments = getStorage<VendorEmployeeAssignment[]>(VENDOR_ASSIGNMENTS_KEY, INITIAL_ASSIGNMENTS);
-    const vendorAssignments = assignments.filter((a) => a.vendor_id === vendorId);
+    let assignments: VendorEmployeeAssignment[] = [];
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase.from('vendor_employee_assignments').select('*').eq('vendor_id', vendorId);
+        if (!error && data !== null && data.length > 0) {
+          assignments = data as VendorEmployeeAssignment[];
+        }
+      } catch (err) {
+        console.warn('[VendorService] Supabase getVendorWorkforce failed:', err);
+      }
+    }
+
+    if (assignments.length === 0) {
+      const stored = getStorage<VendorEmployeeAssignment[]>(VENDOR_ASSIGNMENTS_KEY, INITIAL_ASSIGNMENTS);
+      assignments = stored.filter((a) => a.vendor_id === vendorId);
+    }
 
     // Join with canonical employee master
     const allEmployees = await api.getEmployees();
-    return vendorAssignments.map((asgn) => {
+    return assignments.map((asgn) => {
       const emp = allEmployees.find((e) => e.id === asgn.employee_id);
       return {
         ...asgn,
@@ -461,9 +932,18 @@ export const vendorService = {
       updated_at: new Date().toISOString(),
     };
 
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('vendor_employee_assignments').insert(newAsgn);
+      } catch (err) {
+        console.warn('[VendorService] Supabase insert assignment failed:', err);
+      }
+    }
+
     setStorage(VENDOR_ASSIGNMENTS_KEY, [newAsgn, ...list]);
     await this.logAudit(data.vendor_id, 'EMPLOYEE_ASSIGNED', null, newAsgn);
     hrEventBus.publish('vendor.employee_assigned', newAsgn);
+    hrEventBus.publish('vendor.worker_deployed', newAsgn);
     return newAsgn;
   },
 
@@ -480,6 +960,14 @@ export const vendorService = {
       notes: notes || oldVal.notes,
       updated_at: new Date().toISOString(),
     };
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('vendor_employee_assignments').update(updated).eq('id', assignmentId);
+      } catch (err) {
+        console.warn('[VendorService] Supabase update assignment failed:', err);
+      }
+    }
 
     list[idx] = updated;
     setStorage(VENDOR_ASSIGNMENTS_KEY, list);
@@ -535,10 +1023,49 @@ export const vendorService = {
       new_value: newVal,
       created_at: new Date().toISOString(),
     };
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('vendor_audit_logs').insert({
+          id: log.id,
+          tenant_id: log.organization_id,
+          vendor_id: log.vendor_id,
+          entity_type: 'VENDOR',
+          entity_id: vendorId,
+          action: log.action,
+          previous_value: log.old_value,
+          new_value: log.new_value,
+          performed_by: log.actor_name,
+        });
+      } catch (err) {
+        console.warn('[VendorService] Supabase insert audit failed:', err);
+      }
+    }
+
     setStorage(VENDOR_AUDIT_KEY, [log, ...logs]);
   },
 
   async getAuditLogs(vendorId: string): Promise<VendorAuditLog[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const { data, error } = await supabase.from('vendor_audit_logs').select('*').eq('vendor_id', vendorId);
+        if (!error && data !== null && data.length > 0) {
+          return data.map((d: any) => ({
+            id: d.id,
+            organization_id: d.tenant_id || 'a0000000-0000-0000-0000-000000000001',
+            vendor_id: d.vendor_id,
+            actor_id: d.performed_by || 'user-admin-01',
+            actor_name: d.performed_by || 'System Admin',
+            action: d.action,
+            old_value: d.previous_value,
+            new_value: d.new_value,
+            created_at: d.created_at,
+          }));
+        }
+      } catch (err) {
+        console.warn('[VendorService] Supabase getAuditLogs failed:', err);
+      }
+    }
     const logs = getStorage<VendorAuditLog[]>(VENDOR_AUDIT_KEY, []);
     return logs.filter((l) => l.vendor_id === vendorId);
   },

@@ -10,20 +10,46 @@ import {
 import { vendorPortalService } from '../../../services/vendorPortalService';
 import { VendorOrganization, EmployeeWageBreakdown } from '../../../types/vendorPortal';
 import { CalculationModal } from '../components/CalculationModal';
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
 
 interface VendorWageBreakdownViewProps {
-  activeVendor: VendorOrganization;
-  activePeriod: string;
+  activeVendor?: VendorOrganization | null;
+  activePeriod?: string;
 }
 
 export const VendorWageBreakdownView: React.FC<VendorWageBreakdownViewProps> = ({
   activeVendor,
   activePeriod,
 }) => {
+  let ctxVendor: VendorOrganization | null = null;
+  let ctxRelationship: any = null;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+    ctxRelationship = ctx.activeRelationship;
+  } catch {}
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
+  const effectivePeriod = activePeriod || '2026-08';
+
   const [search, setSearch] = useState('');
   const [calcModalData, setCalcModalData] = useState<any | null>(null);
 
-  const wageList = vendorPortalService.getEmployeeWageBreakdowns(activePeriod, activeVendor.id);
+  const rawWageList = effectiveVendor?.id
+    ? vendorPortalService.getEmployeeWageBreakdowns(effectivePeriod, effectiveVendor.id)
+    : [];
+
+  const allEmployees = effectiveVendor?.id ? vendorPortalService.getEmployees(effectiveVendor.id) : [];
+  const employees = allEmployees.filter((emp) => {
+    if (!ctxRelationship) return true;
+    const relCompanyId = ctxRelationship.company_id || ctxRelationship.id;
+    return !emp.current_client_id || emp.current_client_id === relCompanyId;
+  });
+  const employeeIds = new Set(employees.map((e) => e.id));
+
+  const wageList = ctxRelationship
+    ? rawWageList.filter((w) => employeeIds.has(w.employee_id))
+    : rawWageList;
 
   const filtered = wageList.filter(
     (w) =>

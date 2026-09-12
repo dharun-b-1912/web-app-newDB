@@ -8,6 +8,7 @@ import { hrEventBus } from '../hrEventBus';
 import { getActiveOrgId } from './biometricCommandService';
 import { api } from '../api';
 import { Employee } from '../../types';
+import { JoyRedis } from '../../lib/redis';
 
 export type DeviceDirectionMode = 'CHECK_IN' | 'CHECK_OUT' | 'BOTH' | 'DISABLED';
 
@@ -144,6 +145,7 @@ function getScopedKey(baseKey: string, orgId?: string): string {
 
 function getStore<T>(baseKey: string, fallback: T, orgId?: string): T {
   try {
+    if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return fallback;
     const raw = localStorage.getItem(getScopedKey(baseKey, orgId));
     return raw ? JSON.parse(raw) : fallback;
   } catch {
@@ -153,6 +155,7 @@ function getStore<T>(baseKey: string, fallback: T, orgId?: string): T {
 
 function setStore<T>(baseKey: string, val: T, orgId?: string): void {
   try {
+    if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return;
     localStorage.setItem(getScopedKey(baseKey, orgId), JSON.stringify(val));
   } catch (err) {
     console.error(`[PipelineStore] Error saving ${baseKey}:`, err);
@@ -264,13 +267,22 @@ class BiometricEventPipelineService {
       resolvedEventType
     );
 
-    // 3. Check for exact duplicate event in immutable raw event ledger
+    // 3. Check for exact duplicate event in immutable raw event ledger & Upstash Redis
     const rawLedger = getStore<RawBiometricPunchEvent[]>(STORAGE_KEYS_PIPELINE.RAW_EVENTS, []);
     const existingExact = rawLedger.find(e => e.event_hash === eventHash);
     if (existingExact) {
       console.log(`[PIPELINE] Idempotent duplicate event detected: ${eventHash}`);
       return { event: existingExact, isDuplicate: true, sessionId: existingExact.session_id };
     }
+
+    const redisHashKey = `bio_hash:${tenantId}:${eventHash}`;
+    try {
+      const redisDupe = await JoyRedis.get<RawBiometricPunchEvent>(redisHashKey);
+      if (redisDupe) {
+        console.log(`[PIPELINE] Upstash Redis idempotent duplicate event detected: ${eventHash}`);
+        return { event: redisDupe, isDuplicate: true, sessionId: redisDupe.session_id };
+      }
+    } catch {}
 
     // 4. Resolve Employee Identity from Multi-Tenant Directory
     let mappedEmp: any = null;
@@ -553,9 +565,11 @@ class BiometricEventPipelineService {
           }
         }
 
-        // D. Save to Immutable Raw Event Ledger
+        // D. Save to Immutable Raw Event Ledger & Upstash Redis
         rawLedger.unshift(resultEvent);
         setStore(STORAGE_KEYS_PIPELINE.RAW_EVENTS, rawLedger.slice(0, 3000));
+        JoyRedis.set(redisHashKey, resultEvent, { ex: 259200 }).catch(() => {});
+        JoyRedis.invalidateLedgerCache(tenantId).catch(() => {});
 
         // E. Recalculate Daily Attendance Summary
         this.recalculateDailyAttendance(tenantId, empId, workDate);

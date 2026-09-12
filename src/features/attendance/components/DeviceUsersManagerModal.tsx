@@ -1,10 +1,10 @@
 // src/features/attendance/components/DeviceUsersManagerModal.tsx
 // ============================================================================
-// Joy PeopleHR — Complete Biometric Machine User Management Console
-// Real TCP User Fetch → LAN Agent → Cloud → DB → Web App with Machine Details
+// Joy PeopleHR — Enterprise Biometric User & Machine Directory Console
+// High-Scale 500+ Employee Directory • True Supabase Scoping • LAN TCP Gateway
 // ============================================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   X,
   Users,
@@ -38,6 +38,12 @@ import {
   UserCheck,
   UserX,
   FileSpreadsheet,
+  ChevronLeft,
+  ChevronRight,
+  SlidersHorizontal,
+  UploadCloud,
+  Send,
+  MoreHorizontal,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
@@ -65,6 +71,9 @@ import { cn } from '../../../lib/utils';
 import { MapEmployeeModal } from './MapEmployeeModal';
 import { BulkMapModal } from './BulkMapModal';
 import { RemoteBiometricEnrollmentModal } from './RemoteBiometricEnrollmentModal';
+import { DeviceUserDetailDrawer } from './DeviceUserDetailDrawer';
+import { DeviceUserMappingDrawer } from './DeviceUserMappingDrawer';
+import { UserAttendanceHistoryDrawer } from './UserAttendanceHistoryDrawer';
 
 interface DeviceUsersManagerModalProps {
   isOpen: boolean;
@@ -80,15 +89,34 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
   const { showToast } = useToast();
   const [users, setUsers] = useState<BiometricDeviceUser[]>([]);
   const [totalUsers, setTotalUsers] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [employees, setEmployees] = useState<any[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(25);
+  const [pageSize, setPageSize] = useState<number>(50);
   const [searchQuery, setSearchQuery] = useState('');
-  const [mappingFilter, setMappingFilter] = useState<'ALL' | 'MAPPED' | 'UNMAPPED'>('ALL');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [mappingFilter, setMappingFilter] = useState<'ALL' | 'MAPPED' | 'UNMAPPED' | 'MISSING_FROM_DEVICE'>('ALL');
+  const [modalityFilter, setModalityFilter] = useState<'ALL' | 'FACE' | 'FINGERPRINT' | 'CARD'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ENABLED' | 'DISABLED'>('ALL');
+  const [sortBy, setSortBy] = useState<'device_user_id' | 'name' | 'employee' | 'last_synced'>('device_user_id');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Metrics
+  const [metrics, setMetrics] = useState({
+    totalDeviceUsers: 0,
+    mappedCount: 0,
+    unmappedCount: 0,
+    disabledCount: 0,
+    missingFromDeviceCount: 0,
+    conflictCount: 0,
+    totalCompanyEmployees: 0,
+  });
+
   const [activeView, setActiveView] = useState<'users' | 'history' | 'changes'>('users');
   const [syncHistory, setSyncHistory] = useState<DeviceUserSyncHistory[]>([]);
 
-  // Selection for Bulk Mapping
+  // Selection for Bulk Actions
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
 
   // Sync Progress & Summary State
@@ -96,30 +124,68 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
   const [syncProgress, setSyncProgress] = useState<SyncProgressEvent | null>(null);
   const [lastSyncSummary, setLastSyncSummary] = useState<any | null>(null);
 
-  // Machine User Detail Drawer State
-  const [selectedUserDetail, setSelectedUserDetail] = useState<BiometricDeviceUser | null>(null);
-  const [userDetailHistory, setUserDetailHistory] = useState<BiometricDeviceUserHistory[]>([]);
+  // Drawers & Modals State
+  const [detailUser, setDetailUser] = useState<BiometricDeviceUser | null>(null);
+  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
 
-  // Mapping Modal 2.0 State
-  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
-  const [selectedUserForMapping, setSelectedUserForMapping] = useState<BiometricDeviceUser | null>(null);
+  const [mappingUser, setMappingUser] = useState<BiometricDeviceUser | null>(null);
+  const [isMappingDrawerOpen, setIsMappingDrawerOpen] = useState(false);
+
+  const [historyUser, setHistoryUser] = useState<BiometricDeviceUser | null>(null);
+  const [isHistoryDrawerOpen, setIsHistoryDrawerOpen] = useState(false);
+
   const [isBulkMapModalOpen, setIsBulkMapModalOpen] = useState(false);
-
-  // Unmap Confirmation Modal State
-  const [isUnmapConfirmOpen, setIsUnmapConfirmOpen] = useState(false);
-  const [userToUnmap, setUserToUnmap] = useState<BiometricDeviceUser | null>(null);
-
-  // Remote Enrollment Modal State
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
   const [isPropagating, setIsPropagating] = useState(false);
 
+  // Unmap Confirmation
+  const [isUnmapConfirmOpen, setIsUnmapConfirmOpen] = useState(false);
+  const [userToUnmap, setUserToUnmap] = useState<BiometricDeviceUser | null>(null);
+
+  // Debounce search input (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Load Directory Users
+  const loadEnterpriseUsers = useCallback(async () => {
+    if (!device) return;
+    setIsLoading(true);
+    try {
+      const res = await biometricGatewayService.getEnterpriseDirectoryUsers({
+        deviceId: device.id,
+        page: currentPage,
+        pageSize,
+        searchQuery: debouncedSearch,
+        mappingFilter,
+        modalityFilter,
+        statusFilter,
+        sortBy,
+        sortDirection,
+      });
+
+      setUsers(res.users);
+      setTotalUsers(res.total);
+      setTotalPages(res.totalPages);
+      setMetrics(res.metrics);
+    } catch (err) {
+      console.error('Failed to load enterprise directory users:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [device, currentPage, pageSize, debouncedSearch, mappingFilter, modalityFilter, statusFilter, sortBy, sortDirection]);
+
   useEffect(() => {
     if (isOpen && device) {
-      loadUsers();
+      loadEnterpriseUsers();
       loadEmployees();
       loadHistory();
     }
-  }, [isOpen, device, currentPage, searchQuery, mappingFilter]);
+  }, [isOpen, device, loadEnterpriseUsers]);
 
   // Realtime Sync & Mapping Event Listeners
   useEffect(() => {
@@ -152,25 +218,24 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
           setLastSyncSummary(evt.summary);
         }
         showToast(evt.message, evt.status === 'COMPLETED' ? 'default' : 'error');
-        loadUsers();
+        loadEnterpriseUsers();
         loadHistory();
       }
     });
 
-    // Realtime Mapping & device updates without page refresh
     const unsubMapCreated = hrEventBus.subscribe('biometric.mapping.created', () => {
-      loadUsers();
+      loadEnterpriseUsers();
     });
 
     const unsubMapRemoved = hrEventBus.subscribe('biometric.mapping.removed', () => {
-      loadUsers();
+      loadEnterpriseUsers();
     });
 
     const unsubBioUpdated = hrEventBus.subscribe('biometric.updated', () => {
-      loadUsers();
+      loadEnterpriseUsers();
     });
 
-    const handleWindowUpdate = () => loadUsers();
+    const handleWindowUpdate = () => loadEnterpriseUsers();
     window.addEventListener('biometric:updated', handleWindowUpdate);
 
     // Initial and periodic dynamic live fetch from Gateway (every 4 seconds)
@@ -189,7 +254,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
       unsubBioUpdated();
       window.removeEventListener('biometric:updated', handleWindowUpdate);
     };
-  }, [isOpen, device]);
+  }, [isOpen, device, loadEnterpriseUsers, showToast]);
 
   const loadEmployees = async () => {
     try {
@@ -200,18 +265,6 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
     }
   };
 
-  const loadUsers = () => {
-    if (!device) return;
-    const res = biometricGatewayService.getDeviceUsers(device.id, {
-      page: currentPage,
-      pageSize,
-      search: searchQuery,
-      mappingStatus: mappingFilter,
-    });
-    setUsers(res.users);
-    setTotalUsers(res.total);
-  };
-
   const loadHistory = () => {
     if (!device) return;
     const hist = biometricGatewayService.getDeviceSyncHistory(device.id);
@@ -219,10 +272,18 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
   };
 
   const handleOpenUserDetail = (u: BiometricDeviceUser) => {
-    if (!device) return;
-    setSelectedUserDetail(u);
-    const hist = biometricGatewayService.getDeviceUserHistory(device.id, u.device_user_id);
-    setUserDetailHistory(hist);
+    setDetailUser(u);
+    setIsDetailDrawerOpen(true);
+  };
+
+  const handleOpenUserMapping = (u: BiometricDeviceUser) => {
+    setMappingUser(u);
+    setIsMappingDrawerOpen(true);
+  };
+
+  const handleOpenUserHistory = (u: BiometricDeviceUser) => {
+    setHistoryUser(u);
+    setIsHistoryDrawerOpen(true);
   };
 
   const handleTriggerSync = async () => {
@@ -240,13 +301,24 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
     try {
       await biometricGatewayService.unmapDeviceUser(device.id, user.device_user_id);
       showToast(`PIN #${user.device_user_id} unmapped successfully.`);
-      loadUsers();
-      if (selectedUserDetail && selectedUserDetail.device_user_id === user.device_user_id) {
-        const refreshed = biometricGatewayService.getDeviceUsers(device.id).users.find(x => x.device_user_id === user.device_user_id);
-        if (refreshed) setSelectedUserDetail(refreshed);
+      loadEnterpriseUsers();
+      if (detailUser && detailUser.device_user_id === user.device_user_id) {
+        setIsDetailDrawerOpen(false);
       }
     } catch (err: any) {
       showToast(err.message || 'Failed to unmap user', 'error');
+    }
+  };
+
+  const handlePushMissingUserToDevice = async (user: BiometricDeviceUser) => {
+    if (!device) return;
+    try {
+      showToast(`Pushing ${user.name} to ${device.device_name}...`);
+      const res = await biometricGatewayService.syncEmployeesToTerminal(device.id);
+      showToast(`✓ ${res.message}`);
+      loadEnterpriseUsers();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to push user to device', 'error');
     }
   };
 
@@ -255,7 +327,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
     try {
       const res = await biometricGatewayService.propagateMappingsAcrossDevices();
       showToast(`✓ Propagated employee mappings across ${res.deviceCount} hardware terminal(s)!`);
-      loadUsers();
+      loadEnterpriseUsers();
     } catch (err: any) {
       showToast(err.message || 'Propagation failed', 'error');
     } finally {
@@ -280,23 +352,14 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
   if (!isOpen || !device) return null;
 
   const lastSync = biometricGatewayService.getLastSyncForDevice(device.id);
-  const totalPages = Math.ceil(totalUsers / pageSize) || 1;
-  const capabilities = biometricGatewayService.getDeviceCapabilities(device.id);
-
-  // Compute live summary statistics from store
-  const allCurrentUsers = biometricGatewayService.getDeviceUsers(device.id, { pageSize: 5000 }).users;
-  const mappedCount = allCurrentUsers.filter(u => u.is_mapped).length;
-  const unmappedCount = allCurrentUsers.filter(u => !u.is_mapped).length;
-  const disabledCount = allCurrentUsers.filter(u => !u.enabled).length;
-  const missingCount = allCurrentUsers.filter(u => u.sync_status === 'NOT_PRESENT_ON_DEVICE').length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-6xl w-full max-h-[92vh] shadow-2xl border border-gray-200/80 flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-gray-50 via-white to-gray-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-xs p-3 md:p-6 animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl max-w-7xl w-full max-h-[94vh] shadow-2xl border border-gray-200/80 flex flex-col overflow-hidden">
+        {/* Top Header */}
+        <div className="px-6 py-4.5 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-gray-50 via-white to-gray-50">
           <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-800 flex items-center justify-center shadow-xs">
+            <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-[#07563D] flex items-center justify-center shadow-xs">
               <Users className="w-6 h-6" />
             </div>
             <div>
@@ -377,142 +440,166 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
           </div>
         </div>
 
-        {/* Real-time Sync Progress Tracker */}
+        {/* Real-time Sync Progress Bar */}
         {isSyncing && syncProgress && (
-          <div className="p-4 bg-blue-50/80 border-b border-blue-200/80 flex items-center justify-between gap-4 animate-in slide-in-from-top-1">
+          <div className="p-3.5 bg-blue-50 border-b border-blue-200 flex items-center justify-between gap-4 animate-in slide-in-from-top-1">
             <div className="flex items-center gap-3">
-              <RefreshCw className="w-5 h-5 text-blue-700 animate-spin shrink-0" />
+              <RefreshCw className="w-4 h-4 text-blue-700 animate-spin shrink-0" />
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-blue-950">{syncProgress.status}:</span>
                   <span className="text-xs text-blue-800">{syncProgress.message}</span>
                 </div>
                 <div className="text-[10px] text-blue-600 font-mono mt-0.5">
-                  Job ID: {syncProgress.commandId} • Async LAN socket stream active. Do not close.
+                  Job ID: {syncProgress.commandId} • Async LAN socket stream active.
                 </div>
               </div>
             </div>
             {syncProgress.receivedCount !== undefined && (
               <Badge variant="blue" className="text-xs font-mono font-bold">
-                {syncProgress.receivedCount} Machine Users Received
+                {syncProgress.receivedCount} Users Received
               </Badge>
             )}
           </div>
         )}
 
-        {/* Sync Summary Banner */}
-        {lastSyncSummary && (
-          <div className="p-4 bg-emerald-50/90 border-b border-emerald-200 flex items-center justify-between gap-4 text-xs animate-in fade-in">
-            <div className="flex items-center gap-3">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-              <div>
-                <span className="font-bold text-emerald-950">User Synchronization Complete: </span>
-                <span className="text-emerald-800">
-                  {lastSyncSummary.fetched} fetched, {lastSyncSummary.new} new, {lastSyncSummary.updated} updated, {lastSyncSummary.unchanged} unchanged, {lastSyncSummary.unmapped} unmapped in {lastSyncSummary.durationSec}s.
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setActiveView('changes')}
-                className="text-[11px] text-emerald-800 underline font-bold"
-              >
-                View Changes
-              </button>
-              <button
-                onClick={() => setLastSyncSummary(null)}
-                className="text-[11px] text-gray-500 hover:text-gray-700 font-bold"
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* SUMMARY STATS METRIC CARDS */}
+        {/* 5 COMPACT OPERATIONAL KPI METRIC CARDS */}
         <div className="p-4 bg-gray-50/70 border-b border-gray-100 grid grid-cols-5 gap-3 text-xs">
-          <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs">
+          <div
+            onClick={() => {
+              setMappingFilter('ALL');
+              setCurrentPage(1);
+            }}
+            className={cn(
+              'p-3 bg-white rounded-2xl border transition cursor-pointer shadow-2xs',
+              mappingFilter === 'ALL' ? 'border-[#07563D] ring-2 ring-[#07563D]/20' : 'border-gray-200 hover:border-gray-300'
+            )}
+          >
             <div className="text-gray-400 font-medium text-[11px]">Total Machine Users</div>
-            <div className="text-lg font-bold text-gray-900 mt-0.5">{allCurrentUsers.length}</div>
+            <div className="text-lg font-bold text-gray-900 mt-0.5">{metrics.totalDeviceUsers}</div>
+            <div className="text-[10px] text-gray-400 mt-0.5 font-mono">
+              of {metrics.totalCompanyEmployees} company employees
+            </div>
           </div>
-          <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs">
+
+          <div
+            onClick={() => {
+              setMappingFilter('MAPPED');
+              setCurrentPage(1);
+            }}
+            className={cn(
+              'p-3 bg-white rounded-2xl border transition cursor-pointer shadow-2xs',
+              mappingFilter === 'MAPPED' ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-gray-200 hover:border-gray-300'
+            )}
+          >
             <div className="text-emerald-600 font-medium text-[11px]">Mapped to Employees</div>
-            <div className="text-lg font-bold text-emerald-700 mt-0.5">{mappedCount}</div>
+            <div className="text-lg font-bold text-emerald-700 mt-0.5">{metrics.mappedCount}</div>
+            <div className="text-[10px] text-emerald-600 mt-0.5 font-semibold">
+              {metrics.totalDeviceUsers > 0 ? Math.round((metrics.mappedCount / metrics.totalDeviceUsers) * 100) : 0}% Coverage
+            </div>
           </div>
-          <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs">
-            <div className="text-amber-600 font-medium text-[11px]">Unmapped</div>
-            <div className="text-lg font-bold text-amber-700 mt-0.5">{unmappedCount}</div>
+
+          <div
+            onClick={() => {
+              setMappingFilter('UNMAPPED');
+              setCurrentPage(1);
+            }}
+            className={cn(
+              'p-3 bg-white rounded-2xl border transition cursor-pointer shadow-2xs',
+              mappingFilter === 'UNMAPPED' ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-gray-200 hover:border-gray-300'
+            )}
+          >
+            <div className="text-amber-600 font-medium text-[11px]">Unmapped Machine PINs</div>
+            <div className="text-lg font-bold text-amber-700 mt-0.5">{metrics.unmappedCount}</div>
+            <div className="text-[10px] text-amber-600 mt-0.5 font-semibold">
+              Needs linking
+            </div>
           </div>
-          <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs">
+
+          <div
+            onClick={() => {
+              setStatusFilter(statusFilter === 'DISABLED' ? 'ALL' : 'DISABLED');
+              setCurrentPage(1);
+            }}
+            className={cn(
+              'p-3 bg-white rounded-2xl border transition cursor-pointer shadow-2xs',
+              statusFilter === 'DISABLED' ? 'border-gray-600 ring-2 ring-gray-600/20' : 'border-gray-200 hover:border-gray-300'
+            )}
+          >
             <div className="text-gray-500 font-medium text-[11px]">Disabled / Inactive</div>
-            <div className="text-lg font-bold text-gray-700 mt-0.5">{disabledCount}</div>
+            <div className="text-lg font-bold text-gray-700 mt-0.5">{metrics.disabledCount}</div>
+            <div className="text-[10px] text-gray-400 mt-0.5">Terminal lock applied</div>
           </div>
-          <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs">
+
+          <div
+            onClick={() => {
+              setMappingFilter('MISSING_FROM_DEVICE');
+              setCurrentPage(1);
+            }}
+            className={cn(
+              'p-3 bg-white rounded-2xl border transition cursor-pointer shadow-2xs',
+              mappingFilter === 'MISSING_FROM_DEVICE' ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-gray-200 hover:border-gray-300'
+            )}
+          >
             <div className="text-rose-600 font-medium text-[11px]">Missing on Device</div>
-            <div className="text-lg font-bold text-rose-700 mt-0.5">{missingCount}</div>
+            <div className="text-lg font-bold text-rose-700 mt-0.5">{metrics.missingFromDeviceCount}</div>
+            <div className="text-[10px] text-rose-600 mt-0.5 font-semibold">Employees not enrolled</div>
           </div>
         </div>
 
-        {/* VIEW 1: ENROLLED USERS DIRECTORY */}
+        {/* VIEW 1: ENTERPRISE USERS DIRECTORY */}
         {activeView === 'users' && (
           <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Filters Bar */}
+            {/* Toolbar Filters Bar */}
             <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <div className="relative w-64">
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Search Bar */}
+                <div className="relative w-64 md:w-80">
                   <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Search Machine ID, Name, Employee..."
+                    placeholder="Search Machine ID, Employee Code, Name, Card #..."
                     value={searchQuery}
-                    onChange={e => {
-                      setSearchQuery(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="w-full pl-9 pr-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-hidden"
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 placeholder:text-gray-400 focus:outline-hidden focus:border-[#07563D]"
                   />
                 </div>
 
-                <div className="flex items-center rounded-xl bg-white border border-gray-200 p-0.5 text-xs">
-                  <button
-                    onClick={() => {
-                      setMappingFilter('ALL');
-                      setCurrentPage(1);
-                    }}
-                    className={cn(
-                      'px-2.5 py-1 rounded-lg font-semibold transition',
-                      mappingFilter === 'ALL' ? 'bg-[#07563D] text-white shadow-2xs' : 'text-gray-600 hover:text-gray-900'
-                    )}
-                  >
-                    All ({totalUsers})
-                  </button>
-                  <button
-                    onClick={() => {
-                      setMappingFilter('MAPPED');
-                      setCurrentPage(1);
-                    }}
-                    className={cn(
-                      'px-2.5 py-1 rounded-lg font-semibold transition',
-                      mappingFilter === 'MAPPED' ? 'bg-[#07563D] text-white shadow-2xs' : 'text-gray-600 hover:text-gray-900'
-                    )}
-                  >
-                    Mapped ({mappedCount})
-                  </button>
-                  <button
-                    onClick={() => {
-                      setMappingFilter('UNMAPPED');
-                      setCurrentPage(1);
-                    }}
-                    className={cn(
-                      'px-2.5 py-1 rounded-lg font-semibold transition',
-                      mappingFilter === 'UNMAPPED' ? 'bg-[#07563D] text-white shadow-2xs' : 'text-gray-600 hover:text-gray-900'
-                    )}
-                  >
-                    Unmapped ({unmappedCount})
-                  </button>
-                </div>
+                {/* Modality Filter */}
+                <select
+                  value={modalityFilter}
+                  onChange={e => {
+                    setModalityFilter(e.target.value as any);
+                    setCurrentPage(1);
+                  }}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl text-xs text-gray-700 focus:outline-hidden"
+                >
+                  <option value="ALL">All Biometrics</option>
+                  <option value="FACE">Face Recognition</option>
+                  <option value="FINGERPRINT">Fingerprint</option>
+                  <option value="CARD">RFID Card</option>
+                </select>
+
+                {/* Sort Filter */}
+                <select
+                  value={`${sortBy}-${sortDirection}`}
+                  onChange={e => {
+                    const [field, dir] = e.target.value.split('-');
+                    setSortBy(field as any);
+                    setSortDirection(dir as any);
+                    setCurrentPage(1);
+                  }}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl text-xs text-gray-700 focus:outline-hidden"
+                >
+                  <option value="device_user_id-asc">Sort: PIN (Low to High)</option>
+                  <option value="device_user_id-desc">Sort: PIN (High to Low)</option>
+                  <option value="name-asc">Sort: Name (A–Z)</option>
+                  <option value="employee-asc">Sort: Employee (A–Z)</option>
+                  <option value="last_synced-desc">Sort: Last Synced</option>
+                </select>
               </div>
 
+              {/* Bulk Actions / Page Size Selector */}
               <div className="flex items-center gap-2 text-xs">
                 {selectedUserIds.size > 0 && (
                   <Button
@@ -526,38 +613,46 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                   </Button>
                 )}
 
-                {selectedUserIds.size === 0 && unmappedCount > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const unmapped = users.filter(u => !u.is_mapped);
-                      setSelectedUserIds(new Set(unmapped.map(u => u.device_user_id)));
-                      setIsBulkMapModalOpen(true);
+                {/* Page Size Selector */}
+                <div className="flex items-center gap-1.5 text-gray-500 font-medium">
+                  <span>Show:</span>
+                  <select
+                    value={pageSize}
+                    onChange={e => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
                     }}
-                    className="text-xs font-bold border-blue-200 text-blue-800 hover:bg-blue-50 rounded-xl"
+                    className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-800"
                   >
-                    <Sparkles className="w-3.5 h-3.5 mr-1" />
-                    Bulk Map Unmapped ({unmappedCount})
-                  </Button>
-                )}
+                    <option value={50}>50 / page</option>
+                    <option value={75}>75 / page</option>
+                    <option value={100}>100 / page</option>
+                  </select>
+                </div>
 
-                <span className="text-gray-500 ml-2">
-                  Showing <span className="font-bold text-gray-900">{users.length}</span> of <span className="font-bold text-gray-900">{totalUsers}</span> users
+                <span className="text-gray-400 mx-1">|</span>
+
+                <span className="text-gray-500">
+                  Total <strong className="text-gray-900">{totalUsers}</strong> identities
                 </span>
               </div>
             </div>
 
-            {/* User Records Table */}
-            <div className="flex-1 overflow-y-auto p-5">
-              {users.length === 0 ? (
+            {/* Dense High-Performance Records Table */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {isLoading ? (
+                <div className="py-20 text-center space-y-3">
+                  <RefreshCw className="w-7 h-7 text-[#07563D] animate-spin mx-auto" />
+                  <p className="text-xs text-gray-500 font-medium">Loading biometric directory identities...</p>
+                </div>
+              ) : users.length === 0 ? (
                 <div className="py-16 text-center max-w-sm mx-auto space-y-3">
                   <div className="w-12 h-12 rounded-2xl bg-gray-100 text-gray-400 flex items-center justify-center mx-auto">
                     <Users className="w-6 h-6" />
                   </div>
-                  <h4 className="text-sm font-bold text-gray-800">No synchronized users yet</h4>
+                  <h4 className="text-sm font-bold text-gray-800">No identities match criteria</h4>
                   <p className="text-xs text-gray-500 leading-relaxed">
-                    The terminal is online. Click the button below to initiate raw TCP user extraction via the LAN Gateway Agent.
+                    Try adjusting your search query, mapping filter, or click refresh to fetch raw users from the physical terminal.
                   </p>
                   <Button
                     variant="primary"
@@ -567,7 +662,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                     className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs rounded-xl"
                   >
                     <RefreshCw className={cn('w-3.5 h-3.5 mr-1.5', isSyncing && 'animate-spin')} />
-                    Fetch Users From Device
+                    Fetch From Device
                   </Button>
                 </div>
               ) : (
@@ -589,10 +684,9 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                             className="rounded-sm border-gray-300 text-[#07563D] focus:ring-[#07563D]"
                           />
                         </TableHead>
-                        <TableHead>Machine User ID</TableHead>
-                        <TableHead>UID</TableHead>
+                        <TableHead>Machine PIN</TableHead>
                         <TableHead>Machine Name</TableHead>
-                        <TableHead>Joy PeopleHR Mapping</TableHead>
+                        <TableHead>JOY PeopleHR Mapping</TableHead>
                         <TableHead>Privilege</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Card</TableHead>
@@ -605,7 +699,9 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                     <TableBody>
                       {users.map(u => {
                         const isSelected = selectedUserIds.has(u.device_user_id);
-                        const rawCard = u.card_number && u.card_number !== 'null' && u.card_number !== 'undefined' ? u.card_number : (u as any).credentials?.card?.uid;
+                        const rawCard = u.card_number && u.card_number !== 'null' && u.card_number !== 'undefined'
+                          ? u.card_number
+                          : (u as any).credentials?.card?.uid;
                         const activeCard = rawCard ? String(rawCard).trim() : null;
 
                         const fpCount = Number(u.fingerprint_count || (u as any).credentials?.fingerprint?.count || 0);
@@ -615,8 +711,13 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                         const isFaceEnrolled = Boolean(u.face_enrolled || (u as any).has_face_enrolled || faceCred?.status === 'ENROLLED');
                         const isFaceUnknown = !isFaceEnrolled && (faceCred?.status === 'UNKNOWN' || u.face_enrolled === null || u.face_enrolled === undefined);
 
+                        const isMissingVirtual = mappingFilter === 'MISSING_FROM_DEVICE';
+
                         return (
-                          <TableRow key={u.device_user_id} className={cn('hover:bg-gray-50/50', isSelected && 'bg-blue-50/20')}>
+                          <TableRow
+                            key={`${u.device_id}_${u.device_user_id}`}
+                            className={cn('hover:bg-gray-50/50 transition', isSelected && 'bg-blue-50/20')}
+                          >
                             <TableCell className="text-center">
                               <input
                                 type="checkbox"
@@ -633,23 +734,20 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                                 className="rounded-sm border-gray-300 text-[#07563D] focus:ring-[#07563D]"
                               />
                             </TableCell>
+
+                            {/* Machine PIN */}
                             <TableCell>
                               <div className="font-mono text-xs font-bold text-gray-900">
-                                #{u.device_user_id}
+                                {u.device_user_id.startsWith('#') ? u.device_user_id : `#${u.device_user_id}`}
                               </div>
                             </TableCell>
-                            <TableCell>
-                              {u.device_user_uid ? (
-                                <Badge variant="gray" className="text-[10px] font-mono">
-                                  UID: {u.device_user_uid}
-                                </Badge>
-                              ) : (
-                                <span className="text-[10px] text-gray-400 font-mono">—</span>
-                              )}
-                            </TableCell>
+
+                            {/* Machine Name */}
                             <TableCell className="text-xs font-semibold text-gray-900">
                               {u.name}
                             </TableCell>
+
+                            {/* HR Mapping */}
                             <TableCell>
                               {u.is_mapped && u.mapped_employee_name ? (
                                 <div className="flex items-center gap-1.5 text-xs">
@@ -657,9 +755,14 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                                   <div>
                                     <div className="font-bold text-gray-900">{u.mapped_employee_name}</div>
                                     <div className="text-[10px] text-gray-500 font-mono">
-                                      {u.mapped_employee_code} • {u.mapped_department || 'Engineering'}
+                                      {u.mapped_employee_code} • {u.mapped_department || 'General'}
                                     </div>
                                   </div>
+                                </div>
+                              ) : isMissingVirtual ? (
+                                <div className="text-xs">
+                                  <div className="font-bold text-rose-700">{u.mapped_employee_name}</div>
+                                  <div className="text-[10px] text-gray-400 font-mono">{u.mapped_employee_code} • Needs Push</div>
                                 </div>
                               ) : (
                                 <div className="flex items-center gap-1.5 text-amber-700 text-xs font-medium">
@@ -668,99 +771,132 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
                                 </div>
                               )}
                             </TableCell>
+
+                            {/* Privilege */}
                             <TableCell>
-                              <Badge variant={u.privilege === 'ADMIN' || u.privilege === 'SUPERADMIN' ? 'purple' : 'gray'} className="text-[10px]">
+                              <Badge
+                                variant={u.privilege === 'ADMIN' || u.privilege === 'SUPERADMIN' ? 'purple' : 'gray'}
+                                className="text-[10px]"
+                              >
                                 {u.privilege}
                               </Badge>
                             </TableCell>
+
+                            {/* Status */}
                             <TableCell>
                               <Badge
-                                variant={u.sync_status === 'NOT_PRESENT_ON_DEVICE' ? 'rose' : u.enabled ? 'emerald' : 'gray'}
+                                variant={isMissingVirtual ? 'rose' : u.enabled !== false ? 'emerald' : 'gray'}
                                 className="text-[10px]"
                               >
-                                {u.sync_status === 'NOT_PRESENT_ON_DEVICE' ? 'Missing' : u.enabled ? 'Enabled' : 'Disabled'}
+                                {isMissingVirtual ? 'Missing on Device' : u.enabled !== false ? 'Enabled' : 'Disabled'}
                               </Badge>
                             </TableCell>
+
+                            {/* Card */}
                             <TableCell className="font-mono text-xs text-gray-800">
                               {activeCard ? (
-                                <Badge variant="blue" size="sm" title="Verified from: Device Query" className="text-[10px] gap-1 font-semibold bg-blue-50 text-blue-800 border-blue-200 font-mono">
+                                <Badge variant="blue" size="sm" className="text-[10px] gap-1 font-semibold bg-blue-50 text-blue-800 border-blue-200 font-mono">
                                   🪪 #{activeCard}
                                 </Badge>
                               ) : (
                                 <span className="text-[10px] text-gray-400">No Card</span>
                               )}
                             </TableCell>
+
+                            {/* Fingerprint */}
                             <TableCell>
                               {isFpEnrolled ? (
-                                <Badge variant="emerald" size="sm" title="Verified from: Device Query" className="text-[10px] gap-1 font-semibold bg-emerald-50 text-emerald-800 border-emerald-300">
+                                <Badge variant="emerald" size="sm" className="text-[10px] gap-1 font-semibold bg-emerald-50 text-emerald-800 border-emerald-300">
                                   <Fingerprint className="w-3 h-3 text-[#07563D]" /> {fpCount || 1} Enrolled
                                 </Badge>
                               ) : (
                                 <span className="text-[10px] text-gray-400">No FP</span>
                               )}
                             </TableCell>
+
+                            {/* Face */}
                             <TableCell>
                               {isFaceEnrolled ? (
-                                <Badge variant="emerald" size="sm" title="Verified from: Live Device Event" className="text-[10px] gap-1 font-semibold bg-emerald-50 text-emerald-800 border-emerald-300">
+                                <Badge variant="emerald" size="sm" className="text-[10px] gap-1 font-semibold bg-emerald-50 text-emerald-800 border-emerald-300">
                                   <ScanFace className="w-3 h-3 text-[#07563D]" /> 1 Face Enrolled
                                 </Badge>
                               ) : isFaceUnknown ? (
-                                <Badge variant="gray" size="sm" title="Face template metadata is not verifiable over TCP SDK on Visible Light firmware without live event" className="text-[10px] text-gray-500 bg-gray-100 border-gray-200">
+                                <Badge variant="gray" size="sm" className="text-[10px] text-gray-500 bg-gray-100 border-gray-200">
                                   Unknown
                                 </Badge>
                               ) : (
                                 <span className="text-[10px] text-gray-400">No Face</span>
                               )}
                             </TableCell>
+
+                            {/* Group / Timezone */}
                             <TableCell className="text-[11px] text-gray-500">
                               <div>Group {u.group_id || '1'}</div>
                               <div className="text-[9px] text-gray-400">{u.timezone || 'Asia/Kolkata'}</div>
                             </TableCell>
+
+                            {/* Actions */}
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end gap-1.5">
-                                <button
-                                  onClick={() => handleOpenUserDetail(u)}
-                                  title="View Machine User Details"
-                                  className="p-1.5 text-gray-400 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                </button>
-                                {u.is_mapped ? (
-                                  <>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => {
-                                        setSelectedUserForMapping(u);
-                                        setIsMapModalOpen(true);
-                                      }}
-                                      className="text-[11px] h-7 px-2 rounded-lg border-gray-200 text-gray-600 hover:text-[#07563D]"
-                                    >
-                                      <Link className="w-3 h-3 mr-1" /> Re-map
-                                    </Button>
-                                    <button
-                                      onClick={() => {
-                                        setUserToUnmap(u);
-                                        setIsUnmapConfirmOpen(true);
-                                      }}
-                                      title="Unmap Employee"
-                                      className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                                    >
-                                      <Unlink className="w-3.5 h-3.5" />
-                                    </button>
-                                  </>
-                                ) : (
+                                {isMissingVirtual ? (
                                   <Button
-                                    variant="outline"
+                                    variant="primary"
                                     size="sm"
-                                    onClick={() => {
-                                      setSelectedUserForMapping(u);
-                                      setIsMapModalOpen(true);
-                                    }}
-                                    className="text-[11px] h-7 px-2.5 rounded-lg border-blue-300 text-blue-800 bg-blue-50/50 hover:bg-blue-100 font-semibold"
+                                    onClick={() => handlePushMissingUserToDevice(u)}
+                                    className="text-[11px] h-7 px-2.5 rounded-lg bg-[#07563D] hover:bg-[#0b7a57] text-white font-semibold gap-1"
                                   >
-                                    <Link className="w-3 h-3 mr-1" /> Map Employee
+                                    <UploadCloud className="w-3 h-3" /> Push to Device
                                   </Button>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => handleOpenUserDetail(u)}
+                                      title="View Detailed Profile & Biometrics"
+                                      className="p-1.5 text-gray-400 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    <button
+                                      onClick={() => handleOpenUserHistory(u)}
+                                      title="Inspect Individual Punch History"
+                                      className="p-1.5 text-gray-400 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition"
+                                    >
+                                      <Clock className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {u.is_mapped ? (
+                                      <>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleOpenUserMapping(u)}
+                                          className="text-[11px] h-7 px-2 rounded-lg border-gray-200 text-gray-600 hover:text-[#07563D]"
+                                        >
+                                          <Link className="w-3 h-3 mr-1" /> Re-map
+                                        </Button>
+                                        <button
+                                          onClick={() => {
+                                            setUserToUnmap(u);
+                                            setIsUnmapConfirmOpen(true);
+                                          }}
+                                          title="Unmap Employee"
+                                          className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                                        >
+                                          <Unlink className="w-3.5 h-3.5" />
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleOpenUserMapping(u)}
+                                        className="text-[11px] h-7 px-2.5 rounded-lg border-emerald-300 text-[#07563D] bg-emerald-50/50 hover:bg-emerald-100 font-semibold"
+                                      >
+                                        <Link className="w-3 h-3 mr-1" /> Map Employee
+                                      </Button>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             </TableCell>
@@ -773,32 +909,37 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
               )}
             </div>
 
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <div className="p-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
-                <div>Page {currentPage} of {totalPages}</div>
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={currentPage === 1}
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    className="text-xs rounded-xl"
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={currentPage >= totalPages}
-                    onClick={() => setCurrentPage(p => p + 1)}
-                    className="text-xs rounded-xl"
-                  >
-                    Next
-                  </Button>
-                </div>
+            {/* Server-Side Pagination Footer */}
+            <div className="p-3.5 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
+              <div>
+                Showing <strong className="text-gray-900">{users.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong>–
+                <strong className="text-gray-900">{Math.min(currentPage * pageSize, totalUsers)}</strong> of{' '}
+                <strong className="text-gray-900">{totalUsers}</strong> identities (Page {currentPage} of {totalPages})
               </div>
-            )}
+
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage === 1 || isLoading}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  className="text-xs rounded-xl h-8 px-3"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5 mr-1" />
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage >= totalPages || isLoading}
+                  onClick={() => setCurrentPage(p => p + 1)}
+                  className="text-xs rounded-xl h-8 px-3"
+                >
+                  Next
+                  <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                </Button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -868,190 +1009,63 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
           </div>
         )}
 
-        {/* VIEW 3: LAST SYNC CHANGES BREAKDOWN */}
-        {activeView === 'changes' && lastSyncSummary && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-bold text-gray-900">Last User Synchronization Breakdown</h4>
-                <p className="text-xs text-gray-500">Changes detected between previous snapshot and physical terminal</p>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => setActiveView('users')} className="text-xs rounded-xl">
-                Back to Directory
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-4 gap-3 text-xs">
-              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl">
-                <div className="font-bold text-emerald-950 text-sm">New Machine Users</div>
-                <div className="text-2xl font-bold text-emerald-700 mt-1">+{lastSyncSummary.new}</div>
-                <p className="text-[11px] text-emerald-600 mt-1">Added to directory snapshot</p>
-              </div>
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl">
-                <div className="font-bold text-blue-950 text-sm">Updated Attributes</div>
-                <div className="text-2xl font-bold text-blue-700 mt-1">{lastSyncSummary.updated}</div>
-                <p className="text-[11px] text-blue-600 mt-1">Names, cards, or biometrics modified</p>
-              </div>
-              <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl">
-                <div className="font-bold text-gray-950 text-sm">Unchanged Records</div>
-                <div className="text-2xl font-bold text-gray-700 mt-1">{lastSyncSummary.unchanged}</div>
-                <p className="text-[11px] text-gray-500 mt-1">Identical to local database</p>
-              </div>
-              <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl">
-                <div className="font-bold text-rose-950 text-sm">Missing on Device</div>
-                <div className="text-2xl font-bold text-rose-700 mt-1">{lastSyncSummary.removed || 0}</div>
-                <p className="text-[11px] text-rose-600 mt-1">Preserved for historical attendance</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Machine User Details Drawer */}
-        {selectedUserDetail && (
-          <div className="p-6 border-t border-gray-200 bg-gray-50 space-y-4 animate-in slide-in-from-bottom-2">
-            <div className="flex items-center justify-between border-b border-gray-200 pb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-800 flex items-center justify-center font-mono font-bold text-sm">
-                  #{selectedUserDetail.device_user_id}
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-gray-900">{selectedUserDetail.name}</h4>
-                  <p className="text-xs text-gray-500">
-                    Terminal: {device.device_name} ({device.ip_address}:{device.port})
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedUserDetail(null)}
-                className="w-7 h-7 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-4 gap-4 text-xs">
-              {/* Card 1: Machine Identity */}
-              <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1.5">
-                <div className="font-bold text-gray-900 border-b border-gray-100 pb-1 flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-blue-600" /> Machine Identity
-                </div>
-                <div><span className="text-gray-500">User ID / PIN:</span> <span className="font-mono font-bold">#{selectedUserDetail.device_user_id}</span></div>
-                <div><span className="text-gray-500">Machine UID:</span> <span className="font-mono">{selectedUserDetail.device_user_uid || 'Not reported'}</span></div>
-                <div><span className="text-gray-500">Machine Name:</span> <span className="font-semibold">{selectedUserDetail.name}</span></div>
-                <div><span className="text-gray-500">Privilege:</span> <span className="font-semibold">{selectedUserDetail.privilege}</span></div>
-              </div>
-
-              {/* Card 2: Credentials & Access */}
-              <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1.5">
-                <div className="font-bold text-gray-900 border-b border-gray-100 pb-1 flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-purple-600" /> Credentials & Access
-                </div>
-                <div><span className="text-gray-500">Status:</span> <span className="font-semibold">{selectedUserDetail.enabled ? 'Enabled' : 'Disabled'}</span></div>
-                <div><span className="text-gray-500">Card Number:</span> <span className="font-mono">{selectedUserDetail.card_number || 'None'}</span></div>
-                <div><span className="text-gray-500">Password Set:</span> <span className="font-semibold">{selectedUserDetail.password_configured ? 'Yes' : 'No'}</span></div>
-                <div><span className="text-gray-500">Group / TZ:</span> <span>Group {selectedUserDetail.group_id || '1'} ({selectedUserDetail.timezone || 'Asia/Kolkata'})</span></div>
-              </div>
-
-              {/* Card 3: Biometrics Evidence */}
-              <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1.5">
-                <div className="font-bold text-gray-900 border-b border-gray-100 pb-1 flex items-center gap-1.5">
-                  <Fingerprint className="w-3.5 h-3.5 text-emerald-600" /> Biometrics & Evidence
-                </div>
-                <div>
-                  <span className="text-gray-500">Fingerprint:</span>{' '}
-                  <span className="font-semibold">
-                    {selectedUserDetail.fingerprint_count && selectedUserDetail.fingerprint_count > 0
-                      ? `${selectedUserDetail.fingerprint_count} Enrolled (Device Query)`
-                      : 'No Fingerprints'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Face:</span>{' '}
-                  <span className="font-semibold">
-                    {selectedUserDetail.face_enrolled
-                      ? 'Enrolled (Verified Live Event)'
-                      : (selectedUserDetail as any).credentials?.face?.status === 'UNKNOWN' || selectedUserDetail.face_enrolled === null
-                      ? 'Unknown (Requires on-device registration / live punch)'
-                      : 'No Face'}
-                  </span>
-                </div>
-                <div><span className="text-gray-500">Palm:</span> <span className="text-gray-400">Not supported by model</span></div>
-                <div><span className="text-gray-500">Iris:</span> <span className="text-gray-400">Not supported by model</span></div>
-              </div>
-
-              {/* Card 4: Joy PeopleHR Employee Mapping */}
-              <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1.5">
-                <div className="font-bold text-gray-900 border-b border-gray-100 pb-1 flex items-center gap-1.5">
-                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" /> Joy PeopleHR Mapping
-                </div>
-                {selectedUserDetail.is_mapped ? (
-                  <>
-                    <div><span className="text-gray-500">Employee:</span> <span className="font-bold text-gray-900">{selectedUserDetail.mapped_employee_name}</span></div>
-                    <div><span className="text-gray-500">Employee ID:</span> <span className="font-mono">{selectedUserDetail.mapped_employee_code}</span></div>
-                    <div><span className="text-gray-500">Department:</span> <span>{selectedUserDetail.mapped_department || 'Engineering'}</span></div>
-                    <div><span className="text-gray-500">Mapped By:</span> <span className="text-gray-600">{selectedUserDetail.mapped_by || 'Admin'}</span></div>
-                  </>
-                ) : (
-                  <div className="text-amber-700 py-2">
-                    <div className="font-bold">Not linked to employee</div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedUserForMapping(selectedUserDetail);
-                        setIsMapModalOpen(true);
-                      }}
-                      className="mt-2 text-xs rounded-lg border-blue-300 text-blue-700"
-                    >
-                      <Link className="w-3 h-3 mr-1" /> Map Now
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Audit History of Changes for this Machine User */}
-            {userDetailHistory.length > 0 && (
-              <div className="mt-3 p-3 bg-white rounded-xl border border-gray-200 text-xs">
-                <div className="font-bold text-gray-900 mb-2 flex items-center gap-1.5">
-                  <History className="w-3.5 h-3.5 text-gray-500" /> Machine Audit Trail
-                </div>
-                <div className="space-y-1">
-                  {userDetailHistory.map(h => (
-                    <div key={h.id} className="flex items-center justify-between text-[11px] py-0.5 border-b border-gray-50 last:border-0">
-                      <span className="font-mono text-gray-400">{new Date(h.recorded_at).toLocaleTimeString()}</span>
-                      <Badge variant="gray" className="text-[10px]">{h.change_type}</Badge>
-                      <span className="text-gray-700">{h.new_value || h.old_value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* MAP EMPLOYEE MODAL 2.0 (AI suggestions, scoped search, cross-branch warnings & punch reprocessing) */}
-        {isMapModalOpen && selectedUserForMapping && (
-          <MapEmployeeModal
-            isOpen={isMapModalOpen}
+        {/* MACHINE USER DETAIL DRAWER */}
+        {isDetailDrawerOpen && detailUser && (
+          <DeviceUserDetailDrawer
+            isOpen={isDetailDrawerOpen}
             onClose={() => {
-              setIsMapModalOpen(false);
-              setSelectedUserForMapping(null);
+              setIsDetailDrawerOpen(false);
+              setDetailUser(null);
+            }}
+            user={detailUser}
+            device={device}
+            onOpenMappingModal={u => {
+              setMappingUser(u);
+              setIsMappingDrawerOpen(true);
+            }}
+            onOpenUnmapConfirm={u => {
+              setUserToUnmap(u);
+              setIsUnmapConfirmOpen(true);
+            }}
+            onUserUpdated={loadEnterpriseUsers}
+          />
+        )}
+
+        {/* BIOMETRIC EMPLOYEE MAPPING DRAWER */}
+        {isMappingDrawerOpen && mappingUser && (
+          <DeviceUserMappingDrawer
+            isOpen={isMappingDrawerOpen}
+            onClose={() => {
+              setIsMappingDrawerOpen(false);
+              setMappingUser(null);
             }}
             device={device}
-            machineUser={selectedUserForMapping}
+            machineUser={mappingUser}
             employees={employees}
             onMappingSuccess={() => {
-              loadUsers();
-              if (selectedUserDetail && selectedUserDetail.device_user_id === selectedUserForMapping.device_user_id) {
-                const refreshed = biometricGatewayService.getDeviceUsers(device.id).users.find(x => x.device_user_id === selectedUserForMapping.device_user_id);
-                if (refreshed) setSelectedUserDetail(refreshed);
+              loadEnterpriseUsers();
+              if (detailUser && detailUser.device_user_id === mappingUser.device_user_id) {
+                const refreshed = users.find(x => x.device_user_id === mappingUser.device_user_id);
+                if (refreshed) setDetailUser(refreshed);
               }
             }}
           />
         )}
 
-        {/* BULK MAP MODAL (Multi-user match review & high confidence approval) */}
+        {/* INDIVIDUAL ATTENDANCE HISTORY DRAWER */}
+        {isHistoryDrawerOpen && historyUser && (
+          <UserAttendanceHistoryDrawer
+            isOpen={isHistoryDrawerOpen}
+            onClose={() => {
+              setIsHistoryDrawerOpen(false);
+              setHistoryUser(null);
+            }}
+            user={historyUser}
+            device={device}
+          />
+        )}
+
+        {/* BULK MAP MODAL */}
         {isBulkMapModalOpen && (
           <BulkMapModal
             isOpen={isBulkMapModalOpen}
@@ -1067,7 +1081,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
             }
             employees={employees}
             onBulkMappingSuccess={() => {
-              loadUsers();
+              loadEnterpriseUsers();
               setSelectedUserIds(new Set());
             }}
           />
@@ -1075,7 +1089,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
 
         {/* UNMAP CONFIRMATION MODAL */}
         {isUnmapConfirmOpen && userToUnmap && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-gray-900/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="fixed inset-0 z-70 flex items-center justify-center bg-gray-900/60 backdrop-blur-xs p-4 animate-in fade-in">
             <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-200 space-y-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center">
@@ -1128,7 +1142,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
           </div>
         )}
 
-        {/* REMOTE BIOMETRIC ENROLLMENT MODAL 2.0 (Employee-first, PIN collision check & real sensor progression) */}
+        {/* REMOTE BIOMETRIC ENROLLMENT MODAL */}
         {isEnrollModalOpen && (
           <RemoteBiometricEnrollmentModal
             isOpen={isEnrollModalOpen}
@@ -1136,13 +1150,13 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
             device={device}
             employees={employees}
             onEnrollmentSuccess={() => {
-              loadUsers();
+              loadEnterpriseUsers();
             }}
           />
         )}
 
-        {/* Footer with Device Capabilities Checklist */}
-        <div className="p-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/80 text-xs text-gray-500">
+        {/* Bottom Capabilities Bar */}
+        <div className="p-3.5 border-t border-gray-100 flex items-center justify-between bg-gray-50/80 text-xs text-gray-500">
           <div className="flex items-center gap-2 text-[11px]">
             <span className="font-semibold text-gray-700">Capabilities:</span>
             <Badge variant="emerald" className="text-[9px]">Card ✓</Badge>

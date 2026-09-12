@@ -19,6 +19,7 @@ import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { hrEventBus } from './hrEventBus';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
 import { notificationService } from './notification/notificationService';
+import { leaveEngine } from './leave/leaveEngine';
 
 const STORAGE_KEYS = {
   LEAVE_TYPES: 'workforce_leave_types_v2',
@@ -1195,6 +1196,12 @@ export const leaveApi = {
 
   submitLeaveRequest: (req: Partial<LeaveRequest>): LeaveRequest => {
     const requests = leaveApi.getLeaveRequests();
+    const calculatedDays = leaveEngine.calculateWorkingDays({
+      fromDate: req.from_date || '',
+      toDate: req.to_date || '',
+      isHalfDay: req.is_half_day,
+    });
+
     const newReq: LeaveRequest = {
       id: `lr-${Date.now()}`,
       request_code: `LR-2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -1209,11 +1216,11 @@ export const leaveApi = {
       leave_category: req.leave_category || 'Paid',
       from_date: req.from_date || '',
       to_date: req.to_date || '',
-      total_calendar_days: req.total_calendar_days || 1,
-      working_days: req.working_days || 1,
-      holiday_days: req.holiday_days || 0,
-      weekly_off_days: req.weekly_off_days || 0,
-      leave_days_deducted: req.leave_days_deducted || 1,
+      total_calendar_days: calculatedDays.totalCalendarDays || req.total_calendar_days || 1,
+      working_days: calculatedDays.workingDays || req.working_days || 1,
+      holiday_days: calculatedDays.holidayDays || req.holiday_days || 0,
+      weekly_off_days: calculatedDays.weekendDays || req.weekly_off_days || 0,
+      leave_days_deducted: calculatedDays.leaveDaysDeducted || req.leave_days_deducted || 1,
       is_half_day: req.is_half_day || false,
       half_day_session: req.half_day_session,
       is_hourly: req.is_hourly || false,
@@ -1224,7 +1231,7 @@ export const leaveApi = {
       manager_name: req.manager_name || 'Anand Viswanathan',
       status: 'Pending',
       submitted_at: new Date().toISOString(),
-      daily_breakdown: req.daily_breakdown || [],
+      daily_breakdown: req.daily_breakdown || (calculatedDays.dailyBreakdown as any) || [],
       current_approver_name: req.manager_name || 'Anand Viswanathan',
       is_lop: req.is_lop || false,
       created_at: new Date().toISOString(),
@@ -2122,6 +2129,14 @@ export const leaveApi = {
     } catch (e) {
       console.warn('[leaveApi] syncWithSupabase notice:', e);
     }
+  },
+
+  calculateWorkingDays: (params: Parameters<typeof leaveEngine.calculateWorkingDays>[0]) => {
+    return leaveEngine.calculateWorkingDays(params);
+  },
+
+  reconcileLedgerBalance: async (employeeId: string, leaveTypeId: string, calendarYear: number) => {
+    return leaveEngine.reconcileLedgerBalance(employeeId, leaveTypeId, calendarYear);
   },
 };
 

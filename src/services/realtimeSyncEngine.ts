@@ -7,6 +7,7 @@
 
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { hrEventBus } from './hrEventBus';
+import { api } from './api';
 import { logger } from './diagnostics/loggerService';
 import { realtimeChannelManager } from './realtime/realtimeChannelManager';
 import { leaveApi } from './leaveApi';
@@ -56,7 +57,7 @@ class RealtimeSyncEngine {
           if (idx !== -1) {
             const existingVersion = list[idx]?.record_version || 0;
             const newVersion = payload.new?.record_version || 0;
-            if (newVersion >= existingVersion) {
+            if (newVersion >= existingVersion || payload.new?.avatar_url) {
               list[idx] = { ...list[idx], ...payload.new };
               localStorage.setItem('workforce_employees', JSON.stringify(list));
             }
@@ -65,6 +66,26 @@ class RealtimeSyncEngine {
             localStorage.setItem('workforce_employees', JSON.stringify(list));
           }
         } catch (_) {}
+
+        // Immediate sync with current user in memory/session if avatar changed or user matches
+        try {
+          const currentUser = api.getCurrentUser();
+          if (
+            currentUser &&
+            (currentUser.id === payload.new.id ||
+              currentUser.employee_id === payload.new.id ||
+              currentUser.employee_id === payload.new.employee_code ||
+              (currentUser.email && payload.new.work_email && currentUser.email.toLowerCase() === payload.new.work_email.toLowerCase()))
+          ) {
+            if (payload.new.avatar_url && payload.new.avatar_url !== currentUser.avatar_url) {
+              api.setCurrentUser({
+                ...currentUser,
+                avatar_url: payload.new.avatar_url,
+              });
+            }
+          }
+        } catch (_) {}
+
         hrEventBus.publish('employee.updated', payload.new, { actorId: 'supabase-realtime' });
         if (payload.new?.status) {
           hrEventBus.publish('employee.status_changed', { employee_id: payload.new.id, new_status: payload.new.status, employee: payload.new }, { actorId: 'supabase-realtime' });
@@ -355,6 +376,57 @@ class RealtimeSyncEngine {
       }
     });
     this.disposers.push(unsubNotificationEvents);
+
+    // 11. Vendors Master Table
+    const unsubVendors = realtimeChannelManager.subscribeToTable('vendors', (payload) => {
+      const row = payload.new || payload.old;
+      if (row) {
+        if (payload.eventType === 'INSERT') {
+          hrEventBus.publish('vendor.created', row, { actorId: 'supabase-realtime' });
+        } else if (payload.eventType === 'UPDATE') {
+          hrEventBus.publish('vendor.updated', row, { actorId: 'supabase-realtime' });
+        } else if (payload.eventType === 'DELETE') {
+          hrEventBus.publish('vendor.deleted', row, { actorId: 'supabase-realtime' });
+        }
+      }
+    });
+    this.disposers.push(unsubVendors);
+
+    // 12. Vendor Contracts
+    const unsubVendorContracts = realtimeChannelManager.subscribeToTable('vendor_contracts', (payload) => {
+      const row = payload.new || payload.old;
+      if (row) {
+        hrEventBus.publish('vendor.contract_updated', row, { actorId: 'supabase-realtime' });
+      }
+    });
+    this.disposers.push(unsubVendorContracts);
+
+    // 13. Vendor Employees / Contract Workers
+    const unsubVendorWorkers = realtimeChannelManager.subscribeToTable('vendor_employees', (payload) => {
+      const row = payload.new || payload.old;
+      if (row) {
+        hrEventBus.publish('vendor.worker_updated', row, { actorId: 'supabase-realtime' });
+      }
+    });
+    this.disposers.push(unsubVendorWorkers);
+
+    // 14. Vendor Invoices
+    const unsubVendorInvoices = realtimeChannelManager.subscribeToTable('vendor_invoices', (payload) => {
+      const row = payload.new || payload.old;
+      if (row) {
+        hrEventBus.publish('vendor.invoice_updated', row, { actorId: 'supabase-realtime' });
+      }
+    });
+    this.disposers.push(unsubVendorInvoices);
+
+    // 15. Approvals / Approval Requests
+    const unsubApprovals = realtimeChannelManager.subscribeToTable('approval_requests', (payload) => {
+      const row = payload.new || payload.old;
+      if (row) {
+        hrEventBus.publish('approval.requested', row, { actorId: 'supabase-realtime' });
+      }
+    });
+    this.disposers.push(unsubApprovals);
   }
 
   private setupAutoSyncPolling(): void {

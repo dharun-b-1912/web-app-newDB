@@ -10,10 +10,11 @@ import {
 } from 'lucide-react';
 import { vendorPortalService } from '../../../services/vendorPortalService';
 import { VendorOrganization } from '../../../types/vendorPortal';
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
 
 interface VendorAuditReportsViewProps {
-  activeVendor: VendorOrganization;
-  activePeriod: string;
+  activeVendor?: VendorOrganization | null;
+  activePeriod?: string;
 }
 
 export const VendorAuditReportsView: React.FC<VendorAuditReportsViewProps> = ({
@@ -24,7 +25,16 @@ export const VendorAuditReportsView: React.FC<VendorAuditReportsViewProps> = ({
   const [activeTab, setActiveTab] = useState<'AUDIT' | 'REPORTS'>('AUDIT');
   const [filterEntity, setFilterEntity] = useState('ALL');
 
-  const logs = vendorPortalService.getAuditLogs(activeVendor.id);
+  let ctxVendor: VendorOrganization | null = null;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+  } catch {}
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
+  const effectivePeriod = activePeriod || '2026-08';
+
+  const logs = effectiveVendor?.id ? vendorPortalService.getAuditLogs(effectiveVendor.id) : [];
 
   const filteredLogs = logs.filter(
     (l) => filterEntity === 'ALL' || l.entity_type === filterEntity

@@ -23,7 +23,7 @@ export interface MultiVariantProcessedResult {
 
 export class AvatarService {
   private static instance: AvatarService;
-  private readonly STORAGE_BUCKET = 'employee-profile-pictures';
+  private readonly STORAGE_BUCKET = 'employee-documents';
   private readonly FALLBACK_BUCKET = 'employee-documents';
 
   public static getInstance(): AvatarService {
@@ -160,7 +160,8 @@ export class AvatarService {
 
     const variants = await this.processMultiVariants(imageInput);
     const fileUuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `avatar-${Date.now()}`;
-    const storagePath = `${orgId}/${employeeId}/profile/${fileUuid}.jpg`;
+    // Canonical 4-segment path: <org_id>/<employee_id>/documents/avatar_<file_uuid>.jpg
+    const storagePath = `${orgId}/${employeeId}/documents/avatar_${fileUuid}.jpg`;
 
     let finalBucket = this.STORAGE_BUCKET;
 
@@ -188,12 +189,21 @@ export class AvatarService {
           throw new Error(`Failed to upload avatar: ${fallbackRes.error.message}`);
         }
       }
+    }
 
-      // Update employee avatar_url with canonical storage path
+    // Generate long-lived signed URL (1 year = 31,536,000s)
+    let signedUrl = variants.large.dataUrl;
+    try {
+      const signedRes = await supabaseStorageEngine.createSignedUrl(finalBucket, storagePath, 31536000);
+      signedUrl = signedRes.signedUrl;
+    } catch (_) {}
+
+    if (isSupabaseEnabled) {
+      // Update employee avatar_url with the signed URL for direct loading everywhere
       const { error: updateErr } = await supabase
         .from('employees')
         .update({
-          avatar_url: storagePath,
+          avatar_url: signedUrl,
           updated_at: new Date().toISOString(),
         })
         .eq('id', employeeId);
@@ -201,18 +211,47 @@ export class AvatarService {
       if (updateErr) {
         console.error('[AvatarService] Error updating employee avatar_url:', updateErr);
       }
+
+      // Also update user_profiles table if there is an auth session or profile
+      try {
+        const { data: authUser } = await supabase.auth.getUser();
+        if (authUser?.user?.id) {
+          await supabase
+            .from('user_profiles')
+            .update({
+              avatar_url: signedUrl,
+              updated_at: new Date().toISOString(),
+            })
+            .or(`auth_user_id.eq.${authUser.user.id},id.eq.${authUser.user.id},employee_id.eq.${employeeId}`);
+        }
+      } catch (_) {}
     }
 
-    // Generate short-lived signed URL for active display
-    let signedUrl = variants.large.dataUrl;
+    // Update current logged-in user in API if this is the active user
     try {
-      const signedRes = await supabaseStorageEngine.createSignedUrl(finalBucket, storagePath, 3600);
-      signedUrl = signedRes.signedUrl;
+      const currentUser = api.getCurrentUser();
+      if (currentUser && (currentUser.employee_id === employeeId || currentUser.id === employeeId)) {
+        api.setCurrentUser({
+          ...currentUser,
+          avatar_url: signedUrl,
+        });
+      }
+    } catch (_) {}
+
+    // Update workforce_employees local cache if present
+    try {
+      const raw = localStorage.getItem('workforce_employees');
+      if (raw) {
+        const list = JSON.parse(raw);
+        const updated = list.map((e: any) => e.id === employeeId ? { ...e, avatar_url: signedUrl } : e);
+        localStorage.setItem('workforce_employees', JSON.stringify(updated));
+      }
     } catch (_) {}
 
     hrEventBus.publish('employee.updated', {
       employeeId,
-      avatar_url: storagePath,
+      id: employeeId,
+      avatar_url: signedUrl,
     });
 
     return {
@@ -234,11 +273,11 @@ export class AvatarService {
 
     // It's a canonical storage path: resolve signed URL
     try {
-      const res = await supabaseStorageEngine.createSignedUrl(this.STORAGE_BUCKET, avatarPathOrUrl, 3600);
+      const res = await supabaseStorageEngine.createSignedUrl(this.STORAGE_BUCKET, avatarPathOrUrl, 31536000);
       return res.signedUrl;
     } catch (_) {
       try {
-        const res2 = await supabaseStorageEngine.createSignedUrl(this.FALLBACK_BUCKET, avatarPathOrUrl, 3600);
+        const res2 = await supabaseStorageEngine.createSignedUrl(this.FALLBACK_BUCKET, avatarPathOrUrl, 31536000);
         return res2.signedUrl;
       } catch (_) {
         return '';

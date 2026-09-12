@@ -29,10 +29,17 @@ export const DEFAULT_ATTENDANCE_POLICY: AttendancePolicy = {
   assigned_to: 'Global HQ',
 };
 
-// Converts "09:30", "15:12:41", "09:30 AM" to minutes from midnight
 export function timeStringToMinutes(timeStr?: string | null): number | null {
   if (!timeStr || timeStr === '—' || timeStr === '-' || timeStr === '--:--') return null;
   const clean = timeStr.trim();
+  if (clean.includes('T') || clean.endsWith('Z')) {
+    try {
+      const d = new Date(clean);
+      if (!isNaN(d.getTime())) {
+        return d.getHours() * 60 + d.getMinutes();
+      }
+    } catch (_) {}
+  }
   const match = clean.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?/i);
   if (!match) return null;
   let hours = parseInt(match[1], 10);

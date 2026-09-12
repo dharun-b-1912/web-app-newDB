@@ -41,11 +41,18 @@ export const LeaveCalendarView: React.FC = () => {
   const [searchEmployee, setSearchEmployee] = useState<string>('');
   const [viewMode, setViewMode] = useState<'Month' | 'Week' | 'Day'>('Month');
 
+  const getLocalDateString = (d: Date = new Date()): string => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   // Active Date Navigation State
   const now = new Date();
-  const [currentYear, setCurrentYear] = useState<number>(2026);
-  const [currentMonth, setCurrentMonth] = useState<number>(7); // 0-indexed (7 = August)
-  const [selectedDate, setSelectedDate] = useState<string>('2026-08-18');
+  const [currentYear, setCurrentYear] = useState<number>(() => now.getFullYear());
+  const [currentMonth, setCurrentMonth] = useState<number>(() => now.getMonth());
+  const [selectedDate, setSelectedDate] = useState<string>(() => getLocalDateString(now));
   const [isDayDetailModalOpen, setIsDayDetailModalOpen] = useState(false);
   const [selectedDayDetail, setSelectedDayDetail] = useState<{
     date: string;
@@ -115,14 +122,13 @@ export const LeaveCalendarView: React.FC = () => {
 
   const handleTodayJump = () => {
     const today = new Date();
-    // Use 2026 if context is 2026
-    setCurrentYear(2026);
-    setCurrentMonth(7); // August 2026 default demo context
-    setSelectedDate('2026-08-18');
+    setCurrentYear(today.getFullYear());
+    setCurrentMonth(today.getMonth());
+    setSelectedDate(getLocalDateString(today));
   };
 
   // Compute month days grid
-  const todayStr = '2026-08-26'; // Match global timeline context or today
+  const todayStr = getLocalDateString(now);
   const totalDaysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
   const firstDayOfMonthIndex = new Date(currentYear, currentMonth, 1).getDay(); // 0 = Sun
 

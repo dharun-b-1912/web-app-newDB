@@ -475,9 +475,9 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                       </td>
                       <td className="p-3 text-gray-600 font-mono whitespace-nowrap">{run.period_start} to {run.period_end}</td>
                       <td className="p-3 font-medium text-gray-700">{run.total_employees} Employees</td>
-                      <td className="p-3 font-mono font-bold text-gray-900">₹ {run.total_gross.toLocaleString('en-IN')}</td>
-                      <td className="p-3 font-mono text-rose-700">₹ {run.total_deductions.toLocaleString('en-IN')}</td>
-                      <td className="p-3 font-mono font-bold text-[#07563D]">₹ {run.total_net_payout.toLocaleString('en-IN')}</td>
+                      <td className="p-3 font-mono font-bold text-gray-900">₹ {(run.total_gross || 0).toLocaleString('en-IN')}</td>
+                      <td className="p-3 font-mono text-rose-700">₹ {(run.total_deductions || 0).toLocaleString('en-IN')}</td>
+                      <td className="p-3 font-mono font-bold text-[#07563D]">₹ {(run.total_net_payout || (run as any).total_net || 0).toLocaleString('en-IN')}</td>
                       <td className="p-3 whitespace-nowrap">
                         {run.is_locked ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-800 border border-gray-200">
@@ -581,7 +581,7 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                 </Badge>
               </div>
               <p className="text-xs text-gray-500 mt-0.5">
-                {selectedRun.total_employees} Employees • Total Gross: ₹{selectedRun.total_gross.toLocaleString('en-IN')} • Net Disbursement: ₹{selectedRun.total_net_payout.toLocaleString('en-IN')}
+                {selectedRun.total_employees} Employees • Total Gross: ₹{(selectedRun.total_gross || 0).toLocaleString('en-IN')} • Net Disbursement: ₹{(selectedRun.total_net_payout || (selectedRun as any).total_net || 0).toLocaleString('en-IN')}
               </p>
             </div>
 
@@ -597,7 +597,7 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                       : "text-gray-600 hover:text-gray-900"
                   )}
                 >
-                  All ({selectedRun.employee_records.length})
+                  All ({selectedRun.employee_records?.length || (selectedRun as any).items?.length || 0})
                 </button>
                 <button
                   onClick={() => setWorkforceFilter('DIRECT')}
@@ -609,7 +609,7 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                   )}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  Direct ({selectedRun.employee_records.filter(e => !checkIsVendor(e.employee_id, e.employee_code).isVendor).length})
+                  Direct ({(selectedRun.employee_records || (selectedRun as any).items || []).filter(e => !checkIsVendor(e.employee_id, e.employee_code).isVendor).length})
                 </button>
                 <button
                   onClick={() => setWorkforceFilter('VENDOR')}
@@ -621,7 +621,7 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                   )}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                  Vendor ({selectedRun.employee_records.filter(e => checkIsVendor(e.employee_id, e.employee_code).isVendor).length})
+                  Vendor ({(selectedRun.employee_records || (selectedRun as any).items || []).filter(e => checkIsVendor(e.employee_id, e.employee_code).isVendor).length})
                 </button>
               </div>
 
@@ -658,7 +658,7 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
               <div>
                 <span className="font-bold text-emerald-950 block">Payroll Control Totals & Balancing Check</span>
                 <span className="text-[11px] text-emerald-800">
-                  Gross Earnings (₹{selectedRun.total_gross.toLocaleString('en-IN')}) - Deductions (₹{selectedRun.total_deductions.toLocaleString('en-IN')}) = Net Payout (₹{selectedRun.total_net_payout.toLocaleString('en-IN')})
+                  Gross Earnings (₹{(selectedRun.total_gross || 0).toLocaleString('en-IN')}) - Deductions (₹{(selectedRun.total_deductions || 0).toLocaleString('en-IN')}) = Net Payout (₹{(selectedRun.total_net_payout || (selectedRun as any).total_net || 0).toLocaleString('en-IN')})
                 </span>
               </div>
             </div>
@@ -794,12 +794,12 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                         <span className="font-semibold text-gray-900">{emp.payable_days}d</span>
                         {emp.lop_days > 0 && <span className="text-[10px] text-rose-600 font-bold ml-1">({emp.lop_days}d LOP)</span>}
                       </td>
-                      <td className="p-2.5 font-mono text-gray-800">₹ {emp.basic.toLocaleString('en-IN')}</td>
-                      <td className="p-2.5 font-mono text-gray-800">₹ {(emp.hra + emp.special_allowance).toLocaleString('en-IN')}</td>
-                      <td className="p-2.5 font-mono font-bold text-gray-900">₹ {emp.total_earnings.toLocaleString('en-IN')}</td>
-                      <td className="p-2.5 font-mono text-gray-600">₹ {(emp.epf_employee + emp.esic_employee).toLocaleString('en-IN')}</td>
-                      <td className="p-2.5 font-mono text-gray-600">₹ {(emp.tds_tax + emp.professional_tax).toLocaleString('en-IN')}</td>
-                      <td className="p-2.5 font-mono font-black text-[#07563D]">₹ {emp.net_pay.toLocaleString('en-IN')}</td>
+                      <td className="p-2.5 font-mono text-gray-800">₹ {(emp.basic ?? (emp as any).basic_earned ?? 0).toLocaleString('en-IN')}</td>
+                      <td className="p-2.5 font-mono text-gray-800">₹ {((emp.hra ?? (emp as any).hra_earned ?? 0) + (emp.special_allowance ?? 0)).toLocaleString('en-IN')}</td>
+                      <td className="p-2.5 font-mono font-bold text-gray-900">₹ {(emp.total_earnings ?? (emp as any).gross_earnings ?? 0).toLocaleString('en-IN')}</td>
+                      <td className="p-2.5 font-mono text-gray-600">₹ {((emp.epf_employee ?? (emp as any).pf_employee_deduction ?? 0) + (emp.esic_employee ?? (emp as any).esi_employee_deduction ?? 0)).toLocaleString('en-IN')}</td>
+                      <td className="p-2.5 font-mono text-gray-600">₹ {((emp.tds_tax ?? (emp as any).tds_deduction ?? 0) + (emp.professional_tax ?? (emp as any).pt_deduction ?? 0)).toLocaleString('en-IN')}</td>
+                      <td className="p-2.5 font-mono font-black text-[#07563D]">₹ {(emp.net_pay ?? (emp as any).net_salary ?? (emp as any).net_payable ?? 0).toLocaleString('en-IN')}</td>
                       <td className="p-2.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <Button
@@ -892,10 +892,10 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                   </tr>
                 ) : (
                   filteredEmployees.map(emp => {
-                    const grossBase = emp.total_earnings + (emp.lop_deduction || 0);
+                    const grossBase = ((emp.total_earnings ?? (emp as any).gross_earnings ?? 0)) + (emp.lop_deduction || 0);
                     const dailyRate = Math.round((grossBase / 31) * 100) / 100;
-                    const lopDays = emp.lop_days || (31 - emp.payable_days);
-                    const lopDed = emp.lop_deduction || Math.round(lopDays * dailyRate);
+                    const lopDays = emp.lop_days ?? Math.max(0, 31 - (emp.payable_days ?? 31));
+                    const lopDed = emp.lop_deduction ?? Math.round(lopDays * dailyRate);
                     return (
                       <tr key={emp.employee_id} className="hover:bg-gray-50/70">
                         <td className="p-3">
@@ -909,10 +909,10 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                           {lopDays}d LOP
                         </td>
                         <td className="p-3 text-center font-mono font-black text-[#07563D] bg-emerald-50/50">
-                          {emp.payable_days}d Paid
+                          {emp.payable_days ?? 0}d Paid
                         </td>
                         <td className="p-3 text-right font-mono font-bold text-rose-700">
-                          -₹{lopDed.toLocaleString('en-IN')}
+                          -₹{(lopDed || 0).toLocaleString('en-IN')}
                         </td>
                         <td className="p-3 text-right font-mono text-teal-700">
                           +₹{(emp.overtime_pay || 0).toLocaleString('en-IN')}
@@ -1112,7 +1112,7 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                 <span>{finalizedBatchInfo.payPeriod} Payroll is Locked & Ready for Disbursement</span>
               </div>
               <p className="text-emerald-800 text-[11px] leading-relaxed">
-                The calculation snapshot for <strong>{finalizedBatchInfo.totalEmployees} employees</strong> (Total Net: <span className="font-mono font-bold">₹{finalizedBatchInfo.totalNet.toLocaleString('en-IN')}</span>) has been permanently sealed. A corresponding <strong>Bank Disbursement Batch</strong> has been created in <em>Pending Checker Approval</em> status.
+                The calculation snapshot for <strong>{finalizedBatchInfo.totalEmployees} employees</strong> (Total Net: <span className="font-mono font-bold">₹{(finalizedBatchInfo.totalNet || 0).toLocaleString('en-IN')}</span>) has been permanently sealed. A corresponding <strong>Bank Disbursement Batch</strong> has been created in <em>Pending Checker Approval</em> status.
               </p>
             </div>
 

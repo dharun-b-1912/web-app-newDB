@@ -1,0 +1,64 @@
+name: "JOY PeopleHR — Staging Release & Firebase Test Lab Matrix"
+
+on:
+  push:
+    branches: [ staging ]
+  workflow_dispatch:
+
+jobs:
+  test-lab-and-uat:
+    name: "Firebase Test Lab & UAT Distribution"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Quality Verification
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx vitest run src/services/__tests__/masterAttendanceEngine.test.ts
+
+      - name: Run Flutter Static Analysis & Tests
+        working-directory: ./flutter_app
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Build Instrumentation APK for Firebase Test Lab
+        working-directory: ./flutter_app
+        run: |
+          flutter build apk --release \
+            --dart-define=APP_ENV=staging \
+            --dart-define=APP_VERSION=1.0.3 \
+            --dart-define=APP_BUILD_CODE=${{ github.run_number }}
+
+      - name: Generate UAT Release Notes
+        run: node scripts/generate_release_notes.cjs STAGING
+
+      - name: Distribute to UAT & Pilot Tester Groups
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: ${{ secrets.FIREBASE_ANDROID_APP_ID }}
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+          groups: joy-hr-uat, joy-pilot, joy-product
+          file: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          releaseNotesFile: RELEASE_NOTES.txt

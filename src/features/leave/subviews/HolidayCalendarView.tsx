@@ -60,14 +60,14 @@ export const HolidayCalendarView: React.FC = () => {
   // Calendar Form State
   const [calCode, setCalCode] = useState('');
   const [calName, setCalName] = useState('');
-  const [calYear, setCalYear] = useState<number>(2026);
+  const [calYear, setCalYear] = useState<number>(() => new Date().getFullYear());
   const [calDesc, setCalDesc] = useState('');
   const [calLocations, setCalLocations] = useState<string[]>(['loc-cbe-01']);
   const [calWeeklyOffs, setCalWeeklyOffs] = useState<('Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday')[]>(['Saturday', 'Sunday']);
   const [calMaxRestricted, setCalMaxRestricted] = useState<number>(2);
 
   // Duplicate Form State
-  const [dupYear, setDupYear] = useState<number>(2027);
+  const [dupYear, setDupYear] = useState<number>(() => new Date().getFullYear() + 1);
   const [dupName, setDupName] = useState('');
 
   const loadData = () => {
@@ -262,7 +262,7 @@ export const HolidayCalendarView: React.FC = () => {
     setEditingCal(null);
     setCalCode(`LOC-${new Date().getFullYear()}`);
     setCalName('');
-    setCalYear(2026);
+    setCalYear(new Date().getFullYear());
     setCalDesc('');
     setCalLocations(['loc-cbe-01']);
     setCalWeeklyOffs(['Saturday', 'Sunday']);

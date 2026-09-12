@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   Building2,
   CreditCard,
-  UserCheck,
   FileSignature,
   Upload,
   ArrowRight,
@@ -13,15 +12,34 @@ import {
   ShieldCheck,
   FileText,
   AlertCircle,
+  HelpCircle,
+  Check,
+  AlertTriangle,
 } from 'lucide-react';
 import { vendorPortalService } from '../../../services/vendorPortalService';
-import { VendorCompanyType, VendorOrgType } from '../../../types/vendorPortal';
+import {
+  VendorConstitutionType,
+  MSMEStatus,
+  VendorServiceCategory,
+  VendorOnboardingSubmission,
+} from '../../../types/vendorEcosystem';
+import { VendorComplianceApplicabilityEngine } from '../../../services/vendor/vendorComplianceApplicabilityEngine';
 
 interface VendorOnboardingWizardModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
 }
+
+const STEPS = [
+  { num: 1, label: 'Business Profile' },
+  { num: 2, label: 'Tax & Identity' },
+  { num: 3, label: 'MSME' },
+  { num: 4, label: 'Agreement' },
+  { num: 5, label: 'Compliance' },
+  { num: 6, label: 'Bank & Payout' },
+  { num: 7, label: 'Review & Submit' },
+];
 
 export const VendorOnboardingWizardModal: React.FC<VendorOnboardingWizardModalProps> = ({
   isOpen,
@@ -30,657 +48,1020 @@ export const VendorOnboardingWizardModal: React.FC<VendorOnboardingWizardModalPr
 }) => {
   const [step, setStep] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Form State
-  // Step 1: Basic Info
-  const [name, setName] = useState('');
+  // Step 1: Business Profile
+  const [legalName, setLegalName] = useState('');
   const [tradeName, setTradeName] = useState('');
-  const [vendorType, setVendorType] = useState<VendorOrgType>('MANPOWER_STAFFING');
-  const [companyType, setCompanyType] = useState<VendorCompanyType>('Pvt Ltd');
-  const [registrationNumber, setRegistrationNumber] = useState('');
-  const [gstin, setGstin] = useState('');
-  const [pan, setPan] = useState('');
+  const [vendorType, setVendorType] = useState('Contract Labour');
+  const [constitutionType, setConstitutionType] = useState<VendorConstitutionType>('PRIVATE_LIMITED');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('Coimbatore');
   const [state, setState] = useState('Tamil Nadu');
   const [postalCode, setPostalCode] = useState('641001');
   const [contactPerson, setContactPerson] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  const [mobile, setMobile] = useState('');
 
-  // Step 2: Banking & Financials
+  // Step 2: Tax & Identity
+  const [pan, setPan] = useState('');
+  const [isGstApplicable, setIsGstApplicable] = useState(true);
+  const [gstin, setGstin] = useState('');
+  const [gstExemptionReason, setGstExemptionReason] = useState('');
+  const [panDocName, setPanDocName] = useState('');
+
+  // Step 3: MSME
+  const [msmeRegistered, setMsmeRegistered] = useState<MSMEStatus>('NOT_APPLICABLE');
+  const [udyamNumber, setUdyamNumber] = useState('');
+  const [msmeDocName, setMsmeDocName] = useState('');
+  const [msmeExemptionReason, setMsmeExemptionReason] = useState('');
+
+  // Step 4: Commercial Agreement
+  const [agreementNumber, setAgreementNumber] = useState(`AGR-${Date.now().toString().slice(-4)}`);
+  const [serviceCategory, setServiceCategory] = useState<VendorServiceCategory>('Contract Labour');
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0]);
+  const [scopeOfWork, setScopeOfWork] = useState('Provision of Skilled Technical & Facility Staffing');
+  const [paymentTerms, setPaymentTerms] = useState('Net 30');
+  const [serviceChargePercentage, setServiceChargePercentage] = useState<number>(8.5);
+  const [maxCapacity, setMaxCapacity] = useState<number>(100);
+  const [agreementDocName, setAgreementDocName] = useState('');
+
+  // Step 5: Licences & Statutory Documents
+  const [labourLicenceApplicable, setLabourLicenceApplicable] = useState(true);
+  const [labourLicenceNumber, setLabourLicenceNumber] = useState('');
+  const [licenceDocName, setLicenceDocName] = useState('');
+  const [formVApplicable, setFormVApplicable] = useState(false);
+  const [rcApplicable, setRcApplicable] = useState(false);
+  const [rcDocName, setRcDocName] = useState('');
+  const [epfApplicable, setEpfApplicable] = useState(true);
+  const [epfNumber, setEpfNumber] = useState('');
+  const [epfDocName, setEpfDocName] = useState('');
+  const [esiApplicable, setEsiApplicable] = useState(true);
+  const [esiNumber, setEsiNumber] = useState('');
+  const [esiDocName, setEsiDocName] = useState('');
+
+  // Step 6: Bank & Payment
   const [bankName, setBankName] = useState('HDFC Bank');
   const [accountHolderName, setAccountHolderName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [ifsc, setIfsc] = useState('');
-  const [cancelledChequeName, setCancelledChequeName] = useState<string>('');
-
-  // Step 3: Authorized Person KYC
-  const [authName, setAuthName] = useState('');
-  const [authDesignation, setAuthDesignation] = useState('Managing Director');
-  const [authPan, setAuthPan] = useState('');
-  const [authAadhaar, setAuthAadhaar] = useState('');
-  const [authMobile, setAuthMobile] = useState('');
-  const [authEmail, setAuthEmail] = useState('');
-  const [authLetterName, setAuthLetterName] = useState('');
-
-  // Step 4: Agreement & Scope
-  const [agreementNumber, setAgreementNumber] = useState(`AGR-${Date.now().toString().slice(-4)}`);
-  const [clientCompany, setClientCompany] = useState('Joy Corporate Solutions Pvt Ltd');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0]);
-  const [contractValue, setContractValue] = useState<number>(2500000);
-  const [scopeOfWork, setScopeOfWork] = useState('Provision of Skilled Technical & Facility Staffing');
-  const [workLocation, setWorkLocation] = useState('Coimbatore Plant & Client Sites');
-  const [signedAgreementDoc, setSignedAgreementDoc] = useState('');
+  const [bankBranch, setBankBranch] = useState('Main Branch');
+  const [cancelledChequeName, setCancelledChequeName] = useState('');
 
   if (!isOpen) return null;
 
+  // Build current submission payload for live compliance calculation
+  const currentSubmission: VendorOnboardingSubmission = {
+    vendor_id: `vnd_${(legalName || 'vendor').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10)}_${Date.now().toString(36)}`,
+    business_profile: {
+      legal_name: legalName,
+      trade_name: tradeName || legalName,
+      vendor_type: vendorType,
+      constitution_type: constitutionType,
+      registered_address: address,
+      city,
+      state,
+      postal_code: postalCode,
+      contact_person: contactPerson,
+      email,
+      mobile,
+    },
+    tax_details: {
+      pan,
+      gstin: isGstApplicable ? gstin : undefined,
+      is_gst_applicable: isGstApplicable,
+      gst_exemption_reason: !isGstApplicable ? gstExemptionReason : undefined,
+      state,
+      postal_code: postalCode,
+    },
+    msme_details: {
+      msme_registered: msmeRegistered,
+      udyam_registration_number: msmeRegistered === 'YES' ? udyamNumber : undefined,
+      msme_certificate_url: msmeDocName ? `/docs/${msmeDocName}` : undefined,
+      exemption_reason: msmeRegistered !== 'YES' ? msmeExemptionReason : undefined,
+    },
+    commercial_agreement: {
+      agreement_number: agreementNumber,
+      contract_start_date: startDate,
+      contract_end_date: endDate,
+      service_category: serviceCategory,
+      contract_scope: scopeOfWork,
+      rate_card_type: 'Per Head Per Month',
+      billing_frequency: 'Monthly',
+      payment_terms: paymentTerms,
+      service_charge_percentage: serviceChargePercentage,
+      max_workforce_capacity: maxCapacity,
+      agreement_document_url: agreementDocName ? `/docs/${agreementDocName}` : undefined,
+    },
+    bank_details: {
+      account_holder_name: accountHolderName || legalName,
+      bank_name: bankName,
+      account_number: accountNumber,
+      ifsc_code: ifsc,
+      bank_branch: bankBranch,
+      cancelled_cheque_document_url: cancelledChequeName ? `/docs/${cancelledChequeName}` : undefined,
+    },
+    statutory_details: {
+      epf_applicable: epfApplicable,
+      epf_registration_number: epfNumber,
+      epf_certificate_url: epfDocName ? `/docs/${epfDocName}` : undefined,
+      esi_applicable: esiApplicable,
+      esi_registration_number: esiNumber,
+      esi_certificate_url: esiDocName ? `/docs/${esiDocName}` : undefined,
+      labour_licence_applicable: labourLicenceApplicable,
+      labour_licence_number: labourLicenceNumber,
+      labour_licence_document_url: licenceDocName ? `/docs/${licenceDocName}` : undefined,
+      form_v_applicable: formVApplicable,
+      rc_applicable: rcApplicable,
+      rc_document_url: rcDocName ? `/docs/${rcDocName}` : undefined,
+    },
+    uploaded_documents: [
+      ...(panDocName ? [{ document_type: 'PAN_CARD', document_name: 'PAN Card', file_name: panDocName, file_url: `/docs/${panDocName}` }] : []),
+      ...(gstin ? [{ document_type: 'GST_CERTIFICATE', document_name: 'GST Certificate', file_name: 'GST_Cert.pdf', file_url: '/docs/gst.pdf' }] : []),
+      ...(msmeDocName ? [{ document_type: 'MSME_CERTIFICATE', document_name: 'MSME Udyam Certificate', file_name: msmeDocName, file_url: `/docs/${msmeDocName}` }] : []),
+      ...(agreementDocName ? [{ document_type: 'COMMERCIAL_AGREEMENT', document_name: 'Service Agreement', file_name: agreementDocName, file_url: `/docs/${agreementDocName}` }] : []),
+      ...(cancelledChequeName ? [{ document_type: 'BANK_CANCELLED_CHEQUE', document_name: 'Cancelled Cheque', file_name: cancelledChequeName, file_url: `/docs/${cancelledChequeName}` }] : []),
+      ...(licenceDocName ? [{ document_type: 'LABOUR_LICENCE', document_name: 'Labour Licence', file_name: licenceDocName, file_url: `/docs/${licenceDocName}` }] : []),
+      ...(epfDocName ? [{ document_type: 'EPF_REGISTRATION', document_name: 'EPF Registration', file_name: epfDocName, file_url: `/docs/${epfDocName}` }] : []),
+      ...(esiDocName ? [{ document_type: 'ESI_REGISTRATION', document_name: 'ESI Registration', file_name: esiDocName, file_url: `/docs/${esiDocName}` }] : []),
+      ...(rcDocName ? [{ document_type: 'VEHICLE_RC', document_name: 'Vehicle RC', file_name: rcDocName, file_url: `/docs/${rcDocName}` }] : []),
+    ],
+  };
+
+  const complianceEval = VendorComplianceApplicabilityEngine.evaluateSubmission(currentSubmission);
+
   const handleNext = () => {
-    if (step < 4) setStep(step + 1);
+    setErrorMessage(null);
+    if (step === 1) {
+      if (!legalName.trim() || !contactPerson.trim() || !email.trim()) {
+        setErrorMessage('Please fill in mandatory fields: Legal Name, Contact Person, and Email.');
+        return;
+      }
+    } else if (step === 2) {
+      if (!pan.trim()) {
+        setErrorMessage('PAN is mandatory.');
+        return;
+      }
+      if (isGstApplicable && !gstin.trim()) {
+        setErrorMessage('GSTIN is required unless GST is marked not applicable with a reason.');
+        return;
+      }
+    }
+    if (step < 7) setStep(step + 1);
   };
 
   const handleBack = () => {
+    setErrorMessage(null);
     if (step > 1) setStep(step - 1);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setErrorMessage(null);
 
     try {
-      vendorPortalService.createVendorOnboarding({
-        name: name || 'Apex Staffing Solutions Pvt Ltd',
-        trade_name: tradeName || name || 'Apex Staffing',
-        vendor_type: vendorType,
-        company_type: companyType,
-        registration_number: registrationNumber || 'U74999TZ2026PTC018274',
-        contact_person: contactPerson || 'Rajesh Kumar',
-        email: email || 'contact@apexstaffing.in',
-        phone: phone || '+91 98765 43210',
-        gstin: gstin || '33AAACA1234F1Z8',
-        pan: pan || 'AAACA1234F',
-        address: address || 'Industrial Estate, Phase 2, Coimbatore',
-        city,
-        state,
-        postal_code: postalCode,
-        bank_details: {
-          bank_name: bankName,
-          account_holder_name: accountHolderName || name || 'Apex Staffing Solutions Pvt Ltd',
-          account_number: accountNumber || '50200088192841',
-          ifsc: ifsc || 'HDFC0001234',
-          cancelled_cheque_name: cancelledChequeName || 'Cancelled_Cheque.pdf',
-          is_verified: true,
-        },
-        authorized_person: {
-          name: authName || contactPerson || 'Rajesh Kumar',
-          designation: authDesignation || 'Director',
-          pan: authPan || pan || 'AAACA1234F',
-          aadhaar_masked: authAadhaar || 'XXXX-XXXX-9912',
-          mobile: authMobile || phone || '+91 98765 43210',
-          email: authEmail || email || 'contact@apexstaffing.in',
-          authorization_letter_name: authLetterName || 'Board_Resolution_Auth.pdf',
-          is_verified: true,
-        },
-        agreement_details: {
-          agreement_number: agreementNumber,
-          client_company_name: clientCompany,
-          start_date: startDate,
-          end_date: endDate,
-          contract_value: contractValue,
-          scope_of_work: scopeOfWork,
-          work_location: workLocation,
-          status: 'ACTIVE',
-          signed_agreement_name: signedAgreementDoc || 'Master_Service_Agreement.pdf',
-        },
-      });
-
-      setTimeout(() => {
+      const result = vendorPortalService.submitVendorOnboarding(currentSubmission);
+      if (!result.success) {
+        setErrorMessage(result.error || 'Submission failed compliance validation.');
         setIsSubmitting(false);
-        onSuccess();
-        onClose();
-      }, 500);
-    } catch (err) {
-      console.error(err);
+        return;
+      }
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to submit onboarding.');
+    } finally {
       setIsSubmitting(false);
     }
   };
 
-  const steps = [
-    { num: 1, label: 'Basic Information', icon: Building2 },
-    { num: 2, label: 'Banking & Financials', icon: CreditCard },
-    { num: 3, label: 'Authorized Person KYC', icon: UserCheck },
-    { num: 4, label: 'Agreement & Contracts', icon: FileSignature },
-  ];
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col my-8 animate-in fade-in zoom-in-95 duration-200">
-        {/* Modal Header */}
-        <div className="px-6 py-5 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950/40 border-b border-slate-700/80 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-              <Sparkles className="w-5 h-5" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-gray-100 overflow-hidden my-auto">
+        {/* Header */}
+        <div className="p-6 bg-gradient-to-r from-[#064E3B] via-[#07563D] to-[#043629] text-white flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-emerald-200 text-xs font-bold uppercase tracking-wider">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
+              <span>Vendor Lifecycle</span>
+              <span>•</span>
+              <span>Self-Service Onboarding</span>
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-white tracking-wide flex items-center gap-2">
-                Vendor Compliance Onboarding Wizard
-                <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-medium border border-indigo-500/30">
-                  Step {step} of 4
-                </span>
-              </h2>
-              <p className="text-xs text-slate-400">
-                Register new contractor/vendor with complete statutory compliance, KYC verification, and contractual binding
-              </p>
-            </div>
+            <h2 className="text-xl sm:text-2xl font-black mt-1">Vendor Onboarding & KYC Registration</h2>
+            <p className="text-xs text-emerald-100/80 mt-0.5">
+              Enter organizational, tax, MSME, commercial agreement, and conditional statutory compliance details.
+            </p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            className="p-2 rounded-xl text-emerald-200 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Wizard Stepper Progress Bar */}
-        <div className="px-6 py-4 bg-slate-950/60 border-b border-slate-800">
-          <div className="grid grid-cols-4 gap-2">
-            {steps.map((s) => {
-              const Icon = s.icon;
-              const isCurrent = step === s.num;
-              const isCompleted = step > s.num;
-              return (
-                <div
-                  key={s.num}
-                  className={`flex items-center gap-2.5 p-2 rounded-xl border text-xs font-medium transition-all ${
-                    isCurrent
-                      ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-300 shadow-sm shadow-indigo-500/10'
-                      : isCompleted
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                      : 'bg-slate-800/40 border-slate-800 text-slate-500'
-                  }`}
-                >
-                  <div
-                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                      isCurrent
-                        ? 'bg-indigo-600 text-white'
-                        : isCompleted
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-800 text-slate-400'
-                    }`}
-                  >
-                    {isCompleted ? <CheckCircle2 className="w-3.5 h-3.5" /> : s.num}
-                  </div>
-                  <span className="truncate">{s.label}</span>
-                </div>
-              );
-            })}
-          </div>
+        {/* Stepper Progress */}
+        <div className="px-6 py-3 bg-gray-50 border-b border-gray-200/70 flex items-center justify-between overflow-x-auto scrollbar-none gap-2">
+          {STEPS.map((s) => (
+            <div
+              key={s.num}
+              className={`flex items-center gap-2 shrink-0 text-xs font-bold ${
+                step === s.num
+                  ? 'text-emerald-800'
+                  : step > s.num
+                  ? 'text-gray-700'
+                  : 'text-gray-400'
+              }`}
+            >
+              <div
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black ${
+                  step === s.num
+                    ? 'bg-emerald-800 text-white'
+                    : step > s.num
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-gray-200 text-gray-500'
+                }`}
+              >
+                {step > s.num ? <Check className="w-3.5 h-3.5" /> : s.num}
+              </div>
+              <span className="hidden sm:inline whitespace-nowrap">{s.label}</span>
+            </div>
+          ))}
         </div>
 
-        {/* Step Content */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6 flex-1 max-h-[60vh] overflow-y-auto">
-          {/* STEP 1: Basic Information */}
+        {/* Error Notification */}
+        {errorMessage && (
+          <div className="mx-6 mt-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 flex items-center gap-3 text-xs text-rose-800 font-medium">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
+        {/* Wizard Form Content */}
+        <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
+          {/* STEP 1: BUSINESS PROFILE */}
           {step === 1 && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-4">
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-emerald-800" />
+                Step 1: Business Profile & Constitution
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Vendor Legal Name <span className="text-rose-400">*</span>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    Vendor Legal Name <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
-                    required
-                    placeholder="e.g. Apex Staffing Solutions Pvt Ltd"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    value={legalName}
+                    onChange={(e) => setLegalName(e.target.value)}
+                    placeholder="e.g. Apex Industrial Solutions Pvt Ltd"
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Trade / Brand Name</label>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Trade / Brand Name</label>
                   <input
                     type="text"
-                    placeholder="e.g. Apex Workforce Partner"
                     value={tradeName}
                     onChange={(e) => setTradeName(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    placeholder="e.g. Apex Workforce"
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
                   />
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Vendor Category</label>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    Entity Constitution / Type <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={constitutionType}
+                    onChange={(e) => setConstitutionType(e.target.value as VendorConstitutionType)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden bg-white"
+                  >
+                    <option value="PRIVATE_LIMITED">Private Limited (Pvt Ltd)</option>
+                    <option value="PUBLIC_LIMITED">Public Limited</option>
+                    <option value="LLP">Limited Liability Partnership (LLP)</option>
+                    <option value="PARTNERSHIP">Partnership Firm</option>
+                    <option value="PROPRIETORSHIP">Proprietorship (Single Owner)</option>
+                    <option value="OTHER">Other Enterprise</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Service Category</label>
                   <select
                     value={vendorType}
-                    onChange={(e) => setVendorType(e.target.value as VendorOrgType)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    onChange={(e) => setVendorType(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden bg-white"
                   >
-                    <option value="MANPOWER_STAFFING">Manpower & Staffing</option>
-                    <option value="SECURITY">Security Services</option>
-                    <option value="FACILITY">Facility Management</option>
-                    <option value="IT_CONTRACTING">IT / Technical Contracting</option>
-                    <option value="LOGISTICS">Logistics & Supply Chain</option>
-                    <option value="OTHER">Other Contractor</option>
+                    <option value="Contract Labour">Contract Labour (CLRA)</option>
+                    <option value="Security">Security & Guarding</option>
+                    <option value="Housekeeping">Housekeeping & Facility</option>
+                    <option value="Transport">Transport & Logistics</option>
+                    <option value="Canteen">Canteen & Catering</option>
+                    <option value="Technical & Engineering">Technical & Engineering Staff</option>
+                    <option value="Other">Other Services</option>
                   </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Company Constitution</label>
-                  <select
-                    value={companyType}
-                    onChange={(e) => setCompanyType(e.target.value as VendorCompanyType)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-                  >
-                    <option value="Pvt Ltd">Private Limited (Pvt Ltd)</option>
-                    <option value="LLP">Limited Liability Partnership (LLP)</option>
-                    <option value="Partnership">Partnership Firm</option>
-                    <option value="Proprietorship">Sole Proprietorship</option>
-                    <option value="Public Ltd">Public Limited</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Registration / CIN No.</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. U74999TZ2026PTC018274"
-                    value={registrationNumber}
-                    onChange={(e) => setRegistrationNumber(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                  />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    GSTIN Number <span className="text-rose-400">*</span>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    Contact Person <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
-                    required
-                    placeholder="33AAAAA0000A1Z5"
-                    value={gstin}
-                    onChange={(e) => setGstin(e.target.value.toUpperCase())}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Company PAN Number <span className="text-rose-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="AAAAA0000A"
-                    value={pan}
-                    onChange={(e) => setPan(e.target.value.toUpperCase())}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Contact Person</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Rajesh Kumar"
                     value={contactPerson}
                     onChange={(e) => setContactPerson(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    placeholder="e.g. S. Ramesh"
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Official Email</label>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    Official Email <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="email"
-                    placeholder="compliance@vendor.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    placeholder="e.g. contact@vendor.com"
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Official Phone</label>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Mobile Number</label>
                   <input
-                    type="text"
+                    type="tel"
+                    value={mobile}
+                    onChange={(e) => setMobile(e.target.value)}
                     placeholder="+91 98765 43210"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Registered Office Address</label>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Registered Office Address</label>
                 <input
                   type="text"
-                  placeholder="Plot 42, SIDCO Industrial Estate, Phase 2, Coimbatore"
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  placeholder="Street address, Industrial Estate"
+                  className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
                 />
               </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">City</label>
+                  <input
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">State</label>
+                  <input
+                    type="text"
+                    value={state}
+                    onChange={(e) => setState(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">PIN Code</label>
+                  <input
+                    type="text"
+                    value={postalCode}
+                    onChange={(e) => setPostalCode(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
+                  />
+                </div>
+              </div>
             </div>
           )}
 
-          {/* STEP 2: Banking & Financial Details */}
+          {/* STEP 2: TAX & IDENTITY */}
           {step === 2 && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-200 flex items-start gap-2.5">
-                <ShieldCheck className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
-                <span>
-                  Bank accounts are validated against RTGS/NEFT settlement rails. Uploading a cancelled cheque is mandatory for automated vendor invoice disbursements.
-                </span>
-              </div>
+            <div className="space-y-4">
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                <FileText className="w-4 h-4 text-emerald-800" />
+                Step 2: Tax & Statutory Identity (PAN / GST)
+              </h3>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Bank Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. HDFC Bank / State Bank of India"
-                    value={bankName}
-                    onChange={(e) => setBankName(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Beneficiary Account Name</label>
-                  <input
-                    type="text"
-                    placeholder="Exact name as in bank records"
-                    value={accountHolderName}
-                    onChange={(e) => setAccountHolderName(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Current Account Number</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 50200088192841"
-                    value={accountNumber}
-                    onChange={(e) => setAccountNumber(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">IFSC Code</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. HDFC0001234"
-                    value={ifsc}
-                    onChange={(e) => setIfsc(e.target.value.toUpperCase())}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-                  />
-                </div>
-              </div>
-
-              {/* File Upload Box */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Cancelled Cheque / Bank Letter</label>
-                <div className="border-2 border-dashed border-slate-700 hover:border-indigo-500/60 rounded-xl p-5 text-center bg-slate-800/30 transition cursor-pointer">
-                  <Upload className="w-6 h-6 mx-auto text-slate-400 mb-2" />
-                  <p className="text-xs text-slate-300 font-medium">Click to upload Cancelled Cheque (PDF, PNG, JPG)</p>
-                  <p className="text-[11px] text-slate-500 mt-1">Ensure Account Number and IFSC are clearly visible</p>
-                  {cancelledChequeName && (
-                    <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-xs">
-                      <FileText className="w-3.5 h-3.5" />
-                      {cancelledChequeName}
-                    </div>
-                  )}
-                  <input
-                    type="file"
-                    className="hidden"
-                    id="chequeUpload"
-                    onChange={(e) => {
-                      if (e.target.files?.[0]) setCancelledChequeName(e.target.files[0].name);
-                    }}
-                  />
-                  <label
-                    htmlFor="chequeUpload"
-                    className="mt-3 inline-block cursor-pointer px-3 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-xs text-white"
-                  >
-                    Select File
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    Permanent Account Number (PAN) <span className="text-rose-500">*</span>
                   </label>
+                  <input
+                    type="text"
+                    value={pan}
+                    onChange={(e) => setPan(e.target.value.toUpperCase())}
+                    maxLength={10}
+                    placeholder="e.g. AABCS1234K"
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-mono font-bold focus:ring-2 focus:ring-emerald-700 focus:outline-hidden uppercase"
+                  />
                 </div>
-              </div>
-            </div>
-          )}
 
-          {/* STEP 3: Authorized Person KYC */}
-          {step === 3 && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Authorized Signatory Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Rajesh Kumar"
-                    value={authName}
-                    onChange={(e) => setAuthName(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Designation in Entity</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Managing Director / Partner"
-                    value={authDesignation}
-                    onChange={(e) => setAuthDesignation(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Signatory Individual PAN</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. ABCPK1234M"
-                    value={authPan}
-                    onChange={(e) => setAuthPan(e.target.value.toUpperCase())}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Masked Aadhaar Number</label>
-                  <input
-                    type="text"
-                    placeholder="XXXX-XXXX-9912"
-                    value={authAadhaar}
-                    onChange={(e) => setAuthAadhaar(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Signatory Mobile</label>
-                  <input
-                    type="text"
-                    placeholder="+91 98765 43210"
-                    value={authMobile}
-                    onChange={(e) => setAuthMobile(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Signatory Email</label>
-                  <input
-                    type="email"
-                    placeholder="rajesh.kumar@apexstaffing.in"
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Board Resolution / Power of Attorney Letter</label>
-                <div className="flex items-center gap-3 p-3 bg-slate-800/50 border border-slate-700 rounded-xl">
-                  <FileText className="w-5 h-5 text-indigo-400 shrink-0" />
-                  <div className="flex-1 text-xs text-slate-400">
-                    {authLetterName || 'Attach Authorization Letter from Board of Directors'}
+                  <label className="text-xs font-bold text-gray-700 block mb-1">PAN Card Document</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={panDocName}
+                      onChange={(e) => setPanDocName(e.target.value)}
+                      placeholder="PAN_Card_Signed.pdf"
+                      className="flex-1 px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:outline-hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPanDocName('PAN_Card_Signed.pdf')}
+                      className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-bold cursor-pointer flex items-center gap-1"
+                    >
+                      <Upload className="w-3.5 h-3.5" /> Attach
+                    </button>
                   </div>
-                  <input
-                    type="file"
-                    className="hidden"
-                    id="authLetter"
-                    onChange={(e) => {
-                      if (e.target.files?.[0]) setAuthLetterName(e.target.files[0].name);
-                    }}
-                  />
-                  <label
-                    htmlFor="authLetter"
-                    className="cursor-pointer px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs text-white"
-                  >
-                    Browse
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-900">Goods & Services Tax (GSTIN) Applicability</span>
+                  <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!isGstApplicable}
+                      onChange={(e) => setIsGstApplicable(!e.target.checked)}
+                      className="rounded border-gray-300 text-emerald-800 focus:ring-emerald-700"
+                    />
+                    <span>GST Not Applicable</span>
                   </label>
                 </div>
+
+                {isGstApplicable ? (
+                  <div>
+                    <label className="text-xs font-bold text-gray-700 block mb-1">
+                      GSTIN Registration Number <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={gstin}
+                      onChange={(e) => setGstin(e.target.value.toUpperCase())}
+                      maxLength={15}
+                      placeholder="e.g. 33AABCS1234K1Z5"
+                      className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-mono font-bold focus:ring-2 focus:ring-emerald-700 focus:outline-hidden uppercase"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-xs font-bold text-gray-700 block mb-1">
+                      Reason for GST Exemption / Non-Applicability <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={gstExemptionReason}
+                      onChange={(e) => setGstExemptionReason(e.target.value)}
+                      placeholder="e.g. Annual aggregate turnover below threshold (₹20 Lakhs) / Composition scheme"
+                      className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* STEP 4: Agreement & Contracts */}
-          {step === 4 && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* STEP 3: MSME */}
+          {step === 3 && (
+            <div className="space-y-4">
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-800" />
+                Step 3: MSME / Udyam Registration Status
+              </h3>
+
+              <p className="text-xs text-gray-500">
+                MSME registration is conditional. Vendors without MSME registration may proceed by marking Not Applicable.
+              </p>
+
+              <div className="grid grid-cols-3 gap-3">
+                {(['YES', 'NO', 'NOT_APPLICABLE'] as MSMEStatus[]).map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setMsmeRegistered(status)}
+                    className={`p-4 rounded-2xl border text-center font-bold text-xs transition-all cursor-pointer ${
+                      msmeRegistered === status
+                        ? 'border-emerald-700 bg-emerald-50 text-emerald-900 shadow-sm'
+                        : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                    }`}
+                  >
+                    {status === 'YES' ? 'MSME Registered (Yes)' : status === 'NO' ? 'Not Registered (No)' : 'Not Applicable'}
+                  </button>
+                ))}
+              </div>
+
+              {msmeRegistered === 'YES' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                  <div>
+                    <label className="text-xs font-bold text-gray-700 block mb-1">
+                      Udyam Registration Number <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={udyamNumber}
+                      onChange={(e) => setUdyamNumber(e.target.value)}
+                      placeholder="e.g. UDYAM-TN-03-0012345"
+                      className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-mono font-bold focus:ring-2 focus:ring-emerald-700 focus:outline-hidden uppercase"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-gray-700 block mb-1">MSME Certificate PDF</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={msmeDocName}
+                        onChange={(e) => setMsmeDocName(e.target.value)}
+                        placeholder="Udyam_Certificate.pdf"
+                        className="flex-1 px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:outline-hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setMsmeDocName('Udyam_Certificate.pdf')}
+                        className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-bold cursor-pointer flex items-center gap-1"
+                      >
+                        <Upload className="w-3.5 h-3.5" /> Attach
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {msmeRegistered !== 'YES' && (
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Master Agreement Number</label>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Optional Reason / Notes</label>
+                  <input
+                    type="text"
+                    value={msmeExemptionReason}
+                    onChange={(e) => setMsmeExemptionReason(e.target.value)}
+                    placeholder="e.g. Not applicable / Exempted entity"
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* STEP 4: COMMERCIAL AGREEMENT */}
+          {step === 4 && (
+            <div className="space-y-4">
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                <FileSignature className="w-4 h-4 text-emerald-800" />
+                Step 4: Commercial Agreement & Service Level Agreement
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    Agreement Number <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="text"
                     value={agreementNumber}
                     onChange={(e) => setAgreementNumber(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono"
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-mono font-bold focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Principal Employer Entity</label>
-                  <input
-                    type="text"
-                    value={clientCompany}
-                    onChange={(e) => setClientCompany(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Agreement Start Date</label>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Start Date</label>
                   <input
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Agreement Expiry Date</label>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">End Date</label>
                   <input
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Contract Value (₹)</label>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Service Charge Margin (%)</label>
                   <input
                     type="number"
-                    value={contractValue}
-                    onChange={(e) => setContractValue(Number(e.target.value))}
-                    className="w-full bg-slate-800/70 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    step="0.1"
+                    value={serviceChargePercentage}
+                    onChange={(e) => setServiceChargePercentage(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
                   />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Max Capacity (Heads)</label>
+                  <input
+                    type="number"
+                    value={maxCapacity}
+                    onChange={(e) => setMaxCapacity(parseInt(e.target.value, 10) || 0)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Payment Terms</label>
+                  <select
+                    value={paymentTerms}
+                    onChange={(e) => setPaymentTerms(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden bg-white"
+                  >
+                    <option value="Net 15">Net 15 Days</option>
+                    <option value="Net 30">Net 30 Days</option>
+                    <option value="Net 45">Net 45 Days</option>
+                    <option value="Net 60">Net 60 Days</option>
+                  </select>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Scope of Contractual Work</label>
-                <textarea
-                  rows={2}
-                  value={scopeOfWork}
-                  onChange={(e) => setScopeOfWork(e.target.value)}
-                  className="w-full bg-slate-800/70 border border-slate-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Signed Service Agreement / Work Order Copy</label>
-                <div className="flex items-center gap-3 p-3 bg-slate-800/50 border border-slate-700 rounded-xl">
-                  <FileSignature className="w-5 h-5 text-indigo-400 shrink-0" />
-                  <div className="flex-1 text-xs text-slate-400">
-                    {signedAgreementDoc || 'Attach Signed Bilateral Master Service Agreement (PDF)'}
-                  </div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Agreement PDF Document</label>
+                <div className="flex items-center gap-2">
                   <input
-                    type="file"
-                    className="hidden"
-                    id="signedAggr"
-                    onChange={(e) => {
-                      if (e.target.files?.[0]) setSignedAgreementDoc(e.target.files[0].name);
-                    }}
+                    type="text"
+                    value={agreementDocName}
+                    onChange={(e) => setAgreementDocName(e.target.value)}
+                    placeholder="Executed_Agreement_Signed.pdf"
+                    className="flex-1 px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:outline-hidden"
                   />
-                  <label
-                    htmlFor="signedAggr"
-                    className="cursor-pointer px-3 py-1 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs text-white font-medium"
+                  <button
+                    type="button"
+                    onClick={() => setAgreementDocName('Executed_Agreement_Signed.pdf')}
+                    className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-bold cursor-pointer flex items-center gap-1"
                   >
-                    Select PDF
-                  </label>
+                    <Upload className="w-3.5 h-3.5" /> Attach
+                  </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Footer Actions */}
-          <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
-            {step > 1 ? (
-              <button
-                type="button"
-                onClick={handleBack}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition flex items-center gap-1.5"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" /> Back
-              </button>
-            ) : (
-              <div />
-            )}
+          {/* STEP 5: LICENCES & STATUTORY COMPLIANCE */}
+          {step === 5 && (
+            <div className="space-y-4">
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-800" />
+                Step 5: Conditional Licences & Statutory Coverage
+              </h3>
 
-            {step < 4 ? (
+              <div className="space-y-3">
+                {/* Labour Licence */}
+                <div className="p-4 rounded-2xl border border-gray-200 bg-gray-50 flex items-start justify-between gap-4">
+                  <div className="space-y-1 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-900">Contract Labour Licence</span>
+                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
+                        Conditional
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500">Applicable to contract labour providers exceeding statutory employee thresholds.</p>
+                    {labourLicenceApplicable && (
+                      <div className="grid grid-cols-2 gap-2 pt-2">
+                        <input
+                          type="text"
+                          value={labourLicenceNumber}
+                          onChange={(e) => setLabourLicenceNumber(e.target.value)}
+                          placeholder="Licence No (e.g. TN-CBE-CLA-9901)"
+                          className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setLicenceDocName('Labour_Licence.pdf')}
+                          className="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-xs font-bold"
+                        >
+                          {licenceDocName ? 'Attached ✓' : 'Upload PDF'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={labourLicenceApplicable}
+                    onChange={(e) => setLabourLicenceApplicable(e.target.checked)}
+                    className="rounded border-gray-300 text-emerald-800 mt-1 cursor-pointer"
+                  />
+                </div>
+
+                {/* EPF Registration */}
+                <div className="p-4 rounded-2xl border border-gray-200 bg-gray-50 flex items-start justify-between gap-4">
+                  <div className="space-y-1 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-900">EPF Registration Certificate</span>
+                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-900">
+                        Conditional
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500">Applicable if vendor has active EPFO code for deploying workers.</p>
+                    {epfApplicable && (
+                      <div className="grid grid-cols-2 gap-2 pt-2">
+                        <input
+                          type="text"
+                          value={epfNumber}
+                          onChange={(e) => setEpfNumber(e.target.value)}
+                          placeholder="EPF Code (e.g. CBCBE0012345)"
+                          className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setEpfDocName('EPF_Registration.pdf')}
+                          className="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-xs font-bold"
+                        >
+                          {epfDocName ? 'Attached ✓' : 'Upload PDF'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={epfApplicable}
+                    onChange={(e) => setEpfApplicable(e.target.checked)}
+                    className="rounded border-gray-300 text-emerald-800 mt-1 cursor-pointer"
+                  />
+                </div>
+
+                {/* ESI Registration */}
+                <div className="p-4 rounded-2xl border border-gray-200 bg-gray-50 flex items-start justify-between gap-4">
+                  <div className="space-y-1 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-900">ESI Registration Certificate</span>
+                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-900">
+                        Conditional
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500">Applicable if vendor workforce is covered under ESIC scheme.</p>
+                    {esiApplicable && (
+                      <div className="grid grid-cols-2 gap-2 pt-2">
+                        <input
+                          type="text"
+                          value={esiNumber}
+                          onChange={(e) => setEsiNumber(e.target.value)}
+                          placeholder="ESI Code (e.g. 51000123450000101)"
+                          className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setEsiDocName('ESI_Registration.pdf')}
+                          className="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-xs font-bold"
+                        >
+                          {esiDocName ? 'Attached ✓' : 'Upload PDF'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={esiApplicable}
+                    onChange={(e) => setEsiApplicable(e.target.checked)}
+                    className="rounded border-gray-300 text-emerald-800 mt-1 cursor-pointer"
+                  />
+                </div>
+
+                {/* Vehicle RC */}
+                <div className="p-4 rounded-2xl border border-gray-200 bg-gray-50 flex items-start justify-between gap-4">
+                  <div className="space-y-1 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-900">Vehicle Registration Certificate (RC)</span>
+                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-gray-200 text-gray-800">
+                        Transport Only
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500">Applicable strictly to transport and fleet vendors providing vehicle logistics.</p>
+                    {rcApplicable && (
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setRcDocName('Fleet_Vehicle_RC.pdf')}
+                          className="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-xs font-bold"
+                        >
+                          {rcDocName ? 'Attached ✓' : 'Upload Vehicle RC PDF'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={rcApplicable}
+                    onChange={(e) => setRcApplicable(e.target.checked)}
+                    className="rounded border-gray-300 text-emerald-800 mt-1 cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 6: BANK & PAYMENT */}
+          {step === 6 && (
+            <div className="space-y-4">
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-emerald-800" />
+                Step 6: Bank Disbursement & Payout Mandate
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    Account Holder Legal Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={accountHolderName}
+                    onChange={(e) => setAccountHolderName(e.target.value)}
+                    placeholder={legalName || 'Account Holder'}
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    Bank Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    placeholder="e.g. HDFC Bank"
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    Bank Account Number <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={accountNumber}
+                    onChange={(e) => setAccountNumber(e.target.value)}
+                    placeholder="e.g. 50200088192841"
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-mono font-bold focus:ring-2 focus:ring-emerald-700 focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    IFSC Code <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={ifsc}
+                    onChange={(e) => setIfsc(e.target.value.toUpperCase())}
+                    maxLength={11}
+                    placeholder="e.g. HDFC0001234"
+                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-mono font-bold focus:ring-2 focus:ring-emerald-700 focus:outline-hidden uppercase"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">
+                  Cancelled Cheque / Bank Statement PDF <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={cancelledChequeName}
+                    onChange={(e) => setCancelledChequeName(e.target.value)}
+                    placeholder="Cancelled_Cheque_Signed.pdf"
+                    className="flex-1 px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:outline-hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCancelledChequeName('Cancelled_Cheque_Signed.pdf')}
+                    className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-bold cursor-pointer flex items-center gap-1"
+                  >
+                    <Upload className="w-3.5 h-3.5" /> Attach
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 7: REVIEW & SUBMIT */}
+          {step === 7 && (
+            <div className="space-y-4">
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-800" />
+                Step 7: Final Submission & Compliance Evaluation
+              </h3>
+
+              {/* Compliance Status Card */}
+              <div
+                className={`p-4 rounded-2xl border ${
+                  complianceEval.isCompliant
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {complianceEval.isCompliant ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-700" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5 text-amber-600" />
+                    )}
+                    <div>
+                      <h4 className="font-bold text-xs">
+                        {complianceEval.isCompliant
+                          ? 'All Applicable Requirements Satisfied'
+                          : 'Compliance Incomplete'}
+                      </h4>
+                      <p className="text-[11px] opacity-80">
+                        {complianceEval.satisfiedRequirements.length} / {complianceEval.applicableRequirements.length} applicable documents verified.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-full bg-white/70">
+                    {complianceEval.isCompliant ? '100% READY' : 'PENDING REVIEW'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Review Summary Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="p-4 rounded-2xl border border-gray-200 bg-gray-50 space-y-2">
+                  <span className="font-bold text-gray-900 block border-b pb-1">Legal Identity</span>
+                  <div>Name: <span className="font-bold">{legalName || '—'}</span></div>
+                  <div>Constitution: <span className="font-semibold">{constitutionType}</span></div>
+                  <div>PAN: <span className="font-mono font-bold">{pan || '—'}</span></div>
+                  <div>GST: <span className="font-mono font-bold">{isGstApplicable ? (gstin || '—') : 'Not Applicable'}</span></div>
+                  <div>MSME: <span className="font-semibold">{msmeRegistered}</span></div>
+                </div>
+
+                <div className="p-4 rounded-2xl border border-gray-200 bg-gray-50 space-y-2">
+                  <span className="font-bold text-gray-900 block border-b pb-1">Commercials & Payout</span>
+                  <div>Agreement: <span className="font-mono font-bold">{agreementNumber}</span></div>
+                  <div>Period: <span className="font-semibold">{startDate} to {endDate}</span></div>
+                  <div>Bank: <span className="font-semibold">{bankName}</span></div>
+                  <div>Account: <span className="font-mono font-bold">{accountNumber ? `•••• •••• ${accountNumber.slice(-4)}` : '—'}</span></div>
+                  <div>IFSC: <span className="font-mono font-bold">{ifsc || '—'}</span></div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer Navigation */}
+        <div className="p-4 sm:p-6 bg-gray-50 border-t border-gray-200/70 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={step === 1 ? onClose : handleBack}
+            className="px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-100 text-xs font-bold text-gray-700 flex items-center gap-1.5 cursor-pointer transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            {step === 1 ? 'Cancel' : 'Back'}
+          </button>
+
+          <div className="flex items-center gap-2">
+            {step < 7 ? (
               <button
                 type="button"
                 onClick={handleNext}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5"
+                className="px-5 py-2 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md cursor-pointer transition-colors"
               >
-                Continue to Step {step + 1} <ArrowRight className="w-3.5 h-3.5" />
+                <span>Continue</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
             ) : (
               <button
-                type="submit"
+                type="button"
+                onClick={handleSubmit}
                 disabled={isSubmitting}
-                className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition flex items-center gap-2"
+                className="px-6 py-2 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md cursor-pointer transition-colors disabled:opacity-50"
               >
-                {isSubmitting ? (
-                  <span>Registering Vendor...</span>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" /> Complete & Issue Compliance Passport
-                  </>
-                )}
+                <CheckCircle2 className="w-4 h-4" />
+                <span>{isSubmitting ? 'Submitting...' : 'Submit Onboarding Package'}</span>
               </button>
             )}
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

@@ -76,6 +76,15 @@ export const ShiftRosterCalendarView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'MATRIX' | 'LIST' | 'CALENDAR' | 'DEPARTMENT'>('MATRIX');
   const [currentWeekStart, setCurrentWeekStart] = useState<string>(() => getMondayOfWeek());
 
+  const activePeriodName = useMemo(() => {
+    try {
+      const [y, m] = currentWeekStart.split('-').map(Number);
+      return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    } catch {
+      return new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    }
+  }, [currentWeekStart]);
+
   // Multi-Dimension Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [filterLocation, setFilterLocation] = useState('ALL');
@@ -475,7 +484,7 @@ export const ShiftRosterCalendarView: React.FC = () => {
           <div className="flex items-center gap-2 text-xs text-gray-600 mt-1 flex-wrap">
             <span className="font-semibold text-gray-800">Joy Corporate Solutions</span>
             <span>•</span>
-            <span>Payroll Period: <strong>August 2026</strong></span>
+            <span>Payroll Period: <strong>{activePeriodName}</strong></span>
             <span>•</span>
             <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />

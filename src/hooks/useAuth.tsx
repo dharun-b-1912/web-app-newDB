@@ -109,6 +109,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                       ],
                 },
               ],
+              authContext: resolvedIdentity.authContext,
               created_at: sbUser.created_at || cached?.created_at || new Date().toISOString(),
             };
 
@@ -136,6 +137,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (isMounted) {
               setUser(finalUser);
               setMustChangePassword(Boolean(finalUser.must_change_password));
+            }
+          } else if (
+            cachedContext === 'vendor' &&
+            cachedUser &&
+            (cachedUser.authContext?.portalType === 'VENDOR' || cachedUser.role === 'Vendor Admin')
+          ) {
+            // Authentic Vendor Portal session managed through VendorCredentialService
+            const integrity = validateSessionIntegrity(cachedUser.id);
+            if (!integrity.isValid) {
+              await authService.signOut();
+              if (isMounted) setUser(null);
+              return;
+            }
+            bindSessionFingerprint(cachedUser.id);
+            if (isMounted) {
+              setUser(cachedUser);
+              setMustChangePassword(Boolean(cachedUser.must_change_password));
             }
           } else {
             // No real Supabase session -> purge local cached user so fake session is never active

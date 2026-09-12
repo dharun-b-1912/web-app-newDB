@@ -1,47 +1,72 @@
-name: CI Pipeline & Build Verification
+name: "JOY PeopleHR — Quality Gates & PR CI"
 
 on:
-  push:
-    branches: [main, master, develop]
   pull_request:
-    branches: [main, master]
-  workflow_dispatch:
+    branches: [ main, develop, qa, staging ]
+  push:
+    branches: [ develop ]
 
 jobs:
-  build-and-verify:
-    name: Typecheck & Production Build
+  web-quality-gates:
+    name: "Web App Quality Gates"
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [20.x]
-
     steps:
-      - name: 📥 Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: ⚙️ Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 20
           cache: 'npm'
 
-      - name: 📦 Install Dependencies
+      - name: Install Dependencies
         run: npm ci
 
-      - name: 🔍 TypeScript Type Check
-        run: npm run typecheck
+      - name: TypeScript Type Check
+        run: npx tsc --noEmit
 
-      - name: 🚀 Production Build
+      - name: Run Master Attendance & Backend Tests
+        run: npx vitest run src/services/__tests__/masterAttendanceEngine.test.ts
+
+      - name: Build Web Bundle Verification
         run: npm run build
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://wmqjmyzzamgxyeuotbki.supabase.co' }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndtcWpteXp6YW1neHlldW90YmtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2NzU0NjcsImV4cCI6MjEwMjI1MTQ2N30.mRHhiRs7r7q9J3mphaRVyavL4_THkCAzdhD2dqgvnKA' }}
-          VITE_APP_URL: ${{ secrets.VITE_APP_URL || 'https://joypeoplehr.com' }}
 
-      - name: 📁 Upload Production Artifacts (dist)
-        uses: actions/upload-artifact@v4
+  flutter-quality-gates:
+    name: "Flutter Mobile Quality Gates"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./flutter_app
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          name: production-dist
-          path: dist/
-          retention-days: 7
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Fetch Flutter Dependencies
+        run: flutter pub get
+
+      - name: Flutter Static Analysis
+        run: flutter analyze
+
+      - name: Run Flutter Unit & Widget Tests
+        run: flutter test
+
+      - name: Verify Release APK Build
+        run: |
+          flutter build apk --release \
+            --dart-define=APP_ENV=qa \
+            --dart-define=APP_VERSION=1.0.3 \
+            --dart-define=APP_BUILD_CODE=8

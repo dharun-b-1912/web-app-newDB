@@ -124,15 +124,17 @@ export const LoginForm: React.FC<LoginFormProps> = ({
     <div className="w-full space-y-6">
       {/* Title and context indicator */}
       <div>
-        <h2 className="text-xl font-bold text-gray-900 tracking-tight">
-          {authContext === 'admin'
-            ? 'Company Administration & IAM'
-            : authContext === 'platform'
-            ? 'Platform Administration'
-            : authContext === 'vendor'
-            ? 'Vendor & Contractor Sign In'
-            : 'Sign In to Workspace'}
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-xl font-bold text-gray-900 tracking-tight">
+            {authContext === 'admin'
+              ? 'Company Administration & IAM'
+              : authContext === 'platform'
+              ? 'Platform Administration'
+              : authContext === 'vendor'
+              ? 'Vendor & Contractor Sign In'
+              : 'Sign In to Workspace'}
+          </h2>
+        </div>
         <p className="text-xs text-gray-500 mt-1">
           {authContext === 'admin'
             ? 'Organization Owner & Company Admin access: Legal entities, RBAC, workflows & commercials.'
@@ -143,6 +145,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             : 'Enter your credentials to access your organization portal.'}
         </p>
       </div>
+
 
 
 
@@ -179,7 +182,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                   : authContext === 'platform'
                   ? 'admin@joypeople.com'
                   : authContext === 'vendor'
-                  ? 'vendor@apexstaffing.in'
+                  ? 'vendor@company.com'
                   : 'name@company.com or +91 98765 43210'
               }
               {...register('identifier')}

@@ -59,7 +59,7 @@ export const PayrollInputsView: React.FC<PayrollInputsViewProps> = ({
   });
 
   const [isFrozen, setIsFrozen] = useState<boolean>(false);
-  const [selectedMonth, setSelectedMonth] = useState('August 2026');
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
   const [employees, setEmployees] = useState<PayrollHandoffRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -77,7 +77,11 @@ export const PayrollInputsView: React.FC<PayrollInputsViewProps> = ({
       try {
         const activeComp = api.getActiveCompany();
         const realEmps = await api.getEmployees(activeComp?.id);
-        const daily = attendanceApi.getDailyAttendance('2026-08-20');
+        const todayStr = (() => {
+          const d = new Date();
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        })();
+        const daily = attendanceApi.getDailyAttendance(todayStr);
         const dailyMap = new Map<string, any>();
         daily.forEach(d => {
           if (d.employee_id) dailyMap.set(d.employee_id.toLowerCase(), d);

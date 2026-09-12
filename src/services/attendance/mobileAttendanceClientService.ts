@@ -11,6 +11,8 @@ import { workLocationService, WorkLocation } from '../location/workLocationServi
 import { attendanceApi } from '../attendanceApi';
 import { api } from '../api';
 import { hrEventBus } from '../hrEventBus';
+import { JoyRedis } from '../../lib/redis';
+import { attendanceDecisionEngine } from './attendanceDecisionEngine';
 
 export interface MobileGpsEvidence {
   latitude: number;
@@ -118,6 +120,16 @@ class MobileAttendanceClientService {
     const punchTime = now.toLocaleTimeString('en-US', { hour12: false });
     const punchDate = now.toISOString().split('T')[0];
 
+    // 0. Upstash Redis Atomic Punch Throttle & Deduplication (prevents double-tap/bursts within 15s)
+    const punchThrottle = await JoyRedis.verifyAndLockPunch(
+      request.employeeId,
+      now.toISOString(),
+      15
+    );
+    if (!punchThrottle.allowed) {
+      throw new Error(punchThrottle.reason || 'Duplicate punch detected within 15s window. Please wait before punching again.');
+    }
+
     // Resolve live hardware GPS coords if provided
     const userLat = request.evidence?.latitude;
     const userLon = request.evidence?.longitude;
@@ -182,13 +194,39 @@ class MobileAttendanceClientService {
       tenantId
     );
 
-    // 4. Trigger core attendance engine (Check In / Check Out)
-    // NOTE: Preserves existing working-hours, shift calculations, and payroll logic intact!
+    // 4. Trigger Unified Multi-Mode Attendance Decision Engine
+    // Authoritative Single-Session Model • Source Lock • Concurrency Protection
+    const decisionResult = await attendanceDecisionEngine.processEvent({
+      organizationId: tenantId,
+      employeeId: request.employeeId,
+      employeeCode: empCode,
+      eventTimestamp: now.toISOString(),
+      source: 'MOBILE',
+      method: 'GPS',
+      deviceId: request.evidence?.deviceId || 'MOBILE-APP',
+      deviceName: 'Joy Mobile App',
+      punchIntent: request.punchType,
+      rawPayload: {
+        punchType: request.punchType,
+        workLocationId: locId,
+        locationName: locName,
+        locationVerificationStatus: effectiveStatus,
+        locationReason: request.locationReason,
+      },
+    });
+
+    if (decisionResult.decisionCode === 'IGNORED_ALREADY_CHECKED_IN' || decisionResult.decisionCode === 'IGNORED_ALREADY_CHECKED_OUT' || decisionResult.decisionCode === 'IGNORED_SOURCE_LOCK') {
+      throw new Error(decisionResult.decisionReason);
+    }
+
     if (request.punchType === 'CHECK_OUT') {
       attendanceApi.checkOut(request.employeeId, 'MOBILE');
     } else {
-      attendanceApi.checkIn(request.employeeId, 'MOBILE');
+      attendanceApi.checkIn(request.employeeId, empName, 'MOBILE', locName);
     }
+
+    // Invalidate Redis attendance ledger cache so subsequent views see fresh punch
+    JoyRedis.invalidateLedgerCache(tenantId).catch(() => {});
 
     // 5. Build Comprehensive Response
     const response: MobileAttendancePunchResponse = {

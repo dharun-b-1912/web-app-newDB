@@ -1,0 +1,22 @@
+[Unit]
+Description=JOY PeopleHR Biometric LAN & Cloud Gateway Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/joy-peoplehr
+ExecStart=/usr/bin/node scripts/workforce-gateway-agent.cjs
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=GATEWAY_PORT=11108
+Environment=ADMS_PORT=8080
+Environment=COMM_KEY=123456
+Environment=TENANT_ID=org-joy-01
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=joy-biometric-gateway
+
+[Install]
+WantedBy=multi-user.target

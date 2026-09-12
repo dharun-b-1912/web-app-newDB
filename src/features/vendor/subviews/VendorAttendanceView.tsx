@@ -15,11 +15,12 @@ import {
 } from 'lucide-react';
 import { vendorPortalService } from '../../../services/vendorPortalService';
 import { VendorOrganization, VendorAttendanceCorrectionRequest } from '../../../types/vendorPortal';
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
 
 interface VendorAttendanceViewProps {
-  activeVendor: VendorOrganization;
-  activePeriod: string;
-  onRefresh: () => void;
+  activeVendor?: VendorOrganization | null;
+  activePeriod?: string;
+  onRefresh?: () => void;
 }
 
 export const VendorAttendanceView: React.FC<VendorAttendanceViewProps> = ({
@@ -28,6 +29,24 @@ export const VendorAttendanceView: React.FC<VendorAttendanceViewProps> = ({
   onRefresh,
 }) => {
   const { showToast } = useToast();
+  
+  let ctxVendor: VendorOrganization | null = null;
+  let ctxRelationship: any = null;
+  let ctxRefresh: (() => void) | undefined = undefined;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+    ctxRelationship = ctx.activeRelationship;
+    ctxRefresh = ctx.refreshContext;
+  } catch {}
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
+  const effectivePeriod = activePeriod || '2026-08';
+  const triggerRefresh = () => {
+    if (onRefresh) onRefresh();
+    if (ctxRefresh) ctxRefresh();
+  };
+
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'ATTENDANCE' | 'CORRECTIONS'>('ATTENDANCE');
   const [isCorrectionModalOpen, setIsCorrectionModalOpen] = useState(false);
@@ -40,9 +59,26 @@ export const VendorAttendanceView: React.FC<VendorAttendanceViewProps> = ({
   const [corrReason, setCorrReason] = useState('');
   const [supportingDocName, setSupportingDocName] = useState('Biometric_Device_Punch_Log.pdf');
 
-  const attendance = vendorPortalService.getMonthlyAttendance(activePeriod, activeVendor.id);
-  const corrections = vendorPortalService.getAttendanceCorrections(activeVendor.id);
-  const employees = vendorPortalService.getEmployees(activeVendor.id);
+  const rawAttendance = effectiveVendor?.id
+    ? vendorPortalService.getMonthlyAttendance(effectivePeriod, effectiveVendor.id)
+    : [];
+  const corrections = effectiveVendor?.id
+    ? vendorPortalService.getAttendanceCorrections(effectiveVendor.id)
+    : [];
+  const allEmployees = effectiveVendor?.id
+    ? vendorPortalService.getEmployees(effectiveVendor.id)
+    : [];
+
+  const employees = allEmployees.filter((emp) => {
+    if (!ctxRelationship) return true;
+    const relCompanyId = ctxRelationship.company_id || ctxRelationship.id;
+    return !emp.current_client_id || emp.current_client_id === relCompanyId;
+  });
+
+  const employeeIds = new Set(employees.map((e) => e.id));
+  const attendance = ctxRelationship
+    ? rawAttendance.filter((a) => employeeIds.has(a.employee_id))
+    : rawAttendance;
 
   const filteredAttendance = attendance.filter(
     (a) =>

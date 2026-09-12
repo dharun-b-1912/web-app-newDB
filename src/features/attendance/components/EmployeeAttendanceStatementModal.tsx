@@ -47,14 +47,14 @@ import { useToast } from '../../../components/ui/Toast';
 import { api } from '../../../services/api';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { cn } from '../../../lib/utils';
-import { payrollPeriodService, PayrollPeriod, EmployeePayrollContext } from '../../../services/payroll/payrollPeriodService';
+import { payrollPeriodService, PayrollPeriod, EmployeePayrollContext, getWeekRangesForPeriod } from '../../../services/payroll/payrollPeriodService';
 import { attendanceCalculationService, DailyAttendanceRow, PeriodAttendanceMetrics } from '../../../services/attendance/attendanceCalculationService';
 import { payrollImpactCalculationEngine, PayrollImpactResult } from '../../../services/payroll/payrollImpactCalculationEngine';
 
 export interface EmployeeAttendanceStatementModalProps {
   employeeId: string | null;
   initialDate?: string;
-  initialPeriod?: string; // e.g. "August 2026"
+  initialPeriod?: string; // Optional e.g. "September 2026"
   onClose: () => void;
   onNavigateEmployee?: (employeeId: string) => void;
   onNavigateSubPath?: (subPath: string) => void;
@@ -63,7 +63,7 @@ export interface EmployeeAttendanceStatementModalProps {
 export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatementModalProps> = ({
   employeeId,
   initialDate,
-  initialPeriod = 'August 2026',
+  initialPeriod,
   onClose,
   onNavigateEmployee,
   onNavigateSubPath,
@@ -104,16 +104,30 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
       setEmployees(emps);
       setPayrollPeriods(periods);
 
-      // Resolve initial period
-      const matchedPeriod =
-        periods.find(
+      // Resolve initial period dynamically:
+      // 1. Match against initialDate if provided (e.g. '2026-09-10' -> September 2026)
+      // 2. Match against initialPeriod if provided
+      // 3. Fallback to period containing today's date
+      const targetDate = initialDate || new Date().toISOString().split('T')[0];
+      let matchedPeriod: PayrollPeriod | null = null;
+
+      if (initialPeriod) {
+        matchedPeriod = periods.find(
           (p) =>
             p.period_name.toLowerCase() === initialPeriod.toLowerCase() ||
             initialPeriod.toLowerCase().includes(p.period_name.toLowerCase())
-        ) || periods[0] || null;
-      setSelectedPeriod(matchedPeriod);
+        ) || null;
+      }
+
+      if (!matchedPeriod && targetDate) {
+        matchedPeriod = periods.find(
+          (p) => targetDate >= p.start_date && targetDate <= p.end_date
+        ) || null;
+      }
+
+      setSelectedPeriod(matchedPeriod || periods[0] || null);
     });
-  }, [initialPeriod]);
+  }, [initialDate, initialPeriod]);
 
   // Update current employee when employeeId changes
   useEffect(() => {
@@ -133,12 +147,19 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
     }
   }, [employeeId, employees]);
 
-  // Load Attendance, Workflow, Salary & Payroll Data
-  const loadStatementData = useCallback(() => {
+  const [regularizingDay, setRegularizingDay] = useState<string | null>(null);
+
+  // Load Attendance, Workflow, Salary & Payroll Data dynamically in real-time from Supabase
+  const loadStatementData = useCallback(async () => {
+    if (!selectedPeriod) return;
     setIsLoadingContext(true);
     try {
-      const allDaily = attendanceApi.getDailyAttendance();
-      const allRegs = attendanceApi.getRegularizations();
+      const allDaily = await attendanceApi.getDailyAttendanceForPeriodAsync(
+        selectedPeriod.start_date,
+        selectedPeriod.end_date,
+        currentEmployee?.id
+      );
+      const allRegs = await attendanceApi.getRegularizationsAsync();
       const allExcs = attendanceApi.getExceptions();
       const allOt = attendanceApi.getOvertimeRequests();
       const allWfh = attendanceApi.getWfhRequests();
@@ -155,13 +176,41 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
     } finally {
       setIsLoadingContext(false);
     }
-  }, []);
+  }, [selectedPeriod, currentEmployee]);
+
+  const handleQuickRegularize = async (row: DailyAttendanceRow) => {
+    if (!currentEmployee) return;
+    setRegularizingDay(row.dateStr);
+    try {
+      const empName =
+        currentEmployee.display_name ||
+        `${currentEmployee.first_name || ''} ${currentEmployee.last_name || ''}`.trim() ||
+        'Employee';
+      const newReq = attendanceApi.submitRegularization({
+        employee_id: currentEmployee.id,
+        employee_name: empName,
+        attendance_date: row.dateStr,
+        reason: 'Missing turnstile punch-out regularized and verified by HR Administrator',
+        requested_check_in: row.firstIn || '09:00 AM',
+        requested_check_out: '06:00 PM',
+        current_status: 'Missing Punch',
+      });
+      attendanceApi.approveRegularization(newReq.id, 'Approved', 'Approved by HR Administrator - Marked Payable');
+      showToast(`Regularization approved for ${row.dateStr}. Day is now marked payable.`, 'success');
+      await loadStatementData();
+      hrEventBus.emit('attendance:updated', { date: row.dateStr });
+    } catch (e: any) {
+      showToast(e?.message || 'Failed to regularize attendance', 'error');
+    } finally {
+      setRegularizingDay(null);
+    }
+  };
 
   useEffect(() => {
     loadStatementData();
     const unsub = hrEventBus.subscribe('*', () => loadStatementData());
     return () => unsub();
-  }, [loadStatementData, employeeId, currentEmployee, selectedPeriod]);
+  }, [loadStatementData]);
 
   // Helper to match records to current employee
   const isMatchingEmp = (item: any, emp: any) => {
@@ -221,19 +270,29 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
   // Active Effective Payroll Period
   const activePeriod: PayrollPeriod = useMemo(() => {
     if (selectedPeriod) return selectedPeriod;
+    const today = new Date();
+    const curYear = today.getFullYear() >= 2026 ? today.getFullYear() : 2026;
+    const curMonth = String(today.getMonth() + 1).padStart(2, '0');
+    const monthName = today.toLocaleString('en-US', { month: 'long' });
+    const lastDay = new Date(curYear, today.getMonth() + 1, 0).getDate();
     return {
-      id: 'b0000001-0000-0000-0000-000000000001',
-      tenant_id: 'org-joy-01',
-      organization_id: 'org-joy-01',
-      period_name: 'August 2026',
-      start_date: '2026-08-01',
-      end_date: '2026-08-31',
-      pay_date: '2026-08-31',
-      status: 'FINALIZED',
+      id: `period-${curYear}-${curMonth}`,
+      tenant_id: '0c621892-e938-4707-9957-13534ea32c19',
+      organization_id: '0c621892-e938-4707-9957-13534ea32c19',
+      period_name: `${monthName} ${curYear}`,
+      start_date: `${curYear}-${curMonth}-01`,
+      end_date: `${curYear}-${curMonth}-${String(lastDay).padStart(2, '0')}`,
+      pay_date: `${curYear}-${curMonth}-${String(lastDay).padStart(2, '0')}`,
+      status: 'OPEN',
       policy_version: 'Joy Enterprise Standard Policy (v3.2)',
-      is_locked: true,
+      is_locked: false,
     };
   }, [selectedPeriod]);
+
+  // Dynamic Weekly Breakdown Ranges for the Active Month
+  const weekRanges = useMemo(() => {
+    return getWeekRangesForPeriod(activePeriod);
+  }, [activePeriod]);
 
   // Execute Authoritative Date-by-Date Attendance Calculation
   const calculationResult = useMemo(() => {
@@ -626,15 +685,60 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
             <div className="space-y-6">
               {/* Monthly Visual Timeline Ribbon */}
               <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 font-mono">
-                    {activePeriod.period_name} • Visual Attendance Timeline (Days 1–{metrics.totalCalendarDays})
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 font-mono flex items-center gap-2">
+                    <span>{activePeriod.period_name} • Visual Attendance Timeline (Days 1–{metrics.totalCalendarDays})</span>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[#07563D] border border-emerald-200 text-[10px] font-bold">
+                      {metrics.presentDays}d Present / {metrics.scheduledWorkingDays}d Scheduled
+                    </span>
                   </h3>
-                  <span className="text-xs text-gray-500">Click any day to inspect turnstile punch stamps & calculation trace</span>
+                  <span className="text-xs text-gray-400">Click any day to inspect turnstile punch stamps & calculation trace</span>
+                </div>
+
+                {/* Dynamic Weekly Calendar Breakdown */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1.5 pt-0.5 border-b border-gray-100">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider shrink-0 font-mono">
+                    WEEKS ({weekRanges.length}):
+                  </span>
+                  {weekRanges.map((w) => {
+                    const weekDays = dailyRows.filter((d) => d.dateStr >= w.start_date && d.dateStr <= w.end_date);
+                    const weekPresent = weekDays.filter((d) => d.status === 'Present' || d.status === 'Late').length;
+                    const weekScheduled = weekDays.filter((d) => !d.isWeeklyOff).length;
+                    const isCurrentWeek = weekDays.some((d) => d.isToday);
+
+                    return (
+                      <div
+                        key={w.weekNum}
+                        className={cn(
+                          "px-2.5 py-1 rounded-xl border text-[11px] flex items-center gap-2 shrink-0 transition-all select-none",
+                          isCurrentWeek
+                            ? "bg-emerald-50/80 border-emerald-300 shadow-2xs text-[#07563D] font-semibold"
+                            : "bg-gray-50 border-gray-200 text-gray-700"
+                        )}
+                      >
+                        <span className="font-bold">{w.label.split(' (')[0]}</span>
+                        <span className="text-gray-400 font-mono text-[10px]">
+                          {w.start_date.slice(5)} – {w.end_date.slice(5)}
+                        </span>
+                        <span className={cn(
+                          "px-1.5 py-0.2 rounded-md font-mono font-bold text-[10px]",
+                          weekPresent > 0 ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-600"
+                        )}>
+                          {weekPresent}/{weekScheduled}d P
+                        </span>
+                        {isCurrentWeek && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" title="Active Current Week" />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <div className="grid grid-cols-7 sm:grid-cols-11 md:grid-cols-16 lg:grid-cols-31 gap-1">
                   {dailyRows.map((d) => {
+                    const isMissingPunch = d.status === 'Missing Punch';
+                    const isRegularized = d.status === 'Regularized';
+                    const isCheckedIn = d.status === 'Checked In';
                     const isLate = d.lateMinutes > 0 || d.status === 'Late';
                     const isAbsent = d.status === 'Absent';
                     const isPresent = d.status === 'Present';
@@ -647,11 +751,14 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
                           setSelectedDayRow(d);
                           setActiveTab('daily');
                         }}
-                        title={`Day ${d.dayNum} (${d.dayName}): ${d.status}`}
+                        title={`Day ${d.dayNum} (${d.dayName}): ${d.status}${isMissingPunch ? ' • Missing Check-Out (Unpaid LOP)' : ''}`}
                         className={cn(
-                          "p-2 rounded-xl text-center border cursor-pointer transition-all hover:scale-105 select-none",
-                          d.isToday && "ring-2 ring-[#07563D] ring-offset-1",
+                          "p-1.5 sm:p-2 rounded-xl text-center border cursor-pointer transition-all hover:scale-105 select-none",
+                          d.isToday && "ring-2 ring-[#07563D] ring-offset-1 bg-emerald-50/40 font-bold",
                           d.isWeeklyOff ? "bg-gray-100 border-gray-200 text-gray-500" :
+                          isMissingPunch ? "bg-amber-100 border-amber-400 text-amber-950 font-black shadow-xs ring-1 ring-amber-400" :
+                          isRegularized ? "bg-teal-50 border-teal-300 text-teal-900 font-bold" :
+                          isCheckedIn ? "bg-blue-50 border-blue-300 text-blue-900 font-bold" :
                           isLate ? "bg-amber-50 border-amber-200 text-amber-900 font-bold" :
                           isPresent ? "bg-emerald-50 border-emerald-200 text-emerald-900 font-bold" :
                           isLeave ? "bg-purple-50 border-purple-200 text-purple-900 font-bold" :
@@ -660,9 +767,18 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
                           "bg-white border-gray-200 text-gray-400"
                         )}
                       >
-                        <span className="text-[10px] block font-mono font-bold">{d.dayNum}</span>
+                        <span className="text-[8px] block uppercase text-gray-400 font-semibold">{d.dayName}</span>
+                        <span className="text-[11px] block font-mono font-bold leading-tight">{d.dayNum}</span>
                         <span className="text-[9px] block uppercase font-bold mt-0.5">
-                          {d.isWeeklyOff ? 'WO' : isLate ? 'LP' : isPresent ? 'P' : isLeave ? 'L' : isAbsent ? 'A' : d.isFuture ? 'SCH' : '—'}
+                          {d.isWeeklyOff ? 'WO' :
+                           isMissingPunch ? 'MP' :
+                           isRegularized ? 'REG' :
+                           isCheckedIn ? 'IN' :
+                           isLate ? 'LP' :
+                           isPresent ? 'P' :
+                           isLeave ? 'L' :
+                           isAbsent ? 'A' :
+                           d.isFuture ? 'SCH' : '—'}
                         </span>
                       </div>
                     );
@@ -692,9 +808,19 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
                     </div>
                     <div className="flex justify-between items-center p-2 rounded-lg bg-gray-50">
                       <span className="text-gray-600 font-medium">Missing Punch Exceptions</span>
-                      <strong className={cn("font-bold", metrics.missingPunchCount > 0 ? "text-rose-700" : "text-emerald-700")}>
-                        {metrics.missingPunchCount} flagged
-                      </strong>
+                      <div className="flex items-center gap-2">
+                        <strong className={cn("font-bold", metrics.missingPunchCount > 0 ? "text-rose-700 font-black" : "text-emerald-700")}>
+                          {metrics.missingPunchCount} flagged
+                        </strong>
+                        {metrics.missingPunchCount > 0 && (
+                          <button
+                            onClick={() => setActiveTab('regularization')}
+                            className="px-2 py-0.5 rounded bg-rose-100 hover:bg-rose-200 text-rose-800 text-[10px] font-bold cursor-pointer transition-colors"
+                          >
+                            Resolve →
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="flex justify-between items-center p-2 rounded-lg bg-gray-50">
                       <span className="text-gray-600 font-medium">Regularizations Requested</span>
@@ -840,21 +966,31 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
                           {d.firstIn || (d.isWeeklyOff ? '—' : d.isFuture ? 'Scheduled' : '—')}
                         </td>
                         <td className="px-3 py-3 font-mono font-bold text-gray-900">
-                          {d.lastOut || (d.isWeeklyOff ? '—' : d.isFuture ? 'Scheduled' : '—')}
+                          {d.lastOut || (d.isWeeklyOff ? '—' : d.status === 'Missing Punch' ? (
+                            <span className="text-amber-600 font-bold text-[11px]">Missing</span>
+                          ) : d.isFuture ? 'Scheduled' : '—')}
                         </td>
                         <td className="px-3 py-3 font-mono text-gray-800">
-                          {d.workedDurationStr}
+                          {d.status === 'Missing Punch' ? (
+                            <span className="text-rose-600 font-bold text-[11px]">0h 0m (LOP)</span>
+                          ) : (
+                            d.workedDurationStr
+                          )}
                         </td>
                         <td className="px-3 py-3">
                           <span className={cn(
-                            "px-2 py-0.5 rounded text-[10px] font-bold",
+                            "px-2 py-0.5 rounded text-[10px] font-bold inline-flex items-center gap-1",
                             d.isWeeklyOff ? "bg-gray-100 text-gray-600" :
+                            d.status === 'Missing Punch' ? "bg-amber-100 text-amber-900 border border-amber-300 font-black" :
+                            d.status === 'Regularized' ? "bg-teal-100 text-teal-900 border border-teal-300" :
+                            d.status === 'Checked In' ? "bg-blue-100 text-blue-900 border border-blue-300" :
                             d.status === 'Late' ? "bg-amber-100 text-amber-900" :
                             d.status === 'Present' ? "bg-emerald-100 text-emerald-900" :
                             d.status === 'Paid Leave' ? "bg-purple-100 text-purple-900" :
                             d.status === 'Absent' ? "bg-rose-100 text-rose-900" :
                             d.isFuture ? "bg-blue-100 text-blue-900" : "bg-gray-100 text-gray-600"
                           )}>
+                            {d.status === 'Missing Punch' && <AlertTriangle className="w-3 h-3 text-amber-700" />}
                             {d.status}
                           </span>
                         </td>
@@ -871,9 +1007,29 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
                           {d.source}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <span className="text-[11px] text-[#07563D] font-bold hover:underline">
-                            Inspect Trace →
-                          </span>
+                          <div className="flex items-center justify-end gap-2">
+                            {d.status === 'Missing Punch' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleQuickRegularize(d);
+                                }}
+                                disabled={regularizingDay === d.dateStr}
+                                className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Regularize missing out-punch to make this day payable"
+                              >
+                                {regularizingDay === d.dateStr ? (
+                                  <RefreshCw className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Sliders className="w-3 h-3" />
+                                )}
+                                Regularize
+                              </button>
+                            )}
+                            <span className="text-[11px] text-[#07563D] font-bold hover:underline">
+                              Inspect Trace →
+                            </span>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -899,6 +1055,32 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
                     </button>
                   </div>
 
+                  {selectedDayRow.status === 'Missing Punch' && (
+                    <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                        <div>
+                          <strong className="text-amber-950 block text-xs">Missing Check-Out Punch (Non-Payable LOP)</strong>
+                          <span className="text-amber-800 text-[11px]">
+                            First in-punch was recorded at {selectedDayRow.firstIn}, but no out-punch was recorded. This day is NOT payable until regularized.
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleQuickRegularize(selectedDayRow)}
+                        disabled={regularizingDay === selectedDayRow.dateStr}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shrink-0 cursor-pointer shadow-xs flex items-center gap-1.5"
+                      >
+                        {regularizingDay === selectedDayRow.dateStr ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        )}
+                        Regularize & Make Payable
+                      </button>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-3.5 rounded-xl border border-emerald-200/80">
                     <div>
                       <span className="text-[10px] text-gray-400 block uppercase">Scheduled Window</span>
@@ -907,7 +1089,7 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
                     <div>
                       <span className="text-[10px] text-gray-400 block uppercase">Biometric Turnstile</span>
                       <strong className="text-gray-900 font-mono">
-                        {selectedDayRow.firstIn || 'None'} → {selectedDayRow.lastOut || 'None'}
+                        {selectedDayRow.firstIn || 'None'} → {selectedDayRow.lastOut || (selectedDayRow.status === 'Missing Punch' ? 'Missing (LOP)' : 'None')}
                       </strong>
                     </div>
                     <div>
@@ -916,7 +1098,9 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
                     </div>
                     <div>
                       <span className="text-[10px] text-gray-400 block uppercase">Final Day Status</span>
-                      <strong className="text-[#07563D] font-bold">{selectedDayRow.status} ({selectedDayRow.source})</strong>
+                      <strong className={cn("font-bold", selectedDayRow.status === 'Missing Punch' ? "text-amber-700" : "text-[#07563D]")}>
+                        {selectedDayRow.status} ({selectedDayRow.source})
+                      </strong>
                     </div>
                   </div>
                 </div>
@@ -1057,10 +1241,54 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
             <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-gray-100">
                 <div>
-                  <h3 className="text-sm font-bold text-gray-900">Attendance Regularization Requests</h3>
-                  <p className="text-xs text-gray-500">Employee punch regularization and manager approvals</p>
+                  <h3 className="text-sm font-bold text-gray-900">Attendance Regularization & Punch Reconciliation</h3>
+                  <p className="text-xs text-gray-500">Employee punch regularization and manager approvals for missing check-outs</p>
                 </div>
               </div>
+
+              {/* Unresolved Missing Punches Action Queue */}
+              {dailyRows.filter((d) => d.status === 'Missing Punch').length > 0 && (
+                <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-300 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      <h4 className="font-bold text-amber-950 text-xs uppercase tracking-wide">
+                        Action Required: Unregularized Missing Punches ({dailyRows.filter((d) => d.status === 'Missing Punch').length})
+                      </h4>
+                    </div>
+                    <span className="text-[10px] text-amber-800 font-medium">
+                      Non-Payable (LOP) until check-out is regularized
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {dailyRows.filter((d) => d.status === 'Missing Punch').map((row) => (
+                      <div key={row.dateStr} className="p-3 bg-white rounded-xl border border-amber-200 flex items-center justify-between gap-3 shadow-2xs">
+                        <div>
+                          <strong className="text-gray-900 block">
+                            {row.dateStr} ({row.dayName}) — {row.shiftName}
+                          </strong>
+                          <span className="text-amber-800 text-[11px] block mt-0.5">
+                            Punched In: <span className="font-bold font-mono text-gray-900">{row.firstIn}</span> • Missing Exit Check-out • Impact: <span className="text-rose-700 font-bold">1 Day Unpaid LOP</span>
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => handleQuickRegularize(row)}
+                          disabled={regularizingDay === row.dateStr}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shrink-0 cursor-pointer shadow-xs flex items-center gap-1.5 transition-colors"
+                        >
+                          {regularizingDay === row.dateStr ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          )}
+                          Regularize & Approve (06:00 PM)
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {regularizations.filter((r) => isMatchingEmp(r, currentEmployee)).length > 0 ? (
                 <div className="space-y-2 text-xs">
@@ -1076,7 +1304,7 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
                 </div>
               ) : (
                 <div className="p-8 text-center text-xs text-gray-500 border border-dashed border-gray-200 rounded-xl">
-                  No regularization requests filed for this employee in the selected period.
+                  No previous regularization requests filed for this employee in the selected period.
                 </div>
               )}
             </div>

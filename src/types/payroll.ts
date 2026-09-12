@@ -172,6 +172,19 @@ export interface EmployeeSalaryAssignment {
   esi_applicable?: boolean;
   pt_applicable?: boolean;
   tds_applicable?: boolean;
+  is_pf_exempt?: boolean;
+  is_esi_exempt?: boolean;
+  hra_monthly?: number;
+  ot_amount?: number;
+  special_allowance?: number;
+  payable_days?: number;
+  lop_days?: number;
+  canteen_deduction?: number;
+  salary_advance_deduction?: number;
+  advance_recovery?: number;
+  other_deductions?: number;
+  total_deductions?: number;
+  net_pay?: number;
   effective_from: string;
   status: 'Active' | 'Revised' | 'Inactive' | 'Draft';
   updated_at: string;
@@ -210,6 +223,10 @@ export interface EmployeePayrollInput {
   unpaid_leave_days: number;
   lop_days: number;
   overtime_hours: number;
+  total_calendar_days?: number;
+  fixed_working_days?: number;
+  loss_of_pay_days?: number;
+  ot_hours?: number;
   
   // Base Structure Figures
   ctc_annual: number;
@@ -221,15 +238,19 @@ export interface EmployeePayrollInput {
   medical: number;
   other_allowances: number;
   
-  // Dynamic Additions
+  // Dynamic Additions / Runtime Earned Aliases
   overtime_pay: number;
   incentives: number;
   bonus: number;
   reimbursements: number;
   arrears: number;
   total_earnings: number;
+  gross_earnings?: number;
+  basic_earned?: number;
+  hra_earned?: number;
+  overtime_earned?: number;
   
-  // Deductions
+  // Deductions & Statutory Aliases
   lop_deduction: number;
   epf_employee: number;
   esic_employee: number;
@@ -240,6 +261,12 @@ export interface EmployeePayrollInput {
   fines_deductions?: number;
   other_deductions: number;
   total_deductions: number;
+  pf_employee_deduction?: number;
+  esi_employee_deduction?: number;
+  pt_deduction?: number;
+  tds_deduction?: number;
+  canteen_deduction?: number;
+  salary_advance_deduction?: number;
   
   // Employer Statutory
   epf_employer: number;
@@ -254,9 +281,12 @@ export interface EmployeePayrollInput {
   account_number: string;
   ifsc_code: string;
   pan_number: string;
+  payment_mode?: 'BankTransfer' | 'Cheque' | 'Cash';
   has_exceptions: boolean;
   exception_notes?: string;
   status: 'Draft' | 'Calculated' | 'Approved' | 'Finalized' | 'Paid' | 'Excluded';
+  earnings?: Array<{ code: string; name: string; amount: number }>;
+  deductions?: Array<{ code: string; name: string; amount: number }>;
   created_at?: string;
   updated_at?: string;
 }
@@ -311,13 +341,16 @@ export interface SalaryAdvanceRecord {
   id: string;
   tenant_id: string;
   employee_id: string;
+  employee_code?: string;
   employee_name: string;
   advance_amount: number;
+  amount?: number;
+  principal_amount?: number;
   recovered_amount: number;
   balance_amount: number;
   deduction_period: string; // e.g. "August 2026"
   reason: string;
-  status: 'Pending' | 'Approved' | 'Deducted' | 'Cancelled';
+  status: 'Pending' | 'Approved' | 'Deducted' | 'Cancelled' | 'Active';
   created_at: string;
 }
 
@@ -460,6 +493,7 @@ export interface CorporateFundingAccount {
 export interface FnFSettlement {
   id: string;
   tenant_id: string;
+  separation_id?: string;
   employee_id: string;
   employee_name: string;
   employee_code: string;
@@ -854,8 +888,39 @@ export interface PayrollInputSnapshot {
   loan_emi_due: number;
   advance_recovery_due: number;
   voluntary_deductions: number;
-
   snapshot_created_at: string;
+
+  // Gate 2 Granular Cryptographic Fields
+  organization_id?: string;
+  source_hash?: string;
+  snapshot_version?: string;
+  salary_snapshot?: {
+    base_ctc: number;
+    monthly_base: number;
+    components?: Record<string, number>;
+    tax_regime?: string;
+  };
+  attendance_snapshot?: {
+    total_days: number;
+    present_days: number;
+    lop_days: number;
+    payable_days: number;
+    overtime_hours?: number;
+  };
+  leave_snapshot?: {
+    unpaid_leave_days: number;
+    proration_applied: boolean;
+    approved_leave_days?: number;
+  };
+  overtime_snapshot?: {
+    overtime_hours: number;
+    overtime_amount: number;
+  };
+  statutory_snapshot?: {
+    epf_ceiling: number;
+    esic_threshold: number;
+    pt_slab_monthly: number;
+  };
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -974,5 +1039,41 @@ export interface PayrollVarianceItem {
   severity: 'NORMAL' | 'SIGNIFICANT' | 'ABNORMAL';
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// GATE 2: FINANCIAL AUTHORITY, INPUT SNAPSHOTS & ADJUSTMENTS
+// ────────────────────────────────────────────────────────────────────────────
 
+export type PayrollAdjustmentType =
+  | 'RETROACTIVE_INCREMENT'
+  | 'MISSED_OVERTIME'
+  | 'LOP_CORRECTION'
+  | 'BONUS_ADJUSTMENT'
+  | 'STATUTORY_CORRECTION'
+  | 'RECOVERY_ADJUSTMENT'
+  | 'TAX_ADJUSTMENT';
 
+export interface PayrollAdjustment {
+  id: string;
+  organization_id: string;
+  employee_id: string;
+  source_payroll_run_id?: string;
+  target_payroll_run_id?: string;
+  adjustment_type: PayrollAdjustmentType;
+  amount: number;
+  reason: string;
+  status: 'PENDING' | 'APPROVED' | 'DISBURSED' | 'CANCELLED';
+  approved_by?: string;
+  approved_at?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SnapshotVerificationResult {
+  is_valid: boolean;
+  computed_hash: string;
+  stored_hash: string;
+  employee_id: string;
+  run_id: string;
+  tamper_detected: boolean;
+}

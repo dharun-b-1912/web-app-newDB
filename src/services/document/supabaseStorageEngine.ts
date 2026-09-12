@@ -45,7 +45,7 @@ class SupabaseStorageEngine {
    */
   resolveStorageBucket(category: 'documents' | 'letters' | 'profile' = 'documents'): StorageBucketDomain {
     if (category === 'letters') return 'employee-letters';
-    if (category === 'profile') return 'employee-profile-pictures';
+    if (category === 'profile') return 'employee-documents';
     return 'employee-documents';
   }
 
@@ -62,15 +62,18 @@ class SupabaseStorageEngine {
   }): string {
     const org = params.organizationId;
     const emp = params.employeeId;
-    const cat = params.category || 'documents';
-    
+    const isProfile = params.category === 'profile';
+    const isLetter = params.category === 'letters';
+    const storageCategory = isLetter ? 'letters' : 'documents';
+
     // Generate UUID filename with proper extension
-    const ext = params.fileName.includes('.') 
+    const ext = params.fileName.includes('.')
       ? params.fileName.substring(params.fileName.lastIndexOf('.'))
-      : (cat === 'profile' ? '.jpg' : '.pdf');
-      
+      : (isProfile ? '.jpg' : '.pdf');
+
     const fileId = params.fileUuid || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `file-${Date.now()}`);
-    return `${org}/${emp}/${cat}/${fileId}${ext}`;
+    const prefix = isProfile ? 'avatar_' : '';
+    return `${org}/${emp}/${storageCategory}/${prefix}${fileId}${ext}`;
   }
 
   /**

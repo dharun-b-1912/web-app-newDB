@@ -225,6 +225,12 @@ class DocumentService {
         supabase.from('employees').select('*'),
       ]);
 
+      let docsData = docsRes.data;
+      if (!docsData && docsRes.error) {
+        const fallbackDocs = await supabase.from('employee_documents').select('*');
+        docsData = fallbackDocs.data;
+      }
+
       const empsMap = new Map<string, any>();
       if (empsRes.data) {
         for (const emp of empsRes.data) {
@@ -237,8 +243,8 @@ class DocumentService {
       const masterDocs: DocumentMaster[] = [];
       const versions: DocumentVersion[] = [];
 
-      if (docsRes.data && docsRes.data.length > 0) {
-        for (const doc of docsRes.data) {
+      if (docsData && docsData.length > 0) {
+        for (const doc of docsData) {
           const emp = empsMap.get(doc.employee_id);
           const empName = emp ? `${emp.first_name} ${emp.last_name} (${emp.employee_code || emp.id})` : doc.employee_id;
           const dtMap = doc.document_types;
@@ -246,10 +252,9 @@ class DocumentService {
           const docTypeName = dtMap?.name || doc.file_name || 'Document';
           const matchingType = this.getDocumentTypeByCode(docTypeCode);
 
-          let filePublicUrl = doc.file_url || '';
-          if (doc.storage_path) {
-            filePublicUrl = doc.storage_path;
-          }
+          let filePublicUrl = (doc.file_url && doc.file_url.startsWith('http'))
+            ? doc.file_url
+            : (doc.storage_path || doc.file_url || '');
 
           const versionId = `ver-${doc.id}-1`;
           const curVer: DocumentVersion = {
@@ -290,6 +295,7 @@ class DocumentService {
             updated_at: doc.updated_at || doc.created_at || new Date().toISOString(),
             file_url: filePublicUrl,
             file_name: doc.file_name,
+            storage_path: doc.storage_path || doc.file_path || '',
             employee_id: doc.employee_id,
             employee_name: empName,
             document_type: docTypeName,
@@ -308,7 +314,9 @@ class DocumentService {
           // Find if there is a matching uploaded file in employee_documents or storage
           const matchingDoc = docsRes.data?.find(d => 
             d.id === req.document_id || 
-            (d.employee_id === req.employee_id && (d.document_type === req.document_type || d.document_type === req.title))
+            d.document_type_id === req.id ||
+            ((d.employee_id === req.employee_id || (emp && (d.employee_id === emp.id || d.employee_id === emp.employee_code))) && 
+             (d.document_type === req.document_type || d.document_type === req.title))
           );
 
           let reqFileUrl = matchingDoc?.file_url || '';
@@ -394,10 +402,8 @@ class DocumentService {
         }
       }
 
-      if (masterDocs.length > 0) {
-        this.setStore(DOCUMENTS_STORAGE_KEY, masterDocs);
-        this.setStore(VERSIONS_STORAGE_KEY, versions);
-      }
+      this.setStore(DOCUMENTS_STORAGE_KEY, masterDocs);
+      this.setStore(VERSIONS_STORAGE_KEY, versions);
     } catch (e) {
       console.warn('[DocumentService] syncWithDatabase error:', e);
     }

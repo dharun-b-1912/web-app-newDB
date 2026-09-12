@@ -62,7 +62,9 @@ function getStore<T>(baseKey: string, fallback: T, tenantId = getActiveOrgId()):
 function setStore<T>(baseKey: string, val: T, tenantId = getActiveOrgId()): void {
   try {
     const key = getTenantStorageKey(baseKey, tenantId);
-    localStorage.setItem(key, JSON.stringify(val));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(val));
+    }
   } catch (err) {
     console.error(`[attendanceRosterService] Storage error for ${baseKey}:`, err);
   }

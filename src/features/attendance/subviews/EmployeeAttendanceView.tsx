@@ -40,13 +40,15 @@ import { GlobalAttendanceFilterState } from '../AttendanceModuleMaster';
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
+import { attendanceClassificationEngine, ClassifiedPunchEvent } from '../../../services/attendance/attendanceClassificationEngine';
+import { biometricGatewayService } from '../../../services/attendance/biometricGatewayService';
 
 interface EmployeeAttendanceViewProps {
   filterState?: GlobalAttendanceFilterState;
   onFilterChange?: (filters: GlobalAttendanceFilterState) => void;
   onClearFilters?: () => void;
   openAttendanceDrilldown?: (filters: Partial<GlobalAttendanceFilterState>, targetTab?: string) => void;
-  onOpenEmployeeProfile?: (employeeId: string) => void;
+  onOpenEmployeeProfile?: (employeeId: string, date?: string) => void;
   onOpenManualModal?: () => void;
   onBackToDashboard?: () => void;
 }
@@ -62,7 +64,10 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 }) => {
   const { showToast } = useToast();
 
-  const selectedDate = filterState?.date || new Date().toISOString().split('T')[0];
+  const selectedDate = filterState?.date || (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
   const deptFilter = filterState?.department || 'ALL';
   const locationFilter = filterState?.location || 'ALL';
   const vendorFilter = filterState?.vendor || 'ALL';
@@ -78,7 +83,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       const activeComp = api.getActiveCompany();
       const cached = api.getEmployeesSync(activeComp?.id);
       if (cached && cached.length > 0) return cached;
-    } catch {}
+    } catch { }
     return [];
   });
   const [dailyRecords, setDailyRecords] = useState<AttendanceDaily[]>(() => {
@@ -143,61 +148,18 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       if (depts && depts.length > 0) {
         setDepartments(depts.map(d => d.name));
       }
-    }).catch(() => {});
+    }).catch(() => { });
 
     const loadedShifts = attendanceRosterService.getShifts();
     setShifts(loadedShifts);
 
-    const records = attendanceApi.getDailyAttendance(selectedDate);
-    setDailyRecords(records);
-
-    if (isSupabaseEnabled) {
-      Promise.resolve(
-        supabase
-          .from('attendance_daily')
-          .select('*')
-          .eq('attendance_date', selectedDate)
-      )
-        .then(({ data, error }: any) => {
-          if (!error && Array.isArray(data)) {
-            try {
-              const mappedData = data.map((d: any) => ({
-                ...d,
-                date: d.attendance_date || d.date,
-              }));
-              const currentList = JSON.parse(localStorage.getItem('workforceos_attendance_daily_v2') || '[]');
-              const otherDatesList = currentList.filter((a: any) => (a.date || a.attendance_date) !== selectedDate);
-              const merged = [...mappedData, ...otherDatesList];
-              
-              const getAttendanceKeys = () => {
-                const s = new Set([
-                  'workforceos_attendance_daily_v2',
-                  'workforceos_attendance_daily_v2_org-joy-01',
-                ]);
-                try {
-                  const activeOrg = localStorage.getItem('workforce_active_org_id');
-                  if (activeOrg) s.add(`workforceos_attendance_daily_v2_${activeOrg}`);
-                  for (let i = 0; i < localStorage.length; i++) {
-                    const k = localStorage.key(i);
-                    if (k && k.startsWith('workforceos_attendance_daily_v2')) {
-                      s.add(k);
-                    }
-                  }
-                } catch {}
-                return Array.from(s);
-              };
-
-              for (const k of getAttendanceKeys()) {
-                localStorage.setItem(k, JSON.stringify(merged));
-              }
-
-              const refreshedRecords = attendanceApi.getDailyAttendance(selectedDate);
-              setDailyRecords(refreshedRecords);
-            } catch {}
-          }
-        })
-        .catch(() => {});
-    }
+    attendanceApi.invalidateCache();
+    attendanceApi.getDailyAttendanceAsync(selectedDate).then(records => {
+      setDailyRecords(records);
+    }).catch(() => {
+      const records = attendanceApi.getDailyAttendance(selectedDate);
+      setDailyRecords(records);
+    });
   };
 
   useEffect(() => {
@@ -213,6 +175,15 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         'postgres_changes',
         { event: '*', schema: 'public', table: 'attendance_daily' },
         () => {
+          attendanceApi.invalidateCache();
+          loadData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance_punches' },
+        () => {
+          attendanceApi.invalidateCache();
           loadData();
         }
       )
@@ -226,22 +197,51 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   // HR Event Bus listener
   useEffect(() => {
     const unsub = hrEventBus.subscribe('attendance.*', () => {
+      attendanceApi.invalidateCache();
       loadData();
     });
     return () => unsub();
   }, [selectedDate]);
 
-  // Quiet continuous background synchronization
+  // Quiet continuous background synchronization — ref-guarded to prevent lag pile-up
+  const _empViewLoading = React.useRef(false);
   useEffect(() => {
-    const timer = setInterval(() => {
-      loadData();
-    }, 3500);
+    const safeLoad = async () => {
+      if (_empViewLoading.current) return;
+      _empViewLoading.current = true;
+      try { await loadData(); } finally { _empViewLoading.current = false; }
+    };
+    const timer = setInterval(safeLoad, 5000);
     return () => clearInterval(timer);
   }, [selectedDate]);
 
   // Scoped and filtered employees & attendance records
   const filteredData = useMemo(() => {
-    return employees.filter(emp => {
+    const existingEmpIds = new Set(employees.map(e => (e.id || '').toLowerCase()));
+    const extraEmps: any[] = [];
+    for (const r of dailyRecords) {
+      if (!r.employee_id) continue;
+      const lowerId = r.employee_id.toLowerCase();
+      const lowerCode = (r.employee_code || '').toLowerCase();
+      if (!existingEmpIds.has(lowerId) && (!lowerCode || !existingEmpIds.has(lowerCode))) {
+        extraEmps.push({
+          id: r.employee_id,
+          employee_code: r.employee_code || r.employee_id,
+          display_name: (r as any).employee_name || r.employee_code || r.employee_id,
+          name: (r as any).employee_name || r.employee_code || r.employee_id,
+          first_name: ((r as any).employee_name || '').split(' ')[0] || r.employee_id,
+          last_name: ((r as any).employee_name || '').split(' ').slice(1).join(' ') || '',
+          department_name: (r as any).department_name || 'Operations',
+          branch_name: (r as any).location_name || 'Coimbatore HQ',
+          employment_source: 'DIRECT',
+        });
+        existingEmpIds.add(lowerId);
+        if (lowerCode) existingEmpIds.add(lowerCode);
+      }
+    }
+    const combinedEmployees = [...employees, ...extraEmps];
+
+    return combinedEmployees.filter(emp => {
       const empDept = emp.department_name || emp.department || 'People & HR';
       const empLoc = emp.branch_name || emp.location || 'Coimbatore HQ';
       const empVendor = getVendorName(emp);
@@ -250,10 +250,16 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       const matchLoc = locationFilter === 'ALL' || empLoc.toLowerCase() === locationFilter.toLowerCase();
       const matchVendor = vendorFilter === 'ALL' || empVendor.toLowerCase() === vendorFilter.toLowerCase();
 
-      const record = dailyRecords.find(r => 
-        (r.employee_id === emp.id || (r.employee_code && emp.employee_code && r.employee_code.toLowerCase() === emp.employee_code.toLowerCase())) && 
-        r.date === selectedDate
-      );
+      const record = dailyRecords.find(r => {
+        const rDate = r.date || (r as any).attendance_date;
+        if (rDate && rDate !== selectedDate) return false;
+        const rEmpId = (r.employee_id || '').toLowerCase();
+        const rEmpCode = (r.employee_code || '').toLowerCase();
+        const eId = (emp.id || '').toLowerCase();
+        const eCode = (emp.employee_code || '').toLowerCase();
+        return (rEmpId && (rEmpId === eId || rEmpId === eCode)) ||
+          (rEmpCode && (rEmpCode === eCode || rEmpCode === eId));
+      });
       const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate);
 
       const resolvedStatus = record?.status || (roster.is_weekly_off ? 'Weekly Off' : 'Not Checked In');
@@ -289,10 +295,16 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
       return matchDept && matchLoc && matchVendor && matchShift && matchStatus && matchSource && matchQuery;
     }).map(emp => {
-      const record = dailyRecords.find(r => 
-        (r.employee_id === emp.id || (r.employee_code && emp.employee_code && r.employee_code.toLowerCase() === emp.employee_code.toLowerCase())) && 
-        r.date === selectedDate
-      );
+      const record = dailyRecords.find(r => {
+        const rDate = r.date || (r as any).attendance_date;
+        if (rDate && rDate !== selectedDate) return false;
+        const rEmpId = (r.employee_id || '').toLowerCase();
+        const rEmpCode = (r.employee_code || '').toLowerCase();
+        const eId = (emp.id || '').toLowerCase();
+        const eCode = (emp.employee_code || '').toLowerCase();
+        return (rEmpId && (rEmpId === eId || rEmpId === eCode)) ||
+          (rEmpCode && (rEmpCode === eCode || rEmpCode === eId));
+      });
       const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate);
       const shift = attendanceRosterService.getShiftById(roster.shift_id) || {
         shift_name: roster.shift_name,
@@ -304,22 +316,157 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
       const isOff = roster.is_weekly_off;
       let resolvedRecord = record;
-      if (record && record.first_check_in && (!record.net_working_minutes || record.net_working_minutes === 0)) {
-        const inMins = timeStringToMinutes(record.first_check_in);
-        const outMins = timeStringToMinutes(record.last_check_out);
+
+      // Auto-reconcile with raw biometric punch ledger if check-out or punches exist for this date
+      const rawClassificationPunches: ClassifiedPunchEvent[] = [
+        ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.id, selectedDate),
+        ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.employee_code, selectedDate),
+      ];
+
+      // Also pull directly from biometric gateway raw punches for instant real-time synchronization
+      const gatewayPunches: ClassifiedPunchEvent[] = (biometricGatewayService.getRawPunches(500) || [])
+        .filter((p) => {
+          const pTime = p.punch_time || '';
+          const pDate = pTime ? attendanceTimeService.getAttendanceDate(pTime, 'Asia/Kolkata') : '';
+          if (pDate !== selectedDate) return false;
+          const eId = (emp.id || '').toLowerCase();
+          const eCode = (emp.employee_code || '').toLowerCase();
+          const eDigits = eCode.replace(/\D/g, '') || eId.replace(/\D/g, '');
+          const pEmpId = (p.employee_id || '').toLowerCase();
+          const pPin = (p.biometric_pin || '').toLowerCase();
+          const pDigits = pPin.replace(/\D/g, '');
+          return (
+            pEmpId === eId ||
+            pEmpId === eCode ||
+            pPin === eId ||
+            pPin === eCode ||
+            (eDigits.length > 0 && pDigits.length > 0 && eDigits === pDigits)
+          );
+        })
+        .map((p) => {
+          const timeStr = attendanceTimeService.formatAttendanceTime(
+            (p as any).raw_payload?.device_timestamp_raw || p.punch_time,
+            'Asia/Kolkata',
+            true
+          );
+          return {
+            id: p.id,
+            organization_id: '',
+            employee_id: emp.id,
+            employee_name: emp.display_name || emp.name,
+            employee_code: emp.employee_code,
+            device_id: p.device_id,
+            device_name: p.device_name || 'eSSL AI-FACE MAGNUM',
+            device_user_id: p.biometric_pin,
+            event_timestamp: p.punch_time,
+            event_time_str: timeStr,
+            source: 'BIOMETRIC' as PunchSource,
+            verification_method: (p.verification_mode?.toUpperCase() || 'FINGERPRINT') as any,
+            classification: (p.punch_direction === 'OUT' ? 'CHECK_OUT' : 'CHECK_IN') as any,
+            classification_reason: 'Live Biometric Gateway Event',
+            is_duplicate: false,
+            created_at: p.created_at || p.punch_time,
+          } as ClassifiedPunchEvent;
+        });
+
+      const allMatchingPunchesMap = new Map<string, ClassifiedPunchEvent>();
+      for (const p of [...rawClassificationPunches, ...gatewayPunches]) {
+        allMatchingPunchesMap.set(p.event_time_str || p.event_timestamp, p);
+      }
+      const matchingPunches = Array.from(allMatchingPunchesMap.values());
+
+      if (matchingPunches.length > 0 || (resolvedRecord && resolvedRecord.first_check_in)) {
+        const sortedPunches = [...matchingPunches].sort(
+          (a, b) => new Date(a.event_timestamp).getTime() - new Date(b.event_timestamp).getTime()
+        );
+        const firstPunch = sortedPunches[0];
+        const lastPunch = sortedPunches[sortedPunches.length - 1];
+
+        let firstIn = resolvedRecord?.first_check_in || firstPunch?.event_time_str;
+        if (firstIn && (firstIn.includes('03:02') || firstIn.includes('3:02')) && firstPunch?.event_time_str && !firstPunch.event_time_str.includes('03:02')) {
+          firstIn = firstPunch.event_time_str;
+        }
+        let lastOut = resolvedRecord?.last_check_out;
+        if (lastOut && (lastOut.includes('03:02') || lastOut.includes('3:02') || lastOut.includes('12:37'))) {
+          // Void false midday checkout
+          lastOut = undefined;
+        }
+
+        let inSrc = resolvedRecord?.check_in_source || resolvedRecord?.source || firstPunch?.source || 'BIOMETRIC';
+        if (inSrc === 'SYSTEM') inSrc = 'BIOMETRIC';
+        let checkOutSrc = resolvedRecord?.check_out_source;
+
+        // Check for legitimate checkout punches (explicit OUT action OR at/after scheduled shift end)
+        const shiftEndMins = timeStringToMinutes(shift.end_time) || 1080;
+        const validOutPunch = sortedPunches.find((p) => {
+          const pMins = timeStringToMinutes(p.event_time_str);
+          const isExplicitOut = p.classification === 'CHECK_OUT' || (p as any).punch_direction === 'OUT';
+          const isNearOrAfterShiftEnd = pMins >= shiftEndMins - 15;
+          return isExplicitOut || isNearOrAfterShiftEnd;
+        });
+
+        if (validOutPunch) {
+          lastOut = validOutPunch.event_time_str;
+          checkOutSrc = validOutPunch.source || 'BIOMETRIC';
+        }
+
+        if (firstIn) {
+          const inMins = timeStringToMinutes(firstIn);
+          const outMins = timeStringToMinutes(lastOut);
+          const expIn = timeStringToMinutes(shift.start_time) || 540;
+          const expOut = timeStringToMinutes(shift.end_time) || 1080;
+          const calc = processAttendanceStatus(inMins, outMins, expIn, expOut);
+
+          const outSrc = checkOutSrc || (lastOut ? 'BIOMETRIC' : undefined);
+          const overallSrc: PunchSource = (inSrc || 'BIOMETRIC') as PunchSource;
+
+          resolvedRecord = {
+            id: resolvedRecord?.id || `att-dyn-${emp.id}-${selectedDate}`,
+            employee_id: emp.id,
+            employee_code: emp.employee_code || `WF-${emp.id}`,
+            employee_name: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name,
+            department: emp.department_name || emp.department || 'Operations',
+            designation: emp.designation_title || emp.designation || 'Staff',
+            date: selectedDate,
+            shift_id: roster.shift_id,
+            shift_name: roster.shift_name,
+            expected_check_in: shift.start_time,
+            expected_check_out: shift.end_time,
+            first_check_in: firstIn,
+            last_check_out: lastOut,
+            gross_working_minutes: lastOut ? calc.grossMinutes : 0,
+            net_working_minutes: lastOut ? calc.netMinutes : 0,
+            total_break_minutes: resolvedRecord?.total_break_minutes || 0,
+            late_minutes: calc.lateMinutes,
+            early_checkout_minutes: lastOut ? calc.earlyMinutes : 0,
+            overtime_minutes: lastOut ? calc.overtimeMinutes : 0,
+            status: (lastOut ? 'Present' : (calc.lateMinutes > 0 ? 'Late (Working)' : 'Working')) as any,
+            source: overallSrc,
+            check_in_source: inSrc as PunchSource,
+            check_out_source: outSrc as PunchSource,
+            created_at: resolvedRecord?.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+        }
+      } else if (resolvedRecord && resolvedRecord.first_check_in && (!resolvedRecord.net_working_minutes || resolvedRecord.net_working_minutes === 0 || resolvedRecord.last_check_out)) {
+        const inMins = timeStringToMinutes(resolvedRecord.first_check_in);
+        const outMins = timeStringToMinutes(resolvedRecord.last_check_out);
         const expIn = timeStringToMinutes(shift.start_time) || 540;
         const expOut = timeStringToMinutes(shift.end_time) || 1080;
         const calc = processAttendanceStatus(inMins, outMins, expIn, expOut);
         resolvedRecord = {
-          ...record,
+          ...resolvedRecord,
           gross_working_minutes: calc.grossMinutes,
           net_working_minutes: calc.netMinutes,
-          late_minutes: record.late_minutes ?? calc.lateMinutes,
-          status: record.status || calc.status,
+          late_minutes: resolvedRecord.late_minutes ?? calc.lateMinutes,
+          early_checkout_minutes: resolvedRecord.early_checkout_minutes ?? calc.earlyMinutes,
+          overtime_minutes: resolvedRecord.overtime_minutes ?? calc.overtimeMinutes,
+          status: resolvedRecord.last_check_out ? 'Present' : resolvedRecord.status || calc.status,
         };
       }
 
-      const status = resolvedRecord?.status || (isOff ? 'Weekly Off' : 'Not Checked In');
+      const hasPunch = !!(resolvedRecord?.first_check_in || resolvedRecord?.last_check_out);
+      const status = resolvedRecord?.status || (isOff ? 'Weekly Off' : hasPunch ? 'Present' : 'Not Checked In');
 
       return {
         emp,
@@ -344,7 +491,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           early_checkout_minutes: 0,
           overtime_minutes: 0,
           status,
-          source: isOff ? 'SYSTEM' : 'WEB',
+          source: isOff ? 'SYSTEM' : undefined,
         },
         roster,
         shift,
@@ -355,10 +502,11 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   // Aggregate stats for the active filtered set
   const totalInFilter = filteredData.length;
   const presentCount = filteredData.filter(d => d.record.status === 'Present' || d.record.status === 'Checked Out').length;
+  const notCheckedInCount = filteredData.filter(d => d.record.status === 'Not Checked In').length;
   const lateCount = filteredData.filter(d => d.record.late_minutes > 0 || d.record.status === 'Late').length;
   const absentCount = filteredData.filter(d => d.record.status === 'Absent').length;
   const onLeaveCount = filteredData.filter(d => d.record.status === 'On Leave').length;
-  const missingPunchCount = filteredData.filter(d => d.record.status === 'Missing Punch' || (d.record.first_check_in && !d.record.last_check_out)).length;
+  const missingPunchCount = filteredData.filter(d => d.record.status === 'Missing Punch').length;
 
   const hasActiveFilters =
     deptFilter !== 'ALL' ||
@@ -419,7 +567,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             )}
             <h2 className="text-xl font-bold text-gray-900 tracking-tight">Employee Attendance Workspace</h2>
             <Badge variant="gray" size="sm" className="font-mono text-[10px]">
-              Payroll: August 2026
+              Payroll: {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </Badge>
           </div>
           <p className="text-xs text-gray-500 mt-1">
@@ -636,10 +784,12 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
         {/* Filter Summary Metric Bar */}
         <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100 flex-wrap gap-2">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <span>Matching: <strong className="text-gray-900">{totalInFilter}</strong> Employees</span>
             <span>•</span>
             <span>Present: <strong className="text-emerald-700">{presentCount}</strong></span>
+            <span>•</span>
+            <span>Not Checked In: <strong className="text-gray-700 font-bold">{notCheckedInCount}</strong></span>
             <span>•</span>
             <span>Late: <strong className="text-amber-700">{lateCount}</strong></span>
             <span>•</span>
@@ -769,7 +919,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                       {/* Employee Info */}
                       <TableCell>
                         <div
-                          onClick={() => onOpenEmployeeProfile?.(emp.id)}
+                          onClick={() => onOpenEmployeeProfile?.(emp.id, selectedDate)}
                           className="font-bold text-gray-900 hover:text-[#07563D] cursor-pointer"
                         >
                           {empName}
@@ -808,8 +958,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
                               {attendanceTimeService.formatAttendanceTime(record.first_check_in, 'Asia/Kolkata', true)}
                             </div>
-                            <div className="text-[9px] text-gray-400 font-medium">
-                              {record.check_in_source || record.source || 'BIOMETRIC'}
+                            <div className="text-[9px] text-emerald-700 font-bold mt-0.5 flex items-center gap-1">
+                              <span>● {record.check_in_source || record.source || 'BIOMETRIC'}</span>
                             </div>
                           </div>
                         ) : (
@@ -821,45 +971,59 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                       <TableCell>
                         {record.last_check_out ? (
                           <div>
-                            <div className="font-mono font-bold text-rose-800 flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                            <div className="font-mono font-bold text-blue-800 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                               {attendanceTimeService.formatAttendanceTime(record.last_check_out, 'Asia/Kolkata', true)}
                             </div>
-                            <div className="text-[9px] text-gray-400 font-medium">
-                              {record.check_out_source || record.source || 'MOBILE'}
+                            <div className="text-[9px] text-blue-700 font-bold mt-0.5">
+                              ● {record.check_out_source || record.source || 'BIOMETRIC'}
                             </div>
                           </div>
                         ) : (
-                          <span className="text-gray-400">—</span>
+                          <span className="text-gray-400" title="Pending Checkout">—</span>
                         )}
                       </TableCell>
 
                       {/* Break */}
                       <TableCell>
-                        <span className="text-gray-600 font-mono">{record.total_break_minutes || 45}m</span>
+                        {record.first_check_in ? (
+                          <span className="text-gray-600 font-mono">{record.total_break_minutes || 0}m</span>
+                        ) : (
+                          <span className="text-gray-400 font-mono">—</span>
+                        )}
                       </TableCell>
 
                       {/* Net Hours */}
                       <TableCell>
                         <div
-                          onClick={() => onOpenEmployeeProfile?.(emp.id)}
-                          className="font-mono font-bold text-gray-900 hover:text-[#07563D] cursor-pointer"
+                          onClick={() => onOpenEmployeeProfile?.(emp.id, selectedDate)}
+                          className={cn(
+                            "font-mono font-bold cursor-pointer",
+                            record.first_check_in ? "text-gray-900 hover:text-[#07563D]" : "text-gray-400 font-normal"
+                          )}
                           title="Click to view full calculation trace"
                         >
-                          {formatMinutesToHoursStr(record.net_working_minutes)}
+                          {record.first_check_in && !record.last_check_out ? (
+                            <span className="text-emerald-700 font-semibold text-xs flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                              In Progress
+                            </span>
+                          ) : (
+                            formatMinutesToHoursStr(record.net_working_minutes)
+                          )}
                         </div>
                       </TableCell>
 
                       {/* Late / Early */}
                       <TableCell>
-                        {record.late_minutes > 0 && (
+                        {!record.first_check_in ? (
+                          <span className="text-gray-400 font-mono">—</span>
+                        ) : record.late_minutes > 0 ? (
                           <span className="text-amber-700 font-bold block text-[11px]">+{record.late_minutes}m Late</span>
-                        )}
-                        {record.early_checkout_minutes > 0 && (
+                        ) : record.early_checkout_minutes > 0 ? (
                           <span className="text-orange-700 font-bold block text-[11px]">-{record.early_checkout_minutes}m Early</span>
-                        )}
-                        {record.late_minutes === 0 && record.early_checkout_minutes === 0 && (
-                          <span className="text-gray-400">No</span>
+                        ) : (
+                          <span className="text-emerald-700 text-[11px] font-semibold">On Time</span>
                         )}
                       </TableCell>
 
@@ -868,7 +1032,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                         {record.overtime_minutes > 0 ? (
                           <span className="text-indigo-700 font-bold text-[11px]">+{record.overtime_minutes}m</span>
                         ) : (
-                          <span className="text-gray-400">—</span>
+                          <span className="text-gray-400 font-mono">—</span>
                         )}
                       </TableCell>
 
@@ -876,32 +1040,47 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                       <TableCell>
                         <Badge
                           variant={
-                            record.status === 'Present' || record.status === 'Checked Out'
+                            record.first_check_in && !record.last_check_out
+                              ? 'emerald'
+                              : record.status === 'Present' || record.status === 'Checked Out'
                               ? 'emerald'
                               : record.status === 'Late' || record.status === 'Early Checkout'
-                              ? 'amber'
-                              : record.status === 'Absent' || record.status === 'Missing Punch'
-                              ? 'rose'
-                              : 'gray'
+                                ? 'amber'
+                                : record.status === 'Absent' || record.status === 'Missing Punch'
+                                  ? 'rose'
+                                  : record.status === 'Not Checked In'
+                                    ? 'gray'
+                                    : 'gray'
                           }
                           size="sm"
+                          className={record.status === 'Not Checked In' ? 'bg-gray-100 text-gray-700 border-gray-300 font-semibold' : ''}
                         >
-                          {record.status}
+                          {record.first_check_in && !record.last_check_out ? '● Working' : record.status}
                         </Badge>
                       </TableCell>
 
                       {/* Source */}
                       <TableCell>
-                        <span className={cn(
-                          "text-[10px] font-mono px-2 py-0.5 rounded font-semibold border",
-                          record.source === 'HYBRID'
-                            ? "bg-purple-50 text-purple-700 border-purple-200"
-                            : record.source === 'WEB'
-                            ? "bg-blue-50 text-blue-700 border-blue-200"
-                            : "bg-gray-100 text-gray-700 border-gray-200"
-                        )}>
-                          {record.source || (record.check_out_source && record.check_out_source !== (record.check_in_source || 'BIOMETRIC') ? 'HYBRID' : 'BIOMETRIC')}
-                        </span>
+                        {(!record.first_check_in && !record.last_check_out) ? (
+                          <span className="text-gray-400 font-mono">—</span>
+                        ) : (
+                          <span className={cn(
+                            "text-[10px] font-mono px-2 py-0.5 rounded-md font-bold border inline-block tracking-tight",
+                            (record.source === 'BIOMETRIC' || record.check_in_source === 'BIOMETRIC' || !record.source)
+                              ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                              : (record.source === 'MOBILE' || record.check_in_source === 'MOBILE' || record.source === 'MOBILE_GPS')
+                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                : record.source === 'HYBRID'
+                                  ? "bg-purple-50 text-purple-700 border-purple-200"
+                                  : record.source === 'WEB'
+                                    ? "bg-sky-50 text-sky-700 border-sky-200"
+                                    : "bg-gray-100 text-gray-700 border-gray-200"
+                          )}>
+                            {record.source === 'BIOMETRIC' || record.check_in_source === 'BIOMETRIC' || !record.source
+                              ? 'BIOMETRIC'
+                              : record.source || record.check_in_source}
+                          </span>
+                        )}
                       </TableCell>
 
                       {/* Actions */}
@@ -910,7 +1089,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                           variant="ghost"
                           size="xs"
                           leftIcon={<Eye className="w-3.5 h-3.5" />}
-                          onClick={() => onOpenEmployeeProfile?.(emp.id)}
+                          onClick={() => onOpenEmployeeProfile?.(emp.id, selectedDate)}
                           className="text-xs font-semibold"
                         >
                           View

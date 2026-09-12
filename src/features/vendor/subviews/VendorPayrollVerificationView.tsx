@@ -13,11 +13,12 @@ import {
 } from 'lucide-react';
 import { vendorPortalService } from '../../../services/vendorPortalService';
 import { VendorOrganization, DiscrepancyCategory } from '../../../types/vendorPortal';
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
 
 interface VendorPayrollVerificationViewProps {
-  activeVendor: VendorOrganization;
-  activePeriod: string;
-  onRefresh: () => void;
+  activeVendor?: VendorOrganization | null;
+  activePeriod?: string;
+  onRefresh?: () => void;
 }
 
 export const VendorPayrollVerificationView: React.FC<VendorPayrollVerificationViewProps> = ({
@@ -33,10 +34,44 @@ export const VendorPayrollVerificationView: React.FC<VendorPayrollVerificationVi
   const [actualValue, setActualValue] = useState('');
   const [discReason, setDiscReason] = useState('');
 
-  const employees = vendorPortalService.getEmployees(activeVendor.id);
-  const wageList = vendorPortalService.getEmployeeWageBreakdowns(activePeriod, activeVendor.id);
-  const payable = vendorPortalService.getVendorPayableBreakdown(activePeriod, activeVendor.id);
-  const status = vendorPortalService.getPayrollVerificationStatus(activePeriod, activeVendor.id);
+  let ctxVendor: VendorOrganization | null = null;
+  let ctxRelationship: any = null;
+  let ctxRefresh: (() => void) | undefined = undefined;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+    ctxRelationship = ctx.activeRelationship;
+    ctxRefresh = ctx.refreshContext;
+  } catch {}
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
+  const effectivePeriod = activePeriod || '2026-08';
+  const triggerRefresh = () => {
+    if (onRefresh) onRefresh();
+    if (ctxRefresh) ctxRefresh();
+  };
+
+  const allEmployees = effectiveVendor?.id ? vendorPortalService.getEmployees(effectiveVendor.id) : [];
+  const employees = allEmployees.filter((emp) => {
+    if (!ctxRelationship) return true;
+    const relCompanyId = ctxRelationship.company_id || ctxRelationship.id;
+    return !emp.current_client_id || emp.current_client_id === relCompanyId;
+  });
+  const employeeIds = new Set(employees.map((e) => e.id));
+
+  const rawWageList = effectiveVendor?.id
+    ? vendorPortalService.getEmployeeWageBreakdowns(effectivePeriod, effectiveVendor.id)
+    : [];
+  const wageList = ctxRelationship
+    ? rawWageList.filter((w) => employeeIds.has(w.employee_id))
+    : rawWageList;
+
+  const payable = effectiveVendor?.id
+    ? vendorPortalService.getVendorPayableBreakdown(effectivePeriod, effectiveVendor.id)
+    : { total_before_tax: 0, net_vendor_payable: 0, total_gst: 0, tds_deduction: 0, advance_deduction: 0 };
+  const status = effectiveVendor?.id
+    ? vendorPortalService.getPayrollVerificationStatus(effectivePeriod, effectiveVendor.id)
+    : 'DRAFT';
 
   const totalGross = wageList.reduce((s, w) => s + w.gross_payable, 0);
   const totalDeductions = wageList.reduce((s, w) => s + w.total_deductions, 0);
@@ -44,33 +79,36 @@ export const VendorPayrollVerificationView: React.FC<VendorPayrollVerificationVi
   const totalEmployerStat = wageList.reduce((s, w) => s + w.total_employer_statutory, 0);
 
   const handleVendorConfirm = () => {
+    if (!effectiveVendor) return;
     vendorPortalService.updatePayrollVerificationStatus(
-      activePeriod,
+      effectivePeriod,
       'VENDOR_VERIFIED',
       'Vendor operations head formally verified wage breakdown and submitted to Client HR.'
     );
     showToast('Payroll officially verified by Vendor and routed to Client HR!');
-    onRefresh();
+    triggerRefresh();
   };
 
   const handleClientApprove = () => {
+    if (!effectiveVendor) return;
     vendorPortalService.updatePayrollVerificationStatus(
-      activePeriod,
+      effectivePeriod,
       'CLIENT_APPROVED',
       'Client HR verified contractor timesheet, overtime rates, and wage components.'
     );
     showToast('Payroll approved by Client HR!');
-    onRefresh();
+    triggerRefresh();
   };
 
   const handleFreezePayroll = () => {
+    if (!effectiveVendor) return;
     vendorPortalService.updatePayrollVerificationStatus(
-      activePeriod,
+      effectivePeriod,
       'FROZEN',
       'Payroll immutable freeze locked. Generated final vendor payable.'
     );
     showToast('Payroll locked & frozen. Ready for Purchase Order billing!');
-    onRefresh();
+    triggerRefresh();
   };
 
   const handleRaiseDiscrepancy = (e: React.FormEvent) => {
@@ -82,7 +120,7 @@ export const VendorPayrollVerificationView: React.FC<VendorPayrollVerificationVi
 
     vendorPortalService.logAudit({
       entity_type: 'PAYROLL',
-      entity_id: `${activeVendor.id}_${activePeriod}`,
+      entity_id: `${effectiveVendor?.id || 'vendor'}_${effectivePeriod}`,
       action: 'PAYROLL_DISCREPANCY_RAISED',
       new_value: JSON.stringify({ category, expectedValue, actualValue, reason: discReason }),
       remarks: `Discrepancy ticket raised in category ${category}: ${discReason}`,
@@ -93,7 +131,7 @@ export const VendorPayrollVerificationView: React.FC<VendorPayrollVerificationVi
     setDiscReason('');
     setExpectedValue('');
     setActualValue('');
-    onRefresh();
+    triggerRefresh();
   };
 
   return (

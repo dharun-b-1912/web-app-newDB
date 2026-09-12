@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
-import { Company, Branch, Department, Team, Location, OrganizationSummaryMetrics, Employee } from '../../types';
+import { Company, Branch, BranchType, Department, Team, Location, OrganizationSummaryMetrics, Employee } from '../../types';
 import { hrEventBus } from '../hrEventBus';
 import { api, isValidUUID, ensureUUID } from '../api';
 import { vendorWorkforceService } from './vendorWorkforceService';
@@ -84,14 +84,29 @@ class OrganizationStructureService {
   async getLegalEntities(organizationId: string): Promise<Company[]> {
     if (isSupabaseEnabled && supabase) {
       try {
-        const { data, error } = await supabase
-          .from('companies')
-          .select('*')
-          .eq('organization_id', organizationId)
-          .order('created_at', { ascending: true });
+        let q = supabase.from('companies').select('*');
+        if (organizationId && isValidUUID(organizationId)) {
+          q = q.eq('organization_id', organizationId);
+        }
+        const { data, error } = await q.order('created_at', { ascending: true });
 
         if (!error && data !== null) {
-          return data;
+          const mapped: Company[] = data.map((d: any) => ({
+            id: d.id,
+            organization_id: d.organization_id,
+            legal_name: d.legal_name,
+            trade_name: d.trade_name || d.legal_name,
+            statutory_registration_no: d.cin_number || d.statutory_registration_no || '',
+            tax_id: d.pan_number || d.gstin || d.tax_id || '',
+            country: d.country || 'India',
+            city: d.city || 'Coimbatore',
+            currency: 'INR',
+            timezone: 'Asia/Kolkata',
+            address: d.registered_address || d.address || '',
+            status: d.is_active === false ? 'Inactive' : 'Active',
+            created_at: d.created_at || new Date().toISOString(),
+          }));
+          return mapped;
         }
       } catch (err) {
         console.warn('[OrganizationStructureService] getLegalEntities error:', err);
@@ -101,12 +116,16 @@ class OrganizationStructureService {
   }
 
   /**
-   * Creates a new Legal Entity in the database.
+   * Creates a new Legal Entity in the database with exact PostgreSQL schema alignment.
    */
   async createLegalEntity(payload: Partial<Company> & { organization_id: string; legal_name: string; statutory_registration_no: string }): Promise<Company> {
+    const orgId = payload.organization_id || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null) || '';
+    const tempId = `comp-${Date.now()}`;
+    const code = (payload as any).company_code || `CMP-${Math.floor(1000 + Math.random() * 9000)}`;
+
     const newComp: Company = {
-      id: `comp-${Date.now()}`,
-      organization_id: payload.organization_id,
+      id: tempId,
+      organization_id: orgId,
       legal_name: payload.legal_name,
       trade_name: payload.trade_name || payload.legal_name,
       statutory_registration_no: payload.statutory_registration_no,
@@ -120,17 +139,53 @@ class OrganizationStructureService {
       created_at: new Date().toISOString(),
     };
 
-    if (isSupabaseEnabled && supabase) {
+    if (isSupabaseEnabled && supabase && orgId && isValidUUID(orgId)) {
       try {
-        const { data, error } = await supabase.from('companies').insert([newComp]).select().single();
+        const dbPayload = {
+          organization_id: orgId,
+          legal_name: payload.legal_name,
+          trade_name: payload.trade_name || payload.legal_name,
+          company_code: code,
+          cin_number: payload.statutory_registration_no || null,
+          pan_number: payload.tax_id || null,
+          gstin: (payload as any).gstin || null,
+          registered_address: payload.address || null,
+          city: payload.city || 'Coimbatore',
+          state: (payload as any).state || 'Tamil Nadu',
+          postal_code: (payload as any).postal_code || '641001',
+          country: payload.country || 'India',
+          is_headquarters: Boolean((payload as any).is_headquarters),
+          is_active: payload.status !== 'Inactive',
+        };
+
+        const { data, error } = await supabase.from('companies').insert([dbPayload]).select().single();
         if (!error && data) {
+          const created: Company = {
+            id: data.id,
+            organization_id: data.organization_id,
+            legal_name: data.legal_name,
+            trade_name: data.trade_name || data.legal_name,
+            statutory_registration_no: data.cin_number || payload.statutory_registration_no || '',
+            tax_id: data.pan_number || data.gstin || payload.tax_id || '',
+            country: data.country || 'India',
+            city: data.city || 'Coimbatore',
+            currency: 'INR',
+            timezone: 'Asia/Kolkata',
+            address: data.registered_address || payload.address || '',
+            status: data.is_active === false ? 'Inactive' : 'Active',
+            created_at: data.created_at || new Date().toISOString(),
+          };
+
           try {
             const existingComps = JSON.parse(localStorage.getItem('workforce_companies') || '[]');
-            localStorage.setItem('workforce_companies', JSON.stringify([data, ...existingComps.filter((c: any) => c.id !== data.id)]));
+            localStorage.setItem('workforce_companies', JSON.stringify([created, ...existingComps.filter((c: any) => c.id !== created.id)]));
           } catch (_) {}
+
           window.dispatchEvent(new CustomEvent('organization:context_updated'));
-          hrEventBus.emit('organization.legal_entity_created', { legalEntity: data });
-          return data;
+          hrEventBus.emit('organization.legal_entity_created', { legalEntity: created });
+          return created;
+        } else if (error) {
+          console.warn('[OrganizationStructureService] createLegalEntity insert error:', error);
         }
       } catch (err) {
         console.warn('[OrganizationStructureService] createLegalEntity fallback:', err);
@@ -147,30 +202,109 @@ class OrganizationStructureService {
   }
 
   /**
-   * Fetches all Branches / Campuses / Sites from SQL database (No hardcoded mock seeds).
+   * Updates an existing Legal Entity in SQL and local state.
+   */
+  async updateLegalEntity(id: string, updates: Partial<Company>): Promise<Company> {
+    if (isSupabaseEnabled && supabase && isValidUUID(id)) {
+      try {
+        const dbUpdates: any = {};
+        if (updates.legal_name) dbUpdates.legal_name = updates.legal_name;
+        if (updates.trade_name !== undefined) dbUpdates.trade_name = updates.trade_name;
+        if (updates.statutory_registration_no !== undefined) dbUpdates.cin_number = updates.statutory_registration_no;
+        if (updates.tax_id !== undefined) dbUpdates.pan_number = updates.tax_id;
+        if (updates.address !== undefined) dbUpdates.registered_address = updates.address;
+        if (updates.city) dbUpdates.city = updates.city;
+        if (updates.country) dbUpdates.country = updates.country;
+        if (updates.status !== undefined) dbUpdates.is_active = updates.status !== 'Inactive';
+
+        const { data, error } = await supabase.from('companies').update(dbUpdates).eq('id', id).select().maybeSingle();
+        if (!error && data) {
+          const updated: Company = {
+            id: data.id,
+            organization_id: data.organization_id,
+            legal_name: data.legal_name,
+            trade_name: data.trade_name || data.legal_name,
+            statutory_registration_no: data.cin_number || updates.statutory_registration_no || '',
+            tax_id: data.pan_number || data.gstin || updates.tax_id || '',
+            country: data.country || 'India',
+            city: data.city || 'Coimbatore',
+            currency: 'INR',
+            timezone: 'Asia/Kolkata',
+            address: data.registered_address || updates.address || '',
+            status: data.is_active === false ? 'Inactive' : 'Active',
+            created_at: data.created_at || new Date().toISOString(),
+          };
+
+          try {
+            const existingComps = JSON.parse(localStorage.getItem('workforce_companies') || '[]');
+            localStorage.setItem('workforce_companies', JSON.stringify(existingComps.map((c: any) => c.id === id ? updated : c)));
+          } catch (_) {}
+
+          window.dispatchEvent(new CustomEvent('organization:context_updated'));
+          hrEventBus.emit('organization.legal_entity_updated', { legalEntity: updated });
+          return updated;
+        }
+      } catch (err) {
+        console.warn('[OrganizationStructureService] updateLegalEntity error:', err);
+      }
+    }
+
+    const comps = api.getCompanies ? await api.getCompanies() : [];
+    const index = comps.findIndex((c) => c.id === id);
+    const existing = index >= 0 ? comps[index] : ({ id } as Company);
+    const localUpdated: Company = { ...existing, ...updates };
+
+    try {
+      const existingComps = JSON.parse(localStorage.getItem('workforce_companies') || '[]');
+      localStorage.setItem('workforce_companies', JSON.stringify(existingComps.map((c: any) => c.id === id ? localUpdated : c)));
+    } catch (_) {}
+
+    window.dispatchEvent(new CustomEvent('organization:context_updated'));
+    hrEventBus.emit('organization.legal_entity_updated', { legalEntity: localUpdated });
+    return localUpdated;
+  }
+
+  /**
+   * Fetches all Branches / Campuses / Sites from SQL database.
    */
   async getBranches(companyId?: string, organizationId?: string): Promise<Branch[]> {
     if (isSupabaseEnabled && supabase) {
       try {
         let query = supabase.from('branches').select('*');
-        if (companyId) {
+        if (companyId && isValidUUID(companyId)) {
           query = query.eq('company_id', companyId);
-        } else if (organizationId) {
+        } else if (organizationId && isValidUUID(organizationId)) {
           query = query.eq('organization_id', organizationId);
         }
 
         const { data, error } = await query.order('created_at', { ascending: true });
         if (!error && data) {
-          return data;
+          const mapped: Branch[] = data.map((b: any) => ({
+            id: b.id,
+            company_id: b.company_id,
+            name: b.name,
+            code: b.branch_code || 'BR01',
+            branch_type: (b.branch_type || 'OFFICE') as BranchType,
+            country: b.country || 'India',
+            city: b.city || 'Coimbatore',
+            state: b.state || 'Tamil Nadu',
+            address: b.address || '',
+            postal_code: b.postal_code || '',
+            timezone: 'Asia/Kolkata',
+            status: b.is_active === false ? 'Inactive' : 'Active',
+            contact_phone: b.phone || '',
+            contact_email: b.email || '',
+            created_at: b.created_at || new Date().toISOString(),
+          }));
+          return mapped;
         }
       } catch (err) {
         console.warn('[OrganizationStructureService] getBranches SQL error:', err);
       }
     }
 
-    // Direct database store
+    // Direct database store fallback
     const list = getLocalStore<Branch[]>(BRANCH_STORAGE_KEY, []);
-    // Filter out any stale mock branches
     const cleanList = list.filter(
       b => b.name !== 'Chennai Tech Park' && b.name !== 'Bengaluru Innovation Center' && b.name !== 'Remote Distributed Hub'
     );
@@ -181,11 +315,10 @@ class OrganizationStructureService {
   }
 
   /**
-   * Creates a new Branch in SQL database with adaptive resilient retry.
+   * Creates a new Branch in SQL database with exact PostgreSQL schema alignment.
    */
   async createBranch(payload: Partial<Branch> & { company_id?: string; name: string; code: string }): Promise<Branch> {
-    const id = ensureUUID(payload.id);
-    const branchCode = payload.code || (payload as any).branch_code || 'BR01';
+    const branchCode = payload.code || (payload as any).branch_code || `BR-${Math.floor(100 + Math.random() * 900)}`;
 
     let orgId = (payload as any).organization_id;
     let compId = payload.company_id;
@@ -206,8 +339,12 @@ class OrganizationStructureService {
           }
         }
 
-        if (orgId) {
-          // Verify company belongs to this organization
+        if (!orgId && typeof window !== 'undefined') {
+          orgId = localStorage.getItem('workforce_active_org_id') || '';
+        }
+
+        if (orgId && isValidUUID(orgId)) {
+          // Verify company belongs to this organization or find active company
           let compValid = false;
           if (compId && isValidUUID(compId)) {
             const { data: compCheck } = await supabase
@@ -231,8 +368,9 @@ class OrganizationStructureService {
       } catch (_) {}
     }
 
+    const fallbackId = `br-${Date.now()}`;
     const newBranch: Branch = {
-      id,
+      id: fallbackId,
       company_id: compId || '',
       name: payload.name,
       code: branchCode,
@@ -250,10 +388,9 @@ class OrganizationStructureService {
       created_at: new Date().toISOString(),
     };
 
-    if (isSupabaseEnabled && supabase && orgId && compId) {
+    if (isSupabaseEnabled && supabase && orgId && isValidUUID(orgId) && compId && isValidUUID(compId)) {
       try {
         const dbPayload = {
-          id,
           organization_id: orgId,
           company_id: compId,
           name: newBranch.name,
@@ -261,7 +398,6 @@ class OrganizationStructureService {
           city: newBranch.city || 'Coimbatore',
           state: newBranch.state || 'Tamil Nadu',
           country: newBranch.country || 'India',
-          timezone: newBranch.timezone || 'Asia/Kolkata',
           phone: newBranch.contact_phone || null,
           email: newBranch.contact_email || null,
           is_active: newBranch.status !== 'Inactive',
@@ -269,7 +405,26 @@ class OrganizationStructureService {
         const { data, error, status } = await supabase.from('branches').insert([dbPayload]).select().single();
         if (!error && data) {
           appLogger.dbOperation('branches', 'INSERT', dbPayload);
-          const merged = { ...newBranch, ...data, code: data.branch_code };
+          const merged: Branch = {
+            id: data.id,
+            company_id: data.company_id,
+            name: data.name,
+            code: data.branch_code || branchCode,
+            branch_type: payload.branch_type || 'OFFICE',
+            country: data.country || 'India',
+            city: data.city || 'Coimbatore',
+            state: data.state || 'Tamil Nadu',
+            address: payload.address || '',
+            postal_code: payload.postal_code || '',
+            timezone: 'Asia/Kolkata',
+            status: data.is_active === false ? 'Inactive' : 'Active',
+            head_employee_id: payload.head_employee_id || null,
+            contact_phone: data.phone || '',
+            contact_email: data.email || '',
+            created_at: data.created_at || new Date().toISOString(),
+          };
+          const current = getLocalStore<Branch[]>(BRANCH_STORAGE_KEY, []);
+          setLocalStore(BRANCH_STORAGE_KEY, [merged, ...current.filter((b) => b.id !== merged.id)]);
           hrEventBus.emit('organization.branch_created', { branch: merged });
           return merged;
         } else if (error) {

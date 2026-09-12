@@ -44,6 +44,9 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   // Clocking & Devices (Biometric Channel)
   'biometric',
   'biometric-devices',
+  'attendance-rules',
+  'biometric-rules',
+  'rules-engine',
   'device-enrollment',
   'device-sync',
   'punch-mapping',
@@ -286,7 +289,7 @@ const MANAGER_MODULE_IDS: ModuleId[] = [
   // Attendance (department)
   'attendance', 'attendance-dashboard', 'attendance-employees', 'employee-attendance', 'employees', 'history', 'attendance-history', 'ledger', 'regularization', 'exceptions', 'late-early',
   'shifts', 'roster', 'shift-calendar', 'policies',
-  'biometric', 'biometric-devices', 'device-enrollment', 'device-sync', 'punch-mapping', 'device-logs',
+  'biometric', 'biometric-devices', 'attendance-rules', 'biometric-rules', 'rules-engine', 'device-enrollment', 'device-sync', 'punch-mapping', 'device-logs',
   'face-attendance', 'face-enrollment', 'face-devices', 'face-logs', 'face-exceptions',
   'gps', 'gps-attendance', 'geofences', 'staff-mapping', 'mobile-clocking', 'location-logs', 'location-exceptions',
   'overtime', 'overtime-requests', 'wfh', 'breaks-workhours',
@@ -343,10 +346,18 @@ export const ROLE_PROFILES: Record<string, RoleAccessProfile> = {
     defaultScope: 'COMPANY',
     moduleScopes: {},
   },
-  // ─── TENANT / COMPANY ADMINS ─────────────────────────────────────────────
+  // ─── TENANT / ORGANIZATION ADMINS ─────────────────────────────────────────
+  'Organization Admin': {
+    roleName: 'Organization Admin',
+    hierarchyLevel: 1, // Tenant/Group Admin — multi-company oversight, full HRMS across org
+    allowedModules: HRMS_MODULE_IDS,
+    defaultScope: 'ORGANIZATION',
+    moduleScopes: {},
+  },
+  // ─── COMPANY ADMINS ───────────────────────────────────────────────────────
   'Company Admin': {
     roleName: 'Company Admin',
-    hierarchyLevel: 1, // Tenant admin — full HRMS, NO platform / SaaS access
+    hierarchyLevel: 1, // Legal Entity Admin — full HRMS within assigned company
     allowedModules: HRMS_MODULE_IDS,
     defaultScope: 'COMPANY',
     moduleScopes: {},
@@ -427,6 +438,7 @@ export const ROLE_PROFILES: Record<string, RoleAccessProfile> = {
       'regularization',
       'overtime',
       'biometric',
+      'attendance-rules',
       'gps',
       'late-early',
       'leave',
@@ -502,7 +514,10 @@ export function getPrimaryRole(user: User | null): PrimaryRole {
     if (roleCodes.some(c => ['SUPER_ADMIN', 'SUPER ADMIN', 'SUPERADMIN', 'PLATFORM_ADMIN', 'PLATFORM ADMIN'].includes(c))) {
       return 'Super Admin';
     }
-    if (roleCodes.some(c => ['COMPANY_ADMIN', 'COMPANY ADMIN', 'ORGANIZATION_ADMIN', 'ORGANIZATION ADMIN', 'ORGANIZATION OWNER', 'OWNER', 'COMPANY_OWNER'].includes(c))) {
+    if (roleCodes.some(c => ['ORGANIZATION_ADMIN', 'ORGANIZATION ADMIN', 'ORGANIZATION OWNER', 'ORG_ADMIN'].includes(c))) {
+      return 'Organization Admin';
+    }
+    if (roleCodes.some(c => ['COMPANY_ADMIN', 'COMPANY ADMIN', 'OWNER', 'COMPANY_OWNER', 'ADMIN'].includes(c))) {
       return 'Company Admin';
     }
     if (roleCodes.some(c => ['HR_HEAD', 'HR HEAD'].includes(c))) {
@@ -529,7 +544,8 @@ export function getPrimaryRole(user: User | null): PrimaryRole {
   const directRole = String((user as any).role || (user as any).role_display_name || '').trim().toUpperCase();
   if (directRole) {
     if (['SUPER_ADMIN', 'SUPER ADMIN', 'SUPERADMIN', 'PLATFORM_ADMIN', 'PLATFORM ADMIN'].includes(directRole)) return 'Super Admin';
-    if (['COMPANY_ADMIN', 'COMPANY ADMIN', 'ORGANIZATION_ADMIN', 'ORGANIZATION ADMIN', 'ORGANIZATION OWNER', 'OWNER', 'COMPANY_OWNER', 'ADMIN'].includes(directRole)) return 'Company Admin';
+    if (['ORGANIZATION_ADMIN', 'ORGANIZATION ADMIN', 'ORGANIZATION OWNER', 'ORG_ADMIN'].includes(directRole)) return 'Organization Admin';
+    if (['COMPANY_ADMIN', 'COMPANY ADMIN', 'OWNER', 'COMPANY_OWNER', 'ADMIN'].includes(directRole)) return 'Company Admin';
     if (['HR_HEAD', 'HR HEAD'].includes(directRole)) return 'HR Head';
     if (['HR_ADMIN', 'HR ADMIN', 'PAYROLL_ADMIN', 'ATTENDANCE_ADMIN'].includes(directRole)) return 'HR Admin';
     if (directRole.includes('MANAGER')) return 'Manager';
@@ -601,6 +617,27 @@ export function canViewModule(user: User | null, module: ModuleId | string): boo
   // ── Vendor Operations: Vendor Admin (level 1 vendor) or Company Admin/HR Head ───
   if (module.startsWith('vendor') || module.includes('vendor')) {
     if (roleName === 'Vendor Admin' || profile.hierarchyLevel <= 2) return true;
+  }
+
+  // ── Attendance, Shifts, Biometric, GPS & Clocking routes ─────────────────────
+  if (
+    module.startsWith('attendance') ||
+    module.startsWith('biometric') ||
+    module.startsWith('shift') ||
+    module.startsWith('roster') ||
+    module.startsWith('gps') ||
+    module.startsWith('geofence') ||
+    module.startsWith('face-') ||
+    module === 'late-early' ||
+    module === 'regularization' ||
+    module === 'exceptions' ||
+    module === 'ledger' ||
+    module === 'history' ||
+    module === 'policies'
+  ) {
+    if (profile.hierarchyLevel <= 2 || profile.allowedModules.includes('attendance' as ModuleId) || profile.allowedModules.includes('biometric' as ModuleId)) {
+      return true;
+    }
   }
 
   // ── All other roles/modules: check explicit allowedModules list ──────────────

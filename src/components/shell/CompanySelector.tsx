@@ -47,7 +47,7 @@ export const CompanySelector: React.FC = () => {
             {activeLegalEntity.legal_name}
           </div>
           <div className="text-[10px] text-gray-500 font-medium truncate max-w-[160px] whitespace-nowrap flex items-center gap-1">
-            <span>{activeLegalEntity.city}, {activeLegalEntity.country}</span>
+            <span>{activeLegalEntity.city || 'Coimbatore'}, {activeLegalEntity.country || 'India'}</span>
             <span className="text-gray-300">•</span>
             <span className="font-bold text-emerald-700">{activeLegalEntity.currency || 'INR'}</span>
           </div>

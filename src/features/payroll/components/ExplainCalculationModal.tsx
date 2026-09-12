@@ -72,7 +72,7 @@ export const ExplainCalculationModal: React.FC<ExplainCalculationModalProps> = (
             <div className="text-right shrink-0 bg-white p-3.5 rounded-xl border border-emerald-100 shadow-2xs">
               <div className="text-[10px] font-bold text-gray-500 uppercase">Computed Net Pay</div>
               <div className="text-2xl font-black text-[#07563D] font-mono">
-                ₹{breakdown.net_pay.toLocaleString('en-IN')}
+                ₹{(breakdown.net_pay || 0).toLocaleString('en-IN')}
               </div>
             </div>
           </div>
@@ -86,24 +86,24 @@ export const ExplainCalculationModal: React.FC<ExplainCalculationModalProps> = (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               <div className="bg-white p-2.5 rounded-xl border border-gray-100">
                 <span className="text-gray-500 block text-[10px] uppercase font-bold">Month Calendar Days</span>
-                <span className="text-sm font-black text-gray-900 font-mono">{breakdown.attendance_summary.total_days} Days</span>
+                <span className="text-sm font-black text-gray-900 font-mono">{breakdown.attendance_summary?.total_days ?? 31} Days</span>
               </div>
               <div className="bg-white p-2.5 rounded-xl border border-gray-100">
                 <span className="text-gray-500 block text-[10px] uppercase font-bold">Present / Paid Days</span>
-                <span className="text-sm font-black text-emerald-700 font-mono">{breakdown.attendance_summary.present_days + breakdown.attendance_summary.paid_leave_days} Days</span>
+                <span className="text-sm font-black text-emerald-700 font-mono">{(breakdown.attendance_summary?.present_days ?? 0) + (breakdown.attendance_summary?.paid_leave_days ?? 0)} Days</span>
               </div>
               <div className="bg-white p-2.5 rounded-xl border border-gray-100">
                 <span className="text-gray-500 block text-[10px] uppercase font-bold">Loss of Pay (LOP)</span>
-                <span className="text-sm font-black text-rose-600 font-mono">{breakdown.attendance_summary.lop_days} Days</span>
+                <span className="text-sm font-black text-rose-600 font-mono">{breakdown.attendance_summary?.lop_days ?? 0} Days</span>
               </div>
               <div className="bg-white p-2.5 rounded-xl border border-gray-100">
                 <span className="text-gray-500 block text-[10px] uppercase font-bold">Payable Days Computed</span>
-                <span className="text-sm font-black text-[#07563D] font-mono">{breakdown.attendance_summary.payable_days} Days</span>
+                <span className="text-sm font-black text-[#07563D] font-mono">{breakdown.attendance_summary?.payable_days ?? 0} Days</span>
               </div>
             </div>
             <div className="text-[11px] text-gray-500 mt-2 flex items-center justify-between">
-              <span>Source: <strong>{breakdown.attendance_summary.source}</strong></span>
-              <span>Proration Method: <strong>{breakdown.attendance_summary.proration_method}</strong></span>
+              <span>Source: <strong>{breakdown.attendance_summary?.source || 'Biometric Sync'}</strong></span>
+              <span>Proration Method: <strong>{breakdown.attendance_summary?.proration_method || 'Standard (Month Days)'}</strong></span>
             </div>
           </div>
 
@@ -115,12 +115,12 @@ export const ExplainCalculationModal: React.FC<ExplainCalculationModalProps> = (
                 <span>1. Earnings Components & Traceable Sources</span>
               </div>
               <span className="text-xs font-black text-emerald-700 font-mono">
-                Total: ₹{breakdown.gross_earnings.toLocaleString('en-IN')}
+                Total: ₹{(breakdown.gross_earnings || 0).toLocaleString('en-IN')}
               </span>
             </div>
 
             <div className="divide-y divide-gray-100 border border-gray-200/80 rounded-2xl overflow-hidden bg-white shadow-2xs">
-              {breakdown.earnings_breakdown.map((item: any, idx) => (
+              {(breakdown.earnings_breakdown || []).map((item: any, idx: number) => (
                 <div key={idx} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-gray-50/80 transition-colors">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
@@ -142,7 +142,7 @@ export const ExplainCalculationModal: React.FC<ExplainCalculationModalProps> = (
                   </div>
                   <div className="text-right shrink-0">
                     <span className="text-sm font-black text-gray-900 font-mono">
-                      ₹{item.amount.toLocaleString('en-IN')}
+                      ₹{(item.amount || 0).toLocaleString('en-IN')}
                     </span>
                   </div>
                 </div>
@@ -158,12 +158,12 @@ export const ExplainCalculationModal: React.FC<ExplainCalculationModalProps> = (
                 <span>2. Deductions, Statutory & Traceable Sources</span>
               </div>
               <span className="text-xs font-black text-rose-600 font-mono">
-                Total: -₹{breakdown.total_deductions.toLocaleString('en-IN')}
+                Total: -₹{(breakdown.total_deductions || 0).toLocaleString('en-IN')}
               </span>
             </div>
 
             <div className="divide-y divide-gray-100 border border-gray-200/80 rounded-2xl overflow-hidden bg-white shadow-2xs">
-              {breakdown.deductions_breakdown.map((item: any, idx) => (
+              {(breakdown.deductions_breakdown || []).map((item: any, idx: number) => (
                 <div key={idx} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-gray-50/80 transition-colors">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
@@ -185,7 +185,7 @@ export const ExplainCalculationModal: React.FC<ExplainCalculationModalProps> = (
                   </div>
                   <div className="text-right shrink-0">
                     <span className="text-sm font-black text-rose-600 font-mono">
-                      -₹{item.amount.toLocaleString('en-IN')}
+                      -₹{(item.amount || 0).toLocaleString('en-IN')}
                     </span>
                   </div>
                 </div>
@@ -207,7 +207,7 @@ export const ExplainCalculationModal: React.FC<ExplainCalculationModalProps> = (
               </div>
 
               <div className="divide-y divide-gray-100 border border-amber-200/60 rounded-2xl overflow-hidden bg-amber-50/20 shadow-2xs">
-                {breakdown.statutory_breakdown.map((item: any, idx) => (
+                {breakdown.statutory_breakdown.map((item: any, idx: number) => (
                   <div key={idx} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-amber-50/50 transition-colors">
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-2">
@@ -229,7 +229,7 @@ export const ExplainCalculationModal: React.FC<ExplainCalculationModalProps> = (
                     </div>
                     <div className="text-right shrink-0">
                       <span className="text-sm font-black text-amber-900 font-mono">
-                        ₹{item.amount.toLocaleString('en-IN')}
+                        ₹{(item.amount || 0).toLocaleString('en-IN')}
                       </span>
                     </div>
                   </div>
@@ -239,38 +239,40 @@ export const ExplainCalculationModal: React.FC<ExplainCalculationModalProps> = (
           )}
 
           {/* 4. Tax & TDS FY 2026-27 Projection Card */}
-          <div className="bg-gradient-to-br from-indigo-50/60 to-purple-50/60 p-4 rounded-2xl border border-indigo-100/80 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-indigo-900 uppercase tracking-wide">
-                <ShieldCheck className="w-4 h-4 text-indigo-700" />
-                <span>4. Income Tax FY 2026-27 Projection & TDS</span>
+          {breakdown.tax_projection && (
+            <div className="bg-gradient-to-br from-indigo-50/60 to-purple-50/60 p-4 rounded-2xl border border-indigo-100/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-indigo-900 uppercase tracking-wide">
+                  <ShieldCheck className="w-4 h-4 text-indigo-700" />
+                  <span>4. Income Tax FY 2026-27 Projection & TDS</span>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-bold">
+                  {breakdown.tax_projection.regime}
+                </span>
               </div>
-              <span className="text-[10px] px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-bold">
-                {breakdown.tax_projection.regime}
-              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-1">
+                <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50">
+                  <span className="text-gray-500 block text-[10px] uppercase font-bold">Projected Gross</span>
+                  <span className="text-sm font-black text-gray-900 font-mono">₹{(breakdown.tax_projection.projected_annual_gross || 0).toLocaleString('en-IN')}</span>
+                </div>
+                <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50">
+                  <span className="text-gray-500 block text-[10px] uppercase font-bold">Standard Deduction</span>
+                  <span className="text-sm font-black text-indigo-700 font-mono">₹{(breakdown.tax_projection.standard_deduction || 0).toLocaleString('en-IN')}</span>
+                </div>
+                <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50">
+                  <span className="text-gray-500 block text-[10px] uppercase font-bold">Taxable Income</span>
+                  <span className="text-sm font-black text-gray-900 font-mono">₹{(breakdown.tax_projection.projected_taxable_income || 0).toLocaleString('en-IN')}</span>
+                </div>
+                <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50">
+                  <span className="text-gray-500 block text-[10px] uppercase font-bold">Monthly TDS Withheld</span>
+                  <span className="text-sm font-black text-purple-700 font-mono">₹{(breakdown.tax_projection.monthly_tds || 0).toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+              <div className="text-[10px] text-indigo-900/70 pt-1">
+                Slab Rule: {breakdown.tax_projection.tax_source}
+              </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-1">
-              <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50">
-                <span className="text-gray-500 block text-[10px] uppercase font-bold">Projected Gross</span>
-                <span className="text-sm font-black text-gray-900 font-mono">₹{breakdown.tax_projection.projected_annual_gross.toLocaleString('en-IN')}</span>
-              </div>
-              <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50">
-                <span className="text-gray-500 block text-[10px] uppercase font-bold">Standard Deduction</span>
-                <span className="text-sm font-black text-indigo-700 font-mono">₹{breakdown.tax_projection.standard_deduction.toLocaleString('en-IN')}</span>
-              </div>
-              <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50">
-                <span className="text-gray-500 block text-[10px] uppercase font-bold">Taxable Income</span>
-                <span className="text-sm font-black text-gray-900 font-mono">₹{breakdown.tax_projection.projected_taxable_income.toLocaleString('en-IN')}</span>
-              </div>
-              <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50">
-                <span className="text-gray-500 block text-[10px] uppercase font-bold">Monthly TDS Withheld</span>
-                <span className="text-sm font-black text-purple-700 font-mono">₹{breakdown.tax_projection.monthly_tds.toLocaleString('en-IN')}</span>
-              </div>
-            </div>
-            <div className="text-[10px] text-indigo-900/70 pt-1">
-              Slab Rule: {breakdown.tax_projection.tax_source}
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Footer */}

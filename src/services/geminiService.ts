@@ -4,6 +4,7 @@
 // ============================================================
 
 import { GoogleGenAI } from '@google/genai';
+import { JoyRedis } from '../lib/redis';
 import {
   platformHealthService,
   platformTenantService,
@@ -11,6 +12,15 @@ import {
   platformIncidentService,
   platformAuditService,
 } from './platform';
+
+function hashPrompt(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
 
 // Retrieve Gemini API Key from environment variables
 const getApiKey = (): string | undefined => {
@@ -51,22 +61,33 @@ export async function askWorkForceCopilot(
   prompt: string,
   context?: CopilotContext
 ): Promise<string> {
-  const genAI = getGenAI();
-
   const isSuperAdmin = context?.isPlatformSuperAdmin ?? (context?.userRole === 'SUPER_ADMIN' || context?.userRole === 'PLATFORM_ADMIN');
   const company = context?.companyName || 'Joy PeopleHR Enterprise';
   const org = context?.organizationName || 'Global Enterprise HRMS';
 
+  // 1. Check Upstash Redis AI Response Cache (sub-10ms response, 0 API tokens spent)
+  const cleanPrompt = prompt.trim().toLowerCase();
+  const cacheKey = `joy:copilot:${isSuperAdmin ? 'admin' : company.toLowerCase().replace(/[^a-z0-9]/g, '_')}:${hashPrompt(cleanPrompt)}`;
+  try {
+    const cached = await JoyRedis.get<string>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+  } catch {}
+
+  const genAI = getGenAI();
+
+  let finalResponse = '';
+
   if (!genAI) {
     // High-fidelity operational intelligence fallback engine
-    return isSuperAdmin
+    finalResponse = isSuperAdmin
       ? generatePlatformSuperAdminResponse(prompt)
       : generateTenantHRResponse(prompt, company, org);
-  }
-
-  try {
-    const systemInstruction = isSuperAdmin
-      ? `You are Joy PeopleHR Copilot, the AI Operations Assistant for the multi-tenant SaaS Super Admin Control Plane.
+  } else {
+    try {
+      const systemInstruction = isSuperAdmin
+        ? `You are Joy PeopleHR Copilot, the AI Operations Assistant for the multi-tenant SaaS Super Admin Control Plane.
 Current Platform Metrics:
 - Total Organizations: 428 (385 Active, 37 Trials, 6 At-Risk)
 - MRR: ₹18.4 Lakhs (+8.7% MoM), ARR: ₹2.21 Crores
@@ -76,35 +97,44 @@ Current Platform Metrics:
 - Expiring Trials: ByteForge Systems (Aug 25), CyberSoft Global Tech (Aug 25)
 
 Answer operational questions concisely, accurately, and with actionable steps.`
-      : `You are Joy PeopleHR Copilot, an AI assistant for an enterprise HRMS platform.
+        : `You are Joy PeopleHR Copilot, an AI assistant for an enterprise HRMS platform.
 Current Tenant Context:
 - Active Company: ${company}
 - Parent Organization: ${org}
 
 Respond concisely, accurately, and professionally to HR, workforce analytics, policy, leave, compliance, and department questions.`;
 
-    const response = await genAI.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: `${systemInstruction}\n\nUser Question: ${prompt}` }],
-        },
-      ],
-    });
+      const response = await genAI.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `${systemInstruction}\n\nUser Question: ${prompt}` }],
+          },
+        ],
+      });
 
-    if (response && response.text) {
-      return response.text;
+      if (response && response.text) {
+        finalResponse = response.text;
+      } else {
+        finalResponse = isSuperAdmin
+          ? generatePlatformSuperAdminResponse(prompt)
+          : generateTenantHRResponse(prompt, company, org);
+      }
+    } catch (error) {
+      console.error('Gemini AI API Error:', error);
+      finalResponse = isSuperAdmin
+        ? generatePlatformSuperAdminResponse(prompt)
+        : generateTenantHRResponse(prompt, company, org);
     }
-    return isSuperAdmin
-      ? generatePlatformSuperAdminResponse(prompt)
-      : generateTenantHRResponse(prompt, company, org);
-  } catch (error) {
-    console.error('Gemini AI API Error:', error);
-    return isSuperAdmin
-      ? generatePlatformSuperAdminResponse(prompt)
-      : generateTenantHRResponse(prompt, company, org);
   }
+
+  // 2. Cache response in Upstash Redis (1-hour safe TTL)
+  if (finalResponse) {
+    JoyRedis.set(cacheKey, finalResponse, { ex: 3600 }).catch(() => {});
+  }
+
+  return finalResponse;
 }
 
 function generatePlatformSuperAdminResponse(prompt: string): string {

@@ -18,23 +18,41 @@ import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
 import { vendorPortalService } from '../../../services/vendorPortalService';
-import { ComplianceCalendarTask } from '../../../types/vendorPortal';
+import { ComplianceCalendarTask, VendorOrganization } from '../../../types/vendorPortal';
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
 
-export const VendorComplianceCalendarView: React.FC = () => {
+interface VendorComplianceCalendarViewProps {
+  activeVendor?: VendorOrganization | null;
+  activePeriod?: string;
+}
+
+export const VendorComplianceCalendarView: React.FC<VendorComplianceCalendarViewProps> = ({
+  activeVendor,
+  activePeriod,
+}) => {
+  let ctxVendor: VendorOrganization | null = null;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+  } catch {}
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
+  const effectivePeriod = activePeriod || '2026-08';
+
   const [tasks, setTasks] = useState<ComplianceCalendarTask[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const loadData = () => {
-    setTasks(vendorPortalService.getComplianceCalendarTasks());
+    setTasks(vendorPortalService.getComplianceCalendarTasks(effectivePeriod, effectiveVendor?.id));
   };
 
   useEffect(() => {
     loadData();
     window.addEventListener('wf-vendor-changed', loadData);
     return () => window.removeEventListener('wf-vendor-changed', loadData);
-  }, []);
+  }, [effectiveVendor?.id, effectivePeriod]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);

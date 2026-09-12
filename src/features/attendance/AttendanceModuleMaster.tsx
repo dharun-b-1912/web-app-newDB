@@ -1,27 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { AttendanceDashboardView } from './subviews/AttendanceDashboardView';
-import { EmployeeAttendanceView } from './subviews/EmployeeAttendanceView';
-import { AttendanceHistoryView } from './subviews/AttendanceHistoryView';
-import { AttendanceCalendarView } from './subviews/AttendanceCalendarView';
-import { RegularizationView } from './subviews/RegularizationView';
-import { LateEarlyTrackingView } from './subviews/LateEarlyTrackingView';
-import { WorkOvertimeMasterModule } from '../work/WorkOvertimeMasterModule';
-import { ShiftMasterView } from './subviews/ShiftMasterView';
-import { ShiftRosterCalendarView } from './subviews/ShiftRosterCalendarView';
-import { AttendancePolicyConfigView } from './subviews/AttendancePolicyConfigView';
-import { AttendanceExceptionsView } from './subviews/AttendanceExceptionsView';
-import { AttendanceCalculationAuditView } from './subviews/AttendanceCalculationAuditView';
-import { HolidaysView } from './subviews/HolidaysView';
-import { ApprovalCenterView } from './subviews/ApprovalCenterView';
-import { AttendanceReportsView } from './subviews/AttendanceReportsView';
-import { ManualAttendanceView } from './subviews/ManualAttendanceView';
-import { BiometricIntegrationView } from './subviews/BiometricIntegrationView';
-import { FaceRecognitionChannelView } from './subviews/FaceRecognitionChannelView';
-import { GpsMobileChannelView } from './subviews/GpsMobileChannelView';
-import { ClockingDevicesChannelView } from './subviews/ClockingDevicesChannelView';
-import { PayrollInputsView } from './subviews/PayrollInputsView';
-import { AuditControlView } from './subviews/AuditControlView';
-import { EmployeeAttendanceProfileDrawer } from './components/EmployeeAttendanceProfileDrawer';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
+
+// Lazy-load all attendance subviews for instant initial render & zero blocking
+const AttendanceDashboardView = lazy(() => import('./subviews/AttendanceDashboardView').then(m => ({ default: m.AttendanceDashboardView })));
+const EmployeeAttendanceView = lazy(() => import('./subviews/EmployeeAttendanceView').then(m => ({ default: m.EmployeeAttendanceView })));
+const AttendanceHistoryView = lazy(() => import('./subviews/AttendanceHistoryView').then(m => ({ default: m.AttendanceHistoryView })));
+const AttendanceCalendarView = lazy(() => import('./subviews/AttendanceCalendarView').then(m => ({ default: m.AttendanceCalendarView })));
+const RegularizationView = lazy(() => import('./subviews/RegularizationView').then(m => ({ default: m.RegularizationView })));
+const LateEarlyTrackingView = lazy(() => import('./subviews/LateEarlyTrackingView').then(m => ({ default: m.LateEarlyTrackingView })));
+const WorkOvertimeMasterModule = lazy(() => import('../work/WorkOvertimeMasterModule').then(m => ({ default: m.WorkOvertimeMasterModule })));
+const ShiftMasterView = lazy(() => import('./subviews/ShiftMasterView').then(m => ({ default: m.ShiftMasterView })));
+const ShiftRosterCalendarView = lazy(() => import('./subviews/ShiftRosterCalendarView').then(m => ({ default: m.ShiftRosterCalendarView })));
+const AttendancePolicyConfigView = lazy(() => import('./subviews/AttendancePolicyConfigView').then(m => ({ default: m.AttendancePolicyConfigView })));
+const AttendanceRulesView = lazy(() => import('./subviews/AttendanceRulesView').then(m => ({ default: m.AttendanceRulesView })));
+const AttendanceExceptionsView = lazy(() => import('./subviews/AttendanceExceptionsView').then(m => ({ default: m.AttendanceExceptionsView })));
+const AttendanceCalculationAuditView = lazy(() => import('./subviews/AttendanceCalculationAuditView').then(m => ({ default: m.AttendanceCalculationAuditView })));
+const HolidaysView = lazy(() => import('./subviews/HolidaysView').then(m => ({ default: m.HolidaysView })));
+const ApprovalCenterView = lazy(() => import('./subviews/ApprovalCenterView').then(m => ({ default: m.ApprovalCenterView })));
+const AttendanceReportsView = lazy(() => import('./subviews/AttendanceReportsView').then(m => ({ default: m.AttendanceReportsView })));
+const ManualAttendanceView = lazy(() => import('./subviews/ManualAttendanceView').then(m => ({ default: m.ManualAttendanceView })));
+const BiometricIntegrationView = lazy(() => import('./subviews/BiometricIntegrationView').then(m => ({ default: m.BiometricIntegrationView })));
+const TerminalLogLedgerView = lazy(() => import('./subviews/TerminalLogLedgerView').then(m => ({ default: m.TerminalLogLedgerView })));
+const FaceRecognitionChannelView = lazy(() => import('./subviews/FaceRecognitionChannelView').then(m => ({ default: m.FaceRecognitionChannelView })));
+const GpsMobileChannelView = lazy(() => import('./subviews/GpsMobileChannelView').then(m => ({ default: m.GpsMobileChannelView })));
+const ClockingDevicesChannelView = lazy(() => import('./subviews/ClockingDevicesChannelView').then(m => ({ default: m.ClockingDevicesChannelView })));
+const PayrollInputsView = lazy(() => import('./subviews/PayrollInputsView').then(m => ({ default: m.PayrollInputsView })));
+const AuditControlView = lazy(() => import('./subviews/AuditControlView').then(m => ({ default: m.AuditControlView })));
+const EmployeeAttendanceProfileDrawer = lazy(() => import('./components/EmployeeAttendanceProfileDrawer').then(m => ({ default: m.EmployeeAttendanceProfileDrawer })));
 import {
   LayoutDashboard,
   Users,
@@ -68,6 +72,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
   onNavigateSubPath,
 }) => {
   const [selectedEmployeeProfileId, setSelectedEmployeeProfileId] = useState<string | null>(null);
+  const [selectedProfileDate, setSelectedProfileDate] = useState<string | undefined>(undefined);
 
   const [activeTab, setActiveTab] = useState<string>(() => {
     if (!currentSubPath || currentSubPath === 'attendance' || currentSubPath === 'dashboard') {
@@ -164,7 +169,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     { id: 'regularization', label: 'Regularization Desk', icon: FileCheck },
     { id: 'exceptions', label: 'Exceptions Queue', icon: AlertTriangle },
     { id: 'overtime', label: 'Overtime Engine', icon: TrendingUp },
-    { id: 'calculation-audit', label: 'Ledger & Audits', icon: ShieldCheck },
+    { id: 'calculation-audit', label: 'Live Transactions & Audit', icon: ShieldCheck },
   ];
 
   const handleSelectTab = (tabId: string) => {
@@ -221,7 +226,10 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
             filterState={activeFilters}
             onFilterChange={handleUpdateFilters}
             openAttendanceDrilldown={openAttendanceDrilldown}
-            onOpenEmployeeProfile={id => setSelectedEmployeeProfileId(id)}
+            onOpenEmployeeProfile={(id) => {
+              setSelectedEmployeeProfileId(id);
+              setSelectedProfileDate(activeFilters.date);
+            }}
           />
         );
       case 'employees':
@@ -234,7 +242,10 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
             onFilterChange={handleUpdateFilters}
             onClearFilters={handleClearFilters}
             openAttendanceDrilldown={openAttendanceDrilldown}
-            onOpenEmployeeProfile={id => setSelectedEmployeeProfileId(id)}
+            onOpenEmployeeProfile={(id, date) => {
+              setSelectedEmployeeProfileId(id);
+              setSelectedProfileDate(date || activeFilters.date);
+            }}
             onOpenManualModal={() => handleSelectTab('manual')}
             onBackToDashboard={() => handleSelectTab('attendance-dashboard')}
           />
@@ -244,7 +255,10 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       case 'ledger':
         return (
           <AttendanceHistoryView
-            onOpenEmployeeProfile={(id, date) => setSelectedEmployeeProfileId(id)}
+            onOpenEmployeeProfile={(id, date) => {
+              setSelectedEmployeeProfileId(id);
+              setSelectedProfileDate(date || activeFilters.date);
+            }}
             onNavigateSubPath={sub => handleSelectTab(sub)}
           />
         );
@@ -262,16 +276,29 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
         );
       case 'policies':
         return <AttendancePolicyConfigView />;
+      case 'attendance-rules':
+      case 'rules':
+      case 'biometric-rules':
+      case 'rules-engine':
+        return <AttendanceRulesView onNavigateSubPath={sub => handleSelectTab(sub)} />;
       case 'biometric':
       case 'biometric-devices':
       case 'device-enrollment':
       case 'device-sync':
       case 'punch-mapping':
-      case 'device-logs':
         return (
           <BiometricIntegrationView
             currentTab={activeTab}
             onNavigateSubPath={sub => handleSelectTab(sub)}
+          />
+        );
+      case 'terminal-logs':
+      case 'terminal-log':
+      case 'device-logs':
+      case 'raw-logs':
+        return (
+          <TerminalLogLedgerView
+            onBack={() => handleSelectTab('biometric')}
           />
         );
       case 'face-attendance':
@@ -426,16 +453,29 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
         </div>
       </div>
 
-      {/* Render Subview Content */}
-      {renderActiveSubview()}
+      {/* Render Subview Content with instantaneous Lazy-loading */}
+      <Suspense fallback={
+        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-gray-200/80 min-h-[350px] space-y-3">
+          <div className="w-8 h-8 border-3 border-[#07563D] border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-xs font-semibold text-gray-500">Loading subview...</p>
+        </div>
+      }>
+        {renderActiveSubview()}
+      </Suspense>
 
       {/* Production-Grade Employee Attendance Statement Modal Workspace */}
-      <EmployeeAttendanceProfileDrawer
-        employeeId={selectedEmployeeProfileId}
-        onClose={() => setSelectedEmployeeProfileId(null)}
-        onNavigateEmployee={id => setSelectedEmployeeProfileId(id)}
-        onNavigateSubPath={sub => handleSelectTab(sub)}
-      />
+      <Suspense fallback={null}>
+        <EmployeeAttendanceProfileDrawer
+          employeeId={selectedEmployeeProfileId}
+          initialDate={selectedProfileDate || activeFilters.date}
+          onClose={() => {
+            setSelectedEmployeeProfileId(null);
+            setSelectedProfileDate(undefined);
+          }}
+          onNavigateEmployee={id => setSelectedEmployeeProfileId(id)}
+          onNavigateSubPath={sub => handleSelectTab(sub)}
+        />
+      </Suspense>
     </div>
   );
 };

@@ -249,52 +249,52 @@ export const StatutoryView: React.FC<StatutoryViewProps> = ({ initialSubTab }) =
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 text-xs">
           <div className="p-3 rounded-xl bg-white/5 border border-white/10">
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Basic Pay (50%)</span>
-            <span className="font-mono font-bold text-sm text-white mt-0.5 block">₹{simResult.basic.toLocaleString('en-IN')}</span>
+            <span className="font-mono font-bold text-sm text-white mt-0.5 block">₹{(simResult?.basic || 0).toLocaleString('en-IN')}</span>
             <span className="text-[10px] text-emerald-300/80 font-mono">Base for EPF</span>
           </div>
 
           <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-            <span className="text-[10px] uppercase font-bold text-blue-300 block">Employee EPF ({config.pf_employee_percent || 0}%)</span>
+            <span className="text-[10px] uppercase font-bold text-blue-300 block">Employee EPF ({config?.pf_employee_percent || 0}%)</span>
             <span className="font-mono font-bold text-sm text-white mt-0.5 block">
-              {config.pf_enabled ? `₹${simResult.epfEmployee.toLocaleString('en-IN')}` : 'Disabled'}
+              {config?.pf_enabled ? `₹${(simResult?.epfEmployee || 0).toLocaleString('en-IN')}` : 'Disabled'}
             </span>
-            <span className="text-[10px] text-slate-400 font-mono">Ceiling: ₹{(config.pf_wage_ceiling || 0).toLocaleString('en-IN')}</span>
+            <span className="text-[10px] text-slate-400 font-mono">Ceiling: ₹{(config?.pf_wage_ceiling || 0).toLocaleString('en-IN')}</span>
           </div>
 
           <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-            <span className="text-[10px] uppercase font-bold text-purple-300 block">Employer EPF ({config.pf_employer_percent || 0}%)</span>
+            <span className="text-[10px] uppercase font-bold text-purple-300 block">Employer EPF ({config?.pf_employer_percent || 0}%)</span>
             <span className="font-mono font-bold text-sm text-white mt-0.5 block">
-              {config.pf_enabled ? `₹${simResult.epfEmployer.toLocaleString('en-IN')}` : 'Disabled'}
+              {config?.pf_enabled ? `₹${(simResult?.epfEmployer || 0).toLocaleString('en-IN')}` : 'Disabled'}
             </span>
-            <span className="text-[10px] text-slate-400 font-mono">EPS: ₹{simResult.epfPensionFund}</span>
+            <span className="text-[10px] text-slate-400 font-mono">EPS: ₹{simResult?.epfPensionFund ?? 0}</span>
           </div>
 
           <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-            <span className="text-[10px] uppercase font-bold text-amber-300 block">Employee ESIC ({config.esi_employee_percent || 0}%)</span>
+            <span className="text-[10px] uppercase font-bold text-amber-300 block">Employee ESIC ({config?.esi_employee_percent || 0}%)</span>
             <span className="font-mono font-bold text-sm text-white mt-0.5 block">
-              {simResult.esicApplicable ? `₹${simResult.esicEmployee.toLocaleString('en-IN')}` : '₹0 (Exempt)'}
+              {simResult?.esicApplicable ? `₹${(simResult?.esicEmployee || 0).toLocaleString('en-IN')}` : '₹0 (Exempt)'}
             </span>
-            <span className="text-[10px] text-slate-400 font-mono">Limit: ≤₹{(config.esi_wage_ceiling || 0).toLocaleString('en-IN')}</span>
+            <span className="text-[10px] text-slate-400 font-mono">Limit: ≤₹{(config?.esi_wage_ceiling || 0).toLocaleString('en-IN')}</span>
           </div>
 
           <div className="p-3 rounded-xl bg-white/5 border border-white/10">
             <span className="text-[10px] uppercase font-bold text-teal-300 block">Prof. Tax (PT)</span>
             <span className="font-mono font-bold text-sm text-white mt-0.5 block">
-              {config.pt_enabled ? `₹${simResult.pt}` : '₹0 (Disabled)'}
+              {config?.pt_enabled ? `₹${simResult?.pt ?? 0}` : '₹0 (Disabled)'}
             </span>
             <span className="text-[10px] text-slate-400 font-mono">Monthly Deduction</span>
           </div>
 
           <div className="p-3 rounded-xl bg-white/5 border border-white/10">
             <span className="text-[10px] uppercase font-bold text-rose-300 block">Total Deductions</span>
-            <span className="font-mono font-bold text-sm text-rose-300 mt-0.5 block">₹{simResult.totalEmployeeDeductions.toLocaleString('en-IN')}</span>
+            <span className="font-mono font-bold text-sm text-rose-300 mt-0.5 block">₹{(simResult?.totalEmployeeDeductions || 0).toLocaleString('en-IN')}</span>
             <span className="text-[10px] text-slate-400 font-mono">LOP + EPF + ESI + PT</span>
           </div>
 
           <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-400/30">
             <span className="text-[10px] uppercase font-bold text-emerald-300 block">Net Take-Home Pay</span>
             <span className="font-mono font-black text-sm sm:text-base text-emerald-200 mt-0.5 block">
-              ₹{simResult.netTakeHome.toLocaleString('en-IN')}
+              ₹{(simResult?.netTakeHome || 0).toLocaleString('en-IN')}
             </span>
             <span className="text-[10px] text-emerald-300/80 font-mono">100% Guaranteed Non-Negative</span>
           </div>
@@ -614,7 +614,7 @@ export const StatutoryView: React.FC<StatutoryViewProps> = ({ initialSubTab }) =
                         {juris.slabs.map((slab, sIdx) => (
                           <tr key={sIdx} className="hover:bg-white/80">
                             <td className="p-1.5 text-gray-700">
-                              ₹{slab.min_gross_half_year.toLocaleString('en-IN')} {slab.max_gross_half_year ? `to ₹${slab.max_gross_half_year.toLocaleString('en-IN')}` : 'and above'}
+                              ₹{(slab.min_gross_half_year || 0).toLocaleString('en-IN')} {slab.max_gross_half_year ? `to ₹${(slab.max_gross_half_year || 0).toLocaleString('en-IN')}` : 'and above'}
                             </td>
                             <td className="p-1.5 font-bold text-gray-900">₹{slab.half_year_tax_amount}</td>
                             <td className="p-1.5 font-bold text-[#07563D] text-right">₹{slab.monthly_deduction_amount}</td>

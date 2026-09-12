@@ -10,10 +10,11 @@ import {
 } from 'lucide-react';
 import { vendorPortalService } from '../../../services/vendorPortalService';
 import { VendorOrganization } from '../../../types/vendorPortal';
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
 
 interface VendorPurchaseOrdersViewProps {
-  activeVendor: VendorOrganization;
-  onRefresh: () => void;
+  activeVendor?: VendorOrganization | null;
+  onRefresh?: () => void;
 }
 
 export const VendorPurchaseOrdersView: React.FC<VendorPurchaseOrdersViewProps> = ({
@@ -21,12 +22,35 @@ export const VendorPurchaseOrdersView: React.FC<VendorPurchaseOrdersViewProps> =
   onRefresh,
 }) => {
   const { showToast } = useToast();
-  const pos = vendorPortalService.getPurchaseOrders(activeVendor.id);
+
+  let ctxVendor: VendorOrganization | null = null;
+  let ctxRelationship: any = null;
+  let ctxRefresh: (() => void) | undefined = undefined;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+    ctxRelationship = ctx.activeRelationship;
+    ctxRefresh = ctx.refreshContext;
+  } catch {}
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
+  const triggerRefresh = () => {
+    if (onRefresh) onRefresh();
+    if (ctxRefresh) ctxRefresh();
+  };
+
+  const rawPos = effectiveVendor?.id ? vendorPortalService.getPurchaseOrders(effectiveVendor.id) : [];
+  const pos = rawPos.filter((po) => {
+    if (!ctxRelationship) return true;
+    const relCompanyId = ctxRelationship.company_id || ctxRelationship.id;
+    return !po.client_company_id || po.client_company_id === relCompanyId;
+  });
 
   const handleAcknowledge = (poId: string) => {
-    vendorPortalService.acknowledgePurchaseOrder(poId, activeVendor.contact_person);
+    if (!effectiveVendor) return;
+    vendorPortalService.acknowledgePurchaseOrder(poId, effectiveVendor.contact_person);
     showToast('Purchase Order acknowledged and marked ACTIVE!');
-    onRefresh();
+    triggerRefresh();
   };
 
   return (

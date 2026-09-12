@@ -1,74 +1,63 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { api } from './services/api';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { TenantProvider } from './hooks/useTenant';
 import { ToastProvider } from './components/ui/Toast';
 import { AuthPage } from './features/auth/AuthPage';
-import { SuperAdminLoginPage } from './features/auth/SuperAdminLoginPage';
 import { AppShell } from './components/shell/AppShell';
-import { DashboardView } from './features/dashboard/DashboardView';
-import { WorkforceOverviewView } from './features/dashboard/WorkforceOverviewView';
-import { ExecutiveOverviewView } from './features/dashboard/ExecutiveOverviewView';
-import { CommandCenterView } from './features/dashboard/CommandCenterView';
-import { PeopleView } from './features/people/PeopleView';
-import { OrganizationView } from './features/organization/OrganizationView';
-import { OrganizationWorkspace } from './features/organization/OrganizationWorkspace';
-import { WorkforceWorkspace } from './features/organization/WorkforceWorkspace';
-import { ResourcesWorkspace } from './features/organization/ResourcesWorkspace';
-import { OperationsWorkspace } from './features/operations/OperationsWorkspace';
-import { RequestsApprovalsWorkspace } from './features/operations/RequestsApprovalsWorkspace';
-import { ManpowerWorkspace } from './features/manpower/ManpowerWorkspace';
-import { InsightsWorkspace } from './features/insights/InsightsWorkspace';
-import { AdministrationWorkspace } from './features/admin/AdministrationWorkspace';
-import { DepartmentView } from './features/organization/DepartmentView';
-import { DesignationView } from './features/organization/DesignationView';
-import { LocationView } from './features/organization/LocationView';
-import { VendorsView } from './features/organization/VendorsView';
-import { RbacView } from './features/rbac/RbacView';
-import { MyWorkspaceView } from './features/workspace/MyWorkspaceView';
-import { RecruitmentView } from './features/talent/RecruitmentView';
-import { ComplianceView } from './features/compliance/ComplianceView';
-import { DocumentManagementView } from './features/documents/DocumentManagementView';
-import { OnboardingView } from './features/onboarding/OnboardingView';
-import { OffboardingView } from './features/offboarding/OffboardingView';
-import { AiAssistantDrawer } from './features/assistant/AiAssistantDrawer';
-
 import { RouteGuard } from './components/auth/RouteGuard';
 import { getPrimaryRole, canViewModule } from './lib/rbac/permissionEngine';
-
-import { AssetsView } from './features/organization/AssetsView';
-import { TalentManagementView } from './features/talent/TalentManagementView';
-import { EmployeeRelationsView } from './features/compliance/EmployeeRelationsView';
-import { HrServicesView } from './features/workspace/HrServicesView';
-import { AnalyticsView } from './features/analytics/AnalyticsView';
-import { AutomationView } from './features/automation/AutomationView';
-import { AdministrationView } from './features/admin/AdministrationView';
-
-import { AttendanceModuleMaster } from './features/attendance/AttendanceModuleMaster';
-import { WorkOvertimeMasterModule } from './features/work/WorkOvertimeMasterModule';
-import { LeaveManagementModule } from './features/leave/LeaveManagementModule';
-import { PayrollMasterModule } from './features/payroll/PayrollMasterModule';
-import { PerformanceMasterModule } from './features/performance/PerformanceMasterModule';
-import { LmsMasterModule } from './features/lms/LmsMasterModule';
-import { OtherMasterModule } from './features/other/OtherMasterModule';
-import { EmployeeRelationsMasterModule } from './features/er/EmployeeRelationsMasterModule';
-import { AnalyticsMasterModule } from './features/analytics/AnalyticsMasterModule';
-import { AdminMasterModule } from './features/admin/AdminMasterModule';
-import { EssMasterModule } from './features/ess/EssMasterModule';
-import { TlMasterModule } from './features/tl/TlMasterModule';
-import { PlatformAdminMasterModule } from './features/platform/PlatformAdminMasterModule';
-import { VendorMasterModule } from './features/vendor/VendorMasterModule';
-import { MyProfileView } from './features/profile/MyProfileView';
-import { RealtimeHealthView } from './features/diagnostics/RealtimeHealthView';
-import { LegalCenterView } from './features/legal/LegalCenterView';
-import { CompanyOnboardingWizard } from './features/onboarding/CompanyOnboardingWizard';
 import { SessionExpiryModal } from './components/states/SessionExpiryModal';
 import { parseRouteFromUrl, syncUrlWithRoute } from './lib/router/urlRouter';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { realtimeSyncEngine } from './services/realtimeSyncEngine';
 
+// Lazy-loaded views for instant initial page refresh & sub-second loading
+const SuperAdminLoginPage = lazy(() => import('./features/auth/SuperAdminLoginPage').then(m => ({ default: m.SuperAdminLoginPage })));
+const DashboardView = lazy(() => import('./features/dashboard/DashboardView').then(m => ({ default: m.DashboardView })));
+const CommandCenterView = lazy(() => import('./features/dashboard/CommandCenterView').then(m => ({ default: m.CommandCenterView })));
+const WorkforceOverviewView = lazy(() => import('./features/dashboard/WorkforceOverviewView').then(m => ({ default: m.WorkforceOverviewView })));
+const ExecutiveOverviewView = lazy(() => import('./features/dashboard/ExecutiveOverviewView').then(m => ({ default: m.ExecutiveOverviewView })));
+const WorkforceWorkspace = lazy(() => import('./features/organization/WorkforceWorkspace').then(m => ({ default: m.WorkforceWorkspace })));
+const OrganizationWorkspace = lazy(() => import('./features/organization/OrganizationWorkspace').then(m => ({ default: m.OrganizationWorkspace })));
+const OperationsWorkspace = lazy(() => import('./features/operations/OperationsWorkspace').then(m => ({ default: m.OperationsWorkspace })));
+const RequestsApprovalsWorkspace = lazy(() => import('./features/operations/RequestsApprovalsWorkspace').then(m => ({ default: m.RequestsApprovalsWorkspace })));
+const VendorsView = lazy(() => import('./features/organization/VendorsView').then(m => ({ default: m.VendorsView })));
+const Vendor360Workspace = lazy(() => import('./features/vendor/company/Vendor360Workspace').then(m => ({ default: m.Vendor360Workspace })));
+const CompanyContractorAttendanceView = lazy(() => import('./features/vendor/company/CompanyContractorAttendanceView').then(m => ({ default: m.CompanyContractorAttendanceView })));
+const CompanyThreeWayMatchBillingView = lazy(() => import('./features/vendor/company/CompanyThreeWayMatchBillingView').then(m => ({ default: m.CompanyThreeWayMatchBillingView })));
+const CompanyComplianceRiskAuditView = lazy(() => import('./features/vendor/company/CompanyComplianceRiskAuditView').then(m => ({ default: m.CompanyComplianceRiskAuditView })));
+const InsightsWorkspace = lazy(() => import('./features/insights/InsightsWorkspace').then(m => ({ default: m.InsightsWorkspace })));
+const AdministrationWorkspace = lazy(() => import('./features/admin/AdministrationWorkspace').then(m => ({ default: m.AdministrationWorkspace })));
+const RecruitmentView = lazy(() => import('./features/talent/RecruitmentView').then(m => ({ default: m.RecruitmentView })));
+const OnboardingView = lazy(() => import('./features/onboarding/OnboardingView').then(m => ({ default: m.OnboardingView })));
+const OffboardingView = lazy(() => import('./features/offboarding/OffboardingView').then(m => ({ default: m.OffboardingView })));
+const TalentManagementView = lazy(() => import('./features/talent/TalentManagementView').then(m => ({ default: m.TalentManagementView })));
+const LmsMasterModule = lazy(() => import('./features/lms/LmsMasterModule').then(m => ({ default: m.LmsMasterModule })));
+const PerformanceMasterModule = lazy(() => import('./features/performance/PerformanceMasterModule').then(m => ({ default: m.PerformanceMasterModule })));
+const AttendanceModuleMaster = lazy(() => import('./features/attendance/AttendanceModuleMaster').then(m => ({ default: m.AttendanceModuleMaster })));
+const WorkOvertimeMasterModule = lazy(() => import('./features/work/WorkOvertimeMasterModule').then(m => ({ default: m.WorkOvertimeMasterModule })));
+const LeaveManagementModule = lazy(() => import('./features/leave/LeaveManagementModule').then(m => ({ default: m.LeaveManagementModule })));
+const PayrollMasterModule = lazy(() => import('./features/payroll/PayrollMasterModule').then(m => ({ default: m.PayrollMasterModule })));
+const OtherMasterModule = lazy(() => import('./features/other/OtherMasterModule').then(m => ({ default: m.OtherMasterModule })));
+const EmployeeRelationsMasterModule = lazy(() => import('./features/er/EmployeeRelationsMasterModule').then(m => ({ default: m.EmployeeRelationsMasterModule })));
+const AnalyticsMasterModule = lazy(() => import('./features/analytics/AnalyticsMasterModule').then(m => ({ default: m.AnalyticsMasterModule })));
+const AdminMasterModule = lazy(() => import('./features/admin/AdminMasterModule').then(m => ({ default: m.AdminMasterModule })));
+const EssMasterModule = lazy(() => import('./features/ess/EssMasterModule').then(m => ({ default: m.EssMasterModule })));
+const TlMasterModule = lazy(() => import('./features/tl/TlMasterModule').then(m => ({ default: m.TlMasterModule })));
+const PlatformAdminMasterModule = lazy(() => import('./features/platform/PlatformAdminMasterModule').then(m => ({ default: m.PlatformAdminMasterModule })));
+const VendorPortalWorkspace = lazy(() => import('./features/vendor/portal/VendorPortalWorkspace').then(m => ({ default: m.VendorPortalWorkspace })));
+const MyProfileView = lazy(() => import('./features/profile/MyProfileView').then(m => ({ default: m.MyProfileView })));
+const RealtimeHealthView = lazy(() => import('./features/diagnostics/RealtimeHealthView').then(m => ({ default: m.RealtimeHealthView })));
+const AutomationView = lazy(() => import('./features/automation/AutomationView').then(m => ({ default: m.AutomationView })));
+const ComplianceView = lazy(() => import('./features/compliance/ComplianceView').then(m => ({ default: m.ComplianceView })));
+const MyWorkspaceView = lazy(() => import('./features/workspace/MyWorkspaceView').then(m => ({ default: m.MyWorkspaceView })));
+const LegalCenterView = lazy(() => import('./features/legal/LegalCenterView').then(m => ({ default: m.LegalCenterView })));
+const CompanyOnboardingWizard = lazy(() => import('./features/onboarding/CompanyOnboardingWizard').then(m => ({ default: m.CompanyOnboardingWizard })));
+const AiAssistantDrawer = lazy(() => import('./features/assistant/AiAssistantDrawer').then(m => ({ default: m.AiAssistantDrawer })));
+
 const AppContent: React.FC = () => {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, logout } = useAuth();
 
   // Initialize Realtime Sync Engine for live automatic data replication and purge old legacy mock remnants
   useEffect(() => {
@@ -106,13 +95,16 @@ const AppContent: React.FC = () => {
 
   const getDefaultRouteForUser = (targetUser?: any) => {
     const stored = targetUser || user || api.getCurrentUser();
+    if (stored?.authContext?.defaultRoute) {
+      return stored.authContext.defaultRoute;
+    }
     const primaryRole = getPrimaryRole(stored);
     const isPlatformRole = (['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'] as string[]).includes(primaryRole);
     if (isPlatformRole) return 'platform-dashboard';
     if (primaryRole === 'Vendor Admin' || stored?.vendor_id) {
       return 'vendor-settlement-workspace';
     }
-    if (primaryRole === 'Company Admin') {
+    if (primaryRole === 'Company Admin' || primaryRole === 'Organization Admin') {
       return 'executive-overview';
     }
     if (primaryRole === 'HR Head' || primaryRole === 'HR Admin') {
@@ -299,14 +291,21 @@ const AppContent: React.FC = () => {
             onNavigate={handleNavigate}
             onOpenCopilot={() => setIsCopilotOpen(true)}
           >
-            <PlatformAdminMasterModule onNavigate={handleNavigate} initialTab="dashboard" />
+            <Suspense fallback={<div className="flex items-center justify-center p-12 min-h-[400px]"><div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div></div>}>
+              <PlatformAdminMasterModule onNavigate={handleNavigate} initialTab="dashboard" />
+            </Suspense>
           </AppShell>
         </ErrorBoundary>
       );
     }
 
-    return <SuperAdminLoginPage onSwitchToCustomer={() => handleNavigate('dashboard')} />;
+    return (
+      <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-slate-900"><div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div></div>}>
+        <SuperAdminLoginPage onSwitchToCustomer={() => handleNavigate('dashboard')} />
+      </Suspense>
+    );
   }
+
 
   if (!user) {
     return (
@@ -316,6 +315,36 @@ const AppContent: React.FC = () => {
       />
     );
   }
+
+  const stored = user || api.getCurrentUser();
+  const primaryRole = getPrimaryRole(stored);
+  const isVendorUser =
+    primaryRole === 'Vendor Admin' ||
+    primaryRole?.startsWith('Vendor') ||
+    Boolean((stored as any)?.vendor_id);
+
+  // Dedicated Vendor Portal: Standalone shell with ONE sidebar and ONE top header
+  if (
+    isVendorUser ||
+    currentRoute === 'vendor-portal' ||
+    currentRoute === 'vendor-workspace' ||
+    (currentRoute.startsWith('vendor') &&
+      currentRoute !== 'vendors' &&
+      currentRoute !== 'vendor-360')
+  ) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<div className="flex items-center justify-center p-12 min-h-[400px]"><div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div></div>}>
+          <VendorPortalWorkspace
+            initialTab={currentRoute}
+            onNavigate={handleNavigate}
+            onLogout={logout}
+          />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
 
   const renderViewContent = () => {
     switch (currentRoute) {
@@ -342,13 +371,8 @@ const AppContent: React.FC = () => {
       case 'assets':
         return <WorkforceWorkspace initialTab="resources" onNavigate={handleNavigate} />;
       case 'operations':
+      case 'operations-workspace':
         return <OperationsWorkspace initialTab="attendance" onNavigate={handleNavigate} />;
-      case 'attendance':
-      case 'attendance-dashboard':
-        return <OperationsWorkspace initialTab="attendance" onNavigate={handleNavigate} />;
-      case 'shifts':
-      case 'roster':
-        return <OperationsWorkspace initialTab="shifts" onNavigate={handleNavigate} />;
       case 'leave':
       case 'leave-dashboard':
         return <OperationsWorkspace initialTab="leave" onNavigate={handleNavigate} />;
@@ -357,17 +381,22 @@ const AppContent: React.FC = () => {
         return <OperationsWorkspace initialTab="approvals" onNavigate={handleNavigate} />;
       case 'admin-approvals':
         return <RequestsApprovalsWorkspace initialTab="policies" />;
-      case 'manpower':
-        return <ManpowerWorkspace initialTab="settlement" onNavigate={handleNavigate} />;
       case 'vendors':
       case 'organization-vendors':
-        return <ManpowerWorkspace initialTab="partners" onNavigate={handleNavigate} />;
       case 'vendor-assignments':
-        return <ManpowerWorkspace initialTab="deployment" onNavigate={handleNavigate} />;
-      case 'vendor-settlement-workspace':
-        return <ManpowerWorkspace initialTab="settlement" onNavigate={handleNavigate} />;
+      case 'vendor-workforce':
+      case 'vendor-employees':
+        return <VendorsView onNavigate={handleNavigate} />;
+      case 'vendor-360':
+      case 'vendor-detail':
+        return <Vendor360Workspace isOpen={true} onClose={() => handleNavigate('vendors')} />;
+      case 'vendor-attendance':
+        return <CompanyContractorAttendanceView onNavigate={handleNavigate} />;
+      case 'manpower':
       case 'client-billing':
-        return <ManpowerWorkspace initialTab="billing" onNavigate={handleNavigate} />;
+      case 'vendor-settlement-workspace':
+      case 'vendor-settlement':
+        return <CompanyThreeWayMatchBillingView onNavigate={handleNavigate} />;
       case 'insights':
       case 'workforce-overview':
         return <InsightsWorkspace initialTab="workforce" onNavigate={handleNavigate} />;
@@ -447,6 +476,8 @@ const AppContent: React.FC = () => {
       case 'performance-pip':
       case 'performance-reports':
         return <PerformanceMasterModule initialTab={currentRoute} />;
+      case 'attendance':
+      case 'attendance-dashboard':
       case 'attendance-employees':
       case 'employee-attendance':
       case 'employees':
@@ -457,6 +488,8 @@ const AppContent: React.FC = () => {
       case 'regularization':
       case 'exceptions':
       case 'late-early':
+      case 'shifts':
+      case 'roster':
       case 'shift-calendar':
       case 'policies':
       case 'biometric':
@@ -466,12 +499,29 @@ const AppContent: React.FC = () => {
       case 'punch-mapping':
       case 'device-logs':
       case 'face-attendance':
+      case 'face-enrollment':
+      case 'face-devices':
+      case 'face-logs':
+      case 'face-exceptions':
+      case 'gps':
+      case 'gps-attendance':
+      case 'geofences':
+      case 'staff-mapping':
+      case 'mobile-clocking':
+      case 'location-logs':
+      case 'location-exceptions':
       case 'mobile-punch':
       case 'geofencing':
       case 'geofence-setup':
       case 'attendance-compliance':
       case 'attendance-rules':
+      case 'biometric-rules':
+      case 'rules-engine':
       case 'attendance-settings':
+      case 'calculation-audit':
+      case 'attendance-corrections':
+      case 'approval-history':
+      case 'attendance-activity-logs':
         return (
           <ErrorBoundary>
             <AttendanceModuleMaster currentSubPath={currentRoute} onNavigateSubPath={handleNavigate} />
@@ -658,14 +708,15 @@ const AppContent: React.FC = () => {
         return <PlatformAdminMasterModule initialTab={currentRoute} onNavigateTab={handleNavigate} />;
       case 'vendor':
       case 'vendor-portal':
-      case 'vendor-settlement':
       case 'vendor-dashboard':
       case 'vendor-licenses':
       case 'vendor-compliance-calendar':
       case 'vendor-statutory-returns':
-      case 'vendor-workforce':
-      case 'vendor-employees':
-      case 'vendor-attendance':
+      case 'vendor-compliance':
+      case 'vendor-audit':
+      case 'vendor-reports':
+      case 'vendor-audit-reports':
+        return <CompanyComplianceRiskAuditView onNavigate={handleNavigate} />;
       case 'vendor-wages':
       case 'vendor-wage-breakdown':
       case 'vendor-payroll':
@@ -675,15 +726,11 @@ const AppContent: React.FC = () => {
       case 'vendor-po':
       case 'vendor-invoices':
       case 'vendor-invoice':
-      case 'vendor-compliance':
       case 'vendor-statutory':
       case 'vendor-payslips':
       case 'vendor-payments':
       case 'vendor-reconciliation':
-      case 'vendor-audit':
-      case 'vendor-reports':
-      case 'vendor-audit-reports':
-        return <VendorMasterModule initialTab={currentRoute} onNavigateSubPath={handleNavigate} />;
+        return <CompanyThreeWayMatchBillingView onNavigate={handleNavigate} />;
       case 'my-profile':
       case 'profile':
         return <MyProfileView />;
@@ -722,11 +769,20 @@ const AppContent: React.FC = () => {
     >
       <RouteGuard module={currentRoute} onNavigate={handleNavigate}>
         <ErrorBoundary>
-          {renderViewContent()}
+          <Suspense fallback={
+            <div className="flex flex-col items-center justify-center p-16 min-h-[450px] space-y-3">
+              <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-xs font-medium text-gray-500">Loading module...</p>
+            </div>
+          }>
+            {renderViewContent()}
+          </Suspense>
         </ErrorBoundary>
       </RouteGuard>
 
-      <AiAssistantDrawer isOpen={isCopilotOpen} onClose={() => setIsCopilotOpen(false)} />
+      <Suspense fallback={null}>
+        <AiAssistantDrawer isOpen={isCopilotOpen} onClose={() => setIsCopilotOpen(false)} />
+      </Suspense>
 
       <SessionExpiryModal
         isOpen={isSessionModalOpen}

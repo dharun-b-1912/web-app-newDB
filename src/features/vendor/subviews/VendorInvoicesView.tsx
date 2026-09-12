@@ -15,10 +15,12 @@ import { vendorPortalService } from '../../../services/vendorPortalService';
 import { VendorOrganization, VendorInvoice, ThreeWayMatchResult } from '../../../types/vendorPortal';
 import { ThreeWayMatchModal } from '../components/ThreeWayMatchModal';
 
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
+
 interface VendorInvoicesViewProps {
-  activeVendor: VendorOrganization;
-  activePeriod: string;
-  onRefresh: () => void;
+  activeVendor?: VendorOrganization | null;
+  activePeriod?: string;
+  onRefresh?: () => void;
 }
 
 export const VendorInvoicesView: React.FC<VendorInvoicesViewProps> = ({
@@ -30,9 +32,40 @@ export const VendorInvoicesView: React.FC<VendorInvoicesViewProps> = ({
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [selectedMatchResult, setSelectedMatchResult] = useState<ThreeWayMatchResult | null>(null);
 
-  const pos = vendorPortalService.getPurchaseOrders(activeVendor.id);
-  const invoices = vendorPortalService.getInvoices(activeVendor.id);
-  const payable = vendorPortalService.getVendorPayableBreakdown(activePeriod, activeVendor.id);
+  let ctxVendor: VendorOrganization | null = null;
+  let ctxRelationship: any = null;
+  let ctxRefresh: (() => void) | undefined = undefined;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+    ctxRelationship = ctx.activeRelationship;
+    ctxRefresh = ctx.refreshContext;
+  } catch {}
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
+  const effectivePeriod = activePeriod || '2026-08';
+  const triggerRefresh = () => {
+    if (onRefresh) onRefresh();
+    if (ctxRefresh) ctxRefresh();
+  };
+
+  const rawPos = effectiveVendor?.id ? vendorPortalService.getPurchaseOrders(effectiveVendor.id) : [];
+  const rawInvoices = effectiveVendor?.id ? vendorPortalService.getInvoices(effectiveVendor.id) : [];
+  const payable = effectiveVendor?.id
+    ? vendorPortalService.getVendorPayableBreakdown(effectivePeriod, effectiveVendor.id)
+    : { total_before_tax: 0, net_vendor_payable: 0, total_gst: 0, tds_deduction: 0, advance_deduction: 0 };
+
+  const pos = rawPos.filter((po) => {
+    if (!ctxRelationship) return true;
+    const relCompanyId = ctxRelationship.company_id || ctxRelationship.id;
+    return !po.client_company_id || po.client_company_id === relCompanyId;
+  });
+
+  const invoices = rawInvoices.filter((inv) => {
+    if (!ctxRelationship) return true;
+    const relCompanyId = ctxRelationship.company_id || ctxRelationship.id;
+    return !inv.client_company_id || inv.client_company_id === relCompanyId;
+  });
 
   // Form State
   const [selectedPoId, setSelectedPoId] = useState(pos[0]?.id || '');
@@ -75,7 +108,7 @@ export const VendorInvoicesView: React.FC<VendorInvoicesViewProps> = ({
     setIsSubmitModalOpen(false);
     setSelectedMatchResult(matchResult);
     showToast(`Invoice ${invoice.invoice_number} submitted! 3-Way Match: ${matchResult.match_status}`);
-    onRefresh();
+    triggerRefresh();
   };
 
   const handleInspectMatch = (inv: VendorInvoice) => {

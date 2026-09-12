@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { cn } from '../../lib/utils';
 import { avatarService, AvatarVariant } from '../../services/avatar/avatarService';
 
@@ -18,6 +18,12 @@ export const Avatar: React.FC<AvatarProps> = ({
   className,
 }) => {
   const [hasError, setHasError] = useState(false);
+  const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(() => {
+    if (src && (src.startsWith('http') || src.startsWith('data:'))) {
+      return src;
+    }
+    return undefined;
+  });
 
   const sizes = {
     sm: 'w-7 h-7 text-xs',
@@ -30,7 +36,35 @@ export const Avatar: React.FC<AvatarProps> = ({
   const defaultVariant: AvatarVariant =
     variant || (size === 'sm' ? 'small' : size === 'xl' || size === '2xl' ? 'large' : 'medium');
 
-  const resolvedSrc = src ? avatarService.getAvatarVariantUrl(src, defaultVariant) : undefined;
+  useEffect(() => {
+    if (!src) {
+      setResolvedSrc(undefined);
+      setHasError(false);
+      return;
+    }
+
+    if (src.startsWith('http') || src.startsWith('data:')) {
+      const url = avatarService.getAvatarVariantUrl(src, defaultVariant);
+      setResolvedSrc(url);
+      setHasError(false);
+      return;
+    }
+
+    // Relative storage path: fetch signed URL asynchronously
+    let isCurrent = true;
+    avatarService.getAvatarSignedUrl(src).then((signed) => {
+      if (isCurrent && signed) {
+        setResolvedSrc(signed);
+        setHasError(false);
+      }
+    }).catch(() => {
+      if (isCurrent) setHasError(true);
+    });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [src, defaultVariant]);
 
   const getInitials = (n: string) => {
     if (!n) return 'U';

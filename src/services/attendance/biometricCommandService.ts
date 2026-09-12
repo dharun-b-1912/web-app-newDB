@@ -7,6 +7,8 @@
 import { hrEventBus } from '../hrEventBus';
 import { biometricGatewayService } from './biometricGatewayService';
 
+import { authService } from '../auth/authService';
+
 export type BiometricCommandType =
   | 'SYNC_TIME'
   | 'TEST_CONNECTION'
@@ -49,6 +51,18 @@ export interface BiometricDeviceCommand {
 const STORAGE_KEY_COMMANDS = 'workforce_bio_commands_v2';
 
 export function getActiveOrgId(): string {
+  // 1. Authoritative authenticated backend session identity
+  try {
+    const sessionUser = authService.getCurrentSessionUser();
+    if (sessionUser?.organization_id && sessionUser.organization_id !== 'platform-root') {
+      return sessionUser.organization_id;
+    }
+    if (sessionUser?.tenant_id) {
+      return sessionUser.tenant_id;
+    }
+  } catch (_) {}
+
+  // 2. Safe fallback
   if (typeof window !== 'undefined') {
     return localStorage.getItem('workforce_active_org_id') || 'org-joy-01';
   }

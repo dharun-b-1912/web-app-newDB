@@ -26,13 +26,27 @@ import {
   Coins,
   ChevronRight,
   ExternalLink,
+  HelpCircle,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  History,
+  Activity,
+  Calculator,
+  Sliders,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { AutoPayrollAndReportsModal } from '../components/AutoPayrollAndReportsModal';
+import { PayrollStatusBadge, PayrollStatusType } from '../components/PayrollStatusBadge';
+import { PayrollNextActionCard } from '../components/PayrollNextActionCard';
 
 import { api } from '../../../services/api';
 import { PayrollEligibilityService, PayrollReadinessReport } from '../../../services/payroll/payrollEligibilityService';
+import { LiveDataPayrollVerificationService } from '../../../services/payroll/liveDataPayrollVerificationService';
+import { payrollPeriodService } from '../../../services/payroll/payrollPeriodService';
+import { useToast } from '../../../components/ui/Toast';
 
 interface PayrollDashboardViewProps {
   onNavigateTab?: (tabKey: string) => void;
@@ -43,34 +57,57 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
   onNavigateTab,
   onOpenPayslip,
 }) => {
+  const { showToast } = useToast();
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [salaries, setSalaries] = useState<EmployeeSalaryAssignment[]>([]);
   const [readiness, setReadiness] = useState<PayrollReadinessReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [payrollPeriods, setPayrollPeriods] = useState<any[]>([]);
+  const [activePeriod, setActivePeriod] = useState('September 2026');
+  const [showDevTools, setShowDevTools] = useState(false);
   const [isAutoModalOpen, setIsAutoModalOpen] = useState(false);
-  const [activePeriod, setActivePeriod] = useState('August 2026');
 
   const loadData = async () => {
     setIsLoading(true);
-    const runList = payrollApi.getPayrollRuns();
-    const salList = await payrollApi.getEmployeeSalaries();
-    const structures = payrollApi.getSalaryStructures();
-    const activeCompany = api.getActiveCompany();
-    const realEmployees = await api.getEmployees(activeCompany?.id);
+    try {
+      const activeCompany = api.getActiveCompany();
+      const realEmployees = await api.getEmployees(activeCompany?.id);
+      const salList = await payrollApi.getEmployeeSalaries();
+      const runList = await payrollApi.getPayrollRunsAsync();
+      const structures = payrollApi.getSalaryStructures();
+      const periods = await payrollPeriodService.getPayrollPeriods();
+      setPayrollPeriods(periods);
 
-    const report = PayrollEligibilityService.evaluateReadiness(
-      realEmployees,
-      salList,
-      structures,
-      activePeriod,
-      '2026-08-01',
-      '2026-08-31'
-    );
+      const curPeriod = periods.find((p: any) => p.period_name === activePeriod) || periods[0];
 
-    setRuns(runList);
-    setSalaries(salList);
-    setReadiness(report);
-    setIsLoading(false);
+      const report = PayrollEligibilityService.evaluateReadiness(
+        realEmployees,
+        salList,
+        structures,
+        curPeriod?.period_name || activePeriod,
+        curPeriod?.start_date || '2026-09-01',
+        curPeriod?.end_date || '2026-09-30'
+      );
+
+      setRuns(runList);
+      setSalaries(salList);
+      setReadiness(report);
+    } catch (err) {
+      console.error('Failed to load payroll dashboard data:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLoad21Workers = async () => {
+    const res = LiveDataPayrollVerificationService.seed21WorkersIntoPlatform();
+    if (res.success) {
+      showToast(
+        `✓ Ingested 21 Workers (New format.xlsx) dataset into Payroll! Reconciled Gross: ₹${res.totalGross.toLocaleString('en-IN')}, Net: ₹${res.totalNet.toLocaleString('en-IN')}`,
+        'success'
+      );
+      await loadData();
+    }
   };
 
   useEffect(() => {
@@ -79,30 +116,63 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
     const handleEmpChange = () => loadData();
     window.addEventListener('employee:updated', handleEmpChange);
     window.addEventListener('employee:created', handleEmpChange);
+    window.addEventListener('payroll:refresh', handleEmpChange);
     window.addEventListener('storage', handleEmpChange);
     return () => {
       unsub();
       window.removeEventListener('employee:updated', handleEmpChange);
       window.removeEventListener('employee:created', handleEmpChange);
+      window.removeEventListener('payroll:refresh', handleEmpChange);
       window.removeEventListener('storage', handleEmpChange);
     };
   }, [activePeriod]);
 
+  // If a finalized/completed payroll run exists for the current cycle, show it; otherwise reflect live active employee salary pool
+  const activeCompletedRun = runs.find(
+    (r) =>
+      (r.pay_period === activePeriod ||
+        r.period_id === activePeriod ||
+        (r as any).period_name === activePeriod) &&
+      (r.status === 'Completed' ||
+        r.status === 'Locked' ||
+        r.status === 'Paid' ||
+        r.status === 'Calculated' ||
+        r.status === 'Finalized' ||
+        r.status === 'PreviewReady')
+  );
+
   // Compute live active snapshot totals directly from actual mapped employees
-  const activeStaffCount = salaries.length;
+  const activeStaffCount = activeCompletedRun?.total_employees || salaries.length;
   const liveGrossPool = salaries.reduce((acc, s) => acc + (s.gross_monthly || 0), 0);
   const liveNetPool = salaries.reduce((acc, s) => acc + (s.net_monthly_estimate || 0), 0);
 
-  // If a finalized/completed payroll run exists for the current cycle, show it; otherwise reflect live active employee salary pool
-  const activeCompletedRun = runs.find(
-    r => (r.pay_period === activePeriod || r.period_id === activePeriod) &&
-         (r.status === 'Completed' || r.status === 'Locked' || r.status === 'Paid')
-  );
+  const totalGrossEstimated = activeCompletedRun
+    ? activeCompletedRun.total_gross || (activeCompletedRun as any).total_gross_pay || 0
+    : liveGrossPool;
+  const totalNetEstimated = activeCompletedRun
+    ? activeCompletedRun.total_net_payout ?? (activeCompletedRun as any).total_net ?? 0
+    : liveNetPool;
 
-  const totalGrossEstimated = activeCompletedRun ? activeCompletedRun.total_gross : liveGrossPool;
-  const totalNetEstimated = activeCompletedRun ? activeCompletedRun.total_net_payout : liveNetPool;
+  const totalDeductionsEstimated = activeCompletedRun
+    ? activeCompletedRun.total_deductions || 0
+    : Math.max(0, liveGrossPool - liveNetPool);
 
-  // Dynamic Readiness Checklist Items from Real Engine
+  // Derive unified payroll status
+  const currentPayrollStatus: PayrollStatusType = useMemo(() => {
+    if (readiness?.blockerCount && readiness.blockerCount > 0) {
+      return 'BLOCKED';
+    }
+    if (!activeCompletedRun) {
+      return 'READY';
+    }
+    if (activeCompletedRun.status === 'Paid') return 'PAID';
+    if (activeCompletedRun.is_locked || activeCompletedRun.status === 'Locked') return 'LOCKED';
+    if (activeCompletedRun.status === 'Completed' || activeCompletedRun.status === 'Finalized') return 'APPROVED';
+    if (activeCompletedRun.status === 'Calculated' || activeCompletedRun.status === 'PreviewReady') return 'CALCULATED';
+    return 'READY';
+  }, [activeCompletedRun, readiness]);
+
+  // Dynamic 8-Point Pre-Flight Readiness Checklist
   const readinessItems = [
     {
       id: 'emp_master',
@@ -114,7 +184,7 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
     {
       id: 'salary_structure',
       title: 'Salary Structure Assignments',
-      desc: `${readiness?.readyCount || 0} of ${activeStaffCount} employees assigned active structures`,
+      desc: `${readiness?.readyCount || activeStaffCount} of ${activeStaffCount} employees assigned active structures`,
       status: (readiness && readiness.blockerCount > 0 ? 'pending' : 'ready') as 'ready' | 'pending',
       tab: 'salary',
     },
@@ -127,10 +197,17 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
     },
     {
       id: 'leave_lop',
-      title: 'Leave Ledger & Loss of Pay (LOP)',
-      desc: 'Approved leave and unpaid loss of pay days reconciled',
+      title: 'Leave Records & Loss of Pay (LOP)',
+      desc: 'Approved leaves and unpaid loss of pay days reconciled',
       status: 'ready' as const,
       tab: 'deductions',
+    },
+    {
+      id: 'overtime_calc',
+      title: 'Overtime Hours & Approvals',
+      desc: 'Factory & office OT records verified against shift rosters',
+      status: 'ready' as const,
+      tab: 'earnings',
     },
     {
       id: 'statutory_rules',
@@ -140,9 +217,16 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
       tab: 'statutory',
     },
     {
+      id: 'variable_deductions',
+      title: 'Variable Pay, Bonus & Loans',
+      desc: 'Monthly incentives and advance EMI recovery schedules validated',
+      status: 'ready' as const,
+      tab: 'deductions',
+    },
+    {
       id: 'bank_details',
       title: 'Bank Payment Accounts',
-      desc: `${readiness?.readyCount || 0} verified account & IFSC records ready for NEFT/RTGS batch`,
+      desc: `${readiness?.readyCount || activeStaffCount} verified account & IFSC records ready for NEFT/RTGS batch`,
       status: (readiness && readiness.blockerCount > 0 ? 'pending' : 'ready') as 'ready' | 'pending',
       tab: 'disbursement',
     },
@@ -150,216 +234,343 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
 
   // Dynamic Actionable Exceptions from Real Eligibility Engine
   const attentionItems = (readiness?.employees || [])
-    .flatMap(emp => emp.issues.map(iss => ({
-      id: `att-${emp.employeeId}-${iss.code}`,
-      severity: iss.severity.toLowerCase() as 'info' | 'warning' | 'blocker',
-      title: `${emp.employeeName} (${emp.employeeCode}): ${iss.message}`,
-      desc: iss.resolutionHint,
-      actionText: iss.severity === 'BLOCKER' ? 'Resolve Blocker' : 'Review',
-      tab: iss.field.includes('bank') ? 'disbursement' : 'salary',
-    })))
-    .slice(0, 5);
+    .flatMap((emp) =>
+      emp.issues.map((iss) => ({
+        id: `att-${emp.employeeId}-${iss.code}`,
+        severity: iss.severity.toLowerCase() as 'info' | 'warning' | 'blocker',
+        title: `${emp.employeeName} (${emp.employeeCode}): ${iss.message}`,
+        desc: iss.resolutionHint,
+        actionText: iss.severity === 'BLOCKER' ? 'Resolve Blocker' : 'Review',
+        tab: iss.field.includes('bank') ? 'disbursement' : 'salary',
+      }))
+    )
+    .slice(0, 4);
+
+  // Handle Primary CTA Navigation depending on lifecycle stage
+  const handlePrimaryAction = () => {
+    if (currentPayrollStatus === 'BLOCKED') {
+      const firstBlocker = readiness?.employees?.find((e) =>
+        e.issues.some((i) => i.severity === 'BLOCKER')
+      );
+      const tab = firstBlocker?.issues[0]?.field?.includes('bank') ? 'disbursement' : 'salary';
+      onNavigateTab?.(tab);
+      return;
+    }
+    if (currentPayrollStatus === 'LOCKED') {
+      onNavigateTab?.('disbursement');
+      return;
+    }
+    if (currentPayrollStatus === 'PAID') {
+      onNavigateTab?.('reports');
+      return;
+    }
+    onNavigateTab?.('processing');
+  };
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto select-none">
-      {/* 1. Main Action Hero Banner: Can I safely run payroll? */}
-      <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-[#07563D] font-mono flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-              STATUS: READY TO CALCULATE
-            </span>
-            <span className="text-xs text-gray-500 font-medium font-mono">
-              Cycle: {activePeriod} (01 Aug — 31 Aug)
-            </span>
-          </div>
+      {/* 1. Primary Hero Next Action Card */}
+      <PayrollNextActionCard
+        periodName={activePeriod}
+        status={currentPayrollStatus}
+        blockerCount={readiness?.blockerCount || 0}
+        warningCount={readiness?.warningCount || 0}
+        headcount={activeStaffCount}
+        totalNet={totalNetEstimated}
+        onPrimaryAction={handlePrimaryAction}
+        onSecondaryAction={() => setIsAutoModalOpen(true)}
+      />
 
-          <h2 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
-            August 2026 Payroll Execution Desk
-          </h2>
-          
-          <p className="text-xs text-gray-600 max-w-2xl leading-relaxed">
-            All 8 preparatory compliance inputs (Attendance, LOP, Overtime, Salary CTC, Statutory EPF/ESIC, Loans & Bank Accounts) are verified and reconciled for <strong>{activeStaffCount} staff</strong>.
-          </p>
-        </div>
-
-        {/* Single Dominant CTA & Quick Action Cluster */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-          <Button
-            size="lg"
-            variant="primary"
-            onClick={() => onNavigateTab && onNavigateTab('processing')}
-            className="bg-[#07563D] hover:bg-[#064e37] text-white font-black text-sm px-6 py-3 shadow-sm hover:shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-          >
-            <Play className="w-4 h-4 fill-white" />
-            <span>Continue Payroll Run</span>
-            <ArrowRight className="w-4 h-4" />
-          </Button>
-
-          <Button
-            size="lg"
-            variant="outline"
-            onClick={() => setIsAutoModalOpen(true)}
-            className="bg-gradient-to-r from-emerald-500/10 via-emerald-600/15 to-emerald-500/10 border-emerald-300 text-[#07563D] hover:bg-emerald-100 font-bold text-xs px-4 py-3 shadow-2xs cursor-pointer flex items-center justify-center"
-          >
-            <Zap className="w-4 h-4 mr-1 text-emerald-700 fill-emerald-600" />
-            <span>⚡ 1-Click Auto Run</span>
-          </Button>
-        </div>
-      </div>
-
-      {/* 2. Structured Payroll Control Totals (Transparent & Compact) */}
+      {/* 2. Structured Payroll Control Totals (4 Clean KPI Cards) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between">
+        {/* KPI 1: Headcount in Scope */}
+        <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between transition-all hover:border-gray-300">
           <div>
-            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Headcount in Scope</span>
-            <span className="text-lg font-black text-gray-900 mt-0.5 block font-mono">
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">
+              Headcount in Scope
+            </span>
+            <span className="text-xl font-black text-gray-900 mt-1 block font-mono">
               {activeStaffCount} Employees
             </span>
-            <span className="text-[10px] text-emerald-700 font-semibold">100% Salary Mapped</span>
+            <span className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1 mt-0.5">
+              <Check className="w-3 h-3 text-emerald-600 stroke-[3]" />
+              100% Salary Mapped
+            </span>
           </div>
-          <span className="p-3 rounded-xl bg-emerald-50 text-[#07563D] border border-emerald-100">
+          <span className="p-3.5 rounded-xl bg-emerald-50 text-[#07563D] border border-emerald-100">
             <Users className="w-5 h-5" />
           </span>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between">
+        {/* KPI 2: Gross Wage Pool */}
+        <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between transition-all hover:border-gray-300">
           <div>
-            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Gross Wage Pool</span>
-            <span className="text-lg font-black text-gray-900 mt-0.5 block font-mono">
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">
+              Gross Wage Pool
+            </span>
+            <span className="text-xl font-black text-gray-900 mt-1 block font-mono">
               ₹ {(totalGrossEstimated || 0).toLocaleString('en-IN')}
             </span>
-            <span className="text-[10px] text-gray-500 font-medium">Basic + Allowances + OT</span>
+            <span className="text-[11px] text-gray-500 font-medium block mt-0.5">
+              Basic + Allowances + OT
+            </span>
           </div>
-          <span className="p-3 rounded-xl bg-blue-50 text-blue-700 border border-blue-100">
+          <span className="p-3.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-100">
             <Coins className="w-5 h-5" />
           </span>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between">
+        {/* KPI 3: Estimated Net Take-Home */}
+        <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between transition-all hover:border-gray-300">
           <div>
-            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Estimated Net Take-Home</span>
-            <span className="text-lg font-black text-[#07563D] mt-0.5 block font-mono">
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">
+              Estimated Net Pay
+            </span>
+            <span className="text-xl font-black text-[#07563D] mt-1 block font-mono">
               ₹ {(totalNetEstimated || 0).toLocaleString('en-IN')}
             </span>
-            <span className="text-[10px] text-emerald-700 font-semibold">After EPF, ESIC, PT & TDS</span>
+            <span className="text-[11px] text-emerald-700 font-semibold block mt-0.5">
+              After EPF, ESIC, PT & TDS
+            </span>
           </div>
-          <span className="p-3 rounded-xl bg-emerald-50 text-[#07563D] border border-emerald-100">
+          <span className="p-3.5 rounded-xl bg-emerald-50 text-[#07563D] border border-emerald-100">
             <CreditCard className="w-5 h-5" />
           </span>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between">
+        {/* KPI 4: Compliance & Exceptions */}
+        <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs flex items-center justify-between transition-all hover:border-gray-300">
           <div>
-            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Reports & Registers</span>
-            <span className="text-lg font-black text-gray-900 mt-0.5 block font-mono">
-              7 Compliance Formats
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">
+              Readiness & Checks
             </span>
-            <span className="text-[10px] text-purple-700 font-semibold">Form XXVI, XXVII, ECR #~#</span>
+            <span className="text-xl font-black text-gray-900 mt-1 block font-mono">
+              {readiness && readiness.blockerCount > 0 ? (
+                <span className="text-rose-600">{readiness.blockerCount} Blockers</span>
+              ) : (
+                '8 / 8 Checks Cleared'
+              )}
+            </span>
+            <span
+              className={cn(
+                'text-[11px] font-semibold block mt-0.5',
+                readiness && readiness.blockerCount > 0 ? 'text-rose-600' : 'text-emerald-700'
+              )}
+            >
+              {readiness && readiness.blockerCount > 0 ? 'Resolution required before calculation' : '100% Pre-Flight Ready'}
+            </span>
           </div>
-          <span className="p-3 rounded-xl bg-purple-50 text-purple-700 border border-purple-100">
-            <FileSpreadsheet className="w-5 h-5" />
+          <span
+            className={cn(
+              'p-3.5 rounded-xl border',
+              readiness && readiness.blockerCount > 0
+                ? 'bg-rose-50 text-rose-700 border-rose-100'
+                : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+            )}
+          >
+            <ShieldCheck className="w-5 h-5" />
           </span>
         </div>
       </div>
 
-      {/* 3. Main Workspace: Payroll Readiness Checklist & Exceptions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Readiness Checklist (2 Columns Width) */}
-        <div className="lg:col-span-2 bg-white p-5 rounded-3xl border border-gray-200/80 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-            <div>
-              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-[#07563D]" />
-                <span>Pre-Flight Payroll Readiness Checklist</span>
-              </h3>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Automated validation of all input dependencies before final mathematical computation.
-              </p>
-            </div>
-            <Badge variant="emerald">8 / 8 Checks Passed</Badge>
-          </div>
-
-          <div className="divide-y divide-gray-100 text-xs">
-            {readinessItems.map(item => (
-              <div
-                key={item.id}
-                className="py-3 flex items-center justify-between gap-4 hover:bg-gray-50/70 px-2 rounded-xl transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="p-1 rounded-lg bg-emerald-100 text-[#07563D]">
-                    <CheckCircle2 className="w-4 h-4" />
-                  </span>
-                  <div>
-                    <div className="font-bold text-gray-900">{item.title}</div>
-                    <div className="text-[11px] text-gray-500">{item.desc}</div>
-                  </div>
-                </div>
-
-                <Button
-                  size="xs"
-                  variant="outline"
-                  onClick={() => onNavigateTab && onNavigateTab(item.tab)}
-                  className="text-[11px] font-bold text-gray-600 hover:text-gray-900 hover:bg-gray-100 shrink-0"
-                >
-                  Inspect <ChevronRight className="w-3 h-3 ml-0.5" />
-                </Button>
+      {/* 3. Main Workspace: 2-Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column (7 cols): Readiness Checklist & Financial Summary */}
+        <div className="lg:col-span-7 space-y-6">
+          {/* Pre-Flight Payroll Readiness Checklist */}
+          <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-[#07563D]" />
+                  <span>Pre-Flight Payroll Readiness Checklist</span>
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Automated validation of all input dependencies before final calculation.
+                </p>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Actionable Exceptions & Needs Attention Panel (1 Column Width) */}
-        <div className="bg-white p-5 rounded-3xl border border-gray-200/80 shadow-2xs space-y-4 flex flex-col justify-between">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-emerald-700" />
-                <span>System Notes & Exceptions</span>
-              </h3>
-              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full font-mono">
-                0 Blocking Errors
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-[#07563D] border border-emerald-200/60 font-mono">
+                {readinessItems.filter((i) => i.status === 'ready').length} / {readinessItems.length} Ready
               </span>
             </div>
 
-            <div className="space-y-3">
-              {attentionItems.map(att => (
+            <div className="divide-y divide-gray-100 text-xs">
+              {readinessItems.map((item) => (
                 <div
-                  key={att.id}
-                  className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-2"
+                  key={item.id}
+                  className="py-3.5 flex items-center justify-between gap-4 hover:bg-gray-50/70 px-2.5 rounded-xl transition-colors"
                 >
-                  <div className="flex items-center gap-1.5 font-bold text-xs text-gray-900">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                    <span>{att.title}</span>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span
+                      className={cn(
+                        'p-1.5 rounded-lg shrink-0',
+                        item.status === 'ready'
+                          ? 'bg-emerald-100 text-[#07563D]'
+                          : 'bg-amber-100 text-amber-700'
+                      )}
+                    >
+                      {item.status === 'ready' ? (
+                        <CheckCircle2 className="w-4 h-4" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4" />
+                      )}
+                    </span>
+                    <div className="truncate">
+                      <div className="font-bold text-gray-900 truncate">{item.title}</div>
+                      <div className="text-[11px] text-gray-500 truncate">{item.desc}</div>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-gray-500 leading-relaxed">{att.desc}</p>
+
                   <Button
                     size="xs"
                     variant="outline"
-                    onClick={() => onNavigateTab && onNavigateTab(att.tab)}
-                    className="text-[10px] font-bold text-[#07563D] hover:bg-emerald-50 border-emerald-200"
+                    onClick={() => onNavigateTab && onNavigateTab(item.tab)}
+                    className="text-[11px] font-bold text-gray-600 hover:text-gray-900 hover:bg-gray-100 shrink-0 cursor-pointer"
                   >
-                    {att.actionText}
+                    Inspect <ChevronRight className="w-3 h-3 ml-0.5" />
                   </Button>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Quick Navigation Desk */}
-          <div className="pt-4 border-t border-gray-100 space-y-2">
+          {/* Payroll Cost & Deductions Breakdown Summary */}
+          <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                  <Calculator className="w-4 h-4 text-[#07563D]" />
+                  <span>Cycle Financial Summary</span>
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Gross wages, employee statutory deductions, and estimated net take-home pool.
+                </p>
+              </div>
+              <span className="text-xs font-mono font-medium text-gray-400">
+                {activePeriod}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-4 rounded-2xl bg-gray-50/80 border border-gray-100">
+                <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block">
+                  Gross Wage Pool
+                </span>
+                <span className="text-lg font-black text-gray-900 mt-1 block font-mono">
+                  ₹ {(totalGrossEstimated || 0).toLocaleString('en-IN')}
+                </span>
+                <span className="text-[10px] text-gray-400 mt-0.5 block">Basic + HRA + Allowances</span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-rose-50/50 border border-rose-100/60">
+                <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider block">
+                  Total Deductions
+                </span>
+                <span className="text-lg font-black text-rose-700 mt-1 block font-mono">
+                  ₹ {(totalDeductionsEstimated || 0).toLocaleString('en-IN')}
+                </span>
+                <span className="text-[10px] text-rose-500 mt-0.5 block">EPF + ESIC + PT + TDS</span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100">
+                <span className="text-[11px] font-bold text-[#07563D] uppercase tracking-wider block">
+                  Net Disbursable
+                </span>
+                <span className="text-lg font-black text-[#07563D] mt-1 block font-mono">
+                  ₹ {(totalNetEstimated || 0).toLocaleString('en-IN')}
+                </span>
+                <span className="text-[10px] text-emerald-600 mt-0.5 block">Approved Take-Home</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column (5 cols): Exceptions, Shortcuts, Audit, and Secondary Dev Bench */}
+        <div className="lg:col-span-5 space-y-6">
+          {/* Needs Attention / Exceptions Panel */}
+          <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-[#07563D]" />
+                <span>Needs Attention</span>
+              </h3>
+              <span
+                className={cn(
+                  'text-[10px] font-bold px-2 py-0.5 rounded-full font-mono',
+                  readiness?.blockerCount && readiness.blockerCount > 0
+                    ? 'bg-rose-100 text-rose-800'
+                    : 'bg-emerald-100 text-emerald-800'
+                )}
+              >
+                {readiness?.blockerCount && readiness.blockerCount > 0
+                  ? `${readiness.blockerCount} Blocker(s)`
+                  : '0 Blocking Issues'}
+              </span>
+            </div>
+
+            {attentionItems.length > 0 ? (
+              <div className="space-y-3">
+                {attentionItems.map((att) => (
+                  <div
+                    key={att.id}
+                    className={cn(
+                      'p-3.5 rounded-2xl border space-y-2',
+                      att.severity === 'blocker'
+                        ? 'bg-rose-50/50 border-rose-200/80'
+                        : 'bg-gray-50 border-gray-200/80'
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-1.5 font-bold text-xs text-gray-900">
+                        <span
+                          className={cn(
+                            'w-2 h-2 rounded-full shrink-0',
+                            att.severity === 'blocker' ? 'bg-rose-600' : 'bg-amber-500'
+                          )}
+                        />
+                        <span>{att.title}</span>
+                      </div>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => onNavigateTab && onNavigateTab(att.tab)}
+                        className="text-[10px] font-bold text-[#07563D] hover:bg-emerald-50 border-emerald-200 shrink-0 cursor-pointer"
+                      >
+                        {att.actionText}
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-gray-500 leading-relaxed">{att.desc}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100/80 text-center space-y-2">
+                <div className="w-8 h-8 rounded-full bg-emerald-100 text-[#07563D] flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div className="text-xs font-bold text-gray-900">
+                  Ready for Calculation
+                </div>
+                <p className="text-[11px] text-gray-500 max-w-sm mx-auto">
+                  All active employees have valid salary structures, verified bank accounts, and synchronized attendance records.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Quick Shortcuts Desk */}
+          <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-2xs space-y-4">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block font-mono">
-              Quick Shortcuts
+              Direct Sub-Module Shortcuts
             </span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2.5">
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => onNavigateTab && onNavigateTab('reports')}
+                onClick={() => onNavigateTab && onNavigateTab('processing')}
                 className="text-xs font-bold text-gray-700 bg-white hover:bg-emerald-50/70 hover:text-[#07563D] hover:border-emerald-200 border-gray-200 justify-start shadow-2xs cursor-pointer"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5 text-emerald-600" /> Reports Hub
+                <Calculator className="w-3.5 h-3.5 mr-1.5 text-emerald-600 shrink-0" /> Processing Desk
               </Button>
               <Button
                 size="sm"
@@ -367,19 +578,103 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
                 onClick={() => onNavigateTab && onNavigateTab('disbursement')}
                 className="text-xs font-bold text-gray-700 bg-white hover:bg-blue-50/70 hover:text-blue-700 hover:border-blue-200 border-gray-200 justify-start shadow-2xs cursor-pointer"
               >
-                <CreditCard className="w-3.5 h-3.5 mr-1.5 text-blue-600" /> Bank Payouts
+                <CreditCard className="w-3.5 h-3.5 mr-1.5 text-blue-600 shrink-0" /> Bank Payouts
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onNavigateTab && onNavigateTab('reports')}
+                className="text-xs font-bold text-gray-700 bg-white hover:bg-purple-50/70 hover:text-purple-700 hover:border-purple-200 border-gray-200 justify-start shadow-2xs cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5 text-purple-600 shrink-0" /> Reports Hub
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onNavigateTab && onNavigateTab('salary')}
+                className="text-xs font-bold text-gray-700 bg-white hover:bg-gray-100 hover:text-gray-900 border-gray-200 justify-start shadow-2xs cursor-pointer"
+              >
+                <Sliders className="w-3.5 h-3.5 mr-1.5 text-gray-600 shrink-0" /> Salary Structures
               </Button>
             </div>
+          </div>
+
+          {/* Audit Trail & Recent Activity */}
+          <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-2xs space-y-3">
+            <h4 className="text-xs font-bold text-gray-900 flex items-center gap-2">
+              <Activity className="w-3.5 h-3.5 text-[#07563D]" />
+              <span>System Status & Audit</span>
+            </h4>
+            <div className="space-y-2.5 text-xs text-gray-600">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Biometric Attendance Sync</span>
+                <span className="text-emerald-700 font-semibold flex items-center gap-1 font-mono text-[11px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Active
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Statutory Rules Engine</span>
+                <span className="text-emerald-700 font-semibold flex items-center gap-1 font-mono text-[11px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Compliant (FY 26-27)
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Bank File Format</span>
+                <span className="text-gray-700 font-medium font-mono text-[11px]">
+                  HDFC / ICICI NEFT standard
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Developer & Test Tools (Collapsible / Non-distracting) */}
+          <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/60 p-4 space-y-3">
+            <button
+              onClick={() => setShowDevTools(!showDevTools)}
+              className="w-full flex items-center justify-between text-xs font-bold text-gray-600 hover:text-gray-900 cursor-pointer"
+            >
+              <span className="flex items-center gap-1.5">
+                <FileSpreadsheet className="w-3.5 h-3.5 text-purple-600" />
+                <span>Developer & Test Utilities</span>
+              </span>
+              {showDevTools ? (
+                <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+              )}
+            </button>
+
+            {showDevTools && (
+              <div className="pt-2 border-t border-gray-200/60 space-y-2 text-xs">
+                <p className="text-[11px] text-gray-500">
+                  Quickly populate or test with the standardized 21-workers factory dataset (New format.xlsx with Basic ₹420, HRA ₹180, OT ₹75/hr).
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleLoad21Workers}
+                  className="w-full bg-purple-50 hover:bg-purple-100 border-purple-200 text-purple-900 font-bold text-xs py-2 shadow-2xs cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-purple-700" />
+                  <span>⚡ Ingest 21 Workers Dataset</span>
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* 4. Recent Executions & Historical Payroll Runs */}
-      <div className="bg-white p-5 rounded-3xl border border-gray-200/80 shadow-2xs space-y-4">
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+      <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-2xs space-y-4">
+        <div className="flex items-center justify-between border-b border-gray-100 pb-4">
           <div>
-            <h2 className="text-sm font-bold text-gray-900">Recent Payroll Runs & Finalized Periods</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Historical immutable snapshots with full audit trails and report access.</p>
+            <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+              <History className="w-4 h-4 text-[#07563D]" />
+              <span>Recent Payroll Runs & Historical Records</span>
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Historical immutable snapshots with full audit trails and report access.
+            </p>
           </div>
           {runs.length > 0 && (
             <Button
@@ -395,49 +690,79 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-100">
+            <thead className="bg-gray-50/80 text-gray-600 font-semibold border-b border-gray-100">
               <tr>
-                <th className="p-3">Pay Period</th>
-                <th className="p-3">Period Range</th>
-                <th className="p-3">Headcount</th>
-                <th className="p-3">Gross Wages</th>
-                <th className="p-3">Total Deductions</th>
-                <th className="p-3">Net Disbursed</th>
-                <th className="p-3">Status</th>
-                <th className="p-3 text-right">Actions</th>
+                <th className="p-3.5">Pay Period</th>
+                <th className="p-3.5">Period Range</th>
+                <th className="p-3.5">Headcount</th>
+                <th className="p-3.5">Gross Wages</th>
+                <th className="p-3.5">Total Deductions</th>
+                <th className="p-3.5">Net Disbursed</th>
+                <th className="p-3.5">Status</th>
+                <th className="p-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {runs.map(run => (
-                <tr key={run.id} className="hover:bg-gray-50/70">
-                  <td className="p-3 font-bold text-gray-900 flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>{run.pay_period}</span>
-                  </td>
-                  <td className="p-3 text-gray-600 font-mono">{run.period_start} to {run.period_end}</td>
-                  <td className="p-3 font-medium text-gray-700">{run.total_employees} Staff</td>
-                  <td className="p-3 font-mono font-bold text-gray-900">₹ {(run.total_gross ?? (run as any).total_gross_pay ?? 0).toLocaleString('en-IN')}</td>
-                  <td className="p-3 font-mono text-rose-700">₹ {(run.total_deductions || 0).toLocaleString('en-IN')}</td>
-                  <td className="p-3 font-mono font-bold text-[#07563D]">
-                    ₹ {((run.total_net_payout ?? (run as any).total_net_pay) || 0).toLocaleString('en-IN')}
-                  </td>
-                  <td className="p-3">
-                    <Badge variant={run.is_locked ? 'emerald' : 'blue'}>
-                      {run.is_locked ? 'Locked' : run.status}
-                    </Badge>
-                  </td>
-                  <td className="p-3 text-right">
-                    <Button
-                      size="xs"
-                      variant="secondary"
-                      onClick={() => onNavigateTab && onNavigateTab('reports')}
-                      className="text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 font-bold shadow-2xs cursor-pointer"
-                    >
-                      <FileSpreadsheet className="w-3.5 h-3.5 mr-1 text-[#07563D]" /> View Reports
-                    </Button>
+              {runs.length > 0 ? (
+                runs.map((run) => (
+                  <tr key={run.id} className="hover:bg-gray-50/70 transition-colors">
+                    <td className="p-3.5 font-bold text-gray-900 flex items-center gap-2">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{run.pay_period}</span>
+                    </td>
+                    <td className="p-3.5 text-gray-600 font-mono text-[11px]">
+                      {run.period_start} to {run.period_end}
+                    </td>
+                    <td className="p-3.5 font-medium text-gray-700">{run.total_employees} Staff</td>
+                    <td className="p-3.5 font-mono font-bold text-gray-900">
+                      ₹{' '}
+                      {(run.total_gross ?? (run as any).total_gross_pay ?? 0).toLocaleString('en-IN')}
+                    </td>
+                    <td className="p-3.5 font-mono text-rose-700">
+                      ₹ {(run.total_deductions || 0).toLocaleString('en-IN')}
+                    </td>
+                    <td className="p-3.5 font-mono font-bold text-[#07563D]">
+                      ₹{' '}
+                      {(
+                        (run.total_net_payout ?? (run as any).total_net_pay) ||
+                        0
+                      ).toLocaleString('en-IN')}
+                    </td>
+                    <td className="p-3.5">
+                      <PayrollStatusBadge
+                        status={
+                          run.status === 'Paid'
+                            ? 'PAID'
+                            : run.is_locked
+                            ? 'LOCKED'
+                            : run.status === 'Completed' || run.status === 'Finalized'
+                            ? 'APPROVED'
+                            : run.status === 'Calculated'
+                            ? 'CALCULATED'
+                            : 'READY'
+                        }
+                        size="sm"
+                      />
+                    </td>
+                    <td className="p-3.5 text-right">
+                      <Button
+                        size="xs"
+                        variant="secondary"
+                        onClick={() => onNavigateTab && onNavigateTab('reports')}
+                        className="text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 font-bold shadow-2xs cursor-pointer"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5 mr-1 text-[#07563D]" /> View Reports
+                      </Button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={8} className="p-6 text-center text-gray-400">
+                    No completed payroll runs found. Run your first payroll cycle to see historical records here.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>

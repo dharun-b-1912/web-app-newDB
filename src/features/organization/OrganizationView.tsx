@@ -31,6 +31,7 @@ import {
   Crosshair,
   ArrowRight,
   Navigation,
+  Pencil,
 } from 'lucide-react';
 import { useTenant } from '../../hooks/useTenant';
 import { Company, Branch, BranchType, OrganizationSummaryMetrics } from '../../types';
@@ -85,6 +86,59 @@ export const OrganizationView: React.FC = () => {
   const [branchCity, setBranchCity] = useState('');
   const [branchState, setBranchState] = useState('');
   const [branchAddress, setBranchAddress] = useState('');
+
+  // View & Edit Entity states
+  const [selectedEntityForView, setSelectedEntityForView] = useState<Company | null>(null);
+  const [isViewEntityModalOpen, setIsViewEntityModalOpen] = useState(false);
+  const [isEditEntityModalOpen, setIsEditEntityModalOpen] = useState(false);
+  const [editLegalName, setEditLegalName] = useState('');
+  const [editTradeName, setEditTradeName] = useState('');
+  const [editRegNo, setEditRegNo] = useState('');
+  const [editTaxId, setEditTaxId] = useState('');
+  const [editCountry, setEditCountry] = useState('India');
+  const [editCity, setEditCity] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+
+  const handleOpenViewEntity = (comp: Company) => {
+    setSelectedEntityForView(comp);
+    setIsViewEntityModalOpen(true);
+  };
+
+  const handleOpenEditEntity = (comp: Company) => {
+    setSelectedEntityForView(comp);
+    setEditLegalName(comp.legal_name);
+    setEditTradeName(comp.trade_name || '');
+    setEditRegNo(comp.statutory_registration_no || '');
+    setEditTaxId(comp.tax_id || '');
+    setEditCountry(comp.country || 'India');
+    setEditCity(comp.city || 'Coimbatore');
+    setEditAddress(comp.address || '');
+    setIsViewEntityModalOpen(false);
+    setIsEditEntityModalOpen(true);
+  };
+
+  const handleUpdateCompany = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEntityForView || !editLegalName) return;
+
+    try {
+      await organizationStructureService.updateLegalEntity(selectedEntityForView.id, {
+        legal_name: editLegalName,
+        trade_name: editTradeName || editLegalName,
+        statutory_registration_no: editRegNo,
+        tax_id: editTaxId,
+        country: editCountry,
+        city: editCity || 'Coimbatore',
+        address: editAddress,
+      });
+      await reloadTenant();
+      showToast('Legal Entity details updated successfully!');
+      setIsEditEntityModalOpen(false);
+      loadData();
+    } catch {
+      showToast('Error updating legal entity details', 'error');
+    }
+  };
 
   const orgId = organization?.id || 'org-joy-01';
 
@@ -420,7 +474,12 @@ export const OrganizationView: React.FC = () => {
                           </TableCell>
                           <TableCell className="text-center font-bold text-[#07563D]">{compBranches.length}</TableCell>
                           <TableCell className="text-right">
-                            <Button variant="ghost" size="sm" className="text-xs text-[#07563D] hover:bg-emerald-50">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleOpenViewEntity(comp)}
+                              className="text-xs text-[#07563D] hover:bg-emerald-50 font-bold cursor-pointer"
+                            >
                               View Entity
                             </Button>
                           </TableCell>
@@ -711,6 +770,179 @@ export const OrganizationView: React.FC = () => {
             </Button>
             <Button type="submit" variant="primary" size="sm" className="bg-[#07563D] hover:bg-[#0b7a57] text-white">
               Register Branch
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal: View Legal Entity Details */}
+      <Modal
+        isOpen={isViewEntityModalOpen}
+        onClose={() => setIsViewEntityModalOpen(false)}
+        title="Legal Corporate Entity Details"
+        description="Comprehensive statutory, tax, and location metadata for this registered entity"
+      >
+        {selectedEntityForView && (
+          <div className="p-6 space-y-5">
+            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+              <div>
+                <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                  <Landmark className="w-5 h-5 text-[#07563D]" />
+                  {selectedEntityForView.legal_name}
+                </h3>
+                {selectedEntityForView.trade_name && (
+                  <p className="text-xs text-gray-500 mt-0.5">Operating as: <span className="font-semibold text-gray-700">{selectedEntityForView.trade_name}</span></p>
+                )}
+              </div>
+              <Badge variant="emerald" className="text-xs uppercase font-bold">
+                {selectedEntityForView.status || 'Active'}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              <div className="bg-gray-50/80 p-3.5 rounded-2xl border border-gray-100">
+                <span className="text-gray-400 block font-medium mb-1">Statutory Reg / CIN</span>
+                <span className="font-mono font-bold text-gray-800 text-sm">
+                  {selectedEntityForView.statutory_registration_no || 'Not Registered'}
+                </span>
+              </div>
+              <div className="bg-gray-50/80 p-3.5 rounded-2xl border border-gray-100">
+                <span className="text-gray-400 block font-medium mb-1">Tax ID / PAN</span>
+                <span className="font-mono font-bold text-gray-800 text-sm">
+                  {selectedEntityForView.tax_id || '—'}
+                </span>
+              </div>
+              <div className="bg-gray-50/80 p-3.5 rounded-2xl border border-gray-100">
+                <span className="text-gray-400 block font-medium mb-1">HQ Location & Country</span>
+                <span className="font-bold text-gray-800">
+                  {selectedEntityForView.city || 'Coimbatore'}, {selectedEntityForView.country || 'India'}
+                </span>
+              </div>
+              <div className="bg-gray-50/80 p-3.5 rounded-2xl border border-gray-100">
+                <span className="text-gray-400 block font-medium mb-1">Linked Operational Branches</span>
+                <span className="font-bold text-[#07563D] text-sm">
+                  {branches.filter(b => b.company_id === selectedEntityForView.id).length} Branch Sites
+                </span>
+              </div>
+            </div>
+
+            {selectedEntityForView.address && (
+              <div className="bg-gray-50/80 p-3.5 rounded-2xl border border-gray-100 text-xs">
+                <span className="text-gray-400 block font-medium mb-1">Registered Statutory Address</span>
+                <span className="text-gray-700 font-medium leading-relaxed">{selectedEntityForView.address}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsViewEntityModalOpen(false)}>
+                Close
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => handleOpenEditEntity(selectedEntityForView)}
+                className="bg-[#07563D] hover:bg-[#0b7a57] text-white gap-1.5"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Edit Entity Details
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal: Edit Legal Entity */}
+      <Modal
+        isOpen={isEditEntityModalOpen}
+        onClose={() => setIsEditEntityModalOpen(false)}
+        title="Edit Legal Corporate Entity"
+        description="Update statutory parameters, legal trade names, and registered address"
+      >
+        <form onSubmit={handleUpdateCompany} className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Legal Corporate Name</label>
+            <input
+              type="text"
+              value={editLegalName}
+              onChange={e => setEditLegalName(e.target.value)}
+              required
+              className="w-full p-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#07563D]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Trade / Operating Name</label>
+            <input
+              type="text"
+              value={editTradeName}
+              onChange={e => setEditTradeName(e.target.value)}
+              className="w-full p-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#07563D]"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Statutory Reg / CIN</label>
+              <input
+                type="text"
+                value={editRegNo}
+                onChange={e => setEditRegNo(e.target.value)}
+                required
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#07563D]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Tax ID / PAN</label>
+              <input
+                type="text"
+                value={editTaxId}
+                onChange={e => setEditTaxId(e.target.value)}
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#07563D]"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Country</label>
+              <input
+                type="text"
+                value={editCountry}
+                onChange={e => setEditCountry(e.target.value)}
+                required
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#07563D]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">HQ City</label>
+              <input
+                type="text"
+                value={editCity}
+                onChange={e => setEditCity(e.target.value)}
+                required
+                className="w-full p-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#07563D]"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Registered Address (Optional)</label>
+            <input
+              type="text"
+              value={editAddress}
+              onChange={e => setEditAddress(e.target.value)}
+              placeholder="e.g. 100 Main St, Industrial Corridor"
+              className="w-full p-2.5 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#07563D]"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsEditEntityModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" className="bg-[#07563D] hover:bg-[#0b7a57] text-white">
+              Save Entity Changes
             </Button>
           </div>
         </form>

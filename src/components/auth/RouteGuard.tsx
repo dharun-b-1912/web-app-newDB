@@ -1,12 +1,8 @@
-// src/components/auth/RouteGuard.tsx
-// ============================================================
-// Joy PeopleHR — Authorization & Route Boundary Guard
-// ============================================================
-
 import React from 'react';
 import { usePermission } from '../../hooks/usePermission';
-import { ShieldAlert, ArrowLeft, Lock, Info, HelpCircle } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, Lock, Info, HelpCircle, Sparkles, LayoutDashboard } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { moduleRegistryService } from '../../services/platform/moduleRegistryService';
 
 export interface RouteGuardProps {
   module: string;
@@ -24,8 +20,7 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
   onNavigate,
 }) => {
   const { hasPermission, primaryRole } = usePermission();
-
-  const isAllowed = hasPermission(module, action);
+  const isSuperAdmin = primaryRole === 'Super Admin' || (primaryRole as string) === 'Platform Admin';
 
   // Determine the best fallback route for this role
   const resolvedFallback =
@@ -36,6 +31,61 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
         primaryRole === 'HR Head'
       ? 'dashboard'
       : 'my-workspace');
+
+  // 1. Centralized Module Registry Lifecycle Check (PAUSED / HIDDEN / RELEASE SCOPE)
+  const moduleEval = moduleRegistryService.evaluateRouteAccess(module, primaryRole, isSuperAdmin);
+  if (!moduleEval.accessible) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center p-6 animate-in fade-in zoom-in-95 duration-200">
+        <div className="max-w-md w-full p-8 text-center rounded-3xl border border-gray-200/90 shadow-xl bg-gradient-to-b from-white to-gray-50/50">
+          <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200/80 flex items-center justify-center mx-auto mb-4 shadow-xs">
+            <Lock className="w-8 h-8" />
+          </div>
+
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100/70 text-amber-900 font-black text-[10px] uppercase tracking-wider mb-3">
+            <Sparkles className="w-3 h-3 text-amber-600" />
+            Scheduled Platform Release
+          </span>
+
+          <h2 className="text-xl font-black text-gray-900 tracking-tight">
+            {moduleEval.module?.module_name || 'Feature Currently Unavailable'}
+          </h2>
+
+          <p className="text-xs text-gray-500 mt-2 leading-relaxed max-w-sm mx-auto">
+            This module is undergoing scheduled enterprise certification and is not active in the current production release.
+          </p>
+
+          <div className="mt-6 p-3.5 bg-gray-50 border border-gray-200/70 rounded-2xl text-left text-xs text-gray-600 space-y-1.5">
+            <div className="flex items-center justify-between font-medium">
+              <span className="text-gray-400">Target Release:</span>
+              <span className="font-bold text-gray-800">
+                {moduleEval.module?.planned_phase || 'Upcoming Release'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between font-medium">
+              <span className="text-gray-400">Environment:</span>
+              <span className="font-bold text-emerald-800">Production SaaS Tenant</span>
+            </div>
+          </div>
+
+          <div className="mt-6 flex items-center justify-center">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => onNavigate ? onNavigate(resolvedFallback) : undefined}
+              className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs font-bold gap-2 rounded-xl shadow-xs"
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Return to Dashboard
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Role-Based Access Control
+  const isAllowed = hasPermission(module, action);
 
   // Gracefully bypass internal auth/accept-invite routes that might linger during redirection
   const isAuthOrUtilityRoute =

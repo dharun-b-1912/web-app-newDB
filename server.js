@@ -22,6 +22,7 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY || process.env.VITE_RESEND_API
 const ALLOWED_ORIGINS = new Set([
   'https://joypeoplehr.com',
   'https://www.joypeoplehr.com',
+  'https://app.joypeoplehr.com',
   'http://localhost:3000',
   'http://localhost:5173',
   'http://127.0.0.1:3000',

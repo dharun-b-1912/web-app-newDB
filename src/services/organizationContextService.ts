@@ -226,6 +226,7 @@ class OrganizationContextService {
     const normalized = String(rawRole || '').toLowerCase().replace(/_/g, ' ').replace(/-/g, ' ').trim();
     if (normalized.includes('vendor') || normalized.includes('contractor')) return 'Vendor Operations Admin (Partner)';
     if (normalized.includes('super') || normalized.includes('platform')) return 'Platform Super Admin';
+    if (normalized.includes('organization admin') || normalized.includes('org admin') || normalized === 'organization_admin') return 'Organization Admin (Tenant)';
     if (normalized.includes('assistant')) return 'Assistant Admin (Delegated Ops)';
     if (normalized.includes('company admin') || normalized.includes('owner') || normalized.includes('executive')) return 'Company Admin (Company)';
     if (normalized.includes('hr head')) return 'HR Head (Company)';

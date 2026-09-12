@@ -12,16 +12,32 @@ import {
 } from 'lucide-react';
 import { vendorPortalService } from '../../../services/vendorPortalService';
 import { VendorOrganization } from '../../../types/vendorPortal';
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
 
 interface VendorAssignmentsViewProps {
-  activeVendor: VendorOrganization;
+  activeVendor?: VendorOrganization | null;
 }
 
 export const VendorAssignmentsView: React.FC<VendorAssignmentsViewProps> = ({
   activeVendor,
 }) => {
+  let ctxVendor: VendorOrganization | null = null;
+  let ctxRelationship: any = null;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+    ctxRelationship = ctx.activeRelationship;
+  } catch {}
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
   const [search, setSearch] = useState('');
-  const employees = vendorPortalService.getEmployees(activeVendor.id);
+  const allEmployees = effectiveVendor?.id ? vendorPortalService.getEmployees(effectiveVendor.id) : [];
+
+  const employees = allEmployees.filter((emp) => {
+    if (!ctxRelationship) return true;
+    const relCompanyId = ctxRelationship.company_id || ctxRelationship.id;
+    return !emp.current_client_id || emp.current_client_id === relCompanyId;
+  });
 
   const filtered = employees.filter(
     (e) =>
@@ -46,7 +62,7 @@ export const VendorAssignmentsView: React.FC<VendorAssignmentsViewProps> = ({
         <div className="flex items-center gap-2">
           <Badge variant="outline" size="sm">
             <Building2 className="w-3.5 h-3.5 mr-1" />
-            1 Client (Joy Corporate Solutions)
+            {ctxRelationship ? ctxRelationship.company_name : 'All Authorized Clients'}
           </Badge>
           <Badge variant="blue" size="sm">
             {employees.length} Active Deployments

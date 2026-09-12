@@ -7,6 +7,7 @@ import { FileText, Download, Printer, Eye, Award, Search, Building2, CheckCircle
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { useToast } from '../../../components/ui/Toast';
+import { BatchPayslipExportService } from '../../../services/payroll/batchPayslipExportService';
 
 interface EmployeeDocumentsViewProps {
   initialSubTab?: string;
@@ -41,7 +42,12 @@ export const EmployeeDocumentsView: React.FC<EmployeeDocumentsViewProps> = ({
     { id: 'form16', label: 'Form 16 Tax Documents', icon: Award },
   ];
 
-  const latestRun = runs[0];
+  const CANON_ORDER = [
+    'CE0017', 'CE0018', 'CE0019', 'CE0020', 'CE0021', 'CE0022',
+    'CE0023', 'CE0024', 'CE0025', 'CE0027', 'CE0029', 'CE0030',
+    'CE0043', 'CE0044', 'CE0078', 'CE0079', 'CE0080', 'CE0186',
+    'CE0381', 'CE0382', 'CE0383'
+  ];
 
   const filteredEmployees = salaries.filter(sal => {
     if (searchQuery.trim()) {
@@ -53,13 +59,63 @@ export const EmployeeDocumentsView: React.FC<EmployeeDocumentsViewProps> = ({
       );
     }
     return true;
+  }).sort((a, b) => {
+    const idxA = CANON_ORDER.indexOf(a.employee_code);
+    const idxB = CANON_ORDER.indexOf(b.employee_code);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return (a.employee_code || '').localeCompare(b.employee_code || '');
   });
 
   const totalGross = filteredEmployees.reduce((acc, curr) => acc + curr.gross_monthly, 0);
   const totalNet = filteredEmployees.reduce((acc, curr) => acc + curr.net_monthly_estimate, 0);
 
-  const handleDownloadAll = () => {
-    showToast('✓ Batch PDF generation queued for all active employee payslips (August 2026).');
+  const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
+
+  const handleToggleSelect = (code: string) => {
+    setSelectedCodes(prev =>
+      prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedCodes.length === filteredEmployees.length) {
+      setSelectedCodes([]);
+    } else {
+      setSelectedCodes(filteredEmployees.map(e => e.employee_code));
+    }
+  };
+
+  const handleDownloadAllZip = async (targetCodes?: string[]) => {
+    try {
+      const codes = targetCodes || (selectedCodes.length > 0 ? selectedCodes : filteredEmployees.map(e => e.employee_code));
+      if (codes.length === 0) return;
+      showToast(`Generating ZIP package for ${codes.length} employee payslips...`);
+      await BatchPayslipExportService.downloadAllPayslipsZip(codes, 'August 2026');
+      showToast(`✓ Downloaded ZIP archive containing ${codes.length} individual payslips.`);
+    } catch (err: any) {
+      showToast(`Failed to generate ZIP: ${err.message}`, 'error');
+    }
+  };
+
+  const handlePrintAllCombinedPdf = (targetCodes?: string[]) => {
+    try {
+      const codes = targetCodes || (selectedCodes.length > 0 ? selectedCodes : filteredEmployees.map(e => e.employee_code));
+      if (codes.length === 0) return;
+      showToast(`Opening multi-page consolidated A4 PDF print stream (${codes.length} pages)...`);
+      BatchPayslipExportService.printAllPayslipsCombinedPdf(codes, 'August 2026');
+    } catch (err: any) {
+      showToast(`Failed to open print preview: ${err.message}`, 'error');
+    }
+  };
+
+  const handleSingleEmployeePdf = (empCode: string) => {
+    try {
+      BatchPayslipExportService.printAllPayslipsCombinedPdf([empCode], 'August 2026');
+    } catch (err: any) {
+      showToast(`Failed to generate payslip: ${err.message}`, 'error');
+    }
   };
 
   return (
@@ -86,7 +142,7 @@ export const EmployeeDocumentsView: React.FC<EmployeeDocumentsViewProps> = ({
           })}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
             <input
@@ -94,20 +150,34 @@ export const EmployeeDocumentsView: React.FC<EmployeeDocumentsViewProps> = ({
               placeholder="Search employee payslip..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-1 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#07563D] w-56"
+              className="pl-8 pr-3 py-1 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#07563D] w-52"
             />
           </div>
 
           {subTab === 'payslips' && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={handleDownloadAll}
-              className="text-xs font-bold text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 shadow-2xs rounded-xl cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5 mr-1.5" />
-              Download All Zip
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => handlePrintAllCombinedPdf()}
+                className="text-xs font-bold bg-[#07563D] hover:bg-[#064e37] text-white shadow-2xs rounded-xl cursor-pointer"
+                title="Consolidated Multi-Page A4 PDF / Direct Print"
+              >
+                <Printer className="w-3.5 h-3.5 mr-1.5" />
+                {selectedCodes.length > 0 ? `Print Selected (${selectedCodes.length})` : 'All-in-One PDF / Print All'}
+              </Button>
+
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => handleDownloadAllZip()}
+                className="text-xs font-bold text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 shadow-2xs rounded-xl cursor-pointer"
+                title="Download ZIP package with individual employee payslips"
+              >
+                <Download className="w-3.5 h-3.5 mr-1.5" />
+                {selectedCodes.length > 0 ? `Download ZIP (${selectedCodes.length})` : 'Download All (ZIP)'}
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -126,7 +196,7 @@ export const EmployeeDocumentsView: React.FC<EmployeeDocumentsViewProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-3 text-xs">
+            <div className="flex items-center gap-3 text-xs flex-wrap">
               <div className="px-3 py-1.5 rounded-xl bg-gray-50 border border-gray-200 flex items-center gap-2">
                 <span className="text-gray-500 font-medium">Headcount:</span>
                 <span className="font-bold text-gray-900 font-mono">{filteredEmployees.length} Staff</span>
@@ -142,58 +212,89 @@ export const EmployeeDocumentsView: React.FC<EmployeeDocumentsViewProps> = ({
             <table className="w-full text-left text-xs">
               <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-100">
                 <tr>
+                  <th className="p-3 w-8">
+                    <input
+                      type="checkbox"
+                      checked={selectedCodes.length === filteredEmployees.length && filteredEmployees.length > 0}
+                      onChange={handleSelectAll}
+                      className="rounded border-gray-300 text-[#07563D] focus:ring-[#07563D] cursor-pointer"
+                      title="Select All"
+                    />
+                  </th>
                   <th className="p-3">Employee</th>
                   <th className="p-3">Department & Role</th>
                   <th className="p-3">Gross Earnings</th>
                   <th className="p-3">Net Take-Home Pay</th>
                   <th className="p-3">Payout Mode</th>
                   <th className="p-3">Status</th>
-                  <th className="p-3 text-right">Action</th>
+                  <th className="p-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredEmployees.map(sal => (
-                  <tr key={sal.id} className="hover:bg-gray-50/70 transition-colors">
-                    <td className="p-3">
-                      <div className="font-bold text-gray-900">{sal.employee_name}</div>
-                      <div className="text-[10px] text-gray-400 font-mono">{sal.employee_code}</div>
-                    </td>
-                    <td className="p-3 text-gray-600">
-                      <div>{sal.department_name}</div>
-                      <div className="text-[10px] text-gray-400 font-medium">{sal.designation}</div>
-                    </td>
-                    <td className="p-3 font-mono font-semibold text-gray-900">
-                      ₹ {sal.gross_monthly.toLocaleString('en-IN')}
-                    </td>
-                    <td className="p-3 font-mono font-bold text-[#07563D]">
-                      ₹ {sal.net_monthly_estimate.toLocaleString('en-IN')}
-                    </td>
-                    <td className="p-3 text-gray-600">
-                      <div className="flex items-center gap-1.5">
-                        <CreditCard className="w-3.5 h-3.5 text-gray-400" />
-                        <span className="font-medium text-gray-700">{sal.payment_mode || 'Bank Transfer'}</span>
-                      </div>
-                      <span className="text-[10px] text-gray-400 font-mono block">
-                        {sal.bank_name || 'HDFC Bank Ltd'}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <span className="px-2.5 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        Generated
-                      </span>
-                    </td>
-                    <td className="p-3 text-right">
-                      <Button
-                        size="xs"
-                        variant="secondary"
-                        onClick={() => onOpenPayslip && onOpenPayslip(sal.employee_id)}
-                        className="text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 font-bold shadow-2xs cursor-pointer"
-                      >
-                        <Eye className="w-3.5 h-3.5 mr-1 text-[#07563D]" /> View Payslip
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                {filteredEmployees.map(sal => {
+                  const isChecked = selectedCodes.includes(sal.employee_code);
+                  return (
+                    <tr key={sal.id} className={cn("transition-colors", isChecked ? "bg-emerald-50/40" : "hover:bg-gray-50/70")}>
+                      <td className="p-3">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleSelect(sal.employee_code)}
+                          className="rounded border-gray-300 text-[#07563D] focus:ring-[#07563D] cursor-pointer"
+                        />
+                      </td>
+                      <td className="p-3">
+                        <div className="font-bold text-gray-900">{sal.employee_name}</div>
+                        <div className="text-[10px] text-gray-400 font-mono">{sal.employee_code}</div>
+                      </td>
+                      <td className="p-3 text-gray-600">
+                        <div>{sal.department_name}</div>
+                        <div className="text-[10px] text-gray-400 font-medium">{sal.designation}</div>
+                      </td>
+                      <td className="p-3 font-mono font-semibold text-gray-900">
+                        ₹ {sal.gross_monthly.toLocaleString('en-IN')}
+                      </td>
+                      <td className="p-3 font-mono font-bold text-[#07563D]">
+                        ₹ {sal.net_monthly_estimate.toLocaleString('en-IN')}
+                      </td>
+                      <td className="p-3 text-gray-600">
+                        <div className="flex items-center gap-1.5">
+                          <CreditCard className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="font-medium text-gray-700">{sal.payment_mode || 'Bank Transfer'}</span>
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-mono block">
+                          {sal.bank_name || 'HDFC Bank Ltd'}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <span className="px-2.5 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          Generated
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="xs"
+                            variant="secondary"
+                            onClick={() => handleSingleEmployeePdf(sal.employee_code)}
+                            className="text-slate-700 hover:bg-slate-100 bg-white border border-slate-200 font-semibold shadow-2xs cursor-pointer px-2"
+                            title="Quick Download / Print PDF"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="secondary"
+                            onClick={() => onOpenPayslip && onOpenPayslip(sal.employee_id)}
+                            className="text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 font-bold shadow-2xs cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5 mr-1 text-[#07563D]" /> View Payslip
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

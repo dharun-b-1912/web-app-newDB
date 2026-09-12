@@ -12,11 +12,12 @@ import {
 } from 'lucide-react';
 import { vendorPortalService } from '../../../services/vendorPortalService';
 import { VendorOrganization } from '../../../types/vendorPortal';
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
 
 interface VendorPaymentsReconciliationViewProps {
-  activeVendor: VendorOrganization;
-  activePeriod: string;
-  onRefresh: () => void;
+  activeVendor?: VendorOrganization | null;
+  activePeriod?: string;
+  onRefresh?: () => void;
 }
 
 export const VendorPaymentsReconciliationView: React.FC<VendorPaymentsReconciliationViewProps> = ({
@@ -30,10 +31,46 @@ export const VendorPaymentsReconciliationView: React.FC<VendorPaymentsReconcilia
   const [payAmount, setPayAmount] = useState(0);
   const [bankRef, setBankRef] = useState('');
 
-  const payments = vendorPortalService.getPayments(activeVendor.id);
-  const invoices = vendorPortalService.getInvoices(activeVendor.id);
-  const payable = vendorPortalService.getVendorPayableBreakdown(activePeriod, activeVendor.id);
-  const pos = vendorPortalService.getPurchaseOrders(activeVendor.id);
+  let ctxVendor: VendorOrganization | null = null;
+  let ctxRelationship: any = null;
+  let ctxRefresh: (() => void) | undefined = undefined;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+    ctxRelationship = ctx.activeRelationship;
+    ctxRefresh = ctx.refreshContext;
+  } catch {}
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
+  const effectivePeriod = activePeriod || '2026-08';
+  const triggerRefresh = () => {
+    if (onRefresh) onRefresh();
+    if (ctxRefresh) ctxRefresh();
+  };
+
+  const rawPayments = effectiveVendor?.id ? vendorPortalService.getPayments(effectiveVendor.id) : [];
+  const rawInvoices = effectiveVendor?.id ? vendorPortalService.getInvoices(effectiveVendor.id) : [];
+  const payable = effectiveVendor?.id
+    ? vendorPortalService.getVendorPayableBreakdown(effectivePeriod, effectiveVendor.id)
+    : { total_before_tax: 0, net_vendor_payable: 0, total_gst: 0, tds_deduction: 0, advance_deduction: 0 };
+  const rawPos = effectiveVendor?.id ? vendorPortalService.getPurchaseOrders(effectiveVendor.id) : [];
+
+  const invoices = rawInvoices.filter((inv) => {
+    if (!ctxRelationship) return true;
+    const relCompanyId = ctxRelationship.company_id || ctxRelationship.id;
+    return !inv.client_company_id || inv.client_company_id === relCompanyId;
+  });
+
+  const invoiceIds = new Set(invoices.map((i) => i.id));
+  const payments = ctxRelationship
+    ? rawPayments.filter((p) => invoiceIds.has(p.invoice_id))
+    : rawPayments;
+
+  const pos = rawPos.filter((po) => {
+    if (!ctxRelationship) return true;
+    const relCompanyId = ctxRelationship.company_id || ctxRelationship.id;
+    return !po.client_company_id || po.client_company_id === relCompanyId;
+  });
   const activePo = pos[0];
 
   const totalInvoiced = invoices.reduce((s, i) => s + i.total_invoice_amount, 0);
@@ -57,7 +94,7 @@ export const VendorPaymentsReconciliationView: React.FC<VendorPaymentsReconcilia
     vendorPortalService.recordPayment(selectedInvoiceId, payAmount, bankRef);
     showToast('Payment confirmed and reconciled in general ledger!');
     setIsRecordModalOpen(false);
-    onRefresh();
+    triggerRefresh();
   };
 
   return (

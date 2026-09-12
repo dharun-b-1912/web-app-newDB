@@ -78,15 +78,22 @@ interface MatrixEmployeeRow {
   };
 }
 
+const getLocalDateString = (d: Date = new Date()): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
   onOpenEmployeeProfile,
   onNavigateSubPath,
 }) => {
   const { showToast } = useToast();
 
-  // Active Month & Date Navigation (Defaults to August 2026)
-  const [currentYear, setCurrentYear] = useState<number>(2026);
-  const [currentMonthIndex, setCurrentMonthIndex] = useState<number>(7); // 0-indexed (7 = August)
+  // Active Month & Date Navigation: Dynamically defaults to the real system date
+  const [currentYear, setCurrentYear] = useState<number>(() => new Date().getFullYear());
+  const [currentMonthIndex, setCurrentMonthIndex] = useState<number>(() => new Date().getMonth());
   const [viewMode, setViewMode] = useState<'matrix' | 'detailed'>('matrix');
   const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
 
@@ -133,6 +140,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
   const currentDayLimit = isCurrentMonth ? new Date().getDate() : daysInMonth;
 
   const daysArray = useMemo(() => {
+    const todayLocalStr = getLocalDateString();
     return Array.from({ length: daysInMonth }, (_, i) => {
       const dayNum = i + 1;
       const dateStr = `${monthKey}-${String(dayNum).padStart(2, '0')}`;
@@ -146,7 +154,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
         weekdayShort,
         isSunday,
         isSaturday,
-        isToday: dateStr === new Date().toISOString().split('T')[0],
+        isToday: dateStr === todayLocalStr,
       };
     });
   }, [currentYear, currentMonthIndex, daysInMonth, monthKey]);
@@ -421,7 +429,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
           early_checkout_minutes: record?.early_checkout_minutes || 0,
           overtime_minutes: record?.overtime_minutes || 0,
           total_break_minutes: record?.total_break_minutes || 0,
-          source: record?.source || (roster.is_weekly_off ? 'SYSTEM' : 'WEB'),
+          source: record?.source || (roster.is_weekly_off ? 'SYSTEM' : undefined),
           shift_code: shift.shift_code,
           shift_name: shift.shift_name,
           expected_in: shift.start_time,
@@ -624,7 +632,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
           <button
             onClick={() => {
               setIsPayrollLocked(!isPayrollLocked);
-              showToast(isPayrollLocked ? 'Unlocked August 2026 attendance ledger.' : 'Finalized and locked August 2026 attendance ledger for payroll calculation.');
+              showToast(isPayrollLocked ? `Unlocked ${monthName} ${currentYear} attendance ledger.` : `Finalized and locked ${monthName} ${currentYear} attendance ledger for payroll calculation.`);
             }}
             className={cn(
               "h-8 px-3 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors",
@@ -642,7 +650,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
       {/* 2. FLAT PERIOD + WORKFORCE SEGMENT + FILTER TOOLBAR */}
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2">
-          {/* Month Navigation Control */}
+          {/* Month Navigation Control with Interactive Month Picker */}
           <div className="flex items-center border border-gray-200 bg-white rounded-lg h-9 text-xs font-bold text-gray-800">
             <button
               onClick={handlePrevMonth}
@@ -651,7 +659,23 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <span className="px-3 select-none">{monthName} {currentYear}</span>
+            <div className="relative px-3 flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 h-full group" title="Click to select month and year">
+              <Calendar className="w-3.5 h-3.5 text-gray-500 group-hover:text-[#07563D] transition-colors" />
+              <span className="select-none font-bold text-gray-900">{monthName} {currentYear}</span>
+              <input
+                type="month"
+                value={`${currentYear}-${String(currentMonthIndex + 1).padStart(2, '0')}`}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    const [y, m] = e.target.value.split('-').map(Number);
+                    setCurrentYear(y);
+                    setCurrentMonthIndex(m - 1);
+                  }
+                }}
+                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                title="Click to change month and year"
+              />
+            </div>
             <button
               onClick={handleNextMonth}
               className="px-2 h-full hover:bg-gray-50 border-l border-gray-200 flex items-center text-gray-600 hover:text-gray-900"
@@ -663,8 +687,15 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
           <button
             onClick={handleJumpToday}
-            className="h-9 px-3 text-xs font-semibold border border-gray-200 bg-white rounded-lg hover:bg-gray-50 text-gray-700"
+            className={cn(
+              "h-9 px-3 text-xs font-semibold border rounded-lg transition-colors flex items-center gap-1.5",
+              isCurrentMonth
+                ? "bg-emerald-50 border-emerald-300 text-[#07563D] font-bold"
+                : "bg-white border-gray-200 hover:bg-gray-50 text-gray-700"
+            )}
+            title="Jump to current date & month"
           >
+            {isCurrentMonth && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
             Today
           </button>
 
@@ -877,14 +908,25 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                     <th
                       key={d.dayNum}
                       className={cn(
-                        "p-1 text-center font-mono border-r border-gray-200/60 min-w-[32px]",
+                        "p-1 text-center font-mono border-r border-gray-200/60 min-w-[34px] transition-colors",
                         d.isSunday && "bg-gray-100/50 text-gray-600",
                         d.isSaturday && "bg-gray-50 text-gray-500",
-                        d.isToday && "bg-emerald-50/50 text-emerald-950 font-black border-t-2 border-t-[#07563D]"
+                        d.isToday && "bg-emerald-50 text-emerald-950 font-black border-t-2 border-t-[#07563D] shadow-2xs"
                       )}
                     >
-                      <div className="text-[11px] font-bold leading-tight">{d.dayNum}</div>
-                      <div className="text-[9px] text-gray-400 font-sans font-semibold uppercase">{d.weekdayShort.slice(0, 2)}</div>
+                      <div className="flex flex-col items-center justify-center">
+                        {d.isToday && (
+                          <span className="text-[7px] font-black uppercase tracking-tighter text-[#07563D] leading-none mb-0.5 bg-emerald-100/90 px-1 py-0.5 rounded">
+                            TODAY
+                          </span>
+                        )}
+                        <div className={cn("text-[11px] font-bold leading-tight", d.isToday ? "text-[#07563D] font-black scale-105" : "text-gray-800")}>
+                          {d.dayNum}
+                        </div>
+                        <div className={cn("text-[9px] font-sans font-semibold uppercase", d.isToday ? "text-[#07563D] font-bold" : "text-gray-400")}>
+                          {d.weekdayShort.slice(0, 2)}
+                        </div>
+                      </div>
                     </th>
                   ))}
 
@@ -984,7 +1026,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                                     className={cn(
                                       "p-0.5 text-center border-r border-gray-100 cursor-pointer hover:bg-gray-100/60 select-none",
                                       d.isSunday && "bg-gray-50/40",
-                                      d.isToday && "bg-emerald-50/30"
+                                      d.isToday && "bg-emerald-50/50"
                                     )}
                                   >
                                     <div className="relative inline-flex items-center justify-center">
@@ -1118,7 +1160,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
       {statementEmpId && (
         <EmployeeAttendanceStatementModal
           employeeId={statementEmpId}
-          initialPeriod="August 2026"
+          initialPeriod={`${monthName} ${currentYear}`}
           onClose={() => setStatementEmpId(null)}
           onNavigateEmployee={id => setStatementEmpId(id)}
           onNavigateSubPath={onNavigateSubPath}

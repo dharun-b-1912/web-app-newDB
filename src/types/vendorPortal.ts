@@ -254,6 +254,7 @@ export interface PrincipalEmployerFormV {
   contractor_address: string;
   nature_of_work: string;
   max_contract_labour_capacity: number;
+  max_contract_labour?: number;
   duration_from: string;
   duration_to: string;
   site_location: string;
@@ -551,6 +552,7 @@ export interface VendorLicense {
   license_number: string;
   issued_date: string;
   expiry_date: string;
+  valid_until?: string;
   max_worker_capacity?: number;
   issuing_authority?: string;
   work_location?: string;
@@ -584,7 +586,8 @@ export type StatutoryReturnStatus =
   | 'SUBMITTED'
   | 'VERIFIED'
   | 'REJECTED'
-  | 'OVERDUE';
+  | 'OVERDUE'
+  | 'FILED';
 
 export interface StatutoryReturn {
   id: string;
@@ -592,6 +595,7 @@ export interface StatutoryReturn {
   vendor_id: string;
   vendor_name: string;
   form_type: StatutoryReturnType;
+  type?: string;
   return_period: string; // e.g. "2026-H1", "2026-08", "2026-Annual"
   due_date: string;
   filing_date?: string;
@@ -697,6 +701,13 @@ export interface VendorCompanyRelationship {
   compliance_score: number;
   contract_start_date: string;
   contract_end_date: string;
+  service_charge_percentage?: number;
+  rate_card_type?: string;
+  payment_terms?: string;
+  currency?: string;
+  max_workforce_capacity?: number;
+  suspension_reason?: string;
+  suspension_effective_date?: string;
   sow_number?: string;
   master_po_number?: string;
   primary_hr_contact_name: string;
@@ -704,11 +715,49 @@ export interface VendorCompanyRelationship {
   created_at: string;
   approved_at?: string;
   approved_by?: string;
+  updated_at?: string;
 }
+
+export interface VendorUser {
+  id: string;
+  vendor_id: string;
+  user_profile_id?: string;
+  email: string;
+  full_name: string;
+  phone?: string;
+  role: 'VENDOR_ADMIN' | 'VENDOR_USER' | 'VENDOR_MANAGER';
+  status: 'ACTIVE' | 'INVITED' | 'DISABLED' | 'SUSPENDED';
+  created_at: string;
+  last_login_at?: string;
+  updated_at?: string;
+}
+
+export interface VendorUserRelationship {
+  id: string;
+  user_id: string;
+  vendor_id: string;
+  vendor_relationship_id: string; // References VendorCompanyRelationship.id
+  relationship_id?: string; // Ergonomic alias for vendor_relationship_id
+  company_id: string;
+  company_name: string;
+  role: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  created_at: string;
+  updated_at?: string;
+}
+
+export type FieldOwnershipAuthority =
+  | 'VENDOR_MASTER'
+  | 'COMPANY_RELATIONSHIP'
+  | 'SYSTEM'
+  | 'FINANCE'
+  | 'COMPLIANCE';
 
 export interface WorkerDeployment {
   id: string; // deployment_id
   worker_id: string;
+  worker_name?: string;
+  worker_code?: string;
   vendor_id: string;
   company_id: string;
   relationship_id: string; // Foreign Key to VendorCompanyRelationship
@@ -716,11 +765,13 @@ export interface WorkerDeployment {
   site_name: string;
   department_name: string;
   designation: string;
+  shift_name?: string;
   start_date: string;
   end_date?: string;
   daily_wage_rate: number;
+  ot_hourly_rate?: number;
   overtime_eligible: boolean;
-  status: 'ACTIVE' | 'EXIT_REQUESTED' | 'RELEASED' | 'TRANSFERRED';
+  status: 'ACTIVE' | 'EXIT_REQUESTED' | 'RELEASED' | 'TRANSFERRED' | 'PENDING' | 'APPROVED' | 'SUSPENDED' | 'ENDED';
   gate_pass_valid_till: string;
   created_at: string;
   updated_at: string;

@@ -13,6 +13,7 @@ import {
 } from '../types/attendance';
 import { DEFAULT_ATTENDANCE_POLICY, minutesToTimeString, processAttendanceStatus, timeStringToMinutes, formatCleanTime } from '../lib/attendance/attendanceEngine';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { JoyRedis } from '../lib/redis';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
 import { attendanceTimeService } from './attendance/attendanceTimeService';
 import { getActiveOrgId } from './attendance/biometricCommandService';
@@ -68,34 +69,116 @@ function loadStorage<T>(baseKey: string, seed: T, tenantId = getActiveOrgId()): 
 function saveStorage<T>(baseKey: string, data: T, tenantId = getActiveOrgId()): void {
   try {
     const key = getTenantStorageKey(baseKey, tenantId);
-    localStorage.setItem(key, JSON.stringify(data));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(data));
+    }
   } catch (e) {
     console.error('Failed to save to localStorage', e);
   }
 }
 
 export const attendanceApi = {
+  invalidateCache: () => {
+    _dailyCache = null;
+    try {
+      JoyRedis.invalidateLedgerCache(getActiveOrgId()).catch(() => {});
+    } catch {}
+  },
+
   async getDailyAttendanceAsync(date?: string, department?: string, status?: string, search?: string): Promise<AttendanceDaily[]> {
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('attendance_daily').select('*');
         if (date) q = q.eq('attendance_date', date);
         const { data, error } = await q;
-        if (!error && Array.isArray(data) && data.length > 0) {
-          const mapped: AttendanceDaily[] = data.map((d: any) => ({
+        // Fetch employee details to enrich daily attendance summaries
+        let empMap = new Map<string, any>();
+        try {
+          const { data: empList } = await supabase
+            .from('employees')
+            .select('id, employee_code, first_name, last_name, display_name, avatar_url');
+          if (empList) {
+            empMap = new Map(empList.map((e: any) => [e.id, e]));
+          }
+        } catch { }
+
+        // Fetch punches for date to determine authoritative source: MOBILE, WEB, or BIOMETRIC
+        const punchMap = new Map<string, { checkInSource?: PunchSource; checkOutSource?: PunchSource; source?: PunchSource }>();
+        try {
+          let pq = supabase
+            .from('attendance_punches')
+            .select('employee_id, punch_type, verification_mode, punch_source, device_id, punch_time')
+            .order('punch_time', { ascending: true });
+          if (date) {
+            const startRange = new Date(`${date}T00:00:00Z`);
+            startRange.setHours(startRange.getHours() - 14);
+            const endRange = new Date(`${date}T23:59:59Z`);
+            endRange.setHours(endRange.getHours() + 14);
+            pq = pq.gte('punch_time', startRange.toISOString()).lte('punch_time', endRange.toISOString());
+          }
+          const { data: punches } = await pq;
+          if (punches) {
+            for (const p of punches) {
+              if (date) {
+                const punchDate = new Date(p.punch_time).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+                if (punchDate !== date) continue;
+              }
+              const mode = (p.verification_mode || '').toUpperCase();
+              const psource = (p.punch_source || '').toUpperCase();
+              const dev = (p.device_id || '').toUpperCase();
+
+              let resolved: PunchSource = 'MOBILE';
+              if (mode === 'GPS' || psource === 'WEB_GPS' || psource === 'MOBILE' || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')) {
+                resolved = 'MOBILE';
+              } else if (psource === 'WEB' || dev.includes('BROWSER')) {
+                resolved = 'WEB';
+              } else if (mode === 'BIOMETRIC' || psource === 'BIOMETRIC') {
+                resolved = 'BIOMETRIC';
+              } else if (mode === 'MANUAL') {
+                resolved = 'MANUAL';
+              }
+
+              const empId = p.employee_id;
+              const existing = punchMap.get(empId) || {};
+              const typeUpper = (p.punch_type || '').toUpperCase();
+              if (typeUpper === 'IN' || typeUpper === 'CHECK_IN') {
+                if (!existing.checkInSource) existing.checkInSource = resolved;
+              } else if (typeUpper === 'OUT' || typeUpper === 'CHECK_OUT') {
+                existing.checkOutSource = resolved;
+              }
+              existing.source = resolved;
+              punchMap.set(empId, existing);
+            }
+          }
+        } catch (punchErr) {
+          console.warn('[attendanceApi] error resolving punches for source:', punchErr);
+        }
+
+        const mapped: AttendanceDaily[] = data.map((d: any) => {
+          const emp = empMap.get(d.employee_id);
+          const empName = emp ? (emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee') : 'Employee';
+          const empCode = emp?.employee_code || 'EMP';
+
+          const punchInfo = punchMap.get(d.employee_id);
+          const checkInSource: PunchSource | undefined = punchInfo?.checkInSource || (d.first_check_in ? 'BIOMETRIC' : undefined);
+          const checkOutSource: PunchSource | undefined = punchInfo?.checkOutSource;
+          const source: PunchSource = punchInfo?.source || checkInSource || 'BIOMETRIC';
+
+          return {
             id: d.id,
             employee_id: d.employee_id,
-            employee_code: 'EMP',
-            employee_name: 'Employee',
-            department: 'Operations',
-            designation: 'Staff',
+            employee_code: empCode,
+            employee_name: empName,
+            department: emp?.department || 'Operations',
+            designation: emp?.designation || 'Staff',
+            avatar_url: emp?.avatar_url,
             organization_id: d.organization_id,
             company_id: 'cmp-01',
             date: d.attendance_date,
             shift_id: d.shift_id || 'shift-gen',
             shift_name: 'General Shift',
-            expected_check_in: '09:30 AM',
-            expected_check_out: '06:30 PM',
+            expected_check_in: '09:00 AM',
+            expected_check_out: '06:00 PM',
             status: d.status === 'PRESENT' ? 'Present' : d.status === 'ABSENT' ? 'Absent' : 'Half Day',
             first_check_in: d.first_check_in,
             last_check_out: d.last_check_out,
@@ -105,19 +188,167 @@ export const attendanceApi = {
             late_minutes: d.late_entry_minutes || 0,
             early_checkout_minutes: d.early_exit_minutes || 0,
             overtime_minutes: d.overtime_minutes || 0,
-            source: 'BIOMETRIC',
+            source,
+            check_in_source: checkInSource,
+            check_out_source: checkOutSource,
             created_at: d.created_at,
             updated_at: d.updated_at,
-          }));
-          _dailyCache = { data: mapped, timestamp: Date.now() };
-          saveStorage(STORAGE_KEY_DAILY, mapped);
-          return this.getDailyAttendance(date, department, status, search);
-        }
+          };
+        });
+        _dailyCache = { data: mapped, timestamp: Date.now() };
+        saveStorage(STORAGE_KEY_DAILY, mapped);
+        return this.getDailyAttendance(date, department, status, search);
       } catch (err) {
         console.warn('[attendanceApi] getDailyAttendanceAsync notice:', err);
       }
     }
     return this.getDailyAttendance(date, department, status, search);
+  },
+
+  async getDailyAttendanceForPeriodAsync(startDate: string, endDate: string, employeeId?: string): Promise<AttendanceDaily[]> {
+    const tenantId = getActiveOrgId();
+    const periodCacheKey = `${startDate}_${endDate}_${employeeId || 'all'}`;
+
+    // 1. Instant sub-10ms Redis Ledger Cache Lookup
+    try {
+      const cached = await JoyRedis.getLedgerCache<AttendanceDaily[]>(tenantId, periodCacheKey);
+      if (cached && Array.isArray(cached) && cached.length > 0) {
+        return cached;
+      }
+    } catch {}
+
+    if (isSupabaseEnabled) {
+      try {
+        let q = supabase
+          .from('attendance_daily')
+          .select('*')
+          .gte('attendance_date', startDate)
+          .lte('attendance_date', endDate);
+
+        if (employeeId) {
+          q = q.eq('employee_id', employeeId);
+        }
+
+        const { data, error } = await q;
+        if (error) {
+          console.warn('[attendanceApi] getDailyAttendanceForPeriodAsync DB notice:', error);
+        }
+
+        // Fetch employee details
+        let empMap = new Map<string, any>();
+        try {
+          const { data: empList } = await supabase
+            .from('employees')
+            .select('id, employee_code, first_name, last_name, display_name, avatar_url');
+          if (empList) {
+            empMap = new Map(empList.map((e: any) => [e.id, e]));
+          }
+        } catch {}
+
+        // Fetch punch events for this date range with buffer
+        const startRange = new Date(`${startDate}T00:00:00Z`);
+        startRange.setHours(startRange.getHours() - 14);
+        const endRange = new Date(`${endDate}T23:59:59Z`);
+        endRange.setHours(endRange.getHours() + 14);
+
+        let pq = supabase
+          .from('attendance_punches')
+          .select('employee_id, punch_type, verification_mode, punch_source, device_id, punch_time')
+          .gte('punch_time', startRange.toISOString())
+          .lte('punch_time', endRange.toISOString())
+          .order('punch_time', { ascending: true });
+
+        if (employeeId) {
+          pq = pq.eq('employee_id', employeeId);
+        }
+
+        const { data: punches } = await pq;
+        const punchMap = new Map<string, { checkInSource?: PunchSource; checkOutSource?: PunchSource; source?: PunchSource }>();
+        if (punches) {
+          for (const p of punches) {
+            const punchDate = new Date(p.punch_time).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+            const key = `${p.employee_id}_${punchDate}`;
+
+            const mode = (p.verification_mode || '').toUpperCase();
+            const psource = (p.punch_source || '').toUpperCase();
+            const dev = (p.device_id || '').toUpperCase();
+
+            let resolved: PunchSource = 'MOBILE';
+            if (mode === 'GPS' || psource === 'WEB_GPS' || psource === 'MOBILE' || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')) {
+              resolved = 'MOBILE';
+            } else if (psource === 'WEB' || dev.includes('BROWSER')) {
+              resolved = 'WEB';
+            } else if (mode === 'BIOMETRIC' || psource === 'BIOMETRIC') {
+              resolved = 'BIOMETRIC';
+            } else if (mode === 'MANUAL') {
+              resolved = 'MANUAL';
+            }
+
+            const existing = punchMap.get(key) || {};
+            const typeUpper = (p.punch_type || '').toUpperCase();
+            if (typeUpper === 'IN' || typeUpper === 'CHECK_IN') {
+              if (!existing.checkInSource) existing.checkInSource = resolved;
+            } else if (typeUpper === 'OUT' || typeUpper === 'CHECK_OUT') {
+              existing.checkOutSource = resolved;
+            }
+            existing.source = resolved;
+            punchMap.set(key, existing);
+          }
+        }
+
+        const mapped: AttendanceDaily[] = (data || []).map((d: any) => {
+          const emp = empMap.get(d.employee_id);
+          const empName = emp ? (emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee') : 'Employee';
+          const empCode = emp?.employee_code || 'EMP';
+
+          const punchKey = `${d.employee_id}_${d.attendance_date}`;
+          const punchInfo = punchMap.get(punchKey);
+          const checkInSource: PunchSource | undefined = punchInfo?.checkInSource || (d.first_check_in ? 'BIOMETRIC' : undefined);
+          const checkOutSource: PunchSource | undefined = punchInfo?.checkOutSource;
+          const source: PunchSource = punchInfo?.source || checkInSource || 'BIOMETRIC';
+
+          return {
+            id: d.id,
+            employee_id: d.employee_id,
+            employee_code: empCode,
+            employee_name: empName,
+            department: 'Operations',
+            designation: 'Staff',
+            avatar_url: emp?.avatar_url,
+            organization_id: d.organization_id,
+            company_id: 'cmp-01',
+            date: d.attendance_date,
+            shift_id: d.shift_id || 'shift-gen',
+            shift_name: 'General Shift',
+            expected_check_in: '09:00 AM',
+            expected_check_out: '06:00 PM',
+            status: d.status === 'PRESENT' ? 'Present' : d.status === 'ABSENT' ? 'Absent' : 'Half Day',
+            first_check_in: d.first_check_in,
+            last_check_out: d.last_check_out,
+            gross_working_minutes: d.total_work_minutes || 0,
+            total_break_minutes: d.break_minutes || 0,
+            net_working_minutes: (d.total_work_minutes || 0) - (d.break_minutes || 0),
+            late_minutes: d.late_entry_minutes || 0,
+            early_checkout_minutes: d.early_exit_minutes || 0,
+            overtime_minutes: d.overtime_minutes || 0,
+            source,
+            check_in_source: checkInSource,
+            check_out_source: checkOutSource,
+            created_at: d.created_at,
+            updated_at: d.updated_at,
+          };
+        });
+
+        if (mapped && mapped.length > 0) {
+          JoyRedis.setLedgerCache(tenantId, periodCacheKey, mapped, 180).catch(() => {});
+        }
+
+        return mapped;
+      } catch (err) {
+        console.warn('[attendanceApi] getDailyAttendanceForPeriodAsync notice:', err);
+      }
+    }
+    return this.getDailyAttendance();
   },
 
   getDailyAttendance: (date?: string, department?: string, status?: string, search?: string): AttendanceDaily[] => {
@@ -200,7 +431,34 @@ export const attendanceApi = {
                 early_checkout_minutes: item.early_checkout_minutes ?? calc.earlyMinutes,
                 overtime_minutes: item.overtime_minutes ?? calc.overtimeMinutes,
                 status: resolvedStatus,
-                source: (item.source || item.check_in_source || (hasPunch ? 'MOBILE_GPS' : 'WEB')) as any,
+                source: (item.source || item.check_in_source || (hasPunch ? 'MOBILE_GPS' : undefined)) as any,
+              });
+            }
+          } else {
+            const rawIn = item.first_check_in || (item as any).in_time || (item as any).check_in;
+            const rawOut = item.last_check_out || (item as any).out_time || (item as any).check_out;
+            const hasPunch = !!rawIn || !!rawOut;
+            const itemDate = (item as any).attendance_date || item.date || targetDate;
+            const empKey = `${item.employee_id || item.id}_${itemDate}`;
+            if (!seenEmpKeys.has(empKey)) {
+              seenEmpKeys.add(empKey);
+              const rawStatus = String(item.status || '').toUpperCase();
+              const resolvedStatus = (rawStatus === 'PRESENT')
+                ? 'Present'
+                : (rawStatus === 'ABSENT')
+                ? 'Absent'
+                : (item.status || (hasPunch ? 'Present' : 'Not Checked In'));
+
+              cleaned.push({
+                ...item,
+                date: itemDate,
+                employee_id: item.employee_id || item.id,
+                employee_name: item.employee_name || 'Employee',
+                employee_code: item.employee_code || 'EMP',
+                first_check_in: rawIn ? formatCleanTime(rawIn) : undefined,
+                last_check_out: rawOut ? formatCleanTime(rawOut) : undefined,
+                status: resolvedStatus as any,
+                source: (item.source || (hasPunch ? 'MOBILE_GPS' : undefined)) as any,
               });
             }
           }
@@ -239,7 +497,7 @@ export const attendanceApi = {
               early_checkout_minutes: 0,
               overtime_minutes: 0,
               status: isOff ? 'Weekly Off' : 'Not Checked In',
-              source: isOff ? 'SYSTEM' : 'WEB',
+              source: isOff ? 'SYSTEM' : undefined,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             });
@@ -294,6 +552,7 @@ export const attendanceApi = {
       };
       list[existingIdx] = updated;
       saveStorage(STORAGE_KEY_DAILY, list);
+      JoyRedis.invalidateLedgerCache(getActiveOrgId()).catch(() => {});
       if (_dailyCache) {
         const cIdx = _dailyCache.data.findIndex(e => e.employee_id === employeeId && e.date === today);
         if (cIdx >= 0) _dailyCache.data[cIdx] = updated;
@@ -360,6 +619,7 @@ export const attendanceApi = {
       };
       list.unshift(newItem);
       saveStorage(STORAGE_KEY_DAILY, list);
+      JoyRedis.invalidateLedgerCache(getActiveOrgId()).catch(() => {});
       if (_dailyCache) {
         _dailyCache.data.unshift(newItem);
       }
@@ -411,7 +671,7 @@ export const attendanceApi = {
 
     const checkInSource = record.check_in_source || record.source || 'BIOMETRIC';
     const checkOutSource = source;
-    const overallSource: PunchSource = checkInSource === checkOutSource ? checkInSource : 'HYBRID';
+    const overallSource: PunchSource = checkInSource || source;
 
     const updated: AttendanceDaily = {
       ...record,
@@ -430,6 +690,7 @@ export const attendanceApi = {
 
     list[idx] = updated;
     saveStorage(STORAGE_KEY_DAILY, list);
+    JoyRedis.invalidateLedgerCache(getActiveOrgId()).catch(() => {});
     if (_dailyCache) {
       const cIdx = _dailyCache.data.findIndex(e => e.employee_id === employeeId && e.date === today);
       if (cIdx >= 0) _dailyCache.data[cIdx] = updated;
@@ -485,7 +746,7 @@ export const attendanceApi = {
       ? punchDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : payload.punchTime;
 
-    const existingIdx = list.findIndex(e => e.employee_id === payload.employeeId && e.date === todayStr);
+    const existingIdx = list.findIndex(e => (e.employee_id === payload.employeeId || e.employee_code === payload.employeeId) && (e.date === todayStr || (e as any).attendance_date === todayStr));
 
     if (existingIdx >= 0) {
       const existing = list[existingIdx];
@@ -493,7 +754,7 @@ export const attendanceApi = {
         existing.first_check_in = existing.first_check_in || timeStr;
         existing.status = 'Present';
         existing.source = 'BIOMETRIC';
-      } else {
+      } else if (payload.direction === 'OUT') {
         existing.last_check_out = timeStr;
         const checkInMins = timeStringToMinutes(existing.first_check_in);
         const checkOutMins = timeStringToMinutes(timeStr);
@@ -502,6 +763,22 @@ export const attendanceApi = {
         existing.net_working_minutes = calc.netMinutes;
         existing.status = calc.status;
         existing.source = 'BIOMETRIC';
+      } else {
+        // AUTO Mode: Only set last_check_out if more than 30 mins after first_check_in
+        const checkInMins = timeStringToMinutes(existing.first_check_in);
+        const currentMins = timeStringToMinutes(timeStr);
+        if (currentMins - checkInMins >= 30) {
+          existing.last_check_out = timeStr;
+          const calc = processAttendanceStatus(checkInMins, currentMins);
+          existing.gross_working_minutes = calc.grossMinutes;
+          existing.net_working_minutes = calc.netMinutes;
+          existing.status = calc.status;
+          existing.source = 'BIOMETRIC';
+        } else {
+          // Re-affirm check-in
+          existing.source = 'BIOMETRIC';
+          existing.status = existing.status || 'Present';
+        }
       }
       existing.updated_at = new Date().toISOString();
       list[existingIdx] = existing;

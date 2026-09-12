@@ -6,6 +6,7 @@ import { NotificationsCenter } from './NotificationsCenter';
 import { useTenant } from '../../hooks/useTenant';
 import { usePermission } from '../../hooks/usePermission';
 import { AppDiagnosticsModal } from '../common/AppDiagnosticsModal';
+import { CompanyLocationEditModal } from './CompanyLocationEditModal';
 import { appLogger } from '../../lib/appLogger';
 
 export interface TopbarProps {
@@ -17,6 +18,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
   const { activeCompany } = useTenant();
   const { primaryRole, roleProfile } = usePermission();
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const [errorCount, setErrorCount] = useState(0);
 
   const isSuperAdmin = primaryRole === 'Super Admin';
@@ -69,10 +71,15 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
             <CompanySelector />
             
             {activeCompany && (
-              <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 rounded-xl border border-gray-200/60 text-xs font-semibold text-gray-600 whitespace-nowrap shrink-0">
-                <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                <span>{activeCompany.city}, {activeCompany.country}</span>
-              </div>
+              <button
+                type="button"
+                onClick={() => setIsLocationModalOpen(true)}
+                title="Click to view or edit company live GPS location"
+                className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 hover:bg-emerald-50/80 rounded-xl border border-gray-200/60 hover:border-emerald-300 text-xs font-semibold text-gray-700 hover:text-[#07563D] whitespace-nowrap shrink-0 transition-colors cursor-pointer group"
+              >
+                <MapPin className="w-3.5 h-3.5 text-emerald-700 group-hover:scale-110 transition-transform shrink-0" />
+                <span>{activeCompany.city || 'Coimbatore'}, {activeCompany.country || 'India'}</span>
+              </button>
             )}
 
             {/* Role & Scope Indicator Badge */}
@@ -158,6 +165,12 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
       <AppDiagnosticsModal
         isOpen={isDiagnosticsOpen}
         onClose={() => setIsDiagnosticsOpen(false)}
+      />
+
+      {/* Company Live Location Modal */}
+      <CompanyLocationEditModal
+        isOpen={isLocationModalOpen}
+        onClose={() => setIsLocationModalOpen(false)}
       />
     </header>
   );

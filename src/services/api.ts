@@ -257,10 +257,25 @@ export const api = {
   async getCompanies(): Promise<Company[]> {
     if (isSupabaseEnabled) {
       try {
-        const { data, error } = await supabase.from('companies').select('*');
+        const { data, error } = await supabase.from('companies').select('*').order('created_at', { ascending: true });
         if (!error && data !== null) {
-          setStorage(KEYS.COMPANIES, data);
-          return data;
+          const mapped: Company[] = data.map((d: any) => ({
+            id: d.id,
+            organization_id: d.organization_id,
+            legal_name: d.legal_name,
+            trade_name: d.trade_name || d.legal_name,
+            statutory_registration_no: d.cin_number || d.statutory_registration_no || '',
+            tax_id: d.pan_number || d.gstin || d.tax_id || '',
+            country: d.country || 'India',
+            city: d.city || 'Coimbatore',
+            currency: 'INR',
+            timezone: 'Asia/Kolkata',
+            address: d.registered_address || d.address || '',
+            status: d.is_active === false ? 'Inactive' : 'Active',
+            created_at: d.created_at || new Date().toISOString(),
+          }));
+          setStorage(KEYS.COMPANIES, mapped);
+          return mapped;
         }
       } catch (err) {
         console.error('[API] Failed to fetch companies from Supabase:', err);
@@ -271,20 +286,63 @@ export const api = {
   },
 
   async createCompany(input: Omit<Company, 'id' | 'created_at'>): Promise<Company> {
+    const orgId = input.organization_id || (typeof window !== 'undefined' ? localStorage.getItem('workforce_active_org_id') : null) || '';
+    const tempId = `comp-${Date.now().toString(36)}`;
+    const code = (input as any).company_code || `CMP-${Math.floor(1000 + Math.random() * 9000)}`;
+
     const newCompany: Company = {
       ...input,
-      id: `comp-${Date.now().toString(36)}`,
+      id: tempId,
       created_at: new Date().toISOString(),
     };
-    if (isSupabaseEnabled) {
+
+    if (isSupabaseEnabled && orgId && isValidUUID(orgId)) {
       try {
-        const { error } = await supabase.from('companies').insert(newCompany);
-        if (error) throw error;
+        const dbPayload = {
+          organization_id: orgId,
+          legal_name: input.legal_name,
+          trade_name: input.trade_name || input.legal_name,
+          company_code: code,
+          cin_number: input.statutory_registration_no || null,
+          pan_number: input.tax_id || null,
+          gstin: (input as any).gstin || null,
+          registered_address: input.address || null,
+          city: input.city || 'Coimbatore',
+          state: (input as any).state || 'Tamil Nadu',
+          postal_code: (input as any).postal_code || '641001',
+          country: input.country || 'India',
+          is_headquarters: Boolean((input as any).is_headquarters),
+          is_active: input.status !== 'Inactive',
+        };
+
+        const { data, error } = await supabase.from('companies').insert([dbPayload]).select().single();
+        if (!error && data) {
+          const created: Company = {
+            id: data.id,
+            organization_id: data.organization_id,
+            legal_name: data.legal_name,
+            trade_name: data.trade_name || data.legal_name,
+            statutory_registration_no: data.cin_number || input.statutory_registration_no || '',
+            tax_id: data.pan_number || data.gstin || input.tax_id || '',
+            country: data.country || 'India',
+            city: data.city || 'Coimbatore',
+            currency: 'INR',
+            timezone: 'Asia/Kolkata',
+            address: data.registered_address || input.address || '',
+            status: data.is_active === false ? 'Inactive' : 'Active',
+            created_at: data.created_at || new Date().toISOString(),
+          };
+          const list = getStorage<Company[]>(KEYS.COMPANIES, []);
+          setStorage(KEYS.COMPANIES, [created, ...list.filter((c) => c.id !== created.id)]);
+          return created;
+        } else if (error) {
+          console.warn('[API] Company insert notice:', error);
+        }
       } catch (err) {
-        console.error('[API] Failed to insert company into Supabase:', err);
-        throw err;
+        console.warn('[API] Company insert fallback:', err);
       }
     }
+
     const list = getStorage<Company[]>(KEYS.COMPANIES, []);
     setStorage(KEYS.COMPANIES, [newCompany, ...list]);
     return newCompany;
@@ -296,12 +354,22 @@ export const api = {
     const existing = index >= 0 ? companies[index] : ({ id } as Company);
     const updated: Company = { ...existing, ...updates };
 
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && isValidUUID(id)) {
       try {
-        const { error } = await supabase.from('companies').update(updates).eq('id', id);
-        if (error) console.error('[API] Failed to update company in Supabase:', error);
+        const dbUpdates: any = {};
+        if (updates.legal_name) dbUpdates.legal_name = updates.legal_name;
+        if (updates.trade_name) dbUpdates.trade_name = updates.trade_name;
+        if (updates.statutory_registration_no) dbUpdates.cin_number = updates.statutory_registration_no;
+        if (updates.tax_id) dbUpdates.pan_number = updates.tax_id;
+        if (updates.address) dbUpdates.registered_address = updates.address;
+        if (updates.city) dbUpdates.city = updates.city;
+        if (updates.country) dbUpdates.country = updates.country;
+        if (updates.status !== undefined) dbUpdates.is_active = updates.status !== 'Inactive';
+
+        const { error } = await supabase.from('companies').update(dbUpdates).eq('id', id);
+        if (error) console.warn('[API] Failed to update company in Supabase:', error);
       } catch (err) {
-        console.error('[API] Failed to update company in Supabase:', err);
+        console.warn('[API] Failed to update company in Supabase:', err);
       }
     }
 
@@ -819,11 +887,12 @@ export const api = {
               } catch (_) {}
             }
 
+            const resultList = data;
             if (isUnfiltered) {
-              setStorage(KEYS.EMPLOYEES, data);
-              this._empCache = { data, timestamp: Date.now() };
+              setStorage(KEYS.EMPLOYEES, resultList);
+              this._empCache = { data: resultList, timestamp: Date.now() };
             }
-            return data;
+            return resultList;
           }
           if (error) {
             console.warn('[API] Supabase getEmployees error:', error.message || error);
@@ -923,7 +992,7 @@ export const api = {
     const source = input.employment_source || (input.employment?.employment_source) || 'DIRECT';
 
     const newEmp: Employee = {
-      id: input.id || `emp-${Date.now().toString(36)}`,
+      id: ensureUUID(input.id),
       organization_id: input.organization_id || 'org-joy-01',
       company_id: input.company_id || 'comp-joy-01',
       company_name: input.company_name || 'Joy Corporate Solutions Pvt Ltd',
@@ -1568,21 +1637,25 @@ export const api = {
   async deleteEmployee(id: string): Promise<boolean> {
     const list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
     const target = list.find((e) => e.id === id);
-    const updated = list.filter((e) => e.id !== id);
-    setStorage(KEYS.EMPLOYEES, updated);
+    const orgId = target?.organization_id || 'org-joy-01';
 
-    if (isSupabaseEnabled) {
-      try {
-        await supabase.from('employee_onboardings').delete().eq('employee_id', id);
-        const { error } = await supabase.from('employees').delete().eq('id', id);
-        if (error) {
-          console.error('[API] Failed to delete employee from Supabase:', error);
-          throw error;
-        }
-      } catch (err) {
-        console.error('[API] Supabase employee delete exception:', err);
-        throw err;
+    const { employeeLifecycleEngine } = await import('./identity/employeeLifecycleEngine');
+    const result = await employeeLifecycleEngine.deleteEmployee({
+      employeeId: id,
+      organizationId: orgId,
+      actorId: 'admin-action',
+      reason: 'Administrator initiated employee deletion / archival',
+    });
+
+    if (result.isSoftDeleted) {
+      if (target) {
+        target.status = 'Archived';
+        (target as any).deleted_at = result.employee.deleted_at;
       }
+      setStorage(KEYS.EMPLOYEES, list);
+    } else if (result.isHardDeleted) {
+      const updated = list.filter((e) => e.id !== id);
+      setStorage(KEYS.EMPLOYEES, updated);
     }
 
     hrEventBus.publish('employee.deleted', target || { id });

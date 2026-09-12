@@ -22,14 +22,27 @@ import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
 import { vendorPortalService } from '../../../services/vendorPortalService';
-import { VendorLicense, VendorLicenseType, VendorLicenseStatus } from '../../../types/vendorPortal';
+import { VendorLicense, VendorLicenseType, VendorLicenseStatus, VendorOrganization } from '../../../types/vendorPortal';
 import { DocumentIntelligenceOcrModal } from '../components/DocumentIntelligenceOcrModal';
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
 
 interface VendorLicensesViewProps {
+  activeVendor?: VendorOrganization | null;
   onOpenOcrScanner?: () => void;
 }
 
-export const VendorLicensesView: React.FC<VendorLicensesViewProps> = () => {
+export const VendorLicensesView: React.FC<VendorLicensesViewProps> = ({
+  activeVendor,
+  onOpenOcrScanner,
+}) => {
+  let ctxVendor: VendorOrganization | null = null;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+  } catch {}
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
+
   const [licenses, setLicenses] = useState<VendorLicense[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -45,14 +58,14 @@ export const VendorLicensesView: React.FC<VendorLicensesViewProps> = () => {
   const [issuingAuth, setIssuingAuth] = useState('Joint Commissioner of Labour (Contract Labour Cell)');
 
   const loadData = () => {
-    setLicenses(vendorPortalService.getLicenses());
+    setLicenses(vendorPortalService.getLicenses(effectiveVendor?.id));
   };
 
   useEffect(() => {
     loadData();
     window.addEventListener('wf-vendor-changed', loadData);
     return () => window.removeEventListener('wf-vendor-changed', loadData);
-  }, []);
+  }, [effectiveVendor?.id]);
 
   const handleAddLicense = (e: React.FormEvent) => {
     e.preventDefault();

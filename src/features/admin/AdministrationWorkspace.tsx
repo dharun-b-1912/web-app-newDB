@@ -17,6 +17,7 @@ import {
   History,
   Settings,
   Sparkles,
+  Server,
 } from 'lucide-react';
 import { UserManagementView } from './subviews/UserManagementView';
 import { RoleManagementView } from './subviews/RoleManagementView';
@@ -24,6 +25,7 @@ import { PermissionManagementView } from './subviews/PermissionManagementView';
 import { SecurityConfigView } from './subviews/SecurityConfigView';
 import { ApiManagementView } from './subviews/ApiManagementView';
 import { IntegrationsView } from './subviews/IntegrationsView';
+import { DeviceInfrastructureView } from './subviews/DeviceInfrastructureView';
 import { AuditLogsView } from './subviews/AuditLogsView';
 import { SystemSettingsView } from './subviews/SystemSettingsView';
 import { SubscriptionView } from './subviews/SubscriptionView';
@@ -214,11 +216,11 @@ export const AdministrationWorkspace: React.FC<AdministrationWorkspaceProps> = (
       {/* 3. INTEGRATIONS SUBVIEW */}
       {activeTab === 'integrations' && (
         <div className="space-y-6">
-          <div className="bg-white p-1.5 rounded-2xl border border-gray-200/80 shadow-xs flex items-center gap-1">
+          <div className="bg-white p-1.5 rounded-2xl border border-gray-200/80 shadow-xs flex items-center gap-1 overflow-x-auto">
             <button
               onClick={() => setIntegrationsSubTab('connected')}
               className={cn(
-                'px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-2',
+                'px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-2 whitespace-nowrap',
                 integrationsSubTab === 'connected' ? 'bg-[#07563D] text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'
               )}
             >
@@ -226,9 +228,19 @@ export const AdministrationWorkspace: React.FC<AdministrationWorkspaceProps> = (
               <span>Connected Apps & Biometric Hardware</span>
             </button>
             <button
+              onClick={() => setIntegrationsSubTab('hardware' as any)}
+              className={cn(
+                'px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-2 whitespace-nowrap',
+                (integrationsSubTab as string) === 'hardware' ? 'bg-[#07563D] text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'
+              )}
+            >
+              <Server className="w-3.5 h-3.5" />
+              <span>Device Infrastructure & Connectors</span>
+            </button>
+            <button
               onClick={() => setIntegrationsSubTab('api')}
               className={cn(
-                'px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-2',
+                'px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-2 whitespace-nowrap',
                 integrationsSubTab === 'api' ? 'bg-[#07563D] text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'
               )}
             >
@@ -239,6 +251,7 @@ export const AdministrationWorkspace: React.FC<AdministrationWorkspaceProps> = (
 
           <div>
             {integrationsSubTab === 'connected' && <IntegrationsView />}
+            {(integrationsSubTab as string) === 'hardware' && <DeviceInfrastructureView />}
             {integrationsSubTab === 'api' && <ApiManagementView />}
           </div>
         </div>

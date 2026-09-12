@@ -21,21 +21,38 @@ import { Badge } from '../../../components/ui/Badge';
 import { vendorPortalService } from '../../../services/vendorPortalService';
 import { VendorCompanyRelationship, VendorOrganization } from '../../../types/vendorPortal';
 import { ConnectNewClientModal } from '../components/ConnectNewClientModal';
+import { useVendorPortalContext } from '../portal/VendorPortalContext';
 
 interface VendorMultiClientDashboardViewProps {
-  activeVendor: VendorOrganization;
-  onSelectClientCompany: (relationshipId: string) => void;
+  activeVendor?: VendorOrganization | null;
+  onSelectClientCompany?: (relationshipId: string) => void;
 }
 
 export const VendorMultiClientDashboardView: React.FC<VendorMultiClientDashboardViewProps> = ({
   activeVendor,
   onSelectClientCompany,
 }) => {
+  let ctxVendor: VendorOrganization | null = null;
+  let ctxSelectRel: ((id: string) => void) | undefined = undefined;
+  try {
+    const ctx = useVendorPortalContext();
+    ctxVendor = ctx.vendor;
+    ctxSelectRel = ctx.setActiveRelationshipId;
+  } catch {}
+
+  const effectiveVendor = activeVendor || ctxVendor || vendorPortalService.getActiveVendor();
+
+  const handleSelectClient = (relId: string) => {
+    if (onSelectClientCompany) onSelectClientCompany(relId);
+    if (ctxSelectRel) ctxSelectRel(relId);
+  };
+
   const [relationships, setRelationships] = useState<VendorCompanyRelationship[]>([]);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
 
   const loadData = () => {
-    setRelationships(vendorPortalService.getVendorCompanyRelationships(activeVendor.id));
+    if (!effectiveVendor?.id) return;
+    setRelationships(vendorPortalService.getVendorCompanyRelationships(effectiveVendor.id));
   };
 
   useEffect(() => {
@@ -47,7 +64,7 @@ export const VendorMultiClientDashboardView: React.FC<VendorMultiClientDashboard
       window.removeEventListener('wf-vendor-relationship-changed', handleChanged);
       window.removeEventListener('wf-vendor-changed', handleChanged);
     };
-  }, [activeVendor.id]);
+  }, [effectiveVendor?.id]);
 
   const activeClients = relationships.filter((r) => r.status === 'ACTIVE');
   const pendingClients = relationships.filter((r) => r.status === 'PENDING_APPROVAL');
@@ -58,31 +75,29 @@ export const VendorMultiClientDashboardView: React.FC<VendorMultiClientDashboard
 
   return (
     <div className="space-y-6">
-      {/* Top Banner: Multi-Company Vendor Global Identity */}
-      <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-6 rounded-3xl border border-indigo-500/20 text-white shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 space-y-1.5">
+      {/* Top Header: Multi-Company Vendor Global Identity */}
+      <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className="px-3 py-1 rounded-full bg-indigo-500/30 text-indigo-200 font-semibold text-xs border border-indigo-400/30 flex items-center gap-1.5 uppercase tracking-wider">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-300" /> Multi-Company Vendor Workspace
+            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+              CLIENT WORKSPACES
             </span>
-            <span className="text-xs text-slate-400 font-mono">
-              Vendor Code: {activeVendor.code}
+            <span className="text-xs text-gray-400 font-mono">
+              Code: {effectiveVendor?.code || '—'}
             </span>
           </div>
-          <h2 className="text-xl lg:text-2xl font-black text-white tracking-tight">
-            {activeVendor.name} — Global Client Portfolio
+          <h2 className="text-xl font-bold text-gray-900 tracking-tight">
+            {effectiveVendor?.name || 'Vendor Organization'} — Client Workspaces
           </h2>
-          <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-            Manage deployments, biometric timesheets, wage breakdowns, purchase orders, and tax invoices across multiple independent enterprise clients with strict data isolation.
+          <p className="text-xs text-gray-500 max-w-2xl">
+            Authorized client companies with isolated workforce, deployments, attendance, purchase orders, and commercial settlements.
           </p>
         </div>
 
-        <div className="relative z-10 shrink-0">
+        <div className="shrink-0">
           <Button
             onClick={() => setIsConnectModalOpen(true)}
-            className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-md"
+            className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs rounded-xl shadow-xs"
             leftIcon={<Plus className="w-4 h-4" />}
           >
             Connect New Client Company
@@ -299,7 +314,7 @@ export const VendorMultiClientDashboardView: React.FC<VendorMultiClientDashboard
                   {isApproved ? (
                     <Button
                       size="sm"
-                      onClick={() => onSelectClientCompany(rel.id)}
+                      onClick={() => handleSelectClient(rel.id)}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs"
                       rightIcon={<ArrowUpRight className="w-3.5 h-3.5" />}
                     >

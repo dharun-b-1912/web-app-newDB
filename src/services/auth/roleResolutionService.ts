@@ -2,15 +2,19 @@
 // ============================================================================
 // Joy PeopleHR — Authoritative Database-Driven Role & Identity Resolution Service
 // Resolves user profile, canonical roles, and portal routing from live Supabase DB
+// Master Authority: PortalAccessResolver
 // ============================================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { AuthSessionUser } from './authService';
 import { Role, ScopeLevel } from '../../types';
 import { platformAuthInvitationService } from '../platform/platformAuthInvitationService';
+import { PortalAccessResolver } from './portalAccessResolver';
+import { AuthContext, PortalType } from '../../types/authContext';
 
 export type ResolvedPortalRole =
   | 'Super Admin'
+  | 'Organization Admin'
   | 'Company Admin'
   | 'HR Head'
   | 'HR Admin'
@@ -31,6 +35,7 @@ export interface DatabaseRoleResolutionResult {
   phone: string | null;
   avatarUrl: string | null;
   platformRole?: string;
+  authContext: AuthContext;
 }
 
 export const roleResolutionService = {
@@ -73,11 +78,16 @@ export const roleResolutionService = {
 
     let isPlatformAdmin = false;
     let organizationId: string | null = null;
+    let organizationName: string | null = null;
+    let companyId: string | null = null;
+    let companyName: string | null = null;
     let employeeId: string | null = null;
-    let fullName: string = userMeta.full_name || userMeta.name || cachedUser?.name || emailLower.split('@')[0] || 'User';
+    let vendorId: string | null = null;
+    let fullName: string = userMeta.full_name || userMeta.name || cachedUser?.name || (emailLower ? emailLower.split('@')[0] : 'User');
     let phone: string | null = userMeta.phone || null;
     let avatarUrl: string | null = userMeta.avatar_url || cachedUser?.avatar_url || null;
-    let rolesList: Role[] = [];
+    let rawRoles: any[] = [];
+    let accountStatus = 'ACTIVE';
 
     // 1. Query Database is_platform_admin() RPC if Supabase is enabled
     if (isPlatformAdmin || emailLower === 'superadmin@joypeoplehr.com' || userMeta.is_platform_admin === true || appMeta.is_platform_admin === true) {
@@ -93,50 +103,10 @@ export const roleResolutionService = {
       }
     }
 
-    if (isPlatformAdmin) {
-      const platformUser: AuthSessionUser = {
-        id: authUserId,
-        auth_user_id: authUserId,
-        email: emailLower,
-        name: fullName,
-        phone: phone || undefined,
-        avatar_url: avatarUrl || '',
-        organization_id: 'platform-root',
-        tenant_id: 'platform-root',
-        status: 'Active',
-        account_status: 'ACTIVE',
-        is_platform_admin: true,
-        platform_role: 'SUPER_ADMIN',
-        roles: [
-          {
-            id: 'role-super-admin',
-            name: 'Super Admin',
-            organization_id: 'platform-root',
-            description: 'Platform Super Admin Role',
-            permissions: [{ permission_id: '*', scope_level: 'Organization' as ScopeLevel }],
-          },
-        ],
-        created_at: createdAt,
-      };
-
-      return {
-        sessionUser: platformUser,
-        primaryRole: 'Super Admin',
-        destinationRoute: 'platform-dashboard',
-        isPlatformAdmin: true,
-        organizationId: 'platform-root',
-        employeeId: null,
-        fullName: fullName,
-        phone: phone,
-        avatarUrl: avatarUrl,
-        platformRole: 'SUPER_ADMIN',
-      };
-    }
-
     // 2. Query public.user_profiles and linked user_roles + roles from Supabase
     let profileRow: any = null;
 
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && !isPlatformAdmin) {
       try {
         // First try finding by auth_user_id
         if (authUserId) {
@@ -221,192 +191,124 @@ export const roleResolutionService = {
           const pendingInvite = platformAuthInvitationService.findPendingInvitation(emailLower);
           if (pendingInvite && authUserId) {
             organizationId = pendingInvite.organization_id;
-            rolesList = [
-              {
-                id: `role-${pendingInvite.role.toLowerCase().replace(/_/g, '-')}`,
-                name: pendingInvite.role,
-                organization_id: organizationId,
-                description: `Authoritative ${pendingInvite.role} role`,
-                permissions: [{ permission_id: 'tenant.workspace.read', scope_level: 'Organization' as ScopeLevel }],
-              },
-            ];
+            organizationName = pendingInvite.organization_name || null;
+            rawRoles.push(pendingInvite.role);
             profileRow = {
               id: `prof-${authUserId}`,
               auth_user_id: authUserId,
               organization_id: organizationId,
               email: emailLower,
               full_name: pendingInvite.full_name || fullName,
+              role: pendingInvite.role,
+              status: 'ACTIVE',
             };
           }
         }
 
         if (profileRow) {
           organizationId = profileRow.organization_id;
-          employeeId = profileRow.employee_id;
+          companyId = profileRow.company_id || null;
+          employeeId = profileRow.employee_id || null;
+          vendorId = profileRow.vendor_id || null;
           if (profileRow.full_name) fullName = profileRow.full_name;
           if (profileRow.phone) phone = profileRow.phone;
           if (profileRow.avatar_url) avatarUrl = profileRow.avatar_url;
+          if (profileRow.status) accountStatus = profileRow.status;
+          if (profileRow.role) rawRoles.push(profileRow.role);
 
           // Parse linked roles from user_roles join
           const rawUserRoles = profileRow.user_roles || [];
           for (const ur of rawUserRoles) {
             const r = (ur as any).roles;
             if (r) {
-              rolesList.push({
-                id: r.id || `role-${(r.code || r.name || '').toLowerCase()}`,
-                name: r.name || r.code || 'Employee',
-                organization_id: organizationId || 'root',
-                description: r.description || r.name,
-                permissions: [{ permission_id: 'tenant.workspace.read', scope_level: 'Organization' as ScopeLevel }],
-              });
+              rawRoles.push(r);
             }
           }
+        }
+
+        // 4. Query employee record if employee_id exists to verify role assignments
+        if (employeeId && rawRoles.length === 0) {
+          try {
+            const { data: empRow } = await supabase
+              .from('employees')
+              .select('id, organization_id, company_id, role, designation_id, is_hr_head')
+              .eq('id', employeeId)
+              .maybeSingle();
+
+            if (empRow) {
+              if (empRow.role) rawRoles.push(empRow.role);
+              if (empRow.is_hr_head) rawRoles.push('HR_HEAD');
+              if (empRow.organization_id && !organizationId) organizationId = empRow.organization_id;
+              if (empRow.company_id && !companyId) companyId = empRow.company_id;
+            }
+          } catch (_) {}
         }
       } catch (dbErr) {
         console.warn('[RoleResolution] Database profile resolution notice:', dbErr);
       }
     }
 
-    // 5. Evaluate Highest Authority Role with Explicit Priority
-    // Priority: Super Admin > Company Admin > HR Head > HR Admin > Manager > Team Lead > Vendor Admin > Employee
-    let primaryRole: ResolvedPortalRole = 'Unassigned';
-
-    const normalizedRoleCodes = rolesList.map((r) => String(r.name || '').trim().toUpperCase());
-
-    if (
-      normalizedRoleCodes.some((c) =>
-        [
-          'COMPANY_ADMIN',
-          'COMPANY ADMIN',
-          'COMPANY ADMINISTRATOR',
-          'ORGANIZATION_ADMIN',
-          'ORGANIZATION ADMIN',
-          'ORGANIZATION OWNER',
-          'OWNER',
-        ].includes(c)
-      ) ||
-      userMeta.role === 'COMPANY_ADMIN' ||
-      userMeta.role === 'Company Admin' ||
-      userMeta.role === 'Company Administrator'
-    ) {
-      primaryRole = 'Company Admin';
-    } else if (
-      normalizedRoleCodes.some((c) => ['HR_HEAD', 'HR HEAD'].includes(c)) ||
-      userMeta.role === 'HR_HEAD' ||
-      userMeta.role === 'HR Head'
-    ) {
-      primaryRole = 'HR Head';
-    } else if (
-      normalizedRoleCodes.some((c) => ['HR_ADMIN', 'HR ADMIN', 'PAYROLL_ADMIN', 'ATTENDANCE_ADMIN'].includes(c)) ||
-      userMeta.role === 'HR_ADMIN' ||
-      userMeta.role === 'HR Admin'
-    ) {
-      primaryRole = 'HR Admin';
-    } else if (
-      normalizedRoleCodes.some((c) => ['MANAGER'].includes(c)) ||
-      userMeta.role === 'MANAGER' ||
-      userMeta.role === 'Manager'
-    ) {
-      primaryRole = 'Manager';
-    } else if (
-      normalizedRoleCodes.some((c) => ['TEAM_LEAD', 'LEAD'].includes(c)) ||
-      userMeta.role === 'TEAM_LEAD' ||
-      userMeta.role === 'Team Lead'
-    ) {
-      primaryRole = 'Team Lead';
-    } else if (
-      normalizedRoleCodes.some((c) => ['VENDOR_ADMIN', 'VENDOR'].includes(c)) ||
-      userMeta.role === 'VENDOR_ADMIN'
-    ) {
-      primaryRole = 'Vendor Admin';
-    } else if (
-      normalizedRoleCodes.some((c) => ['EMPLOYEE', 'STAFF'].includes(c)) ||
-      userMeta.role === 'EMPLOYEE' ||
-      userMeta.role === 'Employee'
-    ) {
-      primaryRole = 'Employee';
-    } else if (rolesList.length > 0) {
-      const firstRoleName = rolesList[0].name.toLowerCase();
-      if (firstRoleName.includes('admin') || firstRoleName.includes('owner')) primaryRole = 'Company Admin';
-      else if (firstRoleName.includes('hr')) primaryRole = 'HR Head';
-      else if (firstRoleName.includes('manager')) primaryRole = 'Manager';
-      else if (firstRoleName.includes('lead')) primaryRole = 'Team Lead';
-      else if (firstRoleName.includes('employee')) primaryRole = 'Employee';
-      else primaryRole = 'Unassigned';
-    } else if (cachedUser?.roles && cachedUser.roles.length > 0) {
-      const cachedRoleName = cachedUser.roles[0].name;
-      if (['Company Admin', 'COMPANY_ADMIN', 'Company Administrator'].includes(cachedRoleName)) primaryRole = 'Company Admin';
-      else if (['HR Head', 'HR_HEAD'].includes(cachedRoleName)) primaryRole = 'HR Head';
-      else if (['HR Admin', 'HR_ADMIN'].includes(cachedRoleName)) primaryRole = 'HR Admin';
-      else if (['Employee', 'EMPLOYEE'].includes(cachedRoleName)) primaryRole = 'Employee';
-      else primaryRole = 'Unassigned';
-    } else {
-      // STRICT REQUIREMENT: Never default unresolved users to Employee
-      primaryRole = 'Unassigned';
-    }
-
-    // 6. Ensure rolesList has the resolved primary role
-    if (primaryRole !== 'Unassigned') {
-      if (rolesList.length === 0 || !rolesList.some((r) => r.name === primaryRole)) {
-        rolesList = [
-          {
-            id: `role-${primaryRole.toLowerCase().replace(/\s+/g, '-')}`,
-            name: primaryRole,
-            organization_id: organizationId || 'root',
-            description: `${primaryRole} Role`,
-            permissions: [
-              { permission_id: 'tenant.workspace.read', scope_level: 'Organization' as ScopeLevel },
-              { permission_id: 'tenant.workspace.write', scope_level: 'Organization' as ScopeLevel },
-            ],
-          },
-        ];
+    // 5. If userMeta has role or cached user has role
+    if (userMeta.role) rawRoles.push(userMeta.role);
+    if (cachedUser?.roles && Array.isArray(cachedUser.roles)) {
+      for (const cr of cachedUser.roles) {
+        if (cr.name) rawRoles.push(cr.name);
       }
     }
 
-    // 7. Determine Canonical Destination Route
-    // ABSOLUTE RULE:
-    // Company Admin -> 'executive-overview' (NEVER 'ess-dashboard')
-    // HR Head / HR Admin -> 'dashboard' (NEVER 'ess-dashboard')
-    // Employee -> 'ess-dashboard'
-    // Unassigned -> 'unauthorized'
-    let destinationRoute = 'unauthorized';
-    if ((primaryRole as ResolvedPortalRole) === 'Super Admin') {
-      destinationRoute = 'platform-dashboard';
-    } else if (primaryRole === 'Company Admin') {
-      destinationRoute = 'executive-overview';
-    } else if (primaryRole === 'HR Head' || primaryRole === 'HR Admin') {
-      destinationRoute = 'dashboard';
-    } else if (primaryRole === 'Manager') {
-      destinationRoute = 'dashboard';
-    } else if (primaryRole === 'Team Lead') {
-      destinationRoute = 'tl-dashboard';
-    } else if (primaryRole === 'Vendor Admin') {
-      destinationRoute = 'vendor-settlement-workspace';
-    } else if (primaryRole === 'Employee') {
-      destinationRoute = 'ess-dashboard';
-    } else {
-      destinationRoute = 'unauthorized';
-    }
+    // 6. Invoke Authoritative PortalAccessResolver
+    const authContext = PortalAccessResolver.resolve({
+      userId: profileRow?.id || authUserId,
+      authUserId: authUserId,
+      email: emailLower,
+      fullName: fullName,
+      phone: phone,
+      avatarUrl: avatarUrl,
+      accountStatus: accountStatus,
+      mustChangePassword: Boolean(userMeta.must_change_password || userMeta.require_password_change),
+      isPlatformAdmin: isPlatformAdmin,
+      platformRole: isPlatformAdmin ? 'SUPER_ADMIN' : undefined,
+      organizationId: organizationId,
+      organizationName: organizationName,
+      companyId: companyId,
+      companyName: companyName,
+      employeeId: employeeId,
+      vendorId: vendorId,
+      rawRoles: rawRoles,
+      userMetadataRole: userMeta.role,
+    });
 
-    const fallbackOrgId =
-      typeof window !== 'undefined'
-        ? localStorage.getItem('workforce_active_org_id') || 'org-joy-corporate-solutions-private-'
-        : 'org-joy-corporate-solutions-private-';
+    const primaryRole = authContext.primaryRole as ResolvedPortalRole;
+    const destinationRoute = authContext.defaultRoute;
+
+    const rolesList: Role[] = authContext.roles.map((rName) => ({
+      id: `role-${rName.toLowerCase().replace(/\s+/g, '-')}`,
+      name: rName,
+      organization_id: authContext.tenant?.organizationId || 'root',
+      description: `${rName} Role`,
+      permissions: isPlatformAdmin
+        ? [{ permission_id: '*', scope_level: 'Organization' as ScopeLevel }]
+        : [
+            { permission_id: 'tenant.workspace.read', scope_level: 'Organization' as ScopeLevel },
+            { permission_id: 'tenant.workspace.write', scope_level: 'Organization' as ScopeLevel },
+          ],
+    }));
 
     const sessionUser: AuthSessionUser = {
-      id: authUserId,
-      auth_user_id: authUserId,
-      email: emailLower,
-      name: fullName,
-      phone: phone || undefined,
-      avatar_url: avatarUrl || '',
-      organization_id: organizationId || fallbackOrgId,
-      tenant_id: organizationId || fallbackOrgId,
-      employee_id: employeeId || undefined,
-      status: 'Active',
-      account_status: 'ACTIVE',
-      is_platform_admin: false,
-      platform_role: undefined,
+      id: authContext.userId,
+      auth_user_id: authContext.authUserId,
+      email: authContext.identity.email,
+      name: authContext.identity.fullName,
+      phone: authContext.identity.phone,
+      avatar_url: authContext.identity.avatarUrl || '',
+      organization_id: authContext.tenant?.organizationId || 'org-default',
+      tenant_id: authContext.tenant?.organizationId || 'org-default',
+      employee_id: authContext.employeeId,
+      status: authContext.accountStatus === 'ACTIVE' ? 'Active' : authContext.accountStatus === 'PENDING_ACTIVATION' ? 'Invited' : 'Suspended',
+      account_status: authContext.accountStatus as any,
+      must_change_password: authContext.mustChangePassword,
+      is_platform_admin: authContext.scopes.platform,
+      platform_role: authContext.scopes.platform ? 'SUPER_ADMIN' : undefined,
       role: primaryRole,
       roles: rolesList,
       created_at: createdAt || cachedUser?.created_at || new Date().toISOString(),
@@ -416,13 +318,14 @@ export const roleResolutionService = {
       sessionUser,
       primaryRole,
       destinationRoute,
-      isPlatformAdmin: false,
-      organizationId: sessionUser.organization_id || null,
-      employeeId: employeeId,
-      fullName: fullName,
-      phone: phone,
-      avatarUrl: avatarUrl,
-      platformRole: undefined,
+      isPlatformAdmin: authContext.scopes.platform,
+      organizationId: authContext.tenant?.organizationId || null,
+      employeeId: authContext.employeeId || null,
+      fullName: authContext.identity.fullName,
+      phone: authContext.identity.phone || null,
+      avatarUrl: authContext.identity.avatarUrl || null,
+      platformRole: authContext.scopes.platform ? 'SUPER_ADMIN' : undefined,
+      authContext,
     };
   },
 };

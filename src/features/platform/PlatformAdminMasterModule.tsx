@@ -37,6 +37,9 @@ import { ImpersonationBanner } from './components/ImpersonationBanner';
 import { usePlatformRealtime } from '../../services/platform';
 import { api } from '../../services/api';
 
+import { ModuleRegistryView } from './subviews/ModuleRegistryView';
+import { DevelopmentRoadmapView } from './subviews/DevelopmentRoadmapView';
+import { LaunchScopeDashboardView } from './subviews/LaunchScopeDashboardView';
 import { TenantHealthView } from './subviews/TenantHealthView';
 
 export interface NavigationPayload {
@@ -177,6 +180,15 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
       case 'platform-features':
       case 'platform-flags':
         return <FeatureFlagsView />;
+      case 'platform-modules':
+      case 'platform-registry':
+      case 'platform-product':
+        return <ModuleRegistryView />;
+      case 'platform-roadmap':
+        return <DevelopmentRoadmapView />;
+      case 'platform-launch-scope':
+      case 'platform-launch':
+        return <LaunchScopeDashboardView />;
       case 'platform-security':
         return <SecurityCenterView onNavigateTab={(tab) => handleSelectTab(tab)} />;
       case 'platform-sessions':

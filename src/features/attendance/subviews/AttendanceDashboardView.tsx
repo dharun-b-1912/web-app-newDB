@@ -45,6 +45,7 @@ import { useAuth } from '../../../hooks/useAuth';
 import { usePermission } from '../../../hooks/usePermission';
 import { attendanceRosterService } from '../../../services/attendance/attendanceRosterService';
 import { attendanceTimeService } from '../../../services/attendance/attendanceTimeService';
+import { attendanceDecisionEngine } from '../../../services/attendance/attendanceDecisionEngine';
 import { GlobalAttendanceFilterState } from '../AttendanceModuleMaster';
 import { cn } from '../../../lib/utils';
 
@@ -87,9 +88,43 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
   const currentEmpName = user?.name || 'Hari Priya';
   const myRecord = dailyRecords.find(r => (r.employee_id === currentEmpId || r.employee_code === currentEmpId) && r.date === selectedDate);
 
-  const [isCheckedIn, setIsCheckedIn] = useState(!!myRecord?.first_check_in && !myRecord?.last_check_out);
+  // Authoritative Single Attendance Session from Decision Engine
+  const activeSession = attendanceDecisionEngine.getSession(user?.organization_id || 'org-joy-01', currentEmpId, selectedDate);
+  const [manualCheckedInOverride, setManualCheckedInOverride] = useState<boolean | null>(null);
+  const isCheckedIn = manualCheckedInOverride !== null 
+    ? manualCheckedInOverride 
+    : ((activeSession?.attendance_status === 'CHECKED_IN') || (!!myRecord?.first_check_in && !myRecord?.last_check_out));
   const [isOnBreak, setIsOnBreak] = useState(false);
   const [isGettingGps, setIsGettingGps] = useState(false);
+  const [liveSeconds, setLiveSeconds] = useState<number>(0);
+
+  // Live real-time seconds timer tick
+  useEffect(() => {
+    const updateTimer = () => {
+      if (activeSession?.first_in_at && !activeSession?.last_out_at) {
+        const startMs = new Date(activeSession.first_in_at).getTime();
+        setLiveSeconds(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
+      } else if (myRecord?.first_check_in && !myRecord?.last_check_out) {
+        const startMs = new Date(myRecord.first_check_in.includes('T') ? myRecord.first_check_in : `${selectedDate}T${myRecord.first_check_in}`).getTime();
+        if (!isNaN(startMs)) {
+          setLiveSeconds(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
+        }
+      } else {
+        setLiveSeconds(0);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [activeSession, myRecord, selectedDate]);
+
+  const formatLiveTimer = (totalSeconds: number) => {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+  };
 
   const loadData = useCallback(() => {
     const activeComp = api.getActiveCompany();
@@ -123,51 +158,12 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
 
     // Live query Supabase attendance_daily to catch mobile app punches immediately
     if (isSupabaseEnabled) {
-      Promise.resolve(
-        supabase
-          .from('attendance_daily')
-          .select('*')
-          .eq('attendance_date', selectedDate)
-      )
-        .then(({ data, error }: any) => {
-          if (!error && Array.isArray(data)) {
-            try {
-              const mappedData = data.map((d: any) => ({
-                ...d,
-                date: d.attendance_date || d.date,
-              }));
-              const currentList = JSON.parse(localStorage.getItem('workforceos_attendance_daily_v2') || '[]');
-              const otherDatesList = currentList.filter((a: any) => (a.date || a.attendance_date) !== selectedDate);
-              const merged = [...mappedData, ...otherDatesList];
-              
-              const getAttendanceKeys = () => {
-                const s = new Set([
-                  'workforceos_attendance_daily_v2',
-                  'workforceos_attendance_daily_v2_org-joy-01',
-                ]);
-                try {
-                  const activeOrg = localStorage.getItem('workforce_active_org_id');
-                  if (activeOrg) s.add(`workforceos_attendance_daily_v2_${activeOrg}`);
-                  for (let i = 0; i < localStorage.length; i++) {
-                    const k = localStorage.key(i);
-                    if (k && k.startsWith('workforceos_attendance_daily_v2')) {
-                      s.add(k);
-                    }
-                  }
-                } catch {}
-                return Array.from(s);
-              };
-
-              for (const k of getAttendanceKeys()) {
-                localStorage.setItem(k, JSON.stringify(merged));
-              }
-
-              const refreshedRecords = attendanceApi.getDailyAttendance(selectedDate, deptFilter, undefined, searchQuery);
-              setDailyRecords(refreshedRecords);
-            } catch {}
-          }
-        })
-        .catch(() => {});
+      attendanceApi.getDailyAttendanceAsync(selectedDate, deptFilter, undefined, searchQuery).then(freshRecords => {
+        if (freshRecords && freshRecords.length > 0) {
+          setDailyRecords(freshRecords);
+          setLastSyncTime(new Date().toLocaleTimeString());
+        }
+      }).catch(() => {});
     }
   }, [filterAccessibleEmployees, selectedDate, deptFilter, searchQuery]);
 
@@ -184,6 +180,15 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
         'postgres_changes',
         { event: '*', schema: 'public', table: 'attendance_daily' },
         () => {
+          attendanceApi.invalidateCache();
+          loadData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance_punches' },
+        () => {
+          attendanceApi.invalidateCache();
           loadData();
         }
       )
@@ -221,14 +226,14 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
         () => {
           setIsGettingGps(false);
           const updated = attendanceApi.checkIn(currentEmpId, currentEmpName, 'WEB');
-          setIsCheckedIn(true);
+          setManualCheckedInOverride(true);
           refreshData();
           showToast(`✓ Checked in successfully at ${updated.first_check_in}`);
         },
         () => {
           setIsGettingGps(false);
           const updated = attendanceApi.checkIn(currentEmpId, currentEmpName, 'WEB');
-          setIsCheckedIn(true);
+          setManualCheckedInOverride(true);
           refreshData();
           showToast(`✓ Checked in successfully at ${updated.first_check_in} (GPS fallback)`);
         }
@@ -236,7 +241,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
     } else {
       setIsGettingGps(false);
       const updated = attendanceApi.checkIn(currentEmpId, currentEmpName, 'WEB');
-      setIsCheckedIn(true);
+      setManualCheckedInOverride(true);
       refreshData();
       showToast(`✓ Checked in successfully at ${updated.first_check_in}`);
     }
@@ -245,7 +250,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
   const handleWebCheckOut = () => {
     const updated = attendanceApi.checkOut(currentEmpId);
     if (updated) {
-      setIsCheckedIn(false);
+      setManualCheckedInOverride(false);
       setIsOnBreak(false);
       refreshData();
       showToast(`✓ Checked out successfully at ${updated.last_check_out}. Net: ${formatMinutesToHoursStr(updated.net_working_minutes)}`);
@@ -291,7 +296,10 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
 
       if (isExpected) expected++;
 
-      const record = dailyRecords.find(r => r.employee_id === emp.id && r.date === selectedDate);
+      const record = dailyRecords.find(r => 
+        (r.employee_id && emp.id && r.employee_id.toLowerCase() === emp.id.toLowerCase()) ||
+        (r.employee_code && emp.employee_code && r.employee_code.toLowerCase() === emp.employee_code.toLowerCase())
+      );
 
       if (record) {
         if (record.status === 'On Leave') {
@@ -670,14 +678,29 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
             })()}
           </div>
 
-          <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-xl border border-white/20">
+          <div className="flex flex-wrap items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-xl border border-white/20">
             <div className="text-right pr-2">
               <div className="text-[10px] uppercase font-bold text-emerald-200 tracking-wider">Status Today</div>
               <div className="text-sm font-extrabold text-white flex items-center gap-1.5 justify-end">
                 <span className={`w-2 h-2 rounded-full ${isCheckedIn ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
                 {isCheckedIn ? 'Checked In' : 'Not Clocked In'}
               </div>
+              {isCheckedIn && (
+                <div className="text-[11px] font-mono text-emerald-100 font-bold tracking-tight">
+                  ⏱ Working: {formatLiveTimer(liveSeconds)}
+                </div>
+              )}
             </div>
+
+            {isCheckedIn && (
+              <div className="hidden sm:flex flex-col border-l border-white/20 pl-3 text-left">
+                <div className="text-[10px] uppercase font-bold text-emerald-200">Source</div>
+                <Badge variant="emerald" size="xs" className="mt-0.5 font-bold text-[10px] bg-emerald-950/40 text-emerald-200 border-emerald-400/40">
+                  {activeSession?.active_source || myRecord?.source || 'MOBILE'}
+                  {activeSession?.check_in_method ? ` • ${activeSession.check_in_method}` : ''}
+                </Badge>
+              </div>
+            )}
 
             {!isCheckedIn ? (
               <Button
