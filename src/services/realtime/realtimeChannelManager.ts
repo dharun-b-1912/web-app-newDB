@@ -52,6 +52,7 @@ class RealtimeChannelManager {
   private reconnectTimer: any = null;
   private lastVisibilityCheck: number = 0;
   private lastReconcilePublish: number = 0;
+  private disposeTimers: Map<string, any> = new Map();
 
   public initialize(): void {
     if (this.isInitialized) return;
@@ -148,6 +149,12 @@ class RealtimeChannelManager {
     }
     const handlerSet = this.handlers.get(channelName)!;
     handlerSet.add(handler);
+
+    // Cancel any pending grace-period disposal timer
+    if (this.disposeTimers.has(channelName)) {
+      clearTimeout(this.disposeTimers.get(channelName));
+      this.disposeTimers.delete(channelName);
+    }
 
     // If channel already exists, increment refCount
     if (this.channels.has(channelName)) {
@@ -269,14 +276,27 @@ class RealtimeChannelManager {
     });
 
     if (item.info.refCount <= 0) {
-      logger.realtime('CHANNEL_DISPOSED', {
-        table: item.info.table,
-        message: `Closing and removing channel ${channelName}`,
-      });
-      supabase.removeChannel(item.channel);
-      this.channels.delete(channelName);
-      this.handlers.delete(channelName);
-      this.notifyStatusListeners();
+      item.info.refCount = 0;
+      if (this.disposeTimers.has(channelName)) {
+        clearTimeout(this.disposeTimers.get(channelName));
+      }
+      const timer = setTimeout(() => {
+        this.disposeTimers.delete(channelName);
+        const currentItem = this.channels.get(channelName);
+        if (currentItem && currentItem.info.refCount <= 0) {
+          logger.realtime('CHANNEL_DISPOSED', {
+            table: currentItem.info.table,
+            message: `Closing and removing idle channel ${channelName}`,
+          });
+          try {
+            supabase.removeChannel(currentItem.channel);
+          } catch (_) {}
+          this.channels.delete(channelName);
+          this.handlers.delete(channelName);
+          this.notifyStatusListeners();
+        }
+      }, 30000); // 30s grace period avoids thrashing sockets during tab navigation
+      this.disposeTimers.set(channelName, timer);
     }
   }
 
