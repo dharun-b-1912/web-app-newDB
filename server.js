@@ -23,6 +23,9 @@ const ALLOWED_ORIGINS = new Set([
   'https://joypeoplehr.com',
   'https://www.joypeoplehr.com',
   'https://app.joypeoplehr.com',
+  'https://joypeoplehr.in',
+  'https://www.joypeoplehr.in',
+  'https://app.joypeoplehr.in',
   'http://localhost:3000',
   'http://localhost:5173',
   'http://127.0.0.1:3000',
@@ -50,7 +53,7 @@ app.use((req, res, next) => {
 
   // Dynamic CORS Origin Validation
   const origin = req.headers.origin;
-  if (origin && (ALLOWED_ORIGINS.has(origin) || origin.endsWith('.joypeoplehr.com'))) {
+  if (origin && (ALLOWED_ORIGINS.has(origin) || origin.endsWith('.joypeoplehr.com') || origin.endsWith('.joypeoplehr.in'))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader(
