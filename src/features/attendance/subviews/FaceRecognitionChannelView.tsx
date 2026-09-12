@@ -59,8 +59,12 @@ export const FaceRecognitionChannelView: React.FC<FaceRecognitionChannelViewProp
 
   useEffect(() => {
     loadData();
-    const unsub = hrEventBus.subscribe('*', () => loadData());
-    return () => unsub();
+    const unsub1 = hrEventBus.subscribe('attendance.*', () => loadData());
+    const unsub2 = hrEventBus.subscribe('employee.*', () => loadData());
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, [loadData]);
 
   useEffect(() => {

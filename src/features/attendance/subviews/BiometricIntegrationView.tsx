@@ -168,8 +168,8 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
       if (isLoadingRef.current || destroyed) return;
       isLoadingRef.current = true;
       try {
-        await biometricGatewayService.syncLivePunchesFromGateway();
-        if (!destroyed && !isLiveStreamPaused) await loadData();
+        const synced = await biometricGatewayService.syncLivePunchesFromGateway();
+        if (synced && !destroyed && !isLiveStreamPaused) await loadData();
       } finally {
         isLoadingRef.current = false;
       }
@@ -187,23 +187,23 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
     // STEP 1: Render UI immediately from localStorage — zero network calls
     loadData();
 
-    // STEP 2: Defer punch sync by 1.5s — tab is visible and responsive before any network call
+    // STEP 2: Defer punch sync by 2s — tab is visible and responsive before any network call
     timers.push(setTimeout(() => {
       if (!destroyed) biometricGatewayService.syncLivePunchesFromGateway();
-    }, 1500));
+    }, 2000));
 
-    // STEP 3: Defer heavy gateway sync by 4s — connector health, telemetry
+    // STEP 3: Defer heavy gateway sync by 5s — connector health, telemetry
     timers.push(setTimeout(() => {
       if (!destroyed) runSlowSync();
-    }, 4000));
+    }, 5000));
 
-    // Poll every 5s after initial defer — ref-guarded, skips in-flight ticks
-    const livePollTimer = setInterval(safeSyncAndLoad, 5000);
+    // Poll every 30s after initial defer — ref-guarded, skips in-flight ticks
+    const livePollTimer = setInterval(safeSyncAndLoad, 30000);
 
-    // Slow gateway sync every 60s — connector health check, not UI-blocking
+    // Slow gateway sync every 120s — connector health check, not UI-blocking
     const slowTimer = setInterval(() => {
       if (!destroyed) runSlowSync();
-    }, 60000);
+    }, 120000);
 
     // Event subscriptions update local UI state only (never re-trigger network sync)
     const unsubBiometric = hrEventBus.subscribe('biometric.*', () => {

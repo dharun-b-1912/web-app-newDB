@@ -152,7 +152,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
   useEffect(() => {
     loadData();
     fetchLiveHardwareGps();
-    const unsub = hrEventBus.subscribe('*', () => loadData());
+    const unsub = hrEventBus.subscribe('attendance.*', () => loadData());
     return () => unsub();
   }, [loadData, fetchLiveHardwareGps]);
 

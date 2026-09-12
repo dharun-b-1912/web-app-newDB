@@ -538,59 +538,47 @@ class BiometricGatewayService {
     } catch (_) { }
   }
 
-  // Circuit breaker: after 3 consecutive failures, return null for 20s without any network call
-  private _gwFailCount = 0;
+  // Circuit breaker: when gateway fails, pause all gateway calls for 60s without network calls
   private _gwOpenUntil = 0;
+  private _gwInFlight: Promise<Response | null> | null = null;
 
   private async fetchGateway(endpoint: string, options?: RequestInit): Promise<Response | null> {
-    // Circuit open — return immediately, no network call
+    // 1. Circuit open — return immediately, zero network calls
     if (Date.now() < this._gwOpenUntil) return null;
 
-    // Fast path: always try the known-good port first with a 2s timeout
-    const fastUrl = `http://127.0.0.1:${this.activeGatewayPort}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
+    // 2. Coalesce concurrent probes so only one probe runs at a time
+    if (this._gwInFlight) {
+      try {
+        await this._gwInFlight;
+      } catch (_) { }
+      if (Date.now() < this._gwOpenUntil) return null;
+    }
+
+    const doFetch = async (): Promise<Response | null> => {
+      const fastUrl = `http://127.0.0.1:${this.activeGatewayPort}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
+      try {
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 400); // 400ms timeout for local loopback
+        const resp = await fetch(fastUrl, { ...options, signal: ctrl.signal });
+        clearTimeout(tid);
+        if (resp && (resp.ok || resp.status < 500)) {
+          this._gwOpenUntil = 0;
+          return resp;
+        }
+      } catch (_) { }
+
+      // Probe failed — open circuit for 60s immediately, do not flood network or console
+      this._gwOpenUntil = Date.now() + 60000;
+      return null;
+    };
+
+    this._gwInFlight = doFetch();
     try {
-      const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 2000);
-      const resp = await fetch(fastUrl, { ...options, signal: ctrl.signal });
-      clearTimeout(tid);
-      if (resp && (resp.ok || resp.status < 500)) {
-        this._gwFailCount = 0; // reset on success
-        return resp;
-      }
-    } catch (_) { }
-
-    // Slow fallback: try alternate hosts/ports only if fast path failed
-    const host = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
-      ? window.location.hostname
-      : null;
-    const fallbackHosts = ['127.0.0.1', 'localhost', ...(host ? [host] : [])].filter((v, i, a) => a.indexOf(v) === i);
-    const fallbackPorts = [11108, 8080].filter(p => p !== this.activeGatewayPort);
-
-    for (const h of fallbackHosts) {
-      for (const port of fallbackPorts) {
-        try {
-          const url = `http://${h}:${port}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
-          const ctrl = new AbortController();
-          const tid = setTimeout(() => ctrl.abort(), 2000);
-          const resp = await fetch(url, { ...options, signal: ctrl.signal });
-          clearTimeout(tid);
-          if (resp && (resp.ok || resp.status < 500)) {
-            this.activeGatewayPort = port;
-            this._gwFailCount = 0;
-            return resp;
-          }
-        } catch (_) { }
-      }
+      const res = await this._gwInFlight;
+      return res;
+    } finally {
+      this._gwInFlight = null;
     }
-
-    // All attempts failed — open circuit immediately on first failure
-    this._gwFailCount++;
-    if (this._gwFailCount >= 1) {
-      this._gwOpenUntil = Date.now() + 20000; // pause all gateway calls for 20s
-      this._gwFailCount = 0;
-      console.warn('[BiometricGateway] Circuit breaker OPEN — gateway unreachable. Pausing for 20s.');
-    }
-    return null;
   }
 
   // ==========================================================================
@@ -612,7 +600,7 @@ class BiometricGatewayService {
   async syncLocalAgentStatus(): Promise<BiometricGatewayAgent | null> {
     try {
       const resp = await this.fetchGateway('/health');
-      if (resp.ok) {
+      if (resp && resp.ok) {
         const data = await resp.json();
         const agents = this.getGatewayAgents();
         const pairing = data.pairing_key || 'PAIR-COI-9915';
