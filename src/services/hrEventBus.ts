@@ -53,6 +53,9 @@ export type HREventType =
   | 'task.created'
   | 'task.completed'
   | 'task.blocked'
+  | 'document.submitted'
+  | 'document.uploaded'
+  | 'document.requested'
   | 'document.verified'
   | 'document.rejected'
   | 'document.deleted'
@@ -66,11 +69,17 @@ export type HREventType =
   | 'employee.profile.updated'
   | 'attendance.recorded'
   | 'attendance.updated'
+  | 'attendance:updated'
+  | 'attendance.punch_recorded'
   | 'attendance.deleted'
   | 'attendance.regularized'
   | 'attendance.ledger_updated'
   | 'attendance.punch_received'
   | 'attendance.location_event_created'
+  | 'overtime.approved'
+  | 'overtime.submitted'
+  | 'overtime.rejected'
+  | 'overtime.updated'
   | 'location.created'
   | 'location.updated'
   | 'location.deleted'
@@ -80,6 +89,7 @@ export type HREventType =
   | 'biometric.punch_received'
   | 'biometric.agent_heartbeat'
   | 'biometric.device_status_changed'
+  | 'biometric.connector_status_changed'
   | 'biometric.updated'
   | 'biometric.command_updated'
   | 'biometric.command_dispatched'
@@ -122,6 +132,7 @@ export type HREventType =
   | 'exception.created'
   | 'exception.resolved'
   | 'payroll.processed'
+  | 'payroll.statutory_updated'
   | 'position.created'
   | 'position.filled'
   | 'separation.created'
@@ -206,9 +217,11 @@ export type HREventType =
   | 'notification.received'
   | 'diagnostic.sync_verified'
   | 'sync.reconcile_requested'
+  | 'realtime.permanently_disconnected'
+  | 'realtime.status_changed'
   | 'custom';
 
-export type HREventPattern = HREventType | `${string}.*` | '*';
+export type HREventPattern = HREventType | `${string}.*` | '*' | (string & {});
 
 export interface HREventPayload {
   eventId: string;
@@ -242,6 +255,11 @@ class HREventBusService {
   // Alias for subscribe
   on(eventType: HREventPattern, listener: HREventListener): () => void {
     return this.subscribe(eventType, listener);
+  }
+
+  // Remove listener
+  off(eventType: HREventPattern, listener: HREventListener): void {
+    this.listeners.get(eventType)?.delete(listener);
   }
 
   // Alias for publish

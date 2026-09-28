@@ -68,10 +68,16 @@ export const ExecutiveOverviewView: React.FC<Props> = ({ onNavigate }) => {
 
   // Idempotent Real-time Event Subscription
   useEffect(() => {
-    const unsub = hrEventBus.subscribe('*', () => {
+    const unsub1 = hrEventBus.subscribe('organization.*', () => {
       loadExecutiveData(true);
     });
-    return () => unsub();
+    const unsub2 = hrEventBus.subscribe('employee.*', () => {
+      loadExecutiveData(true);
+    });
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, [loadExecutiveData]);
 
   // Transform bundle to ExecutiveSummaryMetrics format

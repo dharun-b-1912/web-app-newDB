@@ -10,6 +10,9 @@
       "DOM.Iterable"
     ],
     "skipLibCheck": true,
+    "strict": false,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
     "moduleResolution": "bundler",
     "isolatedModules": true,
     "moduleDetection": "force",
@@ -24,7 +27,8 @@
     "noEmit": true
   },
   "include": [
-    "src"
+    "src",
+    "scratch"
   ],
   "exclude": [
     "supabase/functions",

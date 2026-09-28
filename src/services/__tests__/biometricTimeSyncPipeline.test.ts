@@ -4,6 +4,7 @@
 // Verifies 15 Master Gates: Ingestion Normalization, Timezone Authority, Source Locking, Shift Resolution
 // ============================================================================
 
+import { describe, it, expect } from 'vitest';
 import { attendanceTimeService } from '../attendance/attendanceTimeService';
 import { attendanceClassificationEngine } from '../attendance/attendanceClassificationEngine';
 import { biometricGatewayService } from '../attendance/biometricGatewayService';
@@ -254,6 +255,14 @@ export async function runBiometricTimeSyncPipelineSuite(): Promise<{ total: numb
 
   return { total: 15, passed, failed };
 }
+
+describe('JOY PeopleHR — Biometric Time Synchronization Pipeline Comprehensive Suite', () => {
+  it('executes and verifies all 15 Master Gates with zero failures', async () => {
+    const res = await runBiometricTimeSyncPipelineSuite();
+    expect(res.failed).toBe(0);
+    expect(res.passed).toBe(15);
+  }, 30000);
+});
 
 // Auto-run if executed directly via tsx
 if (typeof process !== 'undefined' && process.argv && process.argv[1]?.includes('biometricTimeSyncPipeline.test.ts')) {

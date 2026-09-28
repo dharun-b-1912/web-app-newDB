@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
-export type ToastType = 'success' | 'error' | 'info';
+export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 interface ToastItem {
   id: string;
@@ -11,7 +11,7 @@ interface ToastItem {
 }
 
 interface ToastContextType {
-  showToast: (message: string | { title?: string; message?: string; type?: ToastType }, type?: ToastType) => void;
+  showToast: (message: string | { title?: string; message?: string; description?: string; type?: ToastType }, type?: ToastType) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -19,12 +19,12 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const showToast = (messageOrObj: string | { title?: string; message?: string; type?: ToastType }, type: ToastType = 'success') => {
+  const showToast = (messageOrObj: string | { title?: string; message?: string; description?: string; type?: ToastType }, type: ToastType = 'success') => {
     const id = Date.now().toString();
     let msg = '';
     let toastType = type;
     if (typeof messageOrObj === 'object' && messageOrObj !== null) {
-      msg = messageOrObj.message || messageOrObj.title || 'Notification';
+      msg = messageOrObj.message || messageOrObj.description || messageOrObj.title || 'Notification';
       if (messageOrObj.type) toastType = messageOrObj.type;
     } else {
       msg = String(messageOrObj || '');
@@ -53,13 +53,15 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               'pointer-events-auto flex items-center justify-between p-3.5 rounded-xl shadow-lg border text-sm font-medium animate-in slide-in-from-bottom duration-200',
               t.type === 'success' && 'bg-emerald-900 text-white border-emerald-800',
               t.type === 'error' && 'bg-rose-900 text-white border-rose-800',
-              t.type === 'info' && 'bg-gray-900 text-white border-gray-800'
+              t.type === 'info' && 'bg-gray-900 text-white border-gray-800',
+              t.type === 'warning' && 'bg-amber-800 text-white border-amber-700'
             )}
           >
             <div className="flex items-center gap-2.5">
               {t.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
               {t.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />}
               {t.type === 'info' && <Info className="w-5 h-5 text-sky-400 shrink-0" />}
+              {t.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-300 shrink-0" />}
               <span>{t.message}</span>
             </div>
             <button

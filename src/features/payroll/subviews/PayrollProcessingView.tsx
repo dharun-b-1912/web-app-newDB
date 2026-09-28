@@ -157,7 +157,7 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
 
   useEffect(() => {
     loadRuns();
-    const unsub = hrEventBus.subscribe('*', () => loadRuns());
+    const unsub = hrEventBus.subscribe('payroll.*', () => loadRuns());
     return () => unsub();
   }, []);
 
@@ -265,15 +265,15 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
     }
   };
 
-  const currentWorkflowStage: 1 | 2 | 3 | 4 | 5 | 6 = !selectedRun
-    ? 2
+  const currentWorkflowStage: import('../components/PayrollContextBar').PayrollStageKey = !selectedRun
+    ? 'validate'
     : selectedRun.status === 'Finalized'
-    ? 5
+    ? 'disburse'
     : selectedRun.status === 'Approved'
-    ? 4
+    ? 'lock'
     : selectedRun.status === 'SubmittedForApproval'
-    ? 3
-    : 2;
+    ? 'approve'
+    : 'validate';
 
   const [employees, setEmployees] = useState<any[]>([]);
   const [workforceFilter, setWorkforceFilter] = useState<'ALL' | 'DIRECT' | 'VENDOR'>('ALL');
@@ -324,7 +324,7 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
       {/* 0. Automated Workflow Lifecycle Stepper */}
       <PayrollWorkflowStepper
         currentStage={currentWorkflowStage}
-        onNavigateStage={stageKey => {
+        onNavigateTab={stageKey => {
           if (onNavigateTab) onNavigateTab(stageKey);
         }}
       />

@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 
+import { ExcelBreakupView } from './ExcelBreakupView';
+
 interface InvoicePreviewModalProps {
   run: BillingRun;
   isOpen: boolean;
@@ -34,7 +36,7 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
   onClose,
   onApproveInvoice,
 }) => {
-  const [activeTab, setActiveTab] = useState<'INVOICE' | 'REGISTER' | 'STATUTORY'>('INVOICE');
+  const [activeTab, setActiveTab] = useState<'INVOICE' | 'BREAKUP' | 'REGISTER' | 'STATUTORY'>('INVOICE');
   const [isApproving, setIsApproving] = useState(false);
 
   if (!isOpen) return null;
@@ -130,6 +132,19 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveTab('BREAKUP')}
+            className={cn(
+              "pb-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 cursor-pointer",
+              activeTab === 'BREAKUP'
+                ? "border-[#07563D] text-[#07563D]"
+                : "border-transparent text-gray-500 hover:text-gray-800"
+            )}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Commercial Breakup Sheet</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('REGISTER')}
             className={cn(
               "pb-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 cursor-pointer",
@@ -158,6 +173,22 @@ export const InvoicePreviewModal: React.FC<InvoicePreviewModalProps> = ({
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
+          {activeTab === 'BREAKUP' && (
+            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-xs max-w-4xl mx-auto">
+              <ExcelBreakupView
+                contractWages={run.total_gross_billable_wages || 79215}
+                regularWagesBase={run.client_id === 'comp-arjuna-01' ? 52390 : run.total_gross_billable_wages}
+                pfEmployerRate={13.0}
+                esiEmployerRate={3.25}
+                serviceChargeRate={8.0}
+                roomAllowanceAmount={4650}
+                transportAllowanceAmount={2790}
+                periodText={run.period === 'July 2026' ? '01.07.2026 TO 31.07.2026' : `01.${run.period} TO 31.${run.period}`}
+                clientName={run.client_name}
+              />
+            </div>
+          )}
+
           {activeTab === 'INVOICE' && (
             <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-xs max-w-4xl mx-auto space-y-6">
               {/* Invoice Header */}

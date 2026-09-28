@@ -18,9 +18,21 @@ function getGitMetadata() {
   }
 }
 
+function getPubspecVersion() {
+  try {
+    const pubspecPath = path.resolve(__dirname, '..', 'flutter_app', 'pubspec.yaml');
+    const content = fs.readFileSync(pubspecPath, 'utf8');
+    const match = content.match(/version:\s*([0-9.]+)\+([0-9]+)/);
+    if (match) {
+      return { version: match[1], buildNumber: match[2] };
+    }
+  } catch (_) {}
+  return { version: '1.0.4', buildNumber: '9' };
+}
+
 function generateReleaseNotes({
-  version = '1.0.3',
-  buildNumber = '184',
+  version,
+  buildNumber,
   environment = 'QA',
   channel = 'INTERNAL',
   testFocus = [
@@ -30,16 +42,19 @@ function generateReleaseNotes({
     'eSSL AI-FACE MAGNUM ADMS Realtime push integration'
   ]
 } = {}) {
+  const pub = getPubspecVersion();
+  const effectiveVersion = version || pub.version;
+  const effectiveBuild = buildNumber || pub.buildNumber;
   const { commitSha, branch, commitMsg } = getGitMetadata();
   const dateStr = new Date().toISOString().split('T')[0];
 
   const content = `============================================================
-JOY PeopleHR — ${environment.toUpperCase()} Build (v${version}+${buildNumber})
+JOY PeopleHR — ${environment.toUpperCase()} Build (v${effectiveVersion}+${effectiveBuild})
 ============================================================
 Environment : ${environment}
 Channel     : ${channel}
-Build Number: ${buildNumber}
-Version     : ${version}
+Build Number: ${effectiveBuild}
+Version     : ${effectiveVersion}
 Commit SHA  : ${commitSha} (${branch})
 Release Date: ${dateStr}
 

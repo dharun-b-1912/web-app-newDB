@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
     /* Joy PeopleHR Pixel-Sampled Brand & Semantic Tokens */
@@ -108,13 +110,43 @@
   display: none !important; /* Chrome, Safari, Opera */
 }
 
+/* Joy Brand Vector Animations */
+@keyframes joyFloat {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-6px) scale(1.02);
+  }
+}
+
+@keyframes joyPulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(2, 183, 99, 0));
+  }
+  50% {
+    transform: scale(1.04);
+    filter: drop-shadow(0 0 16px rgba(2, 183, 99, 0.45));
+  }
+}
+
+@keyframes joyShimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 
 /* ============================================================
    PRINT ISOLATION & STYLING RULES
    ============================================================ */
 @media print {
   @page {
-    size: auto;
+    size: A4 portrait;
     margin: 8mm;
   }
 
@@ -130,6 +162,44 @@
   .no-print,
   .print\:hidden {
     display: none !important;
+  }
+
+  /* Vendor Invoice & Breakup Modal Print Isolation */
+  .vendor-invoice-modal-backdrop {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    inset: auto !important;
+    overflow: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    display: block !important;
+  }
+
+  .vendor-invoice-modal-card {
+    position: static !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  .printable-a4-sheet {
+    width: 100% !important;
+    max-width: 190mm !important;
+    margin: 0 auto !important;
+    padding: 14px 16px !important;
+    border: 2px solid #000000 !important;
+    box-shadow: none !important;
+    page-break-inside: avoid !important;
+    background: #ffffff !important;
   }
 
   #invoice-print-document {

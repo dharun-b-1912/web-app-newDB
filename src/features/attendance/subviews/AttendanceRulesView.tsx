@@ -21,6 +21,8 @@ import {
   RuleCategory,
   RuleScopeType,
 } from '../../../types/attendanceRules';
+import { useTenant } from '../../../hooks/useTenant';
+import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
 import { attendanceRuleEngineService } from '../../../services/attendance/attendanceRuleEngineService';
 import {
   SlidersHorizontal,
@@ -53,6 +55,8 @@ import {
   RefreshCw,
   Terminal,
   FileText,
+  Building2,
+  Download,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 
@@ -63,15 +67,24 @@ interface AttendanceRulesViewProps {
 export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavigateSubPath }) => {
   const { showToast } = useToast();
 
+  let tenantContext: any = null;
+  try {
+    tenantContext = useTenant();
+  } catch (_) {}
+
+  const activeOrgId = tenantContext?.organization?.id || getActiveOrgId();
+  const activeOrgName = tenantContext?.organization?.name || 'JOY Corporation';
+  const activeLegalEntityName = tenantContext?.activeLegalEntity?.name || tenantContext?.activeCompany?.name || '';
+
   const [activeTab, setActiveTab] = useState<'rules' | 'exceptions' | 'simulator' | 'priority' | 'templates' | 'logs'>('rules');
   const [selectedCategory, setSelectedCategory] = useState<RuleCategory | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [rules, setRules] = useState<AttendanceRule[]>([]);
-  const [exceptions, setExceptions] = useState<EmployeeAttendanceException[]>([]);
-  const [logs, setLogs] = useState<AttendanceRuleExecutionLog[]>([]);
-  const [metrics, setMetrics] = useState(attendanceRuleEngineService.getMetrics());
+  const [rules, setRules] = useState<AttendanceRule[]>(() => attendanceRuleEngineService.getRules(selectedCategory, undefined, activeOrgId));
+  const [exceptions, setExceptions] = useState<EmployeeAttendanceException[]>(() => attendanceRuleEngineService.getEmployeeExceptions(undefined, activeOrgId));
+  const [logs, setLogs] = useState<AttendanceRuleExecutionLog[]>(() => attendanceRuleEngineService.getRuleExecutionLogs(50, activeOrgId));
+  const [metrics, setMetrics] = useState(() => attendanceRuleEngineService.getMetrics(activeOrgId));
   const [employees, setEmployees] = useState<any[]>([]);
-  const [shifts, setShifts] = useState<any[]>([]);
+  const [shifts, setShifts] = useState<any[]>(() => attendanceRosterService.getShifts(activeOrgId));
 
   // Modals
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
@@ -79,7 +92,7 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
   const [editingRule, setEditingRule] = useState<AttendanceRule | null>(null);
 
   // Simulation State
-  const [simEmployeeId, setSimEmployeeId] = useState('emp-danya-154');
+  const [simEmployeeId, setSimEmployeeId] = useState('');
   const [simDate, setSimDate] = useState('2026-09-11');
   const [simTime, setSimTime] = useState('08:54:00');
   const [simSource, setSimSource] = useState<'BIOMETRIC' | 'MOBILE' | 'WEB'>('BIOMETRIC');
@@ -112,28 +125,52 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
   const [exTo, setExTo] = useState('2026-09-30');
 
   const loadData = () => {
-    const r = attendanceRuleEngineService.getRules(selectedCategory);
-    const ex = attendanceRuleEngineService.getEmployeeExceptions();
-    const l = attendanceRuleEngineService.getRuleExecutionLogs(50);
-    const m = attendanceRuleEngineService.getMetrics();
+    // Phase 1: Immediate in-memory fast path for sub-10ms initial mount
+    const r = attendanceRuleEngineService.getRules(selectedCategory, undefined, activeOrgId);
+    const m = attendanceRuleEngineService.getMetrics(activeOrgId);
+    const ex = attendanceRuleEngineService.getEmployeeExceptions(undefined, activeOrgId);
     setRules(r);
-    setExceptions(ex);
-    setLogs(l);
     setMetrics(m);
+    setExceptions(ex);
 
-    api.getEmployees().then((emps) => {
-      if (emps) setEmployees(emps);
-    }).catch(() => {});
-
-    const loadedShifts = attendanceRosterService.getShifts();
-    setShifts(loadedShifts);
+    if (activeTab === 'logs') {
+      const l = attendanceRuleEngineService.getRuleExecutionLogs(50, activeOrgId);
+      setLogs(l);
+    }
   };
 
   useEffect(() => {
     loadData();
     const unsub = hrEventBus.subscribe('attendance.*', () => loadData());
-    return () => unsub();
-  }, [selectedCategory]);
+    const unsubEmp = hrEventBus.subscribe('employee.updated', () => loadData());
+    return () => {
+      unsub();
+      unsubEmp();
+    };
+  }, [selectedCategory, activeTab, activeOrgId]);
+
+  // Phase 2: Lazy-load heavy employees and shifts only when modals or simulator/exceptions are opened
+  useEffect(() => {
+    if (isBuilderOpen || isExceptionModalOpen || activeTab === 'simulator' || activeTab === 'exceptions') {
+      if (employees.length === 0) {
+        api.getEmployees(activeOrgId).then((emps) => {
+          if (emps && emps.length > 0) {
+            setEmployees(emps);
+            if (!simEmployeeId) {
+              setSimEmployeeId(emps[0].id);
+            }
+          }
+        }).catch(() => {});
+      }
+      if (shifts.length === 0) {
+        const loadedShifts = attendanceRosterService.getShifts(activeOrgId);
+        setShifts(loadedShifts);
+      }
+    }
+    if (activeTab === 'logs') {
+      setLogs(attendanceRuleEngineService.getRuleExecutionLogs(50));
+    }
+  }, [isBuilderOpen, isExceptionModalOpen, activeTab, employees.length, shifts.length]);
 
   const filteredRules = useMemo(() => {
     return rules.filter((r) => {
@@ -151,22 +188,25 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
   // Handle Simulation
   const handleRunSimulation = () => {
     const emp = employees.find((e) => e.id === simEmployeeId) || {
-      id: simEmployeeId,
-      display_name: simEmployeeId.includes('dharun') ? 'Dharun B' : 'Danya R',
-      employee_code: simEmployeeId.includes('dharun') ? 'JCS-017' : 'JCS-154',
+      id: simEmployeeId || 'emp-sim',
+      display_name: 'Selected Employee',
+      employee_code: 'EMP-001',
     };
 
-    const res = attendanceRuleEngineService.simulatePunch({
-      employee_id: emp.id,
-      employee_name: emp.display_name || emp.name,
-      employee_code: emp.employee_code,
-      date: simDate,
-      punch_time: simTime,
-      source: simSource,
-      verification_method: simMethod,
-      punch_direction: simDirection,
-      existing_punches: simDirection === 'OUT' ? [{ time: '09:00:00', direction: 'IN', classification: 'CHECK_IN' }] : [],
-    });
+    const res = attendanceRuleEngineService.simulatePunch(
+      {
+        employee_id: emp.id,
+        employee_name: emp.display_name || emp.name,
+        employee_code: emp.employee_code,
+        date: simDate,
+        punch_time: simTime,
+        source: simSource,
+        verification_method: simMethod,
+        punch_direction: simDirection,
+        existing_punches: simDirection === 'OUT' ? [{ time: '09:00:00', direction: 'IN', classification: 'CHECK_IN' }] : [],
+      },
+      activeOrgId
+    );
 
     setSimulationResult(res);
     showToast(`Simulation complete: Classified as ${res.classification}`);
@@ -175,62 +215,71 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
   // Handle Quick Template Select
   const handleApplyTemplate = (tplKey: string) => {
     if (tplKey === 'PROD_GRACE') {
-      attendanceRuleEngineService.createRule({
-        rule_name: 'Plant Production 15m Grace Rule',
-        rule_code: `RUL-PROD-${Date.now().toString().slice(-4)}`,
-        description: 'Auto-extends on-time grace to 15m for all manufacturing workers.',
-        category: 'GRACE_LATE',
-        status: 'ACTIVE',
-        priority: 25,
-        scope_type: 'DEPARTMENT',
-        scope_ids: ['Operations', 'Production'],
-        scope_labels: ['Operations', 'Production'],
-        trigger_event: 'FIRST_PUNCH',
-        conditions: [],
-        actions: [{ id: 'act-1', action_type: 'APPLY_GRACE', parameters: { grace_minutes: 15 } }],
-        effective_from: '2026-09-01',
-        human_readable_summary: 'When a Production/Operations worker clocks in, apply a 15-minute grace period.',
-        covered_employees_count: 142,
-        created_by: 'HR Operations',
-      });
+      attendanceRuleEngineService.createRule(
+        {
+          rule_name: 'Plant Production 15m Grace Rule',
+          rule_code: `RUL-PROD-${Date.now().toString().slice(-4)}`,
+          description: 'Auto-extends on-time grace to 15m for all manufacturing workers.',
+          category: 'GRACE_LATE',
+          status: 'ACTIVE',
+          priority: 25,
+          scope_type: 'DEPARTMENT',
+          scope_ids: ['Operations', 'Production'],
+          scope_labels: ['Operations', 'Production'],
+          trigger_event: 'FIRST_PUNCH',
+          conditions: [],
+          actions: [{ id: 'act-1', action_type: 'APPLY_GRACE', parameters: { grace_minutes: 15 } }],
+          effective_from: '2026-09-01',
+          human_readable_summary: 'When a Production/Operations worker clocks in, apply a 15-minute grace period.',
+          covered_employees_count: 142,
+          created_by: 'HR Operations',
+        },
+        activeOrgId
+      );
     } else if (tplKey === 'NIGHT_SHIFT') {
-      attendanceRuleEngineService.createRule({
-        rule_name: 'Overnight Shift 22:00–06:00 Reconciliation Rule',
-        rule_code: `RUL-NGT-${Date.now().toString().slice(-4)}`,
-        description: 'Binds next-day morning punches to the previous night shift date.',
-        category: 'CHECK_IN_OUT',
-        status: 'ACTIVE',
-        priority: 20,
-        scope_type: 'SHIFT',
-        scope_ids: ['NGT-22', 'NIGHT'],
-        scope_labels: ['Night Shift (22:00 - 06:00)'],
-        trigger_event: 'ANY_PUNCH',
-        conditions: [],
-        actions: [{ id: 'act-1', action_type: 'CLASSIFY_CHECK_OUT', parameters: { early_checkout_grace_minutes: 15 } }],
-        effective_from: '2026-09-01',
-        human_readable_summary: 'When a night-shift employee punches before 07:00 AM, associate it with the night shift start date.',
-        covered_employees_count: 36,
-        created_by: 'HR Operations',
-      });
+      attendanceRuleEngineService.createRule(
+        {
+          rule_name: 'Overnight Shift 22:00–06:00 Reconciliation Rule',
+          rule_code: `RUL-NGT-${Date.now().toString().slice(-4)}`,
+          description: 'Binds next-day morning punches to the previous night shift date.',
+          category: 'CHECK_IN_OUT',
+          status: 'ACTIVE',
+          priority: 20,
+          scope_type: 'SHIFT',
+          scope_ids: ['NGT-22', 'NIGHT'],
+          scope_labels: ['Night Shift (22:00 - 06:00)'],
+          trigger_event: 'ANY_PUNCH',
+          conditions: [],
+          actions: [{ id: 'act-1', action_type: 'CLASSIFY_CHECK_OUT', parameters: { early_checkout_grace_minutes: 15 } }],
+          effective_from: '2026-09-01',
+          human_readable_summary: 'When a night-shift employee punches before 07:00 AM, associate it with the night shift start date.',
+          covered_employees_count: 36,
+          created_by: 'HR Operations',
+        },
+        activeOrgId
+      );
     } else if (tplKey === 'OT_30M') {
-      attendanceRuleEngineService.createRule({
-        rule_name: 'Standard 30-Minute Overtime Threshold',
-        rule_code: `RUL-OT-${Date.now().toString().slice(-4)}`,
-        description: 'Overtime begins after 30 minutes beyond scheduled shift end.',
-        category: 'OVERTIME',
-        status: 'ACTIVE',
-        priority: 50,
-        scope_type: 'ORGANIZATION',
-        scope_ids: ['ALL'],
-        scope_labels: ['Entire Company'],
-        trigger_event: 'AFTER_SHIFT_END',
-        conditions: [],
-        actions: [{ id: 'act-1', action_type: 'CALCULATE_OT', parameters: { ot_threshold_minutes: 30, ot_rounding: '15_MIN' } }],
-        effective_from: '2026-01-01',
-        human_readable_summary: 'When an employee punches out >30m after scheduled shift end, calculate overtime with 15m intervals.',
-        covered_employees_count: 486,
-        created_by: 'Payroll Admin',
-      });
+      attendanceRuleEngineService.createRule(
+        {
+          rule_name: 'Standard 30-Minute Overtime Threshold',
+          rule_code: `RUL-OT-${Date.now().toString().slice(-4)}`,
+          description: 'Overtime begins after 30 minutes beyond scheduled shift end.',
+          category: 'OVERTIME',
+          status: 'ACTIVE',
+          priority: 50,
+          scope_type: 'ORGANIZATION',
+          scope_ids: ['ALL'],
+          scope_labels: ['Entire Company'],
+          trigger_event: 'AFTER_SHIFT_END',
+          conditions: [],
+          actions: [{ id: 'act-1', action_type: 'CALCULATE_OT', parameters: { ot_threshold_minutes: 30, ot_rounding: '15_MIN' } }],
+          effective_from: '2026-01-01',
+          human_readable_summary: 'When an employee punches out >30m after scheduled shift end, calculate overtime with 15m intervals.',
+          covered_employees_count: 486,
+          created_by: 'Payroll Admin',
+        },
+        activeOrgId
+      );
     }
 
     loadData();
@@ -246,26 +295,29 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
       employee_code: 'JCS-017',
     };
 
-    attendanceRuleEngineService.createEmployeeException({
-      employee_id: emp.id,
-      employee_name: emp.display_name || emp.name,
-      employee_code: emp.employee_code,
-      department: emp.department_name || 'Operations',
-      exception_type: exType,
-      title: exTitle || (exType === 'GRACE_OVERRIDE' ? `${exGraceMinutes}m Grace Override` : 'Custom Schedule Override'),
-      reason: exReason || 'Temporary project requirement',
-      override_values: {
-        grace_minutes: exType === 'GRACE_OVERRIDE' ? exGraceMinutes : undefined,
-        ot_threshold_minutes: exType === 'OT_THRESHOLD_OVERRIDE' ? exOtThreshold : undefined,
-        attendance_mode: 'AUTO',
+    attendanceRuleEngineService.createEmployeeException(
+      {
+        employee_id: emp.id,
+        employee_name: emp.display_name || emp.name,
+        employee_code: emp.employee_code,
+        department: emp.department_name || 'Operations',
+        exception_type: exType,
+        title: exTitle || (exType === 'GRACE_OVERRIDE' ? `${exGraceMinutes}m Grace Override` : 'Custom Schedule Override'),
+        reason: exReason || 'Temporary project requirement',
+        override_values: {
+          grace_minutes: exType === 'GRACE_OVERRIDE' ? exGraceMinutes : undefined,
+          ot_threshold_minutes: exType === 'OT_THRESHOLD_OVERRIDE' ? exOtThreshold : undefined,
+          attendance_mode: 'AUTO',
+        },
+        effective_from: exFrom,
+        effective_to: exTo,
+        status: 'ACTIVE',
+        requested_by: 'HR Head',
+        approved_by: 'Managing Director',
+        approved_at: new Date().toISOString(),
       },
-      effective_from: exFrom,
-      effective_to: exTo,
-      status: 'ACTIVE',
-      requested_by: 'HR Head',
-      approved_by: 'Managing Director',
-      approved_at: new Date().toISOString(),
-    });
+      activeOrgId
+    );
 
     setIsExceptionModalOpen(false);
     loadData();
@@ -297,39 +349,56 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
       return;
     }
 
-    attendanceRuleEngineService.createRule({
-      rule_name: formRuleName,
-      rule_code: `RUL-${Date.now().toString().slice(-4)}`,
-      description: liveSummarySentence,
-      category: formCategory,
-      status: 'ACTIVE',
-      priority: formPriority,
-      scope_type: formScopeType,
-      scope_ids: [formScopeTarget],
-      scope_labels: [formScopeTarget === 'ALL' ? 'Entire Organization' : formScopeTarget],
-      trigger_event: formTrigger,
-      conditions: [],
-      actions: [
-        {
-          id: 'act-1',
-          action_type: formCategory === 'OVERTIME' ? 'CALCULATE_OT' : 'CLASSIFY_CHECK_IN',
-          parameters: {
-            grace_minutes: formGraceMinutes,
-            ot_threshold_minutes: formOtThreshold,
-            ot_rounding: formOtRounding,
-            min_punch_gap_minutes: formMinGap,
+    attendanceRuleEngineService.createRule(
+      {
+        rule_name: formRuleName,
+        rule_code: `RUL-${Date.now().toString().slice(-4)}`,
+        description: liveSummarySentence,
+        category: formCategory,
+        status: 'ACTIVE',
+        priority: formPriority,
+        scope_type: formScopeType,
+        scope_ids: [formScopeTarget],
+        scope_labels: [formScopeTarget === 'ALL' ? 'Entire Organization' : formScopeTarget],
+        trigger_event: formTrigger,
+        conditions: [],
+        actions: [
+          {
+            id: 'act-1',
+            action_type: formCategory === 'OVERTIME' ? 'CALCULATE_OT' : 'CLASSIFY_CHECK_IN',
+            parameters: {
+              grace_minutes: formGraceMinutes,
+              ot_threshold_minutes: formOtThreshold,
+              ot_rounding: formOtRounding,
+              min_punch_gap_minutes: formMinGap,
+            },
           },
-        },
-      ],
-      effective_from: formEffectiveFrom,
-      human_readable_summary: liveSummarySentence,
-      covered_employees_count: formScopeType === 'ORGANIZATION' ? 486 : 142,
-      created_by: 'HR Operations',
-    });
+        ],
+        effective_from: formEffectiveFrom,
+        human_readable_summary: liveSummarySentence,
+        covered_employees_count: formScopeType === 'ORGANIZATION' ? 486 : 142,
+        created_by: 'HR Operations',
+      },
+      activeOrgId
+    );
 
     setIsBuilderOpen(false);
     loadData();
     showToast(`Rule "${formRuleName}" saved and activated successfully.`);
+  };
+
+  const handleExportBackup = () => {
+    const pkg = attendanceRuleEngineService.exportTenantRulesConfig(activeOrgId);
+    const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `attendance_rules_${activeOrgId}_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`Exported attendance rules backup for ${activeOrgName}`);
   };
 
   return (
@@ -349,11 +418,32 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
               <p className="text-xs text-gray-500 mt-0.5">
                 Automatically determine check-in, check-out, grace, breaks and overtime from employee schedules and attendance punches.
               </p>
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-[#07563D] border border-emerald-200">
+                  <Building2 className="w-3 h-3" />
+                  Organization: {activeOrgName} ({activeOrgId})
+                </span>
+                {activeLegalEntityName && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-700 border border-gray-200">
+                    Entity: {activeLegalEntityName}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExportBackup}
+            className="text-xs font-bold gap-1.5 rounded-xl h-9"
+            title="Export full tenant configuration backup"
+          >
+            <Download className="w-3.5 h-3.5 text-blue-600" /> Export Backup
+          </Button>
+
           <Button
             size="sm"
             variant="outline"
@@ -408,7 +498,7 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
         <Card className="p-4 bg-white border border-gray-200/80 rounded-2xl shadow-2xs space-y-1">
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">EMPLOYEES COVERED</span>
           <p className="text-xl font-black text-gray-900 font-mono">{metrics.employees_covered_count}</p>
-          <span className="text-[10px] text-gray-500">100% Workforce Scope</span>
+          <span className="text-[10px] text-gray-500">{metrics.employees_covered_count > 0 ? 'Active Workforce Scope' : 'No Coverage'}</span>
         </Card>
 
         <Card className="p-4 bg-white border border-gray-200/80 rounded-2xl shadow-2xs space-y-1">
@@ -426,13 +516,17 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
         <Card className="p-4 bg-white border border-gray-200/80 rounded-2xl shadow-2xs space-y-1">
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">RULE CONFLICTS</span>
           <p className="text-xl font-black text-gray-900 font-mono">{metrics.rule_conflicts_count}</p>
-          <span className="text-[10px] text-emerald-700 font-semibold">Zero Ambiguity</span>
+          <span className={cn("text-[10px] font-semibold flex items-center gap-1", metrics.rule_conflicts_count > 0 ? "text-amber-600" : "text-emerald-700")}>
+            {metrics.rule_conflicts_count > 0 ? `${metrics.rule_conflicts_count} Overlaps Flagged` : 'Zero Ambiguity'}
+          </span>
         </Card>
 
         <Card className="p-4 bg-white border border-gray-200/80 rounded-2xl shadow-2xs space-y-1">
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">FAILED CALCULATIONS</span>
           <p className="text-xl font-black text-gray-900 font-mono">{metrics.failed_calculations_count}</p>
-          <span className="text-[10px] text-emerald-700 font-semibold">Healthy Pipeline</span>
+          <span className={cn("text-[10px] font-semibold", metrics.failed_calculations_count > 0 ? "text-rose-600" : "text-emerald-700")}>
+            {metrics.failed_calculations_count > 0 ? `${metrics.failed_calculations_count} Failures` : 'Healthy Pipeline'}
+          </span>
         </Card>
       </div>
 
@@ -728,9 +822,15 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
                     onChange={(e) => setSimEmployeeId(e.target.value)}
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-1 focus:ring-[#07563D]"
                   >
-                    <option value="emp-danya-154">Danya R (JCS-154 • Operations)</option>
-                    <option value="emp-dharun-017">Dharun B (JCS-017 • Operations)</option>
-                    <option value="emp-haripriya">Haripriya M (JCS-042 • Engineering)</option>
+                    {employees.length > 0 ? (
+                      employees.map((emp) => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.display_name || emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.employee_code} ({emp.employee_code || emp.id} • {emp.department_name || emp.department || 'Operations'})
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">No employees found</option>
+                    )}
                   </select>
                 </div>
 
@@ -1179,9 +1279,11 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
                   className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs"
                 >
                   <option value="">-- Select Employee --</option>
-                  <option value="emp-dharun-017">Dharun B (JCS-017 • Operations)</option>
-                  <option value="emp-danya-154">Danya R (JCS-154 • Operations)</option>
-                  <option value="emp-haripriya">Haripriya M (JCS-042 • Engineering)</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.display_name || emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.employee_code} ({emp.employee_code || emp.id} • {emp.department_name || emp.department || 'Operations'})
+                    </option>
+                  ))}
                 </select>
               </div>
 

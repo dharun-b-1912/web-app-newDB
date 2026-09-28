@@ -1,7 +1,16 @@
-import React from 'react';
+// src/features/workspace/components/WorkspacePayslipModal.tsx
+// ============================================================================
+// Joy PeopleHR — Employee Workspace Payslip Modal
+// Production Universal Blue Payslip Template with Live Authoritative Payroll Data
+// ============================================================================
+
+import React, { useMemo } from 'react';
 import { Button } from '../../../components/ui/Button';
-import { X, Receipt, Download, Building2, UserCheck, ShieldCheck } from 'lucide-react';
+import { X, Receipt, Download, Printer } from 'lucide-react';
 import { Employee, User, Company } from '../../../types';
+import { PayslipGeneratorService } from '../../../services/payroll/payslipGeneratorService';
+import { PayslipDocument } from '../../../components/payroll/PayslipDocument';
+import { UniversalPayslipPdfService } from '../../../services/payroll/universalPayslipPdfService';
 
 interface Props {
   isOpen: boolean;
@@ -18,87 +27,111 @@ export const WorkspacePayslipModal: React.FC<Props> = ({
   user,
   activeCompany,
 }) => {
+  const empIdentifier = employee?.employee_code || employee?.id || user.id;
+
+  const { viewModel, validation } = useMemo(() => {
+    return PayslipGeneratorService.buildPayslipViewModel(
+      empIdentifier,
+      'August 2026',
+      activeCompany?.id || 'org-main',
+      activeCompany
+        ? {
+            legalName: activeCompany.legal_name,
+            displayName: activeCompany.name,
+            logoUrl: activeCompany.logo_url || '/logo.png',
+          }
+        : undefined
+    );
+  }, [empIdentifier, activeCompany]);
+
   if (!isOpen) return null;
 
+  const handlePrint = () => {
+    UniversalPayslipPdfService.printDocument(viewModel, 'workspace-payslip-document');
+  };
+
+  const handleDownload = () => {
+    UniversalPayslipPdfService.downloadPdf(viewModel, 'workspace-payslip-document');
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        <div className="p-5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-800 flex items-center justify-center font-bold">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-150">
+        {/* Modal Header */}
+        <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-400/30 text-blue-400 flex items-center justify-center font-bold">
               <Receipt className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-black text-gray-900">Latest Compensation Statement</h3>
-              <p className="text-[11px] text-gray-500 font-medium">
-                {activeCompany?.legal_name || 'Joy Corporate Solutions Pvt Ltd'}
+              <h3 className="text-sm font-black text-white flex items-center gap-2">
+                <span>Universal Compensation Statement</span>
+                <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-sans font-bold">
+                  {viewModel.payroll.payrollPeriod}
+                </span>
+              </h3>
+              <p className="text-[11px] text-slate-400 font-medium">
+                {viewModel.company.displayName || viewModel.company.legalName} • Finalized Payroll
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePrint}
+              className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+              title="Print A4 Payslip"
+            >
+              <Printer className="w-4 h-4 text-blue-400" />
+            </button>
+            <button
+              onClick={handleDownload}
+              className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+              title="Download Payslip"
+            >
+              <Download className="w-4 h-4 text-emerald-400" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors ml-2"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
-        <div className="p-6 space-y-5 text-xs">
-          {/* Employee Header */}
-          <div className="p-4 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
-              <p className="font-bold text-gray-900 text-sm">{employee ? `${employee.first_name} ${employee.last_name}` : user.name}</p>
-              <p className="text-[11px] text-gray-500">{employee?.designation_title || 'Software Engineer'} • {employee?.department_name || 'Engineering'}</p>
+        {/* Modal Body: Printable Universal Template */}
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-100/60">
+          {!validation.isValid && (
+            <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs">
+              <strong className="block font-bold">Payroll Reconciliation Notice:</strong>
+              {validation.errors.join(' • ')}
             </div>
-            <div className="text-right text-[11px]">
-              <span className="font-mono font-bold text-gray-700 block">{employee?.employee_code || 'EMP-10001'}</span>
-              <span className="text-gray-400">Pay Period: July 2026</span>
-            </div>
+          )}
+
+          <div className="flex justify-center">
+            <PayslipDocument
+              model={viewModel}
+              mode="screen"
+              id="workspace-payslip-document"
+            />
           </div>
+        </div>
 
-          {/* Pay Breakdown */}
-          <div className="space-y-3">
-            <h4 className="font-black text-gray-800 uppercase tracking-wider text-[10px]">Earnings & Deductions</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-3.5 rounded-xl border border-gray-100 space-y-2">
-                <span className="font-bold text-gray-700 block text-xs">Earnings</span>
-                <div className="flex justify-between text-gray-600"><span>Basic Salary:</span><strong className="text-gray-900">₹45,000</strong></div>
-                <div className="flex justify-between text-gray-600"><span>House Rent (HRA):</span><strong className="text-gray-900">₹18,000</strong></div>
-                <div className="flex justify-between text-gray-600"><span>Special Allowance:</span><strong className="text-gray-900">₹12,000</strong></div>
-                <div className="flex justify-between text-emerald-800 font-bold pt-2 border-t border-gray-100">
-                  <span>Gross Earnings:</span><span>₹75,000</span>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl border border-gray-100 space-y-2">
-                <span className="font-bold text-gray-700 block text-xs">Deductions</span>
-                <div className="flex justify-between text-gray-600"><span>Provident Fund (PF):</span><strong className="text-gray-900">₹1,800</strong></div>
-                <div className="flex justify-between text-gray-600"><span>Professional Tax (PT):</span><strong className="text-gray-900">₹200</strong></div>
-                <div className="flex justify-between text-gray-600"><span>TDS / Income Tax:</span><strong className="text-gray-900">₹3,500</strong></div>
-                <div className="flex justify-between text-rose-800 font-bold pt-2 border-t border-gray-100">
-                  <span>Total Deductions:</span><span>₹5,500</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Net Salary Banner */}
-          <div className="p-4 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-bold text-teal-700 uppercase">Net Salary Transferred</span>
-              <p className="text-2xl font-black text-teal-950">₹69,500</p>
-            </div>
-            <Button size="sm" variant="secondary" onClick={onClose} className="bg-white text-teal-900 border-teal-200 font-bold text-xs">
-              <Download className="w-3.5 h-3.5 mr-1" />
-              Download PDF
+        {/* Modal Footer */}
+        <div className="p-3 bg-white border-t border-slate-200 flex items-center justify-between text-xs">
+          <span className="text-[11px] text-slate-500 font-mono">
+            Document ID: {viewModel.metadata.payslipNumber}
+          </span>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={onClose} className="text-xs font-bold">
+              Close
+            </Button>
+            <Button size="sm" variant="primary" onClick={handlePrint} className="bg-[#034078] hover:bg-[#022c54] text-white text-xs font-bold">
+              <Printer className="w-3.5 h-3.5 mr-1.5" />
+              Print A4
             </Button>
           </div>
-        </div>
-
-        <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end">
-          <Button size="md" variant="secondary" onClick={onClose} className="text-xs font-bold">
-            Close
-          </Button>
         </div>
       </div>
     </div>

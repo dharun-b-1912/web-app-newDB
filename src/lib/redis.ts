@@ -327,6 +327,28 @@ class JoyRedisService {
     }
     return false;
   }
+
+  /**
+   * 4. Biometric Device Users Cache (Sub-1ms Hardware Profile Rendering)
+   */
+  async getDeviceUsersCache<T>(deviceId: string): Promise<T | null> {
+    const cacheKey = `joy:bio:users:${deviceId}`;
+    return this.get<T>(cacheKey);
+  }
+
+  async setDeviceUsersCache<T>(
+    deviceId: string,
+    data: T,
+    ttlSeconds = 300
+  ): Promise<void> {
+    const cacheKey = `joy:bio:users:${deviceId}`;
+    await this.set(cacheKey, data, { ex: ttlSeconds });
+  }
+
+  async invalidateDeviceUsersCache(deviceId: string): Promise<void> {
+    await this.del(`joy:bio:users:${deviceId}`);
+  }
 }
 
 export const JoyRedis = new JoyRedisService();
+export const joyRedis = JoyRedis;

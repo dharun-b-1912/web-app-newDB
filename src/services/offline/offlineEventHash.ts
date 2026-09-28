@@ -4,7 +4,7 @@
 // Guarantees deterministic, immutable fingerprint for offline events
 // ============================================================================
 
-import { computeSha256 } from '../operations/vendorGovernancePolicyEngine';
+import { computeSha256 } from '../../lib/crypto';
 
 export interface OfflinePunchPayload {
   organization_id: string;

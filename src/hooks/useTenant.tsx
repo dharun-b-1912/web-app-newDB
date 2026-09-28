@@ -126,7 +126,20 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
 export const useTenant = () => {
   const context = useContext(TenantContext);
   if (!context) {
-    throw new Error('useTenant must be used within a TenantProvider');
+    return {
+      organization: null,
+      organizations: [],
+      companies: [],
+      legalEntities: [],
+      activeCompany: null,
+      activeLegalEntity: null,
+      roleTitle: 'Unassigned',
+      setActiveCompany: () => {},
+      switchOrganization: async () => {},
+      switchLegalEntity: async () => {},
+      reloadTenant: async () => {},
+      isLoading: true,
+    };
   }
   return context;
 };

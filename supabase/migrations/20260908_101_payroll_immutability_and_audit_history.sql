@@ -194,8 +194,9 @@ EXECUTE FUNCTION public.fn_prevent_locked_line_item_mutation();
 
 -- 5. Backward Compatibility View
 -- Maps canonical public.payroll_runs to legacy public.payroll_periods schema
-DROP VIEW IF EXISTS public.payroll_periods CASCADE;
-CREATE VIEW public.payroll_periods AS 
+CREATE OR REPLACE VIEW public.payroll_periods
+WITH (security_invoker = true)
+AS 
 SELECT 
     id,
     organization_id,

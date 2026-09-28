@@ -41,6 +41,7 @@ import { ProfilePhotoPreviewModal } from './ProfilePhotoPreviewModal';
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { avatarService } from '../../services/avatar/avatarService';
 import { resendEmailService } from '../../services/email/resendEmailService';
+import { enterpriseIdentityService } from '../../services/auth/enterpriseIdentityService';
 
 export interface EmployeeProfileDrawerProps {
   employee: Employee | null;
@@ -81,6 +82,8 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
   const [initialFormData, setInitialFormData] = useState<Partial<Employee>>({});
   const [authStatus, setAuthStatus] = useState<any>(null);
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
+  const [activeInvitation, setActiveInvitation] = useState<any>(null);
+  const [isDispatchingInvite, setIsDispatchingInvite] = useState(false);
 
   const avatarInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -103,8 +106,8 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
           gender: employee.profile?.gender || 'Male',
           date_of_birth: employee.profile?.date_of_birth || '',
           nationality: employee.profile?.nationality || 'Indian',
-          current_address: employee.profile?.current_address || '',
-          permanent_address: employee.profile?.permanent_address || '',
+          current_address: employee.profile?.current_address,
+          permanent_address: employee.profile?.permanent_address,
           ...(employee.profile || {}),
         },
         employment: {
@@ -123,7 +126,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
       setConcurrencyConflict(false);
 
       const status = employeeAuthService.getEmployeeAuthStatus(employee.id, employee.organization_id, {
-        phone: employee.profile?.phone || employee.phone,
+        phone: employee.profile?.phone || (employee as any).phone || '',
         email: employee.work_email,
         name: `${employee.first_name} ${employee.last_name}`,
         role: employee.designation_title,
@@ -150,6 +153,19 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
             if (sRes?.data) setStatutoryData(sRes.data);
             else if (empStat) setStatutoryData(empStat);
             else setStatutoryData(null);
+
+            // Fetch live invitation status
+            if (employee.work_email) {
+              const { data: invData } = await supabase
+                .from('organization_invitations')
+                .select('*')
+                .eq('email', employee.work_email.toLowerCase().trim())
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (invData) setActiveInvitation(invData);
+              else setActiveInvitation(null);
+            }
           } catch (_) {
             setBankData(empBank || null);
             setStatutoryData(empStat || null);
@@ -294,7 +310,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
 
   return (
     <>
-      <Drawer isOpen={isOpen} onClose={handleCloseAttempt} title="Workforce Master Record" size="lg">
+      <Drawer isOpen={isOpen} onClose={handleCloseAttempt} title="Workforce Master Record" width="xl">
         <div className="space-y-6 pb-8">
           {/* Concurrency Conflict Banner */}
           {concurrencyConflict && (
@@ -661,9 +677,10 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                             setFormData({
                               ...formData,
                               employment: {
+                                doj: formData.employment?.doj || employee?.employment?.doj || '2025-01-15',
                                 ...(formData.employment || {}),
                                 reporting_manager_name: e.target.value,
-                              },
+                              } as any,
                             })
                           }
                           className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#07563D]"
@@ -678,9 +695,10 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                             setFormData({
                               ...formData,
                               employment: {
+                                doj: formData.employment?.doj || employee?.employment?.doj || '2025-01-15',
                                 ...(formData.employment || {}),
                                 work_location: e.target.value,
-                              },
+                              } as any,
                             })
                           }
                           className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#07563D]"
@@ -708,19 +726,21 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                     <div>
                       <span className="text-gray-400 text-[11px] block">Vendor / Agency</span>
                       <span className="font-bold text-gray-900">
-                        {employee.vendor_name || employee.employment?.vendor_name || 'ABC Workforce Solutions Pvt Ltd'}
+                        {employee.vendor_name || employee.employment?.vendor_name || '—'}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-400 text-[11px] block">Vendor Employee Code</span>
                       <span className="font-mono font-bold text-gray-800">
-                        {employee.vendor_employee_code || employee.employment?.vendor_employee_code || 'ABC-TN-8821'}
+                        {employee.vendor_employee_code || employee.employment?.vendor_employee_code || '—'}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-400 text-[11px] block">Deployment Contract Period</span>
                       <span className="font-semibold text-gray-700">
-                        {employee.employment?.vendor_start_date || '2025-01-01'} to {employee.employment?.vendor_end_date || '2026-12-31'}
+                        {employee.employment?.vendor_start_date && employee.employment?.vendor_end_date
+                          ? `${employee.employment.vendor_start_date} to ${employee.employment.vendor_end_date}`
+                          : 'Ongoing Deployment'}
                       </span>
                     </div>
                     <div>
@@ -887,55 +907,182 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
           {/* TAB 4: ACCESS & SECURITY */}
           {activeTab === 'access' && (
             <div className="space-y-4">
-              <Card className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-[#07563D]" />
-                    <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
-                      Authentication Account & Login Identity
-                    </h3>
-                  </div>
-                  <Badge
-                    variant={
-                      authStatus?.status === 'ACTIVE'
-                        ? 'emerald'
-                        : authStatus?.status === 'SUSPENDED'
-                        ? 'rose'
-                        : 'blue'
-                    }
-                    className="text-[10px] font-bold"
-                  >
-                    {authStatus?.status || 'ACTIVE'}
-                  </Badge>
-                </div>
+              {/* SECTION: PORTAL ACCESS */}
+              {(() => {
+                const isAccountActive = Boolean(employee.user_id || authStatus?.status === 'ACTIVE');
+                const isAccountSuspended = authStatus?.status === 'SUSPENDED';
+                const hasPendingInvite = Boolean(
+                  activeInvitation &&
+                  (activeInvitation.status === 'INVITED' ||
+                    activeInvitation.status === 'EMAIL_SENT' ||
+                    activeInvitation.status === 'EMAIL_DELIVERED')
+                );
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-gray-50 p-3 rounded-xl border border-gray-200">
-                  <div>
-                    <span className="text-gray-400 text-[11px] block">Login Phone (E.164)</span>
-                    <span className="font-mono font-bold text-gray-900">
-                      {authStatus?.phone || employee.profile?.phone || '+91 98401 22334'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 text-[11px] block">Authentication Policy</span>
-                    <span className="font-bold text-gray-900">Phone + OTP / Password</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 text-[11px] block">First-Time Login</span>
-                    <span className="font-bold text-[#07563D]">
-                      {authStatus?.first_login_completed ? '✅ Completed' : '⏳ Pending Activation'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 text-[11px] block">Last Login</span>
-                    <span className="font-mono text-gray-700">
-                      {authStatus?.last_login_at
-                        ? new Date(authStatus.last_login_at).toLocaleString()
-                        : 'Active session'}
-                    </span>
-                  </div>
-                </div>
-              </Card>
+                const portalStatus: 'Active' | 'Suspended' | 'Invited' | 'Not Invited' = isAccountActive
+                  ? isAccountSuspended
+                    ? 'Suspended'
+                    : 'Active'
+                  : hasPendingInvite
+                  ? 'Invited'
+                  : 'Not Invited';
+
+                return (
+                  <Card className="p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-[#07563D]" />
+                        <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
+                          Portal Access
+                        </h3>
+                      </div>
+                      <Badge
+                        variant={
+                          portalStatus === 'Active'
+                            ? 'emerald'
+                            : portalStatus === 'Suspended'
+                            ? 'rose'
+                            : portalStatus === 'Invited'
+                            ? 'blue'
+                            : 'gray'
+                        }
+                        className="text-[10px] font-bold"
+                      >
+                        ● {portalStatus}
+                      </Badge>
+                    </div>
+
+                    {portalStatus === 'Not Invited' && (
+                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          This employee has an HR record but has not been invited to the portal.
+                          Create portal access to dispatch a secure, single-use activation invitation to their work email.
+                        </p>
+                        <Button
+                          size="sm"
+                          disabled={isDispatchingInvite}
+                          onClick={async () => {
+                            if (!employee.work_email) {
+                              showToast('Please add a work email to this employee profile first.', 'error');
+                              return;
+                            }
+                            setIsDispatchingInvite(true);
+                            try {
+                              const res = await enterpriseIdentityService.inviteUser({
+                                organization_id: employee.organization_id || 'org-joy-01',
+                                email: employee.work_email,
+                                full_name: `${employee.first_name} ${employee.last_name}`.trim(),
+                                role_code: 'EMPLOYEE',
+                                target_id: employee.id,
+                                target_type: 'EMPLOYEE',
+                                phone: employee.profile?.phone || (employee as any).phone || '',
+                              });
+                              if (!res.success) throw new Error(res.error);
+                              showToast(`✓ Invitation dispatched to ${employee.work_email}`, 'success');
+                              setActiveInvitation({
+                                status: 'INVITED',
+                                email: employee.work_email,
+                                created_at: new Date().toISOString(),
+                              });
+                            } catch (e: any) {
+                              showToast(e.message || 'Failed to dispatch invitation', 'error');
+                            } finally {
+                              setIsDispatchingInvite(false);
+                            }
+                          }}
+                          className="bg-[#073B2A] hover:bg-[#064E3B] text-white text-xs font-bold"
+                        >
+                          <Mail className="w-3.5 h-3.5 mr-1.5" />
+                          {isDispatchingInvite ? 'Dispatching...' : 'Create Portal Access'}
+                        </Button>
+                      </div>
+                    )}
+
+                    {portalStatus === 'Invited' && (
+                      <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 space-y-3">
+                        <div className="text-xs text-slate-700">
+                          <strong>Invitation Sent:</strong> {employee.work_email}
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          Sent: {activeInvitation?.created_at ? new Date(activeInvitation.created_at).toLocaleString() : 'Recently'} • Expires in 7 days
+                        </div>
+                        <div className="flex gap-2 pt-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={isDispatchingInvite}
+                            onClick={async () => {
+                              setIsDispatchingInvite(true);
+                              try {
+                                if (activeInvitation?.id) {
+                                  await enterpriseIdentityService.resendInvitation(activeInvitation.id);
+                                } else {
+                                  await enterpriseIdentityService.inviteUser({
+                                    organization_id: employee.organization_id || 'org-joy-01',
+                                    email: employee.work_email,
+                                    full_name: `${employee.first_name} ${employee.last_name}`.trim(),
+                                    role_code: 'EMPLOYEE',
+                                    target_id: employee.id,
+                                    target_type: 'EMPLOYEE',
+                                  });
+                                }
+                                showToast(`✓ Invitation resent to ${employee.work_email}`, 'success');
+                              } catch (e: any) {
+                                showToast(e.message || 'Failed to resend', 'error');
+                              } finally {
+                                setIsDispatchingInvite(false);
+                              }
+                            }}
+                            className="text-xs font-bold"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                            Resend
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                              if (activeInvitation?.id) {
+                                await enterpriseIdentityService.revokeInvitation(activeInvitation.id);
+                                setActiveInvitation(null);
+                                showToast('Invitation revoked.', 'info');
+                              }
+                            }}
+                            className="text-xs font-bold text-rose-600 hover:bg-rose-50"
+                          >
+                            <X className="w-3.5 h-3.5 mr-1" />
+                            Revoke
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {(portalStatus === 'Active' || portalStatus === 'Suspended') && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-gray-50 p-3 rounded-xl border border-gray-200">
+                        <div>
+                          <span className="text-gray-400 text-[11px] block">Login Identifier</span>
+                          <span className="font-mono font-bold text-gray-900">{employee.work_email}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400 text-[11px] block">Portal Status</span>
+                          <span className={portalStatus === 'Active' ? 'text-emerald-700 font-bold' : 'text-rose-600 font-bold'}>
+                            ● {portalStatus}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400 text-[11px] block">Last Login</span>
+                          <span className="font-mono text-gray-700">
+                            {authStatus?.last_login_at ? new Date(authStatus.last_login_at).toLocaleString() : 'Active session'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400 text-[11px] block">Portal Scope</span>
+                          <span className="font-bold text-[#073B2A]">Employee Self-Service (ESS)</span>
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                );
+              })()}
 
               {/* Quick Security Administrative Actions */}
               <Card className="p-4 space-y-3">
@@ -950,7 +1097,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                     onClick={async () => {
                       setIsProcessingAuth(true);
                       try {
-                        const phone = authStatus?.phone || employee.profile?.phone || employee.phone || '+919791817437';
+                        const phone = authStatus?.phone || employee.profile?.phone || (employee as any).phone || '+919791817437';
                         const res = await employeeAuthService.requestPasswordResetOtp(phone, employee.organization_id, {
                           name: `${employee.first_name} ${employee.last_name}`,
                           email: employee.work_email,
@@ -977,7 +1124,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                     onClick={async () => {
                       setIsProcessingAuth(true);
                       try {
-                        const phone = authStatus?.phone || employee.profile?.phone || employee.phone || '+919791817437';
+                        const phone = authStatus?.phone || employee.profile?.phone || (employee as any).phone || '+919791817437';
                         const email = employee.work_email || (employee.profile as any)?.personal_email;
                         const res = await employeeAuthService.provisionEmployeeAuth({
                           tenantId: employee.organization_id || 'org-joy-01',
@@ -1024,14 +1171,14 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                         setIsProcessingAuth(true);
                         try {
                           const updated = await employeeAuthService.suspendEmployeeAuth(employee.id, employee.organization_id, {
-                            phone: employee.profile?.phone || employee.phone,
+                            phone: employee.profile?.phone || (employee as any).phone || '',
                             email: employee.work_email,
                             name: `${employee.first_name} ${employee.last_name}`,
                             role: employee.designation_title,
                           });
                           setAuthStatus(updated);
                           setActiveSessions([]);
-                          showToast(`⚠️ Suspended login access for ${employee.first_name}`, 'warning');
+                          showToast(`⚠️ Suspended login access for ${employee.first_name}`, 'info');
                         } catch (e: any) {
                           showToast(e.message || 'Failed to suspend account', 'error');
                         } finally {
@@ -1052,7 +1199,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                         setIsProcessingAuth(true);
                         try {
                           const updated = await employeeAuthService.activateEmployeeAuth(employee.id, employee.organization_id, {
-                            phone: employee.profile?.phone || employee.phone,
+                            phone: employee.profile?.phone || (employee as any).phone || '',
                             email: employee.work_email,
                             name: `${employee.first_name} ${employee.last_name}`,
                             role: employee.designation_title,
@@ -1118,7 +1265,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                         </div>
                         <Button
                           size="xs"
-                          variant="destructive"
+                          variant="danger"
                           onClick={() => {
                             employeeAuthService.revokeSession(s.id);
                             showToast('Session revoked', 'info');
@@ -1242,7 +1389,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                   Permanently delete this record from Supabase. Use only for accidental test creations.
                 </p>
                 <Button
-                  variant="destructive"
+                  variant="danger"
                   size="sm"
                   onClick={async () => {
                     if (
@@ -1315,7 +1462,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
               </Button>
               <Button
                 size="sm"
-                variant="destructive"
+                variant="danger"
                 onClick={() => {
                   setShowDiscardModal(false);
                   setIsEditing(false);

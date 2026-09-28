@@ -177,6 +177,206 @@ const DEFAULT_DOCUMENT_TYPES: DocumentTypeMaster[] = [
   },
 ];
 
+const DEFAULT_REQUIREMENTS: DocumentRequirement[] = [
+  {
+    id: 'req-pan-emp101',
+    tenant_id: 'org-joy-01',
+    organization_id: '0c621892-e938-4707-9957-13534ea32c19',
+    employee_id: 'emp-101',
+    document_type: 'PAN_CARD',
+    title: 'PAN Card Verification',
+    description: 'Permanent Account Number Card for KYC and Tax compliance',
+    required: true,
+    status: 'VERIFIED',
+    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+  },
+  {
+    id: 'req-aadhaar-emp101',
+    tenant_id: 'org-joy-01',
+    organization_id: '0c621892-e938-4707-9957-13534ea32c19',
+    employee_id: 'emp-101',
+    document_type: 'AADHAAR_CARD',
+    title: 'Aadhaar Card Copy',
+    description: 'National Identity Proof',
+    required: true,
+    status: 'VERIFIED',
+    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+  },
+  {
+    id: 'req-bank-emp101',
+    tenant_id: 'org-joy-01',
+    organization_id: '0c621892-e938-4707-9957-13534ea32c19',
+    employee_id: 'emp-101',
+    document_type: 'BANK_PASSBOOK',
+    title: 'Bank Account Passbook / Cancelled Cheque',
+    description: 'Required for salary account direct deposit verification',
+    required: true,
+    status: 'REQUIRED',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
+
+const DEFAULT_MASTER_DOCS: DocumentMaster[] = [
+  {
+    id: 'doc-seed-101',
+    tenant_id: '0c621892-e938-4707-9957-13534ea32c19',
+    subject_type: 'employee',
+    subject_id: 'emp-101',
+    subject_name: 'Thirumalai R K (WF-1001)',
+    document_type_code: 'AADHAAR_CARD',
+    category_code: 'IDENTITY',
+    title: 'Aadhaar Identity Card',
+    classification: 'restricted',
+    status: 'active',
+    verification_status: 'VERIFIED',
+    current_version_id: 'ver-seed-101',
+    version_count: 1,
+    created_by: 'Thirumalai R K',
+    created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+    file_url: 'https://placehold.co/600x400.png?text=Aadhaar+Verified',
+    file_name: 'Aadhaar_Thirumalai_RK.pdf',
+    storage_path: 'employees/WF-1001/identity/Aadhaar_Thirumalai_RK.pdf',
+    employee_id: 'emp-101',
+    employee_name: 'Thirumalai R K (WF-1001)',
+    document_type: 'Aadhaar Identity Card',
+  },
+  {
+    id: 'doc-seed-102',
+    tenant_id: '0c621892-e938-4707-9957-13534ea32c19',
+    subject_type: 'employee',
+    subject_id: 'emp-101',
+    subject_name: 'Thirumalai R K (WF-1001)',
+    document_type_code: 'OFFER_LETTER',
+    category_code: 'EMPLOYMENT',
+    title: 'Signed Appointment Letter',
+    classification: 'confidential',
+    status: 'active',
+    verification_status: 'PENDING_VERIFICATION',
+    current_version_id: 'ver-seed-102',
+    version_count: 1,
+    created_by: 'Mari Muthu (HR Head)',
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+    file_url: 'https://placehold.co/600x400.png?text=Appointment+Letter',
+    file_name: 'Appointment_Letter_WF1001.pdf',
+    storage_path: 'employees/WF-1001/employment/Appointment_Letter.pdf',
+    employee_id: 'emp-101',
+    employee_name: 'Thirumalai R K (WF-1001)',
+    document_type: 'Signed Appointment Letter',
+  },
+  {
+    id: 'doc-seed-103',
+    tenant_id: '0c621892-e938-4707-9957-13534ea32c19',
+    subject_type: 'vendor',
+    subject_id: 'v-101',
+    subject_name: 'Apex Security & Facility Services (VND-101)',
+    document_type_code: 'EPFO_REGISTRATION',
+    category_code: 'STATUTORY',
+    title: 'Vendor EPFO Registration & Compliance Certificate',
+    classification: 'confidential',
+    status: 'active',
+    verification_status: 'VERIFIED',
+    current_version_id: 'ver-seed-103',
+    version_count: 1,
+    created_by: 'Rajesh Kumar (Apex Vendor Admin)',
+    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 8).toISOString(),
+    file_url: 'https://placehold.co/600x400.png?text=EPFO+Compliance',
+    file_name: 'Apex_Security_EPFO_Certificate.pdf',
+    storage_path: 'vendors/VND-101/statutory/EPFO_Certificate.pdf',
+    document_type: 'EPFO Registration',
+  },
+  {
+    id: 'doc-seed-104',
+    tenant_id: '0c621892-e938-4707-9957-13534ea32c19',
+    subject_type: 'company',
+    subject_id: 'org-joy-01',
+    subject_name: 'Joy Corporate Solutions Pvt Ltd',
+    document_type_code: 'COMPANY_POLICY',
+    category_code: 'COMPANY_POLICY',
+    title: 'Enterprise Code of Conduct & Information Security Policy 2026',
+    classification: 'internal',
+    status: 'active',
+    verification_status: 'VERIFIED',
+    current_version_id: 'ver-seed-104',
+    version_count: 2,
+    created_by: 'Dharun Joy (HR Head)',
+    created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+    file_url: 'https://placehold.co/600x400.png?text=Enterprise+Policy',
+    file_name: 'Enterprise_Code_Of_Conduct_v2.pdf',
+    storage_path: 'company/policies/Enterprise_Code_Of_Conduct_v2.pdf',
+    document_type: 'Company Policy',
+  },
+];
+
+const DEFAULT_MASTER_VERSIONS: DocumentVersion[] = [
+  {
+    id: 'ver-seed-101',
+    document_id: 'doc-seed-101',
+    version_number: 1,
+    file_name: 'Aadhaar_Thirumalai_RK.pdf',
+    file_size_bytes: 512 * 1024,
+    mime_type: 'application/pdf',
+    storage_path: 'employees/WF-1001/identity/Aadhaar_Thirumalai_RK.pdf',
+    content_hash: 'sha256-verified',
+    encryption_algorithm: 'AES-256-GCM',
+    malware_scan_status: 'SAFE',
+    uploaded_by_id: 'emp-101',
+    uploaded_by_name: 'Thirumalai R K',
+    created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+  },
+  {
+    id: 'ver-seed-102',
+    document_id: 'doc-seed-102',
+    version_number: 1,
+    file_name: 'Appointment_Letter_WF1001.pdf',
+    file_size_bytes: 840 * 1024,
+    mime_type: 'application/pdf',
+    storage_path: 'employees/WF-1001/employment/Appointment_Letter.pdf',
+    content_hash: 'sha256-verified',
+    encryption_algorithm: 'AES-256-GCM',
+    malware_scan_status: 'SAFE',
+    uploaded_by_id: 'hr-head',
+    uploaded_by_name: 'Mari Muthu (HR Head)',
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+  },
+  {
+    id: 'ver-seed-103',
+    document_id: 'doc-seed-103',
+    version_number: 1,
+    file_name: 'Apex_Security_EPFO_Certificate.pdf',
+    file_size_bytes: 1024 * 1024,
+    mime_type: 'application/pdf',
+    storage_path: 'vendors/VND-101/statutory/EPFO_Certificate.pdf',
+    content_hash: 'sha256-verified',
+    encryption_algorithm: 'AES-256-GCM',
+    malware_scan_status: 'SAFE',
+    uploaded_by_id: 'v-101',
+    uploaded_by_name: 'Rajesh Kumar (Apex Vendor Admin)',
+    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+  },
+  {
+    id: 'ver-seed-104',
+    document_id: 'doc-seed-104',
+    version_number: 2,
+    file_name: 'Enterprise_Code_Of_Conduct_v2.pdf',
+    file_size_bytes: 2 * 1024 * 1024,
+    mime_type: 'application/pdf',
+    storage_path: 'company/policies/Enterprise_Code_Of_Conduct_v2.pdf',
+    content_hash: 'sha256-verified',
+    encryption_algorithm: 'AES-256-GCM',
+    malware_scan_status: 'SAFE',
+    uploaded_by_id: 'hr-head',
+    uploaded_by_name: 'Dharun Joy (HR Head)',
+    created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
+  },
+];
+
 class DocumentService {
   private getTenantStorageKey(baseKey: string): string {
     const orgId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-01') : 'org-joy-01';
@@ -187,16 +387,42 @@ class DocumentService {
     try {
       const tenantKey = this.getTenantStorageKey(baseKey);
       const data = localStorage.getItem(tenantKey);
-      if (data) return JSON.parse(data);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
 
       const legacy = localStorage.getItem(baseKey);
       if (legacy) {
         const parsed = JSON.parse(legacy);
-        localStorage.setItem(tenantKey, legacy);
-        return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          localStorage.setItem(tenantKey, legacy);
+          return parsed;
+        }
       }
+
+      // Default seed data for documents, versions, and requirements
+      if (baseKey === DOCUMENTS_STORAGE_KEY) {
+        return (DEFAULT_MASTER_DOCS as unknown) as T[];
+      }
+      if (baseKey === VERSIONS_STORAGE_KEY) {
+        return (DEFAULT_MASTER_VERSIONS as unknown) as T[];
+      }
+      if (baseKey === REQUIREMENTS_STORAGE_KEY) {
+        return (DEFAULT_REQUIREMENTS as unknown) as T[];
+      }
+
       return fallback;
     } catch {
+      if (baseKey === DOCUMENTS_STORAGE_KEY) {
+        return (DEFAULT_MASTER_DOCS as unknown) as T[];
+      }
+      if (baseKey === VERSIONS_STORAGE_KEY) {
+        return (DEFAULT_MASTER_VERSIONS as unknown) as T[];
+      }
+      if (baseKey === REQUIREMENTS_STORAGE_KEY) {
+        return (DEFAULT_REQUIREMENTS as unknown) as T[];
+      }
       return fallback;
     }
   }
@@ -421,6 +647,8 @@ class DocumentService {
     const types = this.getDocumentTypes();
     return types.find(t => t.code === code) || null;
   }
+
+  // getDocumentRequirements() and createDocumentRequirement() are defined in Section 6 below (parameterized versions)
 
   // ==========================================================================
   // 2. DOCUMENT QUERY & SUMMARY METRICS
@@ -975,7 +1203,7 @@ class DocumentService {
       ? versions.find(v => v.document_id === documentId && v.version_number === versionNumber)
       : doc.current_version || versions.find(v => v.id === doc.current_version_id) || versions.find(v => v.document_id === documentId);
 
-    const bucket: StorageBucketDomain = supabaseStorageEngine.resolveStorageBucket(doc.subject_type === 'company' ? 'documents' : 'documents');
+    const bucket: StorageBucketDomain = supabaseStorageEngine.resolveStorageBucket(doc.subject_type === 'company' ? 'documents' : 'documents') as StorageBucketDomain;
     const storagePath = targetVersion?.storage_path || `tenant/${doc.tenant_id}/employee/${doc.subject_id}/documents/${doc.id}/v1/${doc.file_name || 'document.pdf'}`;
 
     return supabaseStorageEngine.createSignedUrl(bucket, storagePath, 900);

@@ -21,6 +21,37 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   'locations',
   'vendors',
   'organization-vendors',
+  'vendor-assignments',
+  'vendor-workforce',
+  'vendor-employees',
+  'vendor-360',
+  'vendor-detail',
+  'vendor-attendance',
+  'vendor-settlement-workspace',
+  'vendor-settlement',
+  'vendor-billing',
+  'vendor-payable',
+  'vendor-invoices',
+  'vendor-invoice',
+  'vendor-wages',
+  'vendor-wage-breakdown',
+  'vendor-payroll',
+  'vendor-payroll-verification',
+  'vendor-po',
+  'vendor-purchase-orders',
+  'vendor-statutory',
+  'vendor-payslips',
+  'vendor-payments',
+  'vendor-reconciliation',
+  'vendor-dashboard',
+  'vendor-compliance',
+  'vendor-compliance-calendar',
+  'vendor-statutory-returns',
+  'vendor-licenses',
+  'vendor-audit',
+  'vendor-reports',
+  'vendor-audit-reports',
+  'vendor',
   'documents',
   'assets',
   'onboarding',
@@ -105,10 +136,14 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   // Payroll Master
   'payroll',
   'payroll-dashboard',
+  'client-billing',
   'payroll-salary',
   'payroll-processing',
   'payroll-earnings',
   'payroll-deductions',
+  'payroll-claims',
+  'payroll-expenses',
+  'payroll-disbursement',
   'payroll-statutory',
   'payroll-documents',
   'payroll-fnf',
@@ -116,7 +151,20 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   'payroll-settings',
   // Recruitment
   'recruitment',
+  'recruitment-dashboard',
+  'recruitment-requisitions',
+  'recruitment-jobs',
+  'recruitment-applicants',
+  'recruitment-interviews',
+  'recruitment-offers',
+  'recruitment-referrals',
+  'recruitment-talent-pool',
+  'recruitment-analytics',
+  'recruitment-automation',
   'career-dev',
+  'company-onboarding',
+  'trust-legal',
+  'breaks',
   // Performance
   'performance',
   'performance-dashboard',
@@ -275,12 +323,11 @@ const HRMS_MODULE_IDS: ModuleId[] = ALL_MODULE_IDS.filter(
   id => !id.startsWith('platform') && !id.startsWith('saas-')
 );
 
-// HR Head module IDs — HRMS without system-level admin configuration or company vendor management.
-// HR Head manages people operations but NOT user accounts, RBAC, vendor commercial master, or system settings.
+// HR Head module IDs — HRMS without system-level admin configuration (RBAC/API/integrations).
+// HR Head manages people operations, core HR, contractor workforce, and company vendor operations.
 const HR_HEAD_MODULE_IDS: ModuleId[] = HRMS_MODULE_IDS.filter(
   id => !['users', 'rbac', 'permissions', 'templates',
-           'integrations', 'security', 'audit-logs', 'settings', 'scheduled-jobs',
-           'vendors', 'organization-vendors'].includes(id)
+           'integrations', 'security', 'audit-logs', 'settings', 'scheduled-jobs'].includes(id)
 );
 
 // Manager module IDs — department-scoped operational modules only.
@@ -444,6 +491,14 @@ export const ROLE_PROFILES: Record<string, RoleAccessProfile> = {
       'leave',
       'documents',
       'assets',
+      'vendors',
+      'organization-vendors',
+      'vendor-workforce',
+      'vendor-employees',
+      'vendor-assignments',
+      'vendor-attendance',
+      'vendor-compliance',
+      'vendor-360',
       'helpdesk',
       'requests',
     ],
@@ -517,7 +572,7 @@ export function getPrimaryRole(user: User | null): PrimaryRole {
     if (roleCodes.some(c => ['ORGANIZATION_ADMIN', 'ORGANIZATION ADMIN', 'ORGANIZATION OWNER', 'ORG_ADMIN'].includes(c))) {
       return 'Organization Admin';
     }
-    if (roleCodes.some(c => ['COMPANY_ADMIN', 'COMPANY ADMIN', 'OWNER', 'COMPANY_OWNER', 'ADMIN'].includes(c))) {
+    if (roleCodes.some(c => ['COMPANY_ADMIN', 'COMPANY ADMIN', 'OWNER', 'COMPANY_OWNER', 'ADMIN', 'COMPANY_ADMINISTRATOR', 'COMPANY ADMINISTRATOR'].includes(c) || c.includes('COMPANY ADMIN') || c.includes('ADMINISTRATOR'))) {
       return 'Company Admin';
     }
     if (roleCodes.some(c => ['HR_HEAD', 'HR HEAD'].includes(c))) {
@@ -545,7 +600,7 @@ export function getPrimaryRole(user: User | null): PrimaryRole {
   if (directRole) {
     if (['SUPER_ADMIN', 'SUPER ADMIN', 'SUPERADMIN', 'PLATFORM_ADMIN', 'PLATFORM ADMIN'].includes(directRole)) return 'Super Admin';
     if (['ORGANIZATION_ADMIN', 'ORGANIZATION ADMIN', 'ORGANIZATION OWNER', 'ORG_ADMIN'].includes(directRole)) return 'Organization Admin';
-    if (['COMPANY_ADMIN', 'COMPANY ADMIN', 'OWNER', 'COMPANY_OWNER', 'ADMIN'].includes(directRole)) return 'Company Admin';
+    if (['COMPANY_ADMIN', 'COMPANY ADMIN', 'OWNER', 'COMPANY_OWNER', 'ADMIN', 'COMPANY_ADMINISTRATOR', 'COMPANY ADMINISTRATOR'].includes(directRole) || directRole.includes('COMPANY ADMIN') || directRole.includes('ADMINISTRATOR')) return 'Company Admin';
     if (['HR_HEAD', 'HR HEAD'].includes(directRole)) return 'HR Head';
     if (['HR_ADMIN', 'HR ADMIN', 'PAYROLL_ADMIN', 'ATTENDANCE_ADMIN'].includes(directRole)) return 'HR Admin';
     if (directRole.includes('MANAGER')) return 'Manager';
@@ -644,7 +699,7 @@ export function canViewModule(user: User | null, module: ModuleId | string): boo
   if (profile.allowedModules.includes(module as ModuleId)) return true;
 
   // Sub-module prefix matching (e.g. payroll-processing inherits from payroll)
-  if (module.startsWith('payroll') && profile.allowedModules.includes('payroll')) return true;
+  if ((module.startsWith('payroll') || module === 'client-billing') && profile.allowedModules.includes('payroll')) return true;
   if (module.startsWith('leave') && profile.allowedModules.includes('leave')) return true;
   if (module.startsWith('performance') && profile.allowedModules.includes('performance')) return true;
   if (module.startsWith('lms') && profile.allowedModules.includes('lms')) return true;
@@ -690,8 +745,8 @@ export function hasPermission(
     return false;
   }
 
-  // ── Super Admin: unrestricted ─────────────────────────────────────────────
-  if (roleName === 'Super Admin') return true;
+  // ── Super Admin & Organization Admin: full company/tenant control ─────────
+  if (roleName === 'Super Admin' || roleName === 'Organization Admin') return true;
 
   // ── Company Admin: full HRMS, blocked from platform/saas by canViewModule ──
   if (roleName === 'Company Admin') return canViewModule(user, module);
@@ -700,6 +755,13 @@ export function hasPermission(
   if (roleName === 'HR Head') {
     if (!canViewModule(user, module)) return false;
     if (action === 'configure' && module.startsWith('admin-')) return false;
+    return true;
+  }
+
+  // ── HR Admin: HR operations ──────────────────────────────────────────────
+  if (roleName === 'HR Admin') {
+    if (!canViewModule(user, module)) return false;
+    if (action === 'delete' || action === 'configure') return false;
     return true;
   }
 

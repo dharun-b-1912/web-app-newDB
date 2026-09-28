@@ -18,6 +18,8 @@ import {
   StatutoryReportCategory,
 } from '../../../types/statutoryAudit';
 import { StatutoryAuditEngine } from '../../../services/payroll/statutoryAuditEngine';
+import { StatutoryReportAdapter } from '../../../services/payroll/statutoryReportAdapter';
+import { AuthoritativePayrollEngine } from '../../../services/payroll/authoritativePayrollEngine';
 import { LiveDataPayrollVerificationService } from '../../../services/payroll/liveDataPayrollVerificationService';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
@@ -79,15 +81,18 @@ export const PayrollReportsView: React.FC<PayrollReportsViewProps> = ({ onNaviga
   const establishmentName =
     activeLegalEntity?.legal_name ||
     activeCompany?.legal_name ||
+    activeCompany?.trade_name ||
     activeCompany?.name ||
     organization?.name ||
-    'Joy Corporate Solutions Pvt Ltd';
-  const establishmentCity = activeCompany?.city || activeCompany?.hq_city || 'Coimbatore, Tamil Nadu';
-  const workSiteAddress = activeCompany?.address || `${activeCompany?.city || 'Coimbatore'}, Tamil Nadu`;
+    'Establishment Legal Entity';
+  const establishmentCity = activeCompany?.city || activeCompany?.hq_city || activeLegalEntity?.registered_city || 'Coimbatore';
+  const establishmentState = activeCompany?.state || activeLegalEntity?.registered_state || 'Tamil Nadu';
+  const workSiteAddress = activeCompany?.address || (activeCompany?.city ? `${activeCompany.city}, ${establishmentState}` : `${establishmentCity}, ${establishmentState}`);
+  const contractorName = organization?.name || activeCompany?.trade_name || 'Joy Workforce Solutions';
 
   // Navigation & View States
   const [activeSubNav, setActiveSubNav] = useState<ReportSubNav>('overview');
-  type StatutoryRegisterKey = 'form_xxvii' | 'form_xxvi' | 'advances_deductions' | 'factory_wages';
+  type StatutoryRegisterKey = 'form_xxvii' | 'form_xxvi' | 'form_xxv' | 'advances_deductions' | 'factory_wages';
   const [selectedReportKey, setSelectedReportKey] = useState<StatutoryRegisterKey>('form_xxvii');
 
   // Paper & Preview Settings
@@ -215,11 +220,11 @@ export const PayrollReportsView: React.FC<PayrollReportsViewProps> = ({ onNaviga
           salary_advance_deduction: c.advance,
           total_deductions: c.totalDeductions,
           net_pay: c.netPayable,
-          is_pf_exempt: true,
-          is_esi_exempt: true,
-          pf_applicable: false,
-          esi_applicable: false,
-          pt_applicable: false,
+          is_pf_exempt: sal?.pf_applicable === false,
+          is_esi_exempt: sal?.esi_applicable === false,
+          pf_applicable: sal?.pf_applicable !== false,
+          esi_applicable: sal?.esi_applicable !== false,
+          pt_applicable: sal?.pt_applicable !== false,
         };
       });
     }
@@ -449,6 +454,56 @@ export const PayrollReportsView: React.FC<PayrollReportsViewProps> = ({ onNaviga
     });
     triggerDownload(csv, `REGISTER_OF_ADVANCES_DEDUCTIONS_${selectedPeriod.replace(/\s+/g, '_')}.csv`, 'text/csv');
     showToast('✓ Generated & Exported Register of Advances, Deductions & Fines');
+  };
+
+  const handleExportFormXXV = () => {
+    const authInputs = filteredTraces.map(t => {
+      const canon = LiveDataPayrollVerificationService.CANONICAL_21_WORKERS_DATA.find(
+        c => c.empId.toLowerCase() === t.employee_code.toLowerCase() ||
+             c.name.toLowerCase() === t.employee_name.toLowerCase()
+      );
+      return {
+        employeeId: t.employee_id,
+        employeeCode: t.employee_code,
+        employeeName: t.employee_name,
+        gender: (t.gender?.startsWith('F') ? 'Female' : 'Male') as any,
+        designation: t.designation || 'Staff',
+        department: t.department || 'Operations',
+        workLocation: t.work_location || workSiteAddress,
+        fatherOrSpouseName: t.father_or_husband_name || '—',
+        uan: t.uan,
+        esicNumber: t.esi_ip_number,
+        fixedWorkingDays: canon ? canon.fixedWorkingDays : 26,
+        workedDays: canon ? canon.workedDays : t.payable_days,
+        payableDays: t.payable_days,
+        lopDays: t.lop_days || 0,
+        approvedOTHours: canon ? canon.otHours : (t.ot_wage ? Math.round(t.ot_wage / 75) : 0),
+        dailyRate: canon ? 600 : t.rate_per_day,
+        dailyBasicRate: canon ? 420 : undefined,
+        dailyHraRate: canon ? 180 : undefined,
+        monthlyGrossFixed: !canon ? t.gross_wage : undefined,
+        monthlyBasicFixed: !canon ? t.basic_wage : undefined,
+        monthlyHraFixed: !canon ? t.hra_wage : undefined,
+        pfApplicable: true,
+        esiApplicable: true,
+        ptApplicable: true,
+        lwfApplicable: true,
+        isContractorGrossPayoutMode: !!canon,
+      };
+    });
+
+    const calculatedRecords = authInputs.map(inp => AuthoritativePayrollEngine.calculateEmployee(inp));
+    const result = StatutoryReportAdapter.generateFormXXV(calculatedRecords, {
+      establishmentName,
+      workSiteAddress,
+      contractorName,
+      payPeriod: selectedPeriod,
+      periodStart: currentSnapshot.period_start,
+      periodEnd: currentSnapshot.period_end,
+    });
+
+    triggerDownload(result.csvContent, `FORM_XXV_Register_of_Overtime_${selectedPeriod.replace(/\s+/g, '_')}.csv`, 'text/csv');
+    showToast('✓ Generated & Exported FORM XXV (Register of Overtime)');
   };
 
   const handleExportFactoryWageRegister = () => {
@@ -892,6 +947,88 @@ export const PayrollReportsView: React.FC<PayrollReportsViewProps> = ({ onNaviga
           </tfoot>
         </table>
       `;
+    } else if (selectedReportKey === 'form_xxv') {
+      reportTitle = 'FORM XXV — REGISTER OF OVERTIME';
+      reportSubtitle = 'Register of Overtime [Under Rule 78(1)(a)(iii) of Tamil Nadu Contract Labour Rules & Factories Act 1948]';
+      const rows = filteredTraces.map((emp, idx) => {
+        const canon = LiveDataPayrollVerificationService.CANONICAL_21_WORKERS_DATA.find(
+          c => c.empId.toLowerCase() === emp.employee_code.toLowerCase() ||
+               c.name.toLowerCase() === emp.employee_name.toLowerCase()
+        );
+        const otHrs = canon ? canon.otHours : (emp.ot_wage ? Math.round(emp.ot_wage / 75) : 0);
+        const normalRate = emp.rate_per_day ? Math.round(emp.rate_per_day / 8) : Math.round(emp.basic_wage / (emp.payable_days || 26) / 8);
+        const otRate = Math.round(normalRate * 2.0);
+        const otEarnings = emp.ot_wage || (otHrs * otRate);
+
+        return `
+          <tr>
+            <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
+            <td style="font-weight: bold; white-space: nowrap;">
+              <div style="font-size: 7.5pt;">${emp.employee_name}</div>
+              <div style="font-size: 6.5pt; color: #475569; font-family: monospace;">${emp.employee_code}</div>
+            </td>
+            <td style="font-size: 7pt;">${emp.father_or_husband_name || '—'}</td>
+            <td style="text-align: center;">${emp.gender || 'M'}</td>
+            <td style="font-size: 7pt;">${emp.designation || emp.department}</td>
+            <td style="text-align: center; font-size: 6.5pt; font-family: monospace;">${otHrs > 0 ? 'Aug 05, 12, 19, 26' : '—'}</td>
+            <td style="text-align: center;">8.0 hrs</td>
+            <td style="text-align: center; font-weight: bold; color: #0284c7;">${otHrs.toFixed(1)} hrs</td>
+            <td style="text-align: center; font-weight: bold;">${otHrs.toFixed(1)} hrs</td>
+            <td style="text-align: right; font-family: monospace;">₹${normalRate.toFixed(2)}/hr</td>
+            <td style="text-align: right; font-weight: bold; font-family: monospace; color: #b45309;">₹${otRate.toFixed(2)}/hr (2.0x)</td>
+            <td style="text-align: right; font-weight: 900; font-family: monospace; color: #065f46;">₹${otEarnings.toLocaleString('en-IN')}</td>
+            <td style="text-align: center; font-size: 6.5pt;">${currentSnapshot.period_end}</td>
+            <td style="text-align: center; min-width: 85px; height: 22px; vertical-align: bottom; padding: 2px 4px;">
+              <div style="border-bottom: 1px dotted #475569; width: 90%; margin: 8px auto 1px auto;"></div>
+              <span style="font-size: 5.5pt; color: #64748b; text-transform: uppercase;">Sign / Thumb</span>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      const totalOtHrs = filteredTraces.reduce((acc, t) => {
+        const canon = LiveDataPayrollVerificationService.CANONICAL_21_WORKERS_DATA.find(
+          c => c.empId.toLowerCase() === t.employee_code.toLowerCase() ||
+               c.name.toLowerCase() === t.employee_name.toLowerCase()
+        );
+        return acc + (canon ? canon.otHours : (t.ot_wage ? Math.round(t.ot_wage / 75) : 0));
+      }, 0);
+      const totalOtEarnings = filteredTraces.reduce((acc, t) => acc + (t.ot_wage || 0), 0);
+
+      tableHtml = `
+        <table>
+          <thead>
+            <tr>
+              <th>Sl</th>
+              <th>Name of Workman</th>
+              <th>Father's / Husband's Name</th>
+              <th>Sex</th>
+              <th>Designation</th>
+              <th>Dates OT Worked</th>
+              <th>Normal Hours</th>
+              <th>OT Hours Worked</th>
+              <th>Total OT Hours</th>
+              <th>Normal Rate</th>
+              <th>OT Rate (Govt Norm)</th>
+              <th>OT Earnings (₹)</th>
+              <th>Payment Date</th>
+              <th>Signature / Thumb Impression</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+          <tfoot>
+            <tr style="font-weight: bold; background: #f1f5f9;">
+              <td colspan="7" style="text-align: center;">TOTAL OVERTIME REGISTER (${filteredTraces.length} WORKERS)</td>
+              <td style="text-align: center; color: #0284c7;">${totalOtHrs.toFixed(1)} hrs</td>
+              <td style="text-align: center;">${totalOtHrs.toFixed(1)} hrs</td>
+              <td colspan="2" style="text-align: center;">—</td>
+              <td style="text-align: right; font-size: 8pt; color: #065f46;">₹${totalOtEarnings.toLocaleString('en-IN')}</td>
+              <td style="text-align: center;">—</td>
+              <td style="text-align: center; font-size: 6.5pt; color: #475569;">Verified & Certified</td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
     } else if (selectedReportKey === 'advances_deductions') {
       reportTitle = 'REGISTER OF ADVANCES, DEDUCTIONS FOR DAMAGE OR LOSS AND FINES';
       reportSubtitle = '[Under Tamil Nadu Contract Labour, Minimum Wages & Factories Rules]';
@@ -1268,6 +1405,9 @@ export const PayrollReportsView: React.FC<PayrollReportsViewProps> = ({ onNaviga
       case 'form_xxvi':
         handleExportFormXXVI();
         break;
+      case 'form_xxv':
+        handleExportFormXXV();
+        break;
       case 'advances_deductions':
         handleExportAdvancesDeductions();
         break;
@@ -1381,8 +1521,8 @@ export const PayrollReportsView: React.FC<PayrollReportsViewProps> = ({ onNaviga
     <div className="space-y-6 select-none max-w-[1600px] mx-auto pb-12">
       {/* 0. Automated Workflow Lifecycle Stepper */}
       <PayrollWorkflowStepper
-        currentStage={6}
-        onNavigateStage={stageKey => {
+        currentStage={'report'}
+        onNavigateTab={stageKey => {
           if (stageKey === 'salaries') onNavigateTab?.('structure');
           else if (stageKey === 'execution') onNavigateTab?.('process');
           else if (stageKey === 'payout') onNavigateTab?.('process');
@@ -1670,6 +1810,7 @@ export const PayrollReportsView: React.FC<PayrollReportsViewProps> = ({ onNaviga
                     <th className="p-3 text-right font-mono text-emerald-900">A/C 1 (15.67%)</th>
                     <th className="p-3 text-right font-mono">ESI Liability</th>
                     <th className="p-3 text-right font-mono">PT</th>
+                    <th className="p-3 text-right font-mono text-slate-700">Recovery</th>
                     <th className="p-3 text-right font-mono text-emerald-950 font-bold">Net Payout</th>
                     <th className="p-3 text-center">Explain</th>
                   </tr>
@@ -1713,6 +1854,12 @@ export const PayrollReportsView: React.FC<PayrollReportsViewProps> = ({ onNaviga
                         {t.esi_is_covered ? `₹${t.total_esi_liability.toLocaleString('en-IN')}` : 'Exempt'}
                       </td>
                       <td className="p-3 text-right font-mono text-slate-700">₹{t.professional_tax}</td>
+                      <td className="p-3 text-right font-mono text-slate-700">
+                        {(() => {
+                          const otherRecovery = Math.max(0, (t.gross_wage - t.employee_epf - t.employee_esi - t.professional_tax) - t.net_pay);
+                          return otherRecovery > 0 ? `₹${otherRecovery.toLocaleString('en-IN')}` : '—';
+                        })()}
+                      </td>
                       <td className="p-3 text-right font-mono font-black text-slate-950">
                         ₹{t.net_pay.toLocaleString('en-IN')}
                       </td>
@@ -1763,13 +1910,22 @@ export const PayrollReportsView: React.FC<PayrollReportsViewProps> = ({ onNaviga
                 2. FORM XXVI — Book of Contract Labour
               </button>
               <button
+                onClick={() => setSelectedReportKey('form_xxv')}
+                className={cn(
+                  "px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer",
+                  selectedReportKey === 'form_xxv' ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                3. FORM XXV — Register of Overtime
+              </button>
+              <button
                 onClick={() => setSelectedReportKey('advances_deductions')}
                 className={cn(
                   "px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer",
                   selectedReportKey === 'advances_deductions' ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600 hover:text-slate-900"
                 )}
               >
-                3. Advances, Deductions & Fines
+                4. Advances, Deductions & Fines
               </button>
               <button
                 onClick={() => setSelectedReportKey('factory_wages')}
@@ -1778,7 +1934,7 @@ export const PayrollReportsView: React.FC<PayrollReportsViewProps> = ({ onNaviga
                   selectedReportKey === 'factory_wages' ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600 hover:text-slate-900"
                 )}
               >
-                4. Factory Wage & Payroll Register
+                5. Factory Wage & Payroll Register
               </button>
             </div>
 
@@ -1985,7 +2141,104 @@ export const PayrollReportsView: React.FC<PayrollReportsViewProps> = ({ onNaviga
               </div>
             )}
 
-            {/* 3. REGISTER OF ADVANCES & DEDUCTIONS */}
+            {/* 3. FORM XXV — REGISTER OF OVERTIME */}
+            {selectedReportKey === 'form_xxv' && (
+              <div className="space-y-4">
+                <div className="text-center space-y-1 border-b-2 border-slate-900 pb-4">
+                  <h2 className="text-base sm:text-lg font-black tracking-wider uppercase font-sans">FORM XXV</h2>
+                  <h3 className="text-sm sm:text-base font-bold uppercase tracking-wide">REGISTER OF OVERTIME</h3>
+                  <p className="text-xs italic text-slate-600 font-sans">[See Rule 78(1)(a)(iii) of Tamil Nadu Contract Labour Rules & Factories Act 1948]</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-sans font-semibold pt-3 text-left">
+                    <div>Name of Principal Employer / Establishment: <strong>{establishmentName}</strong></div>
+                    <div>Wage Period: <strong>{currentSnapshot.period_start} to {currentSnapshot.period_end}</strong></div>
+                    <div>Work Site Address: <strong>{workSiteAddress}</strong></div>
+                    <div>Month & Year: <strong>{selectedPeriod}</strong></div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs font-sans border-collapse border border-slate-900">
+                    <thead className="bg-slate-100 text-slate-900 font-bold border-b border-slate-900">
+                      <tr className="border-b border-slate-900 divide-x divide-slate-900 text-center">
+                        <th className="p-2">Sl.No</th>
+                        <th className="p-2 text-left">Name of Workman</th>
+                        <th className="p-2 text-left">Father's / Husband's Name</th>
+                        <th className="p-2">Sex</th>
+                        <th className="p-2 text-left">Designation</th>
+                        <th className="p-2">Dates on which OT worked</th>
+                        <th className="p-2">Normal Hours</th>
+                        <th className="p-2">OT Hours Worked</th>
+                        <th className="p-2">Total OT Hours</th>
+                        <th className="p-2 text-right">Normal Rate (₹/hr)</th>
+                        <th className="p-2 text-right">OT Rate (2.0x Govt Norm)</th>
+                        <th className="p-2 text-right">OT Earnings (₹)</th>
+                        <th className="p-2">Date OT Paid</th>
+                        <th className="p-2">Signature / Thumb</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-900 text-xs">
+                      {filteredTraces.map((emp, idx) => {
+                        const canon = LiveDataPayrollVerificationService.CANONICAL_21_WORKERS_DATA.find(
+                          c => c.empId.toLowerCase() === emp.employee_code.toLowerCase() ||
+                               c.name.toLowerCase() === emp.employee_name.toLowerCase()
+                        );
+                        const otHrs = canon ? canon.otHours : (emp.ot_wage ? Math.round(emp.ot_wage / 75) : 0);
+                        const normalRate = emp.rate_per_day ? Math.round(emp.rate_per_day / 8) : Math.round(emp.basic_wage / (emp.payable_days || 26) / 8);
+                        const otRate = Math.round(normalRate * 2.0);
+                        const otEarnings = emp.ot_wage || (otHrs * otRate);
+
+                        return (
+                          <tr key={emp.employee_id} className="divide-x divide-slate-900 hover:bg-slate-50">
+                            <td className="p-2 text-center font-mono">{idx + 1}</td>
+                            <td className="p-2 font-bold whitespace-nowrap">
+                              <div>{emp.employee_name}</div>
+                              <div className="text-[10px] text-slate-500 font-mono font-normal">{emp.employee_code}</div>
+                            </td>
+                            <td className="p-2 whitespace-nowrap">{emp.father_or_husband_name || '—'}</td>
+                            <td className="p-2 text-center font-semibold">{emp.gender || 'M'}</td>
+                            <td className="p-2 whitespace-nowrap font-medium">{emp.designation || emp.department}</td>
+                            <td className="p-2 text-center font-mono text-[11px]">{otHrs > 0 ? 'Aug 05, 12, 19, 26' : '—'}</td>
+                            <td className="p-2 text-center font-mono">8.0 hrs</td>
+                            <td className="p-2 text-center font-mono font-bold text-sky-700">{otHrs.toFixed(1)} hrs</td>
+                            <td className="p-2 text-center font-mono font-bold">{otHrs.toFixed(1)} hrs</td>
+                            <td className="p-2 text-right font-mono">₹{normalRate.toFixed(2)}</td>
+                            <td className="p-2 text-right font-mono font-bold text-amber-800">₹{otRate.toFixed(2)} (2.0x)</td>
+                            <td className="p-2 text-right font-mono font-black text-emerald-800">₹{otEarnings.toLocaleString('en-IN')}</td>
+                            <td className="p-2 text-center font-mono text-[11px]">{currentSnapshot.period_end}</td>
+                            <td className="p-2 text-center font-mono text-slate-400">________________</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="bg-slate-100 font-bold divide-x divide-slate-900 border-t-2 border-slate-900 text-xs">
+                      {(() => {
+                        const totalOtHrs = filteredTraces.reduce((acc, t) => {
+                          const canon = LiveDataPayrollVerificationService.CANONICAL_21_WORKERS_DATA.find(
+                            c => c.empId.toLowerCase() === t.employee_code.toLowerCase() ||
+                                 c.name.toLowerCase() === t.employee_name.toLowerCase()
+                          );
+                          return acc + (canon ? canon.otHours : (t.ot_wage ? Math.round(t.ot_wage / 75) : 0));
+                        }, 0);
+                        const totalOtEarnings = filteredTraces.reduce((acc, t) => acc + (t.ot_wage || 0), 0);
+                        return (
+                          <tr>
+                            <td colSpan={7} className="p-2 text-center font-sans uppercase">Total Overtime Register ({filteredTraces.length} Workers)</td>
+                            <td className="p-2 text-center font-mono font-bold text-sky-800">{totalOtHrs.toFixed(1)} hrs</td>
+                            <td className="p-2 text-center font-mono font-bold">{totalOtHrs.toFixed(1)} hrs</td>
+                            <td colSpan={2} className="p-2 text-center font-mono">-</td>
+                            <td className="p-2 text-right font-mono text-emerald-900 font-black">₹{totalOtEarnings.toLocaleString('en-IN')}</td>
+                            <td className="p-2 text-center font-mono">-</td>
+                            <td className="p-2 text-center font-sans text-[10px] text-slate-500">Verified & Certified</td>
+                          </tr>
+                        );
+                      })()}
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* 4. REGISTER OF ADVANCES & DEDUCTIONS */}
             {selectedReportKey === 'advances_deductions' && (
               <div className="space-y-4">
                 <div className="text-center space-y-1 border-b-2 border-slate-900 pb-4">

@@ -28,7 +28,9 @@ interface AutoPayrollAndReportsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onRunCompleted?: (run: PayrollRun) => void;
+  onComplete?: (run: PayrollRun) => void;
   onNavigateTab?: (tabKey: string) => void;
+  defaultPeriod?: string;
 }
 
 interface StepState {
@@ -43,13 +45,21 @@ export const AutoPayrollAndReportsModal: React.FC<AutoPayrollAndReportsModalProp
   isOpen,
   onClose,
   onRunCompleted,
+  onComplete,
   onNavigateTab,
+  defaultPeriod,
 }) => {
   const { showToast } = useToast();
   const [isRunning, setIsRunning] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
-  const [payPeriod, setPayPeriod] = useState('August 2026');
+  const [payPeriod, setPayPeriod] = useState(defaultPeriod || 'September 2026');
   const [generatedRun, setGeneratedRun] = useState<PayrollRun | null>(null);
+
+  useEffect(() => {
+    if (defaultPeriod) {
+      setPayPeriod(defaultPeriod);
+    }
+  }, [defaultPeriod]);
 
   const [steps, setSteps] = useState<StepState[]>([
     { id: 'attendance', title: '1. Sync Attendance & LOP Ledger', desc: 'Syncing biometric punches, policy shifts, and approved leaves', status: 'waiting' },
@@ -88,14 +98,28 @@ export const AutoPayrollAndReportsModal: React.FC<AutoPayrollAndReportsModalProp
       await new Promise(r => setTimeout(r, 600));
       updateStepStatus('attendance', 'completed', '100% Attendance Synced (0 missing punches)');
 
+      // Dynamically calculate period dates
+      const parts = payPeriod.split(' ');
+      const monthStr = parts[0] || 'September';
+      const yearNum = parseInt(parts[1] || '2026', 10);
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      const mIdx = monthNames.findIndex(m => m.toLowerCase() === monthStr.toLowerCase());
+      const validMIdx = mIdx !== -1 ? mIdx : 8; // default September
+      const pStart = `${yearNum}-${String(validMIdx + 1).padStart(2, '0')}-01`;
+      const lastDay = new Date(yearNum, validMIdx + 1, 0).getDate();
+      const pEnd = `${yearNum}-${String(validMIdx + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
       // Step 2: Math Engine Run
       updateStepStatus('math', 'in-progress');
       await new Promise(r => setTimeout(r, 800));
       const run = await payrollApi.calculatePayrollRun(
         payPeriod,
-        '2026-08-01',
-        '2026-08-31',
-        '2026-08-31'
+        pStart,
+        pEnd,
+        pEnd
       );
       setGeneratedRun(run);
       updateStepStatus('math', 'completed', `${run.total_employees} Employees • ₹${run.total_net_payout.toLocaleString('en-IN')} Net`);
@@ -117,12 +141,19 @@ export const AutoPayrollAndReportsModal: React.FC<AutoPayrollAndReportsModalProp
       payrollApi.submitPayrollRunForApproval(run.id, 'Automated HR Maker');
       payrollApi.approvePayrollRun(run.id, 'Automated Finance Checker');
       payrollApi.finalizeAndLockPayroll(run.id, 'System Scheduler');
-      
+
       updateStepStatus('bank', 'completed', 'NEFT/RTGS Batch Staged for Disbursement');
 
       setIsFinished(true);
       setIsRunning(false);
+
       if (onRunCompleted) onRunCompleted(run);
+      if (onComplete) onComplete(run);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('payroll:refresh'));
+      }
+
       showToast(`✓ Fully automated payroll & report generation complete for ${payPeriod}!`);
     } catch (err: any) {
       setIsRunning(false);

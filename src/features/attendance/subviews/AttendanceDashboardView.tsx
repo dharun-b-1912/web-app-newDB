@@ -40,6 +40,7 @@ import { api } from '../../../services/api';
 import { useToast } from '../../../components/ui/Toast';
 import { formatMinutesToHoursStr, formatCleanTime } from '../../../lib/attendance/attendanceEngine';
 import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
+import { realtimeChannelManager } from '../../../services/realtime/realtimeChannelManager';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { useAuth } from '../../../hooks/useAuth';
 import { usePermission } from '../../../hooks/usePermission';
@@ -171,31 +172,21 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
     loadData();
   }, [loadData]);
 
-  // Real-time Supabase postgres replication stream for instant punch updates
+  // Real-time Supabase postgres replication stream via centralized mesh for instant punch updates
   useEffect(() => {
     if (!isSupabaseEnabled) return;
-    const channel = supabase
-      .channel(`dash-attendance-live-${selectedDate}-${Date.now()}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance_daily' },
-        () => {
-          attendanceApi.invalidateCache();
-          loadData();
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance_punches' },
-        () => {
-          attendanceApi.invalidateCache();
-          loadData();
-        }
-      )
-      .subscribe();
+    const unsubDaily = realtimeChannelManager.subscribeToTable('attendance_daily', () => {
+      attendanceApi.invalidateCache();
+      loadData();
+    });
+    const unsubPunches = realtimeChannelManager.subscribeToTable('attendance_punches', () => {
+      attendanceApi.invalidateCache();
+      loadData();
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      unsubDaily();
+      unsubPunches();
     };
   }, [selectedDate, loadData]);
 

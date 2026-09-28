@@ -115,7 +115,8 @@ class AttendanceCalendarService {
       return true;
     });
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
     // Fetch holidays from leaveApi
     let holidays: Array<{ date: string; name: string }> = [];
@@ -167,7 +168,7 @@ class AttendanceCalendarService {
     for (let i = 0; i < totalGridCells; i++) {
       const dayOffset = i - startPadding + 1;
       const cellDate = new Date(year, month, dayOffset);
-      const dateStr = cellDate.toISOString().split('T')[0];
+      const dateStr = `${cellDate.getFullYear()}-${String(cellDate.getMonth() + 1).padStart(2, '0')}-${String(cellDate.getDate()).padStart(2, '0')}`;
       const isCurrentMonth = cellDate.getMonth() === month;
       const dayOfWeek = cellDate.getDay();
       const isWeeklyOff = dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday

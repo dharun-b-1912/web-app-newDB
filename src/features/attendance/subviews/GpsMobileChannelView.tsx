@@ -70,11 +70,38 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     return 'attendance';
   });
 
-  // Master Data
-  const [locations, setLocations] = useState<WorkLocation[]>([]);
-  const [locationEvents, setLocationEvents] = useState<AttendanceLocationEvent[]>([]);
+  useEffect(() => {
+    if (currentTab === 'geofences') setActiveSubTab('geofences');
+    else if (currentTab === 'staff-mapping') setActiveSubTab('mapping');
+    else if (currentTab === 'mobile-clocking') setActiveSubTab('mobile');
+    else if (currentTab === 'location-logs') setActiveSubTab('logs');
+    else if (currentTab === 'location-exceptions') setActiveSubTab('exceptions');
+    else if (currentTab === 'gps' || currentTab === 'gps-attendance') setActiveSubTab('attendance');
+  }, [currentTab]);
+
+  // Master Data - initialized synchronously from local store for 0ms initial render
+  const [locations, setLocations] = useState<WorkLocation[]>(() => {
+    try {
+      return workLocationService.getLocations();
+    } catch {
+      return [];
+    }
+  });
+  const [locationEvents, setLocationEvents] = useState<AttendanceLocationEvent[]>(() => {
+    try {
+      return workLocationService.getLocationEvents();
+    } catch {
+      return [];
+    }
+  });
   const [employees, setEmployees] = useState<any[]>([]);
-  const [assignments, setAssignments] = useState<EmployeeWorkLocationAssignment[]>([]);
+  const [assignments, setAssignments] = useState<EmployeeWorkLocationAssignment[]>(() => {
+    try {
+      return workLocationService.getAllAssignments();
+    } catch {
+      return [];
+    }
+  });
 
   // Google Maps State
   const [mapType, setMapType] = useState<'m' | 'k' | 'h'>('m'); // m = roadmap, k = satellite, h = hybrid
@@ -112,15 +139,15 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
       ]);
       setLocations(locs);
       setAssignments(asgns);
-      if (locs.length > 0 && !selectedTargetLocId) {
-        setSelectedTargetLocId(locs[0].id);
+      if (locs.length > 0) {
+        setSelectedTargetLocId((prev) => prev || locs[0].id);
       }
     } catch {
       const fallback = workLocationService.getLocations();
       setLocations(fallback);
       setAssignments(workLocationService.getAllAssignments());
-      if (fallback.length > 0 && !selectedTargetLocId) {
-        setSelectedTargetLocId(fallback[0].id);
+      if (fallback.length > 0) {
+        setSelectedTargetLocId((prev) => prev || fallback[0].id);
       }
     }
 
@@ -129,11 +156,11 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
 
     api.getEmployees().then((emps) => {
       setEmployees(emps);
-      if (emps.length > 0 && !selectedEmployeeId) {
-        setSelectedEmployeeId(emps[0].id);
+      if (emps && emps.length > 0) {
+        setSelectedEmployeeId((prev) => prev || emps[0].id);
       }
     }).catch(() => []);
-  }, [selectedEmployeeId, selectedTargetLocId]);
+  }, []);
 
   // Acquire Real Hardware GPS Coordinates
   const fetchLiveHardwareGps = useCallback(async () => {
@@ -151,10 +178,16 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
 
   useEffect(() => {
     loadData();
-    fetchLiveHardwareGps();
     const unsub = hrEventBus.subscribe('attendance.*', () => loadData());
     return () => unsub();
-  }, [loadData, fetchLiveHardwareGps]);
+  }, [loadData]);
+
+  // Acquire GPS only when user enters mobile clocking subtab, not during general navigation
+  useEffect(() => {
+    if (activeSubTab === 'mobile' && !liveGps) {
+      fetchLiveHardwareGps();
+    }
+  }, [activeSubTab, liveGps, fetchLiveHardwareGps]);
 
   useEffect(() => {
     if (currentTab === 'geofences') setActiveSubTab('geofences');

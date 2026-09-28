@@ -5,13 +5,8 @@ import './index.css';
 import { GlobalErrorInterceptor } from './services/observability/globalErrorInterceptor';
 import { supabaseProject, supabaseUrl } from './lib/supabase';
 
-import { purgeVendorLocalStorage } from './services/vendor/vendorStoragePurge';
-
 // Initialize zero-leakage global observability interceptor
 GlobalErrorInterceptor.initialize();
-
-// Purge legacy mock/test vendor localStorage items
-purgeVendorLocalStorage();
 
 if (typeof window !== 'undefined') {
   console.log(`[WF][SUPABASE][RUNTIME] project=${supabaseProject}`);

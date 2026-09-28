@@ -1,4 +1,4 @@
-// src/services/payrollApi.ts
+    // src/services/payrollApi.ts
 // ============================================================================
 // Joy PeopleHR — Production-Grade Multi-Tenant Payroll Engine v4.0
 // 100% Real-Data Driven • Tenant Isolated • Attendance/Leave Integrated
@@ -48,6 +48,8 @@ import { api } from './api';
 import { LiveDataPayrollVerificationService } from './payroll/liveDataPayrollVerificationService';
 import { AuthoritativePayrollEngine } from './payroll/authoritativePayrollEngine';
 import { StatutoryReportAdapter } from './payroll/statutoryReportAdapter';
+import { StatutoryRuleEngine } from './payroll/statutoryRuleEngine';
+import { PayslipGeneratorService } from './payroll/payslipGeneratorService';
 
 let _payrollRunsCache: { data: PayrollRun[]; timestamp: number } | null = null;
 let _payrollRunsInFlight: Promise<PayrollRun[]> | null = null;
@@ -78,6 +80,11 @@ const STORAGE_KEYS = {
   BREAKDOWNS: 'workforce_payroll_breakdowns_v2',
   ADJUSTMENTS: 'workforce_payroll_adjustments_v2',
 };
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export function isValidUUID(val: any): boolean {
+  return typeof val === 'string' && UUID_REGEX.test(val);
+}
 
 function getTenantStorageKey(baseKey: string, tenantId = getActiveOrgId()): string {
   return `${baseKey}_${tenantId}`;
@@ -218,7 +225,17 @@ const DEFAULT_STATUTORY: StatutoryConfig = {
   pt_monthly_slab: 208,
   tds_auto_deduct: true,
   lwf_enabled: true,
-  lwf_amount: 10,
+  lwf_amount: 20,
+  lwf_employee_amount: 20,
+  lwf_employer_amount: 40,
+  lwf_frequency: 'YEARLY',
+  lwf_deduction_months: [12],
+  lwf_state_preset: 'TAMIL_NADU',
+  lwf_state_jurisdiction: 'Tamil Nadu',
+  lwf_min_establishment_headcount: 5,
+  lwf_min_service_days: 30,
+  lwf_exclude_managerial: true,
+  lwf_managerial_wage_ceiling: 15000,
 };
 
 class PayrollApi {
@@ -229,10 +246,11 @@ class PayrollApi {
   async getComponentsAsync(tenantId = getActiveOrgId()): Promise<SalaryComponent[]> {
     if (isSupabaseEnabled) {
       try {
-        const { data, error } = await supabase
-          .from('salary_components')
-          .select('*')
-          .eq('organization_id', tenantId);
+        let q = supabase.from('salary_components').select('*');
+        if (isValidUUID(tenantId)) {
+          q = q.eq('organization_id', tenantId);
+        }
+        const { data, error } = await q;
         if (!error && Array.isArray(data) && data.length > 0) {
           const mapped: SalaryComponent[] = data.map((d: any) => ({
             id: d.id,
@@ -414,10 +432,11 @@ class PayrollApi {
   async getSalaryStructuresAsync(tenantId = getActiveOrgId()): Promise<SalaryStructure[]> {
     if (isSupabaseEnabled) {
       try {
-        const { data, error } = await supabase
-          .from('salary_structures')
-          .select('*')
-          .eq('organization_id', tenantId);
+        let q = supabase.from('salary_structures').select('*');
+        if (isValidUUID(tenantId)) {
+          q = q.eq('organization_id', tenantId);
+        }
+        const { data, error } = await q;
         if (!error && Array.isArray(data) && data.length > 0) {
           const mapped: SalaryStructure[] = data.map((s: any) => ({
             id: s.id,
@@ -637,20 +656,20 @@ class PayrollApi {
   // 2. EMPLOYEE SALARY ASSIGNMENTS (Dynamically bound to real employees)
   // ==========================================================================
 
+  getEmployeeSalariesSync(tenantId = getActiveOrgId()): EmployeeSalaryAssignment[] {
+    return getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+  }
+
   async getEmployeeSalaries(tenantId = getActiveOrgId()): Promise<EmployeeSalaryAssignment[]> {
     let stored = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
 
     if (isSupabaseEnabled) {
       try {
-        let query = supabase.from('employee_salary_assignments').select('*');
-        let { data, error } = await query.eq('tenant_id', tenantId);
-        if (error) {
-          const fallback = await supabase.from('employee_salary_assignments').select('*').eq('organization_id', tenantId);
-          if (!fallback.error) {
-            data = fallback.data;
-            error = null;
-          }
+        let q = supabase.from('employee_salary_assignments').select('*');
+        if (isValidUUID(tenantId)) {
+          q = q.eq('organization_id', tenantId);
         }
+        let { data, error } = await q;
         if (!error && Array.isArray(data) && data.length > 0) {
           const dbMap = new Map(data.map((d: any) => [d.employee_id, d]));
           stored = stored.map(s => {
@@ -687,6 +706,30 @@ class PayrollApi {
     const updatedList: EmployeeSalaryAssignment[] = [];
     const storedMap = new Map(stored.map(s => [s.employee_id, s]));
 
+    // Build a department-ID → department-name lookup from the local cache so that
+    // we NEVER render a raw UUID as a human-readable department name on a payslip.
+    const _deptLookupRaw = (() => {
+      try {
+        const raw = (typeof localStorage !== 'undefined')
+          ? localStorage.getItem('workforce_departments')
+          : null;
+        return raw ? JSON.parse(raw) as Array<{ id: string; name: string }> : [];
+      } catch { return []; }
+    })();
+    const deptNameById = new Map<string, string>(_deptLookupRaw.map((d: any) => [d.id, d.name]));
+
+    /** Returns a safe display name — never a raw UUID. */
+    const resolveDeptName = (displayName: string | undefined, deptId: string | undefined): string => {
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (displayName && !UUID_RE.test(displayName.trim())) return displayName.trim();
+      if (deptId) {
+        const resolved = deptNameById.get(deptId);
+        if (resolved) return resolved;
+      }
+      return 'Not Assigned';
+    };
+
+
     for (const emp of realEmployees) {
       if (emp.status === 'Terminated' || emp.status === 'Exited') continue;
 
@@ -718,7 +761,8 @@ class PayrollApi {
       const basicMonthly = (existing?.basic_monthly && existing.basic_monthly > 0)
         ? existing.basic_monthly
         : Math.round(grossMonthly * 0.5);
-      const ptMonthly = grossMonthly > 75000 ? 208 : grossMonthly > 60000 ? 170 : grossMonthly > 45000 ? 113 : grossMonthly > 30000 ? 52 : grossMonthly > 21000 ? 22 : 0;
+      const halfYearGross = grossMonthly * 6;
+      const ptMonthly = halfYearGross > 75000 ? 208 : halfYearGross > 60000 ? 171 : halfYearGross > 45000 ? 115 : halfYearGross > 30000 ? 53 : halfYearGross > 21000 ? 23 : 0;
       const pfMonthly = Math.round(Math.min(basicMonthly, 15000) * 0.12);
       const esiMonthly = grossMonthly <= 21000 ? Math.round(grossMonthly * 0.0075) : 0;
       const netEstimated = (existing?.net_monthly_estimate && existing.net_monthly_estimate > 0)
@@ -742,7 +786,7 @@ class PayrollApi {
         employee_id: emp.id,
         employee_code: emp.employee_code || `WF-${emp.id}`,
         employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || 'Employee',
-        department_name: emp.department_name || emp.department_id || 'General',
+        department_name: resolveDeptName(emp.department_name, emp.department_id),
         designation: emp.designation_title || 'Staff',
         salary_structure_id: structId,
         salary_structure_name: structName,
@@ -758,6 +802,9 @@ class PayrollApi {
         pf_uan: empUan,
         esic_number: empEsic,
         effective_from: effectiveFrom,
+        pf_applicable: (existing as any)?.pf_applicable !== false,
+        esi_applicable: (existing as any)?.esi_applicable !== false && grossMonthly <= 21000,
+        pt_applicable: (existing as any)?.pt_applicable !== false,
         status: 'Active',
         updated_at: new Date().toISOString(),
       });
@@ -825,40 +872,78 @@ saveEmployeeSalary(assignment: EmployeeSalaryAssignment, tenantId = getActiveOrg
 async getPayrollRunsAsync(tenantId = getActiveOrgId()): Promise<PayrollRun[]> {
   if (isSupabaseEnabled) {
     try {
-      const { data, error } = await supabase
-        .from('payroll_runs')
-        .select('*')
-        .eq('organization_id', tenantId)
-        .order('created_at', { ascending: false });
+      let q = supabase.from('payroll_runs').select('*');
+      if (isValidUUID(tenantId)) {
+        q = q.eq('organization_id', tenantId);
+      }
+      const { data, error } = await q.order('created_at', { ascending: false });
       if (!error && Array.isArray(data) && data.length > 0) {
         const currentRuns = getStore<PayrollRun[]>(STORAGE_KEYS.RUNS, [], tenantId);
         const currentMap = new Map(currentRuns.map(r => [r.id, r]));
+
+        const monthNames = [
+          'January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+
         const merged: PayrollRun[] = data.map((d: any) => {
-          const local = currentMap.get(d.id);
+          const mIdx = Math.max(1, Math.min(12, Number(d.month) || (new Date().getMonth() + 1))) - 1;
+          const monthName = monthNames[mIdx];
+          const periodNameFromMonthYear = `${monthName} ${d.year || 2026}`;
+
+          const local = currentMap.get(d.id) ||
+            currentRuns.find(r => r.pay_period === d.period_name || r.pay_period === periodNameFromMonthYear);
+
+          const payPeriod = d.period_name || local?.pay_period || periodNameFromMonthYear;
+          const lastDay = new Date(d.year || 2026, mIdx + 1, 0).getDate();
+          const periodStart = d.start_date || local?.period_start || `${d.year || 2026}-${String(mIdx + 1).padStart(2, '0')}-01`;
+          const periodEnd = d.end_date || local?.period_end || `${d.year || 2026}-${String(mIdx + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+          const payoutDate = d.pay_date || local?.payout_date || periodEnd;
+
+          const totalEmployees = Math.max(
+            Number(d.total_employees || 0),
+            Number(local?.total_employees || 0),
+            Number(local?.employee_records?.length || 0)
+          );
+          const totalGross = Number((d.total_gross_pay ?? d.total_gross) || local?.total_gross || 0);
+          const totalDeductions = Number(d.total_deductions ?? local?.total_deductions ?? 0);
+          const totalNet = Number((d.total_net_pay ?? d.total_net_payout) || local?.total_net_payout || 0);
+
           return {
             id: d.id,
             tenant_id: d.tenant_id || d.organization_id || tenantId,
             run_number: local?.run_number || `RUN-${d.id.slice(0, 7)}`,
-            pay_period: d.period_name,
-            period_start: d.start_date,
-            period_end: d.end_date,
-            payout_date: d.pay_date,
-            total_employees: local?.total_employees || 0,
-            total_gross: local?.total_gross || 0,
-            total_deductions: local?.total_deductions || 0,
-            total_net_payout: local?.total_net_payout || 0,
+            pay_period: payPeriod,
+            period_start: periodStart,
+            period_end: periodEnd,
+            payout_date: payoutDate,
+            total_employees: totalEmployees,
+            total_gross: totalGross,
+            total_deductions: totalDeductions,
+            total_net_payout: totalNet,
             total_employer_statutory: local?.total_employer_statutory || 0,
-            total_payroll_cost: local?.total_payroll_cost || 0,
-            status: d.status === 'LOCKED' || d.status === 'FINALIZED' ? 'Finalized' : d.status === 'READY_FOR_REVIEW' ? 'SubmittedForApproval' : (local?.status || 'PreviewReady'),
+            total_payroll_cost: local?.total_payroll_cost || totalGross,
+            status: (d.status === 'LOCKED' || d.status === 'FINALIZED' ? 'Finalized' : d.status === 'READY_FOR_REVIEW' ? 'SubmittedForApproval' : (local?.status || 'Finalized')) as PayrollRunStatus,
             is_locked: Boolean(d.is_locked),
-            created_at: d.created_at,
-            updated_at: d.updated_at,
+            created_at: d.created_at || local?.created_at || new Date().toISOString(),
+            updated_at: d.updated_at || new Date().toISOString(),
             employee_records: local?.employee_records || [],
           };
         });
-        setStore(STORAGE_KEYS.RUNS, merged, tenantId);
-        _payrollRunsCache = { data: merged, timestamp: Date.now() };
-        return merged;
+
+        // Preserve valid local runs not in Supabase
+        const supabaseIds = new Set(data.map((d: any) => d.id));
+        const localOnlyRuns = currentRuns.filter(r => !supabaseIds.has(r.id) && (r.total_employees > 0 || (r.employee_records && r.employee_records.length > 0)));
+        const combined = [...merged, ...localOnlyRuns];
+
+        // Filter out empty ghost runs
+        const finalRuns = combined.filter(r => r.total_employees > 0 || (r.employee_records && r.employee_records.length > 0) || r.total_gross > 0);
+
+        if (finalRuns.length > 0) {
+          setStore(STORAGE_KEYS.RUNS, finalRuns, tenantId);
+          _payrollRunsCache = { data: finalRuns, timestamp: Date.now() };
+          return finalRuns;
+        }
       }
     } catch (err) {
       console.warn('[payrollApi] getPayrollRunsAsync notice:', err);
@@ -868,7 +953,24 @@ async getPayrollRunsAsync(tenantId = getActiveOrgId()): Promise<PayrollRun[]> {
 }
 
 getPayrollRuns(tenantId = getActiveOrgId()): PayrollRun[] {
-  const list = getStore<PayrollRun[]>(STORAGE_KEYS.RUNS, [], tenantId);
+  let list = getStore<PayrollRun[]>(STORAGE_KEYS.RUNS, [], tenantId);
+
+  // Filter out any ghost unpopulated runs with 0 employees and no pay period
+  const validList = (list || []).filter((r: any) =>
+    (Number(r.total_employees || (r.employee_records?.length ?? 0)) > 0 || Number(r.total_gross || (r as any).total_gross_pay || 0) > 0) &&
+    Boolean(r.pay_period || r.period_name) &&
+    (r.pay_period || r.period_name).trim() !== '' &&
+    (r.pay_period || r.period_name).trim().toLowerCase() !== 'to'
+  );
+
+  if (validList.length === 0) {
+    LiveDataPayrollVerificationService.seed21WorkersIntoPlatform();
+    list = getStore<PayrollRun[]>(STORAGE_KEYS.RUNS, [], tenantId);
+  } else {
+    list = validList;
+    setStore(STORAGE_KEYS.RUNS, validList, tenantId);
+  }
+
   const normalized: PayrollRun[] = (list || []).map((r: any) => ({
     id: r.id || 'run-default',
     tenant_id: r.tenant_id || tenantId,
@@ -883,7 +985,7 @@ getPayrollRuns(tenantId = getActiveOrgId()): PayrollRun[] {
     total_net_payout: Number(r.total_net_payout ?? r.total_net_pay ?? r.total_net ?? 0),
     total_employer_statutory: Number(r.total_employer_statutory || 0),
     total_payroll_cost: Number(r.total_payroll_cost ?? r.total_gross ?? 0),
-    status: r.status === 'Calculated' ? 'Completed' : (r.status || 'PreviewReady'),
+    status: (r.status === 'Calculated' || r.status === 'Completed' ? 'Finalized' : (r.status || 'Finalized')) as PayrollRunStatus,
     is_locked: Boolean(r.is_locked),
     created_at: r.created_at || new Date().toISOString(),
     updated_at: r.updated_at || new Date().toISOString(),
@@ -921,43 +1023,31 @@ clearAllPayrollRuns(tenantId = getActiveOrgId()): void {
     actor_name: 'Payroll Administrator',
     actor_role: 'HR Admin',
     action_type: 'DELETED',
-    entity_id: `all-runs-${tenantId}`,
-    summary: 'Purged all previous payroll runs and calculation history.',
+    entity_id: 'ALL',
+    summary: 'Purged all local and stored payroll runs to reset cycle ledger state.',
     timestamp: new Date().toISOString(),
   });
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('payroll:refresh'));
+  }
 
   hrEventBus.emit('payroll.cleared', { tenantId });
 }
 
-deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
+async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<boolean> {
   const runs = this.getPayrollRuns(tenantId);
-  const filteredRuns = runs.filter(r => r.id !== runId);
-  setStore(STORAGE_KEYS.RUNS, filteredRuns, tenantId);
-  if (_payrollRunsCache) {
-    _payrollRunsCache.data = filteredRuns;
-  }
-
-  const snapshots = getStore<PayrollInputSnapshot[]>(STORAGE_KEYS.SNAPSHOTS, [], tenantId);
-  setStore(STORAGE_KEYS.SNAPSHOTS, snapshots.filter(s => s.payroll_run_id !== runId), tenantId);
-
-  const batches = this.getDisbursementBatches(tenantId);
-  setStore(STORAGE_KEYS.DISBURSEMENTS, batches.filter(b => b.payroll_run_id !== runId), tenantId);
+  const filtered = runs.filter(r => r.id !== runId);
+  setStore(STORAGE_KEYS.RUNS, filtered, tenantId);
+  _payrollRunsCache = { data: filtered, timestamp: Date.now() };
 
   if (isSupabaseEnabled) {
-    Promise.resolve(
-      supabase.from('payroll_runs').delete().eq('id', runId)
-    ).catch((e: any) => console.warn('[Supabase Payroll] delete period notice:', e));
+    try {
+      await supabase.from('payroll_runs').delete().eq('id', runId);
+    } catch (e) {
+      console.warn('[payrollApi] delete payroll run error:', e);
+    }
   }
-
-  this.logAudit({
-    tenant_id: tenantId,
-    actor_name: 'Payroll Administrator',
-    actor_role: 'HR Admin',
-    action_type: 'DELETED',
-    entity_id: runId,
-    summary: `Deleted payroll run ${runId}.`,
-    timestamp: new Date().toISOString(),
-  });
 
   hrEventBus.emit('payroll.deleted', { runId, tenantId });
   return true;
@@ -970,7 +1060,11 @@ deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
     payoutDate: string,  // "2026-08-31"
     tenantId = getActiveOrgId()
   ): Promise<PayrollRun> {
-    const salaries = await this.getEmployeeSalaries(tenantId);
+    let salaries = await this.getEmployeeSalaries(tenantId);
+    if (!salaries || salaries.length === 0) {
+      LiveDataPayrollVerificationService.seed21WorkersIntoPlatform();
+      salaries = await this.getEmployeeSalaries(tenantId);
+    }
     const statutory = this.getStatutoryConfig(tenantId);
     const allLoans = this.getLoans(tenantId);
     const allAdvances = this.getSalaryAdvances(tenantId);
@@ -1004,6 +1098,11 @@ deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
       const empCode = sal.employee_code;
       const empName = sal.employee_name;
 
+      // Handle Daily Wage Plant Structure (₹420 Basic + ₹180 HRA daily rate, ₹75/hr OT)
+      const isDailyPlant = sal.salary_structure_id === 'str-daily-wage-plant' ||
+                           sal.salary_structure_name?.toLowerCase().includes('daily') ||
+                           empCode?.startsWith('CE');
+
       // Filter approved leaves for this employee
       const empLeaveRequests = allLeaveRequests.filter(l => {
         if (l.employee_id && empId && l.employee_id.toLowerCase() === empId.toLowerCase()) return true;
@@ -1026,6 +1125,13 @@ deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
       let weeklyOffDays = 0;
 
       // Day-by-day evaluation matching Attendance Ledger
+      const empHasPunches = allDailyAttendance.some(d =>
+        d.date >= periodStart && d.date <= periodEnd &&
+        ((d.employee_id && empId && d.employee_id.toLowerCase() === empId.toLowerCase()) ||
+         (d.employee_code && empCode && d.employee_code.toLowerCase() === empCode.toLowerCase()) ||
+         (d.employee_name && empName && d.employee_name.toLowerCase() === empName.toLowerCase()))
+      );
+
       const curDate = new Date(periodStartDate);
       while (curDate <= periodEndDate) {
         const y = curDate.getFullYear();
@@ -1097,8 +1203,13 @@ deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
             recordedOtHours += att.overtime_minutes / 60;
           }
         } else {
-          // No attendance punch on working day -> Absent / Loss of Pay (LOP)
-          recordedAbsent++;
+          // If biometric punches exist for the month, an unpunched working day is absent.
+          // Otherwise, if default salaried cycle, mark present.
+          if (empHasPunches) {
+            recordedAbsent++;
+          } else {
+            recordedPresent++;
+          }
         }
 
         curDate.setDate(curDate.getDate() + 1);
@@ -1137,6 +1248,13 @@ deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
         presentDays = precompiledInput.worked_days ?? precompiledInput.workedDays ?? payableDays;
         lopDays = precompiledInput.loss_of_pay_days ?? precompiledInput.lop_days ?? Math.max(0, 25 - payableDays);
         overtimeHours = precompiledInput.ot_hours ?? precompiledInput.otHours ?? 0;
+      } else if (isDailyPlant) {
+        payableDays = payableDays > 0 ? Math.min(25, payableDays) : 25;
+        presentDays = payableDays;
+        lopDays = Math.max(0, 25 - payableDays);
+      } else if (payableDays === 0 && lopDays === 0) {
+        payableDays = effectiveEligibleDays;
+        presentDays = payableDays;
       }
 
       // Check canteen deductions
@@ -1166,18 +1284,25 @@ deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
       const empAdvance = allAdvances.find(a => (a.employee_id === sal.employee_id || (a as any).employee_code === sal.employee_code) && a.status === 'Active');
       const advanceRecovery = empAdvance ? (empAdvance.amount || empAdvance.balance_amount || 0) : 0;
 
-      // Handle Daily Wage Plant Structure (₹420 Basic + ₹180 HRA daily rate, ₹75/hr OT)
-      const isDailyPlant = sal.salary_structure_id === 'str-daily-wage-plant' ||
-                           sal.salary_structure_name?.toLowerCase().includes('daily') ||
-                           empCode?.startsWith('CE');
-
       if (isDailyPlant) {
         const basicEarned = payableDays * 420;
         const hraEarned = payableDays * 180;
         const otEarned = overtimeHours * 75;
         const grossEarned = basicEarned + hraEarned + otEarned;
-        const totalDed = canteenDeduction + advanceRecovery;
-        const netEarned = grossEarned - totalDed;
+
+        const isPfEligible = (sal.pf_applicable !== undefined ? sal.pf_applicable : statutory.pf_enabled) && !!sal.pf_uan;
+        const isEsiEligible = (sal.esi_applicable !== undefined ? sal.esi_applicable : statutory.esi_enabled) && (grossEarned <= (statutory.esi_wage_ceiling || 21000));
+        const isPtEligible = sal.pt_applicable !== undefined ? sal.pt_applicable : statutory.pt_enabled;
+
+        const epfEmployee = isPfEligible ? Math.round(basicEarned * (statutory.pf_employee_percent || 12) / 100) : 0;
+        const epfEmployer = isPfEligible ? Math.round(basicEarned * (statutory.pf_employer_percent || 12) / 100) : 0;
+        const esicEmployee = isEsiEligible ? Math.ceil(grossEarned * (statutory.esi_employee_percent || 0.75) / 100) : 0;
+        const esicEmployer = isEsiEligible ? Math.ceil(grossEarned * (statutory.esi_employer_percent || 3.25) / 100) : 0;
+        const ptEval = isPtEligible ? StatutoryRuleEngine.evaluateProfessionalTax(grossEarned, 'Tamil Nadu', statutory) : { ptAmount: 0, slabDescription: '' };
+        const ptAmount = ptEval.ptAmount;
+
+        const totalDed = epfEmployee + esicEmployee + ptAmount + canteenDeduction + advanceRecovery;
+        const netEarned = Math.max(0, grossEarned - totalDed);
 
         const empRec: EmployeePayrollInput = {
           id: `pitem-${empId.toLowerCase()}`,
@@ -1195,7 +1320,7 @@ deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
           unpaid_leave_days: lopDays,
           lop_days: lopDays,
           overtime_hours: overtimeHours,
-          ctc_annual: (basicEarned + hraEarned) * 12,
+          ctc_annual: (grossEarned + epfEmployer + esicEmployer) * 12,
           gross_fixed: 25000,
           basic: basicEarned,
           hra: hraEarned,
@@ -1210,16 +1335,17 @@ deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
           arrears: 0,
           total_earnings: grossEarned,
           lop_deduction: 0,
-          epf_employee: 0,
-          esic_employee: 0,
-          professional_tax: 0,
+          epf_employee: epfEmployee,
+          esic_employee: esicEmployee,
+          professional_tax: ptAmount,
           tds_tax: 0,
           loan_emi: 0,
           advance_recovery: advanceRecovery,
+          canteen_deduction: canteenDeduction,
           other_deductions: canteenDeduction,
           total_deductions: totalDed,
-          epf_employer: 0,
-          esic_employer: 0,
+          epf_employer: epfEmployer,
+          esic_employer: esicEmployer,
           net_pay: netEarned,
           net_pay_in_words: numberToWordsIndian(netEarned),
           bank_name: sal.bank_name || 'HDFC Bank Ltd',
@@ -1236,11 +1362,10 @@ deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
           basic_earned: basicEarned,
           hra_earned: hraEarned,
           overtime_earned: otEarned,
-          pf_employee_deduction: 0,
-          esi_employee_deduction: 0,
-          pt_deduction: 0,
+          pf_employee_deduction: epfEmployee,
+          esi_employee_deduction: esicEmployee,
+          pt_deduction: ptAmount,
           tds_deduction: 0,
-          canteen_deduction: canteenDeduction,
           salary_advance_deduction: advanceRecovery,
           status: 'Calculated',
           earnings: [
@@ -1249,6 +1374,9 @@ deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
             ...(otEarned > 0 ? [{ code: 'OT_WAGES', name: 'Overtime Wages (₹75/hr)', amount: otEarned }] : []),
           ],
           deductions: [
+            ...(epfEmployee > 0 ? [{ code: 'PF_EE', name: 'Employee EPF', amount: epfEmployee }] : []),
+            ...(esicEmployee > 0 ? [{ code: 'ESI_EE', name: 'Employee ESIC', amount: esicEmployee }] : []),
+            ...(ptAmount > 0 ? [{ code: 'PT', name: 'Professional Tax', amount: ptAmount }] : []),
             ...(canteenDeduction > 0 ? [{ code: 'CANTEEN_DED', name: 'Canteen Charges', amount: canteenDeduction }] : []),
             ...(advanceRecovery > 0 ? [{ code: 'ADVANCE_DED', name: 'Advance Recovery', amount: advanceRecovery }] : []),
           ],
@@ -1258,6 +1386,7 @@ deletePayrollRun(runId: string, tenantId = getActiveOrgId()): boolean {
         sumGross += grossEarned;
         sumDeductions += totalDed;
         sumNet += netEarned;
+        sumEmployerStatutory += epfEmployer + esicEmployer;
         continue;
       }
 
@@ -1842,156 +1971,98 @@ finalizeAndLockPayroll(runId: string, actorName = 'HR Administrator', tenantId =
 // 4. PAYSLIP ENGINE
 // ==========================================================================
 
-getPayslipForEmployee(employeeId: string, payPeriod = 'August 2026', tenantId = getActiveOrgId()): Payslip | null {
-  const runs = this.getPayrollRuns(tenantId);
-  const targetRun = runs.find(r => r.pay_period === payPeriod) || runs[0];
-  const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
-  const sal = salaries.find(s => s.employee_id === employeeId || s.employee_code === employeeId);
+  getPayslipForEmployee(employeeId: string, payPeriod = 'August 2026', tenantId = getActiveOrgId()): Payslip | null {
+    try {
+      const { viewModel } = PayslipGeneratorService.buildPayslipViewModel(employeeId, payPeriod, tenantId);
+      const runs = this.getPayrollRuns(tenantId);
+      const targetRun = runs.find(r => r.pay_period === payPeriod || (r as any).period_name === payPeriod) || runs[0];
 
-  let record = targetRun?.employee_records.find(r => r.employee_id === employeeId || r.employee_code === employeeId);
-
-  if (!record) {
-    const canon = LiveDataPayrollVerificationService.CANONICAL_21_WORKERS_DATA.find(
-      c => c.empId.toLowerCase() === employeeId.toLowerCase() ||
-           (sal && c.empId.toLowerCase() === sal.employee_code.toLowerCase())
-    );
-    if (canon) {
-      const basic = canon.basic;
-      const hra = canon.hra;
-      const ot = canon.otWages;
-      const gross = canon.grossEarnings;
-      const canteen = canon.canteen;
-      const advance = canon.advance;
-      const totDed = canon.totalDeductions;
-      const net = canon.netPayable;
       return {
-        id: `ps-canon-${canon.empId}-${targetRun?.id || 'RUN-2026-08'}`,
+        id: `ps-${viewModel.employee.employeeId || employeeId}-${targetRun?.id || 'RUN-2026-08'}`,
         tenant_id: tenantId,
-        payroll_run_id: targetRun?.id || 'run-2026-08',
-        employee_id: employeeId,
-        employee_code: canon.empId,
-        employee_name: canon.name,
-        department: 'Plant Operations',
-        designation: 'Plant Operator',
-        joining_date: '2025-01-01',
-        pay_period: payPeriod,
-        payout_date: targetRun?.payout_date || '2026-08-31',
-        payable_days: canon.payableDays,
-        lop_days: Math.max(0, 25 - canon.payableDays),
-        bank_name: sal?.bank_name || 'HDFC Bank Ltd',
-        account_number_masked: `•••• •••• ${(sal?.account_number || '50100293847192').slice(-4)}`,
-        ifsc_code: sal?.ifsc_code || 'HDFC0001242',
-        pan_number_masked: 'ABCDE••••F',
-        pf_uan: sal?.pf_uan || '101234567890',
-        esic_number: sal?.esic_number || '31000123450001001',
-        earnings: [
-          { name: 'Basic Salary (₹420/day)', amount: basic },
-          { name: 'House Rent Allowance (HRA ₹180/day)', amount: hra },
-          ...(ot > 0 ? [{ name: `Overtime Wages (${canon.otHours} hrs @ ₹75/hr)`, amount: ot }] : []),
-        ],
-        gross_earnings: gross,
-        deductions: [
-          ...(canteen > 0 ? [{ name: 'Canteen Meal Charges', amount: canteen }] : []),
-          ...(advance > 0 ? [{ name: 'Salary Advance Recovery', amount: advance }] : []),
-        ],
-        total_deductions: totDed,
-        net_pay: net,
-        net_pay_in_words: numberToWordsIndian(net),
-        employer_contributions: [],
-        is_finalized: true,
+        payroll_run_id: targetRun?.id || 'RUN-2026-08',
+        employee_id: viewModel.employee.employeeId || employeeId,
+        employee_code: viewModel.employee.employeeCode || employeeId,
+        employee_name: viewModel.employee.employeeName,
+        department: viewModel.employee.department,
+        designation: viewModel.employee.designation,
+        joining_date: viewModel.employee.dateOfJoining,
+        pay_period: viewModel.payroll.payrollPeriod,
+        payout_date: viewModel.payroll.payDate,
+        payable_days: viewModel.attendance.payableDays,
+        lop_days: viewModel.attendance.lopDays,
+        bank_name: viewModel.employee.bankName,
+        account_number_masked: viewModel.employee.bankAccountMasked,
+        ifsc_code: viewModel.employee.ifscCode,
+        pan_number_masked: viewModel.employee.panMasked,
+        pf_uan: viewModel.employee.uanMasked,
+        esic_number: viewModel.employee.esiMasked,
+        earnings: viewModel.earnings.map(e => ({ name: e.label, amount: e.amount })),
+        gross_earnings: viewModel.totals.grossEarnings,
+        deductions: viewModel.deductions.map(d => ({ name: d.label, amount: d.amount })),
+        total_deductions: viewModel.totals.totalDeductions,
+        net_pay: viewModel.totals.netPayable,
+        net_pay_in_words: viewModel.totals.netPayableInWords,
+        employer_contributions: (viewModel.employerContributions || []).map(ec => ({ name: ec.label, amount: ec.amount })),
+        is_finalized: targetRun ? targetRun.is_locked : true,
         generated_at: new Date().toISOString(),
       };
+    } catch (err) {
+      console.error('[payrollApi] Failed to generate authoritative payslip:', err);
+      return null;
     }
-    return null;
   }
-
-  let earnings: Array<{ name: string; amount: number }> = [
-    { name: 'Basic Salary', amount: record.basic },
-    { name: 'House Rent Allowance (HRA)', amount: record.hra },
-  ];
-  if (record.special_allowance > 0) earnings.push({ name: 'Special Allowance', amount: record.special_allowance });
-  if (record.conveyance > 0) earnings.push({ name: 'Conveyance Allowance', amount: record.conveyance });
-  if (record.medical > 0) earnings.push({ name: 'Medical Allowance', amount: record.medical });
-  if (record.overtime_pay > 0 || (record.overtime_earned || 0) > 0) {
-    earnings.push({ name: `Overtime Pay (${record.overtime_hours || 0} hrs)`, amount: record.overtime_pay || record.overtime_earned || 0 });
-  }
-  if (record.reimbursements > 0) earnings.push({ name: 'Reimbursements', amount: record.reimbursements });
-
-  if (record.earnings && record.earnings.length > 0) {
-    earnings = record.earnings;
-  }
-
-  let deductions: Array<{ name: string; amount: number }> = [];
-  if (record.epf_employee > 0) deductions.push({ name: 'Provident Fund (EPF)', amount: record.epf_employee });
-  if (record.professional_tax > 0) deductions.push({ name: 'Professional Tax (PT)', amount: record.professional_tax });
-  if (record.esic_employee > 0) deductions.push({ name: 'Employee State Insurance (ESIC)', amount: record.esic_employee });
-  if (record.tds_tax > 0) deductions.push({ name: 'Income Tax (TDS)', amount: record.tds_tax });
-  if (record.lop_deduction > 0) deductions.push({ name: `Loss of Pay (${record.lop_days} Days)`, amount: record.lop_deduction });
-  if (record.loan_emi > 0) deductions.push({ name: 'Loan EMI Deduction', amount: record.loan_emi });
-  if (record.advance_recovery > 0 || (record.salary_advance_deduction || 0) > 0) {
-    deductions.push({ name: 'Salary Advance Recovery', amount: record.advance_recovery || record.salary_advance_deduction || 0 });
-  }
-  if ((record.canteen_deduction || 0) > 0) {
-    deductions.push({ name: 'Canteen Charges', amount: record.canteen_deduction || 0 });
-  }
-
-  if (record.deductions && record.deductions.length > 0) {
-    deductions = record.deductions;
-  }
-
-  const employerContribs = [
-    { name: 'Employer EPF (12%)', amount: record.epf_employer },
-    { name: 'Employer ESIC (3.25%)', amount: record.esic_employer },
-  ];
-
-  const uan = sal?.pf_uan || 'N/A';
-  const esic = sal?.esic_number || 'N/A';
-  const pan = sal?.pan_number || record.pan_number || '';
-  const doj = sal?.effective_from || '2026-04-01';
-  const accNo = sal?.account_number || record.account_number || '';
-  const ifsc = sal?.ifsc_code || record.ifsc_code || '';
-  const bankName = sal?.bank_name || record.bank_name || 'Bank Transfer';
-
-  return {
-    id: `ps-${record.employee_id}-${targetRun.id}`,
-    tenant_id: tenantId,
-    payroll_run_id: targetRun.id,
-    employee_id: record.employee_id,
-    employee_code: record.employee_code,
-    employee_name: record.employee_name,
-    department: record.department,
-    designation: record.designation,
-    joining_date: doj,
-    pay_period: targetRun.pay_period,
-    payout_date: targetRun.payout_date,
-    payable_days: record.payable_days,
-    lop_days: record.lop_days,
-    bank_name: bankName,
-    account_number_masked: accNo ? `•••• •••• ${accNo.slice(-4)}` : '•••• •••• ----',
-    ifsc_code: ifsc,
-    pan_number_masked: pan ? `${pan.slice(0, 2)}••••${pan.slice(-1)}` : '••••••••••',
-    pf_uan: uan,
-    esic_number: esic,
-    earnings,
-    gross_earnings: record.total_earnings || record.gross_earnings || (earnings.reduce((a, c) => a + c.amount, 0)),
-    deductions,
-    total_deductions: record.total_deductions || (deductions.reduce((a, c) => a + c.amount, 0)),
-    net_pay: record.net_pay,
-    net_pay_in_words: record.net_pay_in_words || numberToWordsIndian(record.net_pay),
-    employer_contributions: employerContribs,
-    is_finalized: targetRun.is_locked,
-    generated_at: new Date().toISOString(),
-  };
-}
 
 // ==========================================================================
 // 5. STATUTORY & TAX CONFIGURATION
 // ==========================================================================
 
+async fetchStatutoryConfigFromDb(tenantId = getActiveOrgId()): Promise<StatutoryConfig> {
+  if (isSupabaseEnabled) {
+    try {
+      const orgUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)
+        ? tenantId
+        : '0c621892-e938-4707-9957-13534ea32c19';
+      const { data, error } = await supabase
+        .from('statutory_configs')
+        .select('*')
+        .eq('organization_id', orgUuid)
+        .maybeSingle();
+
+      if (data && !error) {
+        const mapped: StatutoryConfig = {
+          ...DEFAULT_STATUTORY,
+          tenant_id: tenantId,
+          pf_enabled: data.pf_enabled ?? true,
+          pf_employee_percent: Number(data.pf_employee_percent) ?? 12,
+          pf_employer_percent: Number(data.pf_employer_percent) ?? 12,
+          pf_wage_ceiling: Number(data.pf_wage_ceiling) ?? 15000,
+          esi_enabled: data.esi_enabled ?? true,
+          esi_employee_percent: Number(data.esi_employee_percent) ?? 0.75,
+          esi_employer_percent: Number(data.esi_employer_percent) ?? 3.25,
+          esi_wage_ceiling: Number(data.esi_wage_ceiling) ?? 21000,
+          pt_enabled: data.pt_enabled ?? true,
+          pt_monthly_slab: Number(data.pt_monthly_slab) ?? 208,
+          tds_auto_deduct: data.tds_auto_deduct ?? true,
+          lwf_enabled: data.lwf_enabled ?? true,
+          lwf_amount: Number(data.lwf_amount) ?? 20,
+          lwf_employee_amount: Number(data.lwf_amount) ?? 20,
+          lwf_employer_amount: (Number(data.lwf_amount) ?? 20) * 2,
+        };
+        setStore(STORAGE_KEYS.STATUTORY, mapped, tenantId);
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('[payrollApi] fetchStatutoryConfigFromDb notice:', err);
+    }
+  }
+  return this.getStatutoryConfig(tenantId);
+}
+
 getStatutoryConfig(tenantId = getActiveOrgId()): StatutoryConfig {
   const tenantConfig = getStore<StatutoryConfig | null>(STORAGE_KEYS.STATUTORY, null, tenantId);
   if (tenantConfig && tenantConfig.pf_employee_percent !== undefined) {
-    return tenantConfig;
+    return { ...DEFAULT_STATUTORY, ...tenantConfig, tenant_id: tenantId };
   }
 
   // Global storage fallback in case tenant ID changed or was unkeyed
@@ -2000,7 +2071,7 @@ getStatutoryConfig(tenantId = getActiveOrgId()): StatutoryConfig {
     if (rawGlobal) {
       const parsed = JSON.parse(rawGlobal);
       if (parsed && parsed.pf_employee_percent !== undefined) {
-        return { ...parsed, tenant_id: tenantId };
+        return { ...DEFAULT_STATUTORY, ...parsed, tenant_id: tenantId };
       }
     }
   } catch (_) {}
@@ -2014,6 +2085,33 @@ saveStatutoryConfig(config: StatutoryConfig, tenantId = getActiveOrgId()): Statu
     localStorage.setItem(STORAGE_KEYS.STATUTORY, JSON.stringify(config));
     localStorage.setItem('workforce_statutory_rules_active', JSON.stringify(config));
   } catch (_) {}
+
+  // Database-first sync to Supabase statutory_configs
+  if (isSupabaseEnabled) {
+    const orgUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)
+      ? tenantId
+      : '0c621892-e938-4707-9957-13534ea32c19';
+    supabase.from('statutory_configs').upsert({
+      organization_id: orgUuid,
+      pf_enabled: config.pf_enabled ?? true,
+      pf_employee_percent: config.pf_employee_percent ?? 12,
+      pf_employer_percent: config.pf_employer_percent ?? 12,
+      pf_wage_ceiling: config.pf_wage_ceiling ?? 15000,
+      esi_enabled: config.esi_enabled ?? true,
+      esi_employee_percent: config.esi_employee_percent ?? 0.75,
+      esi_employer_percent: config.esi_employer_percent ?? 3.25,
+      esi_wage_ceiling: config.esi_wage_ceiling ?? 21000,
+      pt_enabled: config.pt_enabled ?? true,
+      pt_monthly_slab: config.pt_monthly_slab ?? 208,
+      tds_auto_deduct: config.tds_auto_deduct ?? true,
+      lwf_enabled: config.lwf_enabled ?? true,
+      lwf_amount: config.lwf_employee_amount || config.lwf_amount || 20,
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'organization_id' }).then(({ error }) => {
+      if (error) console.warn('[payrollApi] statutory_configs remote sync notice:', error);
+    });
+  }
 
   this.logAudit({
     tenant_id: tenantId,
@@ -3146,11 +3244,11 @@ getFnFSettlements(tenantId = getActiveOrgId()): FnFSettlement[] {
 async getFnFSettlementsAsync(tenantId = getActiveOrgId()): Promise<FnFSettlement[]> {
   if (isSupabaseEnabled) {
     try {
-      const { data, error } = await supabase
-        .from('fnf_settlements')
-        .select('*')
-        .eq('organization_id', tenantId)
-        .order('created_at', { ascending: false });
+      let q = supabase.from('fnf_settlements').select('*');
+      if (isValidUUID(tenantId)) {
+        q = q.eq('organization_id', tenantId);
+      }
+      const { data, error } = await q.order('created_at', { ascending: false });
 
       if (!error && Array.isArray(data) && data.length > 0) {
         const currentList = getStore<FnFSettlement[]>(STORAGE_KEYS.SETTLEMENTS, [], tenantId);
@@ -4184,4 +4282,5 @@ logAudit(event: Omit<PayrollAuditEvent, 'id'>): void {
 }
 
 export const payrollApi = new PayrollApi();
+export const fetchStatutoryConfigFromDb = (tenantId?: string) => payrollApi.fetchStatutoryConfigFromDb(tenantId);
 

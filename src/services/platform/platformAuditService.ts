@@ -4,6 +4,7 @@
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { realtimeChannelManager } from '../realtime/realtimeChannelManager';
 import {
   AuditEventRecord,
   AuditSummaryKPIs,
@@ -30,17 +31,9 @@ export const platformAuditService = {
   // -------------------------------------------------------------
   subscribeToRealtime(onChangeCallback: () => void) {
     if (!isSupabaseEnabled) return () => {};
-
-    const channel = supabase
-      .channel('platform_audit_realtime_stream')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_events' }, () => {
-        onChangeCallback();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return realtimeChannelManager.subscribeToTable('audit_events', () => {
+      onChangeCallback();
+    });
   },
 
   // -------------------------------------------------------------

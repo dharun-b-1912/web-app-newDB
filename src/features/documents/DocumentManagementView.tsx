@@ -43,8 +43,10 @@ import { documentSharingService } from '../../services/document/documentSharingS
 import { esignService } from '../../services/document/esignService';
 import { documentAuditService } from '../../services/document/documentAuditService';
 import { documentVerificationService } from '../../services/document/documentVerificationService';
+import { documentRequestService } from '../../services/documents/documentRequestService';
 import { hrEventBus } from '../../services/hrEventBus';
 import { supabase } from '../../lib/supabase';
+import { realtimeChannelManager } from '../../services/realtime/realtimeChannelManager';
 import {
   DocumentMaster,
   DocumentCategory,
@@ -133,7 +135,32 @@ export const DocumentManagementView: React.FC = () => {
       const cats = documentService.getCategories();
       setCategories(cats);
 
-      const reqs = documentService.getDocumentRequirements();
+      const reqsFromService = documentService.getDocumentRequirements();
+      const mobileReqs = documentRequestService.getRequests();
+      
+      const combinedReqsMap = new Map<string, DocumentRequirement>();
+      reqsFromService.forEach(r => combinedReqsMap.set(r.id, r));
+      mobileReqs.forEach(m => {
+        if (!combinedReqsMap.has(m.id)) {
+          combinedReqsMap.set(m.id, {
+            id: m.id,
+            tenant_id: m.tenant_id,
+            employee_id: m.employee_id,
+            employee_name: m.employee_name || m.employee_code || m.employee_id,
+            document_type: m.document_code,
+            title: m.document_title,
+            description: m.request_message || `Required ${m.document_title}`,
+            required: m.is_required,
+            status: m.status as any,
+            due_date: m.due_date,
+            requested_by: m.requested_by_name || m.requested_by,
+            created_at: m.created_at,
+            updated_at: m.updated_at,
+            document_id: m.document_id,
+          });
+        }
+      });
+      const reqs = Array.from(combinedReqsMap.values());
       setRequirements(reqs);
 
       const esigns = esignService.getEsignRequests();
@@ -184,19 +211,16 @@ export const DocumentManagementView: React.FC = () => {
     const unsubEsign = hrEventBus.subscribe('esign.*', () => loadData());
     const unsubShare = hrEventBus.subscribe('share.*', () => loadData());
 
-    // Live subscription to canonical employee_documents table
-    const reqChannel = supabase
-      .channel('hr-web-documents-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_documents' }, () => {
-        loadData();
-      })
-      .subscribe();
+    // Live subscription to canonical employee_documents table via centralized mesh
+    const unsubRealtime = realtimeChannelManager.subscribeToTable('employee_documents', () => {
+      loadData();
+    });
 
     return () => {
       unsubDoc();
       unsubEsign();
       unsubShare();
-      supabase.removeChannel(reqChannel);
+      unsubRealtime();
     };
   }, []);
 
@@ -260,7 +284,7 @@ export const DocumentManagementView: React.FC = () => {
         <div>
           <Breadcrumb
             items={[
-              { label: 'Joy PeopleHR', href: '/' },
+              { label: 'Joy PeopleHR' },
               { label: 'Documents & E-Signature' },
             ]}
           />

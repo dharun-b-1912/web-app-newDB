@@ -31,6 +31,11 @@ import { Button } from '../../../components/ui/Button';
 import { Payslip } from '../../../types/payroll';
 import { PayslipGeneratorService } from '../../../services/payroll/payslipGeneratorService';
 import { PayslipViewModel } from '../../../types/payslipViewModel';
+import { UniversalPayslipPdfService } from '../../../services/payroll/universalPayslipPdfService';
+import { BatchPayslipExportService } from '../../../services/payroll/batchPayslipExportService';
+import { PayslipDocument } from '../../../components/payroll/PayslipDocument';
+
+import { useToast } from '../../../components/ui/Toast';
 
 interface PayslipModalProps {
   payslip: Payslip | null;
@@ -39,9 +44,12 @@ interface PayslipModalProps {
 }
 
 export const PayslipModal: React.FC<PayslipModalProps> = ({ payslip, isOpen, onClose }) => {
+  const { showToast } = useToast();
   const [zoom, setZoom] = useState<number>(1);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isCopied, setIsCopied] = useState<boolean>(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState<boolean>(false);
+  const [pdfDownloadLabel, setPdfDownloadLabel] = useState<string>('Download PDF');
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const documentRef = useRef<HTMLDivElement>(null);
 
@@ -88,66 +96,33 @@ export const PayslipModal: React.FC<PayslipModalProps> = ({ payslip, isOpen, onC
     setTimeout(() => setIsCopied(false), 2000);
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handleDownloadPDF = async () => {
+    if (isDownloadingPdf) return;
+    try {
+      setIsDownloadingPdf(true);
+      setPdfDownloadLabel('Generating PDF...');
+      await new Promise(r => setTimeout(r, 100));
+      setPdfDownloadLabel('Downloading...');
+      await UniversalPayslipPdfService.downloadPdf(vm, 'a4-payslip-document');
+      showToast('Payslip PDF downloaded.', 'success');
+    } catch (err: any) {
+      console.error('[PayslipModal] PDF download failed:', err);
+      showToast('Unable to generate the payslip PDF. Please try again.', 'error');
+    } finally {
+      setTimeout(() => {
+        setIsDownloadingPdf(false);
+        setPdfDownloadLabel('Download PDF');
+      }, 500);
+    }
   };
 
-  const handleDownloadPDF = () => {
-    const printContent = documentRef.current;
-    if (!printContent) {
-      window.print();
-      return;
-    }
-
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <title>Payslip_${vm.employee.employeeCode}_${vm.payroll.payrollPeriod.replace(/\s+/g, '_')}</title>
-            <style>
-              @page {
-                size: A4 portrait;
-                margin: 12mm 12mm 12mm 12mm;
-              }
-              * {
-                box-sizing: border-box;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-              }
-              body {
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-                color: #0f172a;
-                background: #ffffff;
-                margin: 0;
-                padding: 0;
-              }
-              .payslip-page {
-                width: 100%;
-                max-width: 190mm;
-                margin: 0 auto;
-                background: #ffffff;
-              }
-              ${getPrintStyles()}
-            </style>
-          </head>
-          <body>
-            <div class="payslip-page">
-              ${printContent.innerHTML}
-            </div>
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-      }, 350);
-    } else {
-      window.print();
+  const handlePrintA4 = () => {
+    try {
+      UniversalPayslipPdfService.printDocument(vm, 'a4-payslip-document');
+      showToast('Payslip prepared for A4 printing.', 'info');
+    } catch (err: any) {
+      console.error('[PayslipModal] Print failed:', err);
+      showToast('Unable to prepare the payslip for printing.', 'error');
     }
   };
 
@@ -338,237 +313,12 @@ export const PayslipModal: React.FC<PayslipModalProps> = ({ payslip, isOpen, onC
                   }}
                   className="pb-10"
                 >
-                  {/* ACTUAL A4 PAYSLIP DOCUMENT */}
-                  <div
+                  {/* AUTHORITATIVE CANONICAL A4 PAYSLIP DOCUMENT */}
+                  <PayslipDocument
+                    model={vm}
+                    mode="screen"
                     id="a4-payslip-document"
-                    ref={documentRef}
-                    className="w-[794px] min-h-[1123px] bg-white rounded-lg border border-slate-300 p-8 shadow-2xl text-slate-900 font-sans relative"
-                    style={{
-                      boxShadow: '0 20px 25px -5px rgba(15, 23, 42, 0.15), 0 8px 10px -6px rgba(15, 23, 42, 0.1)',
-                    }}
-                  >
-                    {/* SECTION 1: HEADER (LOGO + TITLE + COMPANY BLOCK) */}
-                    <div className="relative flex items-center justify-center pb-2.5 mb-2.5 border-b-2 border-[#1e3a8a]">
-                      {/* Top-Left Logo Box (Constrained & Responsive) */}
-                      <div className="absolute left-0 top-0 w-24 h-16 flex items-center justify-start">
-                        <div className="h-14 max-w-[90px] rounded-lg border border-blue-200 bg-blue-50/40 p-1 flex items-center justify-center shadow-2xs overflow-hidden">
-                          <img
-                            src={vm.company.logoUrl || '/logo.png'}
-                            alt="Company Logo"
-                            className="max-h-full max-w-full object-contain object-left"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = 'none';
-                            }}
-                          />
-                          <span className="font-black text-[#1e3a8a] text-sm tracking-wider">JOY</span>
-                        </div>
-                      </div>
-
-                      {/* Header Center Titles */}
-                      <div className="text-center pt-1">
-                        <h1 className="text-xl font-black text-[#0f2d59] tracking-wider uppercase m-0 font-sans">
-                          EMPLOYEE SALARY SLIP
-                        </h1>
-                        <p className="text-xs font-black text-blue-700 tracking-widest uppercase mt-0.5">
-                          {vm.payroll.payrollPeriod.toUpperCase()}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Company Legal Identity & Statutory Contact Line */}
-                    <div className="text-center mb-3">
-                      <h2 className="text-base font-extrabold text-slate-900 leading-tight">
-                        {vm.company.legalName}
-                      </h2>
-                      <p className="text-xs font-semibold text-slate-500">
-                        {vm.company.displayName}
-                      </p>
-                      <p className="text-[10px] text-slate-600 max-w-xl mx-auto leading-relaxed mt-0.5">
-                        {vm.company.address}
-                      </p>
-                      <p className="text-[9.5px] font-semibold text-blue-700 mt-0.5">
-                        {vm.company.contact}
-                      </p>
-                    </div>
-
-                    {/* SECTION 2: EMPLOYEE INFORMATION 4-COLUMN STRUCTURED GRID */}
-                    <div className="border border-slate-300 rounded-lg overflow-hidden mb-3">
-                      <table className="w-full border-collapse text-xs">
-                        <tbody>
-                          {/* Row 1: Employee & Org Identity */}
-                          <tr className="border-b border-slate-300 divide-x divide-slate-300">
-                            <td className="p-2 bg-slate-50/70 w-1/4">
-                              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">EMPLOYEE ID</div>
-                              <div className="font-bold text-slate-900 font-mono text-xs">{vm.employee.employeeCode}</div>
-                            </td>
-                            <td className="p-2 bg-slate-50/70 w-1/4">
-                              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">EMPLOYEE NAME</div>
-                              <div className="font-bold text-slate-900 uppercase text-xs">{vm.employee.employeeName}</div>
-                            </td>
-                            <td className="p-2 bg-slate-50/70 w-1/4">
-                              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">DESIGNATION</div>
-                              <div className="font-bold text-slate-900 text-xs">{vm.employee.designation}</div>
-                            </td>
-                            <td className="p-2 bg-slate-50/70 w-1/4">
-                              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">DEPARTMENT</div>
-                              <div className="font-bold text-slate-900 text-xs">{vm.employee.department}</div>
-                            </td>
-                          </tr>
-
-                          {/* Row 2: Attendance & Pay Period */}
-                          <tr className="border-b border-slate-300 divide-x divide-slate-300">
-                            <td className="p-2 bg-slate-50/70">
-                              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">DATE OF JOINING (DOJ)</div>
-                              <div className="font-semibold text-slate-900 font-mono text-xs">{vm.employee.dateOfJoining}</div>
-                            </td>
-                            <td className="p-2 bg-slate-50/70">
-                              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">PAYROLL PERIOD</div>
-                              <div className="font-semibold text-slate-900 text-xs">{vm.payroll.periodStart} to {vm.payroll.periodEnd}</div>
-                            </td>
-                            <td className="p-2 bg-slate-50/70">
-                              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">PAYABLE DAYS</div>
-                              <div className="font-bold text-emerald-700 text-xs font-mono">{vm.attendance.payableDays} Days</div>
-                            </td>
-                            <td className="p-2 bg-slate-50/70">
-                              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">OT HOURS</div>
-                              <div className="font-bold text-slate-900 text-xs font-mono">{vm.attendance.overtimeHours} Hrs</div>
-                            </td>
-                          </tr>
-
-                          {/* Row 3: Banking & Statutory Compliance */}
-                          <tr className="divide-x divide-slate-300">
-                            <td className="p-2 bg-slate-50/70">
-                              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">BANK ACCOUNT NUMBER</div>
-                              <div className="font-mono font-bold text-slate-900 text-xs">{vm.employee.bankAccountMasked}</div>
-                            </td>
-                            <td className="p-2 bg-slate-50/70">
-                              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">IFSC CODE & BANK NAME</div>
-                              <div className="font-mono font-bold text-slate-900 text-xs">{vm.employee.ifscCode}</div>
-                            </td>
-                            <td className="p-2 bg-slate-50/70">
-                              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">UAN / EPF NUMBER</div>
-                              <div className="font-mono text-slate-900 text-xs">{vm.employee.uanMasked}</div>
-                            </td>
-                            <td className="p-2 bg-slate-50/70">
-                              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">ESI NUMBER</div>
-                              <div className="font-mono text-slate-900 text-xs">{vm.employee.esiMasked}</div>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* SECTION 3: FINANCIAL STATEMENT (EARNINGS VS DEDUCTIONS) */}
-                    <div className="grid grid-cols-2 gap-3 mb-3">
-                      {/* Left: Earnings Column */}
-                      <div className="border border-slate-300 rounded-lg overflow-hidden flex flex-col justify-between">
-                        <table className="w-full text-left text-xs border-collapse">
-                          <thead className="bg-slate-100 border-b border-slate-300">
-                            <tr>
-                              <th className="p-2.5 font-black text-[#1e3a8a] text-[11px] uppercase tracking-wide">EARNINGS</th>
-                              <th className="p-2.5 font-bold text-slate-600 text-[10px] text-center">UNITS</th>
-                              <th className="p-2.5 font-black text-[#1e3a8a] text-[11px] text-right uppercase tracking-wide">AMOUNT</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {vm.earnings.map(e => (
-                              <tr key={e.code} className="hover:bg-slate-50/60">
-                                <td className="p-2 font-medium text-slate-800">{e.label}</td>
-                                <td className="p-2 text-center text-slate-500 text-[10px] font-mono">{e.units || '—'}</td>
-                                <td className="p-2 text-right font-mono font-bold text-slate-900">₹{e.amount.toLocaleString('en-IN')}</td>
-                              </tr>
-                            ))}
-                            {vm.earnings.length === 0 && (
-                              <tr>
-                                <td colSpan={3} className="p-3 text-center text-slate-400 italic">No earnings recorded</td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-
-                        <div className="p-2.5 bg-slate-50 border-t-2 border-slate-300 flex items-center justify-between text-xs font-black">
-                          <span className="text-[#0f172a] uppercase tracking-wide">Gross Earnings</span>
-                          <span className="font-mono text-sm text-slate-900">₹{vm.totals.grossEarnings.toLocaleString('en-IN')}</span>
-                        </div>
-                      </div>
-
-                      {/* Right: Deductions Column */}
-                      <div className="border border-slate-300 rounded-lg overflow-hidden flex flex-col justify-between">
-                        <table className="w-full text-left text-xs border-collapse">
-                          <thead className="bg-slate-100 border-b border-slate-300">
-                            <tr>
-                              <th className="p-2.5 font-black text-[#1e3a8a] text-[11px] uppercase tracking-wide">DEDUCTIONS</th>
-                              <th className="p-2.5 font-black text-[#1e3a8a] text-[11px] text-right uppercase tracking-wide">AMOUNT</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {vm.deductions.map(d => (
-                              <tr key={d.code} className="hover:bg-slate-50/60">
-                                <td className="p-2 font-medium text-slate-800">{d.label}</td>
-                                <td className="p-2 text-right font-mono font-bold text-rose-800">₹{d.amount.toLocaleString('en-IN')}</td>
-                              </tr>
-                            ))}
-                            {vm.deductions.length === 0 && (
-                              <tr>
-                                <td colSpan={2} className="p-4 text-center text-slate-400 italic text-[11px]">
-                                  Zero deductions applied (₹0.00)
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-
-                        <div className="p-2.5 bg-slate-50 border-t-2 border-slate-300 flex items-center justify-between text-xs font-black">
-                          <span className="text-[#0f172a] uppercase tracking-wide">Total Deductions</span>
-                          <span className="font-mono text-sm text-rose-800">₹{vm.totals.totalDeductions.toLocaleString('en-IN')}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* SECTION 4: PAYROLL RECONCILIATION SUMMARY / SOURCE CHECK */}
-                    <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-lg mb-3 flex items-center justify-between text-xs flex-wrap gap-2">
-                      <div>
-                        <div className="font-bold text-blue-900 text-[11px]">Imported register check</div>
-                        <div className="text-[10px] text-blue-700 font-medium">
-                          Source Gross: <strong>₹{vm.totals.grossEarnings.toLocaleString('en-IN')}</strong> · Source Deductions: <strong>₹{vm.totals.totalDeductions.toLocaleString('en-IN')}</strong> · Source Net: <strong>₹{vm.totals.netPayable.toLocaleString('en-IN')}</strong>
-                        </div>
-                      </div>
-                      <span className="px-2.5 py-0.5 rounded text-[9px] font-black bg-blue-100 text-blue-800 border border-blue-200">
-                        100% RECONCILED
-                      </span>
-                    </div>
-
-                    {/* SECTION 5: NET TAKE-HOME PAY HERO SECTION */}
-                    <div className="p-4 bg-emerald-50/90 border-2 border-emerald-300 rounded-lg mb-3 flex items-center justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-black text-emerald-950 uppercase tracking-wide">NET TAKE-HOME PAY</span>
-                          <span className="px-2.5 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
-                            {vm.employee.paymentMode}
-                          </span>
-                        </div>
-                        <div className="text-[10.5px] font-bold text-emerald-800 mt-1">
-                          Amount in Words: {vm.totals.netPayableInWords}
-                        </div>
-                      </div>
-
-                      <div className="text-2xl font-black text-emerald-900 font-mono tracking-tight text-right">
-                        ₹{vm.totals.netPayable.toLocaleString('en-IN')}
-                      </div>
-                    </div>
-
-                    {/* SECTION 6: STATUTORY FOOTER */}
-                    <div className="border-t border-slate-200 pt-2.5 mt-4 text-center text-slate-500 text-[9.5px]">
-                      <div className="flex items-center justify-between text-[9px] text-slate-400 mb-1">
-                        <span>Generated on: {new Date(vm.metadata.generatedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                        <span>JOY PeopleHR • Secure Statutory Document</span>
-                        <span>Page 1 of 1</span>
-                      </div>
-                      <div className="italic">
-                        *** This is a computer-generated payslip and does not require a physical signature. ***
-                      </div>
-                    </div>
-                  </div>
+                  />
                 </div>
               </div>
             </div>
@@ -578,10 +328,10 @@ export const PayslipModal: React.FC<PayslipModalProps> = ({ payslip, isOpen, onC
               <div className="space-y-4">
                 {/* ACTION PANEL TITLE */}
                 <div>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
-                    Payslip Actions
+                  <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    PAYSLIP ACTIONS
                   </h3>
-                  <p className="text-sm font-extrabold text-slate-900 mt-0.5">
+                  <p className="text-xs font-extrabold text-slate-900 mt-0.5">
                     Export & Distribution
                   </p>
                 </div>
@@ -592,18 +342,23 @@ export const PayslipModal: React.FC<PayslipModalProps> = ({ payslip, isOpen, onC
                     size="md"
                     variant="primary"
                     onClick={handleDownloadPDF}
-                    className="w-full bg-[#07563D] hover:bg-[#064e37] text-white font-bold shadow-sm justify-center cursor-pointer py-2.5"
+                    disabled={isDownloadingPdf}
+                    aria-busy={isDownloadingPdf}
+                    aria-label="Download payslip PDF"
+                    className="w-full bg-[#07563D] hover:bg-[#064e37] text-white font-bold shadow-2xs justify-center cursor-pointer py-2.5 rounded-xl text-xs transition-all disabled:opacity-75"
                   >
-                    <Download className="w-4 h-4 mr-2" /> Download PDF
+                    <Download className={`w-4 h-4 mr-2 ${isDownloadingPdf ? 'animate-bounce' : ''}`} />
+                    {pdfDownloadLabel}
                   </Button>
 
                   <Button
                     size="md"
                     variant="outline"
-                    onClick={handlePrint}
-                    className="w-full border-slate-300 text-slate-800 hover:bg-slate-50 font-bold justify-center cursor-pointer py-2.5"
+                    onClick={handlePrintA4}
+                    aria-label="Print payslip in A4 format"
+                    className="w-full border-slate-300 text-slate-800 hover:bg-slate-50 font-bold justify-center cursor-pointer py-2.5 rounded-xl text-xs bg-white shadow-2xs transition-all"
                   >
-                    <Printer className="w-4 h-4 mr-2 text-slate-600" /> Print Payslip
+                    <Printer className="w-4 h-4 mr-2 text-slate-600" /> Print A4
                   </Button>
                 </div>
 

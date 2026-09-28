@@ -4,19 +4,19 @@
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { realtimeChannelManager } from '../realtime/realtimeChannelManager';
 import { WorkForceEvent, HydratedNotificationItem } from '../../types/notification';
 
 export type NotificationEventListener = (event: WorkForceEvent) => void;
 
 class NotificationRealtimeEngine {
   private listeners = new Set<NotificationEventListener>();
-  private activeChannels: any[] = [];
+  private unsubTable: (() => void) | null = null;
   private broadcastChannel: BroadcastChannel | null = null;
   private isConnected = false;
-  private reconnectAttempts = 0;
-  private maxReconnectDelay = 30000;
   private processedEventIds = new Set<string>();
   private lastReceivedTimestamp: string = new Date().toISOString();
+  private currentParams: { userId?: string; organizationId?: string } = {};
 
   constructor() {
     this.initLocalMesh();
@@ -51,83 +51,29 @@ class NotificationRealtimeEngine {
       return;
     }
 
+    this.currentParams = params;
     this.unsubscribeAll();
 
     try {
-      // 1. User Dedicated Channel
-      const userChan = supabase
-        .channel(`user:${params.userId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'notification_events',
-            filter: `recipient_user_id=eq.${params.userId}`,
-          },
-          (payload) => this.handleEventInsert(payload)
-        )
-        .subscribe((status) => {
-          this.handleChannelStatus(status);
-        });
-      this.activeChannels.push(userChan);
-
-      // 2. Organization Channel (if tenant-bound)
-      if (params.organizationId) {
-        const orgChan = supabase
-          .channel(`organization:${params.organizationId}`)
-          .on(
-            'postgres_changes',
-            {
-              event: 'INSERT',
-              schema: 'public',
-              table: 'notification_events',
-              filter: `organization_id=eq.${params.organizationId}`,
-            },
-            (payload) => this.handleEventInsert(payload)
-          )
-          .subscribe();
-        this.activeChannels.push(orgChan);
-      }
-
-      // 3. Platform Admin Channels (if Super Admin or Staff)
-      if (params.isSuperAdmin || params.isPlatformStaff) {
-        const platformChan = supabase
-          .channel('platform:operations')
-          .on(
-            'postgres_changes',
-            {
-              event: 'INSERT',
-              schema: 'public',
-              table: 'notification_events',
-            },
-            (payload) => this.handleEventInsert(payload)
-          )
-          .subscribe();
-        this.activeChannels.push(platformChan);
-      }
+      this.unsubTable = realtimeChannelManager.subscribeToTable('notification_events', (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const row = payload.new;
+          // Filter in-memory by recipient or tenant or platform scope
+          if (
+            row.recipient_user_id === params.userId ||
+            (params.organizationId && row.organization_id === params.organizationId) ||
+            params.isSuperAdmin ||
+            params.isPlatformStaff
+          ) {
+            this.handleEventInsert(payload);
+          }
+        }
+      });
+      this.isConnected = true;
     } catch (err) {
-      console.warn('[NotificationRealtimeEngine] Supabase Realtime subscription error, using local mesh', err);
+      console.warn('[NotificationRealtimeEngine] Realtime notification registration notice:', err);
       this.isConnected = true;
     }
-  }
-
-  private handleChannelStatus(status: string) {
-    if (status === 'SUBSCRIBED') {
-      this.isConnected = true;
-      this.reconnectAttempts = 0;
-    } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-      this.isConnected = false;
-      this.scheduleReconnect();
-    }
-  }
-
-  private scheduleReconnect() {
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.maxReconnectDelay);
-    this.reconnectAttempts++;
-    setTimeout(() => {
-      console.log('[NotificationRealtimeEngine] Reconnecting realtime notifications channel...');
-    }, delay);
   }
 
   private async handleDeliveryInsert(payload: any) {
@@ -255,14 +201,10 @@ class NotificationRealtimeEngine {
   }
 
   public unsubscribeAll() {
-    this.activeChannels.forEach((c) => {
-      try {
-        supabase.removeChannel(c);
-      } catch (e) {
-        console.warn(e);
-      }
-    });
-    this.activeChannels = [];
+    if (this.unsubTable) {
+      this.unsubTable();
+      this.unsubTable = null;
+    }
   }
 
   public getIsConnected(): boolean {

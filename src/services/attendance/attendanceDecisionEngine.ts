@@ -10,6 +10,14 @@ import { attendanceRosterService } from './attendanceRosterService';
 import { ShiftMaster } from '../../types/shiftRoster';
 import { getActiveOrgId } from './biometricCommandService';
 import { attendanceTimeService } from './attendanceTimeService';
+import {
+  evaluateChannelLock,
+  resolveChannel,
+  getDecisionLabel,
+  AttendanceChannel,
+  DEFAULT_CHANNEL_LOCK_POLICY,
+  ChannelLockPolicy,
+} from './attendanceChannelLockService';
 
 export type AttendanceSource = 'BIOMETRIC' | 'MOBILE' | 'MANUAL' | 'SYSTEM' | 'API' | 'IMPORT' | 'OTHER';
 export type BiometricMethod = 'FINGERPRINT' | 'FACE' | 'RFID' | 'CARD' | 'PIN' | 'PASSWORD' | 'GPS' | 'MANUAL' | 'UNKNOWN';
@@ -70,6 +78,9 @@ export interface AttendanceSession {
 
   attendance_status: AttendanceSessionStatus;
 
+  // Channel locking — the KEY field for one-session-per-day rule
+  locked_channel: AttendanceChannel | null; // 'BIOMETRIC' | 'MOBILE' | 'MANUAL' | 'SYSTEM'
+
   active_source: AttendanceSource | null;
   check_in_source: AttendanceSource | null;
   check_in_method: BiometricMethod | null;
@@ -102,6 +113,7 @@ export interface AttendanceSession {
   raw_events_count: number;
   ignored_events_count: number;
   duplicate_events_count: number;
+  cross_channel_events_count: number; // NEW: how many cross-channel evidence punches
 
   status: 'ACTIVE' | 'FINALIZED' | 'REGULARIZED';
   version: number;
@@ -154,9 +166,24 @@ class AttendanceDecisionEngine {
   private inMemoryRawEvents: RawAttendanceEvent[] = [];
   private eventDedupSet: Set<string> = new Set();
   private defaultPolicy: SourceLockPolicy = 'LOCK_FIRST_SOURCE';
+  private channelLockPolicy: ChannelLockPolicy = { ...DEFAULT_CHANNEL_LOCK_POLICY };
+
+  // ── Performance: debounced localStorage writes ──────────────────────────
+  // Prevents blocking the main thread on every punch event.
+  // Writes are batched and flushed at most once every 500ms.
+  private _saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // ── Performance: employee directory cache (5-minute TTL) ────────────────
+  // Prevents a network call to api.getEmployees() on every biometric punch.
+  private _empCache: { data: any[]; orgId: string; expiresAt: number } | null = null;
 
   constructor() {
     this.loadState();
+    // Flush on page unload so no data is lost on tab close
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', () => this._flushSave());
+      window.addEventListener('pagehide',    () => this._flushSave());
+    }
   }
 
   private getSessionKey(orgId: string, empId: string, date: string): string {
@@ -206,13 +233,24 @@ class AttendanceDecisionEngine {
     } catch (_) {}
   }
 
-  private saveState() {
+  /** Immediate synchronous save — only used on beforeunload */
+  private _flushSave() {
     if (typeof localStorage === 'undefined') return;
     try {
       const sessionList = Array.from(this.inMemorySessions.values());
       localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(sessionList.slice(-2000)));
       localStorage.setItem(STORAGE_KEYS.RAW_EVENTS, JSON.stringify(this.inMemoryRawEvents.slice(-5000)));
     } catch (_) {}
+  }
+
+  /** Debounced save — coalesces rapid punch events into a single write */
+  private saveState() {
+    if (typeof localStorage === 'undefined') return;
+    if (this._saveDebounceTimer) return; // already scheduled
+    this._saveDebounceTimer = setTimeout(() => {
+      this._saveDebounceTimer = null;
+      this._flushSave();
+    }, 500);
   }
 
   /**
@@ -240,6 +278,17 @@ class AttendanceDecisionEngine {
   }
 
   /**
+   * Configure the channel lock policy (cross-channel checkout behaviour)
+   */
+  public setChannelLockPolicy(policy: Partial<ChannelLockPolicy>) {
+    this.channelLockPolicy = { ...this.channelLockPolicy, ...policy };
+  }
+
+  public getChannelLockPolicy(): ChannelLockPolicy {
+    return this.channelLockPolicy;
+  }
+
+  /**
    * Generate Deterministic Idempotent Event Key
    */
   public generateEventKey(orgId: string, deviceId: string, pin: string, timestamp: string, sequence = 0): string {
@@ -256,25 +305,22 @@ class AttendanceDecisionEngine {
     employeeCode?: string,
     employeeId?: string
   ): Promise<{ id: string; name: string; code: string; department?: string; organization_id?: string } | null> {
-    const cleanPin = String(biometricPin || '').trim();
+    const cleanPin  = String(biometricPin  || '').trim();
     const pinDigits = cleanPin.replace(/\D/g, '');
-    const cleanCode = String(employeeCode || '').trim();
-    const cleanId = String(employeeId || '').trim();
-
-    // 1. Direct static employee dictionary resolution
-    if (cleanId === 'emp-dharun-017' || cleanCode === 'JCS-017' || pinDigits === '17' || cleanPin === '017') {
-      const homeOrg = orgId === 'org-attacker-99' ? 'org-joy-test' : orgId;
-      return { id: 'emp-dharun-017', name: 'Dharun B', code: 'JCS-017', department: 'Engineering', organization_id: homeOrg };
-    }
-    if (cleanId === 'emp-danya-154' || cleanCode === 'JCS-154' || pinDigits === '154' || cleanPin === '154') {
-      return { id: 'emp-danya-154', name: 'Danya R', code: 'JCS-154', department: 'Quality Assurance', organization_id: orgId };
-    }
-    if (cleanId === 'emp-user-27' || cleanCode === 'JCS-027' || pinDigits === '27' || cleanPin === '27') {
-      return { id: 'emp-user-27', name: 'User 27', code: 'JCS-027', department: 'Operations', organization_id: orgId };
-    }
+    const cleanCode = String(employeeCode  || '').trim();
+    const cleanId   = String(employeeId    || '').trim();
 
     try {
-      const employees = await api.getEmployees(orgId);
+      // 1. Use cached employee directory (5-minute TTL) — avoids network call per punch
+      let employees: any[];
+      const now = Date.now();
+      if (this._empCache && this._empCache.orgId === orgId && now < this._empCache.expiresAt) {
+        employees = this._empCache.data;
+      } else {
+        employees = await api.getEmployees(orgId);
+        this._empCache = { data: employees, orgId, expiresAt: now + 5 * 60 * 1000 };
+      }
+
       if (Array.isArray(employees) && employees.length > 0) {
         if (cleanId) {
           const found: any = employees.find((e: any) => e.id === cleanId);
@@ -549,6 +595,9 @@ class AttendanceDecisionEngine {
 
         attendance_status: 'CHECKED_IN',
 
+        // Channel locking — lock to the first punch's channel
+        locked_channel: resolveChannel(source),
+
         active_source: source,
         check_in_source: source,
         check_in_method: method,
@@ -581,6 +630,7 @@ class AttendanceDecisionEngine {
         raw_events_count: 1,
         ignored_events_count: 0,
         duplicate_events_count: 0,
+        cross_channel_events_count: 0,
 
         status: 'ACTIVE',
         version: 1,
@@ -680,12 +730,43 @@ class AttendanceDecisionEngine {
       };
     }
 
-    // Check Source Lock Conflict
-    // Rule: If source is locked (e.g. MOBILE) and a different channel arrives (e.g. BIOMETRIC), ignore it for attendance
-    if (session.is_source_locked && session.active_source !== source && policy === 'LOCK_FIRST_SOURCE') {
-      session.ignored_events_count += 1;
+    // ========================================================================
+    // SCENARIO 2B: USE CHANNEL LOCK SERVICE for subsequent events
+    // Replaces ad-hoc source lock check with authoritative channel evaluation
+    // ========================================================================
+    const channelEval = evaluateChannelLock({
+      incomingSource: source,
+      incomingMethod: method,
+      punchIntent: params.punchIntent,
+      punchTimestamp: timestamp,
+      isNearShiftEnd: (() => {
+        const [endH, endM] = shift.end_time.split(':').map((x) => parseInt(x, 10));
+        const shiftEndMins = (endH || 18) * 60 + (endM || 0);
+        const currentMinsIst = attendanceTimeService.getMinutesFromMidnight(timestamp, 'Asia/Kolkata');
+        return currentMinsIst >= shiftEndMins - (shift.early_out_tolerance_minutes ?? 15);
+      })(),
+      elapsedMinutesSinceCheckIn: session.first_in_at
+        ? (new Date(timestamp).getTime() - new Date(session.first_in_at).getTime()) / 60000
+        : 0,
+      currentSession: {
+        sessionId: session.id,
+        channel: session.locked_channel || resolveChannel(session.active_source || 'BIOMETRIC'),
+        checkedInAt: session.first_in_at || timestamp,
+        isCheckedOut: session.attendance_status === 'CHECKED_OUT',
+        lastPunchAt: session.updated_at,
+      },
+      policy: this.channelLockPolicy,
+    });
 
-      const ignoredRaw: RawAttendanceEvent = {
+    // ── Cross-channel evidence (e.g., biometric punch after mobile check-in) ──
+    if (
+      channelEval.decision === 'CROSS_CHANNEL_EVIDENCE' ||
+      channelEval.decision === 'CROSS_CHANNEL_CHECKOUT_BLOCKED'
+    ) {
+      session.ignored_events_count += 1;
+      session.cross_channel_events_count = (session.cross_channel_events_count || 0) + 1;
+
+      const crossRaw: RawAttendanceEvent = {
         id: rawEventId,
         event_key: eventKey,
         organization_id: orgId,
@@ -701,21 +782,21 @@ class AttendanceDecisionEngine {
         method,
         raw_payload: params.rawPayload,
         decision_code: 'IGNORED_SOURCE_LOCK',
-        decision_reason: `Event ignored for attendance. Active session is locked to ${session.active_source}.`,
+        decision_reason: channelEval.reason,
         session_id: session.id,
         received_at: new Date().toISOString(),
       };
 
-      this.inMemoryRawEvents.push(ignoredRaw);
+      this.inMemoryRawEvents.push(crossRaw);
       this.saveState();
-      this.dispatchRealtime(session, ignoredRaw);
+      this.dispatchRealtime(session, crossRaw);
 
       return {
         success: true,
-        event: ignoredRaw,
+        event: crossRaw,
         session,
         decisionCode: 'IGNORED_SOURCE_LOCK',
-        decisionReason: `Raw event recorded for audit. Attendance unchanged (Session locked to ${session.active_source}).`,
+        decisionReason: channelEval.reason,
         isDuplicate: false,
         isIgnoredForLock: true,
         timerRunning: session.attendance_status === 'CHECKED_IN',
@@ -774,8 +855,17 @@ class AttendanceDecisionEngine {
 
     const [endH, endM] = shift.end_time.split(':').map((x) => parseInt(x, 10));
     const shiftEndMins = (endH || 18) * 60 + (endM || 0);
-    const currentMinsOfDay = attendanceTimeService.getMinutesFromMidnight(timestamp, 'Asia/Kolkata');
-    const isPastOrNearShiftEnd = currentMinsOfDay >= (shiftEndMins - (shift.early_out_tolerance_minutes ?? 15));
+    const d = new Date(timestamp);
+    let punchH = d.getUTCHours();
+    let punchM = d.getUTCMinutes();
+    if (!timestamp.endsWith('Z')) {
+      punchH = d.getHours();
+      punchM = d.getMinutes();
+    }
+    const currentMinsUtcOrLocal = punchH * 60 + punchM;
+    const currentMinsIst = attendanceTimeService.getMinutesFromMidnight(timestamp, 'Asia/Kolkata');
+    const thresholdMins = shiftEndMins - (shift.early_out_tolerance_minutes ?? 15);
+    const isPastOrNearShiftEnd = currentMinsUtcOrLocal >= thresholdMins || currentMinsIst >= thresholdMins;
 
     // A punch is eligible for checkout ONLY if:
     // 1. Explicit user checkout action / OUT direction, OR

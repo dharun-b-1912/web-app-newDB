@@ -5,14 +5,17 @@ import { Button } from '../../../components/ui/Button';
 interface Props {
   title?: string;
   message?: string;
+  errorMessage?: string; // alias for message
   onRetry?: () => void;
 }
 
 export const DashboardErrorState: React.FC<Props> = ({
   title = 'Failed to load section data',
-  message = 'An unexpected error occurred while communicating with the data service.',
+  message,
+  errorMessage,
   onRetry,
 }) => {
+  const displayMessage = message || errorMessage || 'An unexpected error occurred while communicating with the data service.';
   return (
     <div className="p-6 rounded-2xl border border-rose-100 bg-rose-50/40 text-center space-y-3">
       <div className="w-10 h-10 mx-auto rounded-full bg-rose-100 text-rose-600 flex items-center justify-center">
@@ -20,7 +23,7 @@ export const DashboardErrorState: React.FC<Props> = ({
       </div>
       <div>
         <h4 className="text-sm font-bold text-gray-900">{title}</h4>
-        <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">{message}</p>
+        <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">{displayMessage}</p>
       </div>
       {onRetry && (
         <Button size="sm" variant="secondary" onClick={onRetry} className="text-xs">

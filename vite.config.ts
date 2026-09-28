@@ -8,8 +8,13 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
+    },
+    test: {
+      globals: true,
+      environment: 'node',
+      exclude: ['**/node_modules/**', '**/Essl Support files/**', '**/scratch/**', '**/.agents/**'],
     },
     server: {
       proxy: {
@@ -18,6 +23,9 @@ export default defineConfig(() => {
           changeOrigin: true,
           secure: true,
           rewrite: (path) => path.replace(/^\/api\/resend/, ''),
+          headers: {
+            Authorization: `Bearer ${process.env.RESEND_API_KEY || 're_mock_dummy_resend_api_key_sanitized'}`,
+          },
         },
       },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

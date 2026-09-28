@@ -3,7 +3,7 @@
 // Joy PeopleHR — Gate B15: Wiegand Turnstile & Barrier Relay Controller
 // ============================================================================
 
-import { computeSha256 } from '../../operations/vendorGovernancePolicyEngine';
+import { computeSha256 } from '../../../lib/crypto';
 
 export interface SignedAccessCommand {
   commandId: string;

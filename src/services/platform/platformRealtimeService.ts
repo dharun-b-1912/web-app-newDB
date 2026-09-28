@@ -1,10 +1,6 @@
-// src/services/platform/platformRealtimeService.ts
-// ============================================================
-// Joy PeopleHR — Realtime Event Subscription & Telemetry Engine
-// ============================================================
-
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { realtimeChannelManager } from '../realtime/realtimeChannelManager';
 import { platformCache } from './platformCache';
 
 export interface RealtimeEventPayload {
@@ -19,7 +15,6 @@ export type RealtimeSubscriber = (payload: RealtimeEventPayload) => void;
 
 class PlatformRealtimeEngine {
   private subscribers = new Set<RealtimeSubscriber>();
-  private channel: any = null;
   private broadcastChannel: BroadcastChannel | null = null;
   private isConnected = false;
 
@@ -52,41 +47,20 @@ class PlatformRealtimeEngine {
 
   private initSupabaseChannel() {
     try {
-      this.channel = supabase
-        .channel('platform-control-plane')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'platform_control', table: 'organizations' },
-          (payload) => this.handlePostgresChange('organizations', payload)
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'billing_mesh', table: 'invoices' },
-          (payload) => this.handlePostgresChange('invoices', payload)
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'billing_mesh', table: 'subscriptions' },
-          (payload) => this.handlePostgresChange('subscriptions', payload)
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'platform_control', table: 'platform_incidents' },
-          (payload) => this.handlePostgresChange('platform_incidents', payload)
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'operations', table: 'background_jobs' },
-          (payload) => this.handlePostgresChange('background_jobs', payload)
-        )
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'audit', table: 'platform_audit_log' },
-          (payload) => this.handlePostgresChange('platform_audit_log', payload)
-        )
-        .subscribe((status) => {
-          this.isConnected = status === 'SUBSCRIBED';
+      const tables = [
+        'organizations',
+        'invoices',
+        'subscriptions',
+        'platform_incidents',
+        'background_jobs',
+        'platform_audit_log',
+      ];
+      tables.forEach((tbl) => {
+        realtimeChannelManager.subscribeToTable(tbl, (payload) => {
+          this.handlePostgresChange(tbl, payload);
         });
+      });
+      this.isConnected = true;
     } catch (err) {
       console.warn('Failed to subscribe to Supabase Realtime channel, fallback to local mesh', err);
       this.isConnected = true;

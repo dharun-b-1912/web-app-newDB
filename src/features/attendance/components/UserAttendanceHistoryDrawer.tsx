@@ -65,15 +65,7 @@ export const UserAttendanceHistoryDrawer: React.FC<UserAttendanceHistoryDrawerPr
       const handleLive = () => {
         loadPunches(page);
       };
-      window.addEventListener('biometric:updated', handleLive);
-
-      const livePoll = setInterval(() => {
-        if (device) biometricGatewayService.syncLivePunchesFromGateway(device.id);
-        loadPunches(page);
-      }, 3000);
-
       return () => {
-        clearInterval(livePoll);
         unsubPunch();
         unsubBio();
         window.removeEventListener('biometric:updated', handleLive);

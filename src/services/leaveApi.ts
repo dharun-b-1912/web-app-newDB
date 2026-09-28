@@ -1664,8 +1664,7 @@ export const leaveApi = {
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('leave_ledger_entries').select('*').order('created_at', { ascending: false });
-        if (employeeId) {
-          if (!isValidUUID(employeeId)) return [];
+        if (employeeId && isValidUUID(employeeId)) {
           q = q.eq('employee_id', employeeId);
         }
         const { data, error } = await q;

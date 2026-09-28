@@ -457,7 +457,7 @@ export interface BillingRun {
 export interface ExcelColumnMapping {
   column_key: string;
   header_label: string;
-  source_path: string; // e.g. 'employee.employee_name', 'attendance.payable_days', 'wages.gross_earnings'
+  source_path?: string; // e.g. 'employee.employee_name', 'attendance.payable_days', 'wages.gross_earnings'
   formula_expression?: string; // e.g. 'SUM(BASIC, HRA, OT)'
   format: 'TEXT' | 'NUMBER' | 'CURRENCY' | 'PERCENTAGE' | 'DATE';
   width?: number;
@@ -483,3 +483,169 @@ export interface LegacyClientTemplateConfig {
   sheets: ExcelSheetTemplate[];
   created_at: string;
 }
+
+// ----------------------------------------------------------------------------
+// Advanced Wage Component Master & Mapping
+// ----------------------------------------------------------------------------
+export type WageComponentCategory =
+  | 'EARNING'
+  | 'DEDUCTION'
+  | 'EMPLOYER_CONTRIBUTION'
+  | 'RECOVERY'
+  | 'STATUTORY_LEVY';
+
+export type StatutoryTaxTreatment =
+  | 'TAXABLE_GROSS'
+  | 'EXEMPT'
+  | 'PF_WAGE_BASIS'
+  | 'ESI_WAGE_BASIS'
+  | 'PT_WAGE_BASIS'
+  | 'PASS_THROUGH';
+
+export interface WageComponentMaster {
+  id: string;
+  component_code: string;
+  component_name: string;
+  component_type: WageComponentCategory;
+  payroll_source_field: string;
+  is_billable_eligible: boolean;
+  default_included_in_wage_basis: boolean;
+  statutory_treatment: StatutoryTaxTreatment;
+  tax_treatment: 'TAXABLE_GST_18' | 'EXEMPT_GST' | 'RCM_APPLICABLE';
+  effective_from: string;
+  effective_to?: string;
+  is_active: boolean;
+  notes?: string;
+}
+
+export interface WageComponentMapping {
+  id: string;
+  tenant_id: string;
+  client_id: string;
+  contract_id: string;
+  component_code: string;
+  component_name: string;
+  source_payroll_field: string;
+  destination_invoice_field: string;
+  transformation_rule: 'DIRECT' | 'INCLUDED_IN_BILLABLE_BASE' | 'SEPARATE_LINE_ITEM' | 'DEDUCTED_FROM_INVOICE' | 'CUSTOM_FORMULA';
+  formula_expression?: string;
+  is_included_in_billable_basis: boolean;
+  is_required: boolean;
+  default_value?: number;
+  sample_value?: number;
+  updated_at: string;
+}
+
+// ----------------------------------------------------------------------------
+// Charge Category Master
+// ----------------------------------------------------------------------------
+export interface ChargeCategoryMaster {
+  id: string;
+  tenant_id: string;
+  category_code: string;
+  category_name: string;
+  charge_type: 'PERCENTAGE_BILLABLE_WAGES' | 'PERCENTAGE_GROSS_WAGES' | 'PER_ACTIVE_HEAD' | 'PER_PAY_DAY' | 'PER_OT_HOUR' | 'FIXED_LUMP_SUM';
+  default_rate: number;
+  calculation_basis: string;
+  tax_treatment: 'GST_18' | 'GST_12' | 'EXEMPT' | 'NIL_RATED';
+  effective_from: string;
+  effective_to?: string;
+  is_active: boolean;
+  requires_approval: boolean;
+  description: string;
+}
+
+// ----------------------------------------------------------------------------
+// Reusable Excel Template Definition & Versioning
+// ----------------------------------------------------------------------------
+export interface ExcelSheetDefinition {
+  sheet_id: string;
+  sheet_name: string;
+  sheet_type: 'PLANT_1' | 'PLANT_2' | 'SALARY_WORKING' | 'SUMMARY' | 'INVOICE' | 'OT_BILL' | 'STATUTORY_RECON';
+  title_header: string;
+  columns: ExcelColumnMapping[];
+  totals_formulas?: Record<string, string>; // e.g. { 'G': 'SUM(G5:G100)', 'K': 'SUM(K5:K100)' }
+}
+
+export interface ExcelTemplateDefinition {
+  id: string;
+  tenant_id: string;
+  client_id?: string;
+  contract_id?: string;
+  template_code: string;
+  template_name: string;
+  version: number;
+  status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+  description: string;
+  applicable_plants: string[];
+  sheets: ExcelSheetDefinition[];
+  published_at?: string;
+  published_by?: string;
+  created_at: string;
+}
+
+// ----------------------------------------------------------------------------
+// Statutory Reconciliation & Anomaly Exceptions
+// ----------------------------------------------------------------------------
+export interface ReconciliationExceptionRecord {
+  id: string;
+  tenant_id: string;
+  billing_run_id: string;
+  exception_type: 'HEADCOUNT_MISMATCH' | 'WAGE_VARIANCE' | 'PF_DISCREPANCY' | 'ESI_DISCREPANCY' | 'MISSING_MAPPING' | 'RECOVERY_VARIANCE';
+  severity: 'CRITICAL' | 'WARNING' | 'INFO';
+  description: string;
+  payroll_value: number | string;
+  billed_value: number | string;
+  variance_amount?: number;
+  status: 'OPEN' | 'RESOLVED' | 'OVERRIDDEN' | 'DISMISSED';
+  resolution_notes?: string;
+  resolved_by?: string;
+  resolved_at?: string;
+  created_at: string;
+}
+
+// ----------------------------------------------------------------------------
+// Billing Configuration Profile & Snapshots
+// ----------------------------------------------------------------------------
+export interface BillingConfigurationProfile {
+  id: string;
+  tenant_id: string;
+  client_id: string;
+  contract_id: string;
+  profile_name: string;
+  version: number;
+  is_active: boolean;
+  salary_divisor_type: SalaryDivisorType;
+  custom_divisor_days?: number;
+  service_charge_method: 'PERCENTAGE_BILLABLE' | 'PERCENTAGE_GROSS' | 'FIXED';
+  service_charge_rate: number;
+  transport_rate_per_head: number;
+  canteen_rate_per_head: number;
+  billable_components: WageComponentMapping[];
+  statutory_rules: {
+    bill_employer_pf: boolean;
+    pf_rate_pct: number;
+    bill_pf_admin: boolean;
+    pf_admin_rate_pct: number;
+    bill_employer_esi: boolean;
+    esi_rate_pct: number;
+    canteen_recovery_deducted: boolean;
+  };
+  linked_excel_template_id?: string;
+  effective_from: string;
+  effective_to?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BillingRunSnapshotRecord {
+  id: string;
+  billing_run_id: string;
+  configuration_profile_snapshot: BillingConfigurationProfile;
+  payroll_data_snapshot_hash: string;
+  employee_count: number;
+  total_billed_amount: number;
+  generated_by: string;
+  generated_at: string;
+}
+

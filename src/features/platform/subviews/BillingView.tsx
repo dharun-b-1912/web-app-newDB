@@ -44,6 +44,7 @@ import {
   RefundItem,
   FinancialLedgerEntry,
 } from '../../../services/platform/platformBillingService';
+import { platformTenantService } from '../../../services/platform/platformTenantService';
 import { CreateInvoiceMultiStepModal } from '../components/billing/CreateInvoiceMultiStepModal';
 import { InvoicePreviewModal } from '../components/billing/InvoicePreviewModal';
 import { RecordPaymentModal } from '../components/billing/RecordPaymentModal';
@@ -64,6 +65,12 @@ export const BillingView: React.FC<BillingViewProps> = ({ onNavigateTab }) => {
   // Version counter for live re-renders
   const [dataVersion, setDataVersion] = useState(0);
   const refreshData = () => setDataVersion((v) => v + 1);
+
+  React.useEffect(() => {
+    platformTenantService.fetchLiveFromSupabase().then(() => {
+      refreshData();
+    });
+  }, []);
 
   // Period Filter State
   const [selectedPeriod, setSelectedPeriod] = useState<string>('Current Month');

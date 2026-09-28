@@ -9,6 +9,7 @@ export interface ModalProps {
   description?: string;
   children: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | 'full';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | 'full';
   hideHeader?: boolean;
 }
 
@@ -18,9 +19,11 @@ export const Modal: React.FC<ModalProps> = ({
   title,
   description,
   children,
-  maxWidth = 'lg',
+  maxWidth,
+  size,
   hideHeader = false,
 }) => {
+  const effectiveMaxWidth = maxWidth || size || 'lg';
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -63,7 +66,7 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         className={cn(
           'relative w-full bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-10 animate-in zoom-in-95 duration-200 my-auto',
-          maxWidths[maxWidth]
+          maxWidths[effectiveMaxWidth]
         )}
       >
         {/* Header */}

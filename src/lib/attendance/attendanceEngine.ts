@@ -236,14 +236,31 @@ export function formatCleanTime(timeStr?: string): string {
     clean = clean.split('.')[0];
   }
 
-  // Handle ISO datetime strings
+  // Handle ISO datetime strings (convert UTC to IST Asia/Kolkata)
   if (clean.includes('T') || clean.endsWith('Z')) {
     try {
       const d = new Date(clean);
       if (!isNaN(d.getTime())) {
-        return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+        return new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        }).format(d);
       }
     } catch (_) {}
+  }
+
+  // If plain 24-hour time string without date (e.g. "09:32:00" or "09:32")
+  const match24 = clean.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (match24) {
+    let h = parseInt(match24[1], 10);
+    const m = match24[2];
+    const s = match24[3] || '00';
+    const suffix = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 === 0 ? 12 : h % 12;
+    return `${String(h).padStart(2, '0')}:${m}:${s} ${suffix}`;
   }
 
   return clean;

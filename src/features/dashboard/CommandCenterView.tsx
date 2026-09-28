@@ -7,6 +7,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { realtimeChannelManager } from '../../services/realtime/realtimeChannelManager';
 import { useAuth } from '../../hooks/useAuth';
 import { useTenant } from '../../hooks/useTenant';
 import {
@@ -84,17 +85,17 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
 
     fetchAttentionMetrics();
 
-    // ⚡ Realtime WebSocket listener for instantaneous Command Center telemetry
-    const realtimeChannel = supabase
-      .channel('command-center-live-telemetry')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_daily' }, () => fetchAttentionMetrics())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_regularizations' }, () => fetchAttentionMetrics())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendors' }, () => fetchAttentionMetrics())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_documents' }, () => fetchAttentionMetrics())
-      .subscribe();
+    // ⚡ Realtime WebSocket listeners via centralized mesh for instantaneous Command Center telemetry
+    const unsubDaily = realtimeChannelManager.subscribeToTable('attendance_daily', () => fetchAttentionMetrics());
+    const unsubReg = realtimeChannelManager.subscribeToTable('attendance_regularizations', () => fetchAttentionMetrics());
+    const unsubVendors = realtimeChannelManager.subscribeToTable('vendors', () => fetchAttentionMetrics());
+    const unsubDocs = realtimeChannelManager.subscribeToTable('employee_documents', () => fetchAttentionMetrics());
 
     return () => {
-      supabase.removeChannel(realtimeChannel);
+      unsubDaily();
+      unsubReg();
+      unsubVendors();
+      unsubDocs();
     };
   }, [activeLegalEntity?.id]);
 

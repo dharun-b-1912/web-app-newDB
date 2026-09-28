@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Avatar } from '../../../components/ui/Avatar';
 import {
   Briefcase,
@@ -14,7 +14,8 @@ import {
 } from 'lucide-react';
 import { Department, Designation } from '../../../types';
 import { payrollCalculationEngine } from '../../../services/payroll/payrollCalculationEngine';
-import { payrollApi } from '../../../services/payrollApi';
+import { payrollApi, fetchStatutoryConfigFromDb } from '../../../services/payrollApi';
+import { hrEventBus } from '../../../services/hrEventBus';
 
 interface Props {
   formData: any;
@@ -49,20 +50,37 @@ export const Step7Review: React.FC<Props> = ({
   const annualCtc = formData.annual_ctc || 1200000;
   const monthlyCtc = formData.monthly_ctc || Math.round(annualCtc / 12);
 
-  const statutoryConfig = useMemo(() => payrollApi.getStatutoryConfig(), []);
+  const [statutoryConfig, setStatutoryConfig] = useState<any>(() => payrollApi.getStatutoryConfig());
 
-  // Live Calculations for Review Summary
+  useEffect(() => {
+    const orgId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-01') : 'org-joy-01';
+    fetchStatutoryConfigFromDb(orgId).then((cfg) => {
+      if (cfg) setStatutoryConfig(cfg);
+    }).catch(() => {});
+
+    const unsubscribe = hrEventBus.subscribe('payroll.statutory_updated', (event: any) => {
+      if (event?.config) {
+        setStatutoryConfig(event.config);
+      }
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
+
+  // Live Calculations for Review Summary using Authoritative Engine
   const liveCalculation = useMemo(() => {
-    return payrollCalculationEngine.calculateBreakdown({
+    return payrollCalculationEngine.calculateCtcBreakdown({
       annualCtc,
       monthlyCtc,
+      compensationBasis: formData.compensation_basis || 'CTC_INCLUSIVE',
       structureCode: formData.salary_structure_code || 'CORP_STD_01',
       pfApplicable: formData.pf_applicable !== false,
-      esiApplicable: formData.esi_applicable !== false,
+      esiApplicable: formData.esi_applicable === true,
       ptApplicable: formData.pt_applicable !== false,
       statutoryConfig,
     });
-  }, [annualCtc, monthlyCtc, formData.salary_structure_code, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, statutoryConfig]);
+  }, [annualCtc, monthlyCtc, formData.compensation_basis, formData.salary_structure_code, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, statutoryConfig]);
 
   const enableAppAccess = formData.enable_app_access !== false;
   const authMethod = formData.auth_method || 'EMPLOYEE_ID_PASSWORD';
@@ -318,7 +336,7 @@ export const Step7Review: React.FC<Props> = ({
               <span className="font-bold text-gray-900">
                 {formData.employment_source === 'VENDOR' ? (
                   <span className="text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                    VENDOR · {formData.vendor_name || 'Manpower Provider'}
+                    VENDOR · {formData.vendor_name || 'Manpower Partner'}
                   </span>
                 ) : (
                   <span className="text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
@@ -327,6 +345,32 @@ export const Step7Review: React.FC<Props> = ({
                 )}
               </span>
             </div>
+            {formData.employment_source === 'VENDOR' && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Vendor Organization:</span>
+                  <span className="font-bold text-amber-900">{formData.vendor_name || 'Assigned Partner'}</span>
+                </div>
+                {formData.vendor_employee_code && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Vendor Worker Ref:</span>
+                    <span className="font-mono font-semibold text-gray-900">{formData.vendor_employee_code}</span>
+                  </div>
+                )}
+                {formData.client_company_name && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Client Contract:</span>
+                    <span className="font-semibold text-gray-800">{formData.client_company_name}</span>
+                  </div>
+                )}
+                {(formData.site_name || formData.site_id) && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Assigned Site / Branch:</span>
+                    <span className="font-semibold text-gray-800">{formData.site_name || formData.site_id}</span>
+                  </div>
+                )}
+              </>
+            )}
             <div className="flex justify-between">
               <span className="text-gray-500">Date of Joining:</span>
               <span className="font-bold text-gray-900">{formData.doj}</span>
@@ -342,7 +386,7 @@ export const Step7Review: React.FC<Props> = ({
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Probation & Notice:</span>
+              <span className="text-gray-500">Probation &amp; Notice:</span>
               <span className="font-bold text-gray-900">{formData.probation_months} mos / {formData.notice_period_days} days</span>
             </div>
           </div>

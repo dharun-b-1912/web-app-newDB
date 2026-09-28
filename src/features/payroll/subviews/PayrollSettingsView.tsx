@@ -18,6 +18,9 @@ import { cn } from '../../../lib/utils';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { OTPolicyConfigurationView } from './OTPolicyConfigurationView';
+import { UniversalPayslipTemplate } from '../../../components/payroll/UniversalPayslipTemplate';
+import { PayslipGeneratorService } from '../../../services/payroll/payslipGeneratorService';
+import { UniversalPayslipPdfService } from '../../../services/payroll/universalPayslipPdfService';
 
 export const PayrollSettingsView: React.FC = () => {
   const { showToast } = useToast();
@@ -459,126 +462,32 @@ export const PayrollSettingsView: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Panel: Live Payslip Preview Canvas (5 Cols) */}
+          {/* Right Panel: Live Universal Blue Payslip Preview Canvas (5 Cols) */}
           <div className="lg:col-span-5 space-y-4">
-            <div className="sticky top-6 bg-white p-5 rounded-3xl border border-gray-300 shadow-md space-y-4 font-serif text-gray-900 text-xs">
-              <div className="flex items-center justify-between border-b-2 border-gray-900 pb-2">
-                <span className="text-[10px] font-bold text-[#07563D] uppercase font-sans tracking-wider">
-                  Live Dynamic Payslip Preview
-                </span>
-                <Badge variant="emerald">A4 Grid Format</Badge>
-              </div>
+            <div className="sticky top-6 space-y-4">
+              {(() => {
+                const { viewModel } = PayslipGeneratorService.buildPayslipViewModel(
+                  'WF-1001',
+                  'August 2026',
+                  'org-main',
+                  {
+                    legalName: templateConfig.company_name,
+                    displayName: templateConfig.client_name_default || templateConfig.company_name,
+                    address: templateConfig.company_address,
+                    logoUrl: templateConfig.company_logo_url,
+                    footerText: templateConfig.footer_disclaimer,
+                  }
+                );
 
-              {/* Payslip Header */}
-              <div className="text-center space-y-1">
-                <h2 className="text-base font-black uppercase tracking-wide font-sans">
-                  {templateConfig.company_name || 'Joy Corporate Solutions'}
-                </h2>
-                <p className="text-[10px] text-gray-600 font-sans leading-tight">
-                  {templateConfig.company_address}
-                </p>
-                <div className="text-[11px] font-bold font-sans pt-1 border-t border-gray-200">
-                  PAYSLIP FOR AUGUST 2026 — {templateConfig.client_name_default}
-                </div>
-              </div>
-
-              {/* Sample Employee Info */}
-              <div className="grid grid-cols-2 gap-2 text-[11px] font-sans p-2 bg-gray-50 border border-gray-200 rounded-lg">
-                <div>Emp Name: <strong>Dharun B</strong></div>
-                <div>Emp Code: <strong>WF-1001</strong></div>
-                <div>Designation: <strong>Senior Specialist</strong></div>
-                <div>Payable Days: <strong>30 / 31</strong></div>
-                <div>PF UAN: <strong>100918234812</strong></div>
-                <div>Bank: <strong>HDFC Bank Ltd</strong></div>
-              </div>
-
-              {/* Dynamic Earnings vs Deductions Table */}
-              <div className="border border-gray-900 font-sans text-xs">
-                <div className="grid grid-cols-2 divide-x divide-gray-900 border-b border-gray-900 bg-gray-100 font-bold text-center">
-                  <div className="p-1.5">EARNINGS</div>
-                  <div className="p-1.5">DEDUCTIONS</div>
-                </div>
-
-                <div className="grid grid-cols-2 divide-x divide-gray-900 text-[11px]">
-                  {/* Earnings column */}
-                  <div className="p-2 space-y-1">
-                    <div className="flex justify-between font-medium">
-                      <span>Basic Wages</span>
-                      <span className="font-mono">₹ 25,000</span>
-                    </div>
-                    <div className="flex justify-between font-medium">
-                      <span>HRA</span>
-                      <span className="font-mono">₹ 10,000</span>
-                    </div>
-                    {templateComponents.find(c => c.code === 'FOOD_ALLOW')?.visibility !== 'hide' && (
-                      <div className="flex justify-between font-medium text-gray-700">
-                        <span>Food Allowance</span>
-                        <span className="font-mono">₹ 1,500</span>
-                      </div>
-                    )}
-                    {templateComponents.find(c => c.code === 'OT_WAGES')?.visibility !== 'hide' && (
-                      <div className="flex justify-between font-medium text-emerald-800 font-semibold">
-                        <span>OT Wages (14h)</span>
-                        <span className="font-mono">₹ 2,100</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between font-medium">
-                      <span>Special Allowance</span>
-                      <span className="font-mono">₹ 8,400</span>
-                    </div>
-                  </div>
-
-                  {/* Deductions column */}
-                  <div className="p-2 space-y-1">
-                    <div className="flex justify-between font-medium">
-                      <span>Provident Fund (EPF)</span>
-                      <span className="font-mono">₹ 1,800</span>
-                    </div>
-                    <div className="flex justify-between font-medium">
-                      <span>Professional Tax (PT)</span>
-                      <span className="font-mono">₹ 208</span>
-                    </div>
-                    {templateComponents.find(c => c.code === 'CANTEEN_DED')?.visibility !== 'hide' && (
-                      <div className="flex justify-between font-medium text-rose-800">
-                        <span>Canteen Recovery</span>
-                        <span className="font-mono">₹ 450</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between font-medium">
-                      <span>TDS / Income Tax</span>
-                      <span className="font-mono">₹ 1,200</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Gross vs Total Deductions */}
-                <div className="grid grid-cols-2 divide-x divide-gray-900 border-t border-gray-900 bg-gray-50 font-bold text-[11px]">
-                  <div className="p-1.5 flex justify-between">
-                    <span>Gross Earnings:</span>
-                    <span className="font-mono">₹ 47,000</span>
-                  </div>
-                  <div className="p-1.5 flex justify-between text-rose-800">
-                    <span>Total Deductions:</span>
-                    <span className="font-mono">₹ 3,658</span>
-                  </div>
-                </div>
-
-                {/* Net Pay */}
-                <div className="p-2 bg-emerald-50/70 border-t-2 border-gray-900 flex justify-between items-center font-bold text-sm">
-                  <span className="text-[#07563D] uppercase font-black">NET TAKE-HOME PAY:</span>
-                  <span className="text-[#07563D] font-mono text-base font-black">₹ 43,342</span>
-                </div>
-              </div>
-
-              {/* Amount in words */}
-              <div className="p-2 bg-gray-50 border border-gray-200 rounded text-[11px] font-sans">
-                Amount in Words: <strong>Rupees Forty-Three Thousand Three Hundred Forty-Two Only</strong>
-              </div>
-
-              {/* Footer disclaimer */}
-              <p className="text-[9px] text-gray-400 font-sans text-center italic">
-                {templateConfig.footer_disclaimer || '***This is a computer-generated payslip and does not require a physical signature.***'}
-              </p>
+                return (
+                  <UniversalPayslipTemplate
+                    documentModel={viewModel}
+                    onPrint={() => UniversalPayslipPdfService.printDocument(viewModel)}
+                    onDownloadPdf={() => UniversalPayslipPdfService.downloadPdf(viewModel)}
+                    showActions={true}
+                  />
+                );
+              })()}
             </div>
           </div>
         </div>

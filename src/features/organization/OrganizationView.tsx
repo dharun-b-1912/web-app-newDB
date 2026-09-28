@@ -43,12 +43,11 @@ import { cn } from '../../lib/utils';
 
 import { OrgChart } from './OrgChart';
 import { DepartmentsAndTeamsView } from './DepartmentsAndTeamsView';
-import { VendorsView } from './VendorsView';
 
 export const OrganizationView: React.FC = () => {
   const { organization, companies, activeCompany, reloadTenant } = useTenant();
   const { showToast } = useToast();
-  const [activeTab, setActiveTab] = useState<'entities' | 'org_chart' | 'departments' | 'vendors'>('entities');
+  const [activeTab, setActiveTab] = useState<'entities' | 'org_chart' | 'departments'>('entities');
 
   const [branches, setBranches] = useState<Branch[]>([]);
   const [metrics, setMetrics] = useState<OrganizationSummaryMetrics>({
@@ -380,18 +379,6 @@ export const OrganizationView: React.FC = () => {
           <Layers className="w-4 h-4" />
           <span>Departments & Teams</span>
         </button>
-        <button
-          onClick={() => setActiveTab('vendors')}
-          className={cn(
-            'px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap',
-            activeTab === 'vendors'
-              ? 'bg-[#07563D] text-white shadow-2xs'
-              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-          )}
-        >
-          <Users className="w-4 h-4" />
-          <span>Vendors & Manpower Partners</span>
-        </button>
       </div>
 
       {/* Tab Contents */}
@@ -408,7 +395,6 @@ export const OrganizationView: React.FC = () => {
         />
       )}
       {activeTab === 'departments' && <DepartmentsAndTeamsView organizationId={orgId} />}
-      {activeTab === 'vendors' && <VendorsView />}
 
       {activeTab === 'entities' && (
         <div className="space-y-8">

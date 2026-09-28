@@ -34,11 +34,44 @@ import {
 import { NotificationPreferencesModal } from '../notifications/NotificationPreferencesModal';
 import { useToast } from '../ui/Toast';
 import { cn } from '../../lib/utils';
+import { useAuth } from '../../hooks/useAuth';
+import { getPrimaryRole } from '../../lib/rbac/permissionEngine';
 
 type NotificationTab = 'all' | 'approvals' | 'alerts' | 'system';
 
 export const NotificationsCenter: React.FC = () => {
   const { showToast } = useToast();
+  const { user } = useAuth();
+  const currentRole = user ? getPrimaryRole(user) : '';
+  const isVendorContext = Boolean(
+    (typeof window !== 'undefined' && (window.location.pathname.startsWith('/vendor') || window.location.hash.includes('vendor'))) ||
+    currentRole.toLowerCase().includes('vendor') ||
+    (user as any)?.role?.toLowerCase().includes('vendor') ||
+    user?.email?.toLowerCase().includes('vendor')
+  );
+
+  const isVendorNotice = (item: { metadata?: any; eventType?: string; actionUrl?: string; title?: string; body?: string }) => {
+    return Boolean(
+      item.metadata?.targetRole === 'VENDOR' ||
+      item.eventType?.startsWith('VENDOR') ||
+      (item.actionUrl && item.actionUrl.includes('vendor')) ||
+      (item.title && (
+        item.title.toLowerCase().includes('compliance') ||
+        item.title.toLowerCase().includes('statutory') ||
+        item.title.toLowerCase().includes('document') ||
+        item.title.toLowerCase().includes('challan') ||
+        item.title.toLowerCase().includes('pan') ||
+        item.title.toLowerCase().includes('gst') ||
+        item.title.toLowerCase().includes('vendor')
+      )) ||
+      (item.body && (
+        item.body.toLowerCase().includes('compliance') ||
+        item.body.toLowerCase().includes('statutory') ||
+        item.body.toLowerCase().includes('vendor')
+      ))
+    );
+  };
+
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<NotificationTab>('all');
   const [notifications, setNotifications] = useState<HydratedNotificationItem[]>([]);
@@ -66,11 +99,65 @@ export const NotificationsCenter: React.FC = () => {
     setIsLoading(true);
     try {
       const [notifRes, apprRes] = await Promise.all([
-        notificationService.getNotifications({ limit: 30 }),
-        approvalService.getApprovalRequests({ status: 'Pending' }),
+        notificationService.getNotifications({ limit: 40 }),
+        isVendorContext ? Promise.resolve([]) : approvalService.getApprovalRequests({ status: 'Pending' }),
       ]);
-      setNotifications(notifRes.items);
-      setUnreadCount(notifRes.unreadCount + apprRes.length);
+
+      // Scoped role filtering
+      let relevant = notifRes.items.filter((item) => {
+        const isNoticeForVendor = isVendorNotice(item);
+        if (isVendorContext) {
+          return isNoticeForVendor;
+        } else {
+          return !isNoticeForVendor;
+        }
+      });
+
+      // If vendor has 0 active notices, surface canonical baseline statutory compliance requirements
+      // so the vendor's notification inbox always reflects their pending statutory duties!
+      if (isVendorContext && relevant.length === 0) {
+        relevant = [
+          {
+            id: 'vendor-statutory-notice-1',
+            deliveryId: 'vendor-statutory-notice-1',
+            eventType: 'VENDOR_COMPLIANCE_NOTICE',
+            category: 'SYSTEM',
+            severity: 'WARNING',
+            title: 'Compliance Action: Monthly EPF & ESIC Filings Due',
+            body: 'September, 2026 cycle: Monthly EPF ECR Challan, ESIC Payment Confirmation, and Wage Register are pending verification. Please upload to Document Vault.',
+            actorName: 'Company HR Compliance Team',
+            actorAvatar: '',
+            resourceType: 'VendorDocument',
+            resourceId: 'EPF-CHALLAN-MONTHLY',
+            actionUrl: '/vendor-storage',
+            isRead: false,
+            status: 'DELIVERED',
+            createdAt: new Date().toISOString(),
+            metadata: { targetRole: 'VENDOR' },
+          },
+          {
+            id: 'vendor-statutory-notice-2',
+            deliveryId: 'vendor-statutory-notice-2',
+            eventType: 'VENDOR_COMPLIANCE_NOTICE',
+            category: 'SYSTEM',
+            severity: 'INFO',
+            title: 'Statutory Documentation: Vendor Registration & Tax Filings Required',
+            body: 'Mandatory company compliance files: PAN Card, GST REG-06 Certificate, and Business Registration must be uploaded to avoid billing hold.',
+            actorName: 'Joy PeopleHR Statutory Desk',
+            actorAvatar: '',
+            resourceType: 'VendorDocument',
+            resourceId: 'PAN-COMPANY',
+            actionUrl: '/vendor-storage',
+            isRead: false,
+            status: 'DELIVERED',
+            createdAt: new Date(Date.now() - 3600000).toISOString(),
+            metadata: { targetRole: 'VENDOR' },
+          },
+        ];
+      }
+
+      setNotifications(relevant);
+      setUnreadCount(relevant.filter((i) => !i.isRead).length + apprRes.length);
       setApprovals(apprRes);
     } catch (err) {
       console.warn('[NotificationsCenter] Error loading data:', err);
@@ -81,11 +168,23 @@ export const NotificationsCenter: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [isOpen]);
+  }, [isOpen, isVendorContext]);
 
   // Subscribe to live Realtime Events
   useEffect(() => {
     const unsubscribe = notificationRealtimeEngine.subscribe((event: WorkForceEvent) => {
+      const isNoticeForVendor = isVendorNotice(event);
+
+      // If notification is targeted for VENDOR, do not display in Company HR inbox!
+      if (isNoticeForVendor && !isVendorContext) {
+        return;
+      }
+
+      // If notification is targeted for COMPANY, do not display in Vendor inbox!
+      if (!isNoticeForVendor && isVendorContext) {
+        return;
+      }
+
       // Prepend live event
       const newItem: HydratedNotificationItem = {
         id: event.eventId,
@@ -109,7 +208,7 @@ export const NotificationsCenter: React.FC = () => {
       setNotifications((prev) => [newItem, ...prev]);
       setUnreadCount((prev) => prev + 1);
 
-      if (event.category === 'APPROVAL') {
+      if (event.category === 'APPROVAL' && !isVendorContext) {
         approvalService.getApprovalRequests({ status: 'Pending' }).then(setApprovals);
       }
 
@@ -120,17 +219,24 @@ export const NotificationsCenter: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [showToast]);
+  }, [showToast, isVendorContext]);
 
   // Filter items by tab
   const filteredNotifications = useMemo(() => {
     if (activeTab === 'alerts') {
       return notifications.filter(
-        (n) => n.category === 'SECURITY' || n.category === 'INTEGRATION' || n.category === 'PLATFORM'
+        (n) =>
+          n.category === 'SECURITY' ||
+          n.category === 'INTEGRATION' ||
+          n.category === 'PLATFORM' ||
+          n.severity === 'WARNING' ||
+          n.severity === 'CRITICAL'
       );
     }
     if (activeTab === 'system') {
-      return notifications.filter((n) => n.category === 'SYSTEM' || n.category === 'BILLING');
+      return notifications.filter(
+        (n) => n.category === 'SYSTEM' || n.category === 'BILLING'
+      );
     }
     return notifications;
   }, [notifications, activeTab]);

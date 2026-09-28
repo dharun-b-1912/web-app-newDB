@@ -127,8 +127,11 @@ export interface HelpdeskTicket {
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   channel: 'Portal' | 'Email' | 'WhatsApp' | 'SMS';
   assigned_agent_name: string;
+  assigned_name?: string; // alias
+  assigned_to_name?: string; // alias
+  department?: string;
   sla_status: 'OnTrack' | 'AtRisk' | 'Breached' | 'Resolved';
-  status: 'New' | 'Open' | 'InProgress' | 'WaitingOnEmployee' | 'Resolved' | 'Closed';
+  status: 'New' | 'Open' | 'InProgress' | 'WaitingOnEmployee' | 'Resolved' | 'Closed' | 'ADMIN';
   created_at: string;
 }
 

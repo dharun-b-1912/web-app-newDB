@@ -65,6 +65,7 @@ import {
 } from '../../../services/platform/platformSupportAccessService';
 import { platformSubscriptionService } from '../../../services/platform/platformSubscriptionService';
 import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
+import { realtimeChannelManager } from '../../../services/realtime/realtimeChannelManager';
 import { ProvisionCustomerModal } from '../components/ProvisionCustomerModal';
 import { CustomerWorkspaceHeader } from '../components/tenants/CustomerWorkspaceHeader';
 import { EditOrganizationModal } from '../components/tenants/EditOrganizationModal';
@@ -84,11 +85,21 @@ import { Button } from '../../../components/ui/Button';
 import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
 
-export const TenantsView: React.FC = () => {
+export interface TenantsViewProps {
+  initialTenantId?: string;
+  initialPreset?: string;
+  onNavigateTab?: (tab: string, payload?: any) => void;
+}
+
+export const TenantsView: React.FC<TenantsViewProps> = ({
+  initialTenantId,
+  initialPreset,
+  onNavigateTab,
+}) => {
   const { showToast } = useToast();
 
   // Active Workspace Navigation State
-  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(initialTenantId || null);
   const [activeTab, setActiveTab] = useState<
     | 'overview'
     | 'people'
@@ -105,13 +116,25 @@ export const TenantsView: React.FC = () => {
   // Search & Filter State
   const [queryParams, setQueryParams] = useState<OrgQueryParams>({
     search: '',
-    status: 'all',
+    status: initialPreset || 'all',
     plan: 'all',
     page: 1,
     page_size: 10,
     sort_by: 'created_at',
     sort_dir: 'desc',
   });
+
+  useEffect(() => {
+    if (initialTenantId) {
+      setSelectedOrgId(initialTenantId);
+    }
+  }, [initialTenantId]);
+
+  useEffect(() => {
+    if (initialPreset) {
+      setQueryParams((prev) => ({ ...prev, status: initialPreset }));
+    }
+  }, [initialPreset]);
 
   // Modal States
   const [isProvisionWizardOpen, setIsProvisionWizardOpen] = useState(false);
@@ -150,36 +173,25 @@ export const TenantsView: React.FC = () => {
 
     if (!isSupabaseEnabled) return;
 
-    const channel = supabase
-      .channel('platform:organizations-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'organizations' },
-        () => {
-          Promise.all([
-            platformTenantService.fetchLiveFromSupabase(),
-            platformSubscriptionService.fetchLiveFromSupabase(),
-          ]).then(() => fetchData());
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'platform_subscriptions' },
-        () => {
-          platformSubscriptionService.fetchLiveFromSupabase().then(() => fetchData());
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'organization_invitations' },
-        () => {
-          fetchData();
-        }
-      )
-      .subscribe();
+    const unsubOrgs = realtimeChannelManager.subscribeToTable('organizations', () => {
+      Promise.all([
+        platformTenantService.fetchLiveFromSupabase(),
+        platformSubscriptionService.fetchLiveFromSupabase(),
+      ]).then(() => fetchData());
+    });
+
+    const unsubSubs = realtimeChannelManager.subscribeToTable('platform_subscriptions', () => {
+      platformSubscriptionService.fetchLiveFromSupabase().then(() => fetchData());
+    });
+
+    const unsubInvs = realtimeChannelManager.subscribeToTable('organization_invitations', () => {
+      fetchData();
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      unsubOrgs();
+      unsubSubs();
+      unsubInvs();
     };
   }, []);
 

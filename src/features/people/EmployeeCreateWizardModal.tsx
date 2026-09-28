@@ -18,7 +18,8 @@ import {
 import { api } from '../../services/api';
 import { onboardingService } from '../../services/onboardingService';
 import { hrEventBus } from '../../services/hrEventBus';
-import { payrollApi } from '../../services/payrollApi';
+import { payrollApi, fetchStatutoryConfigFromDb } from '../../services/payrollApi';
+import { payrollCalculationEngine } from '../../services/payroll/payrollCalculationEngine';
 
 // Wizard Subcomponents
 import { WizardProgressHeader, WIZARD_STEPS } from './wizard/WizardProgressHeader';
@@ -56,7 +57,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
   const isEditMode = Boolean(employeeToEdit);
 
   const [currentStep, setCurrentStep] = useState<number>(1);
-  const [createdEmployee, setCreatedEmployee] = useState<Employee | null>(null);
+  const [draftEmployee, setDraftEmployee] = useState<Employee | null>(null);
+  const [finalizedEmployee, setFinalizedEmployee] = useState<Employee | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Master Data States
@@ -123,6 +125,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     vendor_contract_id: '',
     vendor_start_date: '',
     vendor_end_date: '',
+    client_company_id: '',
+    site_id: '',
     status: 'Active' as EmployeeStatus,
     department_id: '',
     department_name: '',
@@ -144,6 +148,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     leave_policy_name: 'Standard Full-Time Leave Policy',
 
     // Compensation & CTC
+    compensation_basis: 'CTC_INCLUSIVE' as 'CTC_INCLUSIVE' | 'GROSS_BASED',
     salary_structure_code: 'CORP_STD_01',
     salary_structure_name: 'Corporate Standard CTC Structure',
     annual_ctc: 1200000,
@@ -153,7 +158,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     payroll_group_id: 'pg-monthly-main',
     salary_effective_from: new Date().toISOString().split('T')[0],
     pf_applicable: true,
-    esi_applicable: false,
+    esi_applicable: true,
     pt_applicable: true,
 
     // Step 4: Organization & Reporting
@@ -263,6 +268,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       leave_policy_name: (e as any).leave_policy_name || 'Standard Full-Time Leave Policy',
 
       // Compensation & CTC
+      compensation_basis: ((e as any).compensation_basis || 'CTC_INCLUSIVE') as 'CTC_INCLUSIVE' | 'GROSS_BASED',
       salary_structure_code: (e as any).salary_structure_code || 'CORP_STD_01',
       salary_structure_name: (e as any).salary_structure_name || 'Corporate Standard CTC Structure',
       annual_ctc: Number(e.ctc || (e as any).annual_ctc || (emp as any).ctc || (emp as any).annual_ctc || (p as any).annual_ctc || 1200000),
@@ -272,7 +278,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       payroll_group_id: (e as any).payroll_group_id || 'pg-monthly-main',
       salary_effective_from: (e as any).salary_effective_from || e.doj || new Date().toISOString().split('T')[0],
       pf_applicable: (emp as any).statutory?.pf_applicable !== undefined ? (emp as any).statutory?.pf_applicable : ((e as any).pf_applicable !== false),
-      esi_applicable: (emp as any).statutory?.esi_applicable !== undefined ? (emp as any).statutory?.esi_applicable : ((e as any).esi_applicable === true),
+      esi_applicable: (emp as any).statutory?.esi_applicable !== undefined ? (emp as any).statutory?.esi_applicable : ((e as any).esi_applicable !== false),
       pt_applicable: (emp as any).statutory?.pt_applicable !== undefined ? (emp as any).statutory?.pt_applicable : ((e as any).pt_applicable !== false),
 
       // Step 4: Organization & Reporting
@@ -305,23 +311,55 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
 
       // Step 6: Documents
       documents: (emp as any).documents || [],
+
+      // Vendor Client & Site Assignment
+      client_company_id: (e as any).client_company_id || '',
+      site_id: (e as any).site_id || '',
+
+      // Step 7: Employee App Access & Login
+      enable_app_access: (emp as any).app_access?.enable_app_access !== false,
+      auth_method: ((emp as any).app_access?.auth_method || 'EMPLOYEE_ID_PASSWORD') as 'EMPLOYEE_ID_PASSWORD' | 'MOBILE_OTP' | 'EMAIL_PASSWORD',
+      require_password_change: (emp as any).app_access?.require_password_change !== false,
+      require_device_verification: (emp as any).app_access?.require_device_verification !== false,
     };
   }, [activeCompany?.city]);
 
   const [formData, setFormData] = useState(() => getEmployeeFormData(employeeToEdit || null));
 
-  // Reset form data when employeeToEdit or isOpen changes
+  const mergeFreshFormData = useCallback((freshEmp: Employee) => {
+    const freshData = getEmployeeFormData(freshEmp);
+    setFormData((prev) => {
+      const nextData = { ...prev };
+      for (const [k, v] of Object.entries(freshData)) {
+        if (v !== '' && v !== null && v !== undefined && (!Array.isArray(v) || v.length > 0)) {
+          (nextData as any)[k] = v;
+        }
+      }
+      return nextData;
+    });
+  }, [getEmployeeFormData]);
+
+  // Reset form data when employeeToEdit or isOpen changes & deep rehydrate from database
   useEffect(() => {
     if (isOpen) {
       if (employeeToEdit) {
         setFormData(getEmployeeFormData(employeeToEdit));
+        // Deep rehydrate from Supabase to load emergency contacts, bank, statutory, addresses & salary
+        api.getEmployeeById(employeeToEdit.id).then((deepEmp) => {
+          if (deepEmp) {
+            mergeFreshFormData(deepEmp);
+          }
+        }).catch((err) => {
+          console.warn('[WizardModal] Deep employee rehydration notice:', err);
+        });
       } else {
         setFormData(getInitialFormData());
       }
       setCurrentStep(1);
-      setCreatedEmployee(null);
+      setDraftEmployee(null);
+      setFinalizedEmployee(null);
     }
-  }, [isOpen, employeeToEdit, getEmployeeFormData]);
+  }, [isOpen, employeeToEdit, getEmployeeFormData, mergeFreshFormData]);
 
   // Load Master Data & Restore Draft
   useEffect(() => {
@@ -355,10 +393,19 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           const savedRaw = localStorage.getItem(STORAGE_KEY_DRAFT);
           if (savedRaw) {
             const parsed = JSON.parse(savedRaw);
-            if (parsed && parsed.data) {
-              setFormData((prev) => ({ ...prev, ...parsed.data }));
+            if (parsed && (parsed.data || parsed.first_name)) {
+              const restoredData = parsed.data || parsed;
+              setFormData((prev) => ({ ...prev, ...restoredData }));
               if (parsed.step) setCurrentStep(parsed.step);
               setDraftLastSavedText('Restored unsaved draft');
+
+              if (parsed.employeeId) {
+                api.getEmployeeById(parsed.employeeId).then((existingDraftEmp) => {
+                  if (existingDraftEmp) {
+                    setDraftEmployee(existingDraftEmp);
+                  }
+                }).catch(() => {});
+              }
             }
           }
         } catch (_) { }
@@ -374,19 +421,62 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     setFormData((prev) => ({ ...prev, ...fields }));
   };
 
-  // Save Draft Action
-  const handleSaveDraft = useCallback(() => {
+  // Save Draft Action (Database + LocalStorage)
+  const handleSaveDraft = useCallback(async () => {
     setIsSavingDraft(true);
     try {
-      localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify(formData));
-      setDraftLastSavedText(`Draft saved just now`);
-      showToast('Employee draft saved safely.', 'info');
+      let targetEmpId = employeeToEdit?.id || draftEmployee?.id;
+      const activeOrgId = organization?.id || activeCompany?.organization_id || 'org-joy-01';
+
+      // If brand-new draft and first name is provided, create the DB draft employee immediately
+      if (!targetEmpId && formData.first_name.trim()) {
+        try {
+          const draftEmp = await api.createEmployee({
+            first_name: formData.first_name.trim(),
+            middle_name: formData.middle_name.trim(),
+            last_name: formData.last_name.trim(),
+            display_name: formData.preferred_name || `${formData.first_name} ${formData.last_name}`.trim(),
+            work_email: formData.work_email.trim(),
+            phone: formData.phone.trim(),
+            organization_id: activeOrgId,
+            company_id: activeCompany?.id || `comp-${activeOrgId.replace('org-', '')}`,
+            status: 'Active',
+            employment_type: formData.employment_type || 'Full Time',
+          });
+          if (draftEmp?.id) {
+            targetEmpId = draftEmp.id;
+            setDraftEmployee(draftEmp);
+          }
+        } catch (createErr) {
+          console.warn('[WizardModal] Auto draft DB creation notice:', createErr);
+        }
+      }
+
+      localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({
+        step: currentStep,
+        data: formData,
+        employeeId: targetEmpId,
+        savedAt: new Date().toISOString(),
+      }));
+
+      if (targetEmpId) {
+        const updated = await api.saveEmployeeOnboardingStep(targetEmpId, activeOrgId, currentStep, formData);
+        if (updated) {
+          mergeFreshFormData(updated);
+        }
+        setDraftLastSavedText(`✓ Saved to database just now`);
+        showToast('Employee step saved to database.', 'info');
+      } else {
+        setDraftLastSavedText(`✓ Draft saved locally just now`);
+        showToast('Employee draft saved locally.', 'info');
+      }
     } catch (err) {
-      showToast('Failed to save draft locally.', 'error');
+      setDraftLastSavedText('Save Failed');
+      showToast('Failed to save draft to database.', 'error');
     } finally {
       setIsSavingDraft(false);
     }
-  }, [formData, showToast]);
+  }, [formData, employeeToEdit, draftEmployee, organization, activeCompany, currentStep, showToast, mergeFreshFormData]);
 
   // Step Validation Logic
   const validateCurrentStep = (): boolean => {
@@ -412,6 +502,10 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         showToast('Please select the Date of Joining.', 'error');
         return false;
       }
+      if (formData.employment_source === 'VENDOR' && !formData.vendor_id) {
+        showToast('Please select a Vendor Organization for outsourced staff.', 'error');
+        return false;
+      }
       if (!formData.department_id) {
         showToast('Please assign an organizational Department.', 'error');
         return false;
@@ -435,11 +529,115 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     return true;
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (!validateCurrentStep()) return;
+
+    // Deterministic Step Save Contract
+    const targetEmpId = employeeToEdit?.id || draftEmployee?.id;
+    const activeOrgId = organization?.id || activeCompany?.organization_id || 'org-joy-01';
+
+    if (targetEmpId) {
+      setIsSavingDraft(true);
+      setDraftLastSavedText('Saving to database...');
+      try {
+        const updated = await api.saveEmployeeOnboardingStep(targetEmpId, activeOrgId, currentStep, formData);
+        if (updated) {
+          mergeFreshFormData(updated);
+        }
+        localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({
+          step: Math.min(currentStep + 1, 7),
+          data: formData,
+          employeeId: targetEmpId,
+          savedAt: new Date().toISOString(),
+        }));
+        setDraftLastSavedText('✓ Saved to database just now');
+      } catch (err) {
+        console.warn('[WizardModal] Step auto-save notice:', err);
+        setDraftLastSavedText('Save Failed');
+      } finally {
+        setIsSavingDraft(false);
+      }
+    } else if (currentStep === 1) {
+      // Step 1 completed for brand new employee - persist draft employee to DB
+      setIsSavingDraft(true);
+      setDraftLastSavedText('Saving to database...');
+      try {
+        const draftEmp = await api.createEmployee({
+          first_name: formData.first_name.trim(),
+          middle_name: formData.middle_name.trim(),
+          last_name: formData.last_name.trim(),
+          display_name: formData.preferred_name || `${formData.first_name} ${formData.last_name}`.trim(),
+          work_email: formData.work_email.trim(),
+          phone: formData.phone.trim(),
+          organization_id: activeOrgId,
+          company_id: activeCompany?.id || `comp-${activeOrgId.replace('org-', '')}`,
+          status: 'Active',
+          employment_type: formData.employment_type || 'Full Time',
+        });
+        if (draftEmp?.id) {
+          setDraftEmployee(draftEmp);
+          const updated = await api.saveEmployeeOnboardingStep(draftEmp.id, activeOrgId, 1, formData);
+          if (updated) {
+            mergeFreshFormData(updated);
+          }
+          localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({
+            step: 2,
+            data: formData,
+            employeeId: draftEmp.id,
+            savedAt: new Date().toISOString(),
+          }));
+          setDraftLastSavedText('✓ Saved to database just now');
+        }
+      } catch (err) {
+        console.warn('[WizardModal] New employee step 1 save notice:', err);
+        try {
+          localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({ step: currentStep + 1, data: formData }));
+          setDraftLastSavedText('✓ Draft saved locally just now');
+        } catch (_) {}
+      } finally {
+        setIsSavingDraft(false);
+      }
+    } else {
+      try {
+        localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({ step: currentStep + 1, data: formData, employeeId: targetEmpId }));
+        setDraftLastSavedText('✓ Draft saved just now');
+      } catch (_) {}
+    }
+
     if (currentStep < 7) {
       setCurrentStep((prev) => prev + 1);
     }
+  };
+
+  const handleStepClick = async (targetStep: number) => {
+    if (targetStep === currentStep) return;
+    if (targetStep > currentStep && !validateCurrentStep()) return;
+
+    const targetEmpId = employeeToEdit?.id || draftEmployee?.id;
+    if (targetEmpId) {
+      setIsSavingDraft(true);
+      setDraftLastSavedText('Saving to database...');
+      try {
+        const activeOrgId = organization?.id || activeCompany?.organization_id || 'org-joy-01';
+        const updated = await api.saveEmployeeOnboardingStep(targetEmpId, activeOrgId, currentStep, formData);
+        if (updated) {
+          mergeFreshFormData(updated);
+        }
+        localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({
+          step: targetStep,
+          data: formData,
+          employeeId: targetEmpId,
+          savedAt: new Date().toISOString(),
+        }));
+        setDraftLastSavedText('✓ Saved to database just now');
+      } catch (err) {
+        console.warn('[WizardModal] Step save notice on jump:', err);
+        setDraftLastSavedText('Save Failed');
+      } finally {
+        setIsSavingDraft(false);
+      }
+    }
+    setCurrentStep(targetStep);
   };
 
   const handleBack = () => {
@@ -466,14 +664,17 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       const activeOrgId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-corporate-solutions-private-') : 'org-joy-corporate-solutions-private-';
       const activeCompanyId = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_company_id') || `comp-${activeOrgId.replace('org-', '')}`) : `comp-${activeOrgId.replace('org-', '')}`;
 
+      const resolvedEmpId = employeeToEdit?.id || draftEmployee?.id;
       const payload = {
+        id: resolvedEmpId,
         tenant_id: realOrg?.id || realComp?.organization_id || activeOrgId,
         organization_id: realOrg?.id || realComp?.organization_id || activeOrgId,
         company_id: realComp?.id || activeCompanyId,
         company_name: realComp?.legal_name || 'Joy Corporate Solutions Pvt Ltd',
         identity: {
+          id: resolvedEmpId,
           photo_url: formData.photo_url,
-          employee_code: formData.employee_code,
+          employee_code: formData.employee_code || draftEmployee?.employee_code || employeeToEdit?.employee_code,
           first_name: formData.first_name.trim(),
           middle_name: formData.middle_name.trim(),
           last_name: formData.last_name.trim(),
@@ -515,6 +716,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           vendor_contract_id: formData.vendor_contract_id || undefined,
           vendor_start_date: formData.vendor_start_date || undefined,
           vendor_end_date: formData.vendor_end_date || undefined,
+          client_company_id: formData.client_company_id || undefined,
+          site_id: formData.site_id || undefined,
           status: formData.status,
           department_id: formData.department_id,
           department_name: selectedDept?.name || formData.department_name || 'Engineering',
@@ -611,6 +814,11 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           status: payload.employment.status,
           employment_type: payload.employment.employment_type,
           employment_source: payload.employment.employment_source,
+          vendor_id: formData.vendor_id || undefined,
+          vendor_name: formData.vendor_name || undefined,
+          vendor_employee_code: formData.vendor_employee_code || undefined,
+          client_company_id: formData.client_company_id || undefined,
+          site_id: formData.site_id || undefined,
           department_id: payload.employment.department_id,
           department_name: payload.employment.department_name,
           designation_id: payload.employment.designation_id,
@@ -681,9 +889,14 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
             leave_policy_id: formData.leave_policy_id,
             leave_policy_name: formData.leave_policy_name,
             payroll_group_id: formData.payroll_group_id,
-            vendor_id: formData.vendor_id,
-            vendor_name: formData.vendor_name,
-            vendor_employee_code: formData.vendor_employee_code,
+            vendor_id: formData.vendor_id || undefined,
+            vendor_name: formData.vendor_name || undefined,
+            vendor_employee_code: formData.vendor_employee_code || undefined,
+            vendor_contract_id: formData.vendor_contract_id || undefined,
+            client_company_id: formData.client_company_id || undefined,
+            site_id: formData.site_id || undefined,
+            vendor_start_date: formData.vendor_start_date || undefined,
+            vendor_end_date: formData.vendor_end_date || undefined,
           },
           bank: {
             bank_name: formData.bank_name || '',
@@ -707,13 +920,24 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
 
         const updatedResult = await api.updateEmployee(employeeToEdit.id, updatePayload);
 
-        // Real-time synchronization with Payroll Engine
+        // Real-time synchronization with Authoritative Payroll Engine
         try {
-          const grossMonthly = Math.round((formData.annual_ctc || 0) / 12);
-          const basicMonthly = Math.round(grossMonthly * 0.5);
+          const activeOrgId = payload.organization_id || (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-01') : 'org-joy-01');
+          const statConfig = await fetchStatutoryConfigFromDb(activeOrgId);
+          const breakdown = payrollCalculationEngine.calculateCtcBreakdown({
+            annualCtc: formData.annual_ctc || 0,
+            monthlyCtc: formData.monthly_ctc || Math.round((formData.annual_ctc || 0) / 12),
+            compensationBasis: formData.compensation_basis || 'CTC_INCLUSIVE',
+            structureCode: formData.salary_structure_code || 'CORP_STD_01',
+            pfApplicable: formData.pf_applicable !== false,
+            esiApplicable: formData.esi_applicable === true,
+            ptApplicable: formData.pt_applicable !== false,
+            statutoryConfig: statConfig,
+          });
+
           payrollApi.saveEmployeeSalary({
             id: `sal-${employeeToEdit.id}`,
-            tenant_id: payload.organization_id || (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-corporate-solutions-private-') : 'org-joy-corporate-solutions-private-'),
+            tenant_id: activeOrgId,
             employee_id: employeeToEdit.id,
             employee_code: employeeToEdit.employee_code || payload.identity.employee_code,
             employee_name: payload.identity.preferred_name || `${payload.identity.first_name} ${payload.identity.last_name}`.trim(),
@@ -722,9 +946,9 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
             salary_structure_id: formData.salary_structure_code || 'CORP_STD_01',
             salary_structure_name: formData.salary_structure_name || 'Corporate Standard CTC Structure',
             annual_ctc: formData.annual_ctc || 0,
-            gross_monthly: grossMonthly,
-            basic_monthly: basicMonthly,
-            net_monthly_estimate: Math.max(0, Math.round(grossMonthly * 0.88)),
+            gross_monthly: breakdown.monthlyGrossEarnings,
+            basic_monthly: breakdown.basic,
+            net_monthly_estimate: breakdown.netMonthlyPay,
             payment_mode: 'BankTransfer',
             bank_name: formData.bank_name || 'HDFC Bank Ltd',
             account_number: formData.account_number || '',
@@ -773,6 +997,11 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         status: payload.employment.status,
         employment_type: payload.employment.employment_type,
         employment_source: payload.employment.employment_source,
+        vendor_id: payload.employment.vendor_id,
+        vendor_name: payload.employment.vendor_name,
+        vendor_employee_code: payload.employment.vendor_employee_code,
+        client_company_id: payload.employment.client_company_id,
+        site_id: payload.employment.site_id,
         department_id: payload.employment.department_id,
         department_name: payload.employment.department_name,
         designation_id: payload.employment.designation_id,
@@ -821,6 +1050,14 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           doj: payload.employment.doj,
           employment_type: payload.employment.employment_type,
           employment_source: payload.employment.employment_source,
+          vendor_id: payload.employment.vendor_id,
+          vendor_name: payload.employment.vendor_name,
+          vendor_employee_code: payload.employment.vendor_employee_code,
+          vendor_contract_id: payload.employment.vendor_contract_id,
+          client_company_id: payload.employment.client_company_id,
+          site_id: payload.employment.site_id,
+          vendor_start_date: payload.employment.vendor_start_date,
+          vendor_end_date: payload.employment.vendor_end_date,
           work_mode: payload.employment.work_mode,
           job_level: payload.employment.job_level,
           grade: payload.employment.grade,
@@ -853,7 +1090,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       // Emit global realtime event for dashboard & people directory
       window.dispatchEvent(new CustomEvent('employee:created', { detail: constructedEmployee }));
 
-      setCreatedEmployee(constructedEmployee);
+      setFinalizedEmployee(constructedEmployee);
       if (onCreated) {
         onCreated(constructedEmployee);
       }
@@ -869,7 +1106,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
   const handleResetAndClose = () => {
     setFormData(getInitialFormData());
     setCurrentStep(1);
-    setCreatedEmployee(null);
+    setDraftEmployee(null);
+    setFinalizedEmployee(null);
     onClose();
   };
 
@@ -895,7 +1133,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
   const handleAddAnother = () => {
     setFormData(getInitialFormData());
     setCurrentStep(1);
-    setCreatedEmployee(null);
+    setDraftEmployee(null);
+    setFinalizedEmployee(null);
   };
 
   if (!isOpen) return null;
@@ -910,10 +1149,10 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     >
       <div className="flex flex-col h-full max-h-[88vh]">
         {/* Success Screen Overlay when finalized */}
-        {createdEmployee ? (
+        {finalizedEmployee ? (
           <div className="p-6">
             <WizardSuccessScreen
-              employee={createdEmployee}
+              employee={finalizedEmployee}
               onOpenProfile={handleOpenProfile}
               onStartOnboarding={handleStartOnboarding}
               onAddAnother={handleAddAnother}
@@ -975,11 +1214,10 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
             <div className="px-6 pt-3 pb-3 bg-gray-50/70 border-b border-gray-100">
               <WizardProgressHeader
                 currentStep={currentStep}
-                onStepClick={(step) => {
-                  if (step < currentStep || validateCurrentStep()) {
-                    setCurrentStep(step);
-                  }
-                }}
+                onStepClick={handleStepClick}
+                draftLastSavedText={draftLastSavedText}
+                isSavingDraft={isSavingDraft}
+                onSaveDraft={handleSaveDraft}
               />
             </div>
 
@@ -998,7 +1236,6 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
                 <Step2Contact
                   formData={formData}
                   onChange={updateFormData}
-                  activeCompany={activeCompany}
                 />
               )}
 
@@ -1067,9 +1304,10 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
                     type="button"
                     variant="primary"
                     onClick={handleNext}
+                    disabled={isSavingDraft}
                     className="text-xs h-9 px-5 font-bold bg-[#07563D] hover:bg-[#054430] text-white shadow-xs"
                   >
-                    Next Step
+                    {isSavingDraft ? 'Saving Step...' : 'Next Step'}
                     <ArrowRight className="w-4 h-4 ml-1" />
                   </Button>
                 ) : isEditMode ? (

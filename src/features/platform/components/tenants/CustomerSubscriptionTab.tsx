@@ -36,7 +36,9 @@ export const CustomerSubscriptionTab: React.FC<CustomerSubscriptionTabProps> = (
   const { showToast } = useToast();
   const [showChangePlanModal, setShowChangePlanModal] = useState(false);
   const [selectedNewPlan, setSelectedNewPlan] = useState<'Starter' | 'Professional' | 'Business' | 'Enterprise'>('Business');
-  const [selectedBillingCycle, setSelectedBillingCycle] = useState<'Monthly' | 'Annual'>(org.billing_cycle || 'Monthly');
+  const [selectedBillingCycle, setSelectedBillingCycle] = useState<'Monthly' | 'Annual'>(
+    ((org.billing_cycle === 'Monthly' || org.billing_cycle === 'Annual') ? org.billing_cycle : 'Monthly') as 'Monthly' | 'Annual'
+  );
   const [isUpdating, setIsUpdating] = useState(false);
 
   const planCatalog = [
@@ -57,7 +59,7 @@ export const CustomerSubscriptionTab: React.FC<CustomerSubscriptionTabProps> = (
     setIsUpdating(true);
     try {
       await platformSubscriptionService.updateSubscription(
-        `sub-${org.slug || org.id}-01`,
+        `sub-${(org as any).slug || org.id}-01`,
         selectedNewPlan,
         targetPlanSpec.seats,
         selectedBillingCycle

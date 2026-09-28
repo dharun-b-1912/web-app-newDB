@@ -4,6 +4,7 @@
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { realtimeChannelManager } from '../realtime/realtimeChannelManager';
 import {
   SupportCase,
   SupportMessage,
@@ -33,8 +34,8 @@ let cachedMetrics: SupportCenterMetrics = {
 };
 
 let cachedCases: SupportCase[] = [];
-let cachedAccessRequests: SupportAccessRequest[] = [];
 let cachedKnowledgeArticles: KnowledgeArticle[] = [];
+let cachedAccessRequests: SupportAccessRequest[] = [];
 let cachedCustomerActivity: CustomerActivityEvent[] = [];
 
 export const platformSupportCenterService = {
@@ -44,21 +45,14 @@ export const platformSupportCenterService = {
   subscribeToRealtime(onChangeCallback: () => void) {
     if (!isSupabaseEnabled) return () => {};
 
-    const channel = supabase
-      .channel('platform_support_realtime_stream')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_cases' }, () => {
-        onChangeCallback();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_case_messages' }, () => {
-        onChangeCallback();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_access_requests' }, () => {
-        onChangeCallback();
-      })
-      .subscribe();
+    const u1 = realtimeChannelManager.subscribeToTable('support_cases', () => onChangeCallback());
+    const u2 = realtimeChannelManager.subscribeToTable('support_case_messages', () => onChangeCallback());
+    const u3 = realtimeChannelManager.subscribeToTable('support_access_requests', () => onChangeCallback());
 
     return () => {
-      supabase.removeChannel(channel);
+      u1();
+      u2();
+      u3();
     };
   },
 

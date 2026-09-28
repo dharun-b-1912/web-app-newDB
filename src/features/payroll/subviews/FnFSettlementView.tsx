@@ -111,8 +111,12 @@ export const FnFSettlementView: React.FC = () => {
 
   useEffect(() => {
     loadData();
-    const unsub = hrEventBus.subscribe('*', () => loadData());
-    return () => unsub();
+    const unsub1 = hrEventBus.subscribe('fnf.*', () => loadData());
+    const unsub2 = hrEventBus.subscribe('offboarding.*', () => loadData());
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, []);
 
   const handleOpenFromSeparation = (sep: EmployeeSeparation) => {

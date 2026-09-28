@@ -31,12 +31,25 @@ export interface TDSCalculationResult {
   calculationTrace: string[];
 }
 
+export interface LWFEvaluationContext {
+  payrollMonth?: number; // 1 to 12 (e.g. 12 for December)
+  workedDaysInPrecedingYear?: number; // e.g. 30+ days for TN Act 1972
+  establishmentHeadcount?: number; // e.g. 5+ workers
+  isManagerial?: boolean;
+  monthlyGrossWage?: number;
+}
+
 export interface LWFCalculationResult {
   employeeContribution: number;
   employerContribution: number;
   state: string;
   ruleVersion: string;
   explanation: string;
+  isDeductionMonth?: boolean;
+  frequency?: string;
+  deductionMonths?: number[];
+  isExempt?: boolean;
+  exemptionReason?: string;
 }
 
 export class StatutoryRuleEngine {
@@ -288,29 +301,147 @@ export class StatutoryRuleEngine {
   }
 
   // ────────────────────────────────────────────────────────────────────────
-  // 5. LABOUR WELFARE FUND (LWF)
+  // 5. LABOUR WELFARE FUND (LWF) — TAMIL NADU ACT 1972 & MULTI-STATE STATUTORY
   // ────────────────────────────────────────────────────────────────────────
   public static evaluateLWF(
     state: string = 'Tamil Nadu',
-    config?: Partial<StatutoryConfig>
+    config?: Partial<StatutoryConfig>,
+    context?: LWFEvaluationContext
   ): LWFCalculationResult {
-    if (config?.lwf_enabled === false) {
+    const isLwfEnabled = config?.lwf_enabled !== false;
+    const resolvedState = config?.lwf_state_jurisdiction || state || 'Tamil Nadu';
+    const isTN = resolvedState.toLowerCase().includes('tamil nadu') || resolvedState.toLowerCase().includes('chennai');
+    const ruleVersion = isTN ? 'LWF-TN-ACT-1972-V1' : this.RULE_VERSION_LWF;
+
+    if (!isLwfEnabled) {
       return {
         employeeContribution: 0,
         employerContribution: 0,
-        state,
-        ruleVersion: this.RULE_VERSION_LWF,
-        explanation: 'LWF is disabled for this tenant.',
+        state: resolvedState,
+        ruleVersion,
+        explanation: 'Labour Welfare Fund (LWF) is disabled for this tenant.',
+        isExempt: true,
+        exemptionReason: 'DISABLED',
       };
     }
 
-    const amt = config?.lwf_amount || 10;
+    // 1. Establishment Headcount Check (e.g. 5+ workers in TN Act 1972)
+    const minHeadcount = config?.lwf_min_establishment_headcount ?? (isTN ? 5 : 5);
+    if (context?.establishmentHeadcount !== undefined && context.establishmentHeadcount < minHeadcount) {
+      return {
+        employeeContribution: 0,
+        employerContribution: 0,
+        state: resolvedState,
+        ruleVersion,
+        explanation: `Establishment headcount (${context.establishmentHeadcount}) is below statutory minimum (${minHeadcount} workers for ${resolvedState}).`,
+        isExempt: true,
+        exemptionReason: 'ESTABLISHMENT_BELOW_MINIMUM_HEADCOUNT',
+      };
+    }
+
+    // 2. Minimum Service Test (30+ days worked in preceding 12 months under TN Act 1972)
+    const minServiceDays = config?.lwf_min_service_days ?? (isTN ? 30 : 0);
+    if (context?.workedDaysInPrecedingYear !== undefined && context.workedDaysInPrecedingYear < minServiceDays) {
+      return {
+        employeeContribution: 0,
+        employerContribution: 0,
+        state: resolvedState,
+        ruleVersion,
+        explanation: `Employee service (${context.workedDaysInPrecedingYear} days) is less than statutory requirement (${minServiceDays} days in preceding 12 months under ${resolvedState} LWF Act).`,
+        isExempt: true,
+        exemptionReason: 'SERVICE_DAYS_BELOW_THRESHOLD',
+      };
+    }
+
+    // 3. Managerial / Wage Ceiling Exclusion
+    const excludeManagerial = config?.lwf_exclude_managerial !== false;
+    const managerialCeiling = config?.lwf_managerial_wage_ceiling || 15000;
+    if (excludeManagerial && context?.isManagerial) {
+      return {
+        employeeContribution: 0,
+        employerContribution: 0,
+        state: resolvedState,
+        ruleVersion,
+        explanation: `Managerial / administrative employees are exempt under ${resolvedState} LWF Act.`,
+        isExempt: true,
+        exemptionReason: 'MANAGERIAL_EXEMPTION',
+      };
+    }
+    if (context?.monthlyGrossWage !== undefined && managerialCeiling > 0 && context.monthlyGrossWage > managerialCeiling && context?.isManagerial) {
+      return {
+        employeeContribution: 0,
+        employerContribution: 0,
+        state: resolvedState,
+        ruleVersion,
+        explanation: `Employee wage exceeds managerial exemption ceiling (₹${managerialCeiling.toLocaleString('en-IN')}) under ${resolvedState} LWF Act.`,
+        isExempt: true,
+        exemptionReason: 'WAGE_EXCEEDS_MANAGERIAL_CEILING',
+      };
+    }
+
+    // 4. Frequency and Deduction Month Evaluation
+    const frequency = config?.lwf_frequency || 'YEARLY';
+    let deductionMonths: number[] = config?.lwf_deduction_months || (frequency === 'YEARLY' ? [12] : frequency === 'HALF_YEARLY' ? [6, 12] : [1,2,3,4,5,6,7,8,9,10,11,12]);
+    if (deductionMonths.length === 0) {
+      deductionMonths = frequency === 'YEARLY' ? [12] : frequency === 'HALF_YEARLY' ? [6, 12] : [1,2,3,4,5,6,7,8,9,10,11,12];
+    }
+
+    const currentMonth = context?.payrollMonth;
+    const isDeductionMonth = currentMonth === undefined || deductionMonths.includes(currentMonth);
+
+    if (!isDeductionMonth) {
+      const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const targetMonthNames = deductionMonths.map(m => monthNames[m] || `M${m}`).join(', ');
+      const curMonthName = currentMonth ? (monthNames[currentMonth] || `M${currentMonth}`) : 'Current Month';
+      return {
+        employeeContribution: 0,
+        employerContribution: 0,
+        state: resolvedState,
+        ruleVersion,
+        isDeductionMonth: false,
+        frequency,
+        deductionMonths,
+        explanation: `${resolvedState} LWF is configured for ${frequency} deduction in ${targetMonthNames}. (${curMonthName}: ₹0 deduction).`,
+      };
+    }
+
+    // 5. Calculate Contribution Amounts
+    // Defaults: TN = ₹20 EE, ₹40 ER (1:2 ratio)
+    let eeAmt = config?.lwf_employee_amount ?? config?.lwf_amount ?? (isTN ? 20 : 10);
+    let erAmt = config?.lwf_employer_amount ?? (eeAmt * 2);
+
+    // Apply state presets if no explicit override was customized
+    if (config?.lwf_state_preset === 'TAMIL_NADU' || (isTN && !config?.lwf_employee_amount)) {
+      eeAmt = config?.lwf_employee_amount ?? 20;
+      erAmt = config?.lwf_employer_amount ?? 40;
+    } else if (config?.lwf_state_preset === 'KARNATAKA' || resolvedState.toLowerCase().includes('karnataka')) {
+      eeAmt = config?.lwf_employee_amount ?? 20;
+      erAmt = config?.lwf_employer_amount ?? 40;
+    } else if (config?.lwf_state_preset === 'MAHARASHTRA' || resolvedState.toLowerCase().includes('maharashtra')) {
+      eeAmt = config?.lwf_employee_amount ?? 12;
+      erAmt = config?.lwf_employer_amount ?? 36;
+    } else if (config?.lwf_state_preset === 'KERALA' || resolvedState.toLowerCase().includes('kerala')) {
+      eeAmt = config?.lwf_employee_amount ?? 50;
+      erAmt = config?.lwf_employer_amount ?? 50;
+    } else if (config?.lwf_state_preset === 'ANDHRA_PRADESH' || config?.lwf_state_preset === 'TELANGANA') {
+      eeAmt = config?.lwf_employee_amount ?? 30;
+      erAmt = config?.lwf_employer_amount ?? 70;
+    }
+
+    const freqLabel = frequency === 'YEARLY' ? 'Annual once' : frequency === 'HALF_YEARLY' ? 'Half-yearly' : 'Monthly';
+    const explanation = isTN
+      ? `Tamil Nadu Labour Welfare Fund Act, 1972 (${freqLabel}): Employee ₹${eeAmt}, Employer ₹${erAmt} (Total ₹${eeAmt + erAmt} to TN Labour Welfare Board).`
+      : `${resolvedState} Labour Welfare Fund (${freqLabel}): Employee ₹${eeAmt}, Employer ₹${erAmt} (Total ₹${eeAmt + erAmt}).`;
+
     return {
-      employeeContribution: amt,
-      employerContribution: amt * 2, // Standard 1:2 employee:employer statutory ratio
-      state,
-      ruleVersion: this.RULE_VERSION_LWF,
-      explanation: `State LWF (${state}): Employee ₹${amt}, Employer ₹${amt * 2}.`,
+      employeeContribution: eeAmt,
+      employerContribution: erAmt,
+      state: resolvedState,
+      ruleVersion,
+      isDeductionMonth: true,
+      frequency,
+      deductionMonths,
+      explanation,
     };
   }
 

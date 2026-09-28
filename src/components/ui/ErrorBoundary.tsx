@@ -20,18 +20,14 @@ export interface ErrorBoundaryState {
   error: Error | null;
 }
 
-const ComponentBase: any = React.Component;
-
-export class ErrorBoundary extends ComponentBase {
-  public props: ErrorBoundaryProps;
-  public state: ErrorBoundaryState = {
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public override state: ErrorBoundaryState = {
     hasError: false,
     error: null,
   };
 
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.props = props;
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -88,7 +84,7 @@ export class ErrorBoundary extends ComponentBase {
           </div>
           <div className="pt-2 flex justify-center gap-2">
             <Button
-              variant="default"
+              variant="primary"
               size="sm"
               onClick={this.handleReset}
               className="bg-[#047857] hover:bg-[#065F46] text-white cursor-pointer"

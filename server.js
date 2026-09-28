@@ -4,16 +4,18 @@
 // Hardened Security: Anti-Hijacking, Strict CORS & Cookie/Session Headers
 // ============================================================
 
+const initialPort = process.env.PORT;
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { processInboundWhatsAppMessage } from './server_whatsapp_bot.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = initialPort || process.env.PORT || 3000;
 
 // Strictly read secrets from secure environment variables
 const RESEND_API_KEY = process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY;
@@ -133,6 +135,7 @@ app.use('/api', (req, res, next) => {
 
 // Parse JSON request bodies
 app.use(express.json({ limit: '10mb' }));
+
 
 // Healthcheck endpoint
 app.get('/api/health', (req, res) => {
@@ -309,14 +312,100 @@ app.post('/api/resend/emails', async (req, res) => {
   }
 });
 
+// ============================================================================
+// Meta WhatsApp Business Platform Webhook Endpoints
+// URL: https://api.joypeoplehr.com/api/webhooks/whatsapp
+// ============================================================================
+
+const META_WA_VERIFY_TOKEN = process.env.META_WA_VERIFY_TOKEN || process.env.VITE_META_WA_VERIFY_TOKEN || 'joy_peoplehr_meta_webhook_secret_token';
+
+// 1. Webhook Verification Challenge (GET)
+app.get('/api/webhooks/whatsapp', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode === 'subscribe' && token === META_WA_VERIFY_TOKEN) {
+    console.log('[WhatsApp Webhook] Meta challenge verified successfully.');
+    return res.status(200).send(challenge);
+  }
+
+  console.warn('[WhatsApp Webhook] Verification challenge failed: Invalid token or mode.');
+  return res.status(403).json({ error: 'Verification token mismatch' });
+});
+
+// 2. Inbound Message & Delivery Event Processing (POST)
+app.post('/api/webhooks/whatsapp', async (req, res) => {
+  try {
+    const payload = req.body;
+
+    // Immediately acknowledge Meta within 3 seconds with HTTP 200 OK
+    res.status(200).json({ status: 'EVENT_RECEIVED' });
+
+    if (payload && payload.object === 'whatsapp_business_account') {
+      // Async processing of messages / status updates
+      for (const entry of payload.entry || []) {
+        for (const change of entry.changes || []) {
+          if (change.field === 'messages') {
+            const val = change.value;
+            // Delivery status events
+            if (val.statuses && val.statuses.length > 0) {
+              console.log('[WhatsApp Webhook] Status update received:', val.statuses.map(s => `${s.id}: ${s.status}`));
+            }
+            // Inbound messages & interactive button / list replies
+            if (val.messages && val.messages.length > 0) {
+              for (const msg of val.messages) {
+                const senderPhone = msg.from;
+                const messageId = msg.id;
+
+                let textContent = undefined;
+                let buttonPayload = undefined;
+                let listReplyId = undefined;
+
+                if (msg.type === 'text' && msg.text) {
+                  textContent = msg.text.body;
+                } else if (msg.type === 'interactive' && msg.interactive) {
+                  if (msg.interactive.type === 'button_reply' && msg.interactive.button_reply) {
+                    buttonPayload = msg.interactive.button_reply.id;
+                    textContent = msg.interactive.button_reply.title;
+                  } else if (msg.interactive.type === 'list_reply' && msg.interactive.list_reply) {
+                    listReplyId = msg.interactive.list_reply.id;
+                    textContent = msg.interactive.list_reply.title;
+                  }
+                } else if (msg.type === 'button' && msg.button) {
+                  buttonPayload = msg.button.payload;
+                  textContent = msg.button.text;
+                }
+
+                console.log(`[WhatsApp Webhook] Inbound from ${senderPhone} | Payload: ${buttonPayload || listReplyId || 'none'} | Text: "${textContent || ''}"`);
+
+                // Dispatch to WhatsApp self-service bot engine
+                processInboundWhatsAppMessage({
+                  from: senderPhone,
+                  messageId,
+                  text: textContent,
+                  buttonPayload,
+                  listReplyId,
+                }).catch(botErr => console.error('[WhatsApp Webhook Bot Error]:', botErr));
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[WhatsApp Webhook Exception]:', err);
+  }
+});
+
 // Serve static assets from the Vite build output directory
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// SPA Fallback: send index.html for all client-side routes
-app.get('*', (req, res) => {
+// SPA Fallback: send index.html for all client-side routes (Express 5 compatible)
+app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, () => {
   console.log(`[Joy PeopleHR Enterprise] Production Server active on port ${PORT} with Enhanced Security Headers`);
 });

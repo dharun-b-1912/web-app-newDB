@@ -27,6 +27,7 @@ import { SaasBusinessView } from './subviews/SaasBusinessView';
 import { PlatformSettingsView } from './subviews/PlatformSettingsView';
 import { WebhooksAndMeshView } from './subviews/WebhooksAndMeshView';
 import { IntegrationsControlCenterView } from './subviews/IntegrationsControlCenterView';
+import { WhatsAppControlCenterView } from './subviews/WhatsAppControlCenterView';
 import { PlatformAccountMasterView } from './subviews/PlatformAccountMasterView';
 import { PlatformStaffView } from './subviews/PlatformStaffView';
 import { NotificationDeliveryMonitorView } from './subviews/NotificationDeliveryMonitorView';
@@ -41,6 +42,7 @@ import { ModuleRegistryView } from './subviews/ModuleRegistryView';
 import { DevelopmentRoadmapView } from './subviews/DevelopmentRoadmapView';
 import { LaunchScopeDashboardView } from './subviews/LaunchScopeDashboardView';
 import { TenantHealthView } from './subviews/TenantHealthView';
+import { AwsCostAnalysisView } from './subviews/AwsCostAnalysisView';
 
 export interface NavigationPayload {
   tenantId?: string;
@@ -53,6 +55,7 @@ export interface NavigationPayload {
 export interface PlatformAdminMasterModuleProps {
   initialTab?: string;
   onNavigateTab?: (tab: string, payload?: NavigationPayload) => void;
+  onNavigate?: (route: string, params?: any, replace?: boolean) => void;
 }
 
 const TAB_TITLES: Record<string, string> = {
@@ -81,6 +84,8 @@ const TAB_TITLES: Record<string, string> = {
   'platform-jit': 'Just-In-Time Support Access',
   'engineering-ops': 'Joy Engineering Ops v1 (Reality Audit)',
   'saas-revenue': 'Revenue & Growth',
+  'platform-aws-cost-analysis': 'AWS Cloud Cost Analysis & FinOps',
+  'aws-cost-analysis': 'AWS Cloud Cost Analysis & FinOps',
 };
 
 import { parseRouteFromUrl, syncUrlWithRoute } from '../../lib/router/urlRouter';
@@ -89,6 +94,7 @@ import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
 export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps> = ({
   initialTab = 'platform-dashboard',
   onNavigateTab,
+  onNavigate,
 }) => {
   const urlState = parseRouteFromUrl();
   const [activeTab, setActiveTab] = useState(urlState.route || initialTab);
@@ -108,6 +114,7 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
     setNavPayload(payload);
     syncUrlWithRoute(tab, payload as any);
     if (onNavigateTab) onNavigateTab(tab, payload);
+    if (onNavigate) onNavigate(tab, payload);
   };
 
   // Sync activeTab whenever initialTab prop changes
@@ -213,6 +220,8 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
       case 'platform-api':
       case 'platform-keys':
         return <IntegrationsControlCenterView />;
+      case 'platform-whatsapp':
+        return <WhatsAppControlCenterView />;
       case 'platform-settings':
       case 'platform-users':
       case 'platform-marketplace':
@@ -276,6 +285,9 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
       case 'saas-partners':
       case 'saas-subscriptions':
         return <SaasBusinessView />;
+      case 'platform-aws-cost-analysis':
+      case 'aws-cost-analysis':
+        return <AwsCostAnalysisView onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)} />;
       default:
         return <PlatformDashboardView onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)} />;
     }

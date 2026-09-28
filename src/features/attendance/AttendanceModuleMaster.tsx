@@ -1,31 +1,30 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
+import { AttendanceDashboardView } from './subviews/AttendanceDashboardView';
+import { EmployeeAttendanceView } from './subviews/EmployeeAttendanceView';
+import { AttendanceHistoryView } from './subviews/AttendanceHistoryView';
+import { ShiftMasterView } from './subviews/ShiftMasterView';
+import { ShiftRosterCalendarView } from './subviews/ShiftRosterCalendarView';
+import { AttendancePolicyConfigView } from './subviews/AttendancePolicyConfigView';
+import { AttendanceRulesView } from './subviews/AttendanceRulesView';
+import { BiometricIntegrationView } from './subviews/BiometricIntegrationView';
+import { AttendanceCalendarView } from './subviews/AttendanceCalendarView';
+import { RegularizationView } from './subviews/RegularizationView';
+import { LateEarlyTrackingView } from './subviews/LateEarlyTrackingView';
+import { AttendanceExceptionsView } from './subviews/AttendanceExceptionsView';
+import { AttendanceCalculationAuditView } from './subviews/AttendanceCalculationAuditView';
+import { HolidaysView } from './subviews/HolidaysView';
+import { ApprovalCenterView } from './subviews/ApprovalCenterView';
+import { AttendanceReportsView } from './subviews/AttendanceReportsView';
+import { ManualAttendanceView } from './subviews/ManualAttendanceView';
+import { TerminalLogLedgerView } from './subviews/TerminalLogLedgerView';
+import { FaceRecognitionChannelView } from './subviews/FaceRecognitionChannelView';
+import { GpsMobileChannelView } from './subviews/GpsMobileChannelView';
+import { ClockingDevicesChannelView } from './subviews/ClockingDevicesChannelView';
+import { PayrollInputsView } from './subviews/PayrollInputsView';
+import { AuditControlView } from './subviews/AuditControlView';
+import { EmployeeAttendanceProfileDrawer } from './components/EmployeeAttendanceProfileDrawer';
 
-// Lazy-load all attendance subviews for instant initial render & zero blocking
-const AttendanceDashboardView = lazy(() => import('./subviews/AttendanceDashboardView').then(m => ({ default: m.AttendanceDashboardView })));
-const EmployeeAttendanceView = lazy(() => import('./subviews/EmployeeAttendanceView').then(m => ({ default: m.EmployeeAttendanceView })));
-const AttendanceHistoryView = lazy(() => import('./subviews/AttendanceHistoryView').then(m => ({ default: m.AttendanceHistoryView })));
-const AttendanceCalendarView = lazy(() => import('./subviews/AttendanceCalendarView').then(m => ({ default: m.AttendanceCalendarView })));
-const RegularizationView = lazy(() => import('./subviews/RegularizationView').then(m => ({ default: m.RegularizationView })));
-const LateEarlyTrackingView = lazy(() => import('./subviews/LateEarlyTrackingView').then(m => ({ default: m.LateEarlyTrackingView })));
 const WorkOvertimeMasterModule = lazy(() => import('../work/WorkOvertimeMasterModule').then(m => ({ default: m.WorkOvertimeMasterModule })));
-const ShiftMasterView = lazy(() => import('./subviews/ShiftMasterView').then(m => ({ default: m.ShiftMasterView })));
-const ShiftRosterCalendarView = lazy(() => import('./subviews/ShiftRosterCalendarView').then(m => ({ default: m.ShiftRosterCalendarView })));
-const AttendancePolicyConfigView = lazy(() => import('./subviews/AttendancePolicyConfigView').then(m => ({ default: m.AttendancePolicyConfigView })));
-const AttendanceRulesView = lazy(() => import('./subviews/AttendanceRulesView').then(m => ({ default: m.AttendanceRulesView })));
-const AttendanceExceptionsView = lazy(() => import('./subviews/AttendanceExceptionsView').then(m => ({ default: m.AttendanceExceptionsView })));
-const AttendanceCalculationAuditView = lazy(() => import('./subviews/AttendanceCalculationAuditView').then(m => ({ default: m.AttendanceCalculationAuditView })));
-const HolidaysView = lazy(() => import('./subviews/HolidaysView').then(m => ({ default: m.HolidaysView })));
-const ApprovalCenterView = lazy(() => import('./subviews/ApprovalCenterView').then(m => ({ default: m.ApprovalCenterView })));
-const AttendanceReportsView = lazy(() => import('./subviews/AttendanceReportsView').then(m => ({ default: m.AttendanceReportsView })));
-const ManualAttendanceView = lazy(() => import('./subviews/ManualAttendanceView').then(m => ({ default: m.ManualAttendanceView })));
-const BiometricIntegrationView = lazy(() => import('./subviews/BiometricIntegrationView').then(m => ({ default: m.BiometricIntegrationView })));
-const TerminalLogLedgerView = lazy(() => import('./subviews/TerminalLogLedgerView').then(m => ({ default: m.TerminalLogLedgerView })));
-const FaceRecognitionChannelView = lazy(() => import('./subviews/FaceRecognitionChannelView').then(m => ({ default: m.FaceRecognitionChannelView })));
-const GpsMobileChannelView = lazy(() => import('./subviews/GpsMobileChannelView').then(m => ({ default: m.GpsMobileChannelView })));
-const ClockingDevicesChannelView = lazy(() => import('./subviews/ClockingDevicesChannelView').then(m => ({ default: m.ClockingDevicesChannelView })));
-const PayrollInputsView = lazy(() => import('./subviews/PayrollInputsView').then(m => ({ default: m.PayrollInputsView })));
-const AuditControlView = lazy(() => import('./subviews/AuditControlView').then(m => ({ default: m.AuditControlView })));
-const EmployeeAttendanceProfileDrawer = lazy(() => import('./components/EmployeeAttendanceProfileDrawer').then(m => ({ default: m.EmployeeAttendanceProfileDrawer })));
 import {
   LayoutDashboard,
   Users,
@@ -46,7 +45,10 @@ import {
   ScanFace,
   ArrowRightLeft,
   ShieldCheck,
+  SlidersHorizontal,
 } from 'lucide-react';
+import { syncUrlWithRoute } from '../../lib/router/urlRouter';
+import { navPerfTracker } from '../../services/observability/navigationPerfTracker';
 
 export interface GlobalAttendanceFilterState {
   date: string;
@@ -62,10 +64,57 @@ export interface GlobalAttendanceFilterState {
   drilldownTileLabel?: string;
 }
 
+// High-fidelity instant skeleton fallback to make tab transitions feel instantaneous and responsive
 interface AttendanceModuleMasterProps {
   currentSubPath?: string;
-  onNavigateSubPath?: (subPath: string) => void;
+  onNavigateSubPath?: (subPath: string, params?: Record<string, string>, replace?: boolean) => void;
 }
+
+const AttendanceSubViewSkeleton: React.FC = () => (
+  <div className="space-y-6 animate-pulse" aria-label="Loading module content...">
+    {/* Top Summary Bar Skeleton */}
+    <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="space-y-2">
+        <div className="h-4 w-32 bg-gray-200 rounded-md" />
+        <div className="h-7 w-64 bg-gray-200 rounded-lg" />
+        <div className="h-3.5 w-96 bg-gray-100 rounded-md" />
+      </div>
+      <div className="flex gap-2">
+        <div className="h-10 w-28 bg-gray-100 rounded-xl" />
+        <div className="h-10 w-32 bg-gray-200 rounded-xl" />
+      </div>
+    </div>
+
+    {/* Metric Cards Skeleton Grid */}
+    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <div key={i} className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs space-y-2">
+          <div className="h-3 w-20 bg-gray-200 rounded" />
+          <div className="h-7 w-16 bg-gray-200 rounded-md" />
+          <div className="h-2.5 w-24 bg-gray-100 rounded" />
+        </div>
+      ))}
+    </div>
+
+    {/* Table / Content Area Skeleton */}
+    <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-2xs space-y-4">
+      <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+        <div className="h-5 w-48 bg-gray-200 rounded" />
+        <div className="h-9 w-64 bg-gray-100 rounded-xl" />
+      </div>
+      <div className="space-y-3 pt-2">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="h-12 bg-gray-50 rounded-xl border border-gray-100 flex items-center px-4 justify-between">
+            <div className="h-4 w-36 bg-gray-200 rounded" />
+            <div className="h-4 w-24 bg-gray-200 rounded" />
+            <div className="h-4 w-20 bg-gray-100 rounded" />
+            <div className="h-6 w-16 bg-gray-200 rounded-full" />
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
   currentSubPath = 'attendance-dashboard',
@@ -74,12 +123,43 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
   const [selectedEmployeeProfileId, setSelectedEmployeeProfileId] = useState<string | null>(null);
   const [selectedProfileDate, setSelectedProfileDate] = useState<string | undefined>(undefined);
 
-  const [localTab, setLocalTab] = useState<string>('attendance-dashboard');
+  const resolveTab = (subPath?: string): string => {
+    if (!subPath || subPath === 'attendance' || subPath === 'dashboard' || subPath === 'attendance-dashboard' || subPath === 'attendance/dashboard') {
+      return 'attendance-dashboard';
+    }
+    if (
+      subPath === 'attendance-employees' ||
+      subPath === 'attendance/employees' ||
+      subPath === 'employee-attendance' ||
+      subPath === 'daily' ||
+      subPath === 'employees'
+    ) {
+      return 'attendance-employees';
+    }
+    if (subPath === 'history' || subPath === 'attendance-history' || subPath === 'attendance/history' || subPath === 'ledger' || subPath === 'attendance/ledger') {
+      return 'history';
+    }
+    if (subPath === 'late-early' || subPath === 'attendance/late-early') {
+      return 'late-early';
+    }
+    if (subPath === 'regularization' || subPath === 'attendance/regularization') {
+      return 'regularization';
+    }
+    if (subPath === 'exceptions' || subPath === 'attendance/exceptions') {
+      return 'exceptions';
+    }
+    return subPath;
+  };
 
-  // Derive activeTab directly from currentSubPath prop for instant, synchronous subview switching without 1-tick delay or refresh
-  const activeTab = (currentSubPath && currentSubPath !== 'attendance' && currentSubPath !== 'dashboard')
-    ? currentSubPath
-    : localTab;
+  const [localTab, setLocalTab] = useState<string>(() => resolveTab(currentSubPath));
+
+  // Keep localTab in sync whenever currentSubPath prop changes from router navigation
+  useEffect(() => {
+    setLocalTab(resolveTab(currentSubPath));
+  }, [currentSubPath]);
+
+  // Derive activeTab directly from localTab / currentSubPath for instantaneous subview switching
+  const activeTab = resolveTab(localTab || currentSubPath);
 
   // Read initial filter state from URL if available
   const parseFiltersFromUrl = (): GlobalAttendanceFilterState => {
@@ -114,37 +194,23 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     };
   };
 
-  const [activeFilters, setActiveFilters] = useState<GlobalAttendanceFilterState>(parseFiltersFromUrl);
-
-  // Sync state to URL for deep-linking & browser back/refresh reproducibility
-  const syncFiltersToUrl = (filters: GlobalAttendanceFilterState, tab: string) => {
-    if (typeof window === 'undefined') return;
-    const url = new URL(window.location.href);
-    url.searchParams.set('att_tab', tab);
-    if (filters.date) url.searchParams.set('att_date', filters.date);
-    if (filters.department !== 'ALL') url.searchParams.set('att_dept', filters.department);
-    else url.searchParams.delete('att_dept');
-    if (filters.location !== 'ALL') url.searchParams.set('att_loc', filters.location);
-    else url.searchParams.delete('att_loc');
-    if (filters.vendor !== 'ALL') url.searchParams.set('att_vendor', filters.vendor);
-    else url.searchParams.delete('att_vendor');
-    if (filters.employmentType !== 'ALL') url.searchParams.set('att_emptype', filters.employmentType);
-    else url.searchParams.delete('att_emptype');
-    if (filters.shift !== 'ALL') url.searchParams.set('att_shift', filters.shift);
-    else url.searchParams.delete('att_shift');
-    if (filters.status !== 'ALL') url.searchParams.set('att_status', filters.status);
-    else url.searchParams.delete('att_status');
-    if (filters.source !== 'ALL') url.searchParams.set('att_source', filters.source);
-    else url.searchParams.delete('att_source');
-    if (filters.searchQuery) url.searchParams.set('att_q', filters.searchQuery);
-    else url.searchParams.delete('att_q');
-    if (filters.drilldownTileKey) url.searchParams.set('att_tile', filters.drilldownTileKey);
-    else url.searchParams.delete('att_tile');
-    if (filters.drilldownTileLabel) url.searchParams.set('att_tile_lbl', filters.drilldownTileLabel);
-    else url.searchParams.delete('att_tile_lbl');
-
-    window.history.replaceState({}, '', url.toString());
+  const buildParamsFromFilters = (filters: GlobalAttendanceFilterState): Record<string, string> => {
+    const params: Record<string, string> = {};
+    if (filters.date) params.att_date = filters.date;
+    if (filters.department && filters.department !== 'ALL') params.att_dept = filters.department;
+    if (filters.location && filters.location !== 'ALL') params.att_loc = filters.location;
+    if (filters.vendor && filters.vendor !== 'ALL') params.att_vendor = filters.vendor;
+    if (filters.employmentType && filters.employmentType !== 'ALL') params.att_emptype = filters.employmentType;
+    if (filters.shift && filters.shift !== 'ALL') params.att_shift = filters.shift;
+    if (filters.status && filters.status !== 'ALL') params.att_status = filters.status;
+    if (filters.source && filters.source !== 'ALL') params.att_source = filters.source;
+    if (filters.searchQuery) params.att_q = filters.searchQuery;
+    if (filters.drilldownTileKey) params.att_tile = filters.drilldownTileKey;
+    if (filters.drilldownTileLabel) params.att_tile_lbl = filters.drilldownTileLabel;
+    return params;
   };
+
+  const [activeFilters, setActiveFilters] = useState<GlobalAttendanceFilterState>(parseFiltersFromUrl);
 
   const subTabs = [
     { id: 'attendance-dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -152,7 +218,9 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     { id: 'history', label: 'Attendance History', icon: Clock },
     { id: 'shifts', label: 'Shift Master', icon: Clock },
     { id: 'roster', label: 'Shift Roster', icon: CalendarDays },
+    { id: 'policies', label: 'Attendance Policies', icon: SlidersHorizontal },
     { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
+    { id: 'attendance-rules', label: 'Attendance Rules', icon: Sliders },
     { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
     { id: 'face-attendance', label: 'Face Recognition', icon: ScanFace },
     { id: 'late-early', label: 'Late / Early Tracking', icon: Clock },
@@ -162,13 +230,54 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     { id: 'calculation-audit', label: 'Live Transactions & Audit', icon: ShieldCheck },
   ];
 
+  // Listen to browser Back and Forward popstate events to keep filters & tabs synchronized
+  useEffect(() => {
+    const handlePopState = () => {
+      const urlFilters = parseFiltersFromUrl();
+      setActiveFilters(urlFilters);
+      const urlPath = window.location.pathname;
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (tabParam) {
+        setLocalTab(resolveTab(tabParam));
+      } else if (urlPath.includes('/attendance/employees')) {
+        setLocalTab('attendance-employees');
+      } else if (urlPath === '/attendance' || urlPath === '/attendance/dashboard') {
+        setLocalTab('attendance-dashboard');
+      } else if (urlPath.includes('/attendance/history')) {
+        setLocalTab('history');
+      } else if (urlPath.includes('/attendance/late-early')) {
+        setLocalTab('late-early');
+      } else if (urlPath.includes('/attendance/regularization')) {
+        setLocalTab('regularization');
+      } else if (urlPath.includes('/attendance/exceptions')) {
+        setLocalTab('exceptions');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Sync state to URL with canonical route slugs for clean URLs and browser back/forward navigation
+  const syncFiltersToUrl = (filters: GlobalAttendanceFilterState, tab: string, replace: boolean = true) => {
+    if (typeof window === 'undefined') return;
+    const params = buildParamsFromFilters(filters);
+    syncUrlWithRoute(tab, params, replace);
+  };
+
   const handleSelectTab = (tabId: string) => {
+    const t0 = performance.now();
+    const prevTab = activeTab;
     setLocalTab(tabId);
+    const filterParams = buildParamsFromFilters(activeFilters);
     if (onNavigateSubPath) {
-      onNavigateSubPath(tabId);
+      onNavigateSubPath(tabId, filterParams, false);
     } else {
-      syncFiltersToUrl(activeFilters, tabId);
+      syncFiltersToUrl(activeFilters, tabId, false);
     }
+    const elapsed = performance.now() - t0;
+    navPerfTracker.logImmediate('SUBVIEW_NAV', `/attendance/${prevTab}`, `/attendance/${tabId}`, elapsed, 'user_tab_navigation');
   };
 
   const openAttendanceDrilldown = (newFilters: Partial<GlobalAttendanceFilterState>, targetTab: string = 'attendance-employees') => {
@@ -178,9 +287,11 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     };
     setActiveFilters(merged);
     setLocalTab(targetTab);
-    syncFiltersToUrl(merged, targetTab);
+    const filterParams = buildParamsFromFilters(merged);
     if (onNavigateSubPath) {
-      onNavigateSubPath(targetTab);
+      onNavigateSubPath(targetTab, filterParams, false);
+    } else {
+      syncFiltersToUrl(merged, targetTab, false);
     }
   };
 
@@ -199,12 +310,46 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       drilldownTileLabel: undefined,
     };
     setActiveFilters(resetFilters);
-    syncFiltersToUrl(resetFilters, activeTab);
+    const filterParams = buildParamsFromFilters(resetFilters);
+    if (onNavigateSubPath) {
+      onNavigateSubPath(activeTab, filterParams, true);
+    } else {
+      syncFiltersToUrl(resetFilters, activeTab, true);
+    }
+  };
+
+  const handleBackToDashboard = () => {
+    const resetFilters: GlobalAttendanceFilterState = {
+      date: activeFilters.date || new Date().toISOString().split('T')[0],
+      department: 'ALL',
+      location: 'ALL',
+      vendor: 'ALL',
+      employmentType: 'ALL',
+      shift: 'ALL',
+      status: 'ALL',
+      source: 'ALL',
+      searchQuery: '',
+      drilldownTileKey: undefined,
+      drilldownTileLabel: undefined,
+    };
+    setActiveFilters(resetFilters);
+    setLocalTab('attendance-dashboard');
+    const filterParams = buildParamsFromFilters(resetFilters);
+    if (onNavigateSubPath) {
+      onNavigateSubPath('attendance-dashboard', filterParams, false);
+    } else {
+      syncFiltersToUrl(resetFilters, 'attendance-dashboard', false);
+    }
   };
 
   const handleUpdateFilters = (updater: GlobalAttendanceFilterState) => {
     setActiveFilters(updater);
-    syncFiltersToUrl(updater, activeTab);
+    const filterParams = buildParamsFromFilters(updater);
+    if (onNavigateSubPath) {
+      onNavigateSubPath(activeTab, filterParams, true);
+    } else {
+      syncFiltersToUrl(updater, activeTab, true);
+    }
   };
 
   const renderActiveSubview = () => {
@@ -238,7 +383,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
               setSelectedProfileDate(date || activeFilters.date);
             }}
             onOpenManualModal={() => handleSelectTab('manual')}
-            onBackToDashboard={() => handleSelectTab('attendance-dashboard')}
+            onBackToDashboard={handleBackToDashboard}
           />
         );
       case 'history':
@@ -445,12 +590,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       </div>
 
       {/* Render Subview Content with instantaneous Lazy-loading */}
-      <Suspense fallback={
-        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-gray-200/80 min-h-[350px] space-y-3">
-          <div className="w-8 h-8 border-3 border-[#07563D] border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-xs font-semibold text-gray-500">Loading subview...</p>
-        </div>
-      }>
+      <Suspense fallback={<AttendanceSubViewSkeleton />}>
         {renderActiveSubview()}
       </Suspense>
 

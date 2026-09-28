@@ -1885,7 +1885,7 @@ const CreateFeatureModal: React.FC<CreateFeatureModalProps> = ({
                       </div>
                       <Switch
                         checked={allowTenantOverrides}
-                        onChange={(e) => setAllowTenantOverrides(e.target.checked)}
+                        onCheckedChange={(checked) => setAllowTenantOverrides(checked)}
                       />
                     </div>
 
@@ -1917,7 +1917,7 @@ const CreateFeatureModal: React.FC<CreateFeatureModalProps> = ({
                       </div>
                       <Switch
                         checked={hasUsageLimits}
-                        onChange={(e) => setHasUsageLimits(e.target.checked)}
+                        onCheckedChange={(checked) => setHasUsageLimits(checked)}
                       />
                     </div>
 
@@ -2065,7 +2065,7 @@ const CreateFeatureModal: React.FC<CreateFeatureModalProps> = ({
                       </div>
                       <Switch
                         checked={killSwitchEnabled}
-                        onChange={(e) => setKillSwitchEnabled(e.target.checked)}
+                        onCheckedChange={(checked) => setKillSwitchEnabled(checked)}
                       />
                     </div>
 
@@ -2076,7 +2076,7 @@ const CreateFeatureModal: React.FC<CreateFeatureModalProps> = ({
                       </div>
                       <Switch
                         checked={isBeta}
-                        onChange={(e) => setIsBeta(e.target.checked)}
+                        onCheckedChange={(checked) => setIsBeta(checked)}
                       />
                     </div>
                   </div>

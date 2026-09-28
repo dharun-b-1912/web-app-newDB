@@ -11,13 +11,14 @@ echo ================================================================
 echo  JOY PeopleHR — Biometric Hardware Gateway Launcher
 echo ================================================================
 echo.
-echo Starting Biometric Gateway Daemon on ports 11108 (REST) and 8080 (ADMS)...
+echo Starting JOY PeopleHR Production Connector Daemon on port 11108 (REST/ADMS)...
+echo Target Cloud Domain: app.joypeoplehr.in
 echo.
 
-node scripts/workforce-gateway-agent.cjs
+node scripts/joy-attendance-connector.cjs --prod
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo [ERROR] Gateway crashed or stopped with code %ERRORLEVEL%.
+    echo [ERROR] Connector stopped with code %ERRORLEVEL%.
     pause
 )

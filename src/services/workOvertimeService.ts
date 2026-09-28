@@ -10,6 +10,7 @@ import {
   CalculationExplainability,
 } from '../types/workOvertime';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { realtimeChannelManager } from './realtime/realtimeChannelManager';
 import { hrEventBus } from './hrEventBus';
 import { attendanceApi } from './attendanceApi';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
@@ -123,35 +124,13 @@ class WorkOvertimeService {
     this.isRealtimeSubscribed = true;
 
     try {
-      const channelName = `work_overtime_mesh_${tenantId}`;
-      const existingChannel = supabase.getChannels().find((ch) => ch.topic === `realtime:${channelName}`);
-      if (existingChannel) {
-        supabase.removeChannel(existingChannel);
-      }
-
-      const channel = supabase.channel(channelName);
-
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'overtime_records',
-          },
-          () => {
-            this.fetchFromSupabase(tenantId).then(() => {
-              if (typeof window !== 'undefined') {
-                window.dispatchEvent(new CustomEvent('work-overtime:updated'));
-              }
-            });
-          }
-        )
-        .subscribe((status) => {
-          if (status !== 'SUBSCRIBED' && status !== 'TIMED_OUT') {
-            this.isRealtimeSubscribed = false;
+      realtimeChannelManager.subscribeToTable('overtime_records', () => {
+        this.fetchFromSupabase(tenantId).then(() => {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('work-overtime:updated'));
           }
         });
+      });
     } catch (e) {
       console.warn('[WorkOvertime] Realtime subscription notice:', e);
       this.isRealtimeSubscribed = false;

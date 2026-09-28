@@ -235,7 +235,7 @@ export const PhotoUploadCard: React.FC<Props> = ({
             <Button size="xs" variant="outline" onClick={() => setShowRemoveConfirm(false)} className="text-[11px] h-6 px-2">
               Cancel
             </Button>
-            <Button size="xs" variant="destructive" onClick={handleConfirmRemove} className="text-[11px] h-6 px-2 font-bold">
+            <Button size="xs" variant="danger" onClick={handleConfirmRemove} className="text-[11px] h-6 px-2 font-bold">
               Remove
             </Button>
           </div>

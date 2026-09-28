@@ -260,12 +260,52 @@ interface PendingOtp {
   attempts: number;
 }
 
+const _authFallbackStorage = new Map<string, string>();
+
+function getAuthStorage(key: string): string | null {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem(key);
+    }
+  } catch {}
+  return _authFallbackStorage.get(key) || null;
+}
+
+function setAuthStorage(key: string, val: string): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, val);
+      return;
+    }
+  } catch {}
+  _authFallbackStorage.set(key, val);
+}
+
+function getSessionAuthStorage(key: string): string | null {
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      return sessionStorage.getItem(key);
+    }
+  } catch {}
+  return _authFallbackStorage.get(key) || null;
+}
+
+function setSessionAuthStorage(key: string, val: string): void {
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(key, val);
+      return;
+    }
+  } catch {}
+  _authFallbackStorage.set(key, val);
+}
+
 class EmployeeAuthService {
   private getIdentities(): EmployeeAuthIdentity[] {
     try {
-      const val = localStorage.getItem(STORAGE_KEYS.IDENTITIES);
+      const val = getAuthStorage(STORAGE_KEYS.IDENTITIES);
       if (!val) {
-        localStorage.setItem(STORAGE_KEYS.IDENTITIES, JSON.stringify(defaultCanonicalIdentities));
+        setAuthStorage(STORAGE_KEYS.IDENTITIES, JSON.stringify(defaultCanonicalIdentities));
         return defaultCanonicalIdentities;
       }
       return JSON.parse(val);
@@ -276,7 +316,7 @@ class EmployeeAuthService {
 
   private saveIdentities(identities: EmployeeAuthIdentity[]): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.IDENTITIES, JSON.stringify(identities));
+      setAuthStorage(STORAGE_KEYS.IDENTITIES, JSON.stringify(identities));
     } catch (e) {
       console.warn('[EmployeeAuthService] Failed to save identities to local storage:', e);
     }
@@ -284,7 +324,7 @@ class EmployeeAuthService {
 
   private getOtps(): PendingOtp[] {
     try {
-      const val = sessionStorage.getItem(STORAGE_KEYS.OTP_STORE);
+      const val = getSessionAuthStorage(STORAGE_KEYS.OTP_STORE);
       return val ? JSON.parse(val) : [];
     } catch {
       return [];
@@ -293,7 +333,7 @@ class EmployeeAuthService {
 
   private saveOtps(otps: PendingOtp[]): void {
     try {
-      sessionStorage.setItem(STORAGE_KEYS.OTP_STORE, JSON.stringify(otps));
+      setSessionAuthStorage(STORAGE_KEYS.OTP_STORE, JSON.stringify(otps));
     } catch (e) {
       console.warn('[EmployeeAuthService] Failed to save OTPs:', e);
     }
@@ -731,6 +771,26 @@ class EmployeeAuthService {
     return { user, identity };
   }
 
+  /**
+   * Directly activates employee identity by email when accepting invitation / setting password
+   */
+  async activateEmployeeByEmail(email: string, newPassword: string): Promise<boolean> {
+    const cleanEmail = email.toLowerCase().trim();
+    const identities = this.getIdentities();
+    const identity = identities.find((i) => i.email?.toLowerCase() === cleanEmail);
+    if (!identity) return false;
+
+    identity.status = 'ACTIVE';
+    identity.activation_status = 'ACTIVE';
+    identity.first_login_completed = true;
+    identity.password_change_required = false;
+    identity.password_hash = newPassword;
+    identity.last_login_at = new Date().toISOString();
+    identity.updated_at = new Date().toISOString();
+    this.saveIdentities(identities);
+    return true;
+  }
+
   // ==========================================================================
   // 5. Password Reset Flow (Forgot Password via Phone OTP)
   // ==========================================================================
@@ -1084,28 +1144,31 @@ class EmployeeAuthService {
   // ==========================================================================
   private recordSession(identity: EmployeeAuthIdentity): void {
     try {
-      const sessions: ActiveSession[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSIONS) || '[]');
+      const rawSessions = getAuthStorage(STORAGE_KEYS.SESSIONS);
+      const sessions: ActiveSession[] = rawSessions ? JSON.parse(rawSessions) : [];
+      const userAgent = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
       const newSession: ActiveSession = {
         id: `sess-${Date.now().toString(36)}`,
         tenant_id: identity.tenant_id,
         employee_id: identity.employee_id,
         auth_user_id: identity.auth_user_id,
-        device_info: navigator.userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Workstation',
-        browser: navigator.userAgent.includes('Chrome') ? 'Google Chrome' : navigator.userAgent.includes('Safari') ? 'Safari' : 'Web Browser',
-        os: navigator.userAgent.includes('Windows') ? 'Windows' : navigator.userAgent.includes('Mac') ? 'macOS' : 'Linux/Android',
+        device_info: userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Workstation',
+        browser: userAgent.includes('Chrome') ? 'Google Chrome' : userAgent.includes('Safari') ? 'Safari' : 'Web Browser',
+        os: userAgent.includes('Windows') ? 'Windows' : userAgent.includes('Mac') ? 'macOS' : 'Linux/Android',
         ip_address: identity.last_login_ip || '103.21.244.18',
         is_revoked: false,
         last_active_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
       };
       sessions.unshift(newSession);
-      localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(sessions.slice(0, 50)));
+      setAuthStorage(STORAGE_KEYS.SESSIONS, JSON.stringify(sessions.slice(0, 50)));
     } catch {}
   }
 
   listActiveSessions(employeeId: string): ActiveSession[] {
     try {
-      const sessions: ActiveSession[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSIONS) || '[]');
+      const rawSessions = getAuthStorage(STORAGE_KEYS.SESSIONS);
+      const sessions: ActiveSession[] = rawSessions ? JSON.parse(rawSessions) : [];
       return sessions.filter((s) => s.employee_id === employeeId && !s.is_revoked);
     } catch {
       return [];
@@ -1114,17 +1177,19 @@ class EmployeeAuthService {
 
   revokeSession(sessionId: string): void {
     try {
-      const sessions: ActiveSession[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSIONS) || '[]');
+      const rawSessions = getAuthStorage(STORAGE_KEYS.SESSIONS);
+      const sessions: ActiveSession[] = rawSessions ? JSON.parse(rawSessions) : [];
       const updated = sessions.map((s) => (s.id === sessionId ? { ...s, is_revoked: true } : s));
-      localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(updated));
+      setAuthStorage(STORAGE_KEYS.SESSIONS, JSON.stringify(updated));
     } catch {}
   }
 
   revokeAllSessions(employeeId: string, reason: string = 'Security Revocation'): void {
     try {
-      const sessions: ActiveSession[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSIONS) || '[]');
+      const rawSessions = getAuthStorage(STORAGE_KEYS.SESSIONS);
+      const sessions: ActiveSession[] = rawSessions ? JSON.parse(rawSessions) : [];
       const updated = sessions.map((s) => (s.employee_id === employeeId ? { ...s, is_revoked: true } : s));
-      localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(updated));
+      setAuthStorage(STORAGE_KEYS.SESSIONS, JSON.stringify(updated));
     } catch {}
   }
 
@@ -1133,14 +1198,15 @@ class EmployeeAuthService {
   // ==========================================================================
   recordAuditLog(event: Omit<AuthAuditEvent, 'id' | 'created_at'>): void {
     try {
-      const logs: AuthAuditEvent[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS) || '[]');
+      const rawLogs = getAuthStorage(STORAGE_KEYS.AUDIT_LOGS);
+      const logs: AuthAuditEvent[] = rawLogs ? JSON.parse(rawLogs) : [];
       const newEntry: AuthAuditEvent = {
         ...event,
         id: `aud-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         created_at: new Date().toISOString(),
       };
       logs.unshift(newEntry);
-      localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs.slice(0, 200)));
+      setAuthStorage(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs.slice(0, 200)));
 
       if (isSupabaseEnabled) {
         const validOrgUuid = event.tenant_id && isValidUUID(event.tenant_id) ? event.tenant_id : '0c621892-e938-4707-9957-13534ea32c19';
@@ -1178,7 +1244,8 @@ class EmployeeAuthService {
 
   getAuthAuditLogs(employeeId?: string, tenantId: string = 'org-joy-01'): AuthAuditEvent[] {
     try {
-      const logs: AuthAuditEvent[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS) || '[]');
+      const rawLogs = getAuthStorage(STORAGE_KEYS.AUDIT_LOGS);
+      const logs: AuthAuditEvent[] = rawLogs ? JSON.parse(rawLogs) : [];
       return logs.filter((l) => {
         if (l.tenant_id !== tenantId && tenantId !== 'ALL') return false;
         if (employeeId && l.actor_id !== employeeId && l.employee_id !== employeeId) return false;

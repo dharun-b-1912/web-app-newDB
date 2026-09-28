@@ -33,8 +33,14 @@ export interface StatutoryConfiguration {
 
   // Labour Welfare Fund
   lwfEnabled: boolean;
-  lwfEmployeeAmount: number;     // Default ₹10
-  lwfEmployerAmount: number;     // Default ₹20
+  lwfEmployeeAmount: number;     // Default ₹20 (Tamil Nadu Act 1972)
+  lwfEmployerAmount: number;     // Default ₹40 (Tamil Nadu Act 1972)
+  lwfFrequency?: 'YEARLY' | 'HALF_YEARLY' | 'MONTHLY';
+  lwfDeductionMonths?: number[];
+  lwfStatePreset?: string;
+  lwfMinHeadcount?: number;
+  lwfMinServiceDays?: number;
+  lwfExcludeManagerial?: boolean;
 
   effectiveFrom: string;
   effectiveTo?: string;
@@ -126,8 +132,14 @@ export class StatutoryCalculationEngine {
     stateJurisdiction: 'Tamil Nadu',
 
     lwfEnabled: true,
-    lwfEmployeeAmount: 10,
-    lwfEmployerAmount: 20,
+    lwfEmployeeAmount: 20,
+    lwfEmployerAmount: 40,
+    lwfFrequency: 'YEARLY',
+    lwfDeductionMonths: [12],
+    lwfStatePreset: 'TAMIL_NADU',
+    lwfMinHeadcount: 5,
+    lwfMinServiceDays: 30,
+    lwfExcludeManagerial: true,
 
     effectiveFrom: '2026-01-01',
   };
@@ -401,9 +413,17 @@ export class StatutoryCalculationEngine {
    */
   public static calculateLWF(
     stateJurisdiction: string = 'Tamil Nadu',
-    options?: { lwfEligible?: boolean; isContractorExempt?: boolean }
+    options?: {
+      lwfEligible?: boolean;
+      isContractorExempt?: boolean;
+      config?: Partial<StatutoryConfiguration>;
+      payrollMonth?: number;
+      workedDays?: number;
+      isManagerial?: boolean;
+    }
   ): LWFCalculationResult {
-    if (options?.lwfEligible === false || options?.isContractorExempt) {
+    const isLwfEnabled = options?.config?.lwfEnabled ?? true;
+    if (options?.lwfEligible === false || options?.isContractorExempt || !isLwfEnabled) {
       return {
         isApplicable: false,
         state: stateJurisdiction,
@@ -415,16 +435,61 @@ export class StatutoryCalculationEngine {
     }
 
     const state = (stateJurisdiction || 'Tamil Nadu').toLowerCase();
-    let ee = 10;
-    let er = 20;
+    const isTN = state.includes('tamil nadu') || state.includes('chennai');
 
-    if (state.includes('maharashtra')) {
+    // Managerial check
+    if (options?.config?.lwfExcludeManagerial && options?.isManagerial) {
+      return {
+        isApplicable: false,
+        state: stateJurisdiction,
+        employeeAmount: 0,
+        employerAmount: 0,
+        totalLWF: 0,
+        explanation: 'Managerial staff exempt from Labour Welfare Fund.',
+      };
+    }
+
+    // Minimum service check (30 days under TN Act 1972)
+    const minDays = options?.config?.lwfMinServiceDays ?? (isTN ? 30 : 0);
+    if (options?.workedDays !== undefined && options.workedDays < minDays) {
+      return {
+        isApplicable: false,
+        state: stateJurisdiction,
+        employeeAmount: 0,
+        employerAmount: 0,
+        totalLWF: 0,
+        explanation: `Service days (${options.workedDays}) below statutory minimum (${minDays} days).`,
+      };
+    }
+
+    // Frequency and month check
+    const frequency = options?.config?.lwfFrequency || 'YEARLY';
+    const deductionMonths = options?.config?.lwfDeductionMonths || (frequency === 'YEARLY' ? [12] : frequency === 'HALF_YEARLY' ? [6, 12] : [1,2,3,4,5,6,7,8,9,10,11,12]);
+    const currentMonth = options?.payrollMonth;
+
+    if (currentMonth !== undefined && !deductionMonths.includes(currentMonth)) {
+      return {
+        isApplicable: false,
+        state: stateJurisdiction,
+        employeeAmount: 0,
+        employerAmount: 0,
+        totalLWF: 0,
+        explanation: `LWF scheduled for Month(s): ${deductionMonths.join(', ')} (${frequency}). Current month is ${currentMonth} (₹0 deduction).`,
+      };
+    }
+
+    let ee = options?.config?.lwfEmployeeAmount ?? (isTN ? 20 : 10);
+    let er = options?.config?.lwfEmployerAmount ?? (isTN ? 40 : 20);
+
+    if (state.includes('maharashtra') && !options?.config?.lwfEmployeeAmount) {
       ee = 12;
       er = 36;
-    } else if (state.includes('karnataka')) {
+    } else if (state.includes('karnataka') && !options?.config?.lwfEmployeeAmount) {
       ee = 20;
       er = 40;
     }
+
+    const freqLabel = frequency === 'YEARLY' ? 'Annual (Once a year)' : frequency === 'HALF_YEARLY' ? 'Half-Yearly' : 'Monthly';
 
     return {
       isApplicable: true,
@@ -432,7 +497,9 @@ export class StatutoryCalculationEngine {
       employeeAmount: ee,
       employerAmount: er,
       totalLWF: ee + er,
-      explanation: `${stateJurisdiction} LWF: Employee ₹${ee}, Employer ₹${er}. Total: ₹${ee + er}.`,
+      explanation: isTN
+        ? `Tamil Nadu Labour Welfare Fund Act, 1972 (${freqLabel}): Employee ₹${ee}, Employer ₹${er}. Total: ₹${ee + er}.`
+        : `${stateJurisdiction} LWF (${freqLabel}): Employee ₹${ee}, Employer ₹${er}. Total: ₹${ee + er}.`,
     };
   }
 }

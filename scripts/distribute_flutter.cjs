@@ -23,7 +23,7 @@ function runStep(title, command, cwd = ROOT_DIR) {
   console.log(`  Command: ${command}`);
   console.log(`============================================================`);
   
-  const envPath = `${process.env.PATH};C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\src\\flutter\\bin;${process.env.USERPROFILE}\\AppData\\Local\\Pub\\Cache\\bin`;
+  const envPath = `C:\\Windows\\System32;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\src\\flutter\\bin;${process.env.USERPROFILE}\\AppData\\Local\\Pub\\Cache\\bin;${process.env.PATH}`;
   
   try {
     execSync(command, {

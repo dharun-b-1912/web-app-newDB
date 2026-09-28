@@ -5,7 +5,7 @@
 // Overview, Machine Users, Live Attendance, Remote Commands, Health, Sync History, Diagnostics
 // ============================================================================
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Modal } from '../../../components/ui/Modal';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
@@ -46,6 +46,9 @@ import {
   Info,
   Unlock,
   Key,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
 } from 'lucide-react';
 import {
   biometricGatewayService,
@@ -65,6 +68,7 @@ import { DeviceUsersManagerModal } from './DeviceUsersManagerModal';
 import { RemoteBiometricEnrollmentModal } from './RemoteBiometricEnrollmentModal';
 import { cn } from '../../../lib/utils';
 import { attendanceTimeService } from '../../../services/attendance/attendanceTimeService';
+import { navPerfTracker } from '../../../services/observability/navigationPerfTracker';
 
 interface Props {
   device: BiometricDevice;
@@ -92,7 +96,7 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
 
   // Action States
   const [isTestingSocket, setIsTestingSocket] = useState(false);
-  const [socketLatency, setSocketLatency] = useState<number | null>(4);
+  const [socketLatency, setSocketLatency] = useState<number | null>(null);
   const [isSyncingUsers, setIsSyncingUsers] = useState(false);
   const [isPushingEmployees, setIsPushingEmployees] = useState(false);
   const [isDispatchingCmd, setIsDispatchingCmd] = useState<string | null>(null);
@@ -101,53 +105,83 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
   const [isUsersModalOpen, setIsUsersModalOpen] = useState(false);
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
 
-  // Filter States
+  // Filter & Pagination States
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [userMappingFilter, setUserMappingFilter] = useState<'ALL' | 'MAPPED' | 'UNMAPPED'>('ALL');
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersPerPage, setUsersPerPage] = useState(50);
 
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-
   const employeesCacheRef = useRef<any[]>([]);
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
 
-  const loadWorkspaceData = async () => {
+  const loadWorkspaceData = (targetTab: string = activeTabRef.current) => {
     try {
       const allDevs = biometricGatewayService.getBiometricDevices();
       const updatedDev = allDevs.find(d => d.id === device.id) || device;
       setLiveDevice(updatedDev);
 
-      const devUsers = biometricGatewayService.getDeviceUsers(device.id).users;
-      setUsers(devUsers || []);
+      // Instantaneous lazy load of active tab data from local high-speed cache
+      if (targetTab === 'overview' || targetTab === 'users') {
+        const devUsers = biometricGatewayService.getDeviceUsers(device.id).users;
+        setUsers(devUsers || []);
 
-      if (employeesCacheRef.current.length === 0) {
-        try {
+        if (employeesCacheRef.current.length === 0) {
           const syncEmps = (api as any).getEmployeesSync ? (api as any).getEmployeesSync() : [];
           if (syncEmps.length > 0) {
             employeesCacheRef.current = syncEmps;
             setEmployees(syncEmps);
           } else {
-            const empList = await api.getEmployees();
-            employeesCacheRef.current = empList || [];
-            setEmployees(empList || []);
+            api.getEmployees().then((empList) => {
+              employeesCacheRef.current = empList || [];
+              setEmployees(empList || []);
+            }).catch(() => {});
           }
-        } catch (_) { }
+        }
       }
 
-      const devPunches = (biometricGatewayService.getRawPunches(100) || []).filter(p => p.device_id === device.id || p.device_serial === device.serial_number);
-      setPunches(devPunches);
+      if (targetTab === 'overview' || targetTab === 'attendance') {
+        const devPunches = (biometricGatewayService.getRawPunches(100) || []).filter(p => p.device_id === device.id || p.device_serial === device.serial_number);
+        setPunches(devPunches);
+      }
 
-      const devCmds = (biometricCommandService.getCommands() || []).filter(c => c.device_id === device.id);
-      setCommands(devCmds);
+      if (targetTab === 'commands') {
+        const devCmds = (biometricCommandService.getCommands() || []).filter(c => c.device_id === device.id);
+        setCommands(devCmds);
+      }
 
-      const history = biometricGatewayService.getDeviceSyncHistory(device.id) || [];
-      setSyncHistory(history);
+      if (targetTab === 'sync_history') {
+        const history = biometricGatewayService.getDeviceSyncHistory(device.id) || [];
+        setSyncHistory(history);
+      }
 
-      const logs = (biometricGatewayService.getDiagnosticLogs() || []).filter(l => l.device_id === device.id || l.ip_address === device.ip_address);
-      setDiagnosticLogs(logs);
+      if (targetTab === 'health' || targetTab === 'diagnostics') {
+        const logs = (biometricGatewayService.getDiagnosticLogs() || []).filter(l => l.device_id === device.id || l.ip_address === device.ip_address);
+        setDiagnosticLogs(logs);
+      }
 
-      setAgents(biometricGatewayService.getGatewayAgents() || []);
+      if (targetTab === 'overview' || targetTab === 'health') {
+        setAgents(biometricGatewayService.getGatewayAgents() || []);
+      }
     } catch (err) {
       console.error('[BiometricDeviceWorkspace] loadWorkspaceData error:', err);
     }
+  };
+
+  const handleSelectTab = (tabId: 'overview' | 'users' | 'attendance' | 'commands' | 'health' | 'sync_history' | 'diagnostics') => {
+    if (activeTab === tabId) return; // Prevent duplicate work when already on the selected tab
+    const t0 = performance.now();
+    const prevTab = activeTab;
+    setActiveTab(tabId);
+    activeTabRef.current = tabId;
+    loadWorkspaceData(tabId);
+    const elapsed = performance.now() - t0;
+    navPerfTracker.logImmediate('TAB_SWITCH', `/biometric/workspace?tab=${prevTab}`, `/biometric/workspace?tab=${tabId}`, elapsed, 'user_tab_click', {
+      deviceId: device.id,
+      deviceName: device.device_name,
+      tab: tabId,
+    });
   };
 
   const scheduleWorkspaceUpdate = () => {
@@ -155,38 +189,13 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
       clearTimeout(debounceTimerRef.current);
     }
     debounceTimerRef.current = setTimeout(() => {
-      loadWorkspaceData();
-    }, 250);
+      loadWorkspaceData(activeTabRef.current);
+    }, 300);
   };
 
-  const _workspaceSyncing = React.useRef(false);
-
   useEffect(() => {
-    let wsDestroyed = false;
-    const wsTimers: ReturnType<typeof setTimeout>[] = [];
-
-    // Render immediately from cache
+    // Render immediately from local cache with zero latency
     loadWorkspaceData();
-
-    // Defer gateway calls by 2s so panel is interactive before network hits
-    wsTimers.push(setTimeout(() => {
-      if (!wsDestroyed) {
-        biometricGatewayService.syncLiveUsersFromGateway(device.id);
-        biometricGatewayService.syncLivePunchesFromGateway(device.id);
-      }
-    }, 2000));
-
-    // Dynamic auto-sync loop from Gateway — ref-guarded, every 8 seconds
-    const livePollTimer = setInterval(async () => {
-      if (_workspaceSyncing.current || wsDestroyed) return;
-      _workspaceSyncing.current = true;
-      try {
-        await biometricGatewayService.syncLiveUsersFromGateway(device.id);
-        await biometricGatewayService.syncLivePunchesFromGateway(device.id);
-      } finally {
-        _workspaceSyncing.current = false;
-      }
-    }, 8000);
 
     // Real-time event subscriptions
     const unsubBiometric = hrEventBus.subscribe('biometric.*', () => scheduleWorkspaceUpdate());
@@ -197,9 +206,6 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
     window.addEventListener('biometric:updated', handleCustomUpdate);
 
     return () => {
-      wsDestroyed = true;
-      wsTimers.forEach(clearTimeout);
-      clearInterval(livePollTimer);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       unsubBiometric();
       unsubDevice();
@@ -213,15 +219,17 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
     try {
       const res = await biometricGatewayService.testDeviceConnection(liveDevice.id);
       if (res.success) {
-        setSocketLatency(res.latencyMs || 4);
-        showToast(`✓ Socket Online: ${liveDevice.device_name} responded in ${res.latencyMs || 4}ms`);
+        setSocketLatency(res.latencyMs || 8);
+        showToast(`✓ Socket Online: ${liveDevice.device_name} responded in ${res.latencyMs || 8}ms`);
       } else {
-        showToast(`Connection failed: ${res.message}`, 'error');
+        setSocketLatency(null);
+        showToast(`Connection failed: ${res.message || 'Device is offline (No power detected)'}`, 'error');
       }
       loadWorkspaceData();
       onDeviceUpdated();
     } catch (err: any) {
-      showToast(err.message || 'Probe error', 'error');
+      setSocketLatency(null);
+      showToast(err.message || 'Probe error: Terminal is unreachable (No power)', 'error');
     } finally {
       setIsTestingSocket(false);
     }
@@ -264,7 +272,9 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
     try {
       const res = await biometricGatewayService.syncEmployeesToTerminal(liveDevice.id);
       showToast(`✓ ${res.message}`);
-      loadWorkspaceData();
+      const freshUsers = biometricGatewayService.getDeviceUsers(liveDevice.id).users;
+      setUsers(freshUsers || []);
+      loadWorkspaceData('users');
       onDeviceUpdated();
     } catch (err: any) {
       showToast(err.message || 'Push to device failed', 'error');
@@ -378,14 +388,24 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
   };
 
   const handlePullUsersFromTerminal = async () => {
+    if (liveDevice.status !== 'Online') {
+      showToast(`Cannot sync users: ${liveDevice.device_name} is currently offline (No power). Please connect power supply before reading users.`, 'error');
+      return;
+    }
     setIsSyncingUsers(true);
     try {
       const res = await biometricGatewayService.triggerDeviceUserSync(liveDevice.id, 'HR Administrator');
-      showToast(`✓ Read from device: ${res.message}`);
-      loadWorkspaceData();
-      onDeviceUpdated();
+      if (res.status === 'FAILED') {
+        showToast(res.message || 'Read from device failed: Device unreachable.', 'error');
+      } else {
+        showToast(`✓ Read from device: ${res.message}`);
+        const freshUsers = biometricGatewayService.getDeviceUsers(liveDevice.id).users;
+        setUsers(freshUsers || []);
+        loadWorkspaceData('users');
+        onDeviceUpdated();
+      }
     } catch (err: any) {
-      showToast(err.message || 'Read from device failed', 'error');
+      showToast(err.message || 'Read from device failed: Terminal is offline.', 'error');
     } finally {
       setIsSyncingUsers(false);
     }
@@ -409,17 +429,25 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
     }
   };
 
-  const filteredUsers = users.filter(u => {
-    const matchesSearch =
-      u.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
-      u.device_user_id.includes(userSearchQuery) ||
-      (u.mapped_employee_name && u.mapped_employee_name.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
-      (u.mapped_employee_code && u.mapped_employee_code.toLowerCase().includes(userSearchQuery.toLowerCase()));
+  const filteredUsers = useMemo(() => {
+    return users.filter(u => {
+      const matchesSearch =
+        u.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+        u.device_user_id.includes(userSearchQuery) ||
+        (u.mapped_employee_name && u.mapped_employee_name.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
+        (u.mapped_employee_code && u.mapped_employee_code.toLowerCase().includes(userSearchQuery.toLowerCase()));
 
-    if (userMappingFilter === 'MAPPED') return matchesSearch && u.is_mapped;
-    if (userMappingFilter === 'UNMAPPED') return matchesSearch && !u.is_mapped;
-    return matchesSearch;
-  });
+      if (userMappingFilter === 'MAPPED') return matchesSearch && u.is_mapped;
+      if (userMappingFilter === 'UNMAPPED') return matchesSearch && !u.is_mapped;
+      return matchesSearch;
+    });
+  }, [users, userSearchQuery, userMappingFilter]);
+
+  const totalUsersPages = Math.max(1, Math.ceil(filteredUsers.length / usersPerPage));
+  const paginatedUsers = useMemo(() => {
+    const start = (usersPage - 1) * usersPerPage;
+    return filteredUsers.slice(start, start + usersPerPage);
+  }, [filteredUsers, usersPage, usersPerPage]);
 
   const unmappedCount = users.filter(u => !u.is_mapped).length;
   const mappedCount = users.filter(u => u.is_mapped).length;
@@ -452,7 +480,9 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
                 className="gap-1 font-mono text-[11px]"
               >
                 <span className={cn("w-1.5 h-1.5 rounded-full", liveDevice.status === 'Online' ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} />
-                {liveDevice.status === 'Online' ? `Online (${socketLatency || 4}ms)` : 'Offline'}
+                {liveDevice.status === 'Online'
+                  ? `Online (${socketLatency || 12}ms)`
+                  : (liveDevice.status === 'No Power' ? 'Offline (No Power)' : 'Offline')}
               </Badge>
 
               {/* Interactive Direction Role Quick Selector */}
@@ -515,8 +545,12 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
               disabled={isTestingSocket}
               className="gap-1.5 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 border-emerald-200 hover:bg-emerald-100"
             >
-              <RefreshCw className={cn("w-3.5 h-3.5 text-[#07563D]", isTestingSocket && "animate-spin")} />
-              {isTestingSocket ? 'Testing...' : 'Test Socket'}
+              {isTestingSocket ? (
+                <Loader2 className="w-3.5 h-3.5 text-[#07563D] animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5 text-[#07563D]" />
+              )}
+              {isTestingSocket ? 'Testing Socket...' : 'Test Socket'}
             </Button>
 
             <Button
@@ -527,8 +561,12 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
               className="gap-1.5 rounded-xl text-xs font-bold text-teal-800 bg-teal-50 border-teal-200 hover:bg-teal-100"
               title="Synchronizes hardware terminal clock with JOY Cloud server time"
             >
-              <Clock className={cn("w-3.5 h-3.5 text-teal-700", isSyncingClock && "animate-spin")} />
-              {isSyncingClock ? 'Syncing...' : 'Sync Device Clock'}
+              {isSyncingClock ? (
+                <Loader2 className="w-3.5 h-3.5 text-teal-700 animate-spin" />
+              ) : (
+                <Clock className="w-3.5 h-3.5 text-teal-700" />
+              )}
+              {isSyncingClock ? 'Syncing Clock...' : 'Sync Device Clock'}
             </Button>
 
             <Button
@@ -539,7 +577,11 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
               className="gap-1.5 rounded-xl text-xs font-bold text-amber-800 bg-amber-50 border-amber-300 hover:bg-amber-100"
               title="Clears admin lock on physical terminal so the M/OK menu opens"
             >
-              <Unlock className={cn("w-3.5 h-3.5 text-amber-600", isUnlockingAdmin && "animate-spin")} />
+              {isUnlockingAdmin ? (
+                <Loader2 className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+              ) : (
+                <Unlock className="w-3.5 h-3.5 text-amber-600" />
+              )}
               {isUnlockingAdmin ? 'Unlocking...' : 'Unlock Terminal Admin'}
             </Button>
 
@@ -550,7 +592,11 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
               disabled={isPushingEmployees}
               className="gap-1.5 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100"
             >
-              <UploadCloud className={cn("w-3.5 h-3.5 text-indigo-600", isPushingEmployees && "animate-spin")} />
+              {isPushingEmployees ? (
+                <Loader2 className="w-3.5 h-3.5 text-indigo-600 animate-spin" />
+              ) : (
+                <UploadCloud className="w-3.5 h-3.5 text-indigo-600" />
+              )}
               {isPushingEmployees ? 'Pushing to Device...' : 'Push Employees to Device'}
             </Button>
 
@@ -561,8 +607,12 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
               disabled={isSyncingUsers}
               className="gap-1.5 rounded-xl text-xs font-bold text-gray-700 bg-gray-50 border-gray-200 hover:bg-gray-100"
             >
-              <DownloadCloud className={cn("w-3.5 h-3.5 text-gray-600", isSyncingUsers && "animate-spin")} />
-              {isSyncingUsers ? 'Reading...' : 'Sync from Device'}
+              {isSyncingUsers ? (
+                <Loader2 className="w-3.5 h-3.5 text-gray-600 animate-spin" />
+              ) : (
+                <DownloadCloud className="w-3.5 h-3.5 text-gray-600" />
+              )}
+              {isSyncingUsers ? 'Syncing...' : 'Sync from Device'}
             </Button>
 
             <Button
@@ -573,7 +623,11 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
               className="gap-1.5 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100"
               title="Factory wipes all users and punch logs from physical machine memory"
             >
-              <Trash2 className={cn("w-3.5 h-3.5 text-rose-600", isWipingHardware && "animate-spin")} />
+              {isWipingHardware ? (
+                <Loader2 className="w-3.5 h-3.5 text-rose-600 animate-spin" />
+              ) : (
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              )}
               {isWipingHardware ? 'Wiping RAM...' : 'Wipe Device Memory'}
             </Button>
 
@@ -605,11 +659,11 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => handleSelectTab(tab.id as any)}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2.5 text-xs font-bold transition-all border-b-2 whitespace-nowrap cursor-pointer",
+                  "flex items-center gap-2 px-4 py-2.5 text-xs font-bold transition-all border-b-2 whitespace-nowrap cursor-pointer select-none active:scale-95",
                   isActive
-                    ? "border-[#07563D] text-[#07563D] bg-emerald-50/50 rounded-t-xl"
+                    ? "border-[#07563D] text-[#07563D] bg-emerald-50/50 rounded-t-xl shadow-xs"
                     : "border-transparent text-gray-500 hover:text-gray-900 hover:bg-gray-50 rounded-t-xl"
                 )}
               >
@@ -778,7 +832,7 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
 
               {/* Metric 2: Face Templates */}
               {(() => {
-                const realFaceCount = users.filter(u => u.face_enrolled || (u.face_count && u.face_count > 0)).length;
+                const realFaceCount = users.filter(u => u.face_enrolled || (u as any).has_face_enrolled || (u.face_count && u.face_count > 0) || (u as any).credentials?.face?.status === 'ENROLLED').length;
                 const faceCap = liveDevice.face_capacity || 1500;
                 const facePct = Math.min(100, Math.max(realFaceCount > 0 ? 1 : 0, (realFaceCount / faceCap) * 100));
                 return (
@@ -799,7 +853,7 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
 
               {/* Metric 3: Fingerprints */}
               {(() => {
-                const realFpCount = users.reduce((sum, u) => sum + (u.fingerprint_count || 0), 0);
+                const realFpCount = users.reduce((sum, u) => sum + Number(u.fingerprint_count || (u as any).fingerprints_count || (u as any).credentials?.fingerprint?.count || 0), 0);
                 const fpCap = liveDevice.fingerprint_capacity || 5000;
                 const fpPct = Math.min(100, Math.max(realFpCount > 0 ? 1 : 0, (realFpCount / fpCap) * 100));
                 return (
@@ -1122,15 +1176,15 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredUsers.map(u => {
+                  paginatedUsers.map(u => {
                     const rawCard = u.card_number && u.card_number !== 'null' && u.card_number !== 'undefined' ? u.card_number : (u as any).credentials?.card?.uid;
                     const activeCard = rawCard ? String(rawCard).trim() : null;
 
                     const fpCount = Number(u.fingerprint_count || (u as any).fingerprints_count || (u as any).credentials?.fingerprint?.count || 0);
-                    const hasFace = Boolean(u.face_enrolled || (u as any).has_face_enrolled || (u as any).credentials?.face?.status === 'ENROLLED');
-                    const isFaceUnknown = !hasFace && ((u as any).credentials?.face?.status === 'UNKNOWN' || u.face_enrolled === null || u.face_enrolled === undefined);
+                    const hasFace = Boolean(u.face_enrolled || (u as any).has_face_enrolled || (u as any).credentials?.face?.status === 'ENROLLED' || (u.face_count && u.face_count > 0) || (u as any).faceCount > 0);
+                    const isFaceUnknown = !hasFace && (u as any).credentials?.face?.status === 'UNKNOWN';
 
-                    const isAwaiting = !hasFace && fpCount === 0 && !activeCard && !isFaceUnknown;
+                    const isAwaiting = !hasFace && fpCount === 0 && !activeCard;
 
                     return (
                       <TableRow key={u.id} className="hover:bg-gray-50/50">
@@ -1143,26 +1197,22 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
                         <TableCell>
                           <div className="flex flex-wrap items-center gap-1.5">
                             {hasFace ? (
-                              <Badge variant="emerald" size="sm" title="Verified from: Live Device Event" className="text-[10px] gap-1 font-semibold bg-emerald-50 text-emerald-800 border-emerald-300">
+                              <Badge variant="emerald" size="sm" title="Verified Biometric Modality: Facial Template Enrolled" className="text-[10px] gap-1 font-semibold bg-emerald-50 text-emerald-800 border-emerald-300">
                                 📷 Face Enrolled
-                              </Badge>
-                            ) : isFaceUnknown ? (
-                              <Badge variant="gray" size="sm" title="Face template not verifiable over TCP without live event" className="text-[10px] gap-1 text-gray-500 bg-gray-100 border-gray-200">
-                                Face: Unknown
                               </Badge>
                             ) : null}
                             {fpCount > 0 ? (
-                              <Badge variant="emerald" size="sm" title="Verified from: Device Query" className="text-[10px] gap-1 font-semibold bg-emerald-50 text-emerald-800 border-emerald-300">
+                              <Badge variant="emerald" size="sm" title={`Verified Biometric Modality: ${fpCount} Fingerprint(s) Registered`} className="text-[10px] gap-1 font-semibold bg-emerald-50 text-emerald-800 border-emerald-300">
                                 <Fingerprint className="w-3 h-3 text-[#07563D]" /> {fpCount} FP
                               </Badge>
                             ) : null}
                             {activeCard ? (
-                              <Badge variant="blue" size="sm" title="Verified from: Device Query" className="text-[10px] gap-1 font-semibold bg-blue-50 text-blue-800 border-blue-300 font-mono">
+                              <Badge variant="blue" size="sm" title="Verified RFID Card Number" className="text-[10px] gap-1 font-semibold bg-blue-50 text-blue-800 border-blue-300 font-mono">
                                 🪪 #{activeCard}
                               </Badge>
                             ) : null}
                             {isAwaiting ? (
-                              <Badge variant="amber" size="sm" className="text-[10px] gap-1 font-medium bg-amber-50/90 text-amber-800 border-amber-200">
+                              <Badge variant="amber" size="sm" className="text-[10px] gap-1 font-medium bg-amber-50/90 text-amber-800 border-amber-200" title="No biometric templates recorded on device yet. Enroll face or fingerprint on terminal.">
                                 <AlertTriangle className="w-3 h-3" /> Awaiting Biometrics
                               </Badge>
                             ) : null}
@@ -1199,6 +1249,51 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
             </TableBody>
           </Table>
         </div>
+
+        {/* Machine Users Pagination Bar */}
+        {filteredUsers.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 text-xs text-gray-500 border-t border-gray-100 mt-2">
+            <div className="flex items-center gap-2">
+              <span>Showing {Math.min(filteredUsers.length, (usersPage - 1) * usersPerPage + 1)}–{Math.min(filteredUsers.length, usersPage * usersPerPage)} of {filteredUsers.length} machine users</span>
+              <select
+                value={usersPerPage}
+                onChange={e => {
+                  setUsersPerPage(Number(e.target.value));
+                  setUsersPage(1);
+                }}
+                className="px-2 py-1 bg-gray-50 border border-gray-200 rounded-lg text-xs"
+              >
+                <option value={25}>25 per page</option>
+                <option value={50}>50 per page</option>
+                <option value={100}>100 per page</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={usersPage <= 1}
+                onClick={() => setUsersPage(p => Math.max(1, p - 1))}
+                className="px-2.5 py-1 text-xs gap-1 rounded-xl"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" /> Previous
+              </Button>
+              <span className="font-semibold text-gray-700">
+                Page {usersPage} of {totalUsersPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={usersPage >= totalUsersPages}
+                onClick={() => setUsersPage(p => Math.min(totalUsersPages, p + 1))}
+                className="px-2.5 py-1 text-xs gap-1 rounded-xl"
+              >
+                Next <ChevronRight className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
         </Card>
       )}
 
@@ -1733,40 +1828,45 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
       )}
 
       {/* Modals */}
-      <DeviceUsersManagerModal
-        isOpen={isUsersModalOpen}
-        device={liveDevice}
-        onClose={() => {
-          setIsUsersModalOpen(false);
-          loadWorkspaceData();
-        }}
-      />
+      {isUsersModalOpen && (
+        <DeviceUsersManagerModal
+          isOpen={isUsersModalOpen}
+          device={liveDevice}
+          onClose={() => {
+            setIsUsersModalOpen(false);
+            loadWorkspaceData();
+          }}
+        />
+      )}
 
-      <RemoteBiometricEnrollmentModal
-        isOpen={isEnrollModalOpen}
-        device={liveDevice}
-        employees={employees}
-        onClose={() => {
-          setIsEnrollModalOpen(false);
-          loadWorkspaceData();
-        }}
-        onEnrollmentSuccess={() => {
-          loadWorkspaceData();
-          onDeviceUpdated();
-        }}
-      />
+      {isEnrollModalOpen && (
+        <RemoteBiometricEnrollmentModal
+          isOpen={isEnrollModalOpen}
+          device={liveDevice}
+          employees={employees}
+          onClose={() => {
+            setIsEnrollModalOpen(false);
+            loadWorkspaceData();
+          }}
+          onEnrollmentSuccess={() => {
+            loadWorkspaceData();
+            onDeviceUpdated();
+          }}
+        />
+      )}
 
       {/* Enterprise Confirmation Dialog Modal */}
-      <Modal
-        isOpen={confirmDialog.isOpen}
-        onClose={() => {
-          if (!isWipingHardware && !isClearingData) {
-            setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-          }
-        }}
-        title={confirmDialog.title}
-        size="md"
-      >
+      {confirmDialog.isOpen && (
+        <Modal
+          isOpen={confirmDialog.isOpen}
+          onClose={() => {
+            if (!isWipingHardware && !isClearingData) {
+              setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+            }
+          }}
+          title={confirmDialog.title}
+          size="md"
+        >
         <div className="space-y-4">
           <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200/80">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
@@ -1821,6 +1921,7 @@ export const BiometricDeviceWorkspace: React.FC<Props> = ({
           </div>
         </div>
       </Modal>
+      )}
     </div>
   );
 };

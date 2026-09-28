@@ -45,16 +45,18 @@ import { ClientBillingMasterModule } from '../clientBilling/ClientBillingMasterM
 
 interface PayrollMasterModuleProps {
   initialTab?: string;
+  onNavigateTab?: (route: string) => void;
 }
 
 const resolveTabId = (route?: string): string => {
-  if (!route || route === 'payroll') return 'dashboard';
-  const clean = route.replace(/^payroll-/, '');
+  if (!route || route === 'payroll' || route === '/payroll') return 'dashboard';
+  const clean = route.replace(/^\/?payroll[-/]/, '').replace(/^\//, '').toLowerCase();
+  if (clean === 'dashboard') return 'dashboard';
   if (clean === 'billing' || clean === 'client-billing' || clean === 'client-invoice' || clean === 'invoicing') return 'client-billing';
   if (clean === 'epfo' || clean === 'epf' || clean === 'ecr' || clean === 'epf-ecr') return 'epfo';
   if (clean === 'esic' || clean === 'esi' || clean === 'esi-compliance') return 'esi';
-  if (clean === 'claims' || clean === 'expense-claims' || clean === 'reimbursements') return 'claims';
-  if (clean === 'salary' || clean === 'structures' || clean === 'components' || clean === 'employee-salary' || clean === 'revisions') return 'salary';
+  if (clean === 'claims' || clean === 'expense-claims' || clean === 'reimbursements' || clean === 'expenses') return 'claims';
+  if (clean === 'salary' || clean === 'structures' || clean === 'components' || clean === 'employee-salary' || clean === 'revisions' || clean === 'salary-structures') return 'salary';
   if (clean === 'runs' || clean === 'processing' || clean === 'calendar' || clean === 'input' || clean === 'preview' || clean === 'approval' || clean === 'finalization') return 'processing';
   if (clean === 'earnings' || clean === 'overtime' || clean === 'incentives' || clean === 'bonus') return 'earnings';
   if (clean === 'deductions' || clean === 'lop' || clean === 'loans' || clean === 'advance') return 'deductions';
@@ -69,13 +71,35 @@ const resolveTabId = (route?: string): string => {
 
 type TabCategory = 'all' | 'operations' | 'reports' | 'rules';
 
-export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initialTab }) => {
+export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initialTab, onNavigateTab }) => {
   const [activeTab, setActiveTab] = useState<string>(() => resolveTabId(initialTab));
   const [selectedPayslip, setSelectedPayslip] = useState<Payslip | null>(null);
   const [isPayslipModalOpen, setIsPayslipModalOpen] = useState(false);
   const [isAutoModalOpen, setIsAutoModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<TabCategory>('all');
   const [employeeCount, setEmployeeCount] = useState<number>(2);
+
+  const handleSelectTab = (tabId: string) => {
+    setActiveTab(tabId);
+    if (onNavigateTab) {
+      const tabToRouteMap: Record<string, string> = {
+        'dashboard': 'payroll-dashboard',
+        'client-billing': 'client-billing',
+        'salary': 'payroll-salary',
+        'claims': 'payroll-claims',
+        'processing': 'payroll-processing',
+        'earnings': 'payroll-earnings',
+        'deductions': 'payroll-deductions',
+        'statutory': 'payroll-statutory',
+        'documents': 'payroll-documents',
+        'disbursement': 'payroll-disbursement',
+        'fnf': 'payroll-fnf',
+        'reports': 'payroll-reports',
+        'settings': 'payroll-settings',
+      };
+      onNavigateTab(tabToRouteMap[tabId] || `payroll-${tabId}`);
+    }
+  };
 
   useEffect(() => {
     if (initialTab) {
@@ -101,7 +125,6 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
 
   const tabs = [
     { id: 'dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard, category: 'operations' as TabCategory },
-    { id: 'client-billing', label: 'Client Wage Billing & Invoicing', icon: Receipt, category: 'operations' as TabCategory, highlight: true },
     { id: 'processing', label: 'Payroll Processing & Runs', icon: Play, category: 'operations' as TabCategory, highlight: true },
     { id: 'disbursement', label: 'Bank Disbursement', icon: CreditCard, category: 'operations' as TabCategory },
     { id: 'reports', label: 'Reports, Registers & ECR', icon: FileSpreadsheet, category: 'reports' as TabCategory, highlight: true },
@@ -121,8 +144,10 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
 
   const handleOpenPayslip = (employeeId: string) => {
     const slip = payrollApi.getPayslipForEmployee(employeeId, 'August 2026');
-    setSelectedPayslip(slip);
-    setIsPayslipModalOpen(true);
+    if (slip) {
+      setSelectedPayslip(slip);
+      setIsPayslipModalOpen(true);
+    }
   };
 
   const getStageFromTab = (tab: string): PayrollStageKey => {
@@ -231,7 +256,7 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
         <div className="flex items-center justify-between gap-2 bg-gray-50/90 px-3 py-2 rounded-xl border border-gray-200/80 text-xs overflow-x-auto no-scrollbar">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setActiveTab('dashboard')}
+              onClick={() => handleSelectTab('dashboard')}
               className="font-bold text-[#07563D] hover:underline flex items-center gap-1 cursor-pointer"
             >
               <span>← Back to Dashboard</span>
@@ -246,7 +271,7 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
             {tabs.map((t) => (
               <button
                 key={t.id}
-                onClick={() => setActiveTab(t.id)}
+                onClick={() => handleSelectTab(t.id)}
                 className={cn(
                   'px-2 py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer',
                   activeTab === t.id
@@ -265,7 +290,7 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
       <div className="transition-all duration-200">
         {activeTab === 'dashboard' && (
           <PayrollDashboardView
-            onNavigateTab={tabKey => setActiveTab(tabKey)}
+            onNavigateTab={tabKey => handleSelectTab(tabKey)}
             onOpenPayslip={handleOpenPayslip}
           />
         )}
@@ -273,14 +298,14 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
         {activeTab === 'salary' && (
           <SalaryManagementView
             onOpenPayslip={handleOpenPayslip}
-            onNavigateTab={tabKey => setActiveTab(tabKey)}
+            onNavigateTab={tabKey => handleSelectTab(tabKey)}
           />
         )}
         {activeTab === 'claims' && <ExpenseClaimsView />}
         {activeTab === 'processing' && (
           <PayrollProcessingView
             onOpenPayslip={handleOpenPayslip}
-            onNavigateTab={tabKey => setActiveTab(tabKey)}
+            onNavigateTab={tabKey => handleSelectTab(tabKey)}
           />
         )}
         {activeTab === 'earnings' && <EarningsView />}
@@ -291,13 +316,13 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
         {activeTab === 'documents' && <EmployeeDocumentsView onOpenPayslip={handleOpenPayslip} />}
         {activeTab === 'disbursement' && (
           <BankDisbursementView
-            onNavigateTab={tabKey => setActiveTab(tabKey)}
+            onNavigateTab={tabKey => handleSelectTab(tabKey)}
           />
         )}
         {activeTab === 'fnf' && <FnFSettlementView />}
         {activeTab === 'reports' && (
           <PayrollReportsView
-            onNavigateTab={tabKey => setActiveTab(tabKey)}
+            onNavigateTab={tabKey => handleSelectTab(tabKey)}
           />
         )}
         {activeTab === 'settings' && <PayrollSettingsView />}
@@ -315,9 +340,9 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
         isOpen={isAutoModalOpen}
         onClose={() => setIsAutoModalOpen(false)}
         onRunCompleted={() => {
-          setActiveTab('processing');
+          handleSelectTab('processing');
         }}
-        onNavigateTab={tabKey => setActiveTab(tabKey)}
+        onNavigateTab={tabKey => handleSelectTab(tabKey)}
       />
     </div>
   );

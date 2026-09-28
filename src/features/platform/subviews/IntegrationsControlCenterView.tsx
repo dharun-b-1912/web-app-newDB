@@ -83,7 +83,9 @@ import {
   platformIntegrationsService,
   INTEGRATION_PROVIDERS_META,
 } from '../../../services/platform/platformIntegrationsService';
+import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
+import { WhatsAppControlCenterView } from './WhatsAppControlCenterView';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { cn } from '../../../lib/utils';
 
@@ -1336,6 +1338,8 @@ export const IntegrationsControlCenterView: React.FC = () => {
          --------------------------------------------------------- */}
       {activeTab === 'messaging' && (
         <div className="space-y-6">
+          {/* Full Enterprise WhatsApp Business & Flows Platform Hub */}
+          <WhatsAppControlCenterView />
           {/* WhatsApp Accounts */}
           <div className="bg-white p-5 rounded-xl border border-[#E2E8F0] shadow-sm space-y-4">
             <div className="flex items-center justify-between">

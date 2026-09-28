@@ -559,6 +559,7 @@ export const CustomerPeopleTab: React.FC<CustomerPeopleTabProps> = ({ organizati
                   <option value="Organization Owner">Organization Owner</option>
                   <option value="Organization Admin">Organization Admin</option>
                   <option value="HR Head">HR Head</option>
+                  <option value="Finance Head">Finance Head</option>
                   <option value="HR Admin">HR Admin</option>
                   <option value="Payroll Admin">Payroll Admin</option>
                   <option value="Attendance Admin">Attendance Admin</option>

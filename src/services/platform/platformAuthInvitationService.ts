@@ -14,6 +14,7 @@ export type UserRole =
   | 'Organization Admin'
   | 'Company Admin'
   | 'HR Head'
+  | 'Finance Head'
   | 'HR Admin'
   | 'Payroll Admin'
   | 'Attendance Admin'
@@ -72,6 +73,21 @@ let inMemoryInvitations: OrganizationInvitation[] = [
     expires_at: '2099-12-31T23:59:59.000Z',
     created_at: '2026-09-05T05:49:00.000Z',
   },
+  {
+    id: 'inv-vguard-admin',
+    organization_id: 'org-vguard',
+    organization_name: 'V-Guard Industries Ltd',
+    email: 'admin@vguard.in',
+    full_name: 'Mithun Chittilappilly',
+    role: 'Company Admin',
+    department: 'Executive Operations',
+    invitation_token: 'inv_vguard_token_2026',
+    invite_url: `${getAppBaseUrl()}/auth/accept-invite?token=inv_vguard_token_2026&org=org-vguard&email=admin@vguard.in&role=Company%20Admin`,
+    status: 'pending',
+    invited_by: 'Platform Super Admin',
+    expires_at: '2099-12-31T23:59:59.000Z',
+    created_at: '2026-09-18T00:00:00.000Z',
+  },
 ];
 
 const loadStoredInvitations = (): OrganizationInvitation[] => {
@@ -121,8 +137,8 @@ export const platformAuthInvitationService = {
     if (r === 'HR ADMIN' || r === 'HR_ADMIN') {
       return 'HR_ADMIN';
     }
-    if (r.includes('PAYROLL')) {
-      return 'PAYROLL_ADMIN';
+    if (r === 'FINANCE HEAD' || r === 'FINANCE_HEAD' || r.includes('FINANCE') || r.includes('PAYROLL')) {
+      return 'FINANCE_HEAD';
     }
     if (r.includes('ATTENDANCE')) {
       return 'ATTENDANCE_ADMIN';

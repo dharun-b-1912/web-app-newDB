@@ -42,10 +42,17 @@ export interface DetailedEmployeePayrollResult {
 export interface CalculationInput {
   annualCtc?: number;
   monthlyCtc?: number;
+  monthlyGross?: number;
+  compensationBasis?: 'CTC_INCLUSIVE' | 'GROSS_BASED';
   structureCode?: string;
   pfApplicable?: boolean;
   esiApplicable?: boolean;
   ptApplicable?: boolean;
+  lwfApplicable?: boolean;
+  payrollMonth?: number;
+  isManagerial?: boolean;
+  serviceDays?: number;
+  establishmentHeadcount?: number;
   taxRegime?: 'NEW' | 'OLD';
   state?: string;
   statutoryConfig?: Partial<StatutoryConfig>;
@@ -63,6 +70,7 @@ export interface ComponentLineItem {
 }
 
 export interface SalaryCalculationResult {
+  compensationBasis: 'CTC_INCLUSIVE' | 'GROSS_BASED';
   annualCtc: number;
   monthlyCtc: number;
   monthlyGrossEarnings: number;
@@ -84,7 +92,16 @@ export interface SalaryCalculationResult {
   estimatedTdsMonthly: number;
   epfEmployer: number;
   esicEmployer: number;
+  lwfEmployee?: number;
+  lwfEmployer?: number;
   gratuityProvision: number;
+  recoveryCarriedForward?: number;
+  grossVariance: number;
+  netVariance: number;
+  ctcVariance: number;
+  isReconciled: boolean;
+  grossEarnings?: number;
+  totalEmployerCost?: number;
   earnings: ComponentLineItem[];
   deductions: ComponentLineItem[];
   employerContributions: ComponentLineItem[];
@@ -101,12 +118,14 @@ export class PayrollCalculationEngine {
       pfCapped?: boolean;
       stateJurisdiction?: string;
       statutoryConfig?: Partial<StatutoryConfig>;
+      payrollMonth?: number;
     } = {}
   ): DetailedEmployeePayrollResult {
     const divisorType = options.prorationDivisor || 'CALENDAR_DAYS';
     const pfCapped = options.pfCapped !== false && snapshot.pf_capped !== false;
     const stateJurisdiction = options.stateJurisdiction || snapshot.pt_state_jurisdiction || 'Tamil Nadu';
     const statutoryConfig = options.statutoryConfig;
+    const payrollMonth = options.payrollMonth;
     const calculationLines: CalculationLineItem[] = [];
     const exceptions: PayrollException[] = [];
 
@@ -234,7 +253,14 @@ export class PayrollCalculationEngine {
     const estimatedTds = tdsEval.monthlyTdsWithholding;
 
     // F. Labour Welfare Fund (LWF)
-    const lwfEval = StatutoryRuleEngine.evaluateLWF(stateJurisdiction, statutoryConfig);
+    const isManagerial = snapshot.designation
+      ? /manager|director|lead|vp|head|officer|supervisor/i.test(snapshot.designation)
+      : false;
+    const lwfEval = StatutoryRuleEngine.evaluateLWF(stateJurisdiction, statutoryConfig, {
+      payrollMonth,
+      isManagerial,
+      monthlyGrossWage: actualGrossEarnings,
+    });
 
     // ── 7. Deductions Aggregation ─────────────────────────────────────────────
     const loanEmi = snapshot.loan_emi_due || 0;
@@ -266,6 +292,24 @@ export class PayrollCalculationEngine {
         category: 'NEGATIVE_NET',
         message: `Total deductions (₹${totalEmployeeDeductions.toLocaleString('en-IN')}) exceed gross earnings (₹${actualGrossEarnings.toLocaleString('en-IN')}). Net pay is ₹${netPay.toLocaleString('en-IN')}.`,
         suggested_action: 'Reduce voluntary deductions, defer loan recovery EMI, or review LOP days.',
+        source: 'PAYROLL_CALCULATION_ENGINE',
+        detected_at: new Date().toISOString(),
+        is_resolved: false,
+      });
+    }
+
+    if (netPay > actualGrossEarnings) {
+      exceptions.push({
+        id: `exc-net-gt-gross-${snapshot.employee_id}`,
+        tenant_id: snapshot.tenant_id,
+        payroll_run_id: snapshot.payroll_run_id,
+        employee_id: snapshot.employee_id,
+        employee_code: snapshot.employee_code,
+        employee_name: snapshot.employee_name,
+        severity: 'BLOCKER',
+        category: 'CALCULATION_INVARIANT' as any,
+        message: `Net take-home (₹${netPay.toLocaleString('en-IN')}) cannot exceed gross earnings (₹${actualGrossEarnings.toLocaleString('en-IN')}).`,
+        suggested_action: 'Verify that deduction values are non-negative.',
         source: 'PAYROLL_CALCULATION_ENGINE',
         detected_at: new Date().toISOString(),
         is_resolved: false,
@@ -702,12 +746,29 @@ export class PayrollCalculationEngine {
    * Preview CTC Breakdown calculation for onboarding / salary structuring
    * Deterministically synced with active Statutory Configuration (EPF, ESIC, PT, TDS)
    */
-  public static calculateCtcBreakdown(input: CalculationInput): SalaryCalculationResult {
-    const annualCtc = input.annualCtc || (input.monthlyCtc ? input.monthlyCtc * 12 : 600000);
-    const monthlyCtc = Math.max(0, input.monthlyCtc || Math.round(annualCtc / 12));
+  public static calculateCtcBreakdown(
+    input: CalculationInput | number,
+    basisOverride?: 'CTC_INCLUSIVE' | 'GROSS_BASED'
+  ): SalaryCalculationResult & { grossEarnings: number; totalEmployerCost: number } {
+    let resolvedInput: CalculationInput;
+    if (typeof input === 'number') {
+      const b = basisOverride || 'CTC_INCLUSIVE';
+      resolvedInput = {
+        compensationBasis: b,
+        monthlyCtc: b === 'CTC_INCLUSIVE' ? input : undefined,
+        monthlyGross: b === 'GROSS_BASED' ? input : undefined,
+        annualCtc: b === 'CTC_INCLUSIVE' ? input * 12 : undefined,
+      };
+    } else {
+      resolvedInput = input;
+    }
+
+    const basis = resolvedInput.compensationBasis || 'CTC_INCLUSIVE';
+    let annualCtc = resolvedInput.annualCtc || (resolvedInput.monthlyGross ? resolvedInput.monthlyGross * 12 : (resolvedInput.monthlyCtc ? resolvedInput.monthlyCtc * 12 : 600000));
+    let monthlyCtc = Math.max(0, resolvedInput.monthlyCtc || (resolvedInput.monthlyGross ? resolvedInput.monthlyGross : Math.round(annualCtc / 12)));
 
     // Resolve tenant statutory config (passed or from unified storage)
-    let statutoryConfig: Partial<StatutoryConfig> | undefined = input.statutoryConfig;
+    let statutoryConfig: Partial<StatutoryConfig> | undefined = resolvedInput.statutoryConfig;
     if (!statutoryConfig) {
       try {
         const raw = localStorage.getItem('workforce_statutory_rules_active') ||
@@ -718,8 +779,8 @@ export class PayrollCalculationEngine {
       } catch (_) {}
     }
 
-    const isPfEnabled = statutoryConfig?.pf_enabled !== false && input.pfApplicable !== false;
-    const isEsiEnabled = statutoryConfig?.esi_enabled !== false && input.esiApplicable !== false;
+    const isPfEnabled = statutoryConfig?.pf_enabled !== false && resolvedInput.pfApplicable !== false;
+    const isEsiEnabled = statutoryConfig?.esi_enabled !== false && resolvedInput.esiApplicable !== false;
 
     const pfEmployeeRate = (statutoryConfig?.pf_employee_percent !== undefined ? statutoryConfig.pf_employee_percent : 12) / 100;
     const pfEmployerRate = (statutoryConfig?.pf_employer_percent !== undefined ? statutoryConfig.pf_employer_percent : 12) / 100;
@@ -735,7 +796,9 @@ export class PayrollCalculationEngine {
     // ── Exact Deterministic CTC-to-Gross Derivation ──────────────────────────
     // Standard Structure: Basic = 50% of Gross, HRA = 40% of Basic (20% of Gross), Special = 30% of Gross
     let grossMonthly: number;
-    if (input.structureCode === 'INTERN_STIPEND_01' || monthlyCtc === 0) {
+    if (basis === 'GROSS_BASED') {
+      grossMonthly = resolvedInput.monthlyGross || resolvedInput.monthlyCtc || Math.round(annualCtc / 12);
+    } else if (resolvedInput.structureCode === 'INTERN_STIPEND_01' || monthlyCtc === 0) {
       grossMonthly = monthlyCtc;
     } else {
       // Trial 1: Assume Gross is eligible for ESI (Gross <= esiWageCeiling)
@@ -770,7 +833,7 @@ export class PayrollCalculationEngine {
     const pfEval = StatutoryRuleEngine.evaluatePF(
       basic,
       true,
-      input.pfApplicable !== false,
+      resolvedInput.pfApplicable !== false,
       statutoryConfig
     );
 
@@ -783,28 +846,63 @@ export class PayrollCalculationEngine {
 
     const ptEval = StatutoryRuleEngine.evaluateProfessionalTax(
       grossMonthly,
-      input.state || 'Tamil Nadu',
+      resolvedInput.state || 'Tamil Nadu',
       statutoryConfig
     );
 
     const tdsEval = StatutoryRuleEngine.evaluateProjectedTDS(
       grossMonthly,
       grossMonthly * 12,
-      input.taxRegime || 'NEW'
+      resolvedInput.taxRegime || 'NEW'
     );
 
-    const ptAmount = input.ptApplicable !== false ? ptEval.ptAmount : 0;
+    const ptAmount = resolvedInput.ptApplicable !== false ? ptEval.ptAmount : 0;
+
+    // LWF Assessment via Statutory Rule Engine
+    const lwfState = resolvedInput.state || statutoryConfig?.lwf_state_jurisdiction || 'Tamil Nadu';
+    const isLwfActive = statutoryConfig?.lwf_enabled !== false && resolvedInput.lwfApplicable !== false;
+    const lwfEval = isLwfActive
+      ? StatutoryRuleEngine.evaluateLWF(lwfState, statutoryConfig, {
+          payrollMonth: resolvedInput.payrollMonth || 12,
+          isManagerial: resolvedInput.isManagerial || false,
+          workedDaysInPrecedingYear: resolvedInput.serviceDays || 365,
+          establishmentHeadcount: resolvedInput.establishmentHeadcount || 25,
+          monthlyGrossWage: grossMonthly,
+        })
+      : { employeeContribution: 0, employerContribution: 0, isEligible: false, explanation: 'LWF Not Applicable' };
+
+    const lwfEmployee = lwfEval.employeeContribution || 0;
+    const lwfEmployer = lwfEval.employerContribution || 0;
+
     const totalEmployeeDeductions =
       pfEval.employee_contribution +
       esiEval.employee_contribution +
       ptAmount +
-      tdsEval.monthlyTdsWithholding;
+      tdsEval.monthlyTdsWithholding +
+      lwfEmployee;
 
     const totalEmployerContributions =
       pfEval.total_employer_pf_cost +
-      esiEval.employer_contribution;
+      esiEval.employer_contribution +
+      lwfEmployer;
+
+    if (basis === 'GROSS_BASED') {
+      monthlyCtc = grossMonthly + totalEmployerContributions;
+      annualCtc = monthlyCtc * 12;
+    }
 
     const netMonthlyPay = Math.max(0, grossMonthly - totalEmployeeDeductions);
+    const recoveryCarriedForward = totalEmployeeDeductions > grossMonthly
+      ? totalEmployeeDeductions - grossMonthly
+      : 0;
+
+    // Hard Invariant Verifications
+    if (netMonthlyPay > grossMonthly) {
+      throw new Error(`Payroll Invariant Error: Net Take-Home (₹${netMonthlyPay}) cannot exceed Gross Earnings (₹${grossMonthly}).`);
+    }
+    if (basis === 'CTC_INCLUSIVE' && grossMonthly > monthlyCtc) {
+      throw new Error(`Salary Structure Error: Gross earnings (₹${grossMonthly}) exceed configured CTC (₹${monthlyCtc}) after employer costs.`);
+    }
 
     const earnings: ComponentLineItem[] = [
       { componentCode: 'BASIC', componentName: 'Basic Salary', type: 'EARNING', monthlyAmount: basic, annualAmount: basic * 12, calculationBasis: '50% of Gross', taxable: true, isStatutory: false },
@@ -817,14 +915,17 @@ export class PayrollCalculationEngine {
       { componentCode: 'ESI_EE', componentName: `Employee ESIC (${(esiEmployeeRate * 100)}%)`, type: 'DEDUCTION', monthlyAmount: esiEval.employee_contribution, annualAmount: esiEval.employee_contribution * 12, calculationBasis: `${(esiEmployeeRate * 100)}% of Gross`, taxable: false, isStatutory: true },
       { componentCode: 'PT', componentName: 'Professional Tax (PT)', type: 'DEDUCTION', monthlyAmount: ptAmount, annualAmount: ptAmount * 12, calculationBasis: ptEval.slabDescription, taxable: false, isStatutory: true },
       { componentCode: 'TDS', componentName: 'Estimated TDS', type: 'DEDUCTION', monthlyAmount: tdsEval.monthlyTdsWithholding, annualAmount: tdsEval.totalAnnualTaxLiability, calculationBasis: 'Annualized Slab Projection', taxable: false, isStatutory: true },
+      ...(lwfEmployee > 0 ? [{ componentCode: 'LWF_EE', componentName: 'Labour Welfare Fund (LWF)', type: 'DEDUCTION' as const, monthlyAmount: lwfEmployee, annualAmount: lwfEmployee * 12, calculationBasis: 'State Statutory Board Slab', taxable: false, isStatutory: true }] : []),
     ];
 
     const employerContributions: ComponentLineItem[] = [
       { componentCode: 'PF_ER', componentName: `Employer EPF (${(pfEmployerRate * 100)}%) + Admin/EDLI (1%)`, type: 'EMPLOYER_CONTRIBUTION', monthlyAmount: pfEval.total_employer_pf_cost, annualAmount: pfEval.total_employer_pf_cost * 12, calculationBasis: `${((pfEmployerRate + pfAdminRate) * 100)}% of Basic (capped)`, taxable: false, isStatutory: true },
       { componentCode: 'ESI_ER', componentName: `Employer ESIC (${(esiEmployerRate * 100)}%)`, type: 'EMPLOYER_CONTRIBUTION', monthlyAmount: esiEval.employer_contribution, annualAmount: esiEval.employer_contribution * 12, calculationBasis: `${(esiEmployerRate * 100)}% of Gross`, taxable: false, isStatutory: true },
+      ...(lwfEmployer > 0 ? [{ componentCode: 'LWF_ER', componentName: 'Employer LWF Contribution', type: 'EMPLOYER_CONTRIBUTION' as const, monthlyAmount: lwfEmployer, annualAmount: lwfEmployer * 12, calculationBasis: 'State Statutory Board Ratio', taxable: false, isStatutory: true }] : []),
     ];
 
     return {
+      compensationBasis: basis,
       annualCtc,
       monthlyCtc,
       monthlyGrossEarnings: grossMonthly,
@@ -846,7 +947,16 @@ export class PayrollCalculationEngine {
       estimatedTdsMonthly: tdsEval.monthlyTdsWithholding,
       epfEmployer: pfEval.employer_pf_amount,
       esicEmployer: esiEval.employer_contribution,
+      lwfEmployee,
+      lwfEmployer,
       gratuityProvision: Math.round(basic * 0.0481),
+      recoveryCarriedForward,
+      grossVariance: 0,
+      netVariance: 0,
+      ctcVariance: 0,
+      isReconciled: true,
+      grossEarnings: grossMonthly,
+      totalEmployerCost: monthlyCtc,
       earnings,
       deductions,
       employerContributions,

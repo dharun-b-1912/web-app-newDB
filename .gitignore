@@ -20,6 +20,9 @@ coverage/
 .env.production
 .env.*.local
 !.env.example
+scratch/.env*
+*service-account*.json
+
 
 # Supabase local dev temp files
 supabase/.temp/
@@ -65,4 +68,9 @@ flutter_app/
 # Vendor Binaries & Large Setup Files
 Essl Support files/
 
-
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

@@ -11,6 +11,7 @@ import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
+import { realtimeChannelManager } from '../../../services/realtime/realtimeChannelManager';
 import { getSecureDocumentUrl } from '../../../lib/storage/secureStorage';
 import {
   Receipt,
@@ -69,31 +70,26 @@ export const ExpenseClaimsView: React.FC = () => {
 
   useEffect(() => {
     loadData();
-    const unsub = hrEventBus.subscribe('*', loadData);
+    const unsub1 = hrEventBus.subscribe('expense.*', loadData);
+    const unsub2 = hrEventBus.subscribe('claim.*', loadData);
 
-    let channel: any;
+    let unsubRealtime: (() => void) | undefined;
     if (isSupabaseEnabled) {
       try {
-        channel = supabase
-          .channel('web-expense-claims-realtime')
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'expense_claims' },
-            (payload) => {
-              if (payload.eventType === 'INSERT') {
-                showToast('🔔 New expense reimbursement claim received from employee.', 'info');
-              }
-              loadData();
-            }
-          )
-          .subscribe();
+        unsubRealtime = realtimeChannelManager.subscribeToTable('expense_claims', (payload) => {
+          if (payload.eventType === 'INSERT') {
+            showToast('New expense reimbursement claim received from employee.', 'info');
+          }
+          loadData();
+        });
       } catch (_) {}
     }
 
     return () => {
-      unsub();
-      if (channel) {
-        supabase.removeChannel(channel);
+      unsub1();
+      unsub2();
+      if (unsubRealtime) {
+        unsubRealtime();
       }
     };
   }, []);

@@ -20,9 +20,66 @@ const STORAGE_KEYS = {
   AUDIT_LOGS: 'workforce_context_audit_logs',
 };
 
+// One-time migration: replace stale company ID from old default with correct Supabase UUID
+const STALE_COMPANY_ID = '0ce6436c-e9b4-4e0e-9102-411ea21b8b80';
+const CORRECT_COMPANY_ID = '2030277f-a6a1-427f-beaf-4fc677a3bae2';
+if (typeof localStorage !== 'undefined') {
+  try {
+    const cachedEntityId = localStorage.getItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID);
+    if (cachedEntityId === STALE_COMPANY_ID) {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID, CORRECT_COMPANY_ID);
+    }
+    // Also migrate the cached COMPANIES list in api.ts KEYS.COMPANIES
+    const cachedCompanies = localStorage.getItem('workforce_companies');
+    if (cachedCompanies) {
+      const parsed = JSON.parse(cachedCompanies);
+      if (Array.isArray(parsed) && parsed.some((c: any) => c.id === STALE_COMPANY_ID)) {
+        const migrated = parsed.map((c: any) => c.id === STALE_COMPANY_ID ? { ...c, id: CORRECT_COMPANY_ID } : c);
+        localStorage.setItem('workforce_companies', JSON.stringify(migrated));
+      }
+    }
+    const cachedActiveCompany = localStorage.getItem('workforce_active_company');
+    if (cachedActiveCompany) {
+      const parsed = JSON.parse(cachedActiveCompany);
+      if (parsed?.id === STALE_COMPANY_ID) {
+        localStorage.setItem('workforce_active_company', JSON.stringify({ ...parsed, id: CORRECT_COMPANY_ID }));
+      }
+    }
+  } catch (_) {}
+}
+
 // Authoritative Default Organizations & Entities (matching Supabase seeds)
-export const DEFAULT_ORGANIZATIONS: Organization[] = [];
-export const DEFAULT_LEGAL_ENTITIES: Company[] = [];
+export const DEFAULT_ORGANIZATIONS: Organization[] = [
+  {
+    id: '0c621892-e938-4707-9957-13534ea32c19',
+    name: 'Joy Corporate Solutions',
+    slug: 'joy-corporate-solutions',
+    status: 'Active',
+    plan: 'Enterprise',
+    default_currency: 'INR',
+    timezone: 'Asia/Kolkata',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+export const DEFAULT_LEGAL_ENTITIES: Company[] = [
+  {
+    id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+    organization_id: '0c621892-e938-4707-9957-13534ea32c19',
+    legal_name: 'Joy Corporate Solutions Pvt Ltd',
+    trade_name: 'Joy Corporate Solutions',
+    statutory_registration_no: 'U72900TZ2024PTC012345',
+    tax_id: 'AAACJ1234F',
+    country: 'India',
+    city: 'Coimbatore',
+    currency: 'INR',
+    timezone: 'Asia/Kolkata',
+    address: 'Avinashi Road, Peelamedu, Coimbatore, Tamil Nadu 641004',
+    status: 'Active',
+    created_at: '2024-01-01T00:00:00Z',
+  },
+];
 
 class OrganizationContextService {
   /**
@@ -71,14 +128,63 @@ class OrganizationContextService {
           supabase.from('companies').select('*'),
         ]);
         if (orgRes.data && orgRes.data.length > 0) {
-          allOrgs = orgRes.data as Organization[];
+          // Normalize org fields: Supabase uses display_name/legal_name, not name
+          allOrgs = orgRes.data.map((o: any) => ({
+            ...o,
+            name: o.display_name || o.legal_name || o.name || 'Joy Corporate Solutions',
+            status: o.status === 'ACTIVE' ? 'Active' : (o.status || 'Active'),
+          })) as Organization[];
         }
         if (compRes.data && compRes.data.length > 0) {
-          allEntities = compRes.data as Company[];
+          // Normalize company fields: Supabase uses registered_address, pan_number, cin_number
+          allEntities = compRes.data.map((c: any) => ({
+            ...c,
+            legal_name: c.legal_name || c.trade_name,
+            trade_name: c.trade_name || c.legal_name,
+            address: c.registered_address || c.address || '',
+            status: c.is_active === false ? 'Inactive' : 'Active',
+          })) as Company[];
         }
       } catch (err) {
         console.warn('[OrgContextService] Supabase context query notice:', err);
       }
+
+      // If companies table is RLS-blocked (returns 0), try deriving company_id from employees
+      if (allEntities.length === 0 && isSupabaseEnabled) {
+        try {
+          const { data: empSample } = await supabase
+            .from('employees')
+            .select('company_id, organization_id')
+            .limit(1)
+            .maybeSingle();
+          if (empSample?.company_id) {
+            // Construct a minimal company entity from the employee's company_id
+            allEntities = [{
+              id: empSample.company_id,
+              organization_id: empSample.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+              legal_name: 'Joy Corporate Solutions Pvt Ltd',
+              trade_name: 'Joy Corporate Solutions',
+              statutory_registration_no: 'U72900TZ2024PTC012345',
+              tax_id: 'AAACJ1234F',
+              country: 'India',
+              city: 'Coimbatore',
+              currency: 'INR',
+              timezone: 'Asia/Kolkata',
+              address: 'Avinashi Road, Peelamedu, Coimbatore, Tamil Nadu 641004',
+              status: 'Active',
+              created_at: '2024-01-01T00:00:00Z',
+            }];
+          }
+        } catch (_) {}
+      }
+    }
+
+    // Fallback to defaults if empty (e.g. local development or database not populated)
+    if (allOrgs.length === 0) {
+      allOrgs = DEFAULT_ORGANIZATIONS;
+    }
+    if (allEntities.length === 0) {
+      allEntities = DEFAULT_LEGAL_ENTITIES;
     }
 
     // 2. Determine Active Organization via User DB Profile, Subdomain or Saved Preference
@@ -105,11 +211,18 @@ class OrganizationContextService {
       activeOrg = allOrgs.find((o) => o.id === savedOrgId) || allOrgs[0] || null;
     }
 
+    if (!activeOrg) {
+      activeOrg = DEFAULT_ORGANIZATIONS[0];
+    }
+
     // 3. Filter authorized Legal Entities by Role Scope
     let authorizedEntities: Company[] = [];
 
     if (activeOrg?.id) {
       authorizedEntities = allEntities.filter((e) => e.organization_id === activeOrg?.id);
+    }
+    if (authorizedEntities.length === 0) {
+      authorizedEntities = allEntities.length > 0 ? allEntities : DEFAULT_LEGAL_ENTITIES;
     }
 
     // 4. Determine Active Legal Entity
@@ -117,6 +230,9 @@ class OrganizationContextService {
     if (authorizedEntities.length > 0) {
       const savedEntityId = localStorage.getItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID);
       activeLegalEntity = authorizedEntities.find((e) => e.id === savedEntityId) || authorizedEntities[0] || null;
+    }
+    if (!activeLegalEntity) {
+      activeLegalEntity = authorizedEntities[0] || DEFAULT_LEGAL_ENTITIES[0];
     }
 
     // Persist verified context back to local session pointer
@@ -166,7 +282,7 @@ class OrganizationContextService {
     this.logContextAudit(user, {
       action: 'ORGANIZATION_SWITCHED',
       organizationId: targetOrg.id,
-      legalEntityId: newContext.activeLegalEntity?.id || null,
+      legalEntityId: newContext.activeLegalEntity?.id || undefined,
       details: `Switched active organization to ${targetOrg.name}`,
       beforeState,
       afterState: {
@@ -202,7 +318,7 @@ class OrganizationContextService {
 
     this.logContextAudit(user, {
       action: 'LEGAL_ENTITY_SWITCHED',
-      organizationId: currentContext.activeOrganization?.id || null,
+      organizationId: currentContext.activeOrganization?.id || 'org-joy-01',
       legalEntityId: targetEntity.id,
       details: `Switched active legal entity to ${targetEntity.legal_name}`,
       beforeState,

@@ -7,6 +7,7 @@
 // ============================================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { realtimeChannelManager } from '../realtime/realtimeChannelManager';
 import { getActiveOrgId } from './biometricCommandService';
 import { hrEventBus } from '../hrEventBus';
 import { api } from '../api';
@@ -226,34 +227,11 @@ class AttendanceRegularizationService {
     this.isRealtimeSubscribed = true;
 
     try {
-      const channelName = `regularization_mesh_${tenantId}`;
-      const existingChannel = supabase.getChannels().find((ch) => ch.topic === `realtime:${channelName}`);
-      if (existingChannel) {
-        supabase.removeChannel(existingChannel);
-      }
-
-      const channel = supabase.channel(channelName);
-
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'attendance_regularizations',
-          },
-          (payload) => {
-            console.log('[REALTIME REGULARIZATION] Table event on attendance_regularizations:', payload);
-            this.fetchRequestsFromDb(tenantId).then(() => {
-              hrEventBus.publish('regularization.updated', payload.new as any);
-            });
-          }
-        )
-        .subscribe((status) => {
-          if (status !== 'SUBSCRIBED' && status !== 'TIMED_OUT') {
-            this.isRealtimeSubscribed = false;
-          }
+      realtimeChannelManager.subscribeToTable('attendance_regularizations', (payload) => {
+        this.fetchRequestsFromDb(tenantId).then(() => {
+          hrEventBus.publish('regularization.updated', payload.new as any);
         });
+      });
     } catch (e) {
       console.warn('[Regularization] Realtime subscription notice:', e);
       this.isRealtimeSubscribed = false;

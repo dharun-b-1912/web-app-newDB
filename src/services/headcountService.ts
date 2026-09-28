@@ -19,6 +19,7 @@ export interface DimensionalHeadcountItem {
   label: string;
   count: number;
   pct: number;
+  color?: string;
 }
 
 export const headcountService = {

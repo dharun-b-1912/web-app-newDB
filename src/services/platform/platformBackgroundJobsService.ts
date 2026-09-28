@@ -4,6 +4,7 @@
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { realtimeChannelManager } from '../realtime/realtimeChannelManager';
 import {
   JobExecution,
   JobQueue,
@@ -43,21 +44,14 @@ export const platformBackgroundJobsService = {
   subscribeToRealtime(onChangeCallback: () => void) {
     if (!isSupabaseEnabled) return () => {};
 
-    const channel = supabase
-      .channel('platform_jobs_realtime_stream')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'platform_background_jobs' }, () => {
-        onChangeCallback();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'platform_job_queues' }, () => {
-        onChangeCallback();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'platform_workers' }, () => {
-        onChangeCallback();
-      })
-      .subscribe();
+    const u1 = realtimeChannelManager.subscribeToTable('platform_background_jobs', () => onChangeCallback());
+    const u2 = realtimeChannelManager.subscribeToTable('platform_job_queues', () => onChangeCallback());
+    const u3 = realtimeChannelManager.subscribeToTable('platform_workers', () => onChangeCallback());
 
     return () => {
-      supabase.removeChannel(channel);
+      u1();
+      u2();
+      u3();
     };
   },
 

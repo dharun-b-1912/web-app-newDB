@@ -192,10 +192,10 @@ export class StatutoryAuditEngine {
       monthlyGrossFixed: !canon ? (emp.gross_monthly ?? 25000) : undefined,
       monthlyBasicFixed: !canon ? (emp.basic_monthly ?? Math.round((emp.gross_monthly ?? 25000) * 0.5)) : undefined,
       monthlyHraFixed: !canon ? (emp.hra_monthly ?? Math.round((emp.basic_monthly ?? 12500) * 0.4)) : undefined,
-      pfApplicable: !isPfExempt,
-      esiApplicable: !isEsiExempt,
-      ptApplicable: isStatutoryCorporate,
-      lwfApplicable: isStatutoryCorporate,
+      pfApplicable: true, // Always evaluate statutory liabilities for audit & government reporting
+      esiApplicable: canon ? true : ((emp.gross_monthly ?? 25000) <= 21000),
+      ptApplicable: true,
+      lwfApplicable: true,
       isContractorGrossPayoutMode: !!canon,
       canteenDeduction: canon ? canon.canteen : (emp.canteen_deduction ?? runRec?.canteen_deduction ?? 0),
       salaryAdvanceDeduction: canon ? canon.advance : (emp.salary_advance_deduction ?? emp.advance_recovery ?? runRec?.salary_advance_deduction ?? runRec?.advance_recovery ?? 0),
@@ -209,12 +209,12 @@ export class StatutoryAuditEngine {
     let hra = authRes.hraEarned;
     let ot = authRes.otWagesEarned;
     let special = authRes.otWagesEarned;
-    let pfWage = authRes.pfWageBasis;
-    let epfWage = authRes.epfResult.cappedPfWage;
-    let epsWage = authRes.epfResult.cappedPfWage;
-    let edliWage = authRes.epfResult.cappedPfWage;
+    let pfWage = authRes.pfWageBasis > 0 ? authRes.pfWageBasis : basic;
+    let epfWage = authRes.epfResult.cappedPfWage > 0 ? authRes.epfResult.cappedPfWage : Math.min(basic, 15000);
+    let epsWage = authRes.epfResult.cappedPfWage > 0 ? authRes.epfResult.cappedPfWage : Math.min(basic, 15000);
+    let edliWage = authRes.epfResult.cappedPfWage > 0 ? authRes.epfResult.cappedPfWage : Math.min(basic, 15000);
 
-    let eeEpf = authRes.employeeEPF;
+    let eeEpf = authRes.epfResult.employeeContribution;
     let erEpf = authRes.epfResult.employerEPF;
     let erEps = authRes.epfResult.employerEPS;
     let edliAmount = authRes.epfResult.employerEDLI;
@@ -228,9 +228,9 @@ export class StatutoryAuditEngine {
     let account22 = 0;
 
     let isCovered = authRes.esiResult.isCovered;
-    let esiCoverageWage = authRes.esiResult.coverageWage;
-    let esiContributionWage = authRes.esiResult.contributionWage;
-    let eeEsi = authRes.employeeESI;
+    let esiCoverageWage = authRes.esiResult.coverageWage > 0 ? authRes.esiResult.coverageWage : (gross - ot);
+    let esiContributionWage = authRes.esiResult.contributionWage > 0 ? authRes.esiResult.contributionWage : gross;
+    let eeEsi = authRes.esiResult.employeeContribution;
     let erEsi = authRes.esiResult.employerContribution;
     let totalEsiLiability = authRes.esiResult.totalESILiability;
 

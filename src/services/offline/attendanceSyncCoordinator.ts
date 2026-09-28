@@ -7,7 +7,6 @@
 
 import { supabase } from '../../lib/supabase';
 import { employeeIdentityResolver } from '../identity/employeeIdentityResolver';
-import { vendorGovernanceEngine } from '../operations/vendorGovernanceEngine';
 import { offlineAttendanceQueue, OfflineAttendanceEvent } from './offlineAttendanceQueue';
 
 export interface SyncReplayResult {

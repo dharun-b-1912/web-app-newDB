@@ -24,6 +24,7 @@ import { api } from '../../../services/api';
 import { attendanceApi } from '../../../services/attendanceApi';
 import { workLocationService } from '../../../services/location/workLocationService';
 import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
+import { realtimeChannelManager } from '../../../services/realtime/realtimeChannelManager';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 
@@ -91,29 +92,19 @@ export const AuditControlView: React.FC<AuditControlViewProps> = ({
     loadData();
   }, [loadData]);
 
-  // Real-time Postgres listeners on attendance_punches and attendance_daily
+  // Real-time Postgres listeners on attendance_punches and attendance_daily via centralized mesh
   useEffect(() => {
     if (!isSupabaseEnabled) return;
-    const channel = supabase
-      .channel(`audit-transactions-live-${Date.now()}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance_punches' },
-        () => {
-          loadData();
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance_daily' },
-        () => {
-          loadData();
-        }
-      )
-      .subscribe();
+    const unsubPunches = realtimeChannelManager.subscribeToTable('attendance_punches', () => {
+      loadData();
+    });
+    const unsubDaily = realtimeChannelManager.subscribeToTable('attendance_daily', () => {
+      loadData();
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      unsubPunches();
+      unsubDaily();
     };
   }, [loadData]);
 

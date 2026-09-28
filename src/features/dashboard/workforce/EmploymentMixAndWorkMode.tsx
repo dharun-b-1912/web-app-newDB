@@ -6,7 +6,7 @@ export interface MixDistributionItem {
   label: string;
   count: number;
   pct: number;
-  color: string;
+  color?: string;
 }
 
 interface Props {

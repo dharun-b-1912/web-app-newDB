@@ -5,6 +5,7 @@
 // Validates: Midday punches NEVER auto-convert to checkout
 // ============================================================================
 
+import { describe, it, expect } from 'vitest';
 import { attendanceDecisionEngine } from '../attendance/attendanceDecisionEngine';
 import { attendanceClassificationEngine } from '../attendance/attendanceClassificationEngine';
 import { attendanceTimeService } from '../attendance/attendanceTimeService';
@@ -18,28 +19,8 @@ function assert(condition: boolean, message: string) {
   }
 }
 
-async function runTests() {
-  console.log('================================================================');
-  console.log(' 🧪 Biometric Terminal Log & Attendance Decision Engine Tests');
-  console.log('================================================================\n');
-
-  let passed = 0;
-  let failed = 0;
-
-  async function test(name: string, fn: () => Promise<void>) {
-    try {
-      await fn();
-      console.log(`  ✓ ${name}`);
-      passed++;
-    } catch (err: any) {
-      console.error(`  ✗ ${name}`);
-      console.error(`    Error: ${err.message}`);
-      failed++;
-    }
-  }
-
-  // TEST 1: First Biometric Punch -> ACCEPTED_CHECK_IN
-  await test('Test 1: Single biometric punch at 09:32:21 AM yields CHECK-IN (Session Working, Checkout NULL)', async () => {
+describe('JOY PeopleHR — Biometric Terminal Log & Attendance Decision Engine Tests', () => {
+  it('Test 1: Single biometric punch at 09:32:21 AM yields CHECK-IN (Session Working, Checkout NULL)', async () => {
     attendanceDecisionEngine.clearAllState();
 
     const res = await attendanceDecisionEngine.processEvent({
@@ -61,7 +42,7 @@ async function runTests() {
   });
 
   // TEST 2: Midday Punch (12:37:29 PM) MUST NOT become CHECK-OUT
-  await test('Test 2: Second punch at 12:37:29 PM MUST NOT become CHECK-OUT (Decision = ACCEPTED_IN_SESSION)', async () => {
+  it('Test 2: Second punch at 12:37:29 PM MUST NOT become CHECK-OUT (Decision = ACCEPTED_IN_SESSION)', async () => {
     // Punch 2 during active workday
     const resMidday = await attendanceDecisionEngine.processEvent({
       organizationId: ORG,
@@ -89,7 +70,7 @@ async function runTests() {
   });
 
   // TEST 3: Afternoon Punch (03:02:21 PM) MUST NOT become CHECK-OUT
-  await test('Test 3: Third punch at 03:02:21 PM MUST NOT become CHECK-OUT (4h elapsed rule disabled)', async () => {
+  it('Test 3: Third punch at 03:02:21 PM MUST NOT become CHECK-OUT (4h elapsed rule disabled)', async () => {
     const resAft = await attendanceDecisionEngine.processEvent({
       organizationId: ORG,
       employeeId: 'emp-dharun-017',
@@ -109,7 +90,7 @@ async function runTests() {
   });
 
   // TEST 4: Legitimate Departure Punch (18:05:00 PM) -> ACCEPTED_CHECK_OUT
-  await test('Test 4: Legitimate checkout at shift end (18:05:00 PM) yields ACCEPTED_CHECK_OUT', async () => {
+  it('Test 4: Legitimate checkout at shift end (18:05:00 PM) yields ACCEPTED_CHECK_OUT', async () => {
     const resOut = await attendanceDecisionEngine.processEvent({
       organizationId: ORG,
       employeeId: 'emp-dharun-017',
@@ -131,7 +112,7 @@ async function runTests() {
   });
 
   // TEST 5: Raw Event Ledger Integrity (4 raw events recorded, 1 session)
-  await test('Test 5: Event ledger maintains exactly 4 raw events for Dharun B, single session', async () => {
+  it('Test 5: Event ledger maintains exactly 4 raw events for Dharun B, single session', async () => {
     const rawEvents = attendanceDecisionEngine.getRawEvents().filter(e => e.employee_id === 'emp-dharun-017');
     assert(rawEvents.length === 4, `Expected 4 immutable raw events, found ${rawEvents.length}`);
 
@@ -143,7 +124,7 @@ async function runTests() {
   });
 
   // TEST 6: Source Lock & Modality Deduplication
-  await test('Test 6: Mobile check-in locked session ignores conflicting biometric attempt', async () => {
+  it('Test 6: Mobile check-in locked session ignores conflicting biometric attempt', async () => {
     attendanceDecisionEngine.clearAllState();
 
     // Mobile check in first
@@ -175,7 +156,7 @@ async function runTests() {
   });
 
   // TEST 7: Timestamp Conversion Consistency (Device Local + TZ = UTC = Business Local)
-  await test('Test 7: Timestamp consistency: 09:32:21 Asia/Kolkata -> 04:02:21Z -> 09:32:21 AM', async () => {
+  it('Test 7: Timestamp consistency: 09:32:21 Asia/Kolkata -> 04:02:21Z -> 09:32:21 AM', async () => {
     const rawLocal = '2026-09-12 09:32:21';
     const norm = attendanceTimeService.normalizeDeviceTimestamp(rawLocal, 'Asia/Kolkata');
 
@@ -185,7 +166,7 @@ async function runTests() {
   });
 
   // TEST 8: AttendanceClassificationEngine Workday Model
-  await test('Test 8: AttendanceClassificationEngine leaves midday punches in-session without inventing checkout', async () => {
+  it('Test 8: AttendanceClassificationEngine leaves midday punches in-session without inventing checkout', async () => {
     const workday = attendanceClassificationEngine.classifyAndCalculateWorkday(
       'emp-dharun-017',
       [
@@ -218,17 +199,4 @@ async function runTests() {
     assert(workday.status === 'WORKING', 'Status must be WORKING');
     assert(workday.display_status.includes('Working'), `Display status must indicate working, got ${workday.display_status}`);
   });
-
-  console.log(`\n================================================================`);
-  console.log(` Results: ${passed} Passed | ${failed} Failed`);
-  console.log(`================================================================\n`);
-
-  if (failed > 0) {
-    process.exit(1);
-  }
-}
-
-runTests().catch((err) => {
-  console.error('Fatal test error:', err);
-  process.exit(1);
 });

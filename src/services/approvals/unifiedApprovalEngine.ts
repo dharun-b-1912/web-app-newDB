@@ -18,7 +18,6 @@ import { AttendanceApprovalAdapter } from './domainAdapters/attendanceApprovalAd
 import { TravelApprovalAdapter } from './domainAdapters/travelApprovalAdapter';
 import { SeparationApprovalAdapter } from './domainAdapters/separationApprovalAdapter';
 import { FnFApprovalAdapter } from './domainAdapters/fnfApprovalAdapter';
-import { VendorOnboardingApprovalAdapter } from './domainAdapters/vendorOnboardingApprovalAdapter';
 
 export interface ApprovalInstanceRecord {
   id: string;
@@ -101,11 +100,6 @@ export class UnifiedApprovalEngine {
     const fnfAdapter = new FnFApprovalAdapter();
     this.registerAdapter('FNF', fnfAdapter);
     this.registerAdapter('FnF', fnfAdapter);
-
-    const vendorAdapter = new VendorOnboardingApprovalAdapter();
-    this.registerAdapter('VENDOR_ONBOARDING', vendorAdapter);
-    this.registerAdapter('VendorOnboarding', vendorAdapter);
-    this.registerAdapter('VENDOR', vendorAdapter);
   }
 
   public registerAdapter(entityType: string, adapter: DomainApprovalAdapter): void {

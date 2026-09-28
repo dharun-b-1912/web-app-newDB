@@ -133,8 +133,12 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
 
   useEffect(() => {
     loadData();
-    const unsub = hrEventBus.subscribe('*', () => loadData());
-    return () => unsub();
+    const unsub1 = hrEventBus.subscribe('salary.*', () => loadData());
+    const unsub2 = hrEventBus.subscribe('payroll.*', () => loadData());
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, []);
 
   // 1. COMPONENT BUILDER
@@ -573,16 +577,35 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
                   {/* Components breakdown */}
                   <div className="p-3.5 rounded-xl bg-gray-50/80 border border-gray-200/80 text-xs space-y-2">
                     <span className="font-bold text-gray-500 block uppercase text-[10px] tracking-wider mb-1 font-sans">Formula Breakdown</span>
-                    {str.components.map((c, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-xs text-gray-700">
-                        <span className="font-medium text-gray-800">{c.component_name}</span>
-                        <span className="font-bold font-mono text-gray-900">
-                          {c.calculation_type === 'PercentageOfGross' ? `${c.value}% of Gross` :
-                           c.calculation_type === 'PercentageOfBasic' ? `${c.value}% of Basic` :
-                           `₹ ${(c.value || 0).toLocaleString('en-IN')}`}
-                        </span>
-                      </div>
-                    ))}
+                    {(str.components || []).map((c: any, idx: number) => {
+                      const compName = c.component_name || c.name || c.payslip_display_name || c.component_code || c.code || 'Component';
+                      const val = c.value ?? c.default_value ?? 0;
+                      let displayVal = `₹ ${Number(val).toLocaleString('en-IN')}`;
+                      if (c.calculation_type === 'PercentageOfGross') {
+                        displayVal = `${val}% of Gross`;
+                      } else if (c.calculation_type === 'PercentageOfBasic') {
+                        displayVal = `${val}% of Basic`;
+                      } else if (c.calculation_type === 'PercentageOfCTC') {
+                        displayVal = `${val}% of CTC`;
+                      } else if (c.calculation_type === 'FixedDailyAmount' || c.calculation_type === 'PerDay') {
+                        displayVal = `₹ ${Number(val).toLocaleString('en-IN')} / day`;
+                      } else if (c.calculation_type === 'PerHour') {
+                        displayVal = `₹ ${Number(val).toLocaleString('en-IN')} / hr`;
+                      } else if (c.calculation_type === 'Formula' && c.formula_expression) {
+                        displayVal = c.formula_expression;
+                      } else if (c.calculation_type === 'Formula') {
+                        displayVal = `Formula (₹ ${Number(val).toLocaleString('en-IN')})`;
+                      }
+
+                      return (
+                        <div key={idx} className="flex justify-between items-center text-xs text-gray-700">
+                          <span className="font-medium text-gray-800">{compName}</span>
+                          <span className="font-bold font-mono text-gray-900">
+                            {displayVal}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 

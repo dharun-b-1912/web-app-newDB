@@ -21,6 +21,7 @@ import {
 import { AuthContextMode } from '../../services/auth/authService';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
+import { JoyLogo } from '../../components/common/JoyLogo';
 
 export interface AuthPageProps {
   initialContext?: AuthContextMode;
@@ -43,8 +44,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
         currentPath === '/company/login'
       ) {
         setAuthContextMode('admin');
-      } else if (currentPath === '/vendor/login' || currentPath === '/vendor-login' || currentPath.startsWith('/vendor')) {
-        setAuthContextMode('vendor');
       } else if (currentPath === '/platform-login' || currentPath === '/superadmin') {
         setAuthContextMode('platform');
       } else if (currentPath !== '/login' && !currentPath.includes('activate') && !currentPath.includes('reset-password')) {
@@ -53,8 +52,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
             ? '/admin/login'
             : authContext === 'platform'
             ? '/platform-login'
-            : authContext === 'vendor'
-            ? '/vendor/login'
             : '/login';
         window.history.replaceState({ route: slug }, '', slug);
       }
@@ -69,8 +66,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
           ? '/admin/login'
           : mode === 'platform'
           ? '/platform-login'
-          : mode === 'vendor'
-          ? '/vendor/login'
           : '/login';
       window.history.replaceState({ route: slug }, '', slug);
     }
@@ -110,20 +105,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
 
         <button
           type="button"
-          onClick={() => handleContextChange('vendor')}
-          className={cn(
-            'px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2',
-            authContext === 'vendor'
-              ? 'bg-[#312E81] text-white shadow-xs'
-              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-          )}
-        >
-          <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Vendor & Contractor Portal</span>
-        </button>
-
-        <button
-          type="button"
           onClick={() => handleContextChange('platform')}
           className={cn(
             'px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2',
@@ -135,6 +116,19 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
           <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
           <span>Platform Administration</span>
         </button>
+
+        <a
+          href="/vendor-login"
+          onClick={(e) => {
+            e.preventDefault();
+            if (onSuccessRoute) onSuccessRoute('vendor-login');
+            else window.location.href = '/vendor-login';
+          }}
+          className="px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+          <span>Vendor Portal Sign In →</span>
+        </a>
       </div>
 
       {/* 2. Main Authentication Shell (Balanced Two-Column Grid) */}
@@ -147,8 +141,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
               ? 'bg-gradient-to-br from-[#064E3B] via-[#07563D] to-[#042F24]'
               : authContext === 'platform'
               ? 'bg-[#0F172A]'
-              : authContext === 'vendor'
-              ? 'bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900'
               : 'bg-[#073B2A]'
           )}
         >
@@ -158,12 +150,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
 
           {/* Top Brand Logo */}
           <div className="relative z-10 space-y-6">
-            <div className="bg-white/95 rounded-2xl p-2.5 inline-block shadow-sm">
-              <img
-                src="/joy-people-hr-logo.png"
-                alt="JOY People - People First. Work Simplified."
-                className="h-10 w-auto object-contain"
-              />
+            <div className="bg-white/95 rounded-2xl p-2.5 inline-block shadow-md border border-white/40">
+              <JoyLogo size="sm" showText animated={false} />
             </div>
 
             <div className="space-y-2">
@@ -172,8 +160,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
                   ? 'Company Administration & Governance'
                   : authContext === 'platform'
                   ? 'Platform Control Plane'
-                  : authContext === 'vendor'
-                  ? 'Vendor Compliance & Contractor Intelligence'
                   : 'One secure workspace for your people operations.'}
               </h1>
               <p className="text-xs text-white/70 leading-relaxed">
@@ -181,8 +167,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
                   ? 'Enterprise cockpit for Organization Admins: Legal Entities, Custom RBAC, Approval Workflows & Commercials.'
                   : authContext === 'platform'
                   ? 'Manage multi-tenant infrastructure, customer lifecycle, and compliance policies.'
-                  : authContext === 'vendor'
-                  ? 'Direct contractor portal for KYC onboarding, CLRA licenses, worker payroll, and invoice matching.'
                   : 'Empowering teams with seamless attendance, payroll, talent, and workforce intelligence.'}
               </p>
             </div>

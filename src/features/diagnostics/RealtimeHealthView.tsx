@@ -28,6 +28,8 @@ import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { hrEventBus } from '../../services/hrEventBus';
 import { api } from '../../services/api';
 
+import { getActiveOrgId } from '../../services/attendance/biometricCommandService';
+
 export const RealtimeHealthView: React.FC = () => {
   const [globalStatus, setGlobalStatus] = useState<RealtimeStatus>(realtimeChannelManager.getGlobalStatus());
   const [channels, setChannels] = useState<ChannelSubscriptionInfo[]>(realtimeChannelManager.getChannelInfos());
@@ -36,6 +38,14 @@ export const RealtimeHealthView: React.FC = () => {
   const [isTesting, setIsTesting] = useState(false);
   const [testResults, setTestResults] = useState<any | null>(null);
   const [filterLayer, setFilterLayer] = useState<string>('ALL');
+  const [dbCounts, setDbCounts] = useState<{
+    devices: number;
+    punches: number;
+    rules: number;
+    employees: number;
+  }>({ devices: 0, punches: 0, rules: 0, employees: 0 });
+
+  const activeOrg = getActiveOrgId();
 
   useEffect(() => {
     const unsubStatus = realtimeChannelManager.onStatusChange((status, channelList) => {
@@ -47,11 +57,38 @@ export const RealtimeHealthView: React.FC = () => {
       setLogs((prev) => [entry, ...prev.slice(0, 199)]);
     });
 
+    // Fetch live database counts for this organization
+    const loadDbCounts = async () => {
+      if (!isSupabaseEnabled || !supabase) return;
+      try {
+        const [
+          { count: devCount },
+          { count: punchCount },
+          { count: ruleCount },
+          { count: empCount },
+        ] = await Promise.all([
+          supabase.from('biometric_devices').select('*', { count: 'exact', head: true }).eq('organization_id', activeOrg),
+          supabase.from('attendance_punches').select('*', { count: 'exact', head: true }).eq('organization_id', activeOrg),
+          supabase.from('attendance_rules').select('*', { count: 'exact', head: true }).eq('organization_id', activeOrg),
+          supabase.from('employees').select('*', { count: 'exact', head: true }),
+        ]);
+
+        setDbCounts({
+          devices: devCount || 0,
+          punches: punchCount || 0,
+          rules: ruleCount || 0,
+          employees: empCount || 0,
+        });
+      } catch (_) {}
+    };
+
+    loadDbCounts();
+
     return () => {
       unsubStatus();
       unsubLogs();
     };
-  }, []);
+  }, [activeOrg]);
 
   const handleManualReconnect = () => {
     logger.web('MANUAL_RECONNECT_REQUESTED', { message: 'Operator clicked Reconnect All' });
@@ -209,8 +246,8 @@ export const RealtimeHealthView: React.FC = () => {
             <span>Tenant & Org Scope</span>
             <ShieldCheck className="w-4 h-4 text-blue-600" />
           </div>
-          <div className="text-lg font-bold text-gray-900">Joy Corporate Solutions</div>
-          <div className="text-xs text-gray-500 font-mono">tenant_id: org-joy-01</div>
+          <div className="text-lg font-bold text-gray-900">JOY CORPORATE SOLUTIONS</div>
+          <div className="text-xs text-gray-500 font-mono truncate">org_id: {activeOrg}</div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-xs space-y-2">
@@ -220,6 +257,38 @@ export const RealtimeHealthView: React.FC = () => {
           </div>
           <div className="text-lg font-bold text-gray-900">{channels.length} Managed Channels</div>
           <div className="text-xs text-gray-500">Duplicate listener protection active</div>
+        </div>
+      </div>
+
+      {/* Database Entity Source of Truth Metric Row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-emerald-50/60 p-4 rounded-xl border border-emerald-200/80 flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-emerald-800 uppercase tracking-wider">Biometric Devices</div>
+            <div className="text-2xl font-bold text-emerald-950 mt-0.5">{dbCounts.devices}</div>
+          </div>
+          <Server className="w-6 h-6 text-emerald-600/70" />
+        </div>
+        <div className="bg-blue-50/60 p-4 rounded-xl border border-blue-200/80 flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-blue-800 uppercase tracking-wider">Attendance Punches</div>
+            <div className="text-2xl font-bold text-blue-950 mt-0.5">{dbCounts.punches}</div>
+          </div>
+          <Activity className="w-6 h-6 text-blue-600/70" />
+        </div>
+        <div className="bg-purple-50/60 p-4 rounded-xl border border-purple-200/80 flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-purple-800 uppercase tracking-wider">Attendance Rules</div>
+            <div className="text-2xl font-bold text-purple-950 mt-0.5">{dbCounts.rules}</div>
+          </div>
+          <ShieldCheck className="w-6 h-6 text-purple-600/70" />
+        </div>
+        <div className="bg-amber-50/60 p-4 rounded-xl border border-amber-200/80 flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-amber-800 uppercase tracking-wider">Total Employees</div>
+            <div className="text-2xl font-bold text-amber-950 mt-0.5">{dbCounts.employees}</div>
+          </div>
+          <Cpu className="w-6 h-6 text-amber-600/70" />
         </div>
       </div>
 

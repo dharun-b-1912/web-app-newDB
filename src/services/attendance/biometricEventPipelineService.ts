@@ -165,6 +165,21 @@ function setStore<T>(baseKey: string, val: T, orgId?: string): void {
 // In-memory queue mutex to serialize punch execution per employee + work_date
 const employeeLockQueues = new Map<string, Promise<any>>();
 
+// ── Performance: per-tenant employee cache (3-minute TTL) ──────────────────────
+const _pipelineEmpCache = new Map<string, { data: any[]; expiresAt: number }>();
+
+async function getCachedEmployees(orgId: string): Promise<any[]> {
+  const cached = _pipelineEmpCache.get(orgId);
+  if (cached && Date.now() < cached.expiresAt) return cached.data;
+  try {
+    const data = await api.getEmployees();
+    _pipelineEmpCache.set(orgId, { data, expiresAt: Date.now() + 3 * 60 * 1000 });
+    return data;
+  } catch {
+    return cached?.data || [];
+  }
+}
+
 class BiometricEventPipelineService {
   /**
    * Deterministic Idempotency Hash Generator
@@ -284,10 +299,10 @@ class BiometricEventPipelineService {
       }
     } catch {}
 
-    // 4. Resolve Employee Identity from Multi-Tenant Directory
+    // 4. Resolve Employee Identity from Multi-Tenant Directory (cached)
     let mappedEmp: any = null;
     try {
-      const employees = await api.getEmployees();
+      const employees = await getCachedEmployees(tenantId);
       const pinStr = payload.biometricUserId.trim();
       const pinDigits = pinStr.replace(/\D/g, '');
       mappedEmp = employees.find(
@@ -571,8 +586,12 @@ class BiometricEventPipelineService {
         JoyRedis.set(redisHashKey, resultEvent, { ex: 259200 }).catch(() => {});
         JoyRedis.invalidateLedgerCache(tenantId).catch(() => {});
 
-        // E. Recalculate Daily Attendance Summary
-        this.recalculateDailyAttendance(tenantId, empId, workDate);
+        // E. Recalculate Daily Attendance Summary (deferred — non-blocking)
+        // Uses setTimeout(0) to yield the main thread immediately after the punch response
+        // so the biometric page stays responsive during recalculation.
+        setTimeout(() => {
+          this.recalculateDailyAttendance(tenantId, empId, workDate);
+        }, 0);
 
         // F. Broadcast Real-time Bus Event
         hrEventBus.emit('biometric.punch_received', {

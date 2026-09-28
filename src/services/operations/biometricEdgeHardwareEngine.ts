@@ -7,7 +7,7 @@
 
 import { supabase } from '../../lib/supabase';
 import { enterpriseNotificationEngine } from './enterpriseNotificationEngine';
-import { computeSha256 } from './vendorGovernancePolicyEngine';
+import { computeSha256 } from '../../lib/crypto';
 
 export interface DeviceFirmwareStatus {
   device_id: string;

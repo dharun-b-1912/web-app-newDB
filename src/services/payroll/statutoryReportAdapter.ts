@@ -57,6 +57,24 @@ export interface FormXXVIRow {
   remarks: string;
 }
 
+export interface FormXXVRow {
+  slNo: number;
+  workerName: string;
+  workerCode: string;
+  fatherOrHusbandName: string;
+  sex: string;
+  designation: string;
+  datesOnWhichOvertimeWorked: string;
+  extentOfOvertimeHours: number;
+  totalOvertimeHours: number;
+  normalHoursPerDay: number;
+  normalHourlyRate: number;
+  overtimeHourlyRate: number;
+  overtimeEarnings: number;
+  dateOnWhichOvertimePaid: string;
+  signatureThumb: string;
+}
+
 export class StatutoryReportAdapter {
   /**
    * 1. Generates Form XXVII (Register of Wages) under Rule 78(1)(a)(i) of TN Contract Labour Rules
@@ -228,7 +246,101 @@ export class StatutoryReportAdapter {
   }
 
   /**
-   * 3. Generates Canonical Immutable Payslip Model
+   * 3. Generates Form XXV (Register of Overtime) under Rule 78(1)(a)(iii) of TN Contract Labour Rules & Factories Act 1948
+   */
+  public static generateFormXXV(
+    records: AuthoritativeEmployeePayrollResult[],
+    meta: StatutoryReportMetadata
+  ): { rows: FormXXVRow[]; totals: Record<string, number>; csvContent: string } {
+    const rows: FormXXVRow[] = records.map((r, idx) => {
+      const otHrs = r.approvedOTHours || 0;
+      const normalHourly = r.dailyRate > 0 ? (r.dailyRate / 8) : (r.basicEarned / (r.fixedWorkingDays || 26) / 8);
+      const otHourly = r.hourlyOtRate || (r.otBreakdown?.companyHourlyRate || normalHourly * 1.5);
+      const otEarnings = r.otWagesEarned;
+
+      return {
+        slNo: idx + 1,
+        workerName: r.employeeName,
+        workerCode: r.employeeCode,
+        fatherOrHusbandName: r.fatherOrSpouseName,
+        sex: r.gender.startsWith('F') ? 'F' : 'M',
+        designation: r.designation,
+        datesOnWhichOvertimeWorked: otHrs > 0 ? `${meta.periodStart} to ${meta.periodEnd}` : '—',
+        extentOfOvertimeHours: otHrs,
+        totalOvertimeHours: otHrs,
+        normalHoursPerDay: 8,
+        normalHourlyRate: normalHourly,
+        overtimeHourlyRate: otHourly,
+        overtimeEarnings: otEarnings,
+        dateOnWhichOvertimePaid: meta.periodEnd,
+        signatureThumb: 'Verified',
+      };
+    });
+
+    const totals = {
+      totalWorkers: records.length,
+      workersWithOT: rows.filter(r => r.totalOvertimeHours > 0).length,
+      totalOTHours: rows.reduce((s, r) => s + r.totalOvertimeHours, 0),
+      totalOTEarnings: rows.reduce((s, r) => s + r.overtimeEarnings, 0),
+    };
+
+    const csvHeader = [
+      `"FORM XXV"`,
+      `"REGISTER OF OVERTIME"`,
+      `"[See Rule 78(1)(a)(iii) of Tamil Nadu Contract Labour (Regulation and Abolition) Rules, 1975 & Rule 103 of Factories Rules]"`,
+      `"Name and Address of Principal Employer: ${meta.establishmentName}, ${meta.workSiteAddress}"`,
+      `"Name and Address of Contractor: ${meta.contractorName} (${meta.contractorCode || 'Registered Contractor'})"`,
+      `"Name and Address of Work Site: ${meta.workSiteAddress}"`,
+      `"Wage Period: ${meta.periodStart} to ${meta.periodEnd} (${meta.payPeriod})"`,
+      ``,
+      `"Sl.No","Name of Workman","Employee Code","Father's / Husband's Name","Sex","Designation","Dates on which Overtime Worked","Extent of Overtime on each occasion (Hrs)","Total Overtime Hours","Normal Hours / Day","Normal Rate / Hour (₹)","Overtime Rate / Hour (₹)","Overtime Earnings (₹)","Date on which Overtime Payment Made","Signature / Thumb Impression"`,
+    ].join('\n');
+
+    const csvDataRows = rows.map((r) =>
+      [
+        r.slNo,
+        `"${r.workerName}"`,
+        `"${r.workerCode}"`,
+        `"${r.fatherOrHusbandName}"`,
+        `"${r.sex}"`,
+        `"${r.designation}"`,
+        `"${r.datesOnWhichOvertimeWorked}"`,
+        r.extentOfOvertimeHours.toFixed(1),
+        r.totalOvertimeHours.toFixed(1),
+        r.normalHoursPerDay,
+        r.normalHourlyRate.toFixed(2),
+        r.overtimeHourlyRate.toFixed(2),
+        r.overtimeEarnings.toFixed(2),
+        `"${r.dateOnWhichOvertimePaid}"`,
+        `"${r.signatureThumb}"`,
+      ].join(',')
+    );
+
+    const csvTotalsRow = [
+      `"Total"`,
+      `"${totals.totalWorkers} Workers (${totals.workersWithOT} with OT)"`,
+      `""`,
+      `""`,
+      `""`,
+      `""`,
+      `""`,
+      `""`,
+      totals.totalOTHours.toFixed(1),
+      `""`,
+      `""`,
+      `""`,
+      totals.totalOTEarnings.toFixed(2),
+      `""`,
+      `"Verified"`,
+    ].join(',');
+
+    const csvContent = `${csvHeader}\n${csvDataRows.join('\n')}\n${csvTotalsRow}`;
+
+    return { rows, totals, csvContent };
+  }
+
+  /**
+   * 4. Generates Canonical Immutable Payslip Model
    */
   public static generatePayslip(
     record: AuthoritativeEmployeePayrollResult,
@@ -390,6 +502,28 @@ export class StatutoryReportAdapter {
     });
     const ws4 = XLSX.utils.json_to_sheet(ws4Data);
     XLSX.utils.book_append_sheet(wb, ws4, 'Overtime & Statutory Context');
+
+    // Sheet 5: FORM XXV (Register of Overtime)
+    const formXXV = this.generateFormXXV(records, meta);
+    const ws5Data = formXXV.rows.map((r) => ({
+      'Sl.No': r.slNo,
+      'Name of Workman': r.workerName,
+      'Worker Code': r.workerCode,
+      'Father/Husband Name': r.fatherOrHusbandName,
+      'Sex': r.sex,
+      'Designation': r.designation,
+      'Dates Worked OT': r.datesOnWhichOvertimeWorked,
+      'Extent of OT (Hours)': r.extentOfOvertimeHours,
+      'Total OT Hours': r.totalOvertimeHours,
+      'Normal Hours/Day': r.normalHoursPerDay,
+      'Normal Rate (₹/hr)': r.normalHourlyRate,
+      'Overtime Rate (₹/hr)': r.overtimeHourlyRate,
+      'Overtime Earnings (₹)': r.overtimeEarnings,
+      'Payment Date': r.dateOnWhichOvertimePaid,
+      'Signature / Thumb': r.signatureThumb,
+    }));
+    const ws5 = XLSX.utils.json_to_sheet(ws5Data);
+    XLSX.utils.book_append_sheet(wb, ws5, 'FORM XXV - Overtime');
 
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
   }

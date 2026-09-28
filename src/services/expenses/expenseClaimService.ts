@@ -67,10 +67,14 @@ class ExpenseClaimService {
           return data;
         }
         if (error) {
-          console.warn('[ExpenseClaimService] DB query error:', error);
+          if ((error as any).code !== 'PGRST205') {
+            console.warn('[ExpenseClaimService] DB query notice:', error.message);
+          }
         }
-      } catch (err) {
-        console.warn('[ExpenseClaimService] DB query notice:', err);
+      } catch (err: any) {
+        if (err?.code !== 'PGRST205') {
+          console.warn('[ExpenseClaimService] DB query notice:', err?.message || err);
+        }
       }
     }
     const local = this.loadLocalStore(tenantId);

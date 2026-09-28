@@ -7,6 +7,7 @@
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { realtimeChannelManager } from '../realtime/realtimeChannelManager';
 import {
   IntegrationEnvironment,
   IntegrationCategory,
@@ -528,29 +529,22 @@ export const platformIntegrationsService = {
         return () => {};
       }
 
-      const channel = supabase
-        .channel('platform_integrations_realtime_stream')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'integration_connections' }, () => {
-          this.syncFromDatabase().then(() => callback('connected'));
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'integration_devices' }, () => {
-          this.syncFromDatabase().then(() => callback('connected'));
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'integration_sync_jobs' }, () => {
-          this.syncFromDatabase().then(() => callback('connected'));
-        })
-        .subscribe((state) => {
-          if (state === 'SUBSCRIBED') {
-            this.syncFromDatabase().then(() => callback('connected'));
-          } else if (state === 'TIMED_OUT' || state === 'CHANNEL_ERROR') {
-            callback('reconnecting');
-          } else if (state === 'CLOSED') {
-            callback('disconnected');
-          }
-        });
+      callback('connected');
+
+      const u1 = realtimeChannelManager.subscribeToTable('integration_connections', () => {
+        this.syncFromDatabase().then(() => callback('connected'));
+      });
+      const u2 = realtimeChannelManager.subscribeToTable('integration_devices', () => {
+        this.syncFromDatabase().then(() => callback('connected'));
+      });
+      const u3 = realtimeChannelManager.subscribeToTable('integration_sync_jobs', () => {
+        this.syncFromDatabase().then(() => callback('connected'));
+      });
 
       return () => {
-        supabase.removeChannel(channel);
+        u1();
+        u2();
+        u3();
       };
     } catch {
       callback('connected');

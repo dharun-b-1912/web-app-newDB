@@ -90,16 +90,7 @@ export const DeviceUserDetailDrawer: React.FC<DeviceUserDetailDrawerProps> = ({
       const handleLive = () => {
         loadUserPunches(user.device_user_id, punchPage);
       };
-      window.addEventListener('biometric:updated', handleLive);
-
-      // Live 3-second heartbeat poll while drawer is open
-      const livePoll = setInterval(() => {
-        biometricGatewayService.syncLivePunchesFromGateway(device.id);
-        loadUserPunches(user.device_user_id, punchPage);
-      }, 3000);
-
       return () => {
-        clearInterval(livePoll);
         unsubPunch();
         unsubBio();
         window.removeEventListener('biometric:updated', handleLive);

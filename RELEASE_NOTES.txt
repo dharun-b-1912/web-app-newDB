@@ -1,12 +1,12 @@
 ============================================================
-JOY PeopleHR — QA Build (v1.0.3+184)
+JOY PeopleHR — PROD Build (v1.0.4+9)
 ============================================================
-Environment : QA
+Environment : PROD
 Channel     : INTERNAL
-Build Number: 184
-Version     : 1.0.3
-Commit SHA  : 3ca2d06 (main)
-Release Date: 2026-09-12
+Build Number: 9
+Version     : 1.0.4
+Commit SHA  : c2ee99d (main)
+Release Date: 2026-09-16
 
 HIGHLIGHTS & KEY DELIVERABLES:
 - Unified Multi-Mode Attendance Engine: One employee = One attendance record per day.
@@ -16,7 +16,7 @@ HIGHLIGHTS & KEY DELIVERABLES:
 - Privacy-Hardened Crashlytics: Zero-PII sanitization for tokens, passwords, biometric templates.
 
 LATEST COMMIT:
-feat(snapshot): save full project state [2026-09-07 16:51:00 IST] - security hardening, Flutter repositories, enterprise RLS, and storage migrations
+fix(realtime): add 30s grace-period pooling to channels to prevent websocket teardown on navigation
 
 TARGET TEST FOCUS:
 • Unified Multi-Mode Attendance Engine (Biometric + Mobile GPS)
@@ -28,5 +28,5 @@ KNOWN ISSUES / WORKAROUNDS:
 • None
 
 DISTRIBUTION:
-• Managed by Firebase App Distribution (Group: joy-qa)
+• Managed by Firebase App Distribution (Group: joy-prod)
 ============================================================

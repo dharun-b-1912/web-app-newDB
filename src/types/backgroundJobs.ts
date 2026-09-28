@@ -51,6 +51,7 @@ export interface JobLogEntry {
   id: string;
   job_id: string;
   timestamp: string;
+  created_at?: string;
   level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
   message: string;
 }

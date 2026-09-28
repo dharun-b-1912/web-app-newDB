@@ -6,6 +6,7 @@
 // ============================================================================
 
 const http = require('http');
+const https = require('https');
 const net = require('net');
 const url = require('url');
 const fs = require('fs');
@@ -32,7 +33,13 @@ let pairingKey = process.env.PAIRING_KEY || 'PAIR-COI-9915';
 let tenantId = process.env.TENANT_ID || 'comp-joy-corp';
 let companyId = process.env.COMPANY_ID || 'comp-joy-corp';
 let connectorId = process.env.CONNECTOR_ID || `connector-${os.hostname().toLowerCase()}`;
-let cloudApiUrl = process.env.JOY_CLOUD_URL || 'http://localhost:3000/api/biometric/ingest';
+
+// Dual-Mode Cloud Configuration (Production app.joypeoplehr.in & Localhost)
+const PRODUCTION_CLOUD_DOMAIN = 'app.joypeoplehr.in';
+const PRODUCTION_CLOUD_URL = `https://${PRODUCTION_CLOUD_DOMAIN}/api/biometric/ingest`;
+const LOCALHOST_CLOUD_URL = 'http://localhost:3000/api/biometric/ingest';
+
+let cloudApiUrl = process.env.JOY_CLOUD_URL || PRODUCTION_CLOUD_URL;
 let globalCommKey = parseInt(process.env.COMM_KEY || '123456', 10);
 
 process.argv.forEach((val, index) => {
@@ -40,6 +47,8 @@ process.argv.forEach((val, index) => {
   if (val === '--tenant' || val === '-t') tenantId = process.argv[index + 1] || tenantId;
   if (val === '--company' || val === '-c') companyId = process.argv[index + 1] || companyId;
   if (val === '--cloud' || val === '-u') cloudApiUrl = process.argv[index + 1] || cloudApiUrl;
+  if (val === '--prod') cloudApiUrl = PRODUCTION_CLOUD_URL;
+  if (val === '--local') cloudApiUrl = LOCALHOST_CLOUD_URL;
   if (val === '--comm-key' || val === '-k') globalCommKey = parseInt(process.argv[index + 1], 10) || globalCommKey;
 });
 
@@ -62,6 +71,7 @@ console.log(` Tenant ID    : ${tenantId}`);
 console.log(` Pairing Key  : ${pairingKey}`);
 console.log(` Comm Key     : ${globalCommKey}`);
 console.log(` Local Gateway: http://127.0.0.1:${HTTP_PORT}`);
+console.log(` Cloud Ingress: ${cloudApiUrl} (${cloudApiUrl.includes(PRODUCTION_CLOUD_DOMAIN) ? 'PRODUCTION' : 'LOCAL'})`);
 console.log(` Storage Path : ${DATA_DIR}`);
 console.log(' ADMS Server  : Ready for real-time Face / Fingerprint push packets');
 console.log('================================================================\n');
@@ -359,10 +369,12 @@ function makeCommKey(key = 123456, sessionId = 0) {
 // 3. HTTP SERVER WITH ADMS REAL-TIME PUSH & LOCAL API
 // ----------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
-  // CORS Headers for Local Web Browser
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS Headers for Local Web Browser and Production Cloud Domain
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Tenant-Id, X-Pairing-Key');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -607,6 +619,9 @@ const server = http.createServer(async (req, res) => {
         },
         network: getLocalSubnetHints(),
         cloud_connection: 'CONNECTED',
+        cloud_target: cloudApiUrl,
+        production_domain: PRODUCTION_CLOUD_DOMAIN,
+        environment: cloudApiUrl.includes(PRODUCTION_CLOUD_DOMAIN) ? 'PRODUCTION' : 'LOCAL_DEV',
         timestamp: new Date().toISOString(),
       })
     );
@@ -822,11 +837,103 @@ setTimeout(runZKPollCycle, 3000);
 setInterval(runZKPollCycle, 90000);
 
 // ============================================================================
-// 5. LIVENESS HEARTBEAT — confirms daemon is alive in logs every 30 seconds
+// 5. PRODUCTION CLOUD SYNC WORKER
+// Periodically flushes queued biometric punches to app.joypeoplehr.in or localhost
+// ============================================================================
+
+let _cloudSyncActive = false;
+
+async function syncQueueToCloud() {
+  if (_cloudSyncActive) return;
+  const pendingEvents = eventQueue.filter(e => e.queue_state === 'QUEUED' || e.queue_state === 'RETRY');
+  if (pendingEvents.length === 0) return;
+
+  _cloudSyncActive = true;
+  const batch = pendingEvents.slice(0, 50);
+
+  try {
+    const payload = JSON.stringify({
+      tenant_id: tenantId,
+      company_id: companyId,
+      connector_id: connectorId,
+      pairing_key: pairingKey,
+      events: batch,
+      sent_at: new Date().toISOString(),
+    });
+
+    const parsedTarget = url.parse(cloudApiUrl);
+    const isHttps = parsedTarget.protocol === 'https:';
+    const client = isHttps ? https : http;
+
+    const reqOptions = {
+      hostname: parsedTarget.hostname,
+      port: parsedTarget.port || (isHttps ? 443 : 80),
+      path: parsedTarget.path || '/api/biometric/ingest',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        'User-Agent': 'JOY-PeopleHR-Connector-Agent/3.5.0-Enterprise',
+        'X-Connector-ID': connectorId,
+        'X-Tenant-ID': tenantId,
+      },
+      timeout: 8000,
+    };
+
+    const postReq = client.request(reqOptions, (postRes) => {
+      let respBody = '';
+      postRes.on('data', chunk => respBody += chunk);
+      postRes.on('end', () => {
+        if (postRes.statusCode >= 200 && postRes.statusCode < 300) {
+          batch.forEach(e => {
+            e.queue_state = 'UPLOADED';
+            e.uploaded_at = new Date().toISOString();
+          });
+          saveQueue();
+          console.log(`[CLOUD SYNC] ✓ Pushed ${batch.length} event(s) to ${cloudApiUrl}`);
+        } else {
+          batch.forEach(e => {
+            e.queue_state = 'RETRY';
+            e.retry_count = (e.retry_count || 0) + 1;
+          });
+          saveQueue();
+        }
+        _cloudSyncActive = false;
+      });
+    });
+
+    postReq.on('error', (err) => {
+      batch.forEach(e => {
+        e.queue_state = 'RETRY';
+        e.retry_count = (e.retry_count || 0) + 1;
+      });
+      saveQueue();
+      _cloudSyncActive = false;
+    });
+
+    postReq.on('timeout', () => {
+      postReq.destroy();
+      _cloudSyncActive = false;
+    });
+
+    postReq.write(payload);
+    postReq.end();
+  } catch (err) {
+    _cloudSyncActive = false;
+  }
+}
+
+// Start cloud synchronization loop
+setTimeout(syncQueueToCloud, 5000);
+setInterval(syncQueueToCloud, 15000);
+
+// ============================================================================
+// 6. LIVENESS HEARTBEAT — confirms daemon is alive in logs every 30 seconds
 // ============================================================================
 setInterval(() => {
   const pending = eventQueue.filter(e => e.queue_state !== 'UPLOADED').length;
   const uptime = Math.floor(process.uptime());
-  console.log(`[HEARTBEAT] ✓ Connector alive | Uptime: ${uptime}s | Live punches: ${livePunches.length} | Queue pending: ${pending} | ZKLib: ${ZKLib ? 'available' : 'not installed'} | AutoPoll: ${_zkPollActive ? 'RUNNING' : 'IDLE'}`);
+  console.log(`[HEARTBEAT] ✓ Connector alive | Uptime: ${uptime}s | Live punches: ${livePunches.length} | Queue pending: ${pending} | Target: ${cloudApiUrl} | ZKLib: ${ZKLib ? 'available' : 'not installed'} | AutoPoll: ${_zkPollActive ? 'RUNNING' : 'IDLE'}`);
 }, 30000);
+
 

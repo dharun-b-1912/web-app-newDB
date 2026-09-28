@@ -34,7 +34,9 @@ USING (
 
 -- 3. Create Secure Employee Directory Projection (Task D & E)
 -- Exposes only safe directory columns for peer employee discovery within the organization
-CREATE OR REPLACE VIEW public.employee_directory AS
+CREATE OR REPLACE VIEW public.employee_directory
+WITH (security_invoker = true)
+AS
 SELECT
   e.id,
   e.organization_id,

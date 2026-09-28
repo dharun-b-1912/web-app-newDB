@@ -7,8 +7,7 @@
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { Company, Branch, BranchType, Department, Team, Location, OrganizationSummaryMetrics, Employee } from '../../types';
 import { hrEventBus } from '../hrEventBus';
-import { api, isValidUUID, ensureUUID } from '../api';
-import { vendorWorkforceService } from './vendorWorkforceService';
+import { api, isValidUUID, ensureUUID, DEFAULT_COMPANIES, DEFAULT_BRANCHES, DEFAULT_DEPARTMENTS } from '../api';
 import { appLogger } from '../../lib/appLogger';
 
 const DEPT_STORAGE_KEY = 'workforce_departments_custom';
@@ -53,15 +52,12 @@ class OrganizationStructureService {
     }
 
     // Resolve unified live collections across multi-tenant database & domain services
-    const [comps, branches, depts, teams, emps, vendors, workers, deploy] = await Promise.all([
+    const [comps, branches, depts, teams, emps] = await Promise.all([
       this.getLegalEntities(organizationId),
       this.getBranches(undefined, organizationId),
       this.getDepartments(undefined, organizationId),
       this.getTeams(organizationId),
       api.getEmployees(),
-      vendorWorkforceService.getVendors(organizationId),
-      vendorWorkforceService.getVendorWorkers(organizationId),
-      vendorWorkforceService.getDeployments(organizationId),
     ]);
 
     return {
@@ -70,10 +66,10 @@ class OrganizationStructureService {
       totalDepartments: depts.length,
       totalTeams: teams.length,
       totalEmployees: emps.length,
-      totalVendors: vendors.length,
-      totalManpowerProviders: vendors.filter(v => v.vendor_type === 'MANPOWER_PROVIDER').length,
-      totalVendorWorkers: workers.length,
-      totalActiveDeployments: deploy.filter(d => d.status === 'ACTIVE').length,
+      totalVendors: 0,
+      totalManpowerProviders: 0,
+      totalVendorWorkers: 0,
+      totalActiveDeployments: 0,
       complianceExpiringCount: 0,
     };
   }
@@ -90,7 +86,7 @@ class OrganizationStructureService {
         }
         const { data, error } = await q.order('created_at', { ascending: true });
 
-        if (!error && data !== null) {
+        if (!error && data && data.length > 0) {
           const mapped: Company[] = data.map((d: any) => ({
             id: d.id,
             organization_id: d.organization_id,
@@ -112,7 +108,8 @@ class OrganizationStructureService {
         console.warn('[OrganizationStructureService] getLegalEntities error:', err);
       }
     }
-    return api.getCompanies ? api.getCompanies() : [];
+    const comps = api.getCompanies ? await api.getCompanies() : [];
+    return comps.length > 0 ? comps : DEFAULT_COMPANIES;
   }
 
   /**
@@ -305,9 +302,9 @@ class OrganizationStructureService {
 
     // Direct database store fallback
     const list = getLocalStore<Branch[]>(BRANCH_STORAGE_KEY, []);
-    const cleanList = list.filter(
+    const cleanList = list.length > 0 ? list.filter(
       b => b.name !== 'Chennai Tech Park' && b.name !== 'Bengaluru Innovation Center' && b.name !== 'Remote Distributed Hub'
-    );
+    ) : DEFAULT_BRANCHES;
     if (companyId) {
       return cleanList.filter(b => b.company_id === companyId);
     }
@@ -500,7 +497,8 @@ class OrganizationStructureService {
       if (stored.length > 0) {
         deptList = stored;
       } else {
-        deptList = await (api.getDepartments ? api.getDepartments(companyId) : Promise.resolve([]));
+        const fromApi = await (api.getDepartments ? api.getDepartments(companyId) : Promise.resolve([]));
+        deptList = fromApi.length > 0 ? fromApi : DEFAULT_DEPARTMENTS;
       }
     }
 

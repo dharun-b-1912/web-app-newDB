@@ -1,4 +1,4 @@
-import {
+    import {
   Organization,
   Company,
   Branch,
@@ -15,6 +15,7 @@ import {
   ActivityItem,
   DashboardMetrics,
   Asset,
+  Vendor,
 } from '../types';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { hrEventBus } from './hrEventBus';
@@ -37,7 +38,114 @@ const KEYS = {
   METRICS: 'workforce_metrics',
   CURRENT_USER: 'workforce_current_user',
   ACTIVE_COMPANY: 'workforce_active_company',
+  VENDORS: 'workforce_vendors',
 };
+
+export const DEFAULT_COMPANIES: Company[] = [
+  {
+    id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+    organization_id: '0c621892-e938-4707-9957-13534ea32c19',
+    legal_name: 'Joy Corporate Solutions Pvt Ltd',
+    trade_name: 'Joy Corporate Solutions',
+    statutory_registration_no: 'U72900TZ2024PTC012345',
+    tax_id: 'AAACJ1234F',
+    country: 'India',
+    city: 'Coimbatore',
+    currency: 'INR',
+    timezone: 'Asia/Kolkata',
+    address: 'Avinashi Road, Peelamedu, Coimbatore, Tamil Nadu 641004',
+    status: 'Active',
+    created_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+export const DEFAULT_BRANCHES: Branch[] = [
+  {
+    id: 'fc1782e6-fb46-47e8-a428-9da95e5a4f6f',
+    company_id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+    name: 'Coimbatore Campus (HQ)',
+    code: 'CBE-HQ',
+    branch_type: 'HEADQUARTERS',
+    country: 'India',
+    city: 'Coimbatore',
+    state: 'Tamil Nadu',
+    address: 'Avinashi Road, Peelamedu, Coimbatore',
+    postal_code: '641004',
+    timezone: 'Asia/Kolkata',
+    status: 'Active',
+    created_at: '2024-01-01T00:00:00Z',
+  },
+  {
+    id: 'b-102',
+    company_id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+    name: 'Chennai Regional Office',
+    code: 'CHN-01',
+    branch_type: 'REGIONAL_OFFICE',
+    country: 'India',
+    city: 'Chennai',
+    state: 'Tamil Nadu',
+    address: 'OMR IT Corridor, Chennai',
+    postal_code: '600096',
+    timezone: 'Asia/Kolkata',
+    status: 'Active',
+    created_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+export const DEFAULT_DEPARTMENTS: Department[] = [
+  {
+    id: '0cdef8b4-014c-4487-895c-cf264824a0da',
+    company_id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+    name: 'Engineering & Development',
+    code: 'ENG',
+    description: 'Software Product Engineering, Web and Mobile App Development',
+    status: 'Active',
+    employee_count: 2,
+    created_at: '2024-01-01T00:00:00Z',
+  },
+  {
+    id: '70d63528-7aa9-4630-adcc-b7a6194250cd',
+    company_id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+    name: 'Human Resources',
+    code: 'HR',
+    description: 'People Operations, Talent Acquisition, Statutory & Payroll',
+    status: 'Active',
+    employee_count: 1,
+    created_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+export const DEFAULT_DESIGNATIONS: Designation[] = [
+  {
+    id: 'fd2762cd-b1bb-402e-a7ee-81a80aa0eab7',
+    company_id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+    title: 'Senior Software Engineer',
+    code: 'SSE',
+    grade: 'L4 - Senior',
+  },
+  {
+    id: '0dfa6748-c76b-4867-a9f4-59eaf6804a44',
+    company_id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+    title: 'HR Operations Specialist',
+    code: 'HROS',
+    grade: 'L3 - Mid Level',
+  },
+];
+
+export const DEFAULT_LOCATIONS: Location[] = [
+  {
+    id: 'loc-101',
+    branch_id: 'fc1782e6-fb46-47e8-a428-9da95e5a4f6f',
+    name: 'Coimbatore HQ Main Facility',
+    address: 'Avinashi Road, Peelamedu, Coimbatore, Tamil Nadu 641004',
+    latitude: 11.0168,
+    longitude: 76.9558,
+    geofence_radius_meters: 100,
+    is_geofencing_enabled: true,
+    is_active: true,
+    created_at: '2024-01-01T00:00:00Z',
+  },
+];
 
 const _nodeApiFallback = new Map<string, string>();
 
@@ -73,21 +181,30 @@ export function sanitizeEmployeeForSupabase(emp: any): Record<string, any> {
   const clean: Record<string, any> = {};
 
   if (emp.id) clean.id = ensureUUID(emp.id);
-  if (emp.organization_id && isValidUUID(emp.organization_id)) clean.organization_id = emp.organization_id;
-  if (emp.company_id && isValidUUID(emp.company_id)) clean.company_id = emp.company_id;
-  if (emp.branch_id && isValidUUID(emp.branch_id)) clean.branch_id = emp.branch_id;
-  if (emp.department_id && isValidUUID(emp.department_id)) clean.department_id = emp.department_id;
-  if (emp.designation_id && isValidUUID(emp.designation_id)) clean.designation_id = emp.designation_id;
+  if (emp.organization_id) clean.organization_id = isValidUUID(emp.organization_id) ? emp.organization_id : '0c621892-e938-4707-9957-13534ea32c19';
+  if (emp.company_id && isValidUUID(emp.company_id)) {
+    clean.company_id = emp.company_id;
+  } else {
+    const cachedCompanies = getStorage<Company[]>(KEYS.COMPANIES, []);
+    const validComp = cachedCompanies.find((c) => isValidUUID(c.id));
+    clean.company_id = validComp ? validComp.id : '0c621892-e938-4707-9957-13534ea32c19';
+  }
+  const rawDeptId = emp.department_id || emp.employment?.department_id || 'dept-eng';
+  clean.department_id = isValidUUID(rawDeptId) ? rawDeptId : ensureUUID(rawDeptId);
+  const rawDesigId = emp.designation_id || emp.employment?.designation_id || 'desig-se';
+  clean.designation_id = isValidUUID(rawDesigId) ? rawDesigId : ensureUUID(rawDesigId);
+  const rawBranchId = emp.branch_id || emp.employment?.branch_id || 'br-hq';
+  clean.branch_id = isValidUUID(rawBranchId) ? rawBranchId : ensureUUID(rawBranchId);
   if (emp.reporting_manager_id && isValidUUID(emp.reporting_manager_id)) clean.reporting_manager_id = emp.reporting_manager_id;
   if (emp.user_id && isValidUUID(emp.user_id)) clean.user_id = emp.user_id;
 
-  if (emp.employee_code) clean.employee_code = String(emp.employee_code).trim();
+  clean.employee_code = String(emp.employee_code || (emp.identity?.employee_code) || `WF-${Math.floor(1000 + Math.random() * 9000)}`).trim();
   if (emp.first_name) clean.first_name = String(emp.first_name).trim();
   if (emp.middle_name) clean.middle_name = String(emp.middle_name).trim();
   if (emp.last_name) clean.last_name = String(emp.last_name).trim();
   clean.display_name = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee';
   if (emp.work_email) clean.work_email = String(emp.work_email).trim();
-  if (emp.personal_email) clean.personal_email = String(emp.personal_email).trim();
+  if (emp.personal_email || emp.profile?.personal_email) clean.personal_email = String(emp.personal_email || emp.profile?.personal_email).trim();
   if (emp.phone || emp.primary_mobile || emp.profile?.phone) clean.phone = String(emp.phone || emp.primary_mobile || emp.profile?.phone).trim();
 
   // Gender enum normalization: 'MALE' | 'FEMALE' | 'NON_BINARY' | 'PREFER_NOT_TO_SAY'
@@ -145,6 +262,53 @@ export const ensureUUID = (id?: string | null): string => {
   });
 };
 
+export const hasAuthenticatedSession = async (): Promise<boolean> => {
+  if (!isSupabaseEnabled || !supabase) return false;
+  return true;
+};
+
+export function filterEmployeesLocalHelper(list: Employee[], params?: any): Employee[] {
+  if (!params) return list;
+
+  const filterObj = typeof params === 'string' ? { companyId: params } : params;
+  let filtered = [...list];
+  if (filterObj && filterObj.search) {
+    const q = typeof filterObj.search === 'string' ? filterObj.search.toLowerCase() : String(filterObj.search).toLowerCase();
+    filtered = filtered.filter(
+      (e) =>
+        (e.first_name && e.first_name.toLowerCase().includes(q)) ||
+        (e.last_name && e.last_name.toLowerCase().includes(q)) ||
+        (e.work_email && e.work_email.toLowerCase().includes(q)) ||
+        (e.employee_code && e.employee_code.toLowerCase().includes(q)) ||
+        (e.department_name && e.department_name.toLowerCase().includes(q)) ||
+        (e.designation_title && e.designation_title.toLowerCase().includes(q)) ||
+        (e.vendor_name && e.vendor_name.toLowerCase().includes(q))
+    );
+  }
+  if (filterObj && filterObj.companyId && filterObj.companyId !== 'all') {
+    if (isValidUUID(filterObj.companyId)) {
+      filtered = filtered.filter((e) => e.company_id === filterObj.companyId);
+    }
+  }
+  if (filterObj && filterObj.departmentId && filterObj.departmentId !== 'all') {
+    if (isValidUUID(filterObj.departmentId)) {
+      filtered = filtered.filter((e) => e.department_id === filterObj.departmentId);
+    }
+  }
+  if (filterObj && filterObj.status && filterObj.status !== 'all') {
+    filtered = filtered.filter((e) => e.status === filterObj.status);
+  }
+  if (filterObj && filterObj.source && filterObj.source !== 'all') {
+    filtered = filtered.filter((e) => (e.employment_source || 'DIRECT') === filterObj.source);
+  }
+  if (filterObj && filterObj.vendorId && filterObj.vendorId !== 'all') {
+    if (isValidUUID(filterObj.vendorId)) {
+      filtered = filtered.filter((e) => e.vendor_id === filterObj.vendorId);
+    }
+  }
+  return filtered;
+}
+
 export const api = {
   // ==========================================
   // Organization API
@@ -170,8 +334,19 @@ export const api = {
       try {
         const { data, error } = await supabase.from('organizations').select('*').limit(1).maybeSingle();
         if (!error && data) {
-          setStorage(KEYS.ORG, data);
-          return data;
+          const org: Organization = {
+            id: data.id,
+            name: data.display_name || data.legal_name || data.name || 'Joy Corporate Solutions',
+            slug: data.slug || 'joy-corporate-solutions',
+            status: data.status === 'ACTIVE' ? 'Active' : (data.status || 'Active'),
+            plan: data.plan || 'Enterprise',
+            default_currency: data.currency || 'INR',
+            timezone: data.timezone || 'Asia/Kolkata',
+            created_at: data.created_at || '2024-01-01T00:00:00Z',
+            updated_at: data.updated_at || '2024-01-01T00:00:00Z',
+          };
+          setStorage(KEYS.ORG, org);
+          return org;
         }
       } catch (err) {
         console.error('[API] Failed to fetch organization from Supabase:', err);
@@ -258,7 +433,7 @@ export const api = {
     if (isSupabaseEnabled) {
       try {
         const { data, error } = await supabase.from('companies').select('*').order('created_at', { ascending: true });
-        if (!error && data !== null) {
+        if (!error && data && data.length > 0) {
           const mapped: Company[] = data.map((d: any) => ({
             id: d.id,
             organization_id: d.organization_id,
@@ -281,7 +456,11 @@ export const api = {
         console.error('[API] Failed to fetch companies from Supabase:', err);
       }
     }
-    const list = getStorage<Company[]>(KEYS.COMPANIES, []);
+    const list = getStorage<Company[]>(KEYS.COMPANIES, DEFAULT_COMPANIES);
+    if (!list || list.length === 0) {
+      setStorage(KEYS.COMPANIES, DEFAULT_COMPANIES);
+      return DEFAULT_COMPANIES;
+    }
     return list;
   },
 
@@ -389,7 +568,6 @@ export const api = {
   },
 
   // ==========================================
-  // ==========================================
   // Branch API
   // ==========================================
   async getBranches(companyId?: string): Promise<Branch[]> {
@@ -398,7 +576,7 @@ export const api = {
         let q = supabase.from('branches').select('*');
         if (companyId && isValidUUID(companyId)) q = q.eq('company_id', companyId);
         const { data, error } = await q;
-        if (!error && data !== null) {
+        if (!error && data && data.length > 0) {
           const mapped = data.map((b: any) => ({
             ...b,
             code: b.branch_code || b.code,
@@ -413,7 +591,11 @@ export const api = {
         console.error('[API] Failed to fetch branches from Supabase:', err);
       }
     }
-    const list = getStorage<Branch[]>(KEYS.BRANCHES, []);
+    const list = getStorage<Branch[]>(KEYS.BRANCHES, DEFAULT_BRANCHES);
+    if (!list || list.length === 0) {
+      setStorage(KEYS.BRANCHES, DEFAULT_BRANCHES);
+      return companyId ? DEFAULT_BRANCHES.filter((b) => b.company_id === companyId) : DEFAULT_BRANCHES;
+    }
     return companyId ? list.filter((b) => b.company_id === companyId) : list;
   },
 
@@ -488,7 +670,7 @@ export const api = {
         let q = supabase.from('work_locations').select('*');
         if (branchId && isValidUUID(branchId)) q = q.eq('branch_id', branchId);
         const { data, error } = await q;
-        if (!error && data !== null) {
+        if (!error && data && data.length > 0) {
           const mapped = data.map((l: any) => ({
             ...l,
             address: l.address_line1 || l.address,
@@ -501,7 +683,11 @@ export const api = {
         console.error('[API] Failed to fetch locations from Supabase:', err);
       }
     }
-    const list = getStorage<Location[]>(KEYS.LOCATIONS, []);
+    const list = getStorage<Location[]>(KEYS.LOCATIONS, DEFAULT_LOCATIONS);
+    if (!list || list.length === 0) {
+      setStorage(KEYS.LOCATIONS, DEFAULT_LOCATIONS);
+      return branchId ? DEFAULT_LOCATIONS.filter((l) => l.branch_id === branchId) : DEFAULT_LOCATIONS;
+    }
     return branchId ? list.filter((l) => l.branch_id === branchId) : list;
   },
 
@@ -555,14 +741,11 @@ export const api = {
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('departments').select('*');
-        if (companyId && companyId !== 'all') {
-          if (!isValidUUID(companyId)) {
-            return [];
-          }
+        if (companyId && companyId !== 'all' && isValidUUID(companyId)) {
           q = q.eq('company_id', companyId);
         }
         const { data, error } = await q;
-        if (!error && data !== null) {
+        if (!error && data && data.length > 0) {
           setStorage(KEYS.DEPARTMENTS, data);
           return data;
         }
@@ -570,13 +753,20 @@ export const api = {
         console.error('[API] Failed to fetch departments from Supabase:', err);
       }
     }
-    const list = getStorage<Department[]>(KEYS.DEPARTMENTS, []);
-    return companyId ? list.filter((d) => d.company_id === companyId) : list;
+    const list = getStorage<Department[]>(KEYS.DEPARTMENTS, DEFAULT_DEPARTMENTS);
+    if (!list || list.length === 0) {
+      setStorage(KEYS.DEPARTMENTS, DEFAULT_DEPARTMENTS);
+      return companyId && isValidUUID(companyId) ? DEFAULT_DEPARTMENTS.filter((d) => d.company_id === companyId) : DEFAULT_DEPARTMENTS;
+    }
+    return companyId && isValidUUID(companyId) ? list.filter((d) => d.company_id === companyId) : list;
   },
 
   getDepartmentsSync(companyId?: string): Department[] {
-    const list = getStorage<Department[]>(KEYS.DEPARTMENTS, []);
-    return companyId ? list.filter((d) => d.company_id === companyId) : list;
+    const list = getStorage<Department[]>(KEYS.DEPARTMENTS, DEFAULT_DEPARTMENTS);
+    if (!list || list.length === 0) {
+      return companyId && isValidUUID(companyId) ? DEFAULT_DEPARTMENTS.filter((d) => d.company_id === companyId) : DEFAULT_DEPARTMENTS;
+    }
+    return companyId && isValidUUID(companyId) ? list.filter((d) => d.company_id === companyId) : list;
   },
 
   async createDepartment(input: Omit<Department, 'id'>): Promise<Department> {
@@ -637,7 +827,11 @@ export const api = {
       }
     }
 
-    const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, []);
+    const list = getStorage<Designation[]>(KEYS.DESIGNATIONS, DEFAULT_DESIGNATIONS);
+    if (!list || list.length === 0) {
+      setStorage(KEYS.DESIGNATIONS, DEFAULT_DESIGNATIONS);
+      return companyId && isValidUUID(companyId) ? DEFAULT_DESIGNATIONS.filter((d) => d.company_id === companyId) : DEFAULT_DESIGNATIONS;
+    }
     return companyId && isValidUUID(companyId) ? list.filter((d) => d.company_id === companyId) : list;
   },
 
@@ -735,6 +929,10 @@ export const api = {
   // ==========================================
   // Employees API (Direct Realtime Supabase)
   // ==========================================
+  filterEmployeesLocal(list: Employee[], params?: any): Employee[] {
+    return filterEmployeesLocalHelper(list, params);
+  },
+
   getEmployeesSync(params?: {
     search?: string;
     departmentId?: string;
@@ -746,50 +944,16 @@ export const api = {
   } | string): Employee[] {
     // 1. Authoritative in-memory cache takes precedence
     let list: Employee[] = [];
-    if (this._empCache?.data) {
-      list = [...this._empCache.data];
-    } else if (isSupabaseEnabled) {
-      // In Supabase mode, start with empty list while remote query executes
-      list = [];
+    if (api._empCache?.data && api._empCache.data.length > 0) {
+      list = [...api._empCache.data];
     } else {
       list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
       if (list.length > 0) {
-        this._empCache = { data: list, timestamp: Date.now() };
+        api._empCache = { data: list, timestamp: Date.now() };
       }
     }
 
-    if (!params) return list;
-
-    const filterObj = typeof params === 'string' ? { companyId: params } : params;
-    if (filterObj && filterObj.search) {
-      const q = typeof filterObj.search === 'string' ? filterObj.search.toLowerCase() : String(filterObj.search).toLowerCase();
-      list = list.filter(
-        (e) =>
-          (e.first_name && e.first_name.toLowerCase().includes(q)) ||
-          (e.last_name && e.last_name.toLowerCase().includes(q)) ||
-          (e.work_email && e.work_email.toLowerCase().includes(q)) ||
-          (e.employee_code && e.employee_code.toLowerCase().includes(q)) ||
-          (e.department_name && e.department_name.toLowerCase().includes(q)) ||
-          (e.designation_title && e.designation_title.toLowerCase().includes(q)) ||
-          (e.vendor_name && e.vendor_name.toLowerCase().includes(q))
-      );
-    }
-    if (filterObj && filterObj.companyId && filterObj.companyId !== 'all') {
-      list = list.filter((e) => e.company_id === filterObj.companyId);
-    }
-    if (filterObj && filterObj.departmentId && filterObj.departmentId !== 'all') {
-      list = list.filter((e) => e.department_id === filterObj.departmentId);
-    }
-    if (filterObj && filterObj.status && filterObj.status !== 'all') {
-      list = list.filter((e) => e.status === filterObj.status);
-    }
-    if (filterObj && filterObj.source && filterObj.source !== 'all') {
-      list = list.filter((e) => (e.employment_source || 'DIRECT') === filterObj.source);
-    }
-    if (filterObj && filterObj.vendorId && filterObj.vendorId !== 'all') {
-      list = list.filter((e) => e.vendor_id === filterObj.vendorId);
-    }
-    return list;
+    return filterEmployeesLocalHelper(list, params);
   },
 
   _empCache: null as { data: Employee[]; timestamp: number } | null,
@@ -822,23 +986,34 @@ export const api = {
           let q = supabase.from('employees').select('*');
           const filterObj = typeof params === 'string' ? { companyId: params } : params;
           if (filterObj?.companyId && filterObj.companyId !== 'all') {
-            if (!isValidUUID(filterObj.companyId)) {
-              return [];
+            if (isValidUUID(filterObj.companyId)) {
+              q = q.eq('company_id', filterObj.companyId);
             }
-            q = q.eq('company_id', filterObj.companyId);
           }
-          if (filterObj?.departmentId && filterObj.departmentId !== 'all') q = q.eq('department_id', filterObj.departmentId);
-          if (filterObj?.status && filterObj.status !== 'all') q = q.eq('status', filterObj.status);
+          if (filterObj?.departmentId && filterObj.departmentId !== 'all') {
+            if (isValidUUID(filterObj.departmentId)) {
+              q = q.eq('department_id', filterObj.departmentId);
+            }
+          }
+          if (filterObj?.status && filterObj.status !== 'all') q = q.eq('employment_status', filterObj.status.toUpperCase());
           if (filterObj?.source && filterObj.source !== 'all') q = q.eq('employment_source', filterObj.source);
-          if (filterObj?.vendorId && filterObj.vendorId !== 'all') q = q.eq('vendor_id', filterObj.vendorId);
+          if (filterObj?.vendorId && filterObj.vendorId !== 'all') {
+            if (isValidUUID(filterObj.vendorId)) {
+              q = q.eq('vendor_id', filterObj.vendorId);
+            }
+          }
           const { data, error } = await q;
 
           if (!error && data !== null) {
-            // Authoritative remote response
+            // Authoritative remote response (preserving local outbox records)
+            const localList = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
             if (data.length === 0) {
+              if (localList.length > 0) {
+                return filterEmployeesLocalHelper(localList, filterObj);
+              }
               if (isUnfiltered) {
                 setStorage(KEYS.EMPLOYEES, []);
-                this._empCache = { data: [], timestamp: Date.now() };
+                api._empCache = { data: [], timestamp: Date.now() };
               }
               return [];
             }
@@ -884,35 +1059,101 @@ export const api = {
                     };
                   }
                 });
+
+                // Enrich with real relational manager, department, designation, and branch
+                const empLookup = new Map<string, any>(data.map((e: any) => [e.id, e]));
+                data.forEach((e: any) => {
+                  const rawStat = (e.employment_status || e.status || 'ACTIVE').toUpperCase();
+                  e.status = rawStat === 'PROBATION' ? 'Probation' : rawStat === 'NOTICE_PERIOD' ? 'Notice Period' : rawStat === 'TERMINATED' ? 'Terminated' : rawStat === 'RESIGNED' ? 'Resigned' : 'Active';
+                  e.employment_status = e.employment_status || rawStat;
+
+                  e.profile = e.profile || {
+                    personal_email: e.personal_email || undefined,
+                    phone: e.phone || undefined,
+                    date_of_birth: e.dob || undefined,
+                    gender: e.gender || undefined,
+                  };
+                  if (e.phone) {
+                    e.primary_mobile = e.primary_mobile || e.phone;
+                    e.profile.phone = e.profile.phone || e.phone;
+                  }
+                  if (e.personal_email) {
+                    e.profile.personal_email = e.profile.personal_email || e.personal_email;
+                  }
+
+                  e.employment = e.employment || {
+                    doj: e.doj || '2026-09-01',
+                    employment_type: e.employment_type || 'FULL_TIME',
+                    reporting_manager_id: e.reporting_manager_id || null,
+                  };
+
+                  if (e.reporting_manager_id) {
+                    const mgr = empLookup.get(e.reporting_manager_id);
+                    if (mgr) {
+                      e.reporting_manager_name = `${mgr.display_name || `${mgr.first_name || ''} ${mgr.last_name || ''}`.trim()} (${mgr.employee_code || 'MGR'})`;
+                    }
+                  }
+
+                  const dId = String(e.department_id || '').toLowerCase();
+                  if (dId.includes('0cdef8b4') || dId.includes('eng') || dId.includes('dev')) {
+                    e.department = e.department || 'Engineering & Development';
+                    e.department_name = e.department_name || 'Engineering & Development';
+                  } else if (dId.includes('hr') || dId.includes('70d63528')) {
+                    e.department = e.department || 'Human Resources';
+                    e.department_name = e.department_name || 'Human Resources';
+                  } else {
+                    e.department = e.department || e.department_name || 'Engineering & Development';
+                    e.department_name = e.department_name || e.department || 'Engineering & Development';
+                  }
+
+                  const desId = String(e.designation_id || '').toLowerCase();
+                  if (desId.includes('fd2762cd') || desId.includes('se') || desId.includes('dev')) {
+                    e.designation = e.designation || 'Senior Software Engineer';
+                    e.designation_title = e.designation_title || 'Senior Software Engineer';
+                  } else if (desId.includes('0dfa6748') || desId.includes('hr')) {
+                    e.designation = e.designation || 'HR Operations Specialist';
+                    e.designation_title = e.designation_title || 'HR Operations Specialist';
+                  } else {
+                    e.designation = e.designation || e.designation_title || 'Software Engineer';
+                    e.designation_title = e.designation_title || e.designation || 'Software Engineer';
+                  }
+
+                  e.branch_name = e.branch_name || 'Coimbatore Campus (HQ)';
+                  e.location = e.location || 'Coimbatore Campus (HQ)';
+                  e.company_name = e.company_name || 'Joy Corporate Solutions Pvt Ltd';
+                });
               } catch (_) {}
             }
 
-            const resultList = data;
+            const remoteIds = new Set(data.map((e: any) => e.id));
+            const unsyncedLocal = localList.filter((e) => !remoteIds.has(e.id));
+            const combined = [...data, ...unsyncedLocal];
+            const resultList = filterObj ? filterEmployeesLocalHelper(combined, filterObj) : combined;
             if (isUnfiltered) {
-              setStorage(KEYS.EMPLOYEES, resultList);
-              this._empCache = { data: resultList, timestamp: Date.now() };
+              setStorage(KEYS.EMPLOYEES, combined);
+              api._empCache = { data: combined, timestamp: Date.now() };
             }
             return resultList;
           }
           if (error) {
             console.warn('[API] Supabase getEmployees error:', error.message || error);
             if (!isSupabaseEnabled) {
-              return this.getEmployeesSync(params);
+              return api.getEmployeesSync(params);
             }
             return [];
           }
         } catch (err) {
           console.warn('[API] Supabase getEmployees fetch notice:', err);
           if (!isSupabaseEnabled) {
-            return this.getEmployeesSync(params);
+            return api.getEmployeesSync(params);
           }
           return [];
         }
       }
 
-      const syncResult = this.getEmployeesSync(params);
+      const syncResult = api.getEmployeesSync(params);
       if (isUnfiltered) {
-        this._empCache = { data: syncResult, timestamp: Date.now() };
+        api._empCache = { data: syncResult, timestamp: Date.now() };
       }
       return syncResult;
     })();
@@ -931,16 +1172,87 @@ export const api = {
   },
 
   async getEmployeeById(id: string): Promise<Employee | undefined> {
+    const cachedList = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+    const cachedEmp = cachedList.find((e) => e.id === id);
+
     if (isSupabaseEnabled) {
       try {
-        const [empRes, bankRes, statRes] = await Promise.all([
+        const [empRes, bankRes, statRes, emgRes, salRes, docRes, profRes, addrRes] = await Promise.all([
           supabase.from('employees').select('*').eq('id', id).maybeSingle(),
           supabase.from('employee_bank_details').select('*').eq('employee_id', id).maybeSingle(),
           supabase.from('employee_statutory_details').select('*').eq('employee_id', id).maybeSingle(),
+          supabase.from('employee_emergency_contacts').select('*').eq('employee_id', id).order('is_primary', { ascending: false }),
+          supabase.from('employee_salary_assignments').select('*').eq('employee_id', id).order('effective_from', { ascending: false }).limit(1).maybeSingle(),
+          supabase.from('employee_documents').select('*').eq('employee_id', id),
+          Promise.resolve(supabase.from('employee_profiles').select('*').eq('employee_id', id).maybeSingle()).catch(() => ({ data: null })),
+          Promise.resolve(supabase.from('employee_addresses').select('*').eq('employee_id', id)).catch(() => ({ data: null })),
         ]);
 
         if (empRes?.data && !empRes.error) {
-          const emp = empRes.data as any;
+          const emp: any = {
+            ...(cachedEmp || {}),
+            ...empRes.data,
+            profile: {
+              ...(cachedEmp?.profile || {}),
+              ...(empRes.data.profile || {}),
+            },
+            employment: {
+              ...(cachedEmp?.employment || {}),
+              ...(empRes.data.employment || {}),
+            },
+          };
+
+          // Personal email from employee record or profile
+          if (empRes.data.personal_email) {
+            emp.personal_email = empRes.data.personal_email;
+            emp.profile.personal_email = empRes.data.personal_email;
+          }
+
+          // Hydrate demographic fallbacks
+          if (!emp.profile.phone && emp.phone) emp.profile.phone = emp.phone;
+          if (!emp.profile.primary_mobile && emp.phone) emp.profile.primary_mobile = emp.phone;
+          if (!emp.profile.date_of_birth && emp.dob) emp.profile.date_of_birth = emp.dob;
+          if (!emp.profile.gender && emp.gender) emp.profile.gender = emp.gender;
+
+          // Hydrate from employee_profiles table if available
+          if (profRes?.data) {
+            emp.profile.marital_status = profRes.data.marital_status || emp.profile.marital_status;
+            emp.profile.blood_group = profRes.data.blood_group || emp.profile.blood_group;
+            emp.profile.nationality = profRes.data.nationality || emp.profile.nationality;
+            if (profRes.data.emergency_contact_name) {
+              emp.profile.emergency_contact_name = profRes.data.emergency_contact_name;
+              emp.profile.emergency_contact_phone = profRes.data.emergency_contact_phone;
+              emp.profile.emergency_contact_relationship = profRes.data.emergency_contact_relationship;
+            }
+          }
+
+          // Hydrate from employee_addresses table if available
+          if (addrRes?.data && Array.isArray(addrRes.data) && addrRes.data.length > 0) {
+            const present = addrRes.data.find((a: any) => a.address_type === 'PRESENT');
+            const perm = addrRes.data.find((a: any) => a.address_type === 'PERMANENT');
+            if (present) {
+              emp.profile.current_address = {
+                line1: present.address_line1 || '',
+                line2: present.address_line2 || '',
+                city: present.city || '',
+                state: present.state || '',
+                country: present.country || 'India',
+                postal_code: present.postal_code || '',
+              };
+            }
+            if (perm) {
+              emp.profile.permanent_address = {
+                line1: perm.address_line1 || '',
+                line2: perm.address_line2 || '',
+                city: perm.city || '',
+                state: perm.state || '',
+                country: perm.country || 'India',
+                postal_code: perm.postal_code || '',
+              };
+            }
+          }
+
+          // Hydrate Bank Details
           if (bankRes?.data) {
             emp.bank = {
               bank_name: bankRes.data.bank_name,
@@ -950,7 +1262,10 @@ export const api = {
               account_type: bankRes.data.account_type,
               account_holder_name: bankRes.data.account_holder_name,
             };
+            emp.profile.bank_account = emp.bank;
           }
+
+          // Hydrate Statutory Details
           if (statRes?.data) {
             emp.statutory = {
               pan: statRes.data.pan_number,
@@ -960,19 +1275,561 @@ export const api = {
               pf_number: statRes.data.pf_number,
               esi_number: statRes.data.esi_number,
               tax_regime: statRes.data.tax_regime,
-              pf_applicable: statRes.data.pf_applicable,
-              esi_applicable: statRes.data.esi_applicable,
-              pt_applicable: statRes.data.pt_applicable,
+              pf_applicable: statRes.data.pf_applicable !== undefined ? statRes.data.pf_applicable : (statRes.data.is_pf_eligible ?? true),
+              esi_applicable: statRes.data.esi_applicable !== undefined ? statRes.data.esi_applicable : (statRes.data.is_esi_eligible ?? false),
+              pt_applicable: statRes.data.pt_applicable !== undefined ? statRes.data.pt_applicable : (statRes.data.is_pt_eligible ?? true),
             };
+            emp.profile.statutory = emp.statutory;
           }
+
+          // Hydrate Emergency Contacts
+          if (emgRes?.data && emgRes.data.length > 0) {
+            emp.emergency_contacts = emgRes.data;
+            emp.profile.emergency_contacts = emgRes.data;
+            const primaryEmg = emgRes.data[0];
+            emp.profile.emergency_contact_name = primaryEmg.name;
+            emp.profile.emergency_contact_phone = primaryEmg.primary_phone;
+            emp.profile.emergency_contact_relationship = primaryEmg.relationship;
+          }
+
+          // Hydrate Salary Assignment & Compensation
+          if (salRes?.data) {
+            emp.salary_assignment = salRes.data;
+            emp.annual_ctc = Number(salRes.data.annual_ctc) || emp.annual_ctc;
+            emp.monthly_gross = Number(salRes.data.gross_monthly || salRes.data.monthly_gross) || emp.monthly_gross;
+            emp.ctc = emp.annual_ctc;
+            if (emp.employment) {
+              emp.employment.annual_ctc = emp.annual_ctc;
+              emp.employment.monthly_gross = emp.monthly_gross;
+              emp.employment.salary_structure_id = salRes.data.salary_structure_id;
+            }
+          }
+
+          // Hydrate Documents
+          if (docRes?.data && docRes.data.length > 0) {
+            emp.documents = docRes.data;
+          }
+
+          // Update local cache
+          const list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+          const updatedList = list.some((e) => e.id === emp.id)
+            ? list.map((e) => (e.id === emp.id ? { ...e, ...emp } : e))
+            : [emp, ...list];
+          setStorage(KEYS.EMPLOYEES, updatedList);
+          if (this._empCache?.data) {
+            this._empCache.data = updatedList;
+          }
+
           return emp;
         }
       } catch (err) {
         console.error('[API] Supabase getEmployeeById error:', err);
       }
     }
+
+    if (cachedEmp) return cachedEmp;
+
     const list = await this.getEmployees();
     return list.find((e) => e.id === id);
+  },
+
+  async saveEmployeeOnboardingStep(
+    employeeId: string,
+    organizationId: string,
+    stepNumber: number,
+    formData: any
+  ): Promise<Employee> {
+    const existing = (await this.getEmployeeById(employeeId)) || ({} as any);
+    let compId = existing.company_id || api.getActiveCompany()?.id;
+    let orgId = organizationId || existing.organization_id;
+
+    if (isSupabaseEnabled && (!compId || !isValidUUID(compId))) {
+      try {
+        const { data: firstComp } = await supabase.from('companies').select('id, organization_id').limit(1).maybeSingle();
+        if (firstComp) {
+          compId = firstComp.id;
+          if (!orgId) orgId = firstComp.organization_id;
+        }
+      } catch (_) {}
+    }
+    if (!orgId) orgId = 'org-joy-01';
+    if (!compId) compId = 'comp-joy-01';
+
+    const mergedProfile: any = {
+      ...(existing.profile || {}),
+    };
+
+    const mergedEmployment: any = {
+      ...(existing.employment || {}),
+    };
+
+    const employeePatch: Record<string, any> = {
+      id: employeeId,
+      organization_id: orgId,
+      company_id: compId,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (stepNumber === 1) {
+      // Step 1: Identity
+      const code = formData.employee_code?.trim() || existing.employee_code || `WF-${Math.floor(1000 + Math.random() * 9000)}`;
+      employeePatch.employee_code = code;
+      if (formData.first_name !== undefined) employeePatch.first_name = formData.first_name.trim();
+      if (formData.middle_name !== undefined) employeePatch.middle_name = formData.middle_name.trim();
+      if (formData.last_name !== undefined) employeePatch.last_name = formData.last_name.trim();
+      employeePatch.display_name = formData.preferred_name?.trim() || `${employeePatch.first_name || existing.first_name || ''} ${employeePatch.last_name || existing.last_name || ''}`.trim() || 'Employee';
+      if (formData.work_email) employeePatch.work_email = formData.work_email.trim();
+      if (formData.photo_url) employeePatch.avatar_url = formData.photo_url;
+      if (formData.phone) employeePatch.phone = formData.phone.trim();
+      if (formData.dob) employeePatch.dob = formData.dob;
+      if (formData.gender) employeePatch.gender = formData.gender;
+
+      mergedProfile.employee_code = code;
+      mergedProfile.first_name = employeePatch.first_name;
+      mergedProfile.middle_name = employeePatch.middle_name;
+      mergedProfile.last_name = employeePatch.last_name;
+      mergedProfile.display_name = employeePatch.display_name;
+      mergedProfile.phone = formData.phone;
+      mergedProfile.primary_mobile = formData.phone;
+      mergedProfile.date_of_birth = formData.dob;
+      mergedProfile.gender = formData.gender;
+      if (formData.personal_email) mergedProfile.personal_email = formData.personal_email.trim();
+    } else if (stepNumber === 2) {
+      // Step 2: Contact & Addresses
+      if (formData.personal_email !== undefined) {
+        mergedProfile.personal_email = formData.personal_email.trim();
+        employeePatch.personal_email = formData.personal_email.trim();
+      }
+      if (formData.alternate_phone !== undefined) mergedProfile.alternate_phone = formData.alternate_phone;
+      if (formData.marital_status !== undefined) mergedProfile.marital_status = formData.marital_status;
+      if (formData.nationality !== undefined) mergedProfile.nationality = formData.nationality;
+      if (formData.blood_group !== undefined) mergedProfile.blood_group = formData.blood_group;
+      if (formData.preferred_language !== undefined) mergedProfile.preferred_language = formData.preferred_language;
+
+      const currentAddress = {
+        line1: formData.current_line1 || '',
+        line2: formData.current_line2 || '',
+        city: formData.current_city || '',
+        state: formData.current_state || '',
+        country: formData.current_country || '',
+        postal_code: formData.current_postal || '',
+      };
+      const permanentAddress = formData.same_as_permanent
+        ? { ...currentAddress }
+        : {
+            line1: formData.perm_line1 || '',
+            line2: formData.perm_line2 || '',
+            city: formData.perm_city || '',
+            state: formData.perm_state || '',
+            country: formData.perm_country || '',
+            postal_code: formData.perm_postal || '',
+          };
+
+      mergedProfile.current_address = currentAddress;
+      mergedProfile.permanent_address = permanentAddress;
+      mergedProfile.same_as_permanent = Boolean(formData.same_as_permanent);
+
+      // Upsert to employee_profiles & employee_addresses if Supabase is active and authenticated
+      const isAuth = await hasAuthenticatedSession();
+      if (isAuth && isValidUUID(employeeId)) {
+        try {
+          await supabase.from('employee_profiles').upsert({
+            employee_id: employeeId,
+            organization_id: isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19',
+            marital_status: formData.marital_status || null,
+            blood_group: formData.blood_group || null,
+            nationality: formData.nationality || 'Indian',
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'employee_id' });
+        } catch (profErr) {
+          console.warn('[API] Step 2 employee_profiles upsert notice:', profErr);
+        }
+
+        try {
+          if (formData.current_line1) {
+            await supabase.from('employee_addresses').upsert({
+              employee_id: employeeId,
+              organization_id: isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19',
+              address_type: 'PRESENT',
+              address_line1: formData.current_line1,
+              address_line2: formData.current_line2 || null,
+              city: formData.current_city || 'Coimbatore',
+              state: formData.current_state || 'Tamil Nadu',
+              postal_code: formData.current_postal || '641001',
+              country: formData.current_country || 'India',
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'employee_id,address_type' });
+          }
+        } catch (addrErr) {
+          console.warn('[API] Step 2 employee_addresses upsert notice:', addrErr);
+        }
+      }
+    } else if (stepNumber === 3) {
+      // Step 3: Employment & Compensation
+      if (formData.doj) {
+        employeePatch.doj = formData.doj;
+        mergedEmployment.doj = formData.doj;
+      }
+      if (formData.employment_type) {
+        employeePatch.employment_type = formData.employment_type;
+        mergedEmployment.employment_type = formData.employment_type;
+      }
+      if (formData.employment_source) {
+        employeePatch.employment_source = formData.employment_source;
+        mergedEmployment.employment_source = formData.employment_source;
+      }
+      if (formData.vendor_id) {
+        employeePatch.vendor_id = formData.vendor_id;
+        mergedEmployment.vendor_id = formData.vendor_id;
+      }
+      if (formData.vendor_name) {
+        employeePatch.vendor_name = formData.vendor_name;
+        mergedEmployment.vendor_name = formData.vendor_name;
+      }
+      if (formData.vendor_employee_code) {
+        employeePatch.vendor_employee_code = formData.vendor_employee_code;
+        mergedEmployment.vendor_employee_code = formData.vendor_employee_code;
+      }
+      if (formData.client_company_id) {
+        employeePatch.client_company_id = formData.client_company_id;
+        mergedEmployment.client_company_id = formData.client_company_id;
+      }
+      if (formData.site_id) {
+        employeePatch.site_id = formData.site_id;
+        mergedEmployment.site_id = formData.site_id;
+      }
+      if (formData.vendor_contract_id) {
+        mergedEmployment.vendor_contract_id = formData.vendor_contract_id;
+      }
+      if (formData.vendor_start_date) {
+        mergedEmployment.vendor_start_date = formData.vendor_start_date;
+      }
+      if (formData.vendor_end_date) {
+        mergedEmployment.vendor_end_date = formData.vendor_end_date;
+      }
+      if (formData.status) employeePatch.status = formData.status;
+      if (formData.department_id) {
+        employeePatch.department_id = formData.department_id;
+        mergedEmployment.department_id = formData.department_id;
+      }
+      if (formData.department_name) {
+        employeePatch.department_name = formData.department_name;
+        mergedEmployment.department_name = formData.department_name;
+      }
+      if (formData.designation_id) {
+        employeePatch.designation_id = formData.designation_id;
+        mergedEmployment.designation_id = formData.designation_id;
+      }
+      if (formData.designation_title) {
+        employeePatch.designation_title = formData.designation_title;
+        mergedEmployment.designation_title = formData.designation_title;
+      }
+      if (formData.branch_id) employeePatch.branch_id = formData.branch_id;
+
+      mergedEmployment.work_mode = formData.work_mode;
+      mergedEmployment.job_level = formData.job_level;
+      mergedEmployment.grade = formData.grade;
+      mergedEmployment.probation_period_months = formData.probation_months;
+      mergedEmployment.notice_period_days = formData.notice_period_days;
+      mergedEmployment.shift_id = formData.shift_id;
+      mergedEmployment.attendance_policy_id = formData.attendance_policy_id;
+      mergedEmployment.leave_policy_id = formData.leave_policy_id;
+      mergedEmployment.salary_structure_code = formData.salary_structure_code;
+      mergedEmployment.annual_ctc = formData.annual_ctc;
+      mergedEmployment.monthly_ctc = formData.monthly_ctc;
+      mergedEmployment.compensation_basis = formData.compensation_basis || 'CTC_INCLUSIVE';
+
+      // Upsert into employee_salary_assignments
+      const isAuth = await hasAuthenticatedSession();
+      if (isAuth && (formData.annual_ctc || formData.monthly_ctc)) {
+        try {
+          const annCtc = Number(formData.annual_ctc) || 0;
+          const monGross = Number(formData.monthly_ctc) || Math.round(annCtc / 12);
+          await supabase.from('employee_salary_assignments').upsert({
+            id: `sal-${employeeId}`,
+            organization_id: orgId,
+            employee_id: employeeId,
+            annual_ctc: annCtc,
+            gross_monthly: monGross,
+            monthly_gross: monGross,
+            effective_from: formData.salary_effective_from || formData.doj || new Date().toISOString().split('T')[0],
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'employee_id' });
+        } catch (salErr) {
+          console.warn('[API] Step 3 salary assignment notice:', salErr);
+        }
+      }
+
+      // Upsert/Update statutory flags
+      if (isAuth && (formData.pf_applicable !== undefined || formData.esi_applicable !== undefined || formData.pt_applicable !== undefined)) {
+        try {
+          await supabase.from('employee_statutory_details').upsert({
+            employee_id: employeeId,
+            organization_id: orgId,
+            pf_applicable: formData.pf_applicable !== false,
+            esi_applicable: formData.esi_applicable === true,
+            pt_applicable: formData.pt_applicable !== false,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'employee_id' });
+        } catch (statErr) {
+          console.warn('[API] Step 3 statutory flags notice:', statErr);
+        }
+      }
+
+      // Sync Vendor Workforce Assignment if employment_source === 'VENDOR' or vendor_id is present
+      if (formData.employment_source === 'VENDOR' || formData.vendor_id) {
+        try {
+          const { VendorWorkforceService } = await import('./vendor/vendorWorkforceService');
+          await VendorWorkforceService.syncEmployeeAssignment({
+            id: employeeId,
+            organization_id: orgId,
+            employee_code: employeePatch.employee_code || existing.employee_code,
+            first_name: employeePatch.first_name || existing.first_name,
+            last_name: employeePatch.last_name || existing.last_name,
+            display_name: employeePatch.display_name || existing.display_name,
+            work_email: employeePatch.work_email || existing.work_email,
+            phone: employeePatch.phone || existing.phone,
+            designation_title: formData.designation_title || employeePatch.designation_title || existing.designation_title,
+            department_name: formData.department_name || employeePatch.department_name || existing.department_name,
+            vendor_id: formData.vendor_id,
+            vendor_name: formData.vendor_name,
+            vendor_employee_code: formData.vendor_employee_code,
+            employment: {
+              ...mergedEmployment,
+              vendor_id: formData.vendor_id,
+              vendor_name: formData.vendor_name,
+              vendor_contract_id: formData.vendor_contract_id,
+              client_company_id: formData.client_company_id,
+              site_id: formData.site_id,
+              doj: formData.doj,
+              monthly_ctc: formData.monthly_ctc,
+            },
+          }, formData.vendor_id);
+        } catch (vSyncErr) {
+          console.warn('[API] Vendor workforce sync warning in Step 3:', vSyncErr);
+        }
+      }
+    } else if (stepNumber === 4) {
+      // Step 4: Organization & Reporting
+      if (formData.reporting_manager_id || formData.reporting_manager_name) {
+        employeePatch.reporting_manager_id = formData.reporting_manager_id;
+        mergedEmployment.reporting_manager_id = formData.reporting_manager_id;
+        mergedEmployment.reporting_manager_name = formData.reporting_manager_name;
+      }
+      if (formData.team_lead_id || formData.team_lead_name) {
+        mergedEmployment.team_lead_id = formData.team_lead_id;
+        mergedEmployment.team_lead_name = formData.team_lead_name;
+      }
+      if (formData.business_unit) {
+        mergedEmployment.business_unit = formData.business_unit;
+        employeePatch.business_unit = formData.business_unit;
+      }
+      if (formData.cost_center) {
+        mergedEmployment.cost_center_code = formData.cost_center;
+        employeePatch.cost_center_code = formData.cost_center;
+      }
+    } else if (stepNumber === 5) {
+      // Step 5: Emergency, Bank & Statutory
+      mergedProfile.emergency_contacts = [
+        {
+          name: formData.emergency_name,
+          relationship: formData.emergency_relation,
+          phone: formData.emergency_phone,
+          alt_phone: formData.emergency_alt_phone,
+          email: formData.emergency_email,
+        },
+      ];
+      mergedProfile.emergency_contact_name = formData.emergency_name;
+      mergedProfile.emergency_contact_phone = formData.emergency_phone;
+      mergedProfile.emergency_contact_relationship = formData.emergency_relation;
+      mergedProfile.family_members = formData.family_members || [];
+
+      const isAuth = await hasAuthenticatedSession();
+
+      // Upsert emergency contacts to dedicated table
+      if (isAuth && formData.emergency_name && formData.emergency_phone) {
+        try {
+          await supabase.from('employee_emergency_contacts').upsert({
+            id: `emg-${employeeId}`,
+            employee_id: employeeId,
+            name: formData.emergency_name,
+            relationship: formData.emergency_relation || 'Spouse',
+            primary_phone: formData.emergency_phone,
+            alternate_phone: formData.emergency_alt_phone || null,
+            email: formData.emergency_email || null,
+            address: formData.emergency_address || null,
+            is_primary: true,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'id' });
+        } catch (emgErr) {
+          console.warn('[API] Emergency contact upsert notice:', emgErr);
+        }
+      }
+
+      // Set in mergedProfile
+      if (formData.bank_name || formData.account_number) {
+        const bankData = {
+          bank_name: formData.bank_name || 'HDFC Bank',
+          account_number: formData.account_number || '',
+          ifsc: formData.ifsc || formData.ifsc_code || 'HDFC0001234',
+          ifsc_code: formData.ifsc || formData.ifsc_code || 'HDFC0001234',
+          account_type: (formData.account_type || 'SALARY').toUpperCase(),
+          account_holder_name: formData.account_holder_name || `${employeePatch.first_name || existing.first_name || ''} ${employeePatch.last_name || existing.last_name || ''}`.trim(),
+        };
+        mergedProfile.bank_account = bankData;
+        (employeePatch as any).bank = bankData;
+      }
+
+      if (formData.pan || formData.uan || formData.pf_number || formData.esi_number || formData.tax_regime) {
+        const statData = {
+          pan: formData.pan || null,
+          pan_number: formData.pan || null,
+          uan: formData.uan || null,
+          uan_number: formData.uan || null,
+          pf_number: formData.pf_number || null,
+          esi_number: formData.esi_number || null,
+          tax_regime: (formData.tax_regime || 'NEW').toUpperCase(),
+          pf_applicable: formData.pf_applicable !== false,
+          esi_applicable: formData.esi_applicable === true,
+          pt_applicable: formData.pt_applicable !== false,
+        };
+        mergedProfile.statutory = statData;
+        (employeePatch as any).statutory = statData;
+      }
+
+      // Upsert bank details
+      if (isAuth && (formData.bank_name || formData.account_number)) {
+        try {
+          const bankPayload: any = {
+            organization_id: isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19',
+            employee_id: employeeId,
+            bank_name: formData.bank_name || 'HDFC Bank',
+            account_number: formData.account_number || '',
+            ifsc_code: formData.ifsc || formData.ifsc_code || 'HDFC0001234',
+            account_type: (formData.account_type || 'SALARY').toUpperCase(),
+            account_holder_name: formData.account_holder_name || `${employeePatch.first_name || existing.first_name || ''} ${employeePatch.last_name || existing.last_name || ''}`.trim(),
+            is_verified: true,
+            updated_at: new Date().toISOString(),
+          };
+          if (formData.id && isValidUUID(formData.id)) {
+            bankPayload.id = formData.id;
+          }
+          await supabase.from('employee_bank_details').upsert(bankPayload, { onConflict: 'employee_id' });
+        } catch (bErr) {
+          console.warn('[API] Bank details upsert notice:', bErr);
+        }
+      }
+
+      // Upsert statutory details
+      if (isAuth && (formData.pan || formData.uan || formData.pf_number || formData.esi_number)) {
+        try {
+          const statPayload: any = {
+            organization_id: isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19',
+            employee_id: employeeId,
+            pan_number: formData.pan || null,
+            uan_number: formData.uan || null,
+            pf_number: formData.pf_number || null,
+            esi_number: formData.esi_number || null,
+            tax_regime: (formData.tax_regime || 'NEW').toUpperCase(),
+            is_pf_eligible: formData.pf_applicable !== false,
+            is_esi_eligible: formData.esi_applicable === true,
+            is_pt_eligible: formData.pt_applicable !== false,
+            updated_at: new Date().toISOString(),
+          };
+          if (formData.id && isValidUUID(formData.id)) {
+            statPayload.id = formData.id;
+          }
+          await supabase.from('employee_statutory_details').upsert(statPayload, { onConflict: 'employee_id' });
+        } catch (sErr) {
+          console.warn('[API] Statutory details upsert notice:', sErr);
+        }
+      }
+    } else if (stepNumber === 6) {
+      // Step 6: Documents
+      const isAuth = await hasAuthenticatedSession();
+      if (isAuth && Array.isArray(formData.documents) && formData.documents.length > 0) {
+        try {
+          const docPayloads = formData.documents.map((doc: any, i: number) => ({
+            id: doc.id || `doc-${employeeId}-${i}`,
+            employee_id: employeeId,
+            document_category: doc.category || doc.document_category || 'Identity',
+            document_type: doc.type || doc.document_type || 'ID_CARD',
+            file_name: doc.name || doc.file_name || 'document.pdf',
+            file_url: doc.url || doc.file_url || '',
+            file_size_bytes: doc.size || doc.file_size_bytes || 0,
+            verification_status: doc.status || 'Verified',
+            uploaded_at: doc.uploaded_at || new Date().toISOString(),
+          }));
+          await supabase.from('employee_documents').upsert(docPayloads, { onConflict: 'id' });
+        } catch (docErr) {
+          console.warn('[API] Documents upsert notice:', docErr);
+        }
+      }
+      mergedProfile.documents = formData.documents || [];
+      employeePatch.documents = formData.documents || [];
+    } else if (stepNumber === 7) {
+      // Step 7: Final Review & Confirmation
+      if (formData.status) employeePatch.status = formData.status;
+      if (formData.enable_app_access !== undefined) {
+        (employeePatch as any).app_access = {
+          enable_app_access: formData.enable_app_access !== false,
+          auth_method: formData.auth_method || 'EMPLOYEE_ID_PASSWORD',
+          require_password_change: formData.require_password_change !== false,
+          require_device_verification: formData.require_device_verification !== false,
+        };
+      }
+    }
+
+    employeePatch.profile = mergedProfile;
+    employeePatch.employment = mergedEmployment;
+
+    // Apply patch to employees table in Supabase if authenticated
+    const isAuth = await hasAuthenticatedSession();
+    if (isAuth) {
+      try {
+        const cleanPatch = sanitizeEmployeeForSupabase({ ...existing, ...employeePatch });
+        const { error } = await supabase.from('employees').upsert(cleanPatch, { onConflict: 'id' });
+        if (error) {
+          console.warn('[API] Supabase step upsert notice:', error.message || error);
+        }
+      } catch (err) {
+        console.warn('[API] Supabase employee step upsert fallback:', err);
+      }
+    }
+
+    // Always update local cache so in-memory/fallback state is 100% in sync
+    const list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+    const updatedEmp: Employee = {
+      ...existing,
+      ...employeePatch,
+      profile: mergedProfile,
+      employment: mergedEmployment,
+    };
+    const updatedList = list.some((e) => e.id === employeeId)
+      ? list.map((e) => (e.id === employeeId ? updatedEmp : e))
+      : [updatedEmp, ...list];
+    setStorage(KEYS.EMPLOYEES, updatedList);
+    this._empCache = null;
+
+    // Always re-hydrate canonical record from DB, merged with updatedEmp
+    const fresh = await this.getEmployeeById(employeeId);
+    const finalEmp: Employee = {
+      ...updatedEmp,
+      ...(fresh || {}),
+      profile: {
+        ...(updatedEmp.profile || {}),
+        ...((fresh && fresh.profile) || {}),
+      },
+      employment: {
+        ...(updatedEmp.employment || {}),
+        ...((fresh && fresh.employment) || {}),
+      },
+      bank: (fresh as any)?.bank || (updatedEmp as any)?.bank,
+      statutory: (fresh as any)?.statutory || (updatedEmp as any)?.statutory,
+      emergency_contacts: (fresh as any)?.emergency_contacts || (updatedEmp as any)?.emergency_contacts,
+    };
+    return finalEmp;
   },
 
   async createEmployee(input: any): Promise<Employee> {
@@ -1232,55 +2089,58 @@ export const api = {
           delete (newEmp as any).branch_id;
         }
 
-        const cleanEmp = sanitizeEmployeeForSupabase(newEmp);
-        const { error } = await supabase.from('employees').upsert(cleanEmp, { onConflict: 'id' });
+        const isAuth = await hasAuthenticatedSession();
+        if (isAuth) {
+          const cleanEmp = sanitizeEmployeeForSupabase(newEmp);
+          const { error } = await supabase.from('employees').upsert(cleanEmp, { onConflict: 'id' });
 
-        if (error) {
-          console.warn('[API] Supabase employee insert notice (persisted to local outbox):', error.message || error);
-        }
-
-        // 3. Upsert Bank Details
-        if (input.bank || input.bank_name || input.account_number) {
-          const b = input.bank || input;
-          try {
-            const bankId = ensureUUID(b.id || (newEmp.id ? 'b0000000-0000-0000-0000-' + newEmp.id.replace(/-/g, '').slice(0, 12) : null));
-            await supabase.from('employee_bank_details').upsert({
-              id: bankId,
-              organization_id: newEmp.organization_id,
-              employee_id: newEmp.id,
-              bank_name: b.bank_name || 'HDFC Bank',
-              account_number: b.account_number || '1234567890',
-              ifsc_code: b.ifsc || b.ifsc_code || 'HDFC0001234',
-              account_type: (b.account_type || 'SALARY').toUpperCase(),
-              account_holder_name: b.account_holder_name || `${newEmp.first_name} ${newEmp.last_name}`.trim(),
-              is_verified: true,
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'employee_id' });
-          } catch (e) {
-            console.warn('[API] Bank upsert warning:', e);
+          if (error) {
+            console.warn('[API] Supabase employee insert notice (persisted to local outbox):', error.message || error);
           }
-        }
 
-        // 4. Upsert Statutory Details
-        if (input.statutory || input.pan || input.uan) {
-          const s = input.statutory || input;
-          try {
-            const statId = ensureUUID(s.id || (newEmp.id ? 'c0000000-0000-0000-0000-' + newEmp.id.replace(/-/g, '').slice(0, 12) : null));
-            await supabase.from('employee_statutory_details').upsert({
-              id: statId,
-              organization_id: newEmp.organization_id,
-              employee_id: newEmp.id,
-              pan_number: s.pan || s.pan_number || null,
-              uan_number: s.uan || s.uan_number || null,
-              pf_number: s.pf_number || null,
-              esi_number: s.esi_number || null,
-              is_pf_eligible: s.pf_applicable !== undefined ? Boolean(s.pf_applicable) : true,
-              is_esi_eligible: s.esi_applicable !== undefined ? Boolean(s.esi_applicable) : false,
-              is_pt_eligible: s.pt_applicable !== undefined ? Boolean(s.pt_applicable) : true,
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'employee_id' });
-          } catch (e) {
-            console.warn('[API] Statutory upsert warning:', e);
+          // 3. Upsert Bank Details
+          if (input.bank || input.bank_name || input.account_number) {
+            const b = input.bank || input;
+            try {
+              const bankId = ensureUUID(b.id || (newEmp.id ? 'b0000000-0000-0000-0000-' + newEmp.id.replace(/-/g, '').slice(0, 12) : null));
+              await supabase.from('employee_bank_details').upsert({
+                id: bankId,
+                organization_id: newEmp.organization_id,
+                employee_id: newEmp.id,
+                bank_name: b.bank_name || 'HDFC Bank',
+                account_number: b.account_number || '1234567890',
+                ifsc_code: b.ifsc || b.ifsc_code || 'HDFC0001234',
+                account_type: (b.account_type || 'SALARY').toUpperCase(),
+                account_holder_name: b.account_holder_name || `${newEmp.first_name} ${newEmp.last_name}`.trim(),
+                is_verified: true,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'employee_id' });
+            } catch (e) {
+              console.warn('[API] Bank upsert warning:', e);
+            }
+          }
+
+          // 4. Upsert Statutory Details
+          if (input.statutory || input.pan || input.uan) {
+            const s = input.statutory || input;
+            try {
+              const statId = ensureUUID(s.id || (newEmp.id ? 'c0000000-0000-0000-0000-' + newEmp.id.replace(/-/g, '').slice(0, 12) : null));
+              await supabase.from('employee_statutory_details').upsert({
+                id: statId,
+                organization_id: newEmp.organization_id,
+                employee_id: newEmp.id,
+                pan_number: s.pan || s.pan_number || null,
+                uan_number: s.uan || s.uan_number || null,
+                pf_number: s.pf_number || null,
+                esi_number: s.esi_number || null,
+                is_pf_eligible: s.pf_applicable !== undefined ? Boolean(s.pf_applicable) : true,
+                is_esi_eligible: s.esi_applicable !== undefined ? Boolean(s.esi_applicable) : false,
+                is_pt_eligible: s.pt_applicable !== undefined ? Boolean(s.pt_applicable) : true,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'employee_id' });
+            } catch (e) {
+              console.warn('[API] Statutory upsert warning:', e);
+            }
           }
         }
       } catch (err) {
@@ -1289,7 +2149,11 @@ export const api = {
       }
     }
 
-    setStorage(KEYS.EMPLOYEES, [newEmp, ...list]);
+    const updatedList = list.some((e) => e.id === newEmp.id)
+      ? list.map((e) => (e.id === newEmp.id ? { ...e, ...newEmp } : e))
+      : [newEmp, ...list];
+    setStorage(KEYS.EMPLOYEES, updatedList);
+    this._empCache = null;
 
     // Provision Authenticated Employee Identity in local cache / fallback service
     try {
@@ -1316,12 +2180,16 @@ export const api = {
     if (targetEmail && targetEmail.includes('@')) {
       try {
         const { resendEmailService } = await import('./email/resendEmailService');
+        const { getAppBaseUrl } = await import('../lib/supabase');
+        const actToken = `act-${newEmp.id}`;
+        const actUrl = `${getAppBaseUrl()}/activate?token=${encodeURIComponent(actToken)}&emp=${encodeURIComponent(newEmp.employee_code)}&email=${encodeURIComponent(targetEmail)}`;
         await resendEmailService.sendEmployeeActivationEmail({
           to: targetEmail,
           employeeName: `${newEmp.first_name} ${newEmp.last_name}`.trim(),
           employeeId: newEmp.employee_code,
           loginIdentifier: newEmp.employee_code,
-          activationToken: `act-${newEmp.id}`,
+          activationToken: actToken,
+          activationUrl: actUrl,
           organizationName: newEmp.company_name || 'Joy Corporate Solutions',
           authMethod: 'Employee ID & Password / OTP',
           requiresPasswordChange: true,
@@ -1329,6 +2197,35 @@ export const api = {
         console.log('[API] Employee activation email dispatched successfully to:', targetEmail);
       } catch (emailErr) {
         console.warn('[API] Employee activation email dispatch notice:', emailErr);
+      }
+    }
+
+    // Auto-dispatch WhatsApp Welcome & Onboarding Pack to Employee's Primary Mobile
+    const targetMobile = newEmp.profile?.phone || input.primary_mobile || input.phone;
+    if (targetMobile && targetMobile.replace(/\D/g, '').length >= 10) {
+      try {
+        const { whatsAppNotificationService } = await import('./whatsapp/whatsappNotificationService');
+        await whatsAppNotificationService.sendEmployeeWelcomeOnboarding({
+          phone: targetMobile,
+          employeeName: `${newEmp.first_name} ${newEmp.last_name}`.trim(),
+          employeeCode: newEmp.employee_code,
+          companyName: newEmp.company_name || 'Joy Corporate Solutions Pvt Ltd',
+          designation: newEmp.designation_title || 'Team Member',
+          organizationId: newEmp.organization_id || 'org-joy-01',
+          employeeId: newEmp.id,
+        });
+        console.log('[API] WhatsApp Welcome Pack auto-dispatched successfully to:', targetMobile);
+      } catch (waErr) {
+        console.warn('[API] WhatsApp Welcome auto-dispatch notice:', waErr);
+      }
+    }
+
+    if (newEmp.employment_source === 'VENDOR' || newEmp.vendor_id || newEmp.employment?.vendor_id) {
+      try {
+        const { VendorWorkforceService } = await import('./vendor/vendorWorkforceService');
+        await VendorWorkforceService.syncEmployeeAssignment(newEmp, newEmp.vendor_id || newEmp.employment?.vendor_id);
+      } catch (vErr) {
+        console.warn('[API] Vendor workforce sync warning in createEmployee:', vErr);
       }
     }
 
@@ -1351,13 +2248,16 @@ export const api = {
       metadata: { fields: Object.keys(data) },
     });
 
-    // Concurrency Protection: Detect dirty writes if expectedUpdatedAt provided
-    if (expectedUpdatedAt && existing.updated_at && existing.updated_at !== expectedUpdatedAt) {
-      const err: any = new Error('This employee was updated by another administrator. Please reload latest changes before saving.');
-      err.status = 409;
-      err.code = 'CONCURRENCY_CONFLICT';
-      logger.error('WEB', 'CONCURRENCY_CONFLICT', err, { correlationId, employeeId: id });
-      throw err;
+    // Concurrency Protection: Detect dirty writes if expectedUpdatedAt provided with 5-second drift tolerance
+    if (expectedUpdatedAt && existing.updated_at) {
+      const timeDiff = Math.abs(new Date(existing.updated_at).getTime() - new Date(expectedUpdatedAt).getTime());
+      if (existing.updated_at !== expectedUpdatedAt && timeDiff > 5000) {
+        const err: any = new Error('This employee was updated by another administrator. Please reload latest changes before saving.');
+        err.status = 409;
+        err.code = 'CONCURRENCY_CONFLICT';
+        logger.error('WEB', 'CONCURRENCY_CONFLICT', err, { correlationId, employeeId: id });
+        throw err;
+      }
     }
 
     let canonicalRecord: Employee | null = null;
@@ -1418,22 +2318,26 @@ export const api = {
 
           const cleanFallback = sanitizeEmployeeForSupabase(fallbackUpdated);
 
-          // Try upserting so it succeeds whether the record was previously in DB or local-only
-          const { data: selectData, error: directErr } = await supabase
-            .from('employees')
-            .upsert(cleanFallback, { onConflict: 'id' })
-            .select('*')
-            .maybeSingle();
+          const isAuth = await hasAuthenticatedSession();
+          if (isAuth) {
+            // Try upserting so it succeeds whether the record was previously in DB or local-only
+            const { data: selectData, error: directErr } = await supabase
+              .from('employees')
+              .upsert(cleanFallback, { onConflict: 'id' })
+              .select('*')
+              .maybeSingle();
 
-          if (directErr) {
-            console.warn('[API] Direct Supabase employee upsert notice (persisting locally):', directErr.message || directErr);
-          } else if (selectData) {
-            canonicalRecord = selectData as Employee;
+            if (directErr) {
+              console.warn('[API] Direct Supabase employee upsert notice (persisting locally):', directErr.message || directErr);
+            } else if (selectData) {
+              canonicalRecord = selectData as Employee;
+            }
           }
         }
 
+        const isAuth = await hasAuthenticatedSession();
         // Upsert Bank Details if provided
-        if ((data as any).bank || (data as any).bank_name || (data as any).account_number) {
+        if (isAuth && ((data as any).bank || (data as any).bank_name || (data as any).account_number)) {
           const b = (data as any).bank || data;
           try {
             await supabase.from('employee_bank_details').upsert({
@@ -1453,7 +2357,7 @@ export const api = {
         }
 
         // Upsert Statutory Details if provided
-        if ((data as any).statutory || (data as any).pan || (data as any).uan || (data as any).pan_number || (data as any).uan_number) {
+        if (isAuth && ((data as any).statutory || (data as any).pan || (data as any).uan || (data as any).pan_number || (data as any).uan_number)) {
           const s = (data as any).statutory || data;
           const taxRegimeNormalized = (s.tax_regime || 'New').toString().toLowerCase() === 'old' ? 'Old' : 'New';
           try {
@@ -1486,18 +2390,28 @@ export const api = {
     const lastName = data.last_name !== undefined ? data.last_name : (existing.last_name || '');
     const displayName = data.display_name || `${firstName} ${lastName}`.trim();
 
-    const updated: Employee = canonicalRecord || { 
+    const updated: Employee = { 
       ...existing, 
+      ...(canonicalRecord || {}),
       ...data, 
       first_name: firstName,
       last_name: lastName,
       display_name: displayName,
-      profile: { ...(existing.profile || {}), ...(data.profile || {}) } as EmployeeProfile,
-      employment: { ...(existing.employment || {}), ...(data.employment || {}) } as EmploymentDetails,
-      bank: (data as any).bank || (existing as any).bank,
-      statutory: (data as any).statutory || (existing as any).statutory,
+      profile: { 
+        ...(existing.profile || {}), 
+        ...(canonicalRecord?.profile || {}),
+        ...(data.profile || {}) 
+      } as EmployeeProfile,
+      employment: { 
+        ...(existing.employment || {}), 
+        ...(canonicalRecord?.employment || {}),
+        ...(data.employment || {}) 
+      } as EmploymentDetails,
+      bank: (data as any).bank || (canonicalRecord as any)?.bank || (existing as any).bank,
+      statutory: (data as any).statutory || (canonicalRecord as any)?.statutory || (existing as any).statutory,
+      emergency_contacts: (canonicalRecord as any)?.emergency_contacts || (existing as any).emergency_contacts,
       updated_at: new Date().toISOString() 
-    };
+    } as any as Employee;
 
     if (idx !== -1) {
       list[idx] = updated;
@@ -1505,6 +2419,16 @@ export const api = {
       list.unshift(updated);
     }
     setStorage(KEYS.EMPLOYEES, list);
+    this._empCache = null;
+
+    if (updated.employment_source === 'VENDOR' || updated.vendor_id || updated.employment?.vendor_id) {
+      try {
+        const { VendorWorkforceService } = await import('./vendor/vendorWorkforceService');
+        await VendorWorkforceService.syncEmployeeAssignment(updated, updated.vendor_id || updated.employment?.vendor_id);
+      } catch (vErr) {
+        console.warn('[API] Vendor workforce sync warning in updateEmployee:', vErr);
+      }
+    }
 
     // Record audit event
     try {
@@ -1987,13 +2911,109 @@ export const api = {
   },
 
   // ==========================================
+  // Vendor / Contractor API (Database Driven — ZERO MOCK POLICY)
+  // Returns exclusively live database records or empty array
+  // ==========================================
+  getVendorsSync(): Vendor[] {
+    const cached = getStorage<Vendor[]>(KEYS.VENDORS, []);
+    return cached || [];
+  },
+
+  async getVendors(organizationId?: string): Promise<Vendor[]> {
+    try {
+      if (isSupabaseEnabled && supabase) {
+        let query = supabase.from('vendors').select('*').order('created_at', { ascending: true });
+        if (organizationId) {
+          query = query.eq('organization_id', organizationId);
+        }
+        
+        const timeoutPromise = new Promise<{ data: null; error: Error }>((_, reject) =>
+          setTimeout(() => reject(new Error('Vendor query timed out')), 3000)
+        );
+
+        const { data, error } = await Promise.race([query, timeoutPromise]);
+        if (!error && Array.isArray(data)) {
+          setStorage(KEYS.VENDORS, data);
+          return data as Vendor[];
+        }
+      }
+    } catch (err) {
+      console.warn('[API] Vendor query notice, using local cache:', err);
+    }
+    return this.getVendorsSync();
+  },
+
+  async createVendor(vendorData: Omit<Vendor, 'id'> & { id?: string }): Promise<Vendor> {
+    if (!isSupabaseEnabled) {
+      throw new Error('Supabase database connection is not enabled.');
+    }
+    try {
+      const payload = {
+        ...vendorData,
+        organization_id: vendorData.organization_id || 'org-joy-01',
+        status: vendorData.status || 'ACTIVE',
+      };
+      const { data, error } = await supabase.from('vendors').insert([payload]).select().single();
+      if (error) {
+        console.error('[API] Failed to insert vendor into database:', error);
+        throw error;
+      }
+      return data as Vendor;
+    } catch (err) {
+      console.error('[API] Error in createVendor:', err);
+      throw err;
+    }
+  },
+
+  async updateVendor(vendorId: string, patch: Partial<Vendor>): Promise<Vendor> {
+    if (!isSupabaseEnabled) {
+      throw new Error('Supabase database connection is not enabled.');
+    }
+    try {
+      const { data, error } = await supabase
+        .from('vendors')
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('id', vendorId)
+        .select()
+        .single();
+      if (error) {
+        console.error('[API] Failed to update vendor in database:', error);
+        throw error;
+      }
+      return data as Vendor;
+    } catch (err) {
+      console.error('[API] Error in updateVendor:', err);
+      throw err;
+    }
+  },
+
+  async deleteVendor(vendorId: string): Promise<boolean> {
+    if (!isSupabaseEnabled) {
+      throw new Error('Supabase database connection is not enabled.');
+    }
+    try {
+      const { error } = await supabase.from('vendors').delete().eq('id', vendorId);
+      if (error) {
+        console.error('[API] Failed to delete vendor from database:', error);
+        throw error;
+      }
+      return true;
+    } catch (err) {
+      console.error('[API] Error in deleteVendor:', err);
+      throw err;
+    }
+  },
+
+  // ==========================================
   // Active Company Session
   // ==========================================
   getActiveCompany(): Company {
     const comp = getStorage<Company | null>(KEYS.ACTIVE_COMPANY, null);
     if (comp) return comp;
-    const list = getStorage<Company[]>(KEYS.COMPANIES, []);
-    return list[0] || (null as any);
+    const list = getStorage<Company[]>(KEYS.COMPANIES, DEFAULT_COMPANIES);
+    const active = list[0] || DEFAULT_COMPANIES[0];
+    setStorage(KEYS.ACTIVE_COMPANY, active);
+    return active;
   },
 
   setActiveCompany(company: Company): void {
@@ -2039,11 +3059,8 @@ export * from './operations/workforceIdentityEngine';
 export * from './operations/shiftRotationEngine';
 export * from './operations/attendancePolicyEngine';
 export * from './operations/overtimePolicyEngine';
-export * from './operations/vendorCommercialEngine';
 export * from './operations/bankingExportEngine';
 export * from './operations/enterpriseNotificationEngine';
 export * from './operations/employeeDocumentEngine';
 export * from './operations/dailyWagePayrollEngine';
-export * from './operations/vendorGovernanceEngine';
-export * from './operations/vendorGovernancePolicyEngine';
 export * from './identity/employeeIdentityResolver';

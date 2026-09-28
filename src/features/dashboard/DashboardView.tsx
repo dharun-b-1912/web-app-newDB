@@ -347,27 +347,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
 
   // Realtime Subscriptions & Window Event Listeners
   useEffect(() => {
-    const handleEmployeeCreated = () => {
-      loadDashboardData();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedLoad = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadDashboardData();
+      }, 300);
     };
 
-    const handleApprovalUpdated = () => {
-      loadDashboardData();
-    };
+    const unsubEmp = hrEventBus.subscribe('employee.*', debouncedLoad);
+    const unsubAppr = hrEventBus.subscribe('approval.*', debouncedLoad);
+    const unsubAtt = hrEventBus.subscribe('attendance.*', debouncedLoad);
 
-    const unsubBus = hrEventBus.subscribe('*', () => {
-      loadDashboardData();
-    });
-
-    window.addEventListener('employee:created', handleEmployeeCreated);
-    window.addEventListener('approval:updated', handleApprovalUpdated);
-    window.addEventListener('attendance:updated', handleApprovalUpdated);
+    window.addEventListener('employee:created', debouncedLoad);
+    window.addEventListener('approval:updated', debouncedLoad);
+    window.addEventListener('attendance:updated', debouncedLoad);
 
     return () => {
-      unsubBus();
-      window.removeEventListener('employee:created', handleEmployeeCreated);
-      window.removeEventListener('approval:updated', handleApprovalUpdated);
-      window.removeEventListener('attendance:updated', handleApprovalUpdated);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unsubEmp();
+      unsubAppr();
+      unsubAtt();
+      window.removeEventListener('employee:created', debouncedLoad);
+      window.removeEventListener('approval:updated', debouncedLoad);
+      window.removeEventListener('attendance:updated', debouncedLoad);
     };
   }, [loadDashboardData]);
 

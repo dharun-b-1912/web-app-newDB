@@ -211,7 +211,7 @@ export const UsageMeteringView: React.FC<UsageMeteringViewProps> = ({ tenantId, 
                         <Code className="h-3.5 w-3.5 text-[#7C3AED]" /> Monthly REST API Gateway Calls
                       </span>
                       <span className="text-[#0F172B]">
-                        {(usage.api_calls_used / 1000).toFixed(0)}k / {(usage.api_calls_limit / 1000).toFixed(0)}k ({Math.round(apiPct)}%)
+                        {usage.api_calls_used < 1000 ? `${usage.api_calls_used.toLocaleString()} calls` : `${(usage.api_calls_used / 1000).toFixed(1)}k`} / {(usage.api_calls_limit / 1000).toFixed(0)}k ({Math.max(1, Math.round(apiPct))}%)
                       </span>
                     </div>
                     <div className="h-2 w-full bg-[#F1F5F9] rounded-full overflow-hidden">

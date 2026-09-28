@@ -25,11 +25,8 @@ export interface EnterpriseErrorBoundaryState {
   copied: boolean;
 }
 
-const ComponentBase: any = React.Component;
-
-export class EnterpriseErrorBoundary extends ComponentBase {
-  public props: EnterpriseErrorBoundaryProps;
-  public state: EnterpriseErrorBoundaryState = {
+export class EnterpriseErrorBoundary extends React.Component<EnterpriseErrorBoundaryProps, EnterpriseErrorBoundaryState> {
+  public override state: EnterpriseErrorBoundaryState = {
     hasError: false,
     referenceId: null,
     copied: false,
@@ -37,7 +34,6 @@ export class EnterpriseErrorBoundary extends ComponentBase {
 
   constructor(props: EnterpriseErrorBoundaryProps) {
     super(props);
-    this.props = props;
   }
 
   public static getDerivedStateFromError(_: Error): Partial<EnterpriseErrorBoundaryState> {
@@ -142,7 +138,7 @@ export class EnterpriseErrorBoundary extends ComponentBase {
 
           <div className="pt-2 flex justify-center items-center gap-3">
             <Button
-              variant="default"
+              variant="primary"
               size="sm"
               onClick={this.handleReset}
               className="bg-[#059669] hover:bg-[#047857] text-white px-5 h-9 font-medium cursor-pointer shadow-xs"

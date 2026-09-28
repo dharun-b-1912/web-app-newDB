@@ -3,7 +3,7 @@
 // Joy PeopleHR — Employee Creation Success with Auth Provisioning & Resend Email
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   CheckCircle2,
   User,
@@ -14,12 +14,15 @@ import {
   Copy,
   Check,
   Smartphone,
+  MessageCircle,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Avatar } from '../../../components/ui/Avatar';
 import { Employee } from '../../../types';
 import { employeeAuthService } from '../../../services/auth/employeeAuthService';
 import { resendEmailService } from '../../../services/email/resendEmailService';
+import { otpProviderService } from '../../../services/auth/otpProviderService';
+import { whatsAppNotificationService } from '../../../services/whatsapp/whatsappNotificationService';
 import { useToast } from '../../../components/ui/Toast';
 
 interface Props {
@@ -40,7 +43,96 @@ export const WizardSuccessScreen: React.FC<Props> = ({
   const { showToast } = useToast();
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isSendingSms, setIsSendingSms] = useState(false);
+  const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
+  const [whatsAppSent, setWhatsAppSent] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const waSentRef = useRef(false);
+
+  // Auto-send WhatsApp welcome message when onboarding completes
+  useEffect(() => {
+    const emp = employee as any;
+    const employeePhone =
+      emp.phone ||
+      emp.primary_mobile ||
+      emp.profile?.phone ||
+      '';
+
+    if (!employeePhone || waSentRef.current) return;
+    waSentRef.current = true;
+
+    const sendWelcome = async () => {
+      setIsSendingWhatsApp(true);
+      try {
+        const res = await whatsAppNotificationService.sendEmployeeWelcomeOnboarding({
+          phone: employeePhone,
+          employeeName: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || 'Employee',
+          employeeCode: emp.employee_code || emp.id,
+          companyName: emp.company_name || 'Joy Corporate Solutions Pvt. Ltd.',
+          designation:
+            emp.designation_title ||
+            emp.designation ||
+            (emp.designation_id === 'fd2762cd-b1bb-402e-a7ee-81a80aa0eab7' ? 'Senior Software Engineer' : null) ||
+            'Senior Software Engineer',
+          organizationId: emp.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+          employeeId: emp.id,
+          portalUrl: 'https://app.joypeoplehr.com',
+          imageUrl: 'https://app.joypeoplehr.com/joy-people-hr-logo.png',
+        });
+        if (res.success) {
+          setWhatsAppSent(true);
+          showToast(`WhatsApp welcome sent to ${employeePhone} ✅`, 'success');
+        } else {
+          console.warn('[WizardSuccess] WhatsApp welcome send failed:', res.error);
+        }
+      } catch (err: any) {
+        console.warn('[WizardSuccess] WhatsApp welcome error:', err.message);
+      } finally {
+        setIsSendingWhatsApp(false);
+      }
+    };
+
+    sendWelcome();
+  }, [employee.id]);
+
+  const handleResendWhatsApp = async () => {
+    const emp = employee as any;
+    const employeePhone =
+      emp.phone ||
+      emp.primary_mobile ||
+      emp.profile?.phone ||
+      '';
+    if (!employeePhone) {
+      showToast('No phone number registered for this employee.', 'error');
+      return;
+    }
+    setIsSendingWhatsApp(true);
+    try {
+      const res = await whatsAppNotificationService.sendEmployeeWelcomeOnboarding({
+        phone: employeePhone,
+        employeeName: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || 'Employee',
+        employeeCode: emp.employee_code || emp.id,
+        companyName: emp.company_name || 'Joy Corporate Solutions Pvt. Ltd.',
+        designation:
+          emp.designation_title ||
+          emp.designation ||
+          (emp.designation_id === 'fd2762cd-b1bb-402e-a7ee-81a80aa0eab7' ? 'Senior Software Engineer' : null) ||
+          'Senior Software Engineer',
+        organizationId: emp.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+        employeeId: emp.id,
+        portalUrl: 'https://app.joypeoplehr.com',
+      });
+      if (res.success) {
+        setWhatsAppSent(true);
+        showToast(`WhatsApp welcome re-sent to ${employeePhone} ✅`, 'success');
+      } else {
+        showToast(res.error || 'WhatsApp send failed.', 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'WhatsApp error.', 'error');
+    } finally {
+      setIsSendingWhatsApp(false);
+    }
+  };
 
   const handleViewProfile = () => {
     if (onOpenProfile) {
@@ -81,7 +173,7 @@ export const WizardSuccessScreen: React.FC<Props> = ({
   const email = employee.work_email || (employee.profile as any)?.personal_email || '';
   const loginId = employee.employee_code || employee.id;
   const activationToken = `${loginId.toLowerCase()}-act-${Math.floor(100000 + Math.random() * 900000)}`;
-  const activationLink = `${window.location.origin}/activate?token=${activationToken}&emp=${employee.id}`;
+  const activationLink = `${window.location.origin}/activate?token=${activationToken}&emp=${employee.id}&email=${encodeURIComponent(email)}`;
 
   const handleSendEmailActivation = async () => {
     if (!email) {
@@ -91,6 +183,18 @@ export const WizardSuccessScreen: React.FC<Props> = ({
 
     setIsSendingEmail(true);
     try {
+      // 1. Generate & dispatch activation OTP & email via otpProviderService
+      const otpRes = await otpProviderService.sendEmailOtp({
+        email,
+        purpose: 'ACCOUNT_ACTIVATION',
+        recipientName: `${employee.first_name} ${employee.last_name}`.trim(),
+        employeeId: employee.employee_code || employee.id,
+        loginIdentifier: loginId,
+        organizationName: employee.company_name || 'Joy Corporate Solutions',
+        activationUrl: activationLink,
+      });
+
+      // 2. Also send primary employee activation token link
       const res = await resendEmailService.sendEmployeeActivationEmail({
         to: email,
         employeeName: `${employee.first_name} ${employee.last_name}`.trim(),
@@ -103,10 +207,10 @@ export const WizardSuccessScreen: React.FC<Props> = ({
         requiresPasswordChange: true,
       });
 
-      if (res.success) {
-        showToast(`Activation invitation dispatched via Resend to ${email}`, 'success');
+      if (otpRes.success || res.success) {
+        showToast(`Activation invitation & 6-digit OTP dispatched to ${email}`, 'success');
       } else {
-        showToast(res.error || 'Failed to dispatch activation email.', 'error');
+        showToast(otpRes.error || res.error || 'Failed to dispatch activation email.', 'error');
       }
     } catch (err: any) {
       showToast(err.message || 'Error sending email.', 'error');
@@ -128,7 +232,15 @@ export const WizardSuccessScreen: React.FC<Props> = ({
         role: employee.designation_title || 'Employee',
         sendSms: true,
       });
-      showToast(`Activation SMS instructions dispatched to ${phone}`, 'success');
+
+      if (phone) {
+        await otpProviderService.sendSmsOtp({
+          phone: phone,
+          purpose: 'ACCOUNT_ACTIVATION',
+        });
+      }
+
+      showToast(`Activation SMS & OTP instructions dispatched to ${phone}`, 'success');
     } catch (err: any) {
       showToast(err.message || 'Failed to dispatch SMS instructions.', 'error');
     } finally {
@@ -165,8 +277,8 @@ export const WizardSuccessScreen: React.FC<Props> = ({
       {/* Employee Confirmation Card */}
       <div className="w-full p-4 rounded-2xl bg-gray-50 border border-gray-200 text-left flex items-center gap-4">
         <Avatar
-          name={`${employee.first_name} ${employee.last_name}`}
-          src={employee.avatar_url}
+          name={`${employee.first_name || ''} ${employee.last_name || ''}`}
+          src={(employee as any).avatar_url}
           size="lg"
           className="w-14 h-14 rounded-2xl ring-2 ring-emerald-600 shadow-sm flex-shrink-0"
         />
@@ -181,7 +293,7 @@ export const WizardSuccessScreen: React.FC<Props> = ({
             </span>
           </div>
           <p className="text-xs font-semibold text-[#07563D] truncate">
-            {employee.designation_title || 'Software Engineer'} · {employee.department_name || 'Engineering'}
+            {(employee as any).designation_title || (employee as any).designation || 'Software Engineer'} · {(employee as any).department_name || (employee as any).department || 'Engineering'}
           </p>
           <p className="text-[11px] text-gray-400 font-medium truncate">
             {email ? `Email: ${email}` : 'No Corporate Email (Mobile Only)'}
@@ -217,7 +329,7 @@ export const WizardSuccessScreen: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Action Buttons to Send Activation */}
+        {/* WhatsApp Welcome Status */}
         <div className="flex flex-wrap items-center gap-2 pt-1">
           {email && (
             <button
@@ -250,6 +362,37 @@ export const WizardSuccessScreen: React.FC<Props> = ({
             {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
             {copiedLink ? 'Copied' : 'Copy Link'}
           </button>
+        </div>
+
+        {/* WhatsApp Welcome Block */}
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 text-[#25D366]" />
+              <span className="text-xs font-extrabold text-gray-900">WhatsApp Welcome</span>
+              {whatsAppSent && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-800 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Sent
+                </span>
+              )}
+              {isSendingWhatsApp && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-yellow-50 text-yellow-700 animate-pulse">
+                  Sending...
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              disabled={isSendingWhatsApp}
+              onClick={handleResendWhatsApp}
+              className="text-xs font-bold text-[#25D366] hover:text-green-700 disabled:opacity-50"
+            >
+              {whatsAppSent ? 'Resend' : 'Send Now'}
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1">
+            Auto-dispatched on onboarding complete · includes portal link &amp; self-service menu
+          </p>
         </div>
       </div>
 

@@ -8,6 +8,7 @@
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { realtimeChannelManager } from '../realtime/realtimeChannelManager';
 import {
   WebhookEnvironment,
   WebhookEndpoint,
@@ -681,27 +682,20 @@ export const platformWebhooksMeshService = {
 
     if (onStatusChange) onStatusChange('Realtime Connected');
 
-    const channel = supabase
-      .channel('platform_event_mesh_realtime_stream')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'webhook_endpoints' }, () => {
-        this.syncFromSupabase().then(() => onUpdate());
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'webhook_deliveries' }, () => {
-        this.syncFromSupabase().then(() => onUpdate());
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_routes' }, () => {
-        this.syncFromSupabase().then(() => onUpdate());
-      })
-      .subscribe((status) => {
-        if (onStatusChange) {
-          if (status === 'SUBSCRIBED') onStatusChange('Realtime Connected');
-          else if (status === 'TIMED_OUT' || status === 'CLOSED') onStatusChange('Realtime Reconnecting');
-          else if (status === 'CHANNEL_ERROR') onStatusChange('Backend Degraded');
-        }
-      });
+    const u1 = realtimeChannelManager.subscribeToTable('webhook_endpoints', () => {
+      this.syncFromSupabase().then(() => onUpdate());
+    });
+    const u2 = realtimeChannelManager.subscribeToTable('webhook_deliveries', () => {
+      this.syncFromSupabase().then(() => onUpdate());
+    });
+    const u3 = realtimeChannelManager.subscribeToTable('event_routes', () => {
+      this.syncFromSupabase().then(() => onUpdate());
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      u1();
+      u2();
+      u3();
     };
   },
 

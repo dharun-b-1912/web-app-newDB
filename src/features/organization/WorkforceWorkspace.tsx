@@ -44,15 +44,30 @@ export const WorkforceWorkspace: React.FC<WorkforceWorkspaceProps> = ({
   onNavigate,
 }) => {
   const [activeTab, setActiveTab] = useState<WorkforceTab>(initialTab);
-  const [peopleSubTab, setPeopleSubTab] = useState<'directory' | 'onboarding' | 'offboarding'>('directory');
-  const [orgSubTab, setOrgSubTab] = useState<'entities' | 'departments' | 'designations'>('entities');
-  const [resourceSubTab, setResourceSubTab] = useState<'assets' | 'documents'>('assets');
+  const [peopleSubTab, setPeopleSubTab] = useState<'directory' | 'onboarding' | 'offboarding'>(
+    initialSubTab === 'onboarding' || initialSubTab === 'offboarding' ? initialSubTab : 'directory'
+  );
+  const [orgSubTab, setOrgSubTab] = useState<'entities' | 'departments' | 'designations'>(
+    initialSubTab === 'departments' || initialSubTab === 'designations' ? initialSubTab : 'entities'
+  );
+  const [resourceSubTab, setResourceSubTab] = useState<'assets' | 'documents'>(
+    initialSubTab === 'documents' ? 'documents' : 'assets'
+  );
 
   useEffect(() => {
     if (initialTab) {
       setActiveTab(initialTab);
     }
-  }, [initialTab]);
+    if (initialSubTab === 'documents' || initialSubTab === 'assets') {
+      setResourceSubTab(initialSubTab);
+    }
+    if (initialSubTab === 'onboarding' || initialSubTab === 'offboarding' || initialSubTab === 'directory') {
+      setPeopleSubTab(initialSubTab);
+    }
+    if (initialSubTab === 'departments' || initialSubTab === 'designations' || initialSubTab === 'entities') {
+      setOrgSubTab(initialSubTab);
+    }
+  }, [initialTab, initialSubTab]);
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto p-4 sm:p-6 pb-24">

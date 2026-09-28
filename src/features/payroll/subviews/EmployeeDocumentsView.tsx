@@ -33,8 +33,12 @@ export const EmployeeDocumentsView: React.FC<EmployeeDocumentsViewProps> = ({
 
   useEffect(() => {
     loadData();
-    const unsub = hrEventBus.subscribe('*', () => loadData());
-    return () => unsub();
+    const unsub1 = hrEventBus.subscribe('payroll.*', () => loadData());
+    const unsub2 = hrEventBus.subscribe('document.*', () => loadData());
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, []);
 
   const subTabs = [
@@ -285,7 +289,7 @@ export const EmployeeDocumentsView: React.FC<EmployeeDocumentsViewProps> = ({
                           <Button
                             size="xs"
                             variant="secondary"
-                            onClick={() => onOpenPayslip && onOpenPayslip(sal.employee_id)}
+                            onClick={() => onOpenPayslip && onOpenPayslip(sal.employee_code || sal.employee_id)}
                             className="text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 font-bold shadow-2xs cursor-pointer"
                           >
                             <Eye className="w-3.5 h-3.5 mr-1 text-[#07563D]" /> View Payslip

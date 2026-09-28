@@ -59,7 +59,7 @@ export const DeductionsView: React.FC<DeductionsViewProps> = ({ initialSubTab })
 
   useEffect(() => {
     loadData();
-    const unsub = hrEventBus.subscribe('*', () => loadData());
+    const unsub = hrEventBus.subscribe('payroll.*', () => loadData());
     return () => unsub();
   }, []);
 

@@ -3,7 +3,7 @@
 // Joy PeopleHR — Gate B15: Short-Lived Single-Use Relay Command Signer
 // ============================================================================
 
-import { computeSha256 } from '../../operations/vendorGovernancePolicyEngine';
+import { computeSha256 } from '../../../lib/crypto';
 import { AccessDecisionResult } from './accessDecisionEngine';
 
 export interface SignedRelayCommandPayload {

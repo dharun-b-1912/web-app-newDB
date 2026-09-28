@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Joy PeopleHR — Complete AWS Cloud Pricing & Cost Strategy</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+    @page {
+      size: A4;
+      margin: 12mm 14mm 12mm 14mm;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #0f172a;
+      background: #ffffff;
+      font-size: 10px;
+      line-height: 1.45;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .page {
+      page-break-after: always;
+      position: relative;
+      min-height: 268mm;
+      padding-bottom: 12mm;
+    }
+
+    .page:last-child {
+      page-break-after: avoid;
+    }
+
+    /* Header Bar */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+    }
+
+    .brand-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.4px;
+    }
+
+    .brand-subtitle {
+      font-size: 10.5px;
+      color: #059669;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 2px;
+    }
+
+    .doc-meta {
+      text-align: right;
+      font-size: 9px;
+      color: #64748b;
+      line-height: 1.4;
+    }
+
+    .doc-meta strong {
+      color: #0f172a;
+    }
+
+    /* Section Headers */
+    h2 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-top: 12px;
+      margin-bottom: 7px;
+      padding-left: 8px;
+      border-left: 3px solid #059669;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    h3 {
+      font-size: 11px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-top: 9px;
+      margin-bottom: 5px;
+    }
+
+    p {
+      margin-bottom: 7px;
+      color: #334155;
+      font-size: 9.8px;
+    }
+
+    /* Cards & Grids */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .stat-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+
+    .stat-card.accent {
+      background: #ecfdf5;
+      border-color: #a7f3d0;
+    }
+
+    .stat-label {
+      font-size: 8.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #64748b;
+      letter-spacing: 0.3px;
+    }
+
+    .stat-card.accent .stat-label {
+      color: #047857;
+    }
+
+    .stat-val {
+      font-size: 15px;
+      font-weight: 800;
+      color: #0f172a;
+      margin-top: 2px;
+    }
+
+    .stat-card.accent .stat-val {
+      color: #065f46;
+    }
+
+    .stat-sub {
+      font-size: 8.5px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+      font-size: 9.5px;
+    }
+
+    th {
+      background: #f1f5f9;
+      color: #0f172a;
+      font-weight: 700;
+      text-align: left;
+      padding: 5px 7px;
+      border: 1px solid #cbd5e1;
+      font-size: 9px;
+    }
+
+    td {
+      padding: 4.5px 7px;
+      border: 1px solid #e2e8f0;
+      color: #334155;
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+
+    tr.highlight-row td {
+      background: #ecfdf5;
+      font-weight: 700;
+      color: #065f46;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-size: 8px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .badge-green { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
+    .badge-blue { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+    .badge-amber { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+
+    /* Alert / Callout Box */
+    .alert-box {
+      background: #eff6ff;
+      border-left: 3px solid #2563eb;
+      padding: 7px 10px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      font-size: 9.5px;
+      color: #1e40af;
+      line-height: 1.4;
+    }
+
+    .alert-box.success {
+      background: #ecfdf5;
+      border-left-color: #059669;
+      color: #065f46;
+    }
+
+    .alert-box.warning {
+      background: #fffbeb;
+      border-left-color: #d97706;
+      color: #92400e;
+    }
+
+    /* Comparison Box */
+    .compare-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .compare-box {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px;
+      background: #ffffff;
+    }
+
+    .compare-box.active {
+      border-color: #059669;
+      box-shadow: 0 1px 4px rgba(5, 150, 105, 0.08);
+      background: #fafdfb;
+    }
+
+    .compare-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .compare-box ul {
+      list-style-type: none;
+      padding-left: 0;
+      margin-top: 5px;
+    }
+
+    .compare-box li {
+      position: relative;
+      padding-left: 12px;
+      font-size: 9.2px;
+      color: #475569;
+      margin-bottom: 4px;
+      line-height: 1.35;
+    }
+
+    .compare-box li::before {
+      content: "•";
+      position: absolute;
+      left: 1px;
+      color: #059669;
+      font-weight: bold;
+    }
+
+    /* Footer */
+    .footer {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 5px;
+      font-size: 8px;
+      color: #94a3b8;
+    }
+
+    .code-block {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 8.5px;
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ================================================================================== -->
+  <!-- PAGE 1: EXECUTIVE BRIEF, WORKLOAD PROFILE & STEP-BY-STEP GUIDE (PART 1)             -->
+  <!-- ================================================================================== -->
+  <div class="page">
+    <div class="header-bar">
+      <div>
+        <div class="brand-title">JOY PeopleHR — AWS Cloud Hosting & Pricing Strategy</div>
+        <div class="brand-subtitle">Executive Decision Paper: Pay-As-You-Go vs Flat-Rate / Savings Plan (100,000 User Scale)</div>
+      </div>
+      <div class="doc-meta">
+        <div><strong>Date:</strong> September 2026</div>
+        <div><strong>Target Scale:</strong> 100,000 Active Employees</div>
+        <div><strong>Region:</strong> Asia Pacific (Mumbai) <code>ap-south-1</code></div>
+        <div><strong>Platform:</strong> Web App + Flutter Mobile App</div>
+      </div>
+    </div>
+
+    <div class="alert-box success">
+      <strong>Executive Summary for Management:</strong> For a full enterprise SaaS deployment of Joy PeopleHR serving <strong>100,000 active employees</strong> on both the Web App and Flutter Mobile App, total AWS hosting costs benchmark at <strong>~$878.00 / month (~₹75,508 / mo)</strong> on pure Pay-As-You-Go. When committing to a 1-Year Savings Plan, costs drop to <strong>~$590.00 – $656.00 / month (~₹50,740 – ₹56,416 / mo)</strong>. This delivers an infrastructure cost of just <strong>₹0.65 to ₹0.75 per employee per month</strong>, securing a <strong>98%+ Gross Margin</strong> against standard SaaS plan revenues.
+    </div>
+
+    <div class="grid-4">
+      <div class="stat-card accent">
+        <div class="stat-label">100k Monthly (Pay-Go)</div>
+        <div class="stat-val">$878 <span style="font-size: 10px; font-weight: 500;">/mo</span></div>
+        <div class="stat-sub">~₹75,508 / mo (@ ₹86/$)</div>
+      </div>
+      <div class="stat-card accent">
+        <div class="stat-label">100k Monthly (1-Yr Plan)</div>
+        <div class="stat-val">$656 <span style="font-size: 10px; font-weight: 500;">/mo</span></div>
+        <div class="stat-sub">~₹56,416 / mo (Save 30%+)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Hosting Cost / Employee</div>
+        <div class="stat-val">₹0.75 <span style="font-size: 9px; font-weight: 500;">/user/mo</span></div>
+        <div class="stat-sub">Less than 2% of SaaS Revenue</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Projected Gross Margin</div>
+        <div class="stat-val">98.5%</div>
+        <div class="stat-sub">Based on ₹50/user avg plan</div>
+      </div>
+    </div>
+
+    <h2>1. Workload Profile for 100,000 Active Employees</h2>
+    <p>This workload model represents the real technical demands of 100,000 employees actively using Joy PeopleHR across multi-tenant corporate clients and contractor workforces:</p>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 25%;">Workload Dimension</th>
+          <th style="width: 30%;">Operational Volume</th>
+          <th style="width: 45%;">System Impact & Architecture Design</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Daily Attendance Volume</strong></td>
+          <td><strong>100,000 check-ins + 100,000 check-outs</strong><br>= 200,000 daily punches (~6,000,000/mo)</td>
+          <td>Biometric devices (ZKTeco) + Mobile GPS geofenced clock-ins. Redis cache buffers concurrent writes and prevents duplicate punch spikes.</td>
+        </tr>
+        <tr>
+          <td><strong>Peak Concurrency Window</strong></td>
+          <td><strong>~8,000 to 12,000 concurrent users</strong><br>during shift start (8:30 AM – 9:30 AM IST)</td>
+          <td>AWS ECS on Fargate auto-scales from 4 base tasks up to 8 tasks; Application Load Balancer distributes incoming HTTPS and WebSocket traffic.</td>
+        </tr>
+        <tr>
+          <td><strong>Document & KYC Storage</strong></td>
+          <td><strong>100,000 employee files</strong> (KYC, photos, PDF payslips) ≈ <strong>1.5 TB to 2 TB storage</strong></td>
+          <td>Amazon S3 Standard private bucket with presigned URLs + S3 Glacier lifecycle transitions for 7-year statutory labor audit compliance.</td>
+        </tr>
+        <tr>
+          <td><strong>Monthly Outbound Comms</strong></td>
+          <td><strong>~250,000 to 300,000 emails</strong><br>+ <strong>~6,000,000 mobile push notifications</strong></td>
+          <td>Amazon SES dispatches salary slips, leave notifications, and password invites; Amazon SNS dispatches real-time push alerts to Flutter iOS & Android.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>2. Step-by-Step Calculator Configuration Guide (Services 1 – 3)</h2>
+    <p>Configure each service in the official <a href="https://calculator.aws/">AWS Pricing Calculator</a> (<code>calculator.aws</code>) using these exact field parameters:</p>
+
+    <h3>1. Amazon CloudFront (Web CDN & Static Assets)</h3>
+    <p><em>In calculator, search for: <strong>CloudFront</strong></em></p>
+    <ul style="padding-left: 15px; margin-bottom: 8px; font-size: 9.3px; color: #334155;">
+      <li><strong>Option A: Using Flat-Rate Plans (as seen in calculator):</strong> In <strong>Pro Plan</strong>, enter <strong><code>1</code></strong> (leave Free, Business, Premium blank). <em>Why?</em> 100k users generate 3–5 TB of static bundle traffic. Pro Plan bundles higher bandwidth and edge protections at a flat rate. <strong>Estimated Cost: ~$15.00 – $25.00 / month</strong>.</li>
+      <li><strong>Option B: Using Standard Usage Tier:</strong> Data Transfer Out: <strong><code>4 TB</code></strong> per month | Requests: <strong><code>15,000,000</code></strong> HTTPS requests. <strong>Estimated Cost: ~$35.00 / month</strong>.</li>
+    </ul>
+
+    <h3>2. Amazon RDS for PostgreSQL (Primary HR Database)</h3>
+    <p><em>In calculator, search for: <strong>Amazon RDS for PostgreSQL</strong></em></p>
+    <ul style="padding-left: 15px; margin-bottom: 8px; font-size: 9.3px; color: #334155;">
+      <li><strong>Region:</strong> <code>Asia Pacific (Mumbai) ap-south-1</code> (lowest latency for Indian workforce).</li>
+      <li><strong>Deployment Option:</strong> <strong>Multi-AZ</strong> (Mandatory for enterprise HRMS: automatic failover so attendance & payroll never go down).</li>
+      <li><strong>Instance Type:</strong> Family: Memory Optimized (<code>db.r6g.xlarge</code> or <code>db.m6g.xlarge</code>) | Specs: <strong>4 vCPUs, 32 GiB RAM</strong> (Comfortably handles 100k records, complex payroll queries, and attendance locks).</li>
+      <li><strong>Pricing Model:</strong> <strong>1-Year Savings / On-Demand</strong>.</li>
+      <li><strong>Storage:</strong> Storage Type: <strong>General Purpose SSD (gp3)</strong> | Amount: <strong><code>1,000 GB (1 TB)</code></strong> | IOPS: <strong><code>4,000 IOPS</code></strong> | Throughput: <strong><code>250 MB/s</code></strong>.</li>
+      <li><strong>Backup Storage:</strong> <strong><code>1,000 GB</code></strong> (7-day automated backup retention).</li>
+      <li><strong>Estimated Cost: ~$380.00 – $440.00 / month</strong> (Drops to ~$250/mo on 1-year reserved).</li>
+    </ul>
+
+    <h3>3. AWS ECS on Fargate (Backend API & Node.js Server)</h3>
+    <p><em>In calculator, search for: <strong>Elastic Container Service</strong> → Choose <strong>Fargate</strong></em></p>
+    <ul style="padding-left: 15px; margin-bottom: 8px; font-size: 9.3px; color: #334155;">
+      <li><strong>Operating System:</strong> Linux | <strong>Architecture:</strong> ARM64 (AWS Graviton — 20% cheaper and faster).</li>
+      <li><strong>Workload Configuration:</strong> Number of Tasks: <strong>4 base tasks</strong>, autoscaling to <strong>8</strong> during morning punch peak. Average running continuously: <strong>5 tasks</strong> | vCPU per task: <strong>2 vCPU</strong> | Memory per task: <strong>4 GB RAM</strong>.</li>
+      <li><strong>Hours per day:</strong> <code>24</code> | <strong>Days per month:</strong> <code>30.5</code> (~730 hours/month).</li>
+      <li><strong>Application Load Balancer (ALB):</strong> Included: Number of ALBs: <strong>1</strong> | Processed bytes / LCUs: <strong>15 LCUs</strong>.</li>
+      <li><strong>Estimated Cost: ~$165.00 – $210.00 / month</strong>.</li>
+    </ul>
+
+    <div class="footer">
+      <span>Joy PeopleHR Enterprise HRMS — Technical Architecture & Pricing Decision Paper</span>
+      <span>Page 1 of 4</span>
+    </div>
+  </div>
+
+  <!-- ================================================================================== -->
+  <!-- PAGE 2: STEP-BY-STEP GUIDE (PART 2) & GRAND TOTAL 100K SUMMARY TABLE              -->
+  <!-- ================================================================================== -->
+  <div class="page">
+    <div class="header-bar">
+      <div>
+        <div class="brand-title">JOY PeopleHR — AWS Service Configuration (Cont.)</div>
+        <div class="brand-subtitle">Step-by-Step Calculator Guide (Services 4 – 8) & Itemized Cost Schedule</div>
+      </div>
+      <div class="doc-meta">
+        <div><strong>Scale:</strong> 100,000 MAUs</div>
+        <div><strong>Target Currency:</strong> USD & INR (₹ @ 86)</div>
+      </div>
+    </div>
+
+    <h2>2. Step-by-Step Calculator Configuration Guide (Services 4 – 8)</h2>
+
+    <h3>4. Amazon S3 (Employee Documents, Photos, & Payslips)</h3>
+    <p><em>In calculator, search for: <strong>Simple Storage Service (S3)</strong></em></p>
+    <ul style="padding-left: 15px; margin-bottom: 8px; font-size: 9.3px; color: #334155;">
+      <li><strong>S3 Standard Storage:</strong> Total Storage: <strong><code>2,000 GB (2 TB)</code></strong>.</li>
+      <li><strong>PUT/POST requests:</strong> <strong><code>500,000</code></strong> (new document uploads, payslip generation).</li>
+      <li><strong>GET requests:</strong> <strong><code>3,000,000</code></strong> (viewing payslips, ID cards, profile pictures).</li>
+      <li><strong>Data Transfer Out:</strong> Handled via CloudFront (transfer between S3 and CloudFront is <strong>$0.00 free</strong>).</li>
+      <li><strong>Estimated Cost: ~$48.00 – $55.00 / month</strong>.</li>
+    </ul>
+
+    <h3>5. Amazon ElastiCache for Redis (Attendance Cache & Rate Limiting)</h3>
+    <p><em>In calculator, search for: <strong>ElastiCache for Redis</strong></em></p>
+    <ul style="padding-left: 15px; margin-bottom: 8px; font-size: 9.3px; color: #334155;">
+      <li><strong>Node Type:</strong> <code>cache.t4g.medium</code> or <code>cache.m6g.large</code> | <strong>Nodes:</strong> <strong>2</strong> (1 Primary + 1 Read Replica in Multi-AZ).</li>
+      <li><strong>Purpose:</strong> Instant sub-millisecond verification for duplicate biometric punches, active mobile session tokens, and attendance timers.</li>
+      <li><strong>Estimated Cost: ~$45.00 – $68.00 / month</strong>.</li>
+    </ul>
+
+    <h3>6. Identity & Authentication (For 100,000 MAUs)</h3>
+    <ul style="padding-left: 15px; margin-bottom: 8px; font-size: 9.3px; color: #334155;">
+      <li><strong>If using Amazon Cognito:</strong> Monthly Active Users (MAUs): <strong>100,000</strong> | First 50,000 MAUs: <strong>Free ($0.00)</strong> | Remaining 50,000 MAUs: <code>50,000 × $0.0055</code> = <strong>$275.00 / month</strong>.</li>
+      <li><strong>Cost-Saving Alternative (Recommended):</strong> If you use the <strong>Self-Hosted Supabase GoTrue Auth</strong> container on ECS Fargate, your authentication cost is <strong>$0.00 additional</strong> (included in the ECS Fargate compute above).</li>
+    </ul>
+
+    <h3>7. Notifications & Communications (SES + SNS)</h3>
+    <p><em>In calculator, search for: <strong>Simple Email Service (SES)</strong> & <strong>Simple Notification Service (SNS)</strong></em></p>
+    <ul style="padding-left: 15px; margin-bottom: 8px; font-size: 9.3px; color: #334155;">
+      <li><strong>Amazon SES:</strong> Number of Outbound Emails: <strong><code>300,000 emails</code></strong> (salary slips, leave notices, invites) | Cost: <code>300 × $0.10</code> = <strong>$30.00 / month</strong>.</li>
+      <li><strong>Amazon SNS (Mobile Push to Flutter App):</strong> Push Notifications: <strong><code>6,000,000 pushes</code></strong> (First 1M free, next 5M × $0.50) = <strong>$2.50 / month</strong>.</li>
+      <li><strong>Total Messaging Cost: ~$32.50 / month</strong>.</li>
+    </ul>
+
+    <h3>8. Networking, Security & Monitoring</h3>
+    <ul style="padding-left: 15px; margin-bottom: 8px; font-size: 9.3px; color: #334155;">
+      <li><strong>Amazon VPC NAT Gateway:</strong> 2 NAT Gateways (Multi-AZ for secure private database communication): <strong>~$65.00 / month</strong>.</li>
+      <li><strong>AWS WAF (Web Application Firewall):</strong> 1 Web ACL + 5 Core Rules + 20M requests inspected = <strong>~$25.00 / month</strong>.</li>
+      <li><strong>Amazon CloudWatch & Secrets Manager:</strong> 50 GB log ingestion + 10 encrypted secrets = <strong>~$30.00 / month</strong>.</li>
+      <li><strong>Total Security & Networking: ~$120.00 / month</strong>.</li>
+    </ul>
+
+    <h2>3. Grand Total Monthly Cost Summary for 100,000 Users</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Infrastructure Component</th>
+          <th>Monthly Cost (USD)</th>
+          <th>Monthly Cost (INR @ ₹86/$)</th>
+          <th>Share of Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>CloudFront CDN (Pro/Standard)</strong></td>
+          <td>$25.00</td>
+          <td>₹2,150</td>
+          <td>2.8%</td>
+        </tr>
+        <tr>
+          <td><strong>Amazon RDS PostgreSQL (4 vCPU, 32GB RAM, 1TB SSD, Multi-AZ)</strong></td>
+          <td>$410.00</td>
+          <td>₹35,260</td>
+          <td>46.7%</td>
+        </tr>
+        <tr>
+          <td><strong>AWS ECS Fargate + Load Balancer (5-8 Tasks)</strong></td>
+          <td>$185.00</td>
+          <td>₹15,910</td>
+          <td>21.1%</td>
+        </tr>
+        <tr>
+          <td><strong>Amazon S3 Document Vault (2 TB + IOPS)</strong></td>
+          <td>$50.00</td>
+          <td>₹4,300</td>
+          <td>5.7%</td>
+        </tr>
+        <tr>
+          <td><strong>ElastiCache Redis Cluster (Multi-AZ)</strong></td>
+          <td>$55.00</td>
+          <td>₹4,730</td>
+          <td>6.3%</td>
+        </tr>
+        <tr>
+          <td><strong>Amazon SES & SNS (Emails + Push Notifications)</strong></td>
+          <td>$33.00</td>
+          <td>₹2,838</td>
+          <td>3.8%</td>
+        </tr>
+        <tr>
+          <td><strong>AWS WAF, NAT Gateways & CloudWatch Monitoring</strong></td>
+          <td>$120.00</td>
+          <td>₹10,320</td>
+          <td>13.6%</td>
+        </tr>
+        <tr>
+          <td><strong>Authentication Layer (Self-hosted on ECS)</strong></td>
+          <td>$0.00 *(included in ECS)*</td>
+          <td>₹0</td>
+          <td>0.0%</td>
+        </tr>
+        <tr class="highlight-row">
+          <td><strong>TOTAL ESTIMATED MONTHLY AWS BILL</strong></td>
+          <td><strong>~$878.00 / month</strong></td>
+          <td><strong>~₹75,508 / month</strong></td>
+          <td><strong>100.0%</strong></td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="font-size: 8.8px; color: #64748b; margin-top: -6px;">
+      <em>*Note: If using AWS Cognito instead of self-hosted auth, add $275.00/mo → <strong>~$1,153.00 / month (~₹99,150 / mo)</strong>.</em>
+    </p>
+
+    <div class="stat-card accent" style="margin-top: 8px;">
+      <div class="stat-label">Cost Per Active Employee Analysis</div>
+      <div class="stat-val" style="font-size: 13px;">$878 ÷ 100,000 = $0.0088 per employee/month (~₹0.75 per employee/month)</div>
+      <div class="stat-sub" style="font-size: 9px; color: #065f46; font-weight: 600;">
+        If you charge even ₹30 to ₹60 per employee/month on your SaaS plans, your AWS infrastructure cost is less than 2% of revenue, providing an outstanding 98%+ gross margin.
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>Joy PeopleHR Enterprise HRMS — Technical Architecture & Pricing Decision Paper</span>
+      <span>Page 2 of 4</span>
+    </div>
+  </div>
+
+  <!-- ================================================================================== -->
+  <!-- PAGE 3: HOW PAY-AS-YOU-GO WORKS & SERVICE-BY-SERVICE BREAKDOWN                    -->
+  <!-- ================================================================================== -->
+  <div class="page">
+    <div class="header-bar">
+      <div>
+        <div class="brand-title">JOY PeopleHR — How "Pay-As-You-Go" Works on AWS</div>
+        <div class="brand-subtitle">Automatic Scaling, Zero Upfront Risk & Detailed Billing Mechanics</div>
+      </div>
+      <div class="doc-meta">
+        <div><strong>Model:</strong> AWS On-Demand</div>
+        <div><strong>Commitment:</strong> None (Second/GB granularity)</div>
+      </div>
+    </div>
+
+    <p style="font-size: 10px; margin-bottom: 10px;">
+      <strong>Pay-As-You-Go</strong> is AWS's default billing model. There are <strong>no contracts, no upfront payments, and no minimum monthly commitments</strong>. You are billed down to the exact second, gigabyte, or API request your SaaS actually uses. If your web and mobile app use 10 GB of storage this month, you pay for 10 GB ($0.23). If traffic surges during morning attendance and then drops in the evening, your servers automatically scale down and <strong>you stop paying for unused compute</strong>.
+    </p>
+
+    <h2>4. How Pay-As-You-Go Automatically Scales With Your SaaS</h2>
+    <p>With Pay-As-You-Go, you do not pay $878/month on Day 1. Your bill starts tiny and grows only as your paying customer base grows:</p>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 20%;">Stage</th>
+          <th style="width: 25%;">Active Employees</th>
+          <th style="width: 25%;">What You Actually Pay (Pay-Go)</th>
+          <th style="width: 30%;">Why It’s Cheaper</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Phase 1: Launch & Beta</strong></td>
+          <td>100 – 1,000 users</td>
+          <td><strong>~$35 – $65 / month</strong><br>(~₹3,000 – ₹5,600 / mo)</td>
+          <td>Covered mostly by AWS Free Tier (S3 free storage, CloudFront 1TB free, SES free tier).</td>
+        </tr>
+        <tr>
+          <td><strong>Phase 2: Growth Stage</strong></td>
+          <td>5,000 – 20,000 users</td>
+          <td><strong>~$150 – $280 / month</strong><br>(~₹12,900 – ₹24,000 / mo)</td>
+          <td>Single-AZ RDS database (<code>db.t4g.large</code>), 2 ECS tasks, ~200 GB document storage.</td>
+        </tr>
+        <tr>
+          <td><strong>Phase 3: Scale Stage</strong></td>
+          <td>50,000 – 100,000 users</td>
+          <td><strong>~$870 – $1,050 / month</strong><br>(~₹74,800 – ₹90,300 / mo)</td>
+          <td>Multi-AZ RDS cluster, autoscaling 4–8 ECS tasks, multi-TB document vault.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>5. How Each Service is Billed in Pay-As-You-Go</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 22%;">Component</th>
+          <th style="width: 38%;">How You Are Charged in Pay-As-You-Go</th>
+          <th style="width: 40%;">Example at Low Scale vs 100k Scale</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>CloudFront (CDN)</strong></td>
+          <td><strong>Per GB transferred</strong><br>(First 1 TB is <strong>FREE</strong> every month forever)</td>
+          <td>• At 1,000 users: <strong>$0.00</strong> (inside free tier)<br>• At 100,000 users (~4 TB): <strong>~$35 / month</strong></td>
+        </tr>
+        <tr>
+          <td><strong>ECS Fargate (Backend)</strong></td>
+          <td><strong>Per vCPU-second and RAM-second</strong></td>
+          <td>At night (zero punches), you scale down to 2 tasks. During morning rush (8:30 AM), it autoscales to 8 tasks. You only pay for the surge hours.</td>
+        </tr>
+        <tr>
+          <td><strong>Amazon S3 (Documents)</strong></td>
+          <td><strong>$0.023 per GB/month</strong></td>
+          <td>• If you have 50 GB of KYC files: <strong>$1.15 / month</strong><br>• If you have 2,000 GB (2 TB): <strong>$46.00 / month</strong></td>
+        </tr>
+        <tr>
+          <td><strong>Amazon RDS (PostgreSQL)</strong></td>
+          <td><strong>Per hour the database runs</strong></td>
+          <td>You can start with a small <code>db.t4g.small</code> ($25/mo). When you hit 50,000+ users, you upgrade to <code>db.r6g.xlarge</code> with one click without rebuilding.</td>
+        </tr>
+        <tr>
+          <td><strong>Amazon SES (Emails)</strong></td>
+          <td><strong>$0.10 per 1,000 emails sent</strong></td>
+          <td>• Send 5,000 payslip emails: <strong>$0.50</strong><br>• Send 250,000 emails: <strong>$25.00</strong></td>
+        </tr>
+        <tr>
+          <td><strong>Amazon SNS (Mobile Push)</strong></td>
+          <td><strong>$0.50 per 1,000,000 push alerts</strong></td>
+          <td>First <strong>1,000,000 pushes/month are FREE</strong>. 6M pushes = <strong>$2.50</strong>.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="alert-box">
+      <strong>Key Insight on Compute Bursting:</strong> Unlike traditional fixed servers where you pay for peak capacity 24 hours a day, AWS Fargate allows Joy PeopleHR to run 2 minimal background tasks from 10:00 PM to 6:00 AM, burst to 8 tasks during the 8:30 AM punch surge, and settle to 4 tasks during daytime operations. Pay-As-You-Go ensures you are never charged for idle compute.
+    </div>
+
+    <div class="footer">
+      <span>Joy PeopleHR Enterprise HRMS — Technical Architecture & Pricing Decision Paper</span>
+      <span>Page 3 of 4</span>
+    </div>
+  </div>
+
+  <!-- ================================================================================== -->
+  <!-- PAGE 4: SIDE-BY-SIDE COMPARISON, CALCULATOR GUIDE & RECOMMENDATION                -->
+  <!-- ================================================================================== -->
+  <div class="page">
+    <div class="header-bar">
+      <div>
+        <div class="brand-title">JOY PeopleHR — Strategic Comparison & Action Plan</div>
+        <div class="brand-subtitle">Pay-As-You-Go vs Savings Plans & Recommendation for Launch</div>
+      </div>
+      <div class="doc-meta">
+        <div><strong>Decision:</strong> Executive Sign-off</div>
+        <div><strong>Roadmap:</strong> Phase 1 Launch to Phase 4 Scale</div>
+      </div>
+    </div>
+
+    <h2>6. Direct Comparison: Pay-As-You-Go vs Flat-Rate / Reserved Plans</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 25%;">Feature / Attribute</th>
+          <th style="width: 37%;">Pay-As-You-Go (On-Demand)</th>
+          <th style="width: 38%;">Flat-Rate / Reserved / Savings Plans</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Commitment Required</strong></td>
+          <td><strong>0 commitment</strong> (Cancel, stop, or delete anytime)</td>
+          <td><strong>1-Year or 3-Year commitment</strong></td>
+        </tr>
+        <tr>
+          <td><strong>Upfront Cost</strong></td>
+          <td><strong>$0.00</strong></td>
+          <td><strong>$0.00</strong> (No upfront option) or partial/full upfront</td>
+        </tr>
+        <tr>
+          <td><strong>Infrastructure Flexibility</strong></td>
+          <td><strong>100% flexible</strong> — change server sizes anytime without penalty</td>
+          <td>Locked into specific instance family or minimum hourly spend</td>
+        </tr>
+        <tr>
+          <td><strong>Pricing Discount</strong></td>
+          <td>Standard list pricing</td>
+          <td><strong>30% to 45% discount</strong> off standard pricing</td>
+        </tr>
+        <tr>
+          <td><strong>Best For Stage</strong></td>
+          <td><strong>Launching, testing, and scaling up to 10k–30k users</strong></td>
+          <td><strong>Stable enterprise production with predictable 100k+ load</strong></td>
+        </tr>
+        <tr>
+          <td><strong>Monthly Cost at 100k Scale</strong></td>
+          <td><strong>~$878.00 / month (~₹75,508 / mo)</strong></td>
+          <td><strong>~$590.00 – $656.00 / month (~₹50,740 – ₹56,416 / mo)</strong></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>7. How to Select "Pay-As-You-Go" in the AWS Pricing Calculator</h2>
+    <p>When configuring services on <a href="https://calculator.aws/">calculator.aws</a>:</p>
+    <div class="stat-card" style="margin-bottom: 10px;">
+      <ul style="padding-left: 14px; font-size: 9.3px; line-height: 1.5; color: #334155;">
+        <li><strong>For CloudFront:</strong> Instead of picking a paid Flat-Rate plan, select the <strong>Free Plan</strong> (or scroll down to the data transfer fields and enter your expected GB).</li>
+        <li><strong>For RDS PostgreSQL & EC2/ECS Compute:</strong> Under <em>Payment Options / Pricing Strategy</em>, select:
+          <div class="code-block" style="margin-top: 4px; margin-bottom: 4px;">"On-Demand" (No Upfront, Pay as you go)</div>
+          Do <strong>NOT</strong> check "1-year Reserved" or "3-year Reserved" yet.
+        </li>
+        <li>This displays your true <strong>zero-commitment, pay-only-for-what-you-use monthly expense</strong>.</li>
+      </ul>
+    </div>
+
+    <h2>8. Executive Recommendation for Joy PeopleHR Leadership</h2>
+    <div class="compare-container" style="margin-bottom: 10px;">
+      <div class="compare-box active">
+        <div class="compare-title">
+          <span>Step 1: Start with Pay-As-You-Go on Day 1</span>
+          <span class="badge badge-green">Immediate Action</span>
+        </div>
+        <ul>
+          <li>Launch the web app and Flutter mobile app with <strong>zero long-term financial commitments</strong>.</li>
+          <li>Your early cloud hosting bill will be under <strong>$50 to $100 / month (~₹4,300 – ₹8,600 / mo)</strong>.</li>
+          <li>Benefit from AWS Free Tier discounts across CloudFront, SES, SNS, and S3 during onboarding.</li>
+          <li>Configure an automated CloudWatch billing alert at <strong>$150</strong> to prevent unexpected spend.</li>
+        </ul>
+      </div>
+
+      <div class="compare-box">
+        <div class="compare-title">
+          <span>Step 2: Transition to 1-Year Savings Plan Later</span>
+          <span class="badge badge-blue">Growth Milestone</span>
+        </div>
+        <ul>
+          <li>Once Joy PeopleHR signs multi-tenant enterprise contracts and reaches a steady base of <strong>25,000 to 50,000+ employees</strong>.</li>
+          <li>Lock in a <strong>1-Year Savings Plan</strong> on your RDS database and ECS containers.</li>
+          <li>This immediately cuts your monthly hosting bill by <strong>~35% to 40%</strong> without altering a single line of application code.</li>
+          <li>Locks in predictable operational margins for your finance and investor reporting.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="alert-box success">
+      <strong>Final Verdict:</strong> The proposed AWS architecture provides bank-grade security, enterprise high-availability across multiple data centers, and seamless support for both Web and Flutter Mobile clients. At <strong>~₹0.75 per employee per month</strong>, hosting cost is negligible compared to SaaS plan pricing, ensuring the business operates at a stellar <strong>98%+ Gross Margin</strong> from Day 1 through 100,000 employees.
+    </div>
+
+    <div class="footer">
+      <span>Joy PeopleHR Enterprise HRMS — Technical Architecture & Pricing Decision Paper</span>
+      <span>Page 4 of 4</span>
+    </div>
+  </div>
+
+</body>
+</html>

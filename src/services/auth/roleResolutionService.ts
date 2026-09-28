@@ -243,6 +243,28 @@ export const roleResolutionService = {
             }
           } catch (_) {}
         }
+
+        // 5. Query vendor_users if user is a vendor partner
+        if (rawRoles.length === 0 && (authUserId || emailLower)) {
+          try {
+            const filterClause = authUserId
+              ? `auth_user_id.eq.${authUserId},email.eq.${emailLower}`
+              : `email.eq.${emailLower}`;
+            const { data: vUser } = await supabase
+              .from('vendor_users')
+              .select('*, vendors(*)')
+              .or(filterClause)
+              .maybeSingle();
+
+            if (vUser) {
+              vendorId = vUser.vendor_id;
+              rawRoles.push('Vendor Admin');
+              if (vUser.full_name) fullName = vUser.full_name;
+              if (vUser.phone) phone = vUser.phone;
+              accountStatus = vUser.status || 'ACTIVE';
+            }
+          } catch (_) {}
+        }
       } catch (dbErr) {
         console.warn('[RoleResolution] Database profile resolution notice:', dbErr);
       }

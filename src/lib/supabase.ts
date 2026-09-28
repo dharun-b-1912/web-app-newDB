@@ -47,7 +47,18 @@ export const isSupabaseEnabled: boolean = true;
 export const isSupabaseConfigured = () => isSupabaseEnabled;
 
 /** Supabase JS client — always created, only used when isSupabaseEnabled */
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 20,
+    },
+  },
+});
 
 /**
  * Table accessor shortcut.

@@ -5,6 +5,7 @@
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { realtimeChannelManager } from '../realtime/realtimeChannelManager';
 import { platformAuditService } from './platformAuditService';
 import { api } from '../api';
 import {
@@ -65,17 +66,9 @@ export const platformSessionService = {
   // -------------------------------------------------------------
   subscribeToRealtime(onChangeCallback: () => void): () => void {
     if (!isSupabaseEnabled) return () => {};
-
-    const channel = supabase
-      .channel('platform_sessions_realtime_stream')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'active_sessions' }, () => {
-        onChangeCallback();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return realtimeChannelManager.subscribeToTable('active_sessions', () => {
+      onChangeCallback();
+    });
   },
 
   // -------------------------------------------------------------

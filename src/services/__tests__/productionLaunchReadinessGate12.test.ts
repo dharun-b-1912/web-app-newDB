@@ -10,8 +10,6 @@ import { ProductionLaunchSeedDataService } from '../seed/productionLaunchSeedDat
 import { hrEventBus } from '../hrEventBus';
 import { unifiedApprovalEngine } from '../approvals/unifiedApprovalEngine';
 import { separationFnFEngine } from '../offboarding/separationFnFEngine';
-import { vendorService } from '../vendorService';
-import { vendorPortalService } from '../vendorPortalService';
 
 // Polyfill localStorage in Node test environment if not present
 if (typeof globalThis.localStorage === 'undefined') {
@@ -323,95 +321,6 @@ export async function runProductionLaunchReadinessGate12(): Promise<{ passed: nu
       inactiveProfile?.status === 'INACTIVE' &&
       fnfCalculation.breakdown.netPayable > 0,
     `Story 2 verified: Full 8-department clearance completed, FnF settled (₹${fnfCalculation.breakdown.netPayable}), employee transitioned to EXITED, auth immediately revoked.`
-  );
-
-  // ------------------------------------------------------------------------
-  // Story 3: Vendor Workforce Lifecycle & 3-Way Commercial Settlement
-  // ------------------------------------------------------------------------
-
-  // 1. Onboard & Configure Vendor
-  const newVendor = await vendorService.createVendor({
-    organization_id: ProductionLaunchSeedDataService.ORG_ID,
-    legal_entity_id: ProductionLaunchSeedDataService.CHENNAI_COMPANY_ID,
-    legal_name: 'ABC Security Services Pvt Ltd',
-    vendor_type: 'MANPOWER_PROVIDER',
-    status: 'PENDING_VERIFICATION',
-    primary_contact_name: 'Vikram Singh',
-    primary_contact_email: 'admin@abcsecurity.in',
-    primary_contact_phone: '+91 98400 12345',
-    tax_id: '33AABCS7777K1Z8',
-    pan: 'AABCS7777K',
-    gstin: '33AABCS7777K1Z8',
-  }, { allowDuplicate: true });
-
-  const contract = await vendorService.createVendorContract(newVendor.id, {
-    contract_number: 'MSA-2026-ABC-01',
-    contract_type: 'Master Service Agreement (MSA)',
-    start_date: '2026-09-01',
-    end_date: '2027-08-31',
-    service_charge_percentage: 8.5,
-    rate_card_type: 'Per Head Per Month',
-    status: 'ACTIVE',
-  });
-
-  await vendorService.updateVendorStatus(newVendor.id, 'ACTIVE');
-
-  // 2. Issue Form V Certificate
-  const formV = vendorPortalService.issuePrincipalEmployerFormV({
-    vendor_id: newVendor.id,
-    nature_of_work: 'Facility Security & Access Control',
-    max_workers: 15,
-    duration_from: '2026-09-01',
-    duration_to: '2027-08-31',
-    site_location: 'Chennai Plant 1',
-    issued_by_name: 'Meera Vasudevan',
-    issued_by_designation: 'Head of Human Resources & Labour Compliance',
-  });
-
-  // 3. Deploy Worker
-  const deployment = vendorPortalService.assignWorkerDeployment({
-    worker_id: 'wrk-abc-001',
-    vendor_id: newVendor.id,
-    company_id: ProductionLaunchSeedDataService.CHENNAI_COMPANY_ID,
-    company_name: 'JOY Chennai Pvt Ltd',
-    site_name: 'Chennai Plant 1',
-    department_name: 'Security & Facilities',
-    designation: 'Access Control Officer',
-    daily_wage_rate: 850,
-    start_date: '2026-09-01',
-  });
-
-  // 4. Submit & Reconcile Vendor Invoice
-  const invoiceSubmission = vendorPortalService.submitInvoice({
-    vendor_id: newVendor.id,
-    invoice_number: 'INV-ABC-2026-09-001',
-    total_amount: 359677.5, // 15 workers × 26 days × ₹850 + 8.5% margin
-    file_name: 'ABC_Security_Invoice_Sept_2026.pdf',
-    period: '2026-09',
-    po_number: 'PO-SEC-2026-001',
-  });
-
-  vendorPortalService.verifyInvoice(invoiceSubmission.invoice.id, {
-    verified_by: 'Finance Controller',
-    verified_amount: 359677.5,
-  });
-
-  vendorPortalService.approveInvoice(invoiceSubmission.invoice.id, {
-    approved_by: 'Meera Vasudevan (HR Head)',
-  });
-
-  const invoices = vendorPortalService.getInvoices(newVendor.id);
-  const approvedInvoice = invoices.find((i) => i.id === invoiceSubmission.invoice.id);
-
-  record(
-    9,
-    'Gate 12C.3: Story 3 — Vendor Lifecycle & 3-Way Match Settlement',
-    'BUSINESS_STORY_3',
-    formV.certificate_number.includes('FORM-V') &&
-      deployment.status === 'ACTIVE' &&
-      approvedInvoice?.status === 'APPROVED' &&
-      contract.service_charge_percentage === 8.5,
-    `Story 3 verified: Vendor onboarded with Form V (${formV.certificate_number}), contract configured (8.5%), worker deployed, invoice INV-ABC-2026-09-001 approved.`
   );
 
   // ========================================================================

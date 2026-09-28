@@ -18,6 +18,7 @@ const STORAGE_KEYS = {
   NOTIFICATIONS: 'workforceos_notifications_v2',
   DELIVERIES: 'workforceos_notification_deliveries_v2',
   OUTBOX: 'workforceos_notification_outbox_v2',
+  VENDOR_NOTICES: 'workforceos_vendor_notifications_v1',
 };
 
 function getLocalData<T>(key: string, fallback: T): T {
@@ -67,31 +68,49 @@ export const notificationService = {
 
         const { data, error } = await query;
         if (data && !error && data.length > 0) {
-          hydratedItems = data.map((ev: any) => ({
-            id: ev.id,
-            deliveryId: ev.id,
-            eventType: 'notification',
-            category: 'SYSTEM',
-            severity: 'INFO',
-            title: ev.title,
-            body: ev.message || ev.title,
-            actorName: 'System',
-            actorAvatar: '',
-            resourceType: 'Notification',
-            resourceId: ev.id,
-            actionUrl: ev.action_url || '',
-            isRead: ev.is_read || false,
-            status: ev.is_read ? 'READ' : 'DELIVERED',
-            createdAt: ev.created_at,
-            metadata: {},
-          }));
+          hydratedItems = data.map((ev: any) => {
+            const isVendor = (ev.action_url && ev.action_url.includes('vendor')) ||
+              (ev.title && (
+                ev.title.toLowerCase().includes('compliance') ||
+                ev.title.toLowerCase().includes('statutory') ||
+                ev.title.toLowerCase().includes('document') ||
+                ev.title.toLowerCase().includes('vendor')
+              ));
+
+            return {
+              id: ev.id,
+              deliveryId: ev.id,
+              eventType: ev.event_type || (isVendor ? 'VENDOR_COMPLIANCE_NOTICE' : 'system.generic'),
+              category: ev.category || (isVendor ? 'COMPLIANCE' : 'SYSTEM'),
+              severity: ev.severity || (isVendor ? 'WARNING' : 'INFO'),
+              title: ev.title,
+              body: ev.message || ev.body || ev.title,
+              actorName: ev.actor_name || (isVendor ? 'Company HR Compliance Team' : 'System'),
+              actorAvatar: ev.actor_avatar || '',
+              resourceType: ev.resource_type || (isVendor ? 'VendorDocument' : 'Notification'),
+              resourceId: ev.resource_id || ev.id,
+              actionUrl: ev.action_url || (isVendor ? '/vendor-storage' : ''),
+              isRead: ev.is_read || false,
+              status: ev.is_read ? 'READ' : 'DELIVERED',
+              createdAt: ev.created_at,
+              metadata: ev.metadata || (isVendor ? { targetRole: 'VENDOR' } : {}),
+            };
+          });
         }
       } catch (err) {
         console.warn('[NotificationService] Supabase fetch notice:', err);
       }
     }
 
-    // Fallback to local storage if DB returns empty
+    // Merge vendor notices store
+    const localVendorNotifs = getLocalData<HydratedNotificationItem[]>(STORAGE_KEYS.VENDOR_NOTICES, []);
+    localVendorNotifs.forEach((vn) => {
+      if (!hydratedItems.some((i) => i.id === vn.id)) {
+        hydratedItems.unshift(vn);
+      }
+    });
+
+    // Fallback to local storage if items still empty
     if (hydratedItems.length === 0) {
       const localEvents = getLocalData<any[]>(STORAGE_KEYS.NOTIFICATIONS, []);
       const localDeliveries = getLocalData<any[]>(STORAGE_KEYS.DELIVERIES, []);
@@ -107,23 +126,32 @@ export const notificationService = {
           created_at: del.created_at,
           metadata: {},
         };
+        const isVendor = (ev.action_url && ev.action_url.includes('vendor')) ||
+          (ev.title && (
+            ev.title.toLowerCase().includes('compliance') ||
+            ev.title.toLowerCase().includes('statutory') ||
+            ev.title.toLowerCase().includes('document') ||
+            ev.title.toLowerCase().includes('vendor')
+          )) ||
+          ev.metadata?.targetRole === 'VENDOR';
+
         return {
           id: ev.id,
           deliveryId: del.id,
-          eventType: ev.event_type,
-          category: ev.category,
-          severity: ev.severity,
+          eventType: ev.event_type || (isVendor ? 'VENDOR_COMPLIANCE_NOTICE' : 'system.generic'),
+          category: ev.category || (isVendor ? 'COMPLIANCE' : 'SYSTEM'),
+          severity: ev.severity || (isVendor ? 'WARNING' : 'INFO'),
           title: ev.title,
-          body: ev.body,
-          actorName: ev.actor_name,
-          actorAvatar: ev.actor_avatar,
-          resourceType: ev.resource_type,
-          resourceId: ev.resource_id,
-          actionUrl: ev.action_url,
+          body: ev.body || ev.message || ev.title,
+          actorName: ev.actor_name || (isVendor ? 'Company HR Compliance Team' : 'System'),
+          actorAvatar: ev.actor_avatar || '',
+          resourceType: ev.resource_type || (isVendor ? 'VendorDocument' : 'Notification'),
+          resourceId: ev.resource_id || ev.id,
+          actionUrl: ev.action_url || (isVendor ? '/vendor-storage' : ''),
           isRead: del.status === 'READ',
           status: del.status,
           createdAt: ev.created_at,
-          metadata: ev.metadata || {},
+          metadata: ev.metadata || (isVendor ? { targetRole: 'VENDOR' } : {}),
         };
       });
     }
@@ -346,14 +374,17 @@ export const notificationService = {
       resolvedRecipientId = await this.resolveRecipientUserProfileId(event.recipientId, orgId);
     }
 
-    const notifRecord = {
+    const actionUrl = event.actionUrl || (event.metadata?.targetRole === 'VENDOR' ? '/vendor-storage' : null);
+
+    // Exact PostgreSQL notification_events columns: id, organization_id, recipient_user_id, channel, title, message, action_url, is_read, is_sent, sent_at, created_at
+    const dbRecord: any = {
       id: notifId,
-      organization_id: orgId,
-      recipient_user_id: resolvedRecipientId,
+      organization_id: (orgId && orgId.length === 36 && orgId !== '00000000-0000-0000-0000-000000000000') ? orgId : null,
+      recipient_user_id: resolvedRecipientId || null,
       channel: 'IN_APP',
       title: event.title,
-      message: event.body,
-      action_url: event.actionUrl || null,
+      message: event.body || event.title,
+      action_url: actionUrl,
       is_read: false,
       is_sent: true,
       sent_at: timestamp,
@@ -362,8 +393,10 @@ export const notificationService = {
 
     if (isSupabaseEnabled) {
       try {
-        // 1. Insert into notification_events
-        await supabase.from('notification_events').insert([notifRecord]);
+        const { error } = await supabase.from('notification_events').insert([dbRecord]);
+        if (error) {
+          console.warn('[NotificationService] Supabase insert warning:', error.message);
+        }
       } catch (err) {
         console.warn('[NotificationService] Supabase publish notice:', err);
       }
@@ -373,7 +406,19 @@ export const notificationService = {
     const localEvents = getLocalData<any[]>(STORAGE_KEYS.NOTIFICATIONS, []);
     const localDeliveries = getLocalData<any[]>(STORAGE_KEYS.DELIVERIES, []);
 
-    localEvents.unshift(notifRecord);
+    localEvents.unshift({
+      id: notifId,
+      event_type: event.eventType,
+      category: event.category,
+      severity: event.severity,
+      title: event.title,
+      body: event.body,
+      actor_name: event.actorName,
+      action_url: actionUrl,
+      metadata: event.metadata || {},
+      created_at: timestamp,
+    });
+
     localDeliveries.unshift({
       id: notifId,
       notification_id: notifId,
@@ -386,6 +431,38 @@ export const notificationService = {
 
     setLocalData(STORAGE_KEYS.NOTIFICATIONS, localEvents.slice(0, 100));
     setLocalData(STORAGE_KEYS.DELIVERIES, localDeliveries.slice(0, 100));
+
+    // If targeted for VENDOR, persist to dedicated VENDOR_NOTICES store
+    const isVendorTarget = Boolean(
+      event.metadata?.targetRole === 'VENDOR' ||
+      event.eventType?.startsWith('VENDOR') ||
+      (actionUrl && actionUrl.includes('vendor')) ||
+      (event.title && event.title.toLowerCase().includes('compliance'))
+    );
+
+    if (isVendorTarget) {
+      const vendorNotifs = getLocalData<HydratedNotificationItem[]>(STORAGE_KEYS.VENDOR_NOTICES, []);
+      const newVendorItem: HydratedNotificationItem = {
+        id: notifId,
+        deliveryId: notifId,
+        eventType: event.eventType || 'VENDOR_COMPLIANCE_NOTICE',
+        category: event.category || 'SYSTEM',
+        severity: event.severity || 'WARNING',
+        title: event.title,
+        body: event.body,
+        actorName: event.actorName || 'Company HR Compliance Team',
+        actorAvatar: event.actorAvatar || '',
+        resourceType: event.resourceType || 'VendorDocument',
+        resourceId: event.resourceId || 'COMPLIANCE',
+        actionUrl: actionUrl || '/vendor-storage',
+        isRead: false,
+        status: 'DELIVERED',
+        createdAt: timestamp,
+        metadata: event.metadata || { targetRole: 'VENDOR' },
+      };
+      vendorNotifs.unshift(newVendorItem);
+      setLocalData(STORAGE_KEYS.VENDOR_NOTICES, vendorNotifs.slice(0, 50));
+    }
 
     // Emit live to browser listeners and cross-tab mesh
     notificationRealtimeEngine.handleIncomingEvent(event);

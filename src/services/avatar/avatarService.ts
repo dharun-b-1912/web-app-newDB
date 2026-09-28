@@ -23,8 +23,9 @@ export interface MultiVariantProcessedResult {
 
 export class AvatarService {
   private static instance: AvatarService;
-  private readonly STORAGE_BUCKET = 'employee-documents';
-  private readonly FALLBACK_BUCKET = 'employee-documents';
+  private readonly STORAGE_BUCKET = 'employee-profile-media';
+  private readonly FALLBACK_BUCKET = 'peoplehr-private-profile-media';
+  private readonly LEGACY_BUCKET = 'employee-documents';
 
   public static getInstance(): AvatarService {
     if (!AvatarService.instance) {
@@ -160,8 +161,8 @@ export class AvatarService {
 
     const variants = await this.processMultiVariants(imageInput);
     const fileUuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `avatar-${Date.now()}`;
-    // Canonical 4-segment path: <org_id>/<employee_id>/documents/avatar_<file_uuid>.jpg
-    const storagePath = `${orgId}/${employeeId}/documents/avatar_${fileUuid}.jpg`;
+    // Canonical profile media path: tenant/<org_id>/employees/<employee_id>/profile/avatar_<file_uuid>.jpg
+    const storagePath = `tenant/${orgId}/employees/${employeeId}/profile/avatar_${fileUuid}.jpg`;
 
     let finalBucket = this.STORAGE_BUCKET;
 
@@ -175,7 +176,7 @@ export class AvatarService {
         });
 
       if (uploadRes.error) {
-        // Fallback to employee-documents
+        // Try fallback bucket peoplehr-private-profile-media
         finalBucket = this.FALLBACK_BUCKET;
         const fallbackRes = await supabase.storage
           .from(finalBucket)
@@ -186,7 +187,19 @@ export class AvatarService {
           });
 
         if (fallbackRes.error) {
-          throw new Error(`Failed to upload avatar: ${fallbackRes.error.message}`);
+          // Last fallback to legacy bucket
+          finalBucket = this.LEGACY_BUCKET;
+          const legacyRes = await supabase.storage
+            .from(finalBucket)
+            .upload(storagePath, variants.large.blob, {
+              contentType: 'image/jpeg',
+              upsert: true,
+              cacheControl: '3600',
+            });
+
+          if (legacyRes.error) {
+            console.warn('[AvatarService] Supabase avatar upload fallback notice:', legacyRes.error.message);
+          }
         }
       }
     }

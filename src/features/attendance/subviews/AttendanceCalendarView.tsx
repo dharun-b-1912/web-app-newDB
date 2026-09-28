@@ -41,6 +41,10 @@ export interface AttendanceCalendarViewProps {
   onOpenEmployeeProfile?: (empId: string) => void;
 }
 
+const toLocalDateStr = (d: Date = new Date()): string => {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({
   onNavigateSubPath,
   onOpenEmployeeProfile,
@@ -59,7 +63,7 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({
 
   // Selected Date for Right-side Drawer
   const [selectedDateStr, setSelectedDateStr] = useState<string | null>(() => {
-    return new Date().toISOString().split('T')[0];
+    return toLocalDateStr(new Date());
   });
   const [drawerEmployees, setDrawerEmployees] = useState<DayEmployeeRecord[]>([]);
   const [drawerFilter, setDrawerFilter] = useState<'ALL' | 'PRESENT' | 'LATE' | 'EARLY' | 'ABSENT' | 'WFH' | 'LEAVE' | 'EXCEPTION'>('ALL');
@@ -136,7 +140,7 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({
       const prev = new Date(currentDate);
       prev.setDate(prev.getDate() - 1);
       setCurrentDate(prev);
-      setSelectedDateStr(prev.toISOString().split('T')[0]);
+      setSelectedDateStr(toLocalDateStr(prev));
     }
   };
 
@@ -151,14 +155,14 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({
       const next = new Date(currentDate);
       next.setDate(next.getDate() + 1);
       setCurrentDate(next);
-      setSelectedDateStr(next.toISOString().split('T')[0]);
+      setSelectedDateStr(toLocalDateStr(next));
     }
   };
 
   const handleToday = () => {
     const today = new Date();
     setCurrentDate(today);
-    setSelectedDateStr(today.toISOString().split('T')[0]);
+    setSelectedDateStr(toLocalDateStr(today));
   };
 
   const handleDayClick = (day: CalendarDaySummary) => {

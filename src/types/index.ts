@@ -171,14 +171,24 @@ export interface Company {
   tax_id?: string;
   country: string;
   city: string;
+  state?: string;
+  postal_code?: string;
+  latitude?: number;
+  longitude?: number;
+  name?: string;       // Display alias for legal_name
+  logo_url?: string;   // Company branding for payslips and portals
   currency?: string;
   timezone?: string;
   address?: string;
   status?: string;
   created_at: string;
+  // Legacy/alias fields used in reports
+  hq_city?: string;
+  registered_city?: string;
+  registered_state?: string;
 }
 
-export type BranchType = 'HQ' | 'OFFICE' | 'FACTORY' | 'WAREHOUSE' | 'PROJECT_SITE' | 'STORE' | 'HOSPITAL' | 'REMOTE_HUB' | 'OTHER';
+export type BranchType = 'HQ' | 'OFFICE' | 'FACTORY' | 'WAREHOUSE' | 'PROJECT_SITE' | 'STORE' | 'HOSPITAL' | 'REMOTE_HUB' | 'OTHER' | 'HEADQUARTERS' | 'REGIONAL_OFFICE';
 
 export interface Branch {
   id: string;
@@ -211,6 +221,8 @@ export interface Location {
   name: string;
   code?: string;
   location_type_code?: string; // 'BUILDING' | 'FLOOR' | 'ZONE' | 'RACK' | 'LINE' | 'ROOM'
+  type?: string;
+  city?: string;
   building?: string;
   floor?: string;
   area?: string;
@@ -218,6 +230,7 @@ export interface Location {
   latitude?: number | null;
   longitude?: number | null;
   geofence_radius_meters?: number;
+  is_geofencing_enabled?: boolean;
   is_active?: boolean;
   created_at?: string;
 }
@@ -237,6 +250,7 @@ export interface Department {
   employee_count?: number;
   team_count?: number;
   open_positions_count?: number;
+  created_at?: string;
 }
 
 export interface Team {
@@ -494,9 +508,13 @@ export interface EmploymentDetails {
   vendor_contract_id?: string;
   vendor_start_date?: string;
   vendor_end_date?: string;
+  client_company_id?: string;
+  site_id?: string;
   work_mode?: WorkMode;
   job_level?: string;
   grade?: string;
+  designation_title?: string;
+  department_name?: string;
   business_unit_id?: string;
   business_unit_name?: string;
   cost_center_code?: string;
@@ -586,6 +604,8 @@ export interface Employee {
   vendor_id?: string;
   vendor_name?: string;
   vendor_employee_code?: string;
+  client_company_id?: string;
+  site_id?: string;
   profile: EmployeeProfile;
   employment: EmploymentDetails;
   bank?: EmployeeBankAccount;
@@ -1087,6 +1107,7 @@ export interface DocumentRequirement {
   tenant_id: string;
   organization_id?: string;
   employee_id: string;
+  employee_name?: string;
   document_type: string;
   title: string;
   description?: string;
@@ -1332,6 +1353,7 @@ export interface DashboardMetrics {
 
 export type VendorType =
   | 'MANPOWER_PROVIDER'
+  | 'MANPOWER'
   | 'RECRUITMENT_AGENCY'
   | 'CONTRACTOR'
   | 'IT_SERVICE_PROVIDER'

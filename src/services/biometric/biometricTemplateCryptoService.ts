@@ -5,7 +5,7 @@
 // and Tenant-Bound AAD (organization_id | employee_id | device_id | template_version)
 // ============================================================================
 
-import { computeSha256 } from '../operations/vendorGovernancePolicyEngine';
+import { computeSha256 } from '../../lib/crypto';
 
 export interface EncryptedTemplateEnvelope {
   ciphertext: string;

@@ -5,6 +5,7 @@
 // Decimal Hours, Effective Dating, Immutability, Reconciliation & 21-Worker Muster
 // ============================================================================
 
+import { describe, it, expect } from 'vitest';
 import { OTPolicyEngine } from '../payroll/otPolicyEngine';
 import { PayrollReconciliationService } from '../payroll/payrollReconciliationService';
 import { AuthoritativePayrollEngine } from '../payroll/authoritativePayrollEngine';
@@ -544,6 +545,158 @@ export class DedicatedOTConfigurationGateSuite {
       });
     }
 
+    // ────────────────────────────────────────────────────────────────────────────
+    // TEST 10: Code on Wages 2019 Section 2(y) 50% Basic Wage & Deemed Wage Evaluation
+    // ────────────────────────────────────────────────────────────────────────────
+    try {
+      // Scenario 1: Compliant case (Basic ₹15,000 / Gross ₹25,000 = 60% Basic)
+      const compliantEval = OTPolicyEngine.evaluateCodeOnWagesCompliance({
+        totalGrossRemuneration: 25000,
+        basicSalary: 15000,
+        excludedAllowances: 10000,
+      });
+
+      const s1Pass =
+        compliantEval.is_compliant === true &&
+        compliantEval.basic_and_da_percentage === 60.0 &&
+        compliantEval.excess_excluded_allowances === 0 &&
+        compliantEval.deemed_wage_addition === 0 &&
+        compliantEval.adjusted_statutory_wage_base === 15000;
+
+      // Scenario 2: Non-compliant / Deemed wage case (Basic ₹8,000 / Gross ₹25,000 = 32% Basic)
+      // Excluded allowances = ₹17,000 (68%), Cap 50% = ₹12,500, Excess = ₹4,500
+      const excessEval = OTPolicyEngine.evaluateCodeOnWagesCompliance({
+        totalGrossRemuneration: 25000,
+        basicSalary: 8000,
+        excludedAllowances: 17000,
+      });
+
+      const s2Pass =
+        excessEval.is_compliant === false &&
+        excessEval.basic_and_da_percentage === 32.0 &&
+        excessEval.excess_excluded_allowances === 4500 &&
+        excessEval.deemed_wage_addition === 4500 &&
+        excessEval.adjusted_statutory_wage_base === 12500;
+
+      const passed = s1Pass && s2Pass;
+
+      results.push({
+        testNumber: 10,
+        testName: 'Code on Wages 2019 Sec. 2(y): 50% Basic Threshold & Deemed Wage Addition Engine',
+        category: 'CODE_ON_WAGES_2019',
+        passed,
+        details: passed
+          ? `✓ Evaluated: S1 (60% Basic) -> Compliant ✓; S2 (32% Basic) -> ₹4,500 Deemed Wages added to ₹8,000 base = ₹12,500 (Exact 50% floor).`
+          : `Discrepancy: s1Pass=${s1Pass}, s2Pass=${s2Pass}`,
+      });
+    } catch (err: any) {
+      results.push({
+        testNumber: 10,
+        testName: 'Code on Wages 2019 Sec. 2(y) Evaluation',
+        category: 'CODE_ON_WAGES_2019',
+        passed: false,
+        details: `Exception: ${err.message}`,
+      });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // TEST 11: Code on Wages 2019 Policy Preset & Dual-Context Value Reconciliation
+    // ────────────────────────────────────────────────────────────────────────────
+    try {
+      const cowResult = OTPolicyEngine.calculateDedicated({
+        actual_ot_hours: 24,
+        monthly_salary_basis: 20000,
+        basic_salary: 8000,
+        allowances_amount: 12000,
+        policy_override: {
+          calculation_method: 'DYNAMIC_MULTIPLIER',
+          working_days_divisor: 26,
+          working_hours_per_day: 8,
+          company_multiplier: 1.5,
+          government_multiplier: 2.0,
+          statutory_standard_preset: 'CODE_ON_WAGES_2019',
+          enforce_50_percent_wage_rule: true,
+          statutory_quarterly_ot_limit: 115,
+          statutory_spreadover_hours_limit: 12.0,
+        },
+      });
+
+      const actualHoursPreserved = cowResult.actual_ot_hours === 24;
+      const reconDiff = cowResult.reconciliation_difference;
+      const isReconciled = cowResult.is_reconciled && reconDiff === 0;
+      const deemedWagePresent = (cowResult.code_on_wages?.deemed_wage_addition || 0) === 2000;
+      const statutoryPresetMatches = cowResult.statutory_standard_preset === 'CODE_ON_WAGES_2019';
+
+      const passed = actualHoursPreserved && isReconciled && deemedWagePresent && statutoryPresetMatches;
+
+      results.push({
+        testNumber: 11,
+        testName: 'Code on Wages 2019 Policy Preset: Dual Context & Exact ₹0.00 Reconciliation Variance',
+        category: 'CODE_ON_WAGES_2019',
+        passed,
+        details: passed
+          ? `✓ Verified: Company OT ₹${cowResult.company_ot_amount}, Govt Reporting ₹${cowResult.government_reporting_amount}, Deemed Addition ₹${cowResult.code_on_wages?.deemed_wage_addition}, Recon Diff ₹${reconDiff} (Exact Match).`
+          : `Discrepancy: preserved=${actualHoursPreserved}, isReconciled=${isReconciled}, deemedWagePresent=${deemedWagePresent}`,
+      });
+    } catch (err: any) {
+      results.push({
+        testNumber: 11,
+        testName: 'Code on Wages 2019 Policy Preset Integration',
+        category: 'CODE_ON_WAGES_2019',
+        passed: false,
+        details: `Exception: ${err.message}`,
+      });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // TEST 12: Strict Government Statutory Norms Mode (Direct 2.0x Double Rate on Payslip)
+    // ────────────────────────────────────────────────────────────────────────────
+    try {
+      const strictResult = OTPolicyEngine.calculateDedicated({
+        actual_ot_hours: 30,
+        monthly_salary_basis: 17000,
+        basic_salary: 8500,
+        policy_override: {
+          calculation_method: 'STRICT_GOVERNMENT_NORM',
+          working_days_divisor: 26,
+          working_hours_per_day: 8,
+          government_multiplier: 2.0,
+          statutory_standard_preset: 'FACTORIES_ACT_1948',
+        },
+      });
+
+      // Base Hourly = 17,000 / 26 / 8 = ₹81.73077
+      // Direct 2.0x Statutory Rate = 81.73077 * 2.0 = ₹163.46154
+      // Direct Company OT Amount = 30 * 163.46154 = ₹4,903.85
+      // Direct Govt OT Hours = 30.00 hrs (1:1 direct statutory pass-through)
+      const hourlyMatches = Math.abs(strictResult.base_hourly_rate - 81.7308) < 0.01;
+      const compRateMatches = Math.abs(strictResult.company_ot_rate - 163.4615) < 0.01;
+      const compAmtMatches = Math.abs(strictResult.company_ot_amount - 4903.85) < 0.05;
+      const equivHoursDirect = strictResult.government_equivalent_ot_hours === 30;
+      const govtAmtMatches = Math.abs(strictResult.government_reporting_amount - 4903.85) < 0.05;
+      const reconExact = strictResult.reconciliation_difference === 0;
+
+      const passed = hourlyMatches && compRateMatches && compAmtMatches && equivHoursDirect && govtAmtMatches && reconExact;
+
+      results.push({
+        testNumber: 12,
+        testName: 'Strict Government Norms Mode: Direct 2.0x Double Ordinary Rate on Payslips & Registers',
+        category: 'STRICT_GOVERNMENT_NORM',
+        passed,
+        details: passed
+          ? `✓ Verified: Direct 2.0x Rate ₹${strictResult.company_ot_rate}/hr, Direct OT Payout ₹${strictResult.company_ot_amount}, Direct Statutory Hours ${strictResult.government_equivalent_ot_hours}h (100% 1:1 Pass-Through).`
+          : `Discrepancy: compRate=${compRateMatches}, compAmt=${compAmtMatches}, equivDirect=${equivHoursDirect}`,
+      });
+    } catch (err: any) {
+      results.push({
+        testNumber: 12,
+        testName: 'Strict Government Norms Mode',
+        category: 'STRICT_GOVERNMENT_NORM',
+        passed: false,
+        details: `Exception: ${err.message}`,
+      });
+    }
+
     const passCount = results.filter((r) => r.passed).length;
     const totalCount = results.length;
     const passed = passCount === totalCount;
@@ -556,3 +709,15 @@ export class DedicatedOTConfigurationGateSuite {
     };
   }
 }
+
+describe('Dedicated OT Configuration Gate Suite', () => {
+  it('passes all 12 dedicated OT configuration tests including dynamic multipliers, fixed rates, and reconciliation', async () => {
+    const outcome = await DedicatedOTConfigurationGateSuite.runAllTests();
+    const failures = outcome.results.filter((r) => !r.passed);
+    if (failures.length > 0) {
+      console.error('Failed Gate Tests:', failures);
+    }
+    expect(outcome.passed).toBe(true);
+    expect(outcome.passCount).toBe(outcome.totalCount);
+  });
+});

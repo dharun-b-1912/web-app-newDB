@@ -7,8 +7,9 @@ import { Employee } from '../../types';
 export interface AppShellProps {
   activeNav?: string;
   activeRoute?: string;
+  currentRoute?: string;
   onSelectNav?: (id: string) => void;
-  onNavigate?: (id: string) => void;
+  onNavigate?: (id: string, params?: Record<string, string>, replace?: boolean) => void;
   onSelectEmployee?: (emp: Employee) => void;
   onOpenAiAssistant?: () => void;
   onOpenCopilot?: () => void;
@@ -18,6 +19,7 @@ export interface AppShellProps {
 export const AppShell: React.FC<AppShellProps> = ({
   activeNav,
   activeRoute,
+  currentRoute,
   onSelectNav,
   onNavigate,
   onSelectEmployee,
@@ -27,7 +29,7 @@ export const AppShell: React.FC<AppShellProps> = ({
 }) => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
-  const currentNav = activeNav || activeRoute || 'dashboard';
+  const currentNav = activeNav || activeRoute || currentRoute || 'dashboard';
   const handleSelectNav = (id: string) => {
     if (onSelectNav) onSelectNav(id);
     else if (onNavigate) onNavigate(id);
@@ -45,6 +47,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         <Topbar
           onOpenSearch={() => setIsSearchOpen(true)}
           onOpenAiAssistant={handleOpenAi}
+          currentNav={currentNav}
         />
 
         {/* Dynamic Main Workspace Canvas */}

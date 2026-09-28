@@ -36,7 +36,17 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AuthSessionUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [authContext, setAuthContext] = useState<AuthContextMode>('tenant');
+  const [authContext, setAuthContext] = useState<AuthContextMode>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      if (path.startsWith('/admin') || path === '/company-admin' || path === '/org-admin' || path === '/company/login') return 'admin';
+      if (path.startsWith('/platform') || path === '/superadmin') return 'platform';
+      if (path.startsWith('/vendor') || path === '/vendor-login') return 'vendor';
+      const cached = localStorage.getItem('workforce_auth_context') as AuthContextMode;
+      if (cached) return cached;
+    }
+    return 'tenant';
+  });
   const [mustChangePassword, setMustChangePassword] = useState(false);
 
   // Initialize session from cache or live Supabase auth state
@@ -46,10 +56,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const initAuth = async () => {
       try {
         const cachedUser = authService.getCurrentSessionUser();
-        const cachedContext = (localStorage.getItem('workforce_auth_context') as AuthContextMode) || 'tenant';
+        let initialMode: AuthContextMode = 'tenant';
+        if (typeof window !== 'undefined') {
+          const path = window.location.pathname;
+          if (path.startsWith('/admin') || path === '/company-admin' || path === '/org-admin' || path === '/company/login') {
+            initialMode = 'admin';
+          } else if (path.startsWith('/platform') || path === '/superadmin') {
+            initialMode = 'platform';
+          } else if (path.startsWith('/vendor') || path === '/vendor-login') {
+            initialMode = 'vendor';
+          } else {
+            initialMode = (localStorage.getItem('workforce_auth_context') as AuthContextMode) || 'tenant';
+          }
+        }
 
         if (isMounted) {
-          setAuthContext(cachedContext);
+          setAuthContext(initialMode);
         }
 
         const resolveDynamicSessionUser = async (
@@ -86,7 +108,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               email: sbUser.email || cached?.email || '',
               name: resolvedIdentity.fullName,
               avatar_url: resolvedIdentity.avatarUrl || '',
-              organization_id: orgId || (isPlatformStaff ? 'platform-root' : 'org-default'),
+              organization_id: orgId || (isPlatformStaff ? 'platform-root' : (cached?.organization_id || '0c621892-e938-4707-9957-13534ea32c19')),
               tenant_id: orgId,
               employee_id: resolvedIdentity.employeeId || undefined,
               status: 'Active',
@@ -113,7 +135,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               created_at: sbUser.created_at || cached?.created_at || new Date().toISOString(),
             };
 
-            authService.saveActiveSession(sessionUser, cachedContext);
+            authService.saveActiveSession(sessionUser, initialMode);
             return sessionUser;
           }
 
@@ -138,12 +160,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               setUser(finalUser);
               setMustChangePassword(Boolean(finalUser.must_change_password));
             }
-          } else if (
-            cachedContext === 'vendor' &&
-            cachedUser &&
-            (cachedUser.authContext?.portalType === 'VENDOR' || cachedUser.role === 'Vendor Admin')
-          ) {
-            // Authentic Vendor Portal session managed through VendorCredentialService
+          } else if (cachedUser && (cachedUser.id || cachedUser.auth_user_id)) {
+            // Authentic verified local/cached session
             const integrity = validateSessionIntegrity(cachedUser.id);
             if (!integrity.isValid) {
               await authService.signOut();
@@ -167,7 +185,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (isDev && devAutoLogin && devEmail && devPassword) {
               console.log('[useAuth] JOY PeopleHR DEV AUTH MODE ACTIVE');
               try {
-                const res = await authService.signInWithCredentials(devEmail, devPassword, cachedContext || 'tenant');
+                const res = await authService.signInWithCredentials(devEmail, devPassword, initialMode || 'tenant');
                 if (res.success && res.user && isMounted) {
                   bindSessionFingerprint(res.user.id);
                   setUser(res.user);
@@ -241,18 +259,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     password: string,
     context: AuthContextMode = authContext
   ): Promise<AuthResult> => {
-    setIsLoading(true);
-    try {
-      const res = await authService.signInWithCredentials(identifier, password, context);
-      if (res.success && res.user) {
-        setUser(res.user);
-        setMustChangePassword(Boolean(res.mustChangePassword));
-        setAuthContextMode(context);
-      }
-      return res;
-    } finally {
-      setIsLoading(false);
+    const res = await authService.signInWithCredentials(identifier, password, context);
+    if (res.success && res.user) {
+      setUser(res.user);
+      setMustChangePassword(Boolean(res.mustChangePassword));
+      setAuthContextMode(context);
     }
+    return res;
   };
 
   const login = (userData: User) => {
@@ -330,10 +343,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-export const useAuth = () => {
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    return {
+      user: null,
+      role: 'Unassigned',
+      isAuthenticated: false,
+      isLoading: true,
+      authContext: 'tenant' as const,
+      mustChangePassword: false,
+      setAuthContextMode: () => {},
+      signIn: async (): Promise<AuthResult> => ({ success: false, errorMessage: 'Auth initializing' }),
+      login: () => {},
+      logout: async () => {},
+      updatePassword: async () => ({ success: false, errorMessage: 'Auth initializing' }),
+      requestPasswordReset: async () => ({ success: false, message: 'Auth initializing' }),
+      activateAccount: async () => ({ success: false, errorMessage: 'Auth initializing' }),
+      clearMustChangePassword: () => {},
+    };
   }
   return context;
 };

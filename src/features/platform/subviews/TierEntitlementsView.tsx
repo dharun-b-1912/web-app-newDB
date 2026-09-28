@@ -1008,13 +1008,12 @@ export const TierEntitlementsView: React.FC<TierEntitlementsViewProps> = ({ onNa
                         )}
                         <Switch
                           checked={managedPlan.allow_overage}
-                          onChange={() => {
+                          onCheckedChange={() => {
                             const next = !managedPlan.allow_overage;
                             setManagedPlan({ ...managedPlan, allow_overage: next });
                             platformTierPlansService.updatePlan(managedPlan.id, { allow_overage: next });
                             refreshData();
                           }}
-                          label=""
                         />
                       </div>
                     </div>
@@ -1794,7 +1793,7 @@ const CreatePlanWizardModal: React.FC<CreatePlanWizardModalProps> = ({
   // STEP 2: PRICING & CAPACITY
   // -------------------------------------------------------------
   const [billingModel, setBillingModel] = useState('Per Seat');
-  const [currency, setCurrency] = useState('INR');
+  const [currency, setCurrency] = useState<'INR' | 'USD'>('INR');
   const [monthlyPrice, setMonthlyPrice] = useState(45000);
   const [annualPrice, setAnnualPrice] = useState(450000);
   const [isAnnualPriceOverridden, setIsAnnualPriceOverridden] = useState(false);
@@ -2260,7 +2259,7 @@ const CreatePlanWizardModal: React.FC<CreatePlanWizardModalProps> = ({
                         <strong className="text-xs text-[#0F172B] block">Recommended Badge</strong>
                         <span className="text-[10px] text-[#64748B]">Highlight as most popular choice</span>
                       </div>
-                      <Switch checked={isRecommended} onChange={(e) => setIsRecommended(e.target.checked)} />
+                      <Switch checked={isRecommended} onCheckedChange={(checked) => setIsRecommended(checked)} />
                     </div>
 
                     <div className="p-3.5 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] flex items-center justify-between">
@@ -2317,7 +2316,7 @@ const CreatePlanWizardModal: React.FC<CreatePlanWizardModalProps> = ({
                       <label className="font-bold text-[#0F172B] block">Currency</label>
                       <select
                         value={currency}
-                        onChange={(e) => setCurrency(e.target.value)}
+                        onChange={(e) => setCurrency(e.target.value as 'INR' | 'USD')}
                         className="w-full p-2.5 border border-[#CBD5E1] rounded-xl bg-white text-xs focus:border-[#047857] outline-none cursor-pointer"
                       >
                         <option value="INR">INR (₹ Indian Rupee)</option>
@@ -2396,7 +2395,7 @@ const CreatePlanWizardModal: React.FC<CreatePlanWizardModalProps> = ({
                     <div className="p-3.5 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] space-y-2">
                       <div className="flex items-center justify-between">
                         <strong className="text-xs text-[#0F172B]">Seat Overage Billing</strong>
-                        <Switch checked={allowOverage} onChange={(e) => setAllowOverage(e.target.checked)} />
+                        <Switch checked={allowOverage} onCheckedChange={(checked) => setAllowOverage(checked)} />
                       </div>
                       {allowOverage && (
                         <div className="flex items-center gap-2 pt-1">
@@ -2415,7 +2414,7 @@ const CreatePlanWizardModal: React.FC<CreatePlanWizardModalProps> = ({
                     <div className="p-3.5 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] space-y-2">
                       <div className="flex items-center justify-between">
                         <strong className="text-xs text-[#0F172B]">Free Trial Period</strong>
-                        <Switch checked={trialEnabled} onChange={(e) => setTrialEnabled(e.target.checked)} />
+                        <Switch checked={trialEnabled} onCheckedChange={(checked) => setTrialEnabled(checked)} />
                       </div>
                       {trialEnabled && (
                         <div className="flex items-center gap-2 pt-1">

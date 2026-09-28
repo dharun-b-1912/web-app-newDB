@@ -86,6 +86,22 @@ class EnterpriseNotificationEngine {
       }
     }
 
+    // 3. WhatsApp Delivery via WhatsApp Client
+    if (channels.includes('WHATSAPP') && event.recipientPhone) {
+      try {
+        const { whatsAppClient } = await import('../whatsapp');
+        const res = await whatsAppClient.sendText({
+          to: event.recipientPhone,
+          organizationId: event.organizationId,
+          employeeId: event.recipientId,
+          text: `*${event.title}*\n\nHello ${event.recipientName},\n\n${event.message}\n\n_Joy PeopleHR Automated Notification_`,
+        });
+        if (res.success) dispatched.push('WHATSAPP');
+      } catch (err) {
+        console.warn('[NotificationEngine] WhatsApp dispatch error:', err);
+      }
+    }
+
     return {
       success: dispatched.length > 0,
       dispatchedChannels: dispatched,

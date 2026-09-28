@@ -8,7 +8,6 @@ import { PortalType } from '../../types/authContext';
 import { PortalAccessResolver } from '../auth/portalAccessResolver';
 import { ProductionLaunchSeedDataService } from '../seed/productionLaunchSeedDataService';
 import { unifiedApprovalEngine } from '../approvals/unifiedApprovalEngine';
-import { vendorPortalService } from '../vendorPortalService';
 
 interface TestResult {
   testNumber: number;

@@ -406,7 +406,7 @@ export interface HelpdeskTicket {
   messages?: HelpdeskMessage[];
 }
 
-export type FormFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'file' | 'TEXT' | 'TEXTAREA' | 'NUMBER' | 'DATE' | 'SELECT' | 'FILE';
+export type FormFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'file' | 'TEXT' | 'TEXTAREA' | 'NUMBER' | 'DATE' | 'SELECT' | 'FILE' | 'DROPDOWN' | 'RADIO';
 
 export interface ServiceFormField {
   id: string;
@@ -457,8 +457,12 @@ export interface ServiceRequest {
   request_number: string;
   service_id: string;
   service_title: string;
+  service_name?: string; // alias
   employee_id: string;
   employee_name: string;
+  department?: string;
+  category?: string;
+  submitted_at?: string; // alias for created_at
   status: ServiceRequestStatus;
   form_data: Record<string, any>;
   remarks?: string;

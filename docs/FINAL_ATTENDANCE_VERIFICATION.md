@@ -102,6 +102,31 @@
 
 ---
 
-## 3. Production Architecture Sign-Off
+## 3. Hardware Device Verification: Dharun B (12-Sep-2026 09:32 AM)
+
+```text
+Physical Hardware Display (eSSL AI-FACE MAGNUM):
+  Personal Record Search
+  User ID: 017
+  Time: 09-12 09:32
+  Name: Dharun B
+  Punch State: 255 (Check-In)
+  Verification Mode: Face
+```
+
+### Timezone Conversion Pipeline Verification
+
+| Stage | Data Representation | Timezone / Standard | Validation |
+| :--- | :--- | :--- | :---: |
+| **1. Physical Device** | `2026-09-12 09:32:00` | IST (UTC+05:30) | **MATCHED** |
+| **2. Universal Connector** | `{"pin": "017", "timestamp": "2026-09-12T04:02:00.000Z", "deviceTimestampRaw": "2026-09-12 09:32:00", "verifyType": "Face"}` | Canonical UTC Instant + Preserved Raw IST | **MATCHED** |
+| **3. Supabase Database** | `punch_time: 2026-09-12T04:02:00.000Z`, `first_check_in: 2026-09-12T04:02:00.000Z` | `timestamptz` (UTC) | **MATCHED** |
+| **4. Web Frontend (UI)** | `attendanceTimeService.formatAttendanceTime(...)` -> `09:32:00 AM` | IST (`Asia/Kolkata`) Display | **MATCHED** |
+| **5. Mobile App (Flutter)** | `AttendanceLiveTimerWidget` -> `09:32:00 AM` (Biometric Face) | IST Live Working Timer Active | **MATCHED** |
+
+---
+
+## 4. Production Architecture Sign-Off
 
 The system satisfies all enterprise compliance, multi-tenant security, and timestamp authority requirements. The physical eSSL AI-FACE MAGNUM hardware, local connector gateway, Supabase/database layers, and web/mobile frontends now operate on a unified single-session attendance authority.
+

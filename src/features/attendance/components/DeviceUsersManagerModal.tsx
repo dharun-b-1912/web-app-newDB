@@ -238,14 +238,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
     const handleWindowUpdate = () => loadEnterpriseUsers();
     window.addEventListener('biometric:updated', handleWindowUpdate);
 
-    // Initial and periodic dynamic live fetch from Gateway (every 4 seconds)
-    biometricGatewayService.syncLiveUsersFromGateway(device.id);
-    const liveTimer = setInterval(() => {
-      biometricGatewayService.syncLiveUsersFromGateway(device.id);
-    }, 4000);
-
     return () => {
-      clearInterval(liveTimer);
       unsubStarted();
       unsubProgress();
       unsubCompleted();
@@ -288,11 +281,15 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
 
   const handleTriggerSync = async () => {
     if (!device || isSyncing) return;
+    setIsSyncing(true);
     try {
       const res = await biometricGatewayService.triggerDeviceUserSync(device.id, 'IT Administrator');
       showToast(res.message);
+      await loadEnterpriseUsers();
     } catch (err: any) {
       showToast(err.message || 'Failed to start user sync', 'error');
+    } finally {
+      setIsSyncing(false);
     }
   };
 

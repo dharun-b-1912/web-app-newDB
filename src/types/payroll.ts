@@ -33,6 +33,7 @@ export type ComponentCategory =
   | 'Retiral'
   | 'Gratuity'
   | 'Reimbursement'
+  | 'Allowance'
   | 'Custom';
 
 export type CalculationType =
@@ -68,6 +69,7 @@ export type PayrollRunStatus =
   | 'Draft'
   | 'InputCollected'
   | 'Calculating'
+  | 'Calculated'
   | 'Validation'
   | 'PreviewReady'
   | 'ExceptionReview'
@@ -76,7 +78,9 @@ export type PayrollRunStatus =
   | 'Finalized'
   | 'DisbursementPending'
   | 'Paid'
-  | 'Reversed';
+  | 'Reversed'
+  | 'Locked'
+  | 'Completed';
 
 export interface SalaryComponent {
   id: string;
@@ -128,6 +132,9 @@ export interface StructureComponentRule {
   is_taxable?: boolean;
   statutory_flags?: string[];
   display_order?: number;
+  name?: string;
+  default_value?: number;
+  formula_expression?: string;
 }
 
 export interface SalaryStructure {
@@ -141,6 +148,8 @@ export interface SalaryStructure {
   base_annual_ctc: number;
   components: StructureComponentRule[];
   status: 'Active' | 'Draft' | 'Archived';
+  compensation_basis?: 'CTC_INCLUSIVE' | 'GROSS_BASED';
+  ctc_inclusive?: boolean;
   version: number;
   effective_from: string;
   created_at: string;
@@ -157,6 +166,8 @@ export interface EmployeeSalaryAssignment {
   designation: string;
   salary_structure_id: string;
   salary_structure_name: string;
+  compensation_basis?: 'CTC_INCLUSIVE' | 'GROSS_BASED';
+  ctc_inclusive?: boolean;
   annual_ctc: number;
   gross_monthly: number;
   basic_monthly: number;
@@ -231,6 +242,8 @@ export interface EmployeePayrollInput {
   // Base Structure Figures
   ctc_annual: number;
   gross_fixed: number;
+  compensation_basis?: 'CTC_INCLUSIVE' | 'GROSS_BASED';
+  ctc_inclusive?: boolean;
   basic: number;
   hra: number;
   special_allowance: number;
@@ -296,6 +309,8 @@ export interface PayrollRun {
   tenant_id: string;
   run_number: string; // e.g. "RUN-2026-08"
   pay_period: string; // e.g. "August 2026"
+  period_id?: string;
+  period_name?: string;
   period_start: string;
   period_end: string;
   payout_date: string;
@@ -371,6 +386,18 @@ export interface ReimbursementClaim {
   created_at: string;
 }
 
+export type LWFFrequency = 'YEARLY' | 'HALF_YEARLY' | 'MONTHLY';
+
+export type LWFStatePreset =
+  | 'TAMIL_NADU'
+  | 'KARNATAKA'
+  | 'MAHARASHTRA'
+  | 'KERALA'
+  | 'ANDHRA_PRADESH'
+  | 'TELANGANA'
+  | 'GUJARAT'
+  | 'CUSTOM';
+
 export interface StatutoryConfig {
   tenant_id: string;
   pf_enabled: boolean;
@@ -384,8 +411,20 @@ export interface StatutoryConfig {
   pt_enabled: boolean;
   pt_monthly_slab: number;      // 200
   tds_auto_deduct: boolean;
+  
+  // Labour Welfare Fund (LWF) - Multi-State & Tamil Nadu Act 1972
   lwf_enabled: boolean;
-  lwf_amount: number;
+  lwf_amount: number; // legacy fallback / employee amount
+  lwf_employee_amount?: number; // e.g. 20 for TN
+  lwf_employer_amount?: number; // e.g. 40 for TN
+  lwf_frequency?: LWFFrequency; // 'YEARLY' | 'HALF_YEARLY' | 'MONTHLY'
+  lwf_deduction_months?: number[]; // [12] for TN December, [6, 12] for MH
+  lwf_state_preset?: LWFStatePreset;
+  lwf_state_jurisdiction?: string; // 'Tamil Nadu'
+  lwf_min_establishment_headcount?: number; // 5 for TN Act 1972
+  lwf_min_service_days?: number; // 30 days in preceding 12 months
+  lwf_exclude_managerial?: boolean; // true
+  lwf_managerial_wage_ceiling?: number; // 15000
 }
 
 export type DisbursementBatchStatus =
@@ -405,7 +444,9 @@ export type DisbursementBatchStatus =
   | 'ExceptionsFound'
   | 'Closed'
   | 'Cancelled'
-  | 'FileGenerated';
+  | 'FileGenerated'
+  | 'Validated'
+  | 'MakerReviewed';
 
 export interface DisbursementValidationCheck {
   id: string;
@@ -861,6 +902,8 @@ export interface PayrollInputSnapshot {
   // Base Structure Snapshot
   salary_structure_id: string;
   salary_structure_code: string;
+  compensation_basis?: 'CTC_INCLUSIVE' | 'GROSS_BASED';
+  ctc_inclusive?: boolean;
   annual_ctc: number;
   monthly_gross_fixed: number;
   basic_fixed: number;

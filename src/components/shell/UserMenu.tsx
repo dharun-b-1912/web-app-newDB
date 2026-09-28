@@ -111,9 +111,17 @@ export const UserMenu: React.FC = () => {
   const displayName = user.name || (isPlatformAdmin && platformProfile ? platformProfile.display_name : (user.email ? user.email.split('@')[0] : 'User'));
   const avatarSrc = user.avatar_url || (isPlatformAdmin && platformProfile?.avatar_url ? platformProfile.avatar_url : '');
   
+  const isVendorRole =
+    (currentRole as string) === 'Vendor Admin' ||
+    (currentRole as string) === 'Vendor Partner' ||
+    (user as any)?.role === 'Vendor Admin' ||
+    (user as any)?.userType === 'VENDOR';
+
   let effectiveRoleBadge = 'Unassigned';
   if (isPlatformAdmin) {
     effectiveRoleBadge = 'Platform Super Admin';
+  } else if (isVendorRole) {
+    effectiveRoleBadge = 'Vendor Admin (Partner)';
   } else if (currentRole === 'Company Admin') {
     effectiveRoleBadge = 'Company Admin (Company)';
   } else if (currentRole === 'HR Head') {
@@ -124,8 +132,6 @@ export const UserMenu: React.FC = () => {
     effectiveRoleBadge = 'Manager (Department)';
   } else if (currentRole === 'Team Lead') {
     effectiveRoleBadge = 'Team Lead (Team)';
-  } else if (currentRole === 'Vendor Admin') {
-    effectiveRoleBadge = 'Vendor Operations Admin (Partner)';
   } else if (currentRole === 'Employee') {
     effectiveRoleBadge = 'Employee (Self)';
   } else if (roleTitle && roleTitle !== 'Unassigned') {
@@ -166,6 +172,11 @@ export const UserMenu: React.FC = () => {
                 <span className="text-[10px] text-emerald-800 font-bold flex items-center gap-1 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.5 rounded-md truncate max-w-[200px]">
                   <Globe className="w-2.5 h-2.5 shrink-0 text-emerald-600" />
                   <span className="truncate">Joy PeopleHR Platform</span>
+                </span>
+              ) : isVendorRole ? (
+                <span className="text-[10px] text-emerald-800 font-bold flex items-center gap-1 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.5 rounded-md truncate max-w-[200px]">
+                  <Building2 className="w-2.5 h-2.5 shrink-0 text-emerald-600" />
+                  <span className="truncate">Connected: Joy Corporate Solutions</span>
                 </span>
               ) : activeLegalEntity ? (
                 <span className="text-[10px] text-gray-500 font-medium flex items-center gap-1 bg-white border border-gray-200 px-1.5 py-0.5 rounded-md truncate max-w-[170px]">

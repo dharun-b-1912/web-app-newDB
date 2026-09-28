@@ -1,10 +1,31 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Department, Designation, Branch, Location, EmploymentType, WorkMode, EmployeeStatus, EmploymentSource, Vendor } from '../../../types';
-import { vendorService } from '../../../services/vendorService';
 import { payrollCalculationEngine } from '../../../services/payroll/payrollCalculationEngine';
 import { payrollApi } from '../../../services/payrollApi';
 import { api } from '../../../services/api';
-import { Briefcase, Building2, Calendar, MapPin, Shield, Users, DollarSign, Clock, ShieldCheck, Calculator, Sparkles, TrendingUp, Plus, Check, X } from 'lucide-react';
+import { hrEventBus } from '../../../services/hrEventBus';
+import { ClientMasterService } from '../../../services/clientBilling/clientMasterService';
+import { ClientMaster, ClientContract } from '../../../types/clientBilling';
+import {
+  Briefcase,
+  Building2,
+  Calendar,
+  MapPin,
+  Shield,
+  Users,
+  DollarSign,
+  Clock,
+  ShieldCheck,
+  Calculator,
+  Sparkles,
+  TrendingUp,
+  Plus,
+  Check,
+  X,
+  Building,
+  FileSpreadsheet,
+  Layers,
+} from 'lucide-react';
 
 export interface Step3FormData {
   // Employment
@@ -14,10 +35,16 @@ export interface Step3FormData {
   employment_source: EmploymentSource;
   vendor_id?: string;
   vendor_name?: string;
+  vendor_code?: string;
   vendor_employee_code?: string;
   vendor_contract_id?: string;
+  vendor_contract_number?: string;
   vendor_start_date?: string;
   vendor_end_date?: string;
+  client_company_id?: string;
+  client_company_name?: string;
+  site_id?: string;
+  site_name?: string;
   status: EmployeeStatus;
   department_id: string;
   designation_id: string;
@@ -39,6 +66,7 @@ export interface Step3FormData {
   work_location_name?: string;
 
   // Compensation & CTC
+  compensation_basis?: 'CTC_INCLUSIVE' | 'GROSS_BASED';
   salary_structure_code?: string;
   salary_structure_name?: string;
   annual_ctc?: number;
@@ -52,13 +80,13 @@ export interface Step3FormData {
   pt_applicable?: boolean;
 }
 
-const EMPLOYMENT_SOURCES = [
+const EMPLOYMENT_SOURCES: { id: EmploymentSource; label: string; desc: string }[] = [
   { id: 'DIRECT', label: 'Direct Employee', desc: 'On company payroll' },
-  { id: 'VENDOR', label: 'Manpower Provider', desc: 'Supplied via Vendor' },
   { id: 'CONTRACT', label: 'Direct Contract', desc: 'Fixed term agreement' },
   { id: 'INTERN', label: 'Intern / Trainee', desc: 'Stipend training' },
   { id: 'TEMPORARY', label: 'Temporary Staff', desc: 'Project specific' },
   { id: 'CONSULTANT', label: 'Consultant', desc: 'Retainer services' },
+  { id: 'VENDOR', label: 'Vendor Workforce', desc: 'Outsourced partner staff' },
 ];
 
 const SALARY_STRUCTURES = [
@@ -101,7 +129,7 @@ const LEAVE_POLICIES = [
 const PAYROLL_GROUPS = [
   { id: 'pg-monthly-main', name: 'Monthly Main Payroll (Cycle: 1st – Last Day)' },
   { id: 'pg-exec-mgmt', name: 'Executive & Management Payroll' },
-  { id: 'pg-vendor-wages', name: 'Weekly / Bi-Weekly Field Staff' },
+  { id: 'pg-field-staff', name: 'Weekly / Bi-Weekly Field Staff' },
 ];
 
 interface Props {
@@ -121,36 +149,167 @@ export const Step3Employment: React.FC<Props> = ({
   branches = [],
   locations = [],
 }) => {
-  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [isCustomDesig, setIsCustomDesig] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
   const [customGrade, setCustomGrade] = useState('L3 - Mid Level');
   const [isSavingDesig, setIsSavingDesig] = useState(false);
 
+  // Database-Driven Vendor & Contract States
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [isLoadingVendors, setIsLoadingVendors] = useState<boolean>(false);
+  const [clients, setClients] = useState<ClientMaster[]>([]);
+  const [allContracts, setAllContracts] = useState<ClientContract[]>([]);
+
   useEffect(() => {
-    vendorService.getVendors().then(setVendors);
+    setIsLoadingVendors(true);
+    api.getVendors().then((vList) => {
+      setVendors(vList || []);
+    }).catch(() => {
+      setVendors(api.getVendorsSync());
+    }).finally(() => {
+      setIsLoadingVendors(false);
+    });
+
+    ClientMasterService.getClientsAsync().then((cliList) => {
+      setClients(cliList || []);
+      const cntList = cliList.flatMap((c) => ClientMasterService.getContracts(c.id));
+      setAllContracts(cntList || []);
+    }).catch(() => { });
   }, []);
 
-  const isVendorSource = formData.employment_source === 'VENDOR';
+  const filteredContracts = useMemo(() => {
+    if (!formData.client_company_id) return allContracts;
+    return allContracts.filter((c) => c.client_id === formData.client_company_id);
+  }, [allContracts, formData.client_company_id]);
+
+  const handleSourcingChange = (srcId: EmploymentSource) => {
+    if (srcId === 'VENDOR') {
+      const defaultVendor = vendors[0];
+      onChange({
+        employment_source: srcId,
+        vendor_id: formData.vendor_id || defaultVendor?.id || '',
+        vendor_name: formData.vendor_name || defaultVendor?.legal_name || defaultVendor?.trade_name || '',
+        vendor_code: formData.vendor_code || defaultVendor?.vendor_code || '',
+      });
+    } else {
+      onChange({
+        employment_source: srcId,
+        vendor_id: '',
+        vendor_name: '',
+        vendor_code: '',
+        vendor_employee_code: '',
+        vendor_contract_id: '',
+        vendor_contract_number: '',
+        vendor_start_date: '',
+        vendor_end_date: '',
+        client_company_id: '',
+        client_company_name: '',
+        site_id: '',
+        site_name: '',
+      });
+    }
+  };
+
+  const handleVendorChange = (vendorId: string) => {
+    const match = vendors.find((v) => v.id === vendorId);
+    if (match) {
+      onChange({
+        vendor_id: match.id,
+        vendor_name: match.legal_name || match.trade_name || 'Vendor Organization',
+        vendor_code: match.vendor_code || match.id,
+        vendor_contract_id: '',
+        vendor_contract_number: '',
+        client_company_id: '',
+        client_company_name: '',
+        site_id: '',
+        site_name: '',
+      });
+    } else {
+      onChange({
+        vendor_id: '',
+        vendor_name: '',
+        vendor_code: '',
+        vendor_employee_code: '',
+        vendor_contract_id: '',
+        vendor_contract_number: '',
+        client_company_id: '',
+        client_company_name: '',
+        site_id: '',
+        site_name: '',
+      });
+    }
+  };
+
+  const handleClientChange = (clientId: string) => {
+    const match = clients.find((c) => c.id === clientId);
+    onChange({
+      client_company_id: clientId,
+      client_company_name: match?.legal_name || match?.display_name || '',
+      vendor_contract_id: '',
+      vendor_contract_number: '',
+    });
+  };
+
+  const handleContractChange = (contractId: string) => {
+    const match = allContracts.find((c) => c.id === contractId);
+    onChange({
+      vendor_contract_id: contractId,
+      vendor_contract_number: match?.contract_number || '',
+    });
+  };
+
+  const handleSiteChange = (siteId: string) => {
+    const matchLoc = locations.find((l) => l.id === siteId);
+    const matchBranch = branches.find((b) => b.id === siteId);
+    const siteName = matchLoc?.name || matchBranch?.name || siteId;
+    onChange({
+      site_id: siteId,
+      site_name: siteName,
+      location_id: siteId,
+      work_location_name: siteName,
+    });
+  };
 
   const annualCtc = formData.annual_ctc || 1200000;
   const monthlyCtc = formData.monthly_ctc || Math.round(annualCtc / 12);
   const salaryStructureCode = formData.salary_structure_code || 'CORP_STD_01';
 
-  const statutoryConfig = useMemo(() => payrollApi.getStatutoryConfig(), []);
+  const [statutoryConfig, setStatutoryConfig] = useState(() => payrollApi.getStatutoryConfig());
+
+  useEffect(() => {
+    // Refresh configuration on mount and subscribe to real-time statutory rule changes
+    payrollApi.fetchStatutoryConfigFromDb().then((cfg) => {
+      if (cfg) setStatutoryConfig(cfg);
+    }).catch(() => {
+      setStatutoryConfig(payrollApi.getStatutoryConfig());
+    });
+
+    const handleStatutoryUpdated = (e: any) => {
+      if (e?.config) {
+        setStatutoryConfig(e.config);
+      } else {
+        setStatutoryConfig(payrollApi.getStatutoryConfig());
+      }
+    };
+    hrEventBus.on('payroll.statutory_updated', handleStatutoryUpdated);
+    return () => {
+      hrEventBus.off('payroll.statutory_updated', handleStatutoryUpdated);
+    };
+  }, []);
 
   // Live Deterministic Calculation via Centralized Payroll Engine (Synced with Payroll Statutory Settings)
   const liveCalculation = useMemo(() => {
-    return payrollCalculationEngine.calculateBreakdown({
+    return payrollCalculationEngine.calculateCtcBreakdown({
       annualCtc,
       monthlyCtc,
       structureCode: salaryStructureCode,
+      compensationBasis: formData.compensation_basis || 'CTC_INCLUSIVE',
       pfApplicable: formData.pf_applicable !== false,
       esiApplicable: formData.esi_applicable !== false,
       ptApplicable: formData.pt_applicable !== false,
       statutoryConfig,
     });
-  }, [annualCtc, monthlyCtc, salaryStructureCode, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, statutoryConfig]);
+  }, [annualCtc, monthlyCtc, salaryStructureCode, formData.compensation_basis, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, statutoryConfig]);
 
   const handleAnnualCtcChange = (value: number) => {
     const validAnnual = Math.max(0, value);
@@ -170,16 +329,6 @@ export const Step3Employment: React.FC<Props> = ({
     });
   };
 
-  const handleVendorSelect = (vendorId: string) => {
-    const selected = vendors.find((v) => v.id === vendorId);
-    onChange({
-      vendor_id: vendorId,
-      vendor_name: selected?.legal_name || '',
-      vendor_contract_id: selected?.contract_start_date ? 'MSA-PRIMARY' : undefined,
-      vendor_start_date: formData.doj || new Date().toISOString().split('T')[0],
-    });
-  };
-
   return (
     <div className="space-y-8">
       {/* ───────────────────────────────────────────────────────────── */}
@@ -189,7 +338,7 @@ export const Step3Employment: React.FC<Props> = ({
         <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
           <Briefcase className="w-4 h-4 text-[#07563D]" />
           <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">
-            1. Employment & Organizational Mapping
+            1. Employment &amp; Organizational Mapping
           </h3>
         </div>
 
@@ -204,12 +353,11 @@ export const Step3Employment: React.FC<Props> = ({
                 <button
                   type="button"
                   key={src.id}
-                  onClick={() => onChange({ employment_source: src.id as EmploymentSource })}
-                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                    selected
+                  onClick={() => handleSourcingChange(src.id)}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${selected
                       ? 'border-[#07563D] bg-emerald-50/40 shadow-xs ring-1 ring-[#07563D]'
                       : 'border-gray-200 bg-gray-50/50 hover:bg-white hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <p className={`text-xs font-bold ${selected ? 'text-[#07563D]' : 'text-gray-900'}`}>{src.label}</p>
                   <p className="text-[10px] text-gray-400 mt-0.5">{src.desc}</p>
@@ -219,71 +367,134 @@ export const Step3Employment: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Vendor Relationship Card (Conditionally Shown for Vendor Employees) */}
-        {isVendorSource && (
-          <div className="p-4 rounded-xl bg-amber-50/40 border border-amber-200/80 space-y-3">
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-amber-700" />
-              <h4 className="text-xs font-black text-amber-900 uppercase tracking-wider">
-                Vendor / Manpower Provider Details
-              </h4>
+        {/* CONDITIONAL VENDOR WORKFORCE ASSIGNMENT SECTION */}
+        {formData.employment_source === 'VENDOR' && (
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-50/90 via-orange-50/30 to-amber-50/80 border border-amber-200/90 space-y-4 shadow-xs">
+            <div className="flex items-center justify-between pb-2 border-b border-amber-200/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs">
+                  <Building2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-amber-950">
+                    Workforce Ownership &amp; Vendor Assignment
+                  </h4>
+                  <p className="text-[11px] text-amber-700 font-medium">
+                    Select the approved vendor partner, mapped client company, contract assignment, and deployment site.
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                Outsourced Workforce
+              </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              {/* 1. Vendor Organization Dropdown (Database-Driven) */}
               <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                  Authorized Manpower Provider <span className="text-rose-500">*</span>
+                <label className="block text-xs font-bold text-gray-800 mb-1">
+                  Vendor Organization <span className="text-rose-500">*</span>
+                </label>
+                {isLoadingVendors ? (
+                  <div className="p-2.5 text-xs text-amber-700 bg-white border border-amber-200 rounded-xl flex items-center gap-2">
+                    <div className="w-3.5 h-3.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin" />
+                    <span>Loading vendors from database...</span>
+                  </div>
+                ) : (
+                  <select
+                    value={formData.vendor_id || ''}
+                    onChange={(e) => handleVendorChange(e.target.value)}
+                    className="w-full px-3 py-2.5 text-xs bg-white border border-amber-300 rounded-xl focus:border-amber-600 focus:ring-1 focus:ring-amber-600 focus:outline-none font-bold text-gray-900 shadow-2xs"
+                  >
+                    <option value="">-- Select Vendor Organization --</option>
+                    {vendors.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.legal_name || v.trade_name || 'Vendor'} ({v.vendor_code || v.id.slice(0, 8)})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {formData.vendor_name && (
+                  <p className="text-[10px] text-amber-800 font-medium mt-1 flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                    <span>Selected Vendor:</span>
+                    <span className="font-bold">{formData.vendor_name}</span>
+                  </p>
+                )}
+              </div>
+
+              {/* 2. Vendor Worker Code */}
+              <div>
+                <label className="block text-xs font-bold text-gray-800 mb-1">
+                  Vendor Employee / Badge Reference <span className="text-gray-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. APEX-SEC-089"
+                  value={formData.vendor_employee_code || ''}
+                  onChange={(e) => onChange({ vendor_employee_code: e.target.value })}
+                  className="w-full px-3 py-2.5 text-xs bg-white border border-amber-300 rounded-xl focus:border-amber-600 focus:ring-1 focus:ring-amber-600 focus:outline-none font-mono font-medium text-gray-900 shadow-2xs"
+                />
+                <p className="text-[10px] text-gray-400 mt-1">
+                  Internal employee code issued by the vendor organization
+                </p>
+              </div>
+
+              {/* 3. Client Company Dropdown */}
+              <div>
+                <label className="block text-xs font-bold text-gray-800 mb-1">
+                  Assigned Client Company <span className="text-gray-400 font-normal">(Governing Contract)</span>
                 </label>
                 <select
-                  required
-                  value={formData.vendor_id || ''}
-                  onChange={(e) => handleVendorSelect(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold text-gray-900"
+                  value={formData.client_company_id || ''}
+                  onChange={(e) => handleClientChange(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs bg-white border border-amber-300 rounded-xl focus:border-amber-600 focus:ring-1 focus:ring-amber-600 focus:outline-none font-semibold text-gray-900 shadow-2xs"
                 >
-                  <option value="">-- Select Manpower Provider --</option>
-                  {vendors.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.legal_name} ({v.vendor_code})
+                  <option value="">-- Select Client Company --</option>
+                  {clients.map((cli) => (
+                    <option key={cli.id} value={cli.id}>
+                      {cli.legal_name || cli.display_name} ({cli.client_code})
                     </option>
                   ))}
                 </select>
               </div>
 
+              {/* 4. Vendor Contract / Commercial Assignment */}
               <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                  Vendor's Internal Employee Code
+                <label className="block text-xs font-bold text-gray-800 mb-1">
+                  Contract / Commercial Assignment
                 </label>
-                <input
-                  type="text"
-                  placeholder="e.g. ABC-TN-8821"
-                  value={formData.vendor_employee_code || ''}
-                  onChange={(e) => onChange({ vendor_employee_code: e.target.value })}
-                  className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none"
-                />
+                <select
+                  value={formData.vendor_contract_id || ''}
+                  onChange={(e) => handleContractChange(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs bg-white border border-amber-300 rounded-xl focus:border-amber-600 focus:ring-1 focus:ring-amber-600 focus:outline-none font-semibold text-gray-900 shadow-2xs"
+                >
+                  <option value="">-- Select Active Contract --</option>
+                  {filteredContracts.map((cnt) => (
+                    <option key={cnt.id} value={cnt.id}>
+                      {cnt.contract_number} — {cnt.contract_name} ({cnt.service_type})
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                  Vendor Deployment Start Date
+              {/* 5. Assigned Deployment Site / Facility */}
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-gray-800 mb-1">
+                  Assigned Deployment Site / Client Work Facility
                 </label>
-                <input
-                  type="date"
-                  value={formData.vendor_start_date || ''}
-                  onChange={(e) => onChange({ vendor_start_date: e.target.value })}
-                  className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                  Vendor Deployment End Date
-                </label>
-                <input
-                  type="date"
-                  value={formData.vendor_end_date || ''}
-                  onChange={(e) => onChange({ vendor_end_date: e.target.value })}
-                  className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none"
-                />
+                <select
+                  value={formData.site_id || formData.location_id || ''}
+                  onChange={(e) => handleSiteChange(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs bg-white border border-amber-300 rounded-xl focus:border-amber-600 focus:ring-1 focus:ring-amber-600 focus:outline-none font-semibold text-gray-900 shadow-2xs"
+                >
+                  <option value="">-- Select Assigned Site / Facility --</option>
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name} · {loc.city || 'Facility'} ({loc.type || 'Operational Site'})
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
@@ -669,6 +880,52 @@ export const Step3Employment: React.FC<Props> = ({
           </span>
         </div>
 
+        {/* Compensation Basis Selector Cards */}
+        <div>
+          <label className="block text-xs font-bold text-gray-700 mb-2">
+            Compensation Basis & Calculation Architecture <span className="text-rose-500">*</span>
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => onChange({ compensation_basis: 'CTC_INCLUSIVE' })}
+              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${(formData.compensation_basis || 'CTC_INCLUSIVE') === 'CTC_INCLUSIVE'
+                  ? 'border-[#07563D] bg-emerald-50/50 shadow-xs ring-1 ring-[#07563D]'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-gray-900">CTC Inclusive (Cost-to-Company Based)</span>
+                {(formData.compensation_basis || 'CTC_INCLUSIVE') === 'CTC_INCLUSIVE' && (
+                  <span className="text-[10px] font-bold bg-[#07563D] text-white px-2 py-0.5 rounded-md">Active</span>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
+                Gross pay is derived by subtracting employer statutory contributions (EPF, ESIC, Gratuity, LWF). Guaranteed invariant: Net ≤ Gross ≤ CTC.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onChange({ compensation_basis: 'GROSS_BASED' })}
+              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${formData.compensation_basis === 'GROSS_BASED'
+                  ? 'border-[#07563D] bg-emerald-50/50 shadow-xs ring-1 ring-[#07563D]'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-gray-900">Gross Salary Based (Additive CTC)</span>
+                {formData.compensation_basis === 'GROSS_BASED' && (
+                  <span className="text-[10px] font-bold bg-[#07563D] text-white px-2 py-0.5 rounded-md">Active</span>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
+                Gross monthly pay is fixed. Employer statutory contributions are added on top of Gross to determine total monthly CTC.
+              </p>
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">
@@ -768,11 +1025,16 @@ export const Step3Employment: React.FC<Props> = ({
             <div className="flex items-center gap-2">
               <Calculator className="w-5 h-5 text-emerald-300" />
               <div>
-                <h4 className="text-xs font-black uppercase tracking-wider text-emerald-200">
-                  Live Salary & Take-Home Calculation Engine Preview
-                </h4>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-emerald-200">
+                    PAYROLL CALCULATION PREVIEW
+                  </h4>
+                  <span className="text-[9px] font-bold bg-emerald-800/80 text-emerald-200 px-2 py-0.5 rounded-full border border-emerald-600/60">
+                    FY 2026–27 Organization Rules
+                  </span>
+                </div>
                 <p className="text-[11px] text-emerald-100">
-                  Computed dynamically via Production Payroll Invariants (EPF, ESIC, PT, HRA)
+                  Calculated using this organization's active payroll and statutory rules ({formData.compensation_basis === 'GROSS_BASED' ? 'Gross-Salary Based' : 'CTC Inclusive Model'})
                 </p>
               </div>
             </div>
@@ -843,6 +1105,12 @@ export const Step3Employment: React.FC<Props> = ({
                 <span>Professional Tax (PT):</span>
                 <span className="font-bold text-rose-200">-₹{liveCalculation.professionalTax.toLocaleString('en-IN')}</span>
               </div>
+              {liveCalculation.lwfEmployee > 0 && (
+                <div className="flex justify-between text-emerald-100">
+                  <span>Labour Welfare Fund (LWF):</span>
+                  <span className="font-bold text-rose-200">-₹{liveCalculation.lwfEmployee.toLocaleString('en-IN')}</span>
+                </div>
+              )}
               {liveCalculation.estimatedTdsMonthly > 0 && (
                 <div className="flex justify-between text-emerald-100">
                   <span>Estimated Monthly TDS:</span>
@@ -850,7 +1118,7 @@ export const Step3Employment: React.FC<Props> = ({
                 </div>
               )}
               <div className="flex justify-between text-amber-200 pt-1 border-t border-emerald-700/50">
-                <span>Employer EPF/ESIC Contribution:</span>
+                <span>Employer EPF/ESIC/LWF Contribution:</span>
                 <span className="font-bold">₹{liveCalculation.totalEmployerContributions.toLocaleString('en-IN')}</span>
               </div>
             </div>

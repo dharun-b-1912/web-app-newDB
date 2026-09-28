@@ -227,11 +227,11 @@ class ProfileMediaService {
     actorName?: string;
   }): Promise<ProfilePhotoUploadResult> {
     const currentUser = api.getCurrentUser();
-    const tenantId = currentUser.organization_id || 'org-joy-01';
+    const tenantId = currentUser?.organization_id || 'org-joy-01';
     const orgId = tenantId;
     const employeeId = params.employeeId;
-    const actorId = params.actorId || currentUser.id || 'current-user';
-    const actorName = params.actorName || currentUser.name || 'User';
+    const actorId = params.actorId || currentUser?.id || 'current-user';
+    const actorName = params.actorName || currentUser?.name || 'User';
 
     // 1. Optimize & Center Crop Image
     const optimized = await this.optimizeAvatar(params.file);
@@ -253,7 +253,7 @@ class ProfileMediaService {
 
     const nextVersion = (activeMedia?.media_version || 0) + 1;
     const mediaId = `pmed-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const storageBucket = 'employee-profile-media';
+    const storageBucket = 'peoplehr-private-profile-media';
     const storagePath = `tenant/${tenantId}/organization/${orgId}/employee/${employeeId}/profile/${mediaId}.webp`;
     const now = new Date().toISOString();
 
@@ -269,8 +269,8 @@ class ProfileMediaService {
           });
 
         if (error) {
-          // Fallback to workforce-documents bucket if dedicated bucket is not yet provisioned
-          await supabase.storage.from('workforce-documents').upload(storagePath, optimized.blob, {
+          // Fallback to employee-documents or workforce-documents bucket if dedicated bucket is not yet provisioned
+          await supabase.storage.from('employee-documents').upload(storagePath, optimized.blob, {
             contentType: 'image/webp',
             upsert: true,
           });
@@ -320,7 +320,7 @@ class ProfileMediaService {
     // 6. Commit to PostgreSQL if enabled
     if (isSupabaseEnabled) {
       try {
-        // Update superseded records
+        // Update superseded records in employee_profile_media
         await supabase
           .from('employee_profile_media')
           .update({ status: 'REPLACED', updated_at: now })
@@ -345,6 +345,29 @@ class ProfileMediaService {
           media_version: newRecord.media_version,
           status: 'ACTIVE',
           created_by: actorName,
+        });
+
+        // Register in centralized storage_documents table
+        await supabase.from('storage_documents').insert({
+          id: `sdoc-${mediaId}`,
+          tenant_id: tenantId,
+          organization_id: orgId,
+          bucket_id: storageBucket,
+          object_path: storagePath,
+          original_file_name: `${mediaId}.webp`,
+          display_file_name: `Profile Photo v${nextVersion}`,
+          file_category: 'PROFILE_PHOTO',
+          document_type: 'PROFILE_PHOTO',
+          entity_type: 'EMPLOYEE',
+          entity_id: employeeId,
+          employee_id: employeeId,
+          uploaded_by: actorName || 'Employee',
+          mime_type: 'image/webp',
+          file_size_bytes: optimized.optimizedSize,
+          checksum_sha256: optimized.sha256,
+          verification_status: 'VERIFIED',
+          status: 'ACTIVE',
+          metadata_version: nextVersion,
         });
 
         // Update employee table pointer
@@ -472,7 +495,7 @@ class ProfileMediaService {
         employee_id: employeeId,
         tenant_id: activeMedia.tenant_id,
         occurred_at: now,
-        actor: actorName || currentUser.name,
+        actor: actorName || currentUser?.name || 'User',
       });
 
       // Cleanup storage object

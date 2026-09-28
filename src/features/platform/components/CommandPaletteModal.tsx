@@ -26,7 +26,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      platformTenantService.getTenants().then(setTenants);
+      platformTenantService.getTenants().then(data => setTenants(data as unknown as TenantOrganization[]));
     }
   }, [isOpen]);
 

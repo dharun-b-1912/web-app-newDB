@@ -1,4 +1,5 @@
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { realtimeChannelManager } from './realtime/realtimeChannelManager';
 
 export type HrOperationalModule =
   | 'attendance'
@@ -221,18 +222,11 @@ class HrAuthorizationService {
   }
 
   private initRealtime() {
-    if (!isSupabaseEnabled || !supabase) return;
+    if (!isSupabaseEnabled) return;
     try {
-      this.realtimeChannel = supabase
-        .channel('hr_authorizations_realtime')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'hr_authorizations' },
-          () => {
-            this.syncFromSupabase();
-          }
-        )
-        .subscribe();
+      realtimeChannelManager.subscribeToTable('hr_authorizations', () => {
+        this.syncFromSupabase();
+      });
     } catch (err) {
       console.warn('[HrAuthService] Realtime subscription notice:', err);
     }

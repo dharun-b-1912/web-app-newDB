@@ -30,10 +30,13 @@ interface Props {
 export const WizardProgressHeader: React.FC<Props> = ({
   currentStep,
   onStepClick,
+  draftLastSavedText,
+  isSavingDraft,
+  onSaveDraft,
 }) => {
   return (
-    <div className="w-full overflow-x-auto pb-1">
-      <div className="flex items-center justify-between min-w-[700px] gap-2">
+    <div className="w-full space-y-2.5 pb-1">
+      <div className="flex items-center justify-between min-w-[700px] gap-2 overflow-x-auto pb-1">
         {WIZARD_STEPS.map((step) => {
           const isCompleted = step.number < currentStep;
           const isCurrent = step.number === currentStep;
@@ -79,6 +82,33 @@ export const WizardProgressHeader: React.FC<Props> = ({
           );
         })}
       </div>
+
+      {/* Database Persistence & Auto-Save Feedback Bar */}
+      <div className="flex items-center justify-between px-2 pt-0.5 text-xs">
+        <div className="flex items-center gap-2">
+          {isSavingDraft ? (
+            <span className="flex items-center gap-1.5 text-amber-600 font-bold animate-pulse">
+              <Clock className="w-3.5 h-3.5 animate-spin" /> Saving changes to database...
+            </span>
+          ) : draftLastSavedText ? (
+            <span className="flex items-center gap-1.5 text-emerald-700 font-bold">
+              <Check className="w-3.5 h-3.5 text-emerald-600" /> {draftLastSavedText}
+            </span>
+          ) : (
+            <span className="text-gray-400 text-[11px]">All changes auto-persist step-by-step</span>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={onSaveDraft}
+          disabled={isSavingDraft}
+          className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer"
+        >
+          <Save className="w-3.5 h-3.5 text-gray-500" /> Save Progress
+        </button>
+      </div>
     </div>
   );
 };
+

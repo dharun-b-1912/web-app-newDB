@@ -14,7 +14,7 @@ try {
   }
 
   // Use Windows built-in tar.exe to package source files cleanly
-  const tarCmd = `tar --exclude="node_modules" --exclude=".git" --exclude="1.FlutterApp*" --exclude="dist" --exclude="deploy_package.tar.gz" --exclude="*.rar" --exclude="*.pdf" -czf "${outputFile}" .`;
+  const tarCmd = `tar --exclude="node_modules" --exclude=".git" --exclude="flutter_app" --exclude="1.FlutterApp*" --exclude=".agents" --exclude="playwright-report" --exclude="test-results" --exclude="Essl Support files" --exclude="dist" --exclude="deploy_package.tar.gz" --exclude="*.rar" --exclude="*.pdf" --exclude="*.apk" -czf "${outputFile}" .`;
   execSync(tarCmd, { cwd: rootDir, stdio: 'inherit' });
 
   const stats = fs.statSync(outputFile);

@@ -41,6 +41,7 @@ import {
   SubscriptionContractItem,
   SubscriptionStatus,
 } from '../../../services/platform/platformSubscriptionService';
+import { platformTenantService } from '../../../services/platform/platformTenantService';
 import { Button } from '../../../components/ui/Button';
 import { Switch } from '../../../components/ui/Switch';
 import { cn } from '../../../lib/utils';
@@ -77,7 +78,10 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
   };
 
   React.useEffect(() => {
-    platformSubscriptionService.fetchLiveFromSupabase().then(() => {
+    Promise.all([
+      platformTenantService.fetchLiveFromSupabase(),
+      platformSubscriptionService.fetchLiveFromSupabase(),
+    ]).then(() => {
       refreshData();
     });
   }, []);

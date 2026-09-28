@@ -1,15 +1,17 @@
 import fs from 'fs';
 import readline from 'readline';
 
+const transcriptPath = 'C:\\Users\\hp\\.gemini\\antigravity-ide\\brain\\61449129-0329-4660-9c5e-b9fb5051b374\\.system_generated\\logs\\transcript.jsonl';
+
 const rl = readline.createInterface({
-  input: fs.createReadStream('C:\\Users\\USER\\.gemini\\antigravity-ide\\brain\\41db33d1-ed40-45d4-ad82-fef3c93634c6\\.system_generated\\logs\\transcript.jsonl'),
+  input: fs.createReadStream(transcriptPath),
   crlfDelay: Infinity
 });
 
 let count = 0;
 rl.on('line', (line) => {
-  if (line.includes('20260905_100') || line.includes('seed_canonical_master_entities') || line.includes('deploy_canonical')) {
-    console.log(`Line match: ${line.substring(0, 300)}...`);
+  if (line.includes('deployJsApplication') || line.includes('generateUploadURLV1') || line.includes('deployStaticWebsite') || line.includes('deploy_package')) {
+    console.log(`Match: ${line.substring(0, 300)}...`);
     count++;
   }
 });

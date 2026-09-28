@@ -4,6 +4,7 @@
 // ============================================================
 
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { realtimeChannelManager } from '../realtime/realtimeChannelManager';
 import {
   SecurityPosture,
   SecurityAlertItem,
@@ -52,24 +53,24 @@ export const platformSecurityControlService = {
   subscribeToRealtime(onChangeCallback: () => void) {
     if (!isSupabaseEnabled) return () => {};
 
-    const channel = supabase
-      .channel('security_realtime_stream')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'security_findings' }, () => {
-        this.fetchAlertsFromDB().then(onChangeCallback);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'security_credentials' }, () => {
-        this.fetchCredentialsFromDB().then(onChangeCallback);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'security_policies' }, () => {
-        this.fetchPoliciesFromDB().then(onChangeCallback);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'compliance_controls' }, () => {
-        this.fetchComplianceFromDB().then(onChangeCallback);
-      })
-      .subscribe();
+    const u1 = realtimeChannelManager.subscribeToTable('security_findings', () => {
+      this.fetchAlertsFromDB().then(onChangeCallback);
+    });
+    const u2 = realtimeChannelManager.subscribeToTable('security_credentials', () => {
+      this.fetchCredentialsFromDB().then(onChangeCallback);
+    });
+    const u3 = realtimeChannelManager.subscribeToTable('security_policies', () => {
+      this.fetchPoliciesFromDB().then(onChangeCallback);
+    });
+    const u4 = realtimeChannelManager.subscribeToTable('compliance_controls', () => {
+      this.fetchComplianceFromDB().then(onChangeCallback);
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      u1();
+      u2();
+      u3();
+      u4();
     };
   },
 

@@ -38,22 +38,35 @@ export function getTenantStorageKey(baseKey: string, tenantId = getActiveOrgId()
   return `${baseKey}_${tenantId}`;
 }
 
+const _memoryStore = new Map<string, { data: any; raw: string | null }>();
+
 function getStore<T>(baseKey: string, fallback: T, tenantId = getActiveOrgId()): T {
   try {
     const key = getTenantStorageKey(baseKey, tenantId);
+    if (typeof localStorage === 'undefined') return fallback;
     const raw = localStorage.getItem(key);
-    if (raw) return JSON.parse(raw);
-
-    // Fallback migration check
-    const legacyRaw = localStorage.getItem(baseKey);
-    if (legacyRaw) {
-      try {
-        const parsed = JSON.parse(legacyRaw);
-        localStorage.setItem(key, legacyRaw);
-        return parsed;
-      } catch (_) {}
+    if (!raw) {
+      // Fallback migration check
+      const legacyRaw = localStorage.getItem(baseKey);
+      if (legacyRaw) {
+        try {
+          const parsed = JSON.parse(legacyRaw);
+          localStorage.setItem(key, legacyRaw);
+          _memoryStore.set(key, { data: parsed, raw: legacyRaw });
+          return parsed;
+        } catch (_) {}
+      }
+      return fallback;
     }
-    return fallback;
+
+    const cached = _memoryStore.get(key);
+    if (cached && cached.raw === raw) {
+      return cached.data as T;
+    }
+
+    const parsed = JSON.parse(raw);
+    _memoryStore.set(key, { data: parsed, raw });
+    return parsed;
   } catch {
     return fallback;
   }
@@ -63,7 +76,9 @@ function setStore<T>(baseKey: string, val: T, tenantId = getActiveOrgId()): void
   try {
     const key = getTenantStorageKey(baseKey, tenantId);
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(key, JSON.stringify(val));
+      const raw = JSON.stringify(val);
+      localStorage.setItem(key, raw);
+      _memoryStore.set(key, { data: val, raw });
     }
   } catch (err) {
     console.error(`[attendanceRosterService] Storage error for ${baseKey}:`, err);

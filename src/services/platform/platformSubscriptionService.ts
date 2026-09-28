@@ -121,9 +121,26 @@ export const platformSubscriptionService = {
     // Fallback: Synthesize contracts from live organizations
     const orgs = platformTenantService.getOrganizations().items;
     initialSubscriptions = orgs.map((org) => {
-      const seatsAlloc = org.seat_limit || 50;
+      const planPricing: Record<string, number> = {
+        Starter: 18000,
+        Professional: 45000,
+        Business: 85000,
+        Enterprise: 180000,
+      };
+      const seatsAlloc = org.seat_limit || (org.plan === 'Enterprise' ? 500 : org.plan === 'Business' ? 250 : org.plan === 'Professional' ? 100 : 25);
       const usedSeats = org.active_employees || 1;
-      const totalAmt = org.mrr || 180000;
+      const totalAmt = org.mrr || planPricing[org.plan] || 45000;
+
+      const orgStatusUpper = String(org.status || '').toUpperCase();
+      const contractStatus: SubscriptionStatus = orgStatusUpper === 'ACTIVE'
+        ? 'Active'
+        : orgStatusUpper === 'TRIAL'
+        ? 'Trial'
+        : orgStatusUpper.includes('PAST')
+        ? 'Past Due'
+        : orgStatusUpper === 'SUSPENDED'
+        ? 'Suspended'
+        : 'Active';
 
       return {
         id: `sub-${org.tenant_id}`,
@@ -137,16 +154,16 @@ export const platformSubscriptionService = {
         price_per_seat: seatsAlloc > 0 ? Math.round(totalAmt / seatsAlloc) : 450,
         total_amount: totalAmt,
         currency: 'INR',
-        status: org.status === 'Active' ? 'Active' : org.status === 'Trial' ? 'Trial' : 'Suspended',
+        status: contractStatus,
         start_date: org.created_at || new Date().toISOString().slice(0, 10),
         renewal_date: org.renewal_date || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
         auto_renew: org.auto_renew,
         linked_invoices_count: 1,
         last_invoice_id: `INV-${org.tenant_id.slice(-6)}`,
         last_invoice_status: org.billing_status === 'Paid' ? 'Paid' : 'Issued',
-        storage_used_gb: org.storage_used_gb || 0.1,
+        storage_used_gb: org.storage_used_gb || 0.35,
         storage_limit_gb: org.storage_quota_gb || 50,
-        api_used_calls: org.api_calls_this_month || 0,
+        api_used_calls: org.api_calls_this_month || 150,
         api_limit_calls: 100000,
         biometric_devices_used: 0,
         biometric_devices_limit: 10,
@@ -210,12 +227,19 @@ export const platformSubscriptionService = {
   getMetrics() {
     const subs = this.getSubscriptions();
     return {
-      active: subs.filter((s) => s.status === 'Active').length,
-      trial: subs.filter((s) => s.status === 'Trial').length,
-      past_due: subs.filter((s) => s.status === 'Past Due').length,
-      renewing_soon: subs.filter((s) => s.status === 'Renewing Soon').length,
-      cancelled: subs.filter((s) => s.status === 'Cancelled').length,
+      active: subs.filter((s) => s.status === 'Active' || String(s.status).toUpperCase() === 'ACTIVE').length,
+      trial: subs.filter((s) => s.status === 'Trial' || String(s.status).toUpperCase() === 'TRIAL').length,
+      past_due: subs.filter((s) => s.status === 'Past Due' || String(s.status).toUpperCase() === 'PAST DUE').length,
+      renewing_soon: subs.filter((s) => s.status === 'Renewing Soon' || String(s.status).toUpperCase() === 'RENEWING SOON').length,
+      cancelled: subs.filter((s) => s.status === 'Cancelled' || String(s.status).toUpperCase() === 'CANCELLED').length,
     };
+  },
+
+  getTotalMrr(): number {
+    const subs = this.getSubscriptions();
+    return subs
+      .filter((s) => s.status === 'Active' || String(s.status).toUpperCase() === 'ACTIVE')
+      .reduce((sum, s) => sum + (s.total_amount || 0), 0);
   },
 
   async createSubscription(data: {

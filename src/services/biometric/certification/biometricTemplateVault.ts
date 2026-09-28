@@ -3,7 +3,7 @@
 // Joy PeopleHR — Gate B13: Biometric Template Vault & Envelope Encryption
 // ============================================================================
 
-import { computeSha256 } from '../../operations/vendorGovernancePolicyEngine';
+import { computeSha256 } from '../../../lib/crypto';
 
 export interface TemplateVaultEnvelope {
   vaultId: string;

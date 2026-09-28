@@ -144,7 +144,7 @@ export async function runLaunchScopeFeatureGovernanceTests(): Promise<{
   );
 
   // TEST 10: LIVE modules continue functioning with zero regression
-  const liveKeys = ['people', 'organization', 'attendance', 'leave', 'payroll', 'fnf', 'vendors'];
+  const liveKeys = ['people', 'organization', 'attendance', 'leave', 'payroll', 'fnf'];
   const allLiveCertified = liveKeys.every((key) => {
     const mod = moduleRegistryService.getModule(key);
     return (
@@ -157,9 +157,9 @@ export async function runLaunchScopeFeatureGovernanceTests(): Promise<{
   });
   record(
     10,
-    'Core 7 Launch Domains Operational Certification State',
+    'Core 6 Launch Domains Operational Certification State',
     allLiveCertified,
-    'People, Organization, Attendance, Leave, Payroll, FnF, and Vendors 100% Certified LIVE'
+    'People, Organization, Attendance, Leave, Payroll, and FnF 100% Certified LIVE'
   );
 
   // TEST 11: Feature status changes generate audit logs

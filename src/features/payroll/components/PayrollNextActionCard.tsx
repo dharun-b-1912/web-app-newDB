@@ -19,10 +19,17 @@ import { PayrollReadinessReport } from '../../../services/payroll/payrollEligibi
 interface PayrollNextActionCardProps {
   activeRun?: PayrollRun | null;
   readiness?: PayrollReadinessReport | null;
-  employeeCount: number;
+  employeeCount?: number;
+  headcount?: number;
   periodName: string;
+  status?: string;
+  blockerCount?: number;
+  warningCount?: number;
+  totalNet?: number;
   onNavigateTab?: (tabKey: string) => void;
   onOpenAutoModal?: () => void;
+  onSecondaryAction?: () => void;
+  onPrimaryAction?: () => void;
   className?: string;
 }
 
@@ -30,16 +37,25 @@ export const PayrollNextActionCard: React.FC<PayrollNextActionCardProps> = ({
   activeRun,
   readiness,
   employeeCount,
+  headcount,
   periodName,
+  status: propStatus,
+  blockerCount: propBlockerCount,
+  warningCount: _propWarningCount,
+  totalNet: _propTotalNet,
   onNavigateTab,
   onOpenAutoModal,
+  onSecondaryAction,
+  onPrimaryAction,
   className,
 }) => {
-  const blockerCount = readiness?.blockerCount || 0;
+  const effectiveEmployeeCount = employeeCount ?? headcount ?? 0;
+  const effectiveOpenAutoModal = onOpenAutoModal || onSecondaryAction;
+  const blockerCount = propBlockerCount !== undefined ? propBlockerCount : (readiness?.blockerCount || 0);
   const isBlocked = blockerCount > 0;
 
   // Determine the next action step based on authoritative payroll run status
-  const runStatus = (activeRun?.status || '').toUpperCase();
+  const runStatus = (propStatus || activeRun?.status || '').toUpperCase();
   const isLocked = !!activeRun?.is_locked || runStatus === 'LOCKED';
   const isPaid = runStatus === 'PAID' || runStatus === 'COMPLETED';
   const isApproved = runStatus === 'APPROVED';
@@ -53,12 +69,12 @@ export const PayrollNextActionCard: React.FC<PayrollNextActionCardProps> = ({
   let badgeText = 'NEXT ACTION';
   let badgeVariant: 'emerald' | 'amber' | 'rose' | 'blue' | 'purple' = 'emerald';
   let title = 'Payroll is ready for calculation.';
-  let description = `${employeeCount} employees verified • Attendance & OT verified • Statutory inputs reconciled.`;
+  let description = `${effectiveEmployeeCount} employees verified • Attendance & OT verified • Statutory inputs reconciled.`;
   let primaryActionText = 'Calculate Payroll';
   let primaryActionTarget = 'processing';
   let PrimaryIcon = Play;
   let secondaryActionText: string | null = '1-Click Auto Run';
-  let secondaryActionOnClick = onOpenAutoModal;
+  let secondaryActionOnClick = effectiveOpenAutoModal;
 
   if (isBlocked) {
     badgeText = 'ACTION REQUIRED';
@@ -175,7 +191,7 @@ export const PayrollNextActionCard: React.FC<PayrollNextActionCardProps> = ({
         <Button
           size="sm"
           variant="primary"
-          onClick={() => onNavigateTab && onNavigateTab(primaryActionTarget)}
+          onClick={() => onPrimaryAction ? onPrimaryAction() : (onNavigateTab && onNavigateTab(primaryActionTarget))}
           className={cn(
             'text-white font-bold text-xs sm:text-sm px-5 h-10 shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center gap-2 cursor-pointer',
             isBlocked

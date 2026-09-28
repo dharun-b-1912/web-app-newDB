@@ -221,6 +221,7 @@ export interface ImmutableReportSnapshot {
   // Payroll Cycle & Run
   payroll_run_id: string;
   period_name: string;
+  pay_period?: string; // alias for period_name
   period_start: string;
   period_end: string;
   payout_date: string;

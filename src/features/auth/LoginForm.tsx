@@ -96,28 +96,45 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   };
 
   const onSubmit = async (data: LoginFormData) => {
+    console.log('[LoginForm] Form submitted with:', { identifier: data.identifier, authContext });
     setIsLoading(true);
     setAuthError(null);
 
     try {
       const res = await signIn(data.identifier, data.password, authContext);
+      console.log('[LoginForm] signIn returned:', res);
 
       if (res.success && res.user) {
         showToast(`Welcome back, ${res.user.name}`, 'success');
-        if (res.destinationRoute && onSuccessRoute) {
-          onSuccessRoute(res.destinationRoute);
+        const targetRoute = res.destinationRoute || (authContext === 'vendor' ? 'vendor-settlement-workspace' : 'dashboard');
+        if (onSuccessRoute) {
+          onSuccessRoute(targetRoute);
         }
       } else {
         const errorText =
           res.errorMessage ||
           'Unable to sign in. Please verify your credentials and try again.';
+        console.log('[LoginForm] Setting authError:', errorText);
         setAuthError(errorText);
+        showToast(errorText, 'error');
       }
     } catch (err: any) {
-      setAuthError(err.message || 'An unexpected error occurred during sign-in.');
+      const msg = err.message || 'An unexpected error occurred during sign-in.';
+      console.error('[LoginForm] Sign-in exception:', msg);
+      setAuthError(msg);
+      showToast(msg, 'error');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const onInvalid = (formErrors: any) => {
+    const errorMsg =
+      formErrors.identifier?.message ||
+      formErrors.password?.message ||
+      'Please fill in your work email and password.';
+    setAuthError(errorMsg);
+    showToast(errorMsg, 'error');
   };
 
   return (
@@ -146,9 +163,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         </p>
       </div>
 
-
-
-
       {/* Global Error Banner */}
       {authError && (
         <div
@@ -161,7 +175,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({
       )}
 
       {/* Main Authentication Form */}
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSubmit(onSubmit, onInvalid)(e);
+        }}
+        className="space-y-4"
+        noValidate
+      >
         {/* Identifier Field */}
         <div>
           <label className="block text-xs font-semibold text-gray-700 mb-1.5">
@@ -248,7 +269,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               : authContext === 'platform'
               ? 'bg-[#0f172a] hover:bg-[#1e293b] text-white'
               : authContext === 'vendor'
-              ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+              ? 'bg-[#047857] hover:bg-emerald-800 text-white'
               : 'bg-[#073B2A] hover:bg-[#052b1e] text-white'
           }`}
         >

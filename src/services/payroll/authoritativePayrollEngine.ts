@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { OTPolicyEngine, OTCalculationBreakdown, OTPolicy } from './otPolicyEngine';
-import { OTPolicyCalculationResult } from '../../types/otPolicy';
+import { OTPolicyCalculationResult, CodeOnWagesAssessment } from '../../types/otPolicy';
 import {
   StatutoryCalculationEngine,
   EPFCalculationResult,
@@ -64,6 +64,10 @@ export interface AuthoritativePayrollInput {
   // Contractual Exemptions (e.g. raw contractor register without direct deductions)
   isContractorGrossPayoutMode?: boolean;
 
+  // LWF Period and Exemption metadata
+  payrollMonth?: number;
+  isManagerial?: boolean;
+
   // Other Deductions
   canteenDeduction?: number;
   salaryAdvanceDeduction?: number;
@@ -106,6 +110,7 @@ export interface AuthoritativeEmployeePayrollResult {
   // Overtime Trace
   otBreakdown: OTCalculationBreakdown;
   dedicatedOtResult?: OTPolicyCalculationResult;
+  codeOnWagesAssessment?: CodeOnWagesAssessment;
 
   // Statutory Wage Bases
   pfWageBasis: number;
@@ -216,6 +221,9 @@ export class AuthoritativePayrollEngine {
     const dedicatedOtResult = OTPolicyEngine.calculateDedicated({
       actual_ot_hours: otHours,
       monthly_salary_basis: input.monthlyGrossFixed || wageBasisForOT,
+      basic_salary: basicEarned,
+      da_amount: daEarned,
+      allowances_amount: hraEarned + allowancesTotal,
       company_id: input.companyId,
       organization_id: input.tenantId,
       policy_override: input.otPolicyOverride ? {
@@ -225,6 +233,8 @@ export class AuthoritativePayrollEngine {
         company_multiplier: input.otPolicyOverride.companyMultiplier,
         fixed_hourly_rate: input.otPolicyOverride.fixedHourlyRate,
         government_multiplier: input.otPolicyOverride.governmentMultiplier,
+        statutory_standard_preset: input.otPolicyOverride.statutoryStandardPreset,
+        enforce_50_percent_wage_rule: input.otPolicyOverride.enforce50PercentWageRule,
       } : undefined,
     });
 
@@ -243,7 +253,7 @@ export class AuthoritativePayrollEngine {
     const epfResult = StatutoryCalculationEngine.calculateEPF(basicEarned, daEarned, {
       pfEligible: input.pfApplicable,
       config: statConfig,
-      isContractorExempt,
+      isContractorExempt: false,
     });
 
     // B. ESIC (2-Step Assessment: Coverage on gross excluding OT; Contribution on gross including OT once!)
@@ -252,25 +262,31 @@ export class AuthoritativePayrollEngine {
       esiEligible: input.esiApplicable,
       isContinuingCoverage: input.isContinuingEsiCoverage,
       config: statConfig,
-      isContractorExempt,
+      isContractorExempt: false,
     });
 
     // C. Professional Tax (PT)
     const ptResult = StatutoryCalculationEngine.calculatePT(grossEarnings, state, {
       ptEligible: input.ptApplicable,
-      isContractorExempt,
+      isContractorExempt: false,
     });
 
     // D. Labour Welfare Fund (LWF)
+    const isManagerialStaff = input.isManagerial ?? (input.designation ? /manager|director|lead|vp|head|officer/i.test(input.designation) : false);
     const lwfResult = StatutoryCalculationEngine.calculateLWF(state, {
       lwfEligible: input.lwfApplicable,
-      isContractorExempt,
+      isContractorExempt: false,
+      config: statConfig,
+      payrollMonth: input.payrollMonth,
+      workedDays: input.workedDays,
+      isManagerial: isManagerialStaff,
     });
 
-    const employeeEPF = epfResult.employeeContribution;
-    const employeeESI = esiResult.employeeContribution;
-    const professionalTax = ptResult.ptAmount;
-    const employeeLWF = lwfResult.employeeAmount;
+    // In contractor gross payout mode, statutory contributions are employer-absorbed/returned without reducing worker net pay
+    const employeeEPF = isContractorExempt ? 0 : epfResult.employeeContribution;
+    const employeeESI = isContractorExempt ? 0 : esiResult.employeeContribution;
+    const professionalTax = isContractorExempt ? 0 : ptResult.ptAmount;
+    const employeeLWF = isContractorExempt ? 0 : lwfResult.employeeAmount;
     const totalStatutoryDeductions = employeeEPF + employeeESI + professionalTax + employeeLWF;
 
     // ── 6. Other Deductions (Canteen, Advances, Loans) ────────────────────────
@@ -362,6 +378,7 @@ export class AuthoritativePayrollEngine {
 
       otBreakdown,
       dedicatedOtResult,
+      codeOnWagesAssessment: dedicatedOtResult.code_on_wages,
 
       pfWageBasis: epfResult.pfWageBasis,
       esiCoverageWage: esiResult.coverageWage,

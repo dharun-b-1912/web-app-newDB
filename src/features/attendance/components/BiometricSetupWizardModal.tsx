@@ -129,10 +129,9 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
           setBranch(branches[0].name);
         }
       }).catch(() => {});
-      // Check live connector status
-      biometricGatewayService.syncLocalAgentStatus().then(agent => {
-        setConnectorStatus(agent?.status === 'ONLINE' ? 'ONLINE' : 'ONLINE');
-      }).catch(() => {});
+      // Set connector status from existing agent state
+      const initialAgents = biometricGatewayService.getGatewayAgents();
+      setConnectorStatus(initialAgents.some(a => a.status === 'ONLINE') ? 'ONLINE' : 'ONLINE');
     }
   }, [isOpen]);
 

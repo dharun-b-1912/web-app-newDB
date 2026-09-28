@@ -21,6 +21,7 @@ import { onboardingService } from '../../services/onboardingService';
 import { hrEventBus } from '../../services/hrEventBus';
 import { api } from '../../services/api';
 import { EmployeeCreateWizardModal } from '../people/EmployeeCreateWizardModal';
+import { DivyaManpowerOnboardingTab } from './components/DivyaManpowerOnboardingTab';
 import {
   UserPlus,
   CheckSquare,
@@ -51,6 +52,7 @@ import {
   ShieldAlert,
   Layers,
   RotateCcw,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 const PIPELINE_STAGES = [
@@ -79,6 +81,8 @@ export const OnboardingView: React.FC = () => {
     overdue_tasks: 0,
     ready_to_activate: 0,
   });
+
+  const [mainTab, setMainTab] = useState<'PIPELINE' | 'STATUTORY_FORMS'>('STATUTORY_FORMS');
 
   // Filters
   const [search, setSearch] = useState('');
@@ -173,7 +177,7 @@ export const OnboardingView: React.FC = () => {
   const handleConfirmRejectDoc = async () => {
     if (!selectedOnboarding || !rejectReason.trim()) return;
     await onboardingService.verifyDocument(selectedOnboarding.id, rejectDocId, 'REJECTED', rejectReason);
-    showToast('Document rejected and replacement task generated', 'warning');
+    showToast('Document rejected and replacement task generated', 'info');
     setIsRejectDocModalOpen(false);
     setRejectReason('');
     loadData();
@@ -200,7 +204,7 @@ export const OnboardingView: React.FC = () => {
   const handleConfirmOverride = async () => {
     if (!selectedOnboarding || !overrideReason.trim()) return;
     await onboardingService.overrideTask(selectedOnboarding.id, overrideTaskId, overrideReason);
-    showToast('Task requirement overridden by HR Head', 'warning');
+    showToast('Task requirement overridden by HR Head', 'info');
     setIsOverrideModalOpen(false);
     setOverrideReason('');
     loadData();
@@ -265,26 +269,55 @@ export const OnboardingView: React.FC = () => {
     <div className="space-y-6 pb-12">
       <Breadcrumb items={[{ label: 'People & Core HR' }, { label: 'Onboarding Engine 2.0' }]} />
 
-      {/* Header */}
+      {/* Header with Mode Switcher */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-gray-900 tracking-tight">Onboarding Engine</h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Track new joiners, document verification, manager readiness, IT asset provisioning, and employee activation.
+            Intelligent candidate onboarding, missing information detection, statutory forms (11, 2, F, 1, Q) & multi-stage pipeline.
           </p>
         </div>
 
-        <Button
-          onClick={() => setIsCreateWizardOpen(true)}
-          leftIcon={<UserPlus className="w-4 h-4" />}
-          className="font-bold shadow-sm"
-        >
-          Initiate Onboarding
-        </Button>
+        <div className="flex items-center gap-3">
+          <div className="bg-gray-100 p-1 rounded-xl flex items-center gap-1 border border-gray-200 text-xs font-bold">
+            <button
+              onClick={() => setMainTab('STATUTORY_FORMS')}
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                mainTab === 'STATUTORY_FORMS'
+                  ? 'bg-[#07563D] text-white shadow-2xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Statutory Forms & KYC Automation
+            </button>
+            <button
+              onClick={() => setMainTab('PIPELINE')}
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                mainTab === 'PIPELINE'
+                  ? 'bg-white text-gray-900 shadow-2xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" /> Enterprise Pipeline
+            </button>
+          </div>
+
+          <Button
+            onClick={() => setIsCreateWizardOpen(true)}
+            leftIcon={<UserPlus className="w-4 h-4" />}
+            className="font-bold shadow-sm"
+          >
+            Initiate Onboarding
+          </Button>
+        </div>
       </div>
 
-      {/* 8 Live SQL-Driven KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+      {mainTab === 'STATUTORY_FORMS' ? (
+        <DivyaManpowerOnboardingTab />
+      ) : (
+        <>
+          {/* 8 Live SQL-Driven KPI Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs space-y-1">
           <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Active</div>
           <div className="text-xl font-black text-gray-900">{metrics.active_onboardings}</div>
@@ -549,13 +582,15 @@ export const OnboardingView: React.FC = () => {
           </TableBody>
         </Table>
       </div>
+      </>
+      )}
 
       {/* 7-Tab Onboarding Detail Inspector Drawer */}
       <Drawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         title={selectedOnboarding ? `${selectedOnboarding.employee?.first_name} ${selectedOnboarding.employee?.last_name} — Onboarding` : 'Onboarding Details'}
-        size="lg"
+        width="lg"
       >
         {selectedOnboarding && (
           <div className="space-y-5">

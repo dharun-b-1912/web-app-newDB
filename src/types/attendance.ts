@@ -15,7 +15,7 @@ export type AttendanceStatus =
 
 export type EventType = 'CHECK_IN' | 'CHECK_OUT' | 'BREAK_START' | 'BREAK_END' | 'OTHER';
 
-export type PunchSource = 'BIOMETRIC' | 'GPS' | 'WEB' | 'MOBILE' | 'MANUAL' | 'API' | 'IMPORT' | 'SYSTEM' | 'HYBRID';
+export type PunchSource = 'BIOMETRIC' | 'GPS' | 'WEB' | 'MOBILE' | 'MANUAL' | 'API' | 'IMPORT' | 'SYSTEM' | 'HYBRID' | 'MOBILE_GPS';
 
 export type RegularizationStatus = 'Draft' | 'Submitted' | 'Pending Manager' | 'Pending HR' | 'Approved' | 'Rejected' | 'Cancelled';
 
@@ -163,6 +163,7 @@ export interface BiometricDevice {
   branch: string;
   status: 'Online' | 'Offline' | 'Syncing' | 'Error';
   last_sync: string;
+  last_sync_at?: string;
   sync_frequency_mins: number;
 }
 

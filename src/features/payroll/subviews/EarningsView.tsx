@@ -99,8 +99,12 @@ export const EarningsView: React.FC<EarningsViewProps> = ({ initialSubTab }) => 
 
   useEffect(() => {
     loadData();
-    const unsub = hrEventBus.subscribe('*', () => loadData());
-    return () => unsub();
+    const unsub1 = hrEventBus.subscribe('payroll.*', () => loadData());
+    const unsub2 = hrEventBus.subscribe('earnings.*', () => loadData());
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, []);
 
   const subTabs = [

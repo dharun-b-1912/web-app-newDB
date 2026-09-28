@@ -10,6 +10,8 @@ import { platformTenantService, OrganizationRecord } from './platformTenantServi
 import { platformSubscriptionService } from './platformSubscriptionService';
 import { platformBillingService } from './platformBillingService';
 import { userAuthProvisionerService } from '../auth/userAuthProvisionerService';
+import { enterpriseIdentityService } from '../auth/enterpriseIdentityService';
+import { platformAuthInvitationService } from './platformAuthInvitationService';
 
 export interface ProvisioningFormData {
   // Step 1: Organization
@@ -458,21 +460,32 @@ export const platformProvisioningEngine = {
       steps[4].status = 'IN_PROGRESS';
       onProgress?.(steps[4]);
 
-      // Automatically provision the Company Admin GoTrue Auth user account
+      // Automatically dispatch secure one-time activation invitation to the Organization Admin
       if (formData.admin_email) {
         try {
-          await userAuthProvisionerService.provisionUser({
-            organizationId: orgId,
-            organizationName: formData.legal_name,
-            companyId: companyId,
+          await enterpriseIdentityService.inviteUser({
+            organization_id: orgId,
             email: formData.admin_email,
-            fullName: `${formData.admin_first_name || ''} ${formData.admin_last_name || ''}`.trim() || `${formData.legal_name} Admin`,
+            full_name: `${formData.admin_first_name || ''} ${formData.admin_last_name || ''}`.trim() || `${formData.legal_name} Administrator`,
             phone: formData.admin_phone,
-            roleCode: 'COMPANY_ADMIN',
-            temporaryPassword: 'joypeoplehr',
+            role_code: 'ORGANIZATION_ADMIN',
           });
         } catch (authErr) {
-          console.warn('[ProvisioningEngine] Company admin auth provisioning notice:', authErr);
+          console.warn('[ProvisioningEngine] Organization admin invitation dispatch notice:', authErr);
+        }
+
+        try {
+          await platformAuthInvitationService.inviteUser({
+            organizationId: orgId,
+            organizationName: formData.legal_name,
+            email: formData.admin_email,
+            fullName: `${formData.admin_first_name || ''} ${formData.admin_last_name || ''}`.trim() || `${formData.legal_name} Administrator`,
+            phone: formData.admin_phone,
+            role: 'Company Admin',
+            sendSupabaseEmail: false,
+          });
+        } catch (localErr) {
+          console.warn('[ProvisioningEngine] Local invitation record notice:', localErr);
         }
       }
 
@@ -491,6 +504,18 @@ export const platformProvisioningEngine = {
 
       // Clear draft on successful completion
       this.clearDraft();
+
+      // Refresh platform tenant directory and subscriptions so metrics recalculate in real-time
+      try {
+        await platformTenantService.fetchLiveFromSupabase(true);
+        await platformSubscriptionService.fetchLiveFromSupabase();
+      } catch (syncErr) {
+        console.warn('[ProvisioningEngine] Post-provision sync notice:', syncErr);
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('platform:tenant_updated', { detail: { organizationId: orgId } }));
+      }
 
       await new Promise((r) => setTimeout(r, 250));
       steps[4].status = 'COMPLETED';

@@ -112,18 +112,18 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
 
   useEffect(() => {
     loadData();
-    const unsub = hrEventBus.subscribe('*', () => loadData());
+    const unsub1 = hrEventBus.subscribe('payroll.*', () => loadData());
+    const unsub2 = hrEventBus.subscribe('employee.*', () => loadData());
     const handleEmpChange = () => loadData();
     window.addEventListener('employee:updated', handleEmpChange);
     window.addEventListener('employee:created', handleEmpChange);
     window.addEventListener('payroll:refresh', handleEmpChange);
-    window.addEventListener('storage', handleEmpChange);
     return () => {
-      unsub();
+      unsub1();
+      unsub2();
       window.removeEventListener('employee:updated', handleEmpChange);
       window.removeEventListener('employee:created', handleEmpChange);
       window.removeEventListener('payroll:refresh', handleEmpChange);
-      window.removeEventListener('storage', handleEmpChange);
     };
   }, [activePeriod]);
 
@@ -272,13 +272,17 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
       {/* 1. Primary Hero Next Action Card */}
       <PayrollNextActionCard
         periodName={activePeriod}
+        activeRun={activeCompletedRun}
         status={currentPayrollStatus}
         blockerCount={readiness?.blockerCount || 0}
         warningCount={readiness?.warningCount || 0}
         headcount={activeStaffCount}
+        employeeCount={activeStaffCount}
         totalNet={totalNetEstimated}
         onPrimaryAction={handlePrimaryAction}
+        onOpenAutoModal={() => setIsAutoModalOpen(true)}
         onSecondaryAction={() => setIsAutoModalOpen(true)}
+        onNavigateTab={onNavigateTab}
       />
 
       {/* 2. Structured Payroll Control Totals (4 Clean KPI Cards) */}
@@ -703,66 +707,79 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {runs.length > 0 ? (
-                runs.map((run) => (
-                  <tr key={run.id} className="hover:bg-gray-50/70 transition-colors">
-                    <td className="p-3.5 font-bold text-gray-900 flex items-center gap-2">
-                      <Calendar className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>{run.pay_period}</span>
-                    </td>
-                    <td className="p-3.5 text-gray-600 font-mono text-[11px]">
-                      {run.period_start} to {run.period_end}
-                    </td>
-                    <td className="p-3.5 font-medium text-gray-700">{run.total_employees} Staff</td>
-                    <td className="p-3.5 font-mono font-bold text-gray-900">
-                      ₹{' '}
-                      {(run.total_gross ?? (run as any).total_gross_pay ?? 0).toLocaleString('en-IN')}
-                    </td>
-                    <td className="p-3.5 font-mono text-rose-700">
-                      ₹ {(run.total_deductions || 0).toLocaleString('en-IN')}
-                    </td>
-                    <td className="p-3.5 font-mono font-bold text-[#07563D]">
-                      ₹{' '}
-                      {(
-                        (run.total_net_payout ?? (run as any).total_net_pay) ||
-                        0
-                      ).toLocaleString('en-IN')}
-                    </td>
-                    <td className="p-3.5">
-                      <PayrollStatusBadge
-                        status={
-                          run.status === 'Paid'
-                            ? 'PAID'
-                            : run.is_locked
-                            ? 'LOCKED'
-                            : run.status === 'Completed' || run.status === 'Finalized'
-                            ? 'APPROVED'
-                            : run.status === 'Calculated'
-                            ? 'CALCULATED'
-                            : 'READY'
-                        }
-                        size="sm"
-                      />
-                    </td>
-                    <td className="p-3.5 text-right">
-                      <Button
-                        size="xs"
-                        variant="secondary"
-                        onClick={() => onNavigateTab && onNavigateTab('reports')}
-                        className="text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 font-bold shadow-2xs cursor-pointer"
-                      >
-                        <FileSpreadsheet className="w-3.5 h-3.5 mr-1 text-[#07563D]" /> View Reports
-                      </Button>
+              {(() => {
+                const displayRuns = runs.filter(
+                  (r) =>
+                    (Number(r.total_employees || 0) > 0 ||
+                      (r.employee_records && r.employee_records.length > 0) ||
+                      Number(r.total_gross ?? (r as any).total_gross_pay ?? 0) > 0) &&
+                    Boolean(r.pay_period || r.period_name) &&
+                    String(r.pay_period || r.period_name).trim() !== '' &&
+                    String(r.pay_period || r.period_name).trim().toLowerCase() !== 'to' &&
+                    Boolean(r.period_start && r.period_end)
+                );
+
+                return displayRuns.length > 0 ? (
+                  displayRuns.map((run) => (
+                    <tr key={run.id} className="hover:bg-gray-50/70 transition-colors">
+                      <td className="p-3.5 font-bold text-gray-900 flex items-center gap-2">
+                        <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{run.pay_period || 'August 2026'}</span>
+                      </td>
+                      <td className="p-3.5 text-gray-600 font-mono text-[11px]">
+                        {run.period_start} to {run.period_end}
+                      </td>
+                      <td className="p-3.5 font-medium text-gray-700">{run.total_employees} Staff</td>
+                      <td className="p-3.5 font-mono font-bold text-gray-900">
+                        ₹{' '}
+                        {(run.total_gross ?? (run as any).total_gross_pay ?? 0).toLocaleString('en-IN')}
+                      </td>
+                      <td className="p-3.5 font-mono text-rose-700">
+                        ₹ {(run.total_deductions || 0).toLocaleString('en-IN')}
+                      </td>
+                      <td className="p-3.5 font-mono font-bold text-[#07563D]">
+                        ₹{' '}
+                        {(
+                          (run.total_net_payout ?? (run as any).total_net_pay) ||
+                          0
+                        ).toLocaleString('en-IN')}
+                      </td>
+                      <td className="p-3.5">
+                        <PayrollStatusBadge
+                          status={
+                            run.status === 'Paid'
+                              ? 'PAID'
+                              : run.is_locked
+                              ? 'LOCKED'
+                              : run.status === 'Completed' || run.status === 'Finalized'
+                              ? 'APPROVED'
+                              : run.status === 'Calculated'
+                              ? 'CALCULATED'
+                              : 'READY'
+                          }
+                          size="sm"
+                        />
+                      </td>
+                      <td className="p-3.5 text-right">
+                        <Button
+                          size="xs"
+                          variant="secondary"
+                          onClick={() => onNavigateTab && onNavigateTab('reports')}
+                          className="text-[#07563D] hover:bg-emerald-100/80 bg-emerald-50/80 border border-emerald-200/80 font-bold shadow-2xs cursor-pointer"
+                        >
+                          <FileSpreadsheet className="w-3.5 h-3.5 mr-1 text-[#07563D]" /> View Reports
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={8} className="p-6 text-center text-gray-400">
+                      No completed payroll runs found. Run your first payroll cycle to see historical records here.
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={8} className="p-6 text-center text-gray-400">
-                    No completed payroll runs found. Run your first payroll cycle to see historical records here.
-                  </td>
-                </tr>
-              )}
+                );
+              })()}
             </tbody>
           </table>
         </div>
@@ -773,8 +790,13 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
         <AutoPayrollAndReportsModal
           isOpen={isAutoModalOpen}
           onClose={() => setIsAutoModalOpen(false)}
-          onComplete={() => {
-            loadData();
+          defaultPeriod={activePeriod}
+          onRunCompleted={async (run) => {
+            await loadData();
+            if (onNavigateTab) onNavigateTab('reports');
+          }}
+          onComplete={async (run) => {
+            await loadData();
             if (onNavigateTab) onNavigateTab('reports');
           }}
         />

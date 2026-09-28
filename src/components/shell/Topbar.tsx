@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Search, MapPin, Sparkles, Shield, Globe, Terminal } from 'lucide-react';
+import { Search, MapPin, Sparkles, Shield, Globe, Terminal, ShieldCheck, ArrowRightLeft, Building2 } from 'lucide-react';
 import { CompanySelector } from './CompanySelector';
+import { VendorCompanyConnectionSelector } from './VendorCompanyConnectionSelector';
 import { UserMenu } from './UserMenu';
 import { NotificationsCenter } from './NotificationsCenter';
 import { useTenant } from '../../hooks/useTenant';
 import { usePermission } from '../../hooks/usePermission';
+import { useAuth } from '../../hooks/useAuth';
 import { AppDiagnosticsModal } from '../common/AppDiagnosticsModal';
 import { CompanyLocationEditModal } from './CompanyLocationEditModal';
 import { appLogger } from '../../lib/appLogger';
@@ -12,16 +14,51 @@ import { appLogger } from '../../lib/appLogger';
 export interface TopbarProps {
   onOpenSearch: () => void;
   onOpenAiAssistant?: () => void;
+  currentNav?: string;
 }
 
-export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant }) => {
+export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant, currentNav }) => {
   const { activeCompany } = useTenant();
   const { primaryRole, roleProfile } = usePermission();
+  const { user } = useAuth();
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const [errorCount, setErrorCount] = useState(0);
 
+  // Active client site state for vendor portal
+  const [activeVendorSite, setActiveVendorSite] = useState<string>(() => {
+    try {
+      return localStorage.getItem('workforce_vendor_active_site') || 'Chennai Manufacturing Plant (CHE-01)';
+    } catch {
+      return 'Chennai Manufacturing Plant (CHE-01)';
+    }
+  });
+
+  useEffect(() => {
+    const handleClientChange = (e: any) => {
+      if (e.detail?.siteName) {
+        setActiveVendorSite(e.detail.siteName);
+      }
+    };
+    window.addEventListener('vendor:client_changed', handleClientChange);
+    return () => window.removeEventListener('vendor:client_changed', handleClientChange);
+  }, []);
+
   const isSuperAdmin = primaryRole === 'Super Admin';
+
+  const isVendorPortal =
+    primaryRole === 'Vendor Admin' ||
+    primaryRole === 'Vendor Partner' ||
+    (user as any)?.role === 'Vendor Admin' ||
+    (user as any)?.userType === 'VENDOR' ||
+    Boolean((user as any)?.vendor_id) ||
+    (currentNav && currentNav.startsWith('vendor')) ||
+    (typeof window !== 'undefined' && (
+      window.location.pathname.startsWith('/vendor') ||
+      window.location.pathname.includes('vendor-storage') ||
+      window.location.pathname.includes('vendor-settlement') ||
+      window.location.pathname.includes('vendor-portal')
+    ));
 
   useEffect(() => {
     const handleLog = () => {
@@ -66,6 +103,26 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
               <span>India (ap-south-1)</span>
             </div>
           </div>
+        ) : isVendorPortal ? (
+          <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+            {/* Dedicated Vendor Organization Identity & Connected Client Selector */}
+            <VendorCompanyConnectionSelector />
+
+            {/* Assigned Deployed Site Pill */}
+            <div
+              title="Assigned Client Deployment Location for Contracted Workforce"
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50/70 rounded-xl border border-emerald-200/80 text-xs font-semibold text-[#07563D] whitespace-nowrap shrink-0"
+            >
+              <MapPin className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+              <span>Site: {activeVendorSite}</span>
+            </div>
+
+            {/* Vendor Scope Badge */}
+            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 bg-slate-900 text-white border-slate-700 shadow-2xs">
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+              <span>Vendor Portal · External Partner</span>
+            </div>
+          </div>
         ) : (
           <>
             <CompanySelector />
@@ -75,7 +132,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
                 type="button"
                 onClick={() => setIsLocationModalOpen(true)}
                 title="Click to view or edit company live GPS location"
-                className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 hover:bg-emerald-50/80 rounded-xl border border-gray-200/60 hover:border-emerald-300 text-xs font-semibold text-gray-700 hover:text-[#07563D] whitespace-nowrap shrink-0 transition-colors cursor-pointer group"
+                className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 hover:bg-emerald-50/80 rounded-xl border border-gray-200/60 hover:border-emerald-300 text-xs font-semibold text-gray-700 hover:text-[#07563D] whitespace-nowrap shrink-0 transition-colors cursor-pointer group"
               >
                 <MapPin className="w-3.5 h-3.5 text-emerald-700 group-hover:scale-110 transition-transform shrink-0" />
                 <span>{activeCompany.city || 'Coimbatore'}, {activeCompany.country || 'India'}</span>
@@ -83,13 +140,9 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
             )}
 
             {/* Role & Scope Indicator Badge */}
-            <div className={`hidden 2xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 ${
-              primaryRole === 'Vendor Admin'
-                ? 'bg-indigo-50 text-indigo-900 border-indigo-200/80'
-                : 'bg-emerald-50 text-[#07563D] border-emerald-200/60'
-            }`}>
-              <Shield className={`w-3.5 h-3.5 shrink-0 ${primaryRole === 'Vendor Admin' ? 'text-indigo-600' : 'text-emerald-700'}`} />
-              <span>{primaryRole === 'Vendor Admin' ? 'Vendor Operations Admin (Partner)' : `${primaryRole} (${roleProfile.defaultScope})`}</span>
+            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 bg-emerald-50 text-[#07563D] border-emerald-200/60">
+              <Shield className="w-3.5 h-3.5 shrink-0 text-emerald-700" />
+              <span>{`${primaryRole} (${roleProfile.defaultScope})`}</span>
             </div>
           </>
         )}
@@ -106,6 +159,8 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
             <span className="truncate whitespace-nowrap text-xs text-gray-400 font-medium">
               {isSuperAdmin
                 ? 'Search organizations, invoices, audit events (Ctrl + K)...'
+                : isVendorPortal
+                ? 'Search purchase orders, workforce roster, invoices, compliance vault (Ctrl + K)...'
                 : 'Search employees, departments, reports...'}
             </span>
           </span>
@@ -132,7 +187,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-[#07563D] border border-emerald-200/80 rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <span>{isSuperAdmin ? 'Joy PeopleHR Copilot' : 'HR Assistant'}</span>
+            <span>{isSuperAdmin ? 'Joy PeopleHR Copilot' : isVendorPortal ? 'Vendor Desk' : 'HR Assistant'}</span>
           </button>
         )}
 
@@ -167,12 +222,14 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant 
         onClose={() => setIsDiagnosticsOpen(false)}
       />
 
-      {/* Company Live Location Modal */}
-      <CompanyLocationEditModal
-        isOpen={isLocationModalOpen}
-        onClose={() => setIsLocationModalOpen(false)}
-      />
+      {/* Company GPS Location Modal */}
+      {activeCompany && (
+        <CompanyLocationEditModal
+          isOpen={isLocationModalOpen}
+          onClose={() => setIsLocationModalOpen(false)}
+          company={activeCompany}
+        />
+      )}
     </header>
   );
 };
-

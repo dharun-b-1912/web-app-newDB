@@ -281,7 +281,7 @@ export const ProfilePhotoPreviewModal: React.FC<Props> = ({
                 <Button size="sm" variant="secondary" onClick={() => setShowRemoveConfirm(false)} className="bg-white/20 text-white hover:bg-white/30 border-0">
                   Cancel
                 </Button>
-                <Button size="sm" variant="destructive" onClick={handleRemovePhoto} className="bg-rose-600 hover:bg-rose-700 font-bold">
+                <Button size="sm" variant="danger" onClick={handleRemovePhoto} className="bg-rose-600 hover:bg-rose-700 font-bold">
                   Yes, Remove
                 </Button>
               </div>

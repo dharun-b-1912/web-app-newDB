@@ -40,6 +40,7 @@ import { GlobalAttendanceFilterState } from '../AttendanceModuleMaster';
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
+import { realtimeChannelManager } from '../../../services/realtime/realtimeChannelManager';
 import { attendanceClassificationEngine, ClassifiedPunchEvent } from '../../../services/attendance/attendanceClassificationEngine';
 import { biometricGatewayService } from '../../../services/attendance/biometricGatewayService';
 
@@ -166,31 +167,21 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     loadData();
   }, [selectedDate]);
 
-  // Real-time Supabase postgres replication stream for instant punch updates
+  // Real-time Supabase postgres replication stream via centralized mesh for instant punch updates
   useEffect(() => {
     if (!isSupabaseEnabled) return;
-    const channel = supabase
-      .channel(`emp-attendance-live-${selectedDate}-${Date.now()}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance_daily' },
-        () => {
-          attendanceApi.invalidateCache();
-          loadData();
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance_punches' },
-        () => {
-          attendanceApi.invalidateCache();
-          loadData();
-        }
-      )
-      .subscribe();
+    const unsubDaily = realtimeChannelManager.subscribeToTable('attendance_daily', () => {
+      attendanceApi.invalidateCache();
+      loadData();
+    });
+    const unsubPunches = realtimeChannelManager.subscribeToTable('attendance_punches', () => {
+      attendanceApi.invalidateCache();
+      loadData();
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      unsubDaily();
+      unsubPunches();
     };
   }, [selectedDate]);
 
@@ -203,17 +194,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     return () => unsub();
   }, [selectedDate]);
 
-  // Quiet continuous background synchronization — ref-guarded to prevent lag pile-up
-  const _empViewLoading = React.useRef(false);
-  useEffect(() => {
-    const safeLoad = async () => {
-      if (_empViewLoading.current) return;
-      _empViewLoading.current = true;
-      try { await loadData(); } finally { _empViewLoading.current = false; }
-    };
-    const timer = setInterval(safeLoad, 5000);
-    return () => clearInterval(timer);
-  }, [selectedDate]);
+  // Event-driven cache invalidation and live loading is managed via hrEventBus above
 
   // Scoped and filtered employees & attendance records
   const filteredData = useMemo(() => {
@@ -427,6 +408,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             employee_name: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name,
             department: emp.department_name || emp.department || 'Operations',
             designation: emp.designation_title || emp.designation || 'Staff',
+            organization_id: emp.organization_id || '',
+            company_id: emp.company_id || '',
             date: selectedDate,
             shift_id: roster.shift_id,
             shift_name: roster.shift_name,
@@ -470,13 +453,15 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
       return {
         emp,
-        record: resolvedRecord || {
+        record: (resolvedRecord || {
           id: `att-dyn-${emp.id}-${selectedDate}`,
           employee_id: emp.id,
           employee_code: emp.employee_code || `WF-${emp.id}`,
           employee_name: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name,
           department: emp.department_name || emp.department || 'Operations',
           designation: emp.designation_title || emp.designation || 'Staff',
+          organization_id: emp.organization_id || '',
+          company_id: emp.company_id || '',
           date: selectedDate,
           shift_id: roster.shift_id,
           shift_name: roster.shift_name,
@@ -491,8 +476,12 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           early_checkout_minutes: 0,
           overtime_minutes: 0,
           status,
-          source: isOff ? 'SYSTEM' : undefined,
-        },
+          source: (isOff ? 'SYSTEM' : 'SYSTEM') as PunchSource,
+          check_in_source: undefined,
+          check_out_source: undefined,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }) as AttendanceDaily,
         roster,
         shift,
       };

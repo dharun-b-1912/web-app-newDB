@@ -73,8 +73,12 @@ export const BankDisbursementView: React.FC<BankDisbursementViewProps> = ({
 
   useEffect(() => {
     loadData();
-    const unsub = hrEventBus.subscribe('*', () => loadData());
-    return () => unsub();
+    const unsub1 = hrEventBus.subscribe('disbursement.*', () => loadData());
+    const unsub2 = hrEventBus.subscribe('payroll.*', () => loadData());
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, []);
 
   const filteredBatches = useMemo(() => {
@@ -130,8 +134,8 @@ export const BankDisbursementView: React.FC<BankDisbursementViewProps> = ({
     <div className="space-y-6">
       {/* 0. Automated Workflow Lifecycle Stepper */}
       <PayrollWorkflowStepper
-        currentStage={batches.some(b => b.status === 'Settled' || b.status === 'Reconciled') ? 6 : 5}
-        onNavigateStage={stageKey => {
+        currentStage={batches.some(b => b.status === 'Settled' || b.status === 'Reconciled') ? 'report' : 'disburse'}
+        onNavigateTab={stageKey => {
           if (onNavigateTab) onNavigateTab(stageKey);
         }}
       />

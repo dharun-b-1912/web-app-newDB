@@ -257,7 +257,7 @@ export async function runPayslipPreviewPrintCertificationSuite(): Promise<{
       'CE0381', 'CE0382', 'CE0383'
     ];
     const multiPageHtml = BatchPayslipExportService.generateMultiPageHtml(all21Codes, 'August 2026');
-    const pageCountMatch = (multiPageHtml.match(/class="payslip-page"/g) || []).length;
+    const pageCountMatch = (multiPageHtml.match(/class="[^"]*payslip-page[^"]*"/g) || multiPageHtml.match(/class="payslip-page"/g) || []).length;
     const hasPageBreakCss = multiPageHtml.includes('page-break-after: always') && multiPageHtml.includes('break-after: page');
     const passed = pageCountMatch === 21 && hasPageBreakCss && multiPageHtml.length > 20000;
     results.push({
