@@ -1099,7 +1099,7 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
                           <td className="py-2.5 px-3 text-center text-gray-500">{emp.absent_days} d</td>
                           <td className="py-2.5 px-3 text-center text-gray-500">{emp.weekly_off_days} d</td>
                           <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-800">
-                            {emp.ot_hours > 0 ? `${emp.ot_hours} hrs` : '—'}
+                            {emp.ot_hours > 0 ? `${Number(emp.ot_hours).toFixed(2)} hrs` : '—'}
                           </td>
                           <td className="py-2.5 px-3 text-center">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -1199,9 +1199,9 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
                                           <td className="py-1.5 px-3 text-center"><HalfStatusBadge status={punch.second_half_status} /></td>
                                           <td className="py-1.5 px-3 text-gray-700">{punch.in_time || '—'}</td>
                                           <td className="py-1.5 px-3 text-gray-700">{punch.out_time || '—'}</td>
-                                          <td className="py-1.5 px-3 text-right text-gray-900">{punch.regular_hours}h</td>
+                                          <td className="py-1.5 px-3 text-right text-gray-900">{Number(punch.regular_hours).toFixed(2)}h</td>
                                           <td className="py-1.5 px-3 text-right font-bold text-amber-800">
-                                            {punch.ot_hours > 0 ? `${punch.ot_hours}h` : '—'}
+                                            {punch.ot_hours > 0 ? `${Number(punch.ot_hours).toFixed(2)}h` : '—'}
                                           </td>
                                           <td className="py-1.5 px-3 text-center">
                                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 font-sans">
@@ -1344,9 +1344,9 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
                       </td>
                       <td className="py-2 px-3 text-gray-700">{rec.in_time || '—'}</td>
                       <td className="py-2 px-3 text-gray-700">{rec.out_time || '—'}</td>
-                      <td className="py-2 px-3 text-right text-gray-900">{rec.regular_hours}h</td>
+                      <td className="py-2 px-3 text-right text-gray-900">{Number(rec.regular_hours).toFixed(2)}h</td>
                       <td className="py-2 px-3 text-right font-bold text-amber-800">
-                        {rec.ot_hours > 0 ? `${rec.ot_hours}h` : '—'}
+                        {rec.ot_hours > 0 ? `${Number(rec.ot_hours).toFixed(2)}h` : '—'}
                       </td>
                       <td className="py-2 px-3 text-center">
                         <AttendanceStatusBadge status={rec.attendance_status} firstHalf={rec.first_half_status} />
@@ -1587,7 +1587,7 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
                         <td className="py-2.5 px-3 font-mono font-bold text-emerald-800">{rec.employee_id}</td>
                         <td className="py-2.5 px-3 font-semibold text-gray-900">{rec.employee_name}</td>
                         <td className="py-2.5 px-3 text-gray-600">{rec.department}</td>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-800">{rec.total_ot_hours} hrs</td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-800">{Number(rec.total_ot_hours).toFixed(2)} hrs</td>
                         <td className="py-2.5 px-3 text-center font-mono">{rec.ot_gt_4hrs_occurrences} d</td>
                         <td className="py-2.5 px-3 text-center">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
@@ -1640,7 +1640,7 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
                       <td className="py-2 px-3 text-center text-gray-500">{rec.lop}</td>
                       <td className="py-2 px-3 text-center text-gray-700">{rec.no_of_shifts_present}</td>
                       <td className="py-2 px-3 text-right font-bold text-amber-800">
-                        {rec.ot_hours > 0 ? `${rec.ot_hours}` : '—'}
+                        {rec.ot_hours > 0 ? Number(rec.ot_hours).toFixed(2) : '—'}
                       </td>
                       <td className="py-2 px-3 text-center font-sans">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -1663,7 +1663,7 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
                     <td className="py-2.5 px-3 text-center">0</td>
                     <td className="py-2.5 px-3 text-center">{master.stats.totalLOP}</td>
                     <td className="py-2.5 px-3 text-center">{master.stats.totalPresentDays.toFixed(1)}</td>
-                    <td className="py-2.5 px-3 text-right font-bold text-amber-900">{master.stats.totalOtHours}</td>
+                    <td className="py-2.5 px-3 text-right font-bold text-amber-900">{Number(master.stats.totalOtHours).toFixed(2)}</td>
                     <td></td>
                   </tr>
                 </tbody>
@@ -1723,7 +1723,7 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-right font-bold text-amber-800">
-                        {emp.ot_hours > 0 ? `${emp.ot_hours}h` : '—'}
+                        {emp.ot_hours > 0 ? `${Number(emp.ot_hours).toFixed(2)}h` : '—'}
                       </td>
                       <td className="py-2.5 px-3 font-sans">
                         {emp.audit_status === 'MATCHED' ? (

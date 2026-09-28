@@ -210,7 +210,7 @@ export const BreaksWorkHoursView: React.FC = () => {
                   <TableCell>
                     {record.payable_ot_hours > 0 ? (
                       <Badge variant="emerald" size="sm">
-                        +{record.payable_ot_hours}h Overtime
+                        +{Number(record.payable_ot_hours).toFixed(2)}h Overtime
                       </Badge>
                     ) : (
                       <span className="text-xs text-gray-400 font-medium">0.0h</span>

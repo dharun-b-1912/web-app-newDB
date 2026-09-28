@@ -241,7 +241,7 @@ export const OvertimeEngineView: React.FC = () => {
 
         <Card className="p-3.5 bg-white rounded-2xl border border-gray-200/80 shadow-xs">
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Projected OT</div>
-          <div className="text-xl font-black text-blue-600 mt-0.5">{metrics.projected_ot_hours}h</div>
+          <div className="text-xl font-black text-blue-600 mt-0.5">{Number(metrics.projected_ot_hours).toFixed(2)}h</div>
           <div className="text-[10px] text-blue-700 mt-0.5">Estimated End-of-Day</div>
         </Card>
 
@@ -352,10 +352,10 @@ export const OvertimeEngineView: React.FC = () => {
                     {record.payable_ot_hours > 0 ? (
                       <div>
                         <Badge variant="emerald" size="sm">
-                          {record.payable_ot_hours}h Payable OT
+                          {Number(record.payable_ot_hours).toFixed(2)}h Payable OT
                         </Badge>
                         <div className="text-[10px] text-gray-500 mt-0.5 font-medium">
-                          Eligible: {record.eligible_ot_hours}h | Appr: {record.approved_ot_hours}h
+                          Eligible: {Number(record.eligible_ot_hours).toFixed(2)}h | Appr: {Number(record.approved_ot_hours).toFixed(2)}h
                         </div>
                       </div>
                     ) : (

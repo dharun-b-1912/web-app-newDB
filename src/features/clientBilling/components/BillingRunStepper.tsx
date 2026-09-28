@@ -432,7 +432,7 @@ export const BillingRunStepper: React.FC<BillingRunStepperProps> = ({
                         </span>
                       </td>
                       <td className="py-2 px-3 text-right font-mono">{emp.payable_days}</td>
-                      <td className="py-2 px-3 text-right font-mono">{emp.ot_hours}</td>
+                      <td className="py-2 px-3 text-right font-mono">{Number(emp.ot_hours).toFixed(2)}</td>
                       <td className="py-2 px-3 text-right font-mono font-medium">{formatINR(emp.basic_earned)}</td>
                       <td className="py-2 px-3 text-right font-mono font-bold text-gray-900">{formatINR(emp.gross_billable_wages)}</td>
                       <td className="py-2 px-3 text-right font-mono text-indigo-700">{formatINR(emp.total_employer_pf_cost)}</td>
@@ -450,7 +450,7 @@ export const BillingRunStepper: React.FC<BillingRunStepperProps> = ({
                       {filteredEmployees.reduce((s, e) => s + e.payable_days, 0)}
                     </td>
                     <td className="py-3 px-3 text-right font-mono">
-                      {filteredEmployees.reduce((s, e) => s + e.ot_hours, 0)}
+                      {Number(filteredEmployees.reduce((s, e) => s + e.ot_hours, 0)).toFixed(2)}
                     </td>
                     <td className="py-3 px-3 text-right font-mono">
                       {formatINR(filteredEmployees.reduce((s, e) => s + e.basic_earned, 0))}
