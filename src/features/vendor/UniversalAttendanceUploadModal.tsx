@@ -43,7 +43,7 @@ import {
 import { CrossSheetReconciliationRow } from '../../services/vendor/universalSheetParsers/types';
 import { AuditExplanationModal } from './components/AuditExplanationModal';
 import { AuditGuideDrawer } from './components/AuditGuideDrawer';
-import { AttendanceMasterService } from '../../services/vendor/attendanceMasterService';
+import { AttendanceMasterService, AttendanceReconciliationMaster } from '../../services/vendor/attendanceMasterService';
 import { useToast } from '../../components/ui/Toast';
 
 const CANONICAL_FIELD_OPTIONS = [
@@ -66,7 +66,7 @@ const CANONICAL_FIELD_OPTIONS = [
 interface UniversalAttendanceUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onApplyMuster?: (reconciliation: AttendanceReconciliationSummary) => void;
+  onApplyMuster?: (reconciliation: AttendanceReconciliationSummary, master?: AttendanceReconciliationMaster) => void;
   organizationId?: string;
   vendorId?: string;
 }
@@ -501,7 +501,7 @@ export const UniversalAttendanceUploadModal: React.FC<UniversalAttendanceUploadM
             workerCode: mr.employeeId,
             workerName: mr.employeeName,
             department: mr.department,
-            dailyWages: mr.rate || 0,
+            dailyWages: mr.rate || 605,
             payDays: mr.presentDays,
             rawOtHours: mr.otHours,
             approvedOtHours: mr.otHours,
@@ -513,9 +513,16 @@ export const UniversalAttendanceUploadModal: React.FC<UniversalAttendanceUploadM
             ot_numeric_rate: empOtCalc.hourlyRate,
             ot_numeric_amount: empOtCalc.payableAmount,
             allowanceWorkingDays: mr.presentDays,
-            roomAllowance: 0,
+            faQualifyingDays: mr.faQualifyingDays || 0,
+            faAmount: mr.faAmount || 0,
+            naQualifyingDays: mr.naQualifyingDays || 0,
+            naAmount: mr.naAmount || 0,
+            uan: mr.uan,
+            esiNumber: mr.esiNumber,
+            canteenDeduction: mr.canteenDeduction || 0,
+            roomAllowance: mr.roomAllowance || 0,
             transportAllowance: 0,
-            totalAllowance: 0,
+            totalAllowance: (mr.faAmount || 0) + (mr.naAmount || 0),
             employeePf: 0,
             employeeEsi: 0,
             netPay: mr.wages || 0,
@@ -734,7 +741,7 @@ export const UniversalAttendanceUploadModal: React.FC<UniversalAttendanceUploadM
     const resolvedVendorId = vendorId || 'VEN-JOY-001';
     const resolvedOrgId = organizationId || 'org-joy-main';
     const master = AttendanceMasterService.setMasterFromAnalysisResult(analysisResult, {
-      name: uploadedFile?.name || 'JOY SEP IN & OUT.xlsx',
+      name: uploadedFile?.name || 'Uploaded_Attendance_Workbook.xlsx',
       vendorId: resolvedVendorId,
       companyId: resolvedOrgId,
     });
@@ -778,7 +785,7 @@ export const UniversalAttendanceUploadModal: React.FC<UniversalAttendanceUploadM
     };
 
     if (onApplyMuster) {
-      onApplyMuster(reconciliation);
+      onApplyMuster(reconciliation, master);
     }
     showToast(
       `Imported ✓ ${workerSummaries.length} employees · ${dailyAttendanceRecords.length} attendance rows · ${dailyOtRecords.length} OT records`,

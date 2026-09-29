@@ -75,6 +75,7 @@ import { VendorLeaderboardTab } from './components/VendorLeaderboardTab';
 import { VendorDocumentVaultTab } from './components/VendorDocumentVaultTab';
 import { VendorAttendanceReconciliationTab } from './components/VendorAttendanceReconciliationTab';
 import { VendorAttendanceEngineTab } from './components/VendorAttendanceEngineTab';
+import VendorWageEngineTab from './components/VendorWageEngineTab';
 import { VendorAttendanceEngineService, VendorDailyAttendance } from '../../services/vendor/vendorAttendanceEngineService';
 import { UniversalAttendanceUploadModal } from './UniversalAttendanceUploadModal';
 import { UniversalAttendanceSheetEngine } from '../../services/vendor/universalAttendanceSheetEngine';
@@ -184,6 +185,7 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
     | 'workforce'
     | 'attendance'
     | 'attendance_recon'
+    | 'wages'
     | 'payroll'
     | 'compliance'
     | 'invoices'
@@ -201,13 +203,25 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
     if (r.includes('directory') || r.includes('onboarding') || r === 'vendors') return isVendorPortal ? 'dashboard' : 'directory';
     if (r.includes('company') || r.includes('contract') || r.includes('profile')) return isVendorPortal ? 'company' : 'directory';
     if (r.includes('workforce') || r.includes('employee-onboarding')) return 'workforce';
+    if (
+      r.includes('wage') ||
+      r.includes('earnings') ||
+      r.includes('salary-calc') ||
+      r.includes('salary-statement') ||
+      r === 'client-billing' ||
+      r === 'client-wage-billing' ||
+      r === 'vendor-wages' ||
+      r === 'vendor-billing' ||
+      r.includes('billing')
+    ) return 'wages';
     if (r.includes('payroll')) return 'payroll';
     if (r.includes('compliance') || r.includes('vault') || r.includes('document')) return 'compliance';
     if (r.includes('leaderboard')) return 'leaderboard';
     if (r.includes('miss_report') || r.includes('miss-report')) return 'miss_report';
-    if (r.includes('communication')) return 'communication';
+    if (r.includes('communication') || r.includes('desk')) return 'communication';
     if (r.includes('asset')) return 'assets';
     if (r.includes('report') || r.includes('audit')) return 'reports';
+    if (r.includes('portal') || r.includes('overview') || r.includes('dashboard')) return 'dashboard';
     return isVendorPortal ? 'dashboard' : 'directory';
   };
 
@@ -219,6 +233,8 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
     | 'workforce'
     | 'attendance'
     | 'attendance_recon'
+    | 'wage_statement'
+    | 'wages'
     | 'payroll'
     | 'compliance'
     | 'invoices'
@@ -228,6 +244,12 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
     | 'miss_report'
     | 'leaderboard'
   >(() => mapRouteToTab(initialTab));
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(mapRouteToTab(initialTab));
+    }
+  }, [initialTab]);
 
 
 
@@ -508,6 +530,11 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
       isMounted = false;
     };
   }, [vendorProfile.vendorCode]);
+
+  // One-time startup sweep: purge any stale legacy benchmark/mock datasets from storage
+  useEffect(() => {
+    AttendanceMasterService.clearMockData();
+  }, []);
 
   // Ingestion State (Mode B Attendance Upload)
   const [uploadResult, setUploadResult] = useState<IngestionValidationResult | null>(null);
@@ -1181,8 +1208,31 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
     showToast(`Dispatched ${payloads.length} escalation emails to Operations Leads ✓`, 'success');
   };
 
+  const GOVERNANCE_TAB_IDS = ['dashboard', 'directory', 'company', 'pos', 'attendance_recon', 'wages', 'invoices', 'compliance'];
+  const OPERATIONS_TAB_IDS = ['workforce', 'attendance', 'leaderboard', 'assets', 'communication', 'reports', 'miss_report', 'payroll'];
+
+  const [activeDomain, setActiveDomain] = useState<'GOVERNANCE' | 'OPERATIONS' | 'ALL'>(() => {
+    return OPERATIONS_TAB_IDS.includes(activeTab) ? 'OPERATIONS' : 'GOVERNANCE';
+  });
+
+  useEffect(() => {
+    if (activeDomain !== 'ALL') {
+      if (OPERATIONS_TAB_IDS.includes(activeTab)) {
+        setActiveDomain('OPERATIONS');
+      } else if (GOVERNANCE_TAB_IDS.includes(activeTab)) {
+        setActiveDomain('GOVERNANCE');
+      }
+    }
+  }, [activeTab]);
+
   const handleTabSelect = (tabId: string) => {
     setActiveTab(tabId as any);
+    if (OPERATIONS_TAB_IDS.includes(tabId) && activeDomain === 'GOVERNANCE') {
+      setActiveDomain('OPERATIONS');
+    } else if (GOVERNANCE_TAB_IDS.includes(tabId) && activeDomain === 'OPERATIONS') {
+      setActiveDomain('GOVERNANCE');
+    }
+
     if (onNavigate) {
       if (isVendorPortal) {
         const vendorSlugMap: Record<string, string> = {
@@ -1190,26 +1240,30 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
           company: 'vendor-company',
           pos: 'vendor-purchase-orders',
           attendance_recon: 'vendor-attendance-recon',
+          wages: 'vendor-wages',
           workforce: 'vendor-workforce',
           attendance: 'vendor-attendance',
           leaderboard: 'vendor-leaderboard',
           payroll: 'vendor-payroll',
           compliance: 'vendor-compliance',
           invoices: 'vendor-invoices',
+          assets: 'vendor-assets',
           communication: 'vendor-communication',
+          reports: 'vendor-reports',
         };
         onNavigate(vendorSlugMap[tabId] || `vendor-${tabId}`);
       } else {
         const hrSlugMap: Record<string, string> = {
-          dashboard: 'vendors',
+          dashboard: 'vendor-portal',
           directory: 'vendor-directory',
           pos: 'vendor-purchase-orders',
           attendance_recon: 'vendor-attendance-recon',
+          wages: 'client-billing',
+          invoices: 'vendor-invoices',
+          compliance: 'vendor-compliance',
           workforce: 'vendor-workforce',
           attendance: 'vendor-attendance',
-          invoices: 'vendor-invoices',
           leaderboard: 'vendor-leaderboard',
-          compliance: 'vendor-compliance',
           assets: 'vendor-assets',
           communication: 'vendor-communication',
           reports: 'vendor-reports',
@@ -1225,34 +1279,36 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
     selectedPeriod
   );
 
-  const navTabs = isVendorPortal
-    ? [
-        { id: 'dashboard', label: 'Dashboard', icon: Building2 },
-        { id: 'company', label: 'My Company Profile', icon: ShieldCheck },
-        { id: 'pos', label: 'Purchase Orders', icon: ShoppingCart },
-        { id: 'attendance_recon', label: 'Attendance & OT Recon', icon: Clock },
-        { id: 'workforce', label: 'Workforce Nominations', icon: Users },
-        { id: 'attendance', label: 'Daily Biometrics', icon: Clock },
-        { id: 'leaderboard', label: 'Performance Analytics', icon: Award },
-        { id: 'payroll', label: 'Payroll Inputs', icon: DollarSign },
-        { id: 'compliance', label: 'Document Vault', icon: FileCheck },
-        { id: 'invoices', label: 'Invoices & Payments', icon: FileCheck },
-        { id: 'communication', label: 'Communication Desk', icon: MessageSquare },
-      ]
-    : [
-        { id: 'dashboard', label: 'Overview', icon: Building2 },
-        { id: 'directory', label: 'Vendor Directory', icon: Building2 },
-        { id: 'pos', label: 'Purchase Orders', icon: ShoppingCart },
-        { id: 'attendance_recon', label: 'Attendance & OT Recon', icon: Clock },
-        { id: 'workforce', label: 'Workforce Allocation', icon: Users },
-        { id: 'attendance', label: 'Attendance & Ingestion', icon: Clock },
-        { id: 'invoices', label: 'Invoices & 3-Way Match', icon: FileCheck },
-        { id: 'leaderboard', label: 'Performance Analytics', icon: Award },
-        { id: 'compliance', label: 'Document Vault', icon: FileCheck },
-        { id: 'assets', label: 'Asset Allocation', icon: Package },
-        { id: 'communication', label: 'Communication Desk', icon: MessageSquare },
-        { id: 'reports', label: 'Reports & Audit', icon: BarChart3 },
-      ];
+  const governanceTabs = [
+    { id: 'dashboard', label: isVendorPortal ? 'Dashboard' : 'Overview', icon: Building2 },
+    {
+      id: isVendorPortal ? 'company' : 'directory',
+      label: isVendorPortal ? 'My Company Profile' : 'Vendor Directory',
+      icon: isVendorPortal ? ShieldCheck : Building2,
+    },
+    { id: 'pos', label: 'Purchase Orders', icon: ShoppingCart },
+    { id: 'attendance_recon', label: 'Attendance & OT Recon', icon: Clock },
+    { id: 'wage_statement', label: 'Statutory Wage & Breakup', icon: FileSpreadsheet },
+    { id: 'wages', label: isVendorPortal ? 'Wage Calculation Engine' : 'Wage & Billing Engine', icon: Calculator },
+    { id: 'invoices', label: isVendorPortal ? 'Invoices & Payments' : 'Invoices & 3-Way Match', icon: FileCheck },
+    { id: 'compliance', label: 'Document Vault', icon: FileCheck },
+  ];
+
+  const operationsTabs = [
+    { id: 'workforce', label: isVendorPortal ? 'Workforce Nominations' : 'Workforce Allocation', icon: Users },
+    { id: 'attendance', label: isVendorPortal ? 'Daily Biometrics' : 'Attendance & Ingestion', icon: Clock },
+    { id: 'leaderboard', label: 'Performance Analytics', icon: Award },
+    { id: 'assets', label: 'Asset Allocation', icon: Package },
+    { id: 'communication', label: 'Communication Desk', icon: MessageSquare },
+    { id: 'reports', label: 'Reports & Audit', icon: BarChart3 },
+  ];
+
+  const displayedTabs =
+    activeDomain === 'GOVERNANCE'
+      ? governanceTabs
+      : activeDomain === 'OPERATIONS'
+      ? operationsTabs
+      : [...governanceTabs, ...operationsTabs];
 
   const getTabMetadata = () => {
     switch (activeTab) {
@@ -1281,6 +1337,16 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
           title: 'Workforce Attendance & OT Reconciliation Engine',
           subtitle: 'Muster roll verification, manager-approved daily overtime, and strict commercial PO rate validation.',
         };
+      case 'wage_statement':
+        return {
+          title: 'Statutory Wage Statement, Commercial Breakup & Invoice',
+          subtitle: 'Client-mandated 27-column muster, EPF 13%, ESIC 3.25%, Service Charge 6%, and tax invoice generation.',
+        };
+      case 'wages':
+        return {
+          title: 'Wage Calculation & Client Billing Engine',
+          subtitle: 'Attendance-to-Payroll transformation, multi-tier allowance policies, statutory PF/ESI, and GST billing workings.',
+        };
       case 'workforce':
         return {
           title: 'Workforce Allocations & Deployments',
@@ -1305,6 +1371,11 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
         return {
           title: 'Invoices & 3-Way Match Settlement',
           subtitle: 'PO-linked contractor billing, automated muster sheet cross-matching, and finance approvals.',
+        };
+      case 'assets':
+        return {
+          title: 'Asset Allocation & Custody Register',
+          subtitle: 'Operational tracking for equipment, toolkits, protective gear, and ID badges issued to vendor workers.',
         };
       case 'communication':
         return {
@@ -1331,7 +1402,11 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 w-full">
           <div>
             <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
-              <span>{isVendorPortal ? 'Vendor Portal' : 'Vendor Governance'}</span>
+              <span>
+                {isVendorPortal
+                  ? (activeDomain === 'OPERATIONS' ? 'Vendor Operations' : 'Vendor Portal')
+                  : (activeDomain === 'OPERATIONS' ? 'Vendor Workforce & Field Ops' : 'Vendor Governance')}
+              </span>
               <ChevronRight className="w-3.5 h-3.5" />
               <span className="font-semibold text-[#047857]">
                 {getTabMetadata().title}
@@ -1392,36 +1467,129 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
         </div>
       </div>
 
-      {/* Horizontal Operational Tabs Navigation Bar */}
-      <div className="bg-white border border-gray-200 rounded-xl p-1.5 shadow-2xs overflow-x-auto">
-        <nav className="flex items-center gap-1 min-w-max">
-          {navTabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
+      {/* Horizontal Operational Tabs Navigation Bar with Domain Switcher */}
+      <div className="bg-white border border-gray-200 rounded-xl p-2.5 shadow-2xs space-y-2.5">
+        {/* Domain Switcher Pill Header */}
+        <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider px-1">
+              Operational Domain:
+            </span>
+            <div className="inline-flex items-center bg-gray-100/90 p-0.5 rounded-lg border border-gray-200/80">
               <button
-                key={tab.id}
                 type="button"
-                onClick={() => handleTabSelect(tab.id)}
-                className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                  isActive
-                    ? 'bg-[#047857] text-white shadow-2xs'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/80'
+                onClick={() => {
+                  setActiveDomain('GOVERNANCE');
+                  if (!GOVERNANCE_TAB_IDS.includes(activeTab)) {
+                    handleTabSelect(isVendorPortal ? 'dashboard' : 'directory');
+                  }
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  activeDomain === 'GOVERNANCE'
+                    ? 'bg-white text-emerald-800 shadow-2xs border border-gray-200/60'
+                    : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-gray-500'}`} />
-                <span>{tab.label}</span>
-                {tab.id === 'attendance_recon' && (
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold uppercase ${
-                    isActive ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
-                  }`}>
-                    Live July&apos;26
-                  </span>
-                )}
+                <Building2 className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Vendor Governance & Commercials</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  activeDomain === 'GOVERNANCE' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200/80 text-gray-600'
+                }`}>
+                  7
+                </span>
               </button>
-            );
-          })}
-        </nav>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveDomain('OPERATIONS');
+                  if (!OPERATIONS_TAB_IDS.includes(activeTab)) {
+                    handleTabSelect('workforce');
+                  }
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  activeDomain === 'OPERATIONS'
+                    ? 'bg-white text-emerald-800 shadow-2xs border border-gray-200/60'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Workforce & Field Operations</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  activeDomain === 'OPERATIONS' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200/80 text-gray-600'
+                }`}>
+                  6
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveDomain('ALL')}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  activeDomain === 'ALL'
+                    ? 'bg-white text-gray-900 shadow-2xs border border-gray-200/60'
+                    : 'text-gray-500 hover:text-gray-800'
+                }`}
+                title="Display all 13 integrated modules"
+              >
+                <span>View All</span>
+                <span className="text-[10px] px-1 py-0.2 rounded bg-gray-200/70 text-gray-600 font-bold">
+                  13
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div className="text-[11px] text-gray-500 hidden sm:flex items-center gap-1.5 font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span>
+              {activeDomain === 'GOVERNANCE'
+                ? 'Pillar 1: Directory, POs, Recon, Wage Engine, Invoices & Statutory Vault'
+                : activeDomain === 'OPERATIONS'
+                ? 'Pillar 2: Allocations, Biometrics, Analytics, Assets, Desk & Reports'
+                : 'Complete 13 Integrated Enterprise Capabilities'}
+            </span>
+          </div>
+        </div>
+
+        {/* Operational Tabs Navigation Strip */}
+        <div className="overflow-x-auto">
+          <nav className="flex items-center gap-1 min-w-max">
+            {displayedTabs.map((tab, idx) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              const isFirstOpsInAll = activeDomain === 'ALL' && idx === governanceTabs.length;
+
+              return (
+                <React.Fragment key={tab.id}>
+                  {isFirstOpsInAll && (
+                    <div className="h-6 w-px bg-gray-300 mx-1 shrink-0" />
+                  )}
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => handleTabSelect(tab.id)}
+                    className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                      isActive
+                        ? 'bg-[#047857] text-white shadow-2xs'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/80'
+                    }`}
+                  >
+                    <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-gray-500'}`} />
+                    <span>{tab.label}</span>
+                    {tab.id === 'attendance_recon' && (
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold uppercase ${
+                        isActive ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        Live July&apos;26
+                      </span>
+                    )}
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          </nav>
+        </div>
       </div>
 
       {/* Workspace Content Canvas */}
@@ -1866,8 +2034,7 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
         {activeTab === 'attendance' && (() => {
           // PRIMARY SOURCE: AttendanceMasterService (persists across reload, vendor+period aware)
           const masterData = AttendanceMasterService.getActiveMaster();
-          const hasMasterData = masterData && masterData.masterRecords && masterData.masterRecords.length > 0 &&
-            masterData.calculationMode !== 'BENCHMARK'; // Benchmark is NOT user data
+          const hasMasterData = Boolean(masterData && masterData.masterRecords && masterData.masterRecords.length > 0);
 
           // FALLBACK SOURCE: in-memory stagedReconciliation from this session's upload
           const summaries = hasMasterData
@@ -2034,13 +2201,13 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
                           ) : masterData.calculationMode === 'REALTIME_PARSED' ? (
                             <>⚡ Real-Time ({masterData.stats?.totalMasterWorkers || 0} workers)</>
                           ) : (
-                            <>🛡 Benchmark ({masterData.stats?.totalMasterWorkers || 0} workers)</>
+                            <>🛡 Staged Dataset ({masterData.stats?.totalMasterWorkers || 0} workers)</>
                           )}
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      Vendor: <span className="font-semibold text-gray-800">{masterData?.vendorInfo?.vendorName || vendorProfile?.legalName || 'Joy Manpower Services'}</span> • Operational Period: <span className="font-semibold text-gray-800">{masterData?.reportingPeriod?.label || '26 Aug 2026 – 25 Sep 2026'}</span> • Contract: <span className="font-mono text-gray-700">{vendorContracts[0]?.contractNumber || 'CON-JOY-CORP-2026-01'}</span>
+                      Vendor: <span className="font-semibold text-gray-800">{masterData?.vendorInfo?.vendorName || vendorProfile?.legalName || 'Joy Manpower Services Private Limited'}</span> • Operational Period: <span className="font-semibold text-gray-800">{masterData?.reportingPeriod?.label || '26 Aug 2026 – 25 Sep 2026'}</span> • Contract: <span className="font-mono text-gray-700">{vendorContracts[0]?.contractNumber || masterData?.vendorInfo?.contractPo || 'CON-JOY-CORP-2026-01'}</span>
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -2522,23 +2689,6 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
                       >
                         <Upload className="w-4 h-4" />
                         Upload Attendance Sheet (Excel &amp; CSV)
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const canonical = AttendanceMasterService.buildCanonicalBenchmarkMaster();
-                          canonical.calculationMode = 'REALTIME_PARSED';
-                          canonical.dbSyncStatus = 'SYNCED';
-                          AttendanceMasterService.setActiveContext('VEN-JOY-001', '2026-09');
-                          AttendanceMasterService.setActiveMaster(canonical);
-                          setAttendanceMasterVersion((v) => v + 1);
-                          showToast('✓ Loaded Joy Sep Benchmark (44 workers, 1,346 OT hrs)', 'success');
-                        }}
-                        className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-semibold inline-flex items-center gap-2 cursor-pointer transition-all border border-gray-300"
-                      >
-                        <Sparkles className="w-4 h-4 text-emerald-600" />
-                        Load Joy Sep Benchmark Dataset (44 Workers)
                       </button>
                     </div>
                   </div>
@@ -3276,6 +3426,13 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
           );
         })()}
 
+        {/* TAB: WAGE ENGINE & CLIENT BILLING WORKINGS */}
+        {activeTab === 'wages' && (
+          <VendorWageEngineTab
+            vendorId={vendorProfile.vendorCode || undefined}
+          />
+        )}
+
         {/* TAB 5: PAYROLL & DEDUCTIONS */}
         {activeTab === 'payroll' && (
           <VendorPayrollInputsTab
@@ -3484,6 +3641,20 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
             vendorName={vendorProfile.legalName || vendorProfile.tradeName || 'Joy Manpower Services Private Limited'}
             siteName={contracts[0]?.siteName || 'Chennai Manufacturing Plant (CHE 01)'}
             companyName={contracts[0]?.companyName || 'Joy Corporate Solutions Pvt Ltd'}
+            onNavigateToWageStatement={() => setActiveTab('wage_statement')}
+          />
+        )}
+
+        {/* TAB: STATUTORY WAGE STATEMENT, BREAKUP & TAX INVOICE */}
+        {activeTab === 'wage_statement' && (
+          <VendorAttendanceReconciliationTab
+            organizationId={vendorProfile.organizationId || 'org-joy-main'}
+            vendorId={vendorProfile.legalName || 'JOY MANPOWER SERVICE'}
+            viewMode={isVendorPortal ? 'VENDOR' : 'COMPANY'}
+            onProceedToInvoice={(poId) => {
+              setSelectedPoForInvoice(poId);
+              setActiveTab('invoices');
+            }}
           />
         )}
 
@@ -3504,7 +3675,17 @@ export const VendorPortalWorkspace: React.FC<VendorPortalWorkspaceProps> = ({
         )}
 
         {/* TAB: VENDOR ASSET ALLOCATION */}
-        {activeTab === 'assets' && <VendorAssetAllocationTab workers={workforceList} />}
+        {activeTab === 'assets' && (
+          <VendorAssetAllocationTab
+            workers={workforceList}
+            organizationId={vendorProfile.organizationId || user?.organization_id || 'org-joy-main'}
+            vendorId={vendorProfile.vendorCode || 'VND-JOY-01'}
+            vendorName={vendorProfile.legalName || 'Joy Manpower Services Private Limited'}
+            selectedSiteId={selectedSiteId}
+            selectedPeriod={selectedPeriod}
+            onNavigateToTab={(tab: string) => handleTabSelect(tab)}
+          />
+        )}
 
         {/* TAB: VENDOR COMMUNICATION & TICKETS */}
         {activeTab === 'communication' && (

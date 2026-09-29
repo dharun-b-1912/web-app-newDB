@@ -603,14 +603,6 @@ const AppContent: React.FC = () => {
       case 'leave-accrual':
       case 'leave-exceptions':
         return <LeaveManagementModule initialTab={currentRoute} />;
-      case 'client-billing':
-      case 'payroll/billing':
-      case 'payroll-billing':
-      case 'client-invoicing':
-      case 'billing-runs':
-      case 'billing-rules':
-      case 'client-contracts':
-        return <ClientBillingMasterModule />;
       case 'payroll':
       case 'payroll-dashboard':
       case 'payroll/dashboard':
@@ -853,6 +845,21 @@ const AppContent: React.FC = () => {
       case 'invoices':
       case 'vendor-assets':
       case 'vendor/assets':
+      case 'vendor-wages':
+      case 'vendor/wages':
+      case 'vendors/wages':
+      case 'vendor-billing':
+      case 'vendors/billing':
+      case 'wage-engine':
+      case 'vendor-portal/wages':
+      case 'client-billing':
+      case 'client-wage-billing':
+      case 'payroll/billing':
+      case 'payroll-billing':
+      case 'client-invoicing':
+      case 'billing-runs':
+      case 'billing-rules':
+      case 'client-contracts':
       case 'vendor-communication':
       case 'vendor/communication':
       case 'vendor-reports':
@@ -887,10 +894,6 @@ const AppContent: React.FC = () => {
         }
 
         const isExplicitVendorRoute =
-          currentRoute.startsWith('vendor-portal') ||
-          currentRoute.startsWith('vendor/portal') ||
-          currentRoute === 'vendor-portal' ||
-          currentRoute === 'vendor/portal' ||
           currentRoute === 'vendor-dashboard' ||
           currentRoute === 'vendor/dashboard' ||
           currentRoute === 'vendor-tasks';

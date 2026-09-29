@@ -16,8 +16,8 @@ import {
   AttendanceReconciliationSummary,
   VendorAttendanceReconciliationService,
 } from './vendorAttendanceReconciliationService';
-import { ARJUNA_NATURALS_JULY_2026_WORKERS } from './fixtures/arjunaNaturalJuly2026Fixture';
 import { PurchaseOrderService } from './purchaseOrderService';
+
 
 export interface VendorInvoiceItem {
   id?: string;
@@ -195,124 +195,28 @@ export interface CreateInvoiceInput {
 export class VendorInvoiceService {
   private static inMemoryInvoices: Map<string, VendorInvoiceRecord> = new Map();
 
-  static {
-    try {
-      const benchmarkBreakup = VendorManpowerBillingEngine.calculateVendorBillingBreakup(
-        ARJUNA_NATURALS_JULY_2026_WORKERS.map((w) => ({
-          employeeId: w.workerCode,
-          employeeCode: w.workerCode,
-          employeeName: w.workerName,
-          dailyWages: w.dailyWages,
-          payDays: w.payDays,
-          otHours: w.otHours,
-          workingDaysForAllowance: w.allowanceWorkingDays,
-        })),
-        {
-          employerPfPct: 13.0,
-          employerEsiPct: 3.25,
-          serviceChargePct: 8.0,
-          fixedRoomAllowance: 7440.0,
-          fixedTransportAllowance: 0.0,
-          isRoomAllowanceBillable: true,
-          isTransportAllowanceBillable: false,
-          cgstPct: 9.0,
-          sgstPct: 9.0,
-        }
-      );
-
-      const initialInvoice: VendorInvoiceRecord = {
-        id: 'inv-arjuna-2026-07-001',
-        vendorId: 'JOY MANPOWER SERVICE',
-        organizationId: 'org-joy-main',
-        poId: 'po-arjuna-2026-07',
-        reconciliationId: 'recon-arjuna-2026-07',
-        invoiceNumber: 'INV-ARJUNA-2026-07-001',
-        billingPeriod: '2026-07',
-        contractReference: 'CON-ARJUNA-MANPOWER-2026',
-        invoiceDate: '2026-08-02',
-        dueDate: '2026-08-15',
-        subtotalAmount: benchmarkBreakup.billingBaseTaxable,
-        taxAmount: benchmarkBreakup.totalTaxAmount,
-        totalAmount: benchmarkBreakup.grandTotal,
-        currency: 'INR',
-        approvalStatus: 'SUBMITTED',
-        paymentStatus: 'UNPAID',
-        matchingStatus: 'MATCHED',
-        notes: "Commercial Manpower & Statutory Billing for July 2026 (84.5 days muster reconciled)",
-        calculationBreakup: benchmarkBreakup,
-        items: [
-          {
-            id: 'item-1',
-            poLineItemId: 'poi-1',
-            description: "Contract Workforce Wages (Workings gross July'26)",
-            category: 'MANPOWER_SERVICES',
-            workforceCount: 84.5,
-            ratePerUnit: 620,
-            serviceChargePct: 8.0,
-            taxRatePct: 18.0,
-            lineTotal: 79215.0,
-            explanation: "84.5 attendance muster days verified against biometric punches",
-          },
-          {
-            id: 'item-2',
-            poLineItemId: 'poi-2',
-            description: 'Employer PF Contribution @ 13% on Wages',
-            category: 'STATUTORY_PF',
-            workforceCount: 1,
-            ratePerUnit: 6810.7,
-            serviceChargePct: 0,
-            taxRatePct: 18.0,
-            lineTotal: 6810.7,
-          },
-          {
-            id: 'item-3',
-            poLineItemId: 'poi-3',
-            description: 'Employer ESI Contribution @ 3.25% on Wages',
-            category: 'STATUTORY_ESI',
-            workforceCount: 1,
-            ratePerUnit: 1702.68,
-            serviceChargePct: 0,
-            taxRatePct: 18.0,
-            lineTotal: 1702.68,
-          },
-          {
-            id: 'item-4',
-            poLineItemId: 'poi-4',
-            description: 'Agency Service Charge @ 8% on Gross Contract Wages',
-            category: 'SERVICE_CHARGE',
-            workforceCount: 1,
-            ratePerUnit: 6337.2,
-            serviceChargePct: 0,
-            taxRatePct: 18.0,
-            lineTotal: 6337.2,
-          },
-          {
-            id: 'item-5',
-            poLineItemId: 'poi-5',
-            description: 'Room Allowance (Approved Billable Allowance)',
-            category: 'ROOM_ALLOWANCE',
-            workforceCount: 93,
-            ratePerUnit: 80.0,
-            serviceChargePct: 0,
-            taxRatePct: 18.0,
-            lineTotal: 7440.0,
-          },
-        ],
-        createdAt: '2026-08-02T10:00:00.000Z',
-        updatedAt: '2026-08-02T10:00:00.000Z',
-      };
-
-      this.inMemoryInvoices.set(initialInvoice.id, initialInvoice);
-    } catch (e) {
-      console.warn('[VendorInvoiceService] Failed to seed initial invoice', e);
-    }
-  }
+  // No static seed data — all invoices are fetched from Supabase or created by users at runtime.
 
   private static isUuid(val?: string): boolean {
     return (
       typeof val === 'string' &&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)
     );
+  }
+
+  /**
+   * Generates next sequential invoice number in format e.g. "206/2026-27"
+   */
+  public static getNextSequentialInvoiceNumber(financialYear = '2026-27'): string {
+    const existing = Array.from(this.inMemoryInvoices.values());
+    const numbers = existing
+      .map((inv) => {
+        const match = inv.invoiceNumber.match(/^(\d+)\//);
+        return match ? parseInt(match[1], 10) : 0;
+      })
+      .filter((n) => !isNaN(n) && n > 0);
+    const max = numbers.length > 0 ? Math.max(...numbers) : 205;
+    return `${max + 1}/${financialYear}`;
   }
 
   /**

@@ -86,6 +86,14 @@ export interface MRReportRecord {
   otHours: number;         // Overtime hours in MR
   otGte4hDays: number;     // Days OT >= 4H
   otGte8hDays: number;     // Days OT >= 8H in W/Off
+  faQualifyingDays: number; // Food Allowance qualifying days (OT >= 4H)
+  faAmount: number;        // Food Allowance amount (FA days * 20 or source)
+  naQualifyingDays: number; // Night/Sunday Allowance qualifying days (OT >= 8H in W-Off)
+  naAmount: number;        // Night Allowance amount (NA days * 45 or source)
+  uan?: string;            // Universal Account Number
+  esiNumber?: string;      // ESI IP Number
+  canteenDeduction?: number;
+  roomAllowance?: number;
   rate: number | null;
   wages: number | null;
   hasWageData: boolean;
@@ -146,6 +154,8 @@ export interface MRReportKPIs {
   totalLOP: number;
   totalShifts: number;
   totalOtHours: number;
+  totalFaAmount?: number;
+  totalNaAmount?: number;
   totalWages: number | null;
 }
 

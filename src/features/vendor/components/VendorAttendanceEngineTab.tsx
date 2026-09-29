@@ -24,8 +24,10 @@ import {
   Shield, Info, Check, X, ChevronLeft, ChevronRight as ChevronRightIcon,
   HelpCircle, Layers, FileDown, AlertCircle, RefreshCw,
   Database, CloudUpload, CloudDownload, Zap, Loader2, ShieldCheck,
-  Sliders, Settings, Mail
+  Sliders, Settings, Mail, Upload
 } from 'lucide-react';
+import { UniversalAttendanceUploadModal } from '../UniversalAttendanceUploadModal';
+import { AttendanceReconciliationSummary } from '../../../services/vendor/vendorAttendanceReconciliationService';
 import { OTPolicyEngine } from '../../../services/payroll/otPolicyEngine';
 import { OTPolicyRecord } from '../../../types/otPolicy';
 import { AttendanceOTPolicyModal } from '../AttendanceOTPolicyModal';
@@ -74,6 +76,7 @@ interface VendorAttendanceEngineTabProps {
   vendorName?: string;
   siteName?: string;
   companyName?: string;
+  onNavigateToWageStatement?: () => void;
 }
 
 type SubView = 'summary' | 'attendance' | 'ot_report' | 'mr_report' | 'reconciliation' | 'exceptions';
@@ -255,6 +258,7 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
   vendorName = 'Joy Manpower Services Private Limited',
   siteName = 'Unit II Plant, Coimbatore',
   companyName = 'JOY CORPORATE SOLUTIONS PVT LTD',
+  onNavigateToWageStatement,
 }) => {
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -289,10 +293,18 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
   // Dedicated OT Policy State & Modal
   const [isOtPolicyModalOpen, setIsOtPolicyModalOpen] = useState(false);
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [availablePolicies, setAvailablePolicies] = useState<OTPolicyRecord[]>(() => OTPolicyEngine.getPolicies());
   const [selectedPolicyId, setSelectedPolicyId] = useState<string>(() => {
     return OTPolicyEngine.getActivePolicyId() || master.activeOtPolicy?.id || 'pol-default-company-1.5';
   });
+
+  const handleApplyMuster = useCallback((_reconciliation?: any, parsedMaster?: AttendanceReconciliationMaster) => {
+    const active = parsedMaster || AttendanceMasterService.getActiveMaster();
+    setMaster({ ...active });
+    setIsUploadModalOpen(false);
+    showToast(`✓ Master attendance dataset updated (${active.stats.totalMasterWorkers} workers, ${active.stats.totalOtHours} OT hrs)`, 'success');
+  }, [showToast]);
 
   // Dynamic OT Calculation Metrics (Reflects live recalculation across all daily entries)
   const activeOtInfo = useMemo(() => {
@@ -354,10 +366,12 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
     }
   };
 
-  // Ensure fresh master on mount and listen for real-time OT policy changes
+  // Ensure fresh master on mount and listen for real-time OT policy and dataset updates
   useEffect(() => {
     const active = AttendanceMasterService.getActiveMaster();
-    setMaster(active);
+    if (active) {
+      setMaster({ ...active });
+    }
 
     const handlePolicyChange = () => {
       const freshMaster = AttendanceMasterService.getActiveMaster();
@@ -369,12 +383,19 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
       }
     };
 
+    const handleMasterUpdate = () => {
+      const freshMaster = AttendanceMasterService.getActiveMaster();
+      setMaster({ ...freshMaster });
+    };
+
     window.addEventListener('joy_ot_policy_changed', handlePolicyChange);
-    window.addEventListener('storage', handlePolicyChange);
+    window.addEventListener('joy_master_dataset_updated', handleMasterUpdate);
+    window.addEventListener('storage', handleMasterUpdate);
 
     return () => {
       window.removeEventListener('joy_ot_policy_changed', handlePolicyChange);
-      window.removeEventListener('storage', handlePolicyChange);
+      window.removeEventListener('joy_master_dataset_updated', handleMasterUpdate);
+      window.removeEventListener('storage', handleMasterUpdate);
     };
   }, []);
 
@@ -704,6 +725,17 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Upload Attendance Sheet (Excel & CSV) Button */}
+          <button
+            type="button"
+            onClick={() => setIsUploadModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold shadow-xs transition-colors cursor-pointer"
+            title="Upload attendance workbook (.xlsx, .csv)"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Upload Attendance Sheet</span>
+          </button>
+
           {/* How It Works Button (Point 25) */}
           <button
             type="button"
@@ -852,6 +884,19 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
               </span>
             </button>
           )}
+
+          {/* Direct Navigation to Statutory Wage Statement & Breakup */}
+          {master.stats.totalMasterWorkers > 0 && onNavigateToWageStatement && (
+            <button
+              type="button"
+              onClick={onNavigateToWageStatement}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-xs transition-colors cursor-pointer"
+              title="View 27-column D Wages Statement, Commercial Breakup & Tax Invoice"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Statutory Wages &amp; Breakup →</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -883,7 +928,7 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
         <StatCard
           label="Total Overtime"
           value={`${master.stats.totalOtHours.toLocaleString()} hrs`}
-          sub={`${master.stats.totalOtWorkers} workers · 323 entries`}
+          sub={`${master.stats.totalOtWorkers} workers · ${(master.dailyOtRecords || []).length} entries`}
           icon={<Clock className="w-4 h-4" />}
           color="text-amber-700"
         />
@@ -928,7 +973,7 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
             ) : master.calculationMode === 'DATABASE_RECORD' ? (
               <><Database className="w-2.5 h-2.5" /> Database Record</>
             ) : (
-              <><Shield className="w-2.5 h-2.5" /> Benchmark Dataset</>
+              <><Shield className="w-2.5 h-2.5" /> Staged Master</>
             )}
           </span>
           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${
@@ -1045,20 +1090,46 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
       {/* 4. MAIN CONTENT AREA                                                   */}
       {/* ===================================================================== */}
       <div className="flex-1 overflow-auto bg-white p-6">
-        {/* VIEW 1: EMPLOYEE SUMMARY (Default Reconciliation View: Point 22) */}
-        {subView === 'summary' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between text-xs text-gray-500">
-              <div>
-                Showing <b>{pagedSummaries.length}</b> of <b>{filteredSummaries.length}</b> employees (strictly 44 contracted population)
-              </div>
-              <div className="flex items-center gap-2">
-                <span>Rows per page:</span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="px-2 py-1 text-xs border border-gray-300 rounded bg-white"
-                >
+        {master.stats.totalMasterWorkers === 0 ? (
+          <div className="p-12 text-center bg-white rounded-xl border border-gray-200 shadow-xs space-y-4 my-6">
+            <div className="w-14 h-14 mx-auto rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
+              <Layers className="w-7 h-7" />
+            </div>
+            <div className="max-w-md mx-auto space-y-1">
+              <h3 className="text-base font-bold text-gray-900">
+                No Attendance Dataset Staged Yet
+              </h3>
+              <p className="text-xs text-gray-500">
+                Upload your contractor attendance workbook (.xlsx, .xls, .csv) containing IN&amp;OUT biometric punches, MR muster report, and overtime registers to perform automatic grain-separated reconciliation.
+              </p>
+            </div>
+            <div className="pt-2 flex items-center justify-center gap-3 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setIsUploadModalOpen(true)}
+                className="px-5 py-2.5 bg-[#047857] hover:bg-[#065f46] text-white rounded-lg text-xs font-bold shadow-md shadow-emerald-700/20 inline-flex items-center gap-2 cursor-pointer transition-all"
+              >
+                <Upload className="w-4 h-4" />
+                Upload Attendance Sheet (Excel &amp; CSV)
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* VIEW 1: EMPLOYEE SUMMARY (Default Reconciliation View: Point 22) */}
+            {subView === 'summary' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <div>
+                    Showing <b>{pagedSummaries.length}</b> of <b>{filteredSummaries.length}</b> employees ({master.stats.totalMasterWorkers} total)
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span>Rows per page:</span>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => setPageSize(Number(e.target.value))}
+                      className="px-2 py-1 text-xs border border-gray-300 rounded bg-white"
+                    >
                   <option value={25}>25</option>
                   <option value={50}>50</option>
                   <option value={100}>100</option>
@@ -1654,7 +1725,7 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
                   {/* Totals Row with calculated sums */}
                   <tr className="bg-emerald-100/50 font-bold border-t-2 border-emerald-300 font-mono text-emerald-950">
                     <td colSpan={4} className="py-2.5 px-3 text-right font-sans">
-                      TOTALS (44 Employees):
+                      TOTALS ({master.mrReportRecords.length} Employees):
                     </td>
                     <td className="py-2.5 px-3 text-center">{master.stats.totalPresentDays.toFixed(1)}</td>
                     <td className="py-2.5 px-3 text-center">0</td>
@@ -1808,6 +1879,8 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
             </div>
           </div>
         )}
+          </>
+        )}
       </div>
 
       {/* ===================================================================== */}
@@ -1854,6 +1927,15 @@ export const VendorAttendanceEngineTab: React.FC<VendorAttendanceEngineTabProps>
         onClose={() => setIsEmailModalOpen(false)}
         master={master}
         defaultRecipient="thirumalairk28@mail.com"
+      />
+
+      {/* Universal Attendance Ingestion & Recon Modal */}
+      <UniversalAttendanceUploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onApplyMuster={handleApplyMuster}
+        vendorId={vendorId}
+        organizationId={organizationId}
       />
     </div>
   );

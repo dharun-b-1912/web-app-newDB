@@ -9,43 +9,48 @@ import { FileSpreadsheet, CheckCircle2, Copy, Sparkles } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 
 export interface ExcelBreakupProps {
-  contractWages?: number; // 79215.00
-  regularWagesBase?: number; // 52390.00
-  pfEmployerRate?: number; // 13.00%
-  esiEmployerRate?: number; // 3.25%
-  serviceChargeRate?: number; // 8.00%
-  roomAllowanceAmount?: number; // 4650.00
-  transportAllowanceAmount?: number; // 2790.00
-  periodText?: string; // '01.07.2026 TO 31.07.2026'
+  contractWages?: number;
+  regularWagesBase?: number;
+  esiWagesBase?: number;
+  pfEmployerRate?: number;
+  esiEmployerRate?: number;
+  serviceChargeRate?: number;
+  roomAllowanceAmount?: number;
+  transportAllowanceAmount?: number;
+  canteenDeduction?: number;
+  periodText?: string;
   clientName?: string;
   className?: string;
 }
 
 export const ExcelBreakupView: React.FC<ExcelBreakupProps> = ({
-  contractWages = 79215.0,
-  regularWagesBase = 52390.0,
+  contractWages = 0,
+  regularWagesBase = 0,
+  esiWagesBase,
   pfEmployerRate = 13.0,
   esiEmployerRate = 3.25,
-  serviceChargeRate = 8.0,
-  roomAllowanceAmount = 4650.0,
-  transportAllowanceAmount = 2790.0,
-  periodText = '01.07.2026 TO 31.07.2026',
-  clientName = 'Arjuna Natural Pvt Ltd',
+  serviceChargeRate = 6.0,
+  roomAllowanceAmount = 0,
+  transportAllowanceAmount = 0,
+  canteenDeduction = 0,
+  periodText = '26.08.2026 TO 25.09.2026',
+  clientName = 'Watertec India Private Limited - Unit - Ill',
   className,
 }) => {
   const [displayMode, setDisplayMode] = useState<'ROUNDED' | 'DECIMAL'>('ROUNDED');
   const [copied, setCopied] = useState(false);
 
   // Exact Excel Formulas:
-  // 1. Manpower Services = Workings!K27 = 79,215.00
-  // 2. PF Employer @ 13% on Rs. 52,390 = 6,810.70 (rounded = 6,811)
-  const pfAmountExact = Math.round(regularWagesBase * (pfEmployerRate / 100) * 100) / 100; // 6810.70
-  // 3. ESI Employer @ 3.25% on Rs. 52,390 = 1,702.68 (rounded = 1,703)
-  const esiAmountExact = Math.round(regularWagesBase * (esiEmployerRate / 100) * 100) / 100; // 1702.68
-  // 4. Service Charges @ 8% on Gross = 6,337.20 (rounded = 6,337)
-  const scAmountExact = Math.round(contractWages * (serviceChargeRate / 100) * 100) / 100; // 6337.20
-  // 5 & 6. Room & Transport Allowances = Allowance!I27 = 4,650 + 2,790 = 7,440.00
-  const totalAllowanceExact = roomAllowanceAmount + transportAllowanceAmount; // 7440.00
+  // 1. Manpower Services = Gross Contract Wages
+  // 2. PF Employer @ 13% on Basic Wages
+  const pfAmountExact = Math.round(regularWagesBase * (pfEmployerRate / 100) * 100) / 100;
+  // 3. ESI Employer @ 3.25% on ESI Wages (Gross - HRA) or fallback to regularWagesBase
+  const effectiveEsiBase = esiWagesBase !== undefined ? esiWagesBase : regularWagesBase;
+  const esiAmountExact = Math.round(effectiveEsiBase * (esiEmployerRate / 100) * 100) / 100;
+  // 4. Service Charges @ % on Gross
+  const scAmountExact = Math.round(contractWages * (serviceChargeRate / 100) * 100) / 100;
+  // 5 & 6. Room & Transport Allowances
+  const totalAllowanceExact = roomAllowanceAmount + transportAllowanceAmount;
 
   // Subtotal = 101,505.58 (rounded = 101,506)
   const subtotalExact = contractWages + pfAmountExact + esiAmountExact + scAmountExact + totalAllowanceExact; // 101505.58

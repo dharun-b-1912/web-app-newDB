@@ -61,13 +61,10 @@ import {
   VendorManpowerBillingEngine,
   VendorBillingBreakupResult,
 } from '../../../services/vendor/vendorManpowerBillingEngine';
-import {
-  ARJUNA_NATURALS_WORKBOOK_BENCHMARK,
-  ARJUNA_NATURALS_JULY_2026_WORKERS,
-} from '../../../services/vendor/fixtures/arjunaNaturalJuly2026Fixture';
 import { useToast } from '../../../components/ui/Toast';
 import { ExcelBreakupView } from '../../clientBilling/components/ExcelBreakupView';
 import { VendorInvoicePrintService } from '../../../services/vendor/vendorInvoicePrintService';
+
 
 interface VendorInvoicesTabProps {
   organizationId?: string;
@@ -119,74 +116,43 @@ export const VendorInvoicesTab: React.FC<VendorInvoicesTabProps> = ({
   const [availablePOs, setAvailablePOs] = useState<PurchaseOrder[]>([]);
   const [selectedPoId, setSelectedPoId] = useState<string>(initialPoId || '');
 
-  // ── Invoice Form Fields (Controlled & Auto-fetched) ──
+  // Invoice Form Fields (Controlled & Auto-fetched from PO)
   const [invoiceNumber, setInvoiceNumber] = useState('');
-  const [billingPeriod, setBillingPeriod] = useState('2026-07');
-  const [contractRef, setContractRef] = useState('CON-ARJUNA-MANPOWER-2026');
+  const [billingPeriod, setBillingPeriod] = useState(new Date().toISOString().substring(0, 7));
+  const [contractRef, setContractRef] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().substring(0, 10));
-  const [dueDate, setDueDate] = useState('2026-08-31');
-  const [serviceStartDate, setServiceStartDate] = useState('2026-07-01');
-  const [serviceEndDate, setServiceEndDate] = useState('2026-07-31');
+  const today = new Date();
+  const defaultDueDate = new Date(today.getFullYear(), today.getMonth() + 1, 15).toISOString().substring(0, 10);
+  const [dueDate, setDueDate] = useState(defaultDueDate);
+  const defaultPeriodStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().substring(0, 10);
+  const defaultPeriodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().substring(0, 10);
+  const [serviceStartDate, setServiceStartDate] = useState(defaultPeriodStart);
+  const [serviceEndDate, setServiceEndDate] = useState(defaultPeriodEnd);
 
-  // Vendor Profile & Statutory Information
-  const [vendorName, setVendorName] = useState('JOY MANPOWER SERVICE');
-  const [vendorAddress, setVendorAddress] = useState('No.16, Krishna complex, Avinashi main road, Thennampalayam, Arasur PO, Coimbatore - 641 407');
-  const [vendorGstin, setVendorGstin] = useState('33AOAPR4773D1Z2');
-  const [vendorPan, setVendorPan] = useState('AOAPR4773D');
-  const [vendorPfCode, setVendorPfCode] = useState('CB/CBE/1724259000');
-  const [vendorEsicCode, setVendorEsicCode] = useState('56001195190001001');
+  // Vendor Profile & Statutory Information (populated from PO / vendor master)
+  const [vendorName, setVendorName] = useState('');
+  const [vendorAddress, setVendorAddress] = useState('');
+  const [vendorGstin, setVendorGstin] = useState('');
+  const [vendorPan, setVendorPan] = useState('');
+  const [vendorPfCode, setVendorPfCode] = useState('');
+  const [vendorEsicCode, setVendorEsicCode] = useState('');
   const [sacCode, setSacCode] = useState('998519');
 
-  // Client Details
-  const [clientName, setClientName] = useState('Arjuna Natural Pvt Ltd');
-  const [clientAddress, setClientAddress] = useState('15/4B, Sirambarayampalayam Road, Sennappachetty Pudur Post, Karumathampatty Via, Coimbatore-641659');
-  const [clientGstin, setClientGstin] = useState('33AACCA8648K1ZG');
+  // Client Details (populated from PO / tenant context)
+  const [clientName, setClientName] = useState('');
+  const [clientAddress, setClientAddress] = useState('');
+  const [clientGstin, setClientGstin] = useState('');
 
-  // Bank Mandate
-  const [bankAccountNum, setBankAccountNum] = useState('987654321098');
-  const [bankName, setBankName] = useState('HDFC Bank Ltd');
-  const [bankIfsc, setBankIfsc] = useState('HDFC0001234');
+  // Bank Mandate (populated from vendor master)
+  const [bankAccountNum, setBankAccountNum] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [bankIfsc, setBankIfsc] = useState('');
   const [vendorNotes, setVendorNotes] = useState('Being the Contract Services for supply of manpower at your Factory premises.');
 
-  // Supporting Documents attached to draft
-  const [draftDocuments, setDraftDocuments] = useState<InvoiceSupportingDoc[]>([
-    {
-      id: 'doc-seed-1',
-      documentType: 'TAX_INVOICE_PDF',
-      fileName: 'Tax_Invoice_134_2026_27.pdf',
-      fileSize: 124500,
-      uploadedAt: new Date().toISOString(),
-      status: 'VERIFIED',
-      uploadedBy: 'Vendor Operations',
-    },
-    {
-      id: 'doc-seed-2',
-      documentType: 'WAGE_BREAKUP_SHEET',
-      fileName: 'Arjuna_Wages_Breakup_July2026.xlsx',
-      fileSize: 85200,
-      uploadedAt: new Date().toISOString(),
-      status: 'VERIFIED',
-      uploadedBy: 'Vendor Operations',
-    },
-    {
-      id: 'doc-seed-3',
-      documentType: 'PF_MONTHLY_ECR_CHALLAN',
-      fileName: 'EPFO_Challan_July2026_Paid.pdf',
-      fileSize: 450000,
-      uploadedAt: new Date().toISOString(),
-      status: 'VERIFIED',
-      uploadedBy: 'Compliance Desk',
-    },
-    {
-      id: 'doc-seed-4',
-      documentType: 'ESI_MONTHLY_CHALLAN',
-      fileName: 'ESIC_Payment_Challan_July2026.pdf',
-      fileSize: 320000,
-      uploadedAt: new Date().toISOString(),
-      status: 'VERIFIED',
-      uploadedBy: 'Compliance Desk',
-    },
-  ]);
+
+  // Supporting Documents attached to draft — starts empty, user uploads real docs
+  const [draftDocuments, setDraftDocuments] = useState<InvoiceSupportingDoc[]>([]);
+
 
   // Review Checklist State for Company HR Review Desk
   const [reviewChecklist, setReviewChecklist] = useState<Record<string, boolean>>({
@@ -206,7 +172,7 @@ export const VendorInvoicesTab: React.FC<VendorInvoicesTabProps> = ({
     statutoryDocsSubmitted: true,
   });
 
-  // Itemized Billable Line Items
+  // Itemized Billable Line Items — starts with one blank row, user fills from PO or manually
   const [invoiceItems, setInvoiceItems] = useState<
     Array<{
       description: string;
@@ -218,54 +184,15 @@ export const VendorInvoicesTab: React.FC<VendorInvoicesTabProps> = ({
     }>
   >([
     {
-      description: 'Being the Contract Services for supply of manpower at your Factory premises from 01.07.2026 TO 31.07.2026',
-      workforceCount: 84.5,
-      ratePerUnit: 620,
-      serviceChargePct: 8.0,
-      taxRatePct: 18.0,
-      lineTotal: 79215.0,
-    },
-    {
-      description: 'P.F.Employer Contribution @ 13% Rs. 52390',
-      workforceCount: 1,
-      ratePerUnit: 6811.0,
+      description: 'Being the Contract Services for supply of manpower',
+      workforceCount: 0,
+      ratePerUnit: 0,
       serviceChargePct: 0,
       taxRatePct: 18.0,
-      lineTotal: 6811.0,
-    },
-    {
-      description: 'E.S.I Employer Contribution @ 3.25% Rs. 52390',
-      workforceCount: 1,
-      ratePerUnit: 1703.0,
-      serviceChargePct: 0,
-      taxRatePct: 18.0,
-      lineTotal: 1703.0,
-    },
-    {
-      description: 'Service Charges @ 8% on Gross',
-      workforceCount: 1,
-      ratePerUnit: 6337.0,
-      serviceChargePct: 0,
-      taxRatePct: 18.0,
-      lineTotal: 6337.0,
-    },
-    {
-      description: 'ADD Room Allowance @ 50',
-      workforceCount: 93,
-      ratePerUnit: 50.0,
-      serviceChargePct: 0,
-      taxRatePct: 18.0,
-      lineTotal: 4650.0,
-    },
-    {
-      description: 'ADD Transport Allowance @ 30',
-      workforceCount: 93,
-      ratePerUnit: 30.0,
-      serviceChargePct: 0,
-      taxRatePct: 18.0,
-      lineTotal: 2790.0,
+      lineTotal: 0,
     },
   ]);
+
 
   const [formError, setFormError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -283,10 +210,25 @@ export const VendorInvoicesTab: React.FC<VendorInvoicesTabProps> = ({
   const formTotalTax = useMemo(() => formCgst + formSgst, [formCgst, formSgst]);
   const formGrandTotal = useMemo(() => formSubtotal + formTotalTax, [formSubtotal, formTotalTax]);
 
-  // Convert numbers to Indian Rupees in words
+  // Convert numbers to Indian Rupees in words dynamically
   const amountInWords = useMemo(() => {
-    return 'Rupees : One Lakh Nineteen Thousand Seven Hundred And Seventy Seven Only /-';
+    const n = Math.round(formGrandTotal);
+    if (n <= 0) return 'Rupees : Zero Only /-';
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+      'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    const toWords = (num: number): string => {
+      if (num === 0) return '';
+      if (num < 20) return ones[num] + ' ';
+      if (num < 100) return tens[Math.floor(num / 10)] + (num % 10 ? ' ' + ones[num % 10] : '') + ' ';
+      if (num < 1000) return ones[Math.floor(num / 100)] + ' Hundred ' + toWords(num % 100);
+      if (num < 100000) return toWords(Math.floor(num / 1000)) + 'Thousand ' + toWords(num % 1000);
+      if (num < 10000000) return toWords(Math.floor(num / 100000)) + 'Lakh ' + toWords(num % 100000);
+      return toWords(Math.floor(num / 10000000)) + 'Crore ' + toWords(num % 10000000);
+    };
+    return `Rupees : ${toWords(n).trim()} Only /-`;
   }, [formGrandTotal]);
+
 
   // ── Load Invoices & Eligible POs ──
   const fetchInvoices = async () => {
@@ -338,11 +280,15 @@ export const VendorInvoicesTab: React.FC<VendorInvoicesTabProps> = ({
 
   const populateFromPo = (po: PurchaseOrder) => {
     setSelectedPoId(po.id);
-    setContractRef(po.contractReference || 'CON-ARJUNA-MANPOWER-2026');
-    setBillingPeriod(po.servicePeriod || '2026-07');
-    setInvoiceNumber(`134/2026-27`);
-    setServiceStartDate('2026-07-01');
-    setServiceEndDate('2026-07-31');
+    setContractRef(po.contractReference || '');
+    setBillingPeriod(po.servicePeriod || new Date().toISOString().substring(0, 7));
+    // Auto-generate a sequential invoice number suggestion
+    const month = (po.servicePeriod || new Date().toISOString().substring(0, 7)).replace('-', '');
+    setInvoiceNumber(`INV-${po.poNumber || 'DRAFT'}-${month}`);
+    const periodStart = po.validFrom || defaultPeriodStart;
+    const periodEnd = po.validUntil || defaultPeriodEnd;
+    setServiceStartDate(periodStart);
+    setServiceEndDate(periodEnd);
 
     const items = po.items || po.lineItems;
     if (items && items.length > 0) {
@@ -358,6 +304,7 @@ export const VendorInvoicesTab: React.FC<VendorInvoicesTabProps> = ({
       );
     }
   };
+
 
   const handlePoSelectionChange = (poId: string) => {
     setSelectedPoId(poId);
@@ -460,131 +407,6 @@ export const VendorInvoicesTab: React.FC<VendorInvoicesTabProps> = ({
     showToast('Exported invoice registry to CSV ✓', 'success');
   };
 
-  /**
-   * One-click benchmark generator: Builds the Arjuna Naturals July 2026 invoice
-   */
-  const handleLoadArjunaBenchmarkInvoice = async () => {
-    setIsGeneratingBenchmark(true);
-    try {
-      let po = availablePOs.find((p) => p.poNumber === 'PO-ARJUNA-2026-07');
-      if (!po) {
-        const poRes = await PurchaseOrderService.createPurchaseOrder({
-          poNumber: 'PO-ARJUNA-2026-07',
-          organizationId,
-          vendorId: vendorId || 'JOY MANPOWER SERVICE',
-          contractReference: 'CON-ARJUNA-MANPOWER-2026',
-          servicePeriod: '2026-07',
-          validFrom: '2026-07-01',
-          validUntil: '2026-07-31',
-          currency: 'INR',
-          lineItems: [
-            {
-              category: 'MANPOWER_SERVICES',
-              description: "Being the Contract Services for supply of manpower at your Factory premises from 01.07.2026 TO 31.07.2026",
-              quantity: 84.5,
-              unit: 'DAYS',
-              unitPrice: 620,
-              taxRatePct: 18.0,
-            },
-            {
-              category: 'STATUTORY_PF',
-              description: 'P.F.Employer Contribution @ 13% Rs. 52390',
-              quantity: 1,
-              unit: 'MONTH',
-              unitPrice: 6811.0,
-              taxRatePct: 18.0,
-            },
-            {
-              category: 'STATUTORY_ESI',
-              description: 'E.S.I Employer Contribution @ 3.25% Rs. 52390',
-              quantity: 1,
-              unit: 'MONTH',
-              unitPrice: 1703.0,
-              taxRatePct: 18.0,
-            },
-            {
-              category: 'SERVICE_CHARGE',
-              description: 'Service Charges @ 8% on Gross',
-              quantity: 1,
-              unit: 'MONTH',
-              unitPrice: 6337.0,
-              taxRatePct: 18.0,
-            },
-            {
-              category: 'ALLOWANCE_ROOM',
-              description: 'ADD Room Allowance @ 50',
-              quantity: 93,
-              unit: 'DAYS',
-              unitPrice: 50.0,
-              taxRatePct: 18.0,
-            },
-            {
-              category: 'ALLOWANCE_TRANSPORT',
-              description: 'ADD Transport Allowance @ 30',
-              quantity: 93,
-              unit: 'DAYS',
-              unitPrice: 30.0,
-              taxRatePct: 18.0,
-            },
-          ],
-        });
-        if (poRes.success && poRes.po) {
-          po = poRes.po;
-          await PurchaseOrderService.respondToPurchaseOrder({
-            poId: po.id,
-            action: 'ACCEPT',
-          });
-          setAvailablePOs((prev) => [po!, ...prev]);
-        }
-      }
-
-      if (!po) {
-        showToast('Unable to initialize Purchase Order for benchmark', 'error');
-        return;
-      }
-
-      const recon = VendorAttendanceReconciliationService.loadArjunaNaturalsReconciliation({
-        organizationId,
-        vendorId: vendorId || 'JOY MANPOWER SERVICE',
-        poNumber: po.poNumber,
-      });
-
-      const invNumber = `134/2026-27`;
-      const invRes = await VendorInvoiceService.createInvoiceFromReconciliation({
-        vendorId: vendorId || 'JOY MANPOWER SERVICE',
-        organizationId,
-        po,
-        reconciliation: recon,
-        invoiceNumber: invNumber,
-        billingRuleConfig: {
-          serviceChargePct: 8.0,
-          employerPfPct: 13.0,
-          employerEsiPct: 3.25,
-          cgstPct: 9.0,
-          sgstPct: 9.0,
-          roomAllowancePerDay: 50.0,
-          transportAllowancePerDay: 30.0,
-          isRoomAllowanceBillable: true,
-          isTransportAllowanceBillable: true,
-        },
-        dueDate: '2026-08-31',
-        notes: "Live Benchmark matching ARJUNA NATURALS INVOICE JULY'26 (Invoice # 134/2026-27)",
-      });
-
-      if (invRes.success && invRes.invoice) {
-        showToast("Created Arjuna Naturals July'26 benchmark invoice (₹119,777) ✓", 'success');
-        await fetchInvoices();
-        handleOpenReviewDrawer(invRes.invoice);
-      } else {
-        showToast(invRes.error || 'Failed to create invoice', 'error');
-      }
-    } catch (err: any) {
-      console.error(err);
-      showToast('Error generating benchmark invoice', 'error');
-    } finally {
-      setIsGeneratingBenchmark(false);
-    }
-  };
 
   // Submit new or draft invoice
   const handleCreateInvoice = async (asDraft: boolean = false) => {
@@ -766,17 +588,7 @@ export const VendorInvoicesTab: React.FC<VendorInvoicesTabProps> = ({
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
-          {viewMode === 'COMPANY' && (
-            <button
-              type="button"
-              onClick={handleLoadArjunaBenchmarkInvoice}
-              disabled={isGeneratingBenchmark}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-[#047857] border border-emerald-300 text-xs font-bold rounded-xl transition-all shadow-2xs cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4 text-[#047857]" />
-              {isGeneratingBenchmark ? 'Generating…' : "Load July'26 Benchmark (₹119,777)"}
-            </button>
-          )}
+          {/* Benchmark button removed — all invoices must be based on real PO + attendance data */}
 
           {viewMode === 'VENDOR' ? (
             <button

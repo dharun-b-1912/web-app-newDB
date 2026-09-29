@@ -163,9 +163,10 @@ export interface VendorMRReportRecord {
   ot_gt_4hrs_count: number;     // No. of days OT > 4 hrs
   ot_gt_8hrs_on_woff: number;   // No. of days OT > 8 hrs on Weekly Off
 
-  // Compliance flags
-  fa?: number;                  // Fine/Absent
-  na?: number;                  // Not Attended
+  // Compliance & Allowances
+  fa?: number;                  // Food Allowance
+  na?: number;                  // Night Shift Allowance
+  canteen?: number;             // Canteen / Meal Recovery Deduction
 
   // Commercial & Audit
   rate?: number;

@@ -164,7 +164,7 @@ export const VendorCompanyConnectionSelector: React.FC<VendorCompanyConnectionSe
             </span>
           </div>
           <div className="text-[10px] text-slate-400 font-medium leading-none mt-0.5">
-            Authorized Vendor Agency
+            Authorized Manpower Contractor
           </div>
         </div>
       </div>

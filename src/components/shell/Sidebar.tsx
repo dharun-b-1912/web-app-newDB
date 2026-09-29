@@ -138,6 +138,11 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'payroll-dashboard' && (currentNav === 'payroll' || currentNav === 'payroll-dashboard')) return true;
   if (itemId === 'client-billing' && (
     currentNav === 'client-billing' ||
+    currentNav === 'vendor-wages' ||
+    currentNav === 'vendor/wages' ||
+    currentNav === 'vendors/wages' ||
+    currentNav === 'vendor-billing' ||
+    currentNav === 'wage-engine' ||
     currentNav === 'payroll-billing' ||
     currentNav === 'billing' ||
     currentNav === 'invoicing' ||
@@ -265,6 +270,9 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'vendor-payroll' && (currentNav === 'vendor-payroll' || currentNav === 'vendor/payroll')) return true;
   if (itemId === 'vendor-compliance' && (currentNav === 'vendor-compliance' || currentNav === 'vendor/compliance')) return true;
   if (itemId === 'vendor-leaderboard' && (currentNav === 'vendor-leaderboard' || currentNav === 'vendor/leaderboard')) return true;
+  if (itemId === 'vendor-assets' && (currentNav === 'vendor-assets' || currentNav === 'vendor/assets')) return true;
+  if (itemId === 'vendor-communication' && (currentNav === 'vendor-communication' || currentNav === 'vendor/communication')) return true;
+  if (itemId === 'vendor-reports' && (currentNav === 'vendor-reports' || currentNav === 'vendor/reports')) return true;
   if (itemId === 'vendor-storage' && (currentNav === 'vendor-storage' || currentNav === 'vendor/storage')) return true;
   if (itemId === 'vendor-audit' && (currentNav === 'vendor-audit' || currentNav === 'vendor/audit')) return true;
   if (itemId.startsWith('vendor-') && currentNav === itemId) return true;
@@ -508,15 +516,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
-      groupName: 'VENDOR & WORKFORCE GOVERNANCE',
+      groupName: 'VENDOR & PROCUREMENT GOVERNANCE',
       items: [
+        { id: 'vendor-portal', label: 'Vendor Governance Overview', icon: Building2 },
         { id: 'vendor-directory', label: 'Vendor Master Directory', icon: Building2 },
         { id: 'vendor-purchase-orders', label: 'Purchase Orders & Contracts', icon: ShoppingCart },
-        { id: 'vendor-invoices', label: 'Invoices & 3-Way Match', icon: Receipt },
-        { id: 'vendor-attendance-recon', label: 'Attendance & OT Reconciliation', icon: Clock },
-        { id: 'vendor-compliance', label: 'Vendor Document Vault', icon: FileCheck2 },
-        { id: 'vendor-leaderboard', label: 'Workforce Performance', icon: Award },
+        { id: 'vendor-attendance-recon', label: 'Attendance & OT Recon', icon: Clock },
         { id: 'client-billing', label: 'Client Wage Billing & Invoicing', icon: Calculator, badge: 'Active' },
+        { id: 'vendor-invoices', label: 'Invoices & 3-Way Match', icon: Receipt },
+        { id: 'vendor-compliance', label: 'Statutory Vault & Compliance', icon: FileCheck2 },
+      ],
+    },
+    {
+      groupName: 'VENDOR WORKFORCE & FIELD OPS',
+      items: [
+        { id: 'vendor-workforce', label: 'Workforce Allocation', icon: Users },
+        { id: 'vendor-attendance', label: 'Attendance & Ingestion', icon: Clock },
+        { id: 'vendor-leaderboard', label: 'Performance Analytics', icon: Award },
+        { id: 'vendor-assets', label: 'Asset Allocation', icon: Package },
+        { id: 'vendor-communication', label: 'Communication Desk', icon: MessageSquare },
+        { id: 'vendor-reports', label: 'Reports & Audit', icon: BarChart3 },
       ],
     },
     {
@@ -722,6 +741,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
+      groupName: 'VENDOR WORKFORCE & FIELD OPS',
+      items: [
+        { id: 'vendor-workforce', label: 'Workforce Allocation', icon: Users },
+        { id: 'vendor-attendance', label: 'Attendance & Ingestion', icon: Clock },
+        { id: 'vendor-leaderboard', label: 'Performance Analytics', icon: Award },
+        { id: 'vendor-assets', label: 'Asset Allocation', icon: Package },
+        { id: 'vendor-communication', label: 'Communication Desk', icon: MessageSquare },
+        { id: 'vendor-reports', label: 'Reports & Audit', icon: BarChart3 },
+      ],
+    },
+    {
       groupName: 'OPERATIONS',
       items: [
         { id: 'attendance', label: 'Attendance', icon: Clock },
@@ -784,9 +814,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'vendor-portal', label: 'Vendor Governance Overview', icon: Building2 },
         { id: 'vendor-directory', label: 'Vendor Master Directory', icon: Building2 },
         { id: 'vendor-purchase-orders', label: 'Purchase Orders & Contracts', icon: ShoppingCart },
-        { id: 'vendor-invoices', label: 'Invoices & 3-Way Match', icon: Receipt },
+        { id: 'vendor-attendance-recon', label: 'Attendance & OT Recon', icon: Clock },
         { id: 'client-billing', label: 'Client Wage Billing & Invoicing', icon: Calculator, badge: 'Active' },
-        { id: 'storage-admin', label: 'Statutory Vault & Storage', icon: Lock, badge: 'Vault' },
+        { id: 'vendor-invoices', label: 'Invoices & 3-Way Match', icon: Receipt },
+        { id: 'vendor-compliance', label: 'Statutory Vault & Compliance', icon: FileCheck2 },
+      ],
+    },
+    {
+      groupName: 'VENDOR WORKFORCE & FIELD OPS',
+      items: [
+        { id: 'vendor-workforce', label: 'Workforce Allocation', icon: Users },
+        { id: 'vendor-attendance', label: 'Attendance & Ingestion', icon: Clock },
+        { id: 'vendor-leaderboard', label: 'Performance Analytics', icon: Award },
+        { id: 'vendor-assets', label: 'Asset Allocation', icon: Package },
+        { id: 'vendor-communication', label: 'Communication Desk', icon: MessageSquare },
+        { id: 'vendor-reports', label: 'Reports & Audit', icon: BarChart3 },
       ],
     },
     {

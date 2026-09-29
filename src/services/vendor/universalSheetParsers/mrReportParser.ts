@@ -89,6 +89,44 @@ export class MRReportParser {
       const otGte4hDays = this.parseNum(colMap.otGte4h !== undefined ? row[colMap.otGte4h] : 0);
       const otGte8hDays = this.parseNum(colMap.otGte8h !== undefined ? row[colMap.otGte8h] : 0);
 
+      // FA (Food Allowance) extraction: col 16/17 (days or amount)
+      const rawFa = colMap.fa !== undefined ? row[colMap.fa] : 0;
+      const parsedFa = this.parseNum(rawFa);
+      let faQualifyingDays = 0;
+      let faAmount = 0;
+      if (otGte4hDays > 0) {
+        faQualifyingDays = otGte4hDays;
+        faAmount = parsedFa > 0 ? parsedFa : Math.round(faQualifyingDays * 20);
+      } else if (parsedFa > 0) {
+        if (parsedFa <= 31) {
+          faQualifyingDays = parsedFa;
+          faAmount = Math.round(faQualifyingDays * 20);
+        } else {
+          faAmount = parsedFa;
+          faQualifyingDays = Math.round(parsedFa / 20);
+        }
+      }
+
+      // NA (Night / W-Off Allowance) extraction: col 18 (days or amount)
+      const rawNa = colMap.na !== undefined ? row[colMap.na] : 0;
+      const parsedNa = this.parseNum(rawNa);
+      let naQualifyingDays = 0;
+      let naAmount = 0;
+      if (parsedNa > 0) {
+        if (parsedNa <= 31) {
+          naQualifyingDays = parsedNa;
+          naAmount = Math.round(naQualifyingDays * 45);
+        } else {
+          naAmount = parsedNa;
+          naQualifyingDays = Math.round(parsedNa / 45);
+        }
+      }
+
+      const uan = colMap.uan !== undefined && row[colMap.uan] ? String(row[colMap.uan]).trim() : undefined;
+      const esiNumber = colMap.esi !== undefined && row[colMap.esi] ? String(row[colMap.esi]).trim() : undefined;
+      const canteenDeduction = colMap.canteen !== undefined ? this.parseNum(row[colMap.canteen]) : undefined;
+      const roomAllowance = colMap.rent !== undefined ? this.parseNum(row[colMap.rent]) : undefined;
+
       const rawWage = colMap.wages !== undefined ? row[colMap.wages] : undefined;
       const wages = rawWage !== undefined && rawWage !== null && rawWage !== '' ? this.parseNum(rawWage) : null;
       if (wages !== null) {
@@ -126,6 +164,14 @@ export class MRReportParser {
         otHours,
         otGte4hDays,
         otGte8hDays,
+        faQualifyingDays,
+        faAmount,
+        naQualifyingDays,
+        naAmount,
+        uan,
+        esiNumber,
+        canteenDeduction,
+        roomAllowance,
         rate: null,
         wages,
         hasWageData: wages !== null,
@@ -263,6 +309,12 @@ export class MRReportParser {
           else if (val === 'overtime' || val === 'ot' || val === 'ot hours') colMap.otHours = idx;
           else if (val.includes('more than 4') || val.includes('4 hrs') || val === 'fa') colMap.otGte4h = idx;
           else if (val.includes('8 hrs') || val === 'na') colMap.otGte8h = idx;
+          else if (val === 'fa' || val === 'f.allow' || val === 'f.allowance' || val === 'food allow') colMap.fa = idx;
+          else if (val === 'na' || val === 'n.allow' || val === 'n.allowance' || val === 'night allow') colMap.na = idx;
+          else if (val.includes('uan')) colMap.uan = idx;
+          else if (val.includes('esi number') || val === 'esi no' || val === 'esic') colMap.esi = idx;
+          else if (val.includes('canteen')) colMap.canteen = idx;
+          else if (val.includes('rent') || val.includes('room allow')) colMap.rent = idx;
           else if (val === 'wages' || val === 'gross wages' || val === 'salary') colMap.wages = idx;
         });
 
@@ -270,7 +322,7 @@ export class MRReportParser {
           colMap.sno = 0;
         }
 
-        // Check next row (r + 1) for shift sub-headers (G.SHIFT, SHIFT I, etc.)
+        // Check next row (r + 1) for shift sub-headers (G.SHIFT, SHIFT I, etc.) and FA / NA
         const nextRow = matrix[r + 1] || [];
         nextRow.forEach((c: any, nIdx: number) => {
           const nVal = String(c || '').trim().toLowerCase();
@@ -278,6 +330,8 @@ export class MRReportParser {
           else if (nVal === 'shift i' || nVal === 'shift 1') colMap.shiftsI = nIdx;
           else if (nVal === 'shift ii' || nVal === 'shift 2') colMap.shiftsII = nIdx;
           else if (nVal === 'shift iii' || nVal === 'shift 3') colMap.shiftsIII = nIdx;
+          else if (nVal === 'fa' || nVal === 'f.allow' || nVal === 'f.allowance') colMap.fa = nIdx;
+          else if (nVal === 'na' || nVal === 'n.allow' || nVal === 'n.allowance') colMap.na = nIdx;
         });
 
         break;

@@ -43,8 +43,7 @@ import {
   HalfDayStatus,
   VendorAttendanceEngineService,
 } from './vendorAttendanceEngineService';
-import { VendorWorkforceService, VendorWorkerRecord } from './vendorWorkforceService';
-import { JOY_SEP_MASTER_WORKFORCE_44 } from './fixtures/joySepAttendanceBenchmarkFixture';
+import { VendorWorkforceService } from './vendorWorkforceService';
 import { AttendanceMasterService } from './attendanceMasterService';
 
 // ---------------------------------------------------------------------------
@@ -235,8 +234,101 @@ export class VendorAttendanceNormalizedDataService {
           isIntact: true,
           issues: [],
           warnings: missingWorkersDetails.length > 0
-            ? [`${missingWorkersDetails.length} worker(s) on master roster have 0 biometric punches (S.No 31).`]
+            ? [`${missingWorkersDetails.length} worker(s) on master roster have 0 biometric punches.`]
             : [],
+        },
+      };
+    }
+
+    // 2. Check in-memory staged attendance from VendorAttendanceEngineService
+    const staged = VendorAttendanceEngineService.getActiveAttendance();
+    if (staged.length > 0) {
+      const dedupMap = new Map<string, VendorDailyAttendance>();
+      let duplicatesRemoved = 0;
+      for (const rec of staged) {
+        const key = `${rec.employee_id}::${rec.attendance_date}`;
+        if (dedupMap.has(key)) {
+          duplicatesRemoved++;
+        } else {
+          dedupMap.set(key, rec);
+        }
+      }
+      const attendanceRecords = Array.from(dedupMap.values());
+      const uniqueEmps = Array.from(new Set(attendanceRecords.map((r) => r.employee_id)));
+      const totalWorkers = request.totalWorkers && request.totalWorkers > uniqueEmps.length
+        ? request.totalWorkers
+        : uniqueEmps.length;
+
+      const missingWorkersDetails: MissingWorkerInfo[] = [];
+      if (master.employeeSummaries && master.employeeSummaries.length > 0) {
+        master.employeeSummaries
+          .filter((e) => e.status !== 'ACTIVE' || e.punch_records_count === 0)
+          .forEach((e) => {
+            missingWorkersDetails.push({
+              employeeId: e.employee_id,
+              employeeCode: e.employee_code || e.employee_id,
+              employeeName: e.employee_name,
+              department: e.department || 'Operations',
+              category: e.category || 'Contractor',
+            });
+          });
+      }
+
+      // If specified totalWorkers exceeds attendee count, populate unpunched roster slot dynamically
+      const missingCount = totalWorkers - uniqueEmps.length;
+      while (missingWorkersDetails.length < missingCount) {
+        const slotNum = uniqueEmps.length + missingWorkersDetails.length + 1;
+        missingWorkersDetails.push({
+          employeeId: `UNPUNCHED-${slotNum}`,
+          employeeCode: `UNPUNCHED-${slotNum}`,
+          employeeName: `Unpunched Roster Worker ${slotNum}`,
+          department: attendanceRecords[0]?.department || 'Contract Workforce',
+          category: attendanceRecords[0]?.category || 'Contractor',
+        });
+      }
+
+      const period: AttendancePeriod = {
+        id: request.periodLabel || 'CYCLE',
+        label: request.periodLabel || 'Reporting Period',
+        from_date: request.periodStart || '2026-08-26',
+        to_date: request.periodEnd || '2026-09-25',
+        period_type: 'ATTENDANCE_CYCLE',
+      };
+
+      const mrReport = this.buildMRReport(attendanceRecords, missingWorkersDetails);
+      const otMatrix = this.buildOTMatrix(attendanceRecords, period);
+      const reconciliation = this.buildReconciliation(attendanceRecords, mrReport, otMatrix, missingWorkersDetails);
+      const exceptions = this.detectExceptions(attendanceRecords, missingWorkersDetails, period);
+
+      return {
+        vendorId: request.vendorId,
+        companyId: request.companyId,
+        siteId: request.siteId,
+        periodStart: request.periodStart,
+        periodEnd: request.periodEnd,
+        totalWorkers,
+        workersWithAttendance: uniqueEmps.length,
+        workersWithoutAttendance: missingWorkersDetails.map((m) => m.employeeId),
+        missingWorkersDetails,
+        attendanceRecords,
+        attendanceRecordCount: attendanceRecords.length,
+        mrReport,
+        otMatrix,
+        reconciliation,
+        exceptions,
+        integrity: {
+          sourceRecordCount: staged.length,
+          deduplicatedRecordCount: attendanceRecords.length,
+          duplicatesRemoved,
+          uniqueEmployeesInAttendance: uniqueEmps.length,
+          mrRowCount: mrReport.length,
+          otWorkerCount: otMatrix.length,
+          reconciliationMatched: reconciliation.filter((r) => r.status === 'MATCHED').length,
+          reconciliationIssues: reconciliation.filter((r) => r.status !== 'MATCHED').length,
+          exceptionCount: exceptions.length,
+          isIntact: true,
+          issues: [],
+          warnings: missingWorkersDetails.length > 0 ? ['Missing workers on roster'] : [],
         },
       };
     }

@@ -257,6 +257,15 @@ export class OTPolicyEngine {
     return null;
   }
 
+  public static getActivePolicy(): OTPolicyRecord | null {
+    const id = this.getActivePolicyId();
+    if (id && this.policies.has(id)) {
+      return this.policies.get(id)!;
+    }
+    const all = Array.from(this.policies.values());
+    return all.find(p => p.status === 'ACTIVE') || all[0] || null;
+  }
+
   public static registerPolicyRecord(policy: OTPolicyRecord): void {
     this.policies.set(policy.id, policy);
   }

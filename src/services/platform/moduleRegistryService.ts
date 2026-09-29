@@ -299,8 +299,8 @@ export const CANONICAL_MODULES: ModuleRegistryItem[] = [
     priority: 'CRITICAL_P0',
     completion_percentage: 100,
     development_notes: 'Client payroll OS for Joy Corporate Solutions: commercial contracts, margin billing, and multi-sheet exports.',
-    associated_routes: ['client-billing', 'client-contracts', 'client-invoicing', 'billing-runs'],
-    associated_nav_ids: ['client-billing'],
+    associated_routes: ['client-billing', 'client-contracts', 'client-invoicing', 'billing-runs', 'vendor-wages', 'vendor/wages', 'wage-engine'],
+    associated_nav_ids: ['client-billing', 'vendor-wages'],
   },
 
   // ─── 5. EMPLOYEE RELATIONS (LIVE) ───────────────────────────────────

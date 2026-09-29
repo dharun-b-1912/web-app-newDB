@@ -5,12 +5,8 @@
 // to generate auditable inputs for VendorManpowerBillingEngine and 3-Way Matching
 // ============================================================================
 
-import {
-  ARJUNA_NATURALS_JULY_2026_WORKERS,
-  ARJUNA_NATURALS_WORKBOOK_BENCHMARK,
-  ArjunaWorkerFixtureRecord,
-} from './fixtures/arjunaNaturalJuly2026Fixture';
 import { EmployeePayrollInput } from './vendorManpowerBillingEngine';
+
 
 export interface WorkerAttendanceSummary {
   workerCode: string;
@@ -25,6 +21,13 @@ export interface WorkerAttendanceSummary {
   roomAllowance: number;
   transportAllowance: number;
   totalAllowance: number;
+  faQualifyingDays?: number;
+  faAmount?: number;
+  naQualifyingDays?: number;
+  naAmount?: number;
+  uan?: string;
+  esiNumber?: string;
+  canteenDeduction?: number;
   employeePf?: number;
   employeeEsi?: number;
   netPay?: number;
@@ -118,100 +121,9 @@ export interface InvoiceAttendanceAuditResult {
 }
 
 export class VendorAttendanceReconciliationService {
-  /**
-   * Loads the Arjuna Naturals July 2026 verified attendance & OT reconciliation fixture
-   */
-  public static loadArjunaNaturalsReconciliation(params?: {
-    organizationId?: string;
-    vendorId?: string;
-    poNumber?: string;
-  }): AttendanceReconciliationSummary {
-    const workers = ARJUNA_NATURALS_JULY_2026_WORKERS;
+  // loadArjunaNaturalsReconciliation was removed — no benchmark fixture data.
+  // All reconciliation is now done via reconcileAttendanceDataset with real DB inputs.
 
-    const workerSummaries: WorkerAttendanceSummary[] = workers.map((w) => ({
-      workerCode: w.workerCode,
-      workerName: w.workerName,
-      department: w.department,
-      dailyWages: w.dailyWages,
-      payDays: w.payDays,
-      rawOtHours: w.otHours,
-      approvedOtHours: w.otHours,
-      otApprovalStatus: 'APPROVED',
-      allowanceWorkingDays: w.allowanceWorkingDays,
-      roomAllowance: w.roomAllowance,
-      transportAllowance: w.transportAllowance,
-      totalAllowance: w.totalAllowance,
-      employeePf: w.employeePf,
-      employeeEsi: w.employeeEsi,
-      netPay: w.netPay,
-      anomaliesCount: 0,
-    }));
-
-    const payrollInputs: EmployeePayrollInput[] = workers.map((w) => ({
-      employeeId: `emp-arjuna-${w.workerCode.toLowerCase()}`,
-      employeeCode: w.workerCode,
-      employeeName: w.workerName,
-      dailyWages: w.dailyWages,
-      payDays: w.payDays,
-      otHours: w.otHours,
-      workingDaysForAllowance: w.allowanceWorkingDays,
-    }));
-
-    const totalPayDays = workers.reduce((sum, w) => sum + w.payDays, 0);
-    const totalOtHours = workers.reduce((sum, w) => sum + w.otHours, 0);
-    const totalRegularWages = workers.reduce((sum, w) => sum + w.regularWages, 0);
-    const totalOtStipend = workers.reduce((sum, w) => sum + w.otStipend, 0);
-    const totalGrossWages = totalRegularWages + totalOtStipend;
-
-    const totalAllowanceWorkingDays = workers.reduce((sum, w) => sum + w.allowanceWorkingDays, 0);
-    const totalRoomAllowance = workers.reduce((sum, w) => sum + w.roomAllowance, 0);
-    const totalTransportAllowance = workers.reduce((sum, w) => sum + w.transportAllowance, 0);
-    const totalAllowanceAmount = totalRoomAllowance + totalTransportAllowance;
-
-    const totalEmployeePf = workers.reduce((sum, w) => sum + w.employeePf, 0);
-    const totalEmployeeEsi = workers.reduce((sum, w) => sum + w.employeeEsi, 0);
-    const totalNetEmployeePay = workers.reduce((sum, w) => sum + w.netPay, 0);
-
-    return {
-      reconciliationId: `recon-arjuna-2026-07-${Date.now()}`,
-      organizationId: params?.organizationId || ARJUNA_NATURALS_WORKBOOK_BENCHMARK.company.clientCompanyId,
-      vendorId: params?.vendorId || ARJUNA_NATURALS_WORKBOOK_BENCHMARK.vendor.vendorCode,
-      clientSiteId: 'site-arjuna-cbe-01',
-      clientSiteName: ARJUNA_NATURALS_WORKBOOK_BENCHMARK.company.siteName,
-      servicePeriod: ARJUNA_NATURALS_WORKBOOK_BENCHMARK.commercialTerms.servicePeriod,
-      periodMonth: ARJUNA_NATURALS_WORKBOOK_BENCHMARK.commercialTerms.periodMonth,
-      poNumber: params?.poNumber || 'PO-ARJUNA-2026-07',
-      contractReference: 'CON-ARJUNA-MANPOWER-2026',
-      reconciledAt: new Date().toISOString(),
-
-      totalDeployedWorkers: workers.length,
-      totalPresentDays: totalPayDays,
-      totalPayDays,
-      totalRawOtHours: totalOtHours,
-      totalApprovedOtHours: totalOtHours,
-      totalUnapprovedOtHours: 0,
-
-      totalRegularWages,
-      totalOtStipend,
-      totalGrossWages,
-
-      totalAllowanceWorkingDays,
-      totalRoomAllowance,
-      totalTransportAllowance,
-      totalAllowanceAmount,
-
-      totalEmployeePf,
-      totalEmployeeEsi,
-      totalNetEmployeePay,
-
-      anomaliesFound: 0,
-      isReconciled: true,
-      reconciliationStatus: 'RECONCILED',
-
-      workerSummaries,
-      payrollInputs,
-    };
-  }
 
   /**
    * Reconciles raw daily attendance logs against approved manager OT approvals and deployment scopes

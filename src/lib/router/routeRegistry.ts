@@ -343,6 +343,7 @@ export const ROUTE_MANIFEST: RouteDefinition[] = [
   { id: 'vendor-directory', label: 'Vendor Master Directory', canonicalPath: '/vendor-directory', section: 'VENDOR & PROCUREMENT GOVERNANCE', aliases: ['/vendor/directory', '/vendors'] },
   { id: 'vendor-purchase-orders', label: 'Purchase Orders & Contracts', canonicalPath: '/vendor-purchase-orders', section: 'VENDOR & PROCUREMENT GOVERNANCE', aliases: ['/vendor/purchase-orders', '/vendor-pos', '/vendor/pos', '/purchase-orders'] },
   { id: 'vendor-invoices', label: 'Invoices & 3-Way Match', canonicalPath: '/vendor-invoices', section: 'VENDOR & PROCUREMENT GOVERNANCE', aliases: ['/vendor/invoices', '/invoices'] },
+  { id: 'vendor-wages', label: 'Client Wage Billing & Invoicing', canonicalPath: '/vendor-wages', section: 'VENDOR & PROCUREMENT GOVERNANCE', aliases: ['/vendor/wages', '/vendors/wages', '/vendor-billing', '/vendors/billing', '/wage-engine', '/vendor-portal/wages', '/client-billing', '/payroll/billing', '/payroll-billing', '/billing-runs', '/client-wage-billing'] },
   { id: 'vendor-company', label: 'My Company Profile', canonicalPath: '/vendor-company', section: 'VENDOR & PROCUREMENT GOVERNANCE', aliases: ['/vendor/company'] },
   { id: 'vendor-workforce', label: 'Workforce Directory', canonicalPath: '/vendor-workforce', section: 'VENDOR & PROCUREMENT GOVERNANCE', aliases: ['/vendor/workforce'] },
   { id: 'vendor-attendance', label: 'Attendance & Overtime', canonicalPath: '/vendor-attendance', section: 'VENDOR & PROCUREMENT GOVERNANCE', aliases: ['/vendor/attendance'] },
