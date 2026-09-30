@@ -194,6 +194,9 @@ export class LiveDataPayrollVerificationService {
    * Seeds the 21 Workers Live Dataset directly into the Application Platform
    */
   public static seed21WorkersIntoPlatform(companyId?: string): { success: boolean; count: number; totalGross: number; totalNet: number } {
+    if (typeof window !== 'undefined') {
+      return { success: false, count: 0, totalGross: 0, totalNet: 0 };
+    }
     const rawData = this.loadSourceWorkbookData();
     const activeOrgId = typeof localStorage !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-01') : 'org-joy-01';
     const activeCompanyId = companyId || 'comp-joy-chennai';
@@ -272,11 +275,17 @@ export class LiveDataPayrollVerificationService {
       localStorage.setItem('workforce_21_workers_active', 'true');
       localStorage.setItem('workforce_21_workers_list', JSON.stringify(newEmps));
 
+      // Only seed into workforce_employees if running in pure offline/test mode without real UUID employees
       const storedEmpRaw = localStorage.getItem('workforce_employees');
-      const existingEmps = storedEmpRaw ? JSON.parse(storedEmpRaw) : [];
-      const newCodes = new Set(newEmps.map(ne => ne.employee_code));
-      const mergedEmps = [...existingEmps.filter((e: any) => !newCodes.has(e.employee_code || e.id)), ...newEmps];
-      localStorage.setItem('workforce_employees', JSON.stringify(mergedEmps));
+      const existingEmps: any[] = storedEmpRaw ? JSON.parse(storedEmpRaw) : [];
+      const hasRealUuidEmployees = existingEmps.some((e: any) =>
+        typeof e?.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(e.id)
+      );
+      if (!hasRealUuidEmployees && typeof window === 'undefined') {
+        const newCodes = new Set(newEmps.map(ne => ne.employee_code));
+        const mergedEmps = [...existingEmps.filter((e: any) => !newCodes.has(e.employee_code || e.id)), ...newEmps];
+        localStorage.setItem('workforce_employees', JSON.stringify(mergedEmps));
+      }
     } catch (_) {}
 
     // 2. Seed Salary Structure & Employee Salary Assignments

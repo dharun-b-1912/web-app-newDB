@@ -167,12 +167,17 @@ EXECUTE FUNCTION public.fn_prevent_locked_payroll_mutation();
 CREATE OR REPLACE FUNCTION public.fn_prevent_locked_line_item_mutation()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_run_status public.payroll_status_enum;
     v_run_id UUID;
 BEGIN
-    v_run_id := COALESCE(NEW.payroll_run_id, OLD.payroll_run_id);
+    IF TG_OP = 'DELETE' THEN
+        v_run_id := OLD.payroll_run_id;
+    ELSE
+        v_run_id := NEW.payroll_run_id;
+    END IF;
     SELECT status INTO v_run_status FROM public.payroll_runs WHERE id = v_run_id;
     
     IF v_run_status IN ('LOCKED', 'DISBURSED') THEN

@@ -12,7 +12,7 @@ import {
   WfhRequest,
 } from '../types/attendance';
 import { DEFAULT_ATTENDANCE_POLICY, minutesToTimeString, processAttendanceStatus, timeStringToMinutes, formatCleanTime } from '../lib/attendance/attendanceEngine';
-import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { supabase, isSupabaseEnabled, ensureSupabaseSession } from '../lib/supabase';
 import { JoyRedis } from '../lib/redis';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
 import { attendanceTimeService } from './attendance/attendanceTimeService';
@@ -89,26 +89,49 @@ export const attendanceApi = {
   async getDailyAttendanceAsync(date?: string, department?: string, status?: string, search?: string): Promise<AttendanceDaily[]> {
     if (isSupabaseEnabled) {
       try {
+        await ensureSupabaseSession();
+
         let q = supabase.from('attendance_daily').select('*');
         if (date) q = q.eq('attendance_date', date);
-        const { data, error } = await q;
+        const { data } = await q;
+
         // Fetch employee details to enrich daily attendance summaries
         let empMap = new Map<string, any>();
         try {
           const { data: empList } = await supabase
             .from('employees')
-            .select('id, employee_code, first_name, last_name, display_name, avatar_url');
-          if (empList) {
+            .select('id, organization_id, company_id, employee_code, first_name, last_name, display_name, avatar_url, department_id, designation_id, employment_status');
+          if (empList && empList.length > 0) {
             empMap = new Map(empList.map((e: any) => [e.id, e]));
+            // Ensure localStorage workforce_employees has real UUID employees if empty or polluted
+            try {
+              const rawLocal = localStorage.getItem('workforce_employees');
+              const parsedLocal: any[] = rawLocal ? JSON.parse(rawLocal) : [];
+              const uuidLocal = parsedLocal.filter((e: any) =>
+                typeof e?.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(e.id)
+              );
+              if (uuidLocal.length === 0) {
+                localStorage.setItem('workforce_employees', JSON.stringify(empList));
+              } else if (uuidLocal.length !== parsedLocal.length) {
+                localStorage.setItem('workforce_employees', JSON.stringify(uuidLocal));
+              }
+            } catch (_) {}
           }
         } catch { }
 
-        // Fetch punches for date to determine authoritative source: MOBILE, WEB, or BIOMETRIC
-        const punchMap = new Map<string, { checkInSource?: PunchSource; checkOutSource?: PunchSource; source?: PunchSource }>();
+        // Fetch punches for date to determine authoritative source (MOBILE, WEB, BIOMETRIC) and fallback punch timestamps
+        const punchMap = new Map<string, {
+          checkInSource?: PunchSource;
+          checkOutSource?: PunchSource;
+          source?: PunchSource;
+          firstInIso?: string;
+          lastOutIso?: string;
+          organizationId?: string;
+        }>();
         try {
           let pq = supabase
             .from('attendance_punches')
-            .select('employee_id, punch_type, verification_mode, punch_source, device_id, punch_time')
+            .select('employee_id, organization_id, punch_type, verification_mode, punch_source, device_id, punch_time')
             .order('punch_time', { ascending: true });
           if (date) {
             const startRange = new Date(`${date}T00:00:00Z`);
@@ -144,10 +167,13 @@ export const attendanceApi = {
               const typeUpper = (p.punch_type || '').toUpperCase();
               if (typeUpper === 'IN' || typeUpper === 'CHECK_IN') {
                 if (!existing.checkInSource) existing.checkInSource = resolved;
+                if (!existing.firstInIso) existing.firstInIso = p.punch_time;
               } else if (typeUpper === 'OUT' || typeUpper === 'CHECK_OUT') {
                 existing.checkOutSource = resolved;
+                existing.lastOutIso = p.punch_time;
               }
               existing.source = resolved;
+              existing.organizationId = p.organization_id || existing.organizationId;
               punchMap.set(empId, existing);
             }
           }
@@ -155,40 +181,88 @@ export const attendanceApi = {
           console.warn('[attendanceApi] error resolving punches for source:', punchErr);
         }
 
-        const mapped: AttendanceDaily[] = (data || []).map((d: any) => {
+        const dailyRows: any[] = [...(data || [])];
+        const dailyEmpIds = new Set(dailyRows.map((d: any) => d.employee_id));
+        const targetDateStr = date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+        // Synthesize daily row for any employee who has punches in attendance_punches today but no attendance_daily row yet
+        for (const [empId, pInfo] of punchMap.entries()) {
+          if (!dailyEmpIds.has(empId) && (pInfo.firstInIso || pInfo.lastOutIso)) {
+            dailyRows.push({
+              id: `att-punch-${empId}-${targetDateStr}`,
+              employee_id: empId,
+              organization_id: pInfo.organizationId || getActiveOrgId(),
+              attendance_date: targetDateStr,
+              status: 'PRESENT',
+              first_check_in: pInfo.firstInIso || null,
+              last_check_out: pInfo.lastOutIso || null,
+              total_work_minutes: 0,
+              break_minutes: 0,
+              late_entry_minutes: 0,
+              early_exit_minutes: 0,
+              overtime_minutes: 0,
+              created_at: pInfo.firstInIso || new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+          }
+        }
+
+        const mapped: AttendanceDaily[] = dailyRows.map((d: any) => {
           const emp = empMap.get(d.employee_id);
           const empName = emp ? (emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee') : 'Employee';
           const empCode = emp?.employee_code || 'EMP';
 
           const punchInfo = punchMap.get(d.employee_id);
-          const checkInSource: PunchSource | undefined = punchInfo?.checkInSource || (d.first_check_in ? 'BIOMETRIC' : undefined);
+          const rawFirstIn = d.first_check_in || punchInfo?.firstInIso;
+          const rawLastOut = d.last_check_out || punchInfo?.lastOutIso;
+
+          const checkInSource: PunchSource | undefined = punchInfo?.checkInSource || (rawFirstIn ? 'MOBILE' : undefined);
           const checkOutSource: PunchSource | undefined = punchInfo?.checkOutSource;
-          const source: PunchSource = punchInfo?.source || checkInSource || 'BIOMETRIC';
+          const source: PunchSource = punchInfo?.source || checkInSource || 'MOBILE';
+
+          const formattedIn = rawFirstIn ? attendanceTimeService.formatAttendanceTime(rawFirstIn, 'Asia/Kolkata', true) : undefined;
+          const formattedOut = rawLastOut ? attendanceTimeService.formatAttendanceTime(rawLastOut, 'Asia/Kolkata', true) : undefined;
+
+          // Compute late minutes and working minutes accurately
+          const inMins = formattedIn ? timeStringToMinutes(formattedIn) : null;
+          const outMins = formattedOut ? timeStringToMinutes(formattedOut) : null;
+          const calc = processAttendanceStatus(inMins, outMins, 540, 1080);
+
+          let grossMins = d.total_work_minutes || calc.grossMinutes || 0;
+          if (!rawLastOut && rawFirstIn) {
+            const startMs = new Date(rawFirstIn).getTime();
+            if (!isNaN(startMs)) {
+              grossMins = Math.max(0, Math.floor((Date.now() - startMs) / 60000));
+            }
+          }
+          const breakMins = d.break_minutes || 0;
+          const netMins = Math.max(0, grossMins - breakMins);
+          const lateMins = (d.late_entry_minutes && d.late_entry_minutes > 0) ? d.late_entry_minutes : calc.lateMinutes;
 
           return {
             id: d.id,
             employee_id: d.employee_id,
             employee_code: empCode,
             employee_name: empName,
-            department: emp?.department || 'Operations',
-            designation: emp?.designation || 'Staff',
+            department: emp?.department || 'Engineering & Development',
+            designation: emp?.designation || 'Senior Software Engineer',
             avatar_url: emp?.avatar_url,
             organization_id: d.organization_id,
-            company_id: 'cmp-01',
+            company_id: emp?.company_id || 'cmp-01',
             date: d.attendance_date,
             shift_id: d.shift_id || 'shift-gen',
             shift_name: 'General Shift',
             expected_check_in: '09:00 AM',
             expected_check_out: '06:00 PM',
-            status: d.status === 'PRESENT' ? 'Present' : d.status === 'ABSENT' ? 'Absent' : 'Half Day',
-            first_check_in: d.first_check_in ? attendanceTimeService.formatAttendanceTime(d.first_check_in, 'Asia/Kolkata', true) : undefined,
-            last_check_out: d.last_check_out ? attendanceTimeService.formatAttendanceTime(d.last_check_out, 'Asia/Kolkata', true) : undefined,
-            gross_working_minutes: d.total_work_minutes || 0,
-            total_break_minutes: d.break_minutes || 0,
-            net_working_minutes: (d.total_work_minutes || 0) - (d.break_minutes || 0),
-            late_minutes: d.late_entry_minutes || 0,
-            early_checkout_minutes: d.early_exit_minutes || 0,
-            overtime_minutes: d.overtime_minutes || 0,
+            status: d.status === 'PRESENT' || rawFirstIn ? 'Present' : d.status === 'ABSENT' ? 'Absent' : 'Half Day',
+            first_check_in: formattedIn,
+            last_check_out: formattedOut,
+            gross_working_minutes: grossMins,
+            total_break_minutes: breakMins,
+            net_working_minutes: netMins,
+            late_minutes: lateMins,
+            early_checkout_minutes: d.early_exit_minutes || calc.earlyMinutes || 0,
+            overtime_minutes: d.overtime_minutes || calc.overtimeMinutes || 0,
             source,
             check_in_source: checkInSource,
             check_out_source: checkOutSource,
@@ -198,6 +272,23 @@ export const attendanceApi = {
         });
         _dailyCache = { data: mapped, timestamp: Date.now() };
         saveStorage(STORAGE_KEY_DAILY, mapped);
+        try {
+          if (typeof localStorage !== 'undefined') {
+            for (let i = localStorage.length - 1; i >= 0; i--) {
+              const k = localStorage.key(i);
+              if (
+                k &&
+                (k.startsWith('workforce_raw_punch_ledger_v4') ||
+                  k.startsWith('workforce_bio_punches_v1') ||
+                  k.startsWith('workforce_classified_punch_ledger_v4'))
+              ) {
+                localStorage.removeItem(k);
+              }
+            }
+          }
+        } catch {
+          // ignore storage errors
+        }
         return this.getDailyAttendance(date, department, status, search);
       } catch (err) {
         console.warn('[attendanceApi] getDailyAttendanceAsync notice:', err);
@@ -208,18 +299,10 @@ export const attendanceApi = {
 
   async getDailyAttendanceForPeriodAsync(startDate: string, endDate: string, employeeId?: string): Promise<AttendanceDaily[]> {
     const tenantId = getActiveOrgId();
-    const periodCacheKey = `${startDate}_${endDate}_${employeeId || 'all'}`;
-
-    // 1. Instant sub-10ms Redis Ledger Cache Lookup
-    try {
-      const cached = await JoyRedis.getLedgerCache<AttendanceDaily[]>(tenantId, periodCacheKey);
-      if (cached && Array.isArray(cached) && cached.length > 0) {
-        return cached;
-      }
-    } catch {}
 
     if (isSupabaseEnabled) {
       try {
+        await ensureSupabaseSession();
         let q = supabase
           .from('attendance_daily')
           .select('*')
@@ -254,7 +337,7 @@ export const attendanceApi = {
 
         let pq = supabase
           .from('attendance_punches')
-          .select('employee_id, punch_type, verification_mode, punch_source, device_id, punch_time')
+          .select('employee_id, organization_id, punch_type, verification_mode, punch_source, device_id, punch_time')
           .gte('punch_time', startRange.toISOString())
           .lte('punch_time', endRange.toISOString())
           .order('punch_time', { ascending: true });
@@ -264,10 +347,20 @@ export const attendanceApi = {
         }
 
         const { data: punches } = await pq;
-        const punchMap = new Map<string, { checkInSource?: PunchSource; checkOutSource?: PunchSource; source?: PunchSource }>();
+        const punchMap = new Map<string, {
+          employeeId: string;
+          punchDate: string;
+          organizationId?: string;
+          checkInSource?: PunchSource;
+          checkOutSource?: PunchSource;
+          source?: PunchSource;
+          firstInIso?: string;
+          lastOutIso?: string;
+        }>();
         if (punches) {
           for (const p of punches) {
             const punchDate = new Date(p.punch_time).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+            if (punchDate < startDate || punchDate > endDate) continue;
             const key = `${p.employee_id}_${punchDate}`;
 
             const mode = (p.verification_mode || '').toUpperCase();
@@ -285,28 +378,89 @@ export const attendanceApi = {
               resolved = 'MANUAL';
             }
 
-            const existing = punchMap.get(key) || {};
+            const existing: {
+              employeeId: string;
+              punchDate: string;
+              organizationId?: string;
+              checkInSource?: PunchSource;
+              checkOutSource?: PunchSource;
+              source?: PunchSource;
+              firstInIso?: string;
+              lastOutIso?: string;
+            } = punchMap.get(key) || {
+              employeeId: p.employee_id,
+              punchDate,
+              organizationId: p.organization_id,
+            };
             const typeUpper = (p.punch_type || '').toUpperCase();
             if (typeUpper === 'IN' || typeUpper === 'CHECK_IN') {
               if (!existing.checkInSource) existing.checkInSource = resolved;
+              if (!existing.firstInIso) existing.firstInIso = p.punch_time;
             } else if (typeUpper === 'OUT' || typeUpper === 'CHECK_OUT') {
               existing.checkOutSource = resolved;
+              existing.lastOutIso = p.punch_time;
             }
             existing.source = resolved;
             punchMap.set(key, existing);
           }
         }
 
-        const mapped: AttendanceDaily[] = (data || []).map((d: any) => {
+        const dailyRows: any[] = [...(data || [])];
+        const existingKeys = new Set(dailyRows.map((d: any) => `${d.employee_id}_${d.attendance_date}`));
+
+        // Synthesize daily row from actual punch if attendance_daily row does not exist yet
+        for (const [key, pInfo] of punchMap.entries()) {
+          if (!existingKeys.has(key) && (pInfo.firstInIso || pInfo.lastOutIso)) {
+            dailyRows.push({
+              id: `att-punch-${pInfo.employeeId}-${pInfo.punchDate}`,
+              employee_id: pInfo.employeeId,
+              organization_id: pInfo.organizationId || tenantId,
+              attendance_date: pInfo.punchDate,
+              status: 'PRESENT',
+              first_check_in: pInfo.firstInIso || null,
+              last_check_out: pInfo.lastOutIso || null,
+              total_work_minutes: 0,
+              break_minutes: 0,
+              late_entry_minutes: 0,
+              early_exit_minutes: 0,
+              overtime_minutes: 0,
+              created_at: pInfo.firstInIso || new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+          }
+        }
+
+        const mapped: AttendanceDaily[] = dailyRows.map((d: any) => {
           const emp = empMap.get(d.employee_id);
           const empName = emp ? (emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee') : 'Employee';
           const empCode = emp?.employee_code || 'EMP';
 
           const punchKey = `${d.employee_id}_${d.attendance_date}`;
           const punchInfo = punchMap.get(punchKey);
-          const checkInSource: PunchSource | undefined = punchInfo?.checkInSource || (d.first_check_in ? 'BIOMETRIC' : undefined);
+          const rawFirstIn = d.first_check_in || punchInfo?.firstInIso;
+          const rawLastOut = d.last_check_out || punchInfo?.lastOutIso;
+
+          const checkInSource: PunchSource | undefined = punchInfo?.checkInSource || (rawFirstIn ? 'MOBILE' : undefined);
           const checkOutSource: PunchSource | undefined = punchInfo?.checkOutSource;
-          const source: PunchSource = punchInfo?.source || checkInSource || 'BIOMETRIC';
+          const source: PunchSource = punchInfo?.source || checkInSource || 'MOBILE';
+
+          const formattedIn = rawFirstIn ? attendanceTimeService.formatAttendanceTime(rawFirstIn, 'Asia/Kolkata', true) : undefined;
+          const formattedOut = rawLastOut ? attendanceTimeService.formatAttendanceTime(rawLastOut, 'Asia/Kolkata', true) : undefined;
+
+          const inMins = formattedIn ? timeStringToMinutes(formattedIn) : null;
+          const outMins = formattedOut ? timeStringToMinutes(formattedOut) : null;
+          const calc = processAttendanceStatus(inMins, outMins, 540, 1080);
+
+          let grossMins = d.total_work_minutes || calc.grossMinutes || 0;
+          if (!rawLastOut && rawFirstIn) {
+            const startMs = new Date(rawFirstIn).getTime();
+            if (!isNaN(startMs)) {
+              grossMins = Math.max(0, Math.floor((Date.now() - startMs) / 60000));
+            }
+          }
+          const breakMins = d.break_minutes || 0;
+          const netMins = Math.max(0, grossMins - breakMins);
+          const lateMins = (d.late_entry_minutes && d.late_entry_minutes > 0) ? d.late_entry_minutes : calc.lateMinutes;
 
           return {
             id: d.id,
@@ -323,15 +477,15 @@ export const attendanceApi = {
             shift_name: 'General Shift',
             expected_check_in: '09:00 AM',
             expected_check_out: '06:00 PM',
-            status: d.status === 'PRESENT' ? 'Present' : d.status === 'ABSENT' ? 'Absent' : 'Half Day',
-            first_check_in: d.first_check_in ? attendanceTimeService.formatAttendanceTime(d.first_check_in, 'Asia/Kolkata', true) : undefined,
-            last_check_out: d.last_check_out ? attendanceTimeService.formatAttendanceTime(d.last_check_out, 'Asia/Kolkata', true) : undefined,
-            gross_working_minutes: d.total_work_minutes || 0,
-            total_break_minutes: d.break_minutes || 0,
-            net_working_minutes: (d.total_work_minutes || 0) - (d.break_minutes || 0),
-            late_minutes: d.late_entry_minutes || 0,
-            early_checkout_minutes: d.early_exit_minutes || 0,
-            overtime_minutes: d.overtime_minutes || 0,
+            status: d.status === 'PRESENT' || rawFirstIn ? 'Present' : d.status === 'ABSENT' ? 'Absent' : 'Half Day',
+            first_check_in: formattedIn,
+            last_check_out: formattedOut,
+            gross_working_minutes: grossMins,
+            total_break_minutes: breakMins,
+            net_working_minutes: netMins,
+            late_minutes: lateMins,
+            early_checkout_minutes: d.early_exit_minutes || calc.earlyMinutes || 0,
+            overtime_minutes: d.overtime_minutes || calc.overtimeMinutes || 0,
             source,
             check_in_source: checkInSource,
             check_out_source: checkOutSource,
@@ -340,131 +494,7 @@ export const attendanceApi = {
           };
         });
 
-        if (mapped && mapped.length > 0) {
-          JoyRedis.setLedgerCache(tenantId, periodCacheKey, mapped, 180).catch(() => {});
-          return mapped;
-        }
-
-        // When remote DB has no entries for the active month, generate complete turnstile verified daily attendance
-        const employees = await api.getEmployees().catch(() => []);
-        const targetEmps = employeeId
-          ? employees.filter((e) => e.id === employeeId || e.employee_code === employeeId)
-          : employees.filter((e) => e.status !== 'Terminated' && e.status !== 'Exited');
-
-        const fallbackList: AttendanceDaily[] = [];
-        const todayStr = new Date().toISOString().split('T')[0];
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-
-        for (const emp of targetEmps) {
-          const empDoj = emp.doj || emp.date_of_joining || emp.employment?.doj || null;
-
-          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-            const dateStr = d.toISOString().split('T')[0];
-            const dayOfWeek = d.getDay();
-            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-            const isPreJoining = Boolean(empDoj && dateStr < empDoj);
-            const isPast = dateStr < todayStr;
-            const isToday = dateStr === todayStr;
-
-            if (isPreJoining) {
-              continue; // Exclude pre-joining days from active attendance records
-            }
-
-            const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, dateStr);
-            const isOff = isWeekend || roster.is_weekly_off;
-
-            if (isOff) {
-              fallbackList.push({
-                id: `att-${emp.id}-${dateStr}`,
-                employee_id: emp.id,
-                employee_code: emp.employee_code,
-                employee_name: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim(),
-                department: emp.department_name || emp.department || 'Engineering',
-                designation: emp.designation_title || emp.designation || 'Senior Software Engineer',
-                organization_id: tenantId,
-                company_id: emp.company_id || 'cmp-01',
-                date: dateStr,
-                shift_id: roster.shift_id,
-                shift_name: roster.shift_name,
-                expected_check_in: '09:00 AM',
-                expected_check_out: '06:00 PM',
-                status: 'Weekly Off',
-                gross_working_minutes: 0,
-                total_break_minutes: 0,
-                net_working_minutes: 0,
-                late_minutes: 0,
-                early_checkout_minutes: 0,
-                overtime_minutes: 0,
-                source: 'SYSTEM',
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              });
-            } else if (isPast || isToday) {
-              fallbackList.push({
-                id: `att-${emp.id}-${dateStr}`,
-                employee_id: emp.id,
-                employee_code: emp.employee_code,
-                employee_name: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim(),
-                department: emp.department_name || emp.department || 'Engineering',
-                designation: emp.designation_title || emp.designation || 'Senior Software Engineer',
-                organization_id: tenantId,
-                company_id: emp.company_id || 'cmp-01',
-                date: dateStr,
-                shift_id: roster.shift_id,
-                shift_name: roster.shift_name,
-                expected_check_in: '09:00 AM',
-                expected_check_out: '06:00 PM',
-                status: 'Present',
-                first_check_in: '08:58 AM',
-                last_check_out: '06:05 PM',
-                gross_working_minutes: 547,
-                total_break_minutes: 45,
-                net_working_minutes: 480,
-                late_minutes: 0,
-                early_checkout_minutes: 0,
-                overtime_minutes: 0,
-                source: 'BIOMETRIC',
-                check_in_source: 'BIOMETRIC',
-                check_out_source: 'BIOMETRIC',
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              });
-            } else {
-              fallbackList.push({
-                id: `att-${emp.id}-${dateStr}`,
-                employee_id: emp.id,
-                employee_code: emp.employee_code,
-                employee_name: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim(),
-                department: emp.department_name || emp.department || 'Engineering',
-                designation: emp.designation_title || emp.designation || 'Senior Software Engineer',
-                organization_id: tenantId,
-                company_id: emp.company_id || 'cmp-01',
-                date: dateStr,
-                shift_id: roster.shift_id,
-                shift_name: roster.shift_name,
-                expected_check_in: '09:00 AM',
-                expected_check_out: '06:00 PM',
-                status: 'Not Checked In',
-                gross_working_minutes: 0,
-                total_break_minutes: 0,
-                net_working_minutes: 0,
-                late_minutes: 0,
-                early_checkout_minutes: 0,
-                overtime_minutes: 0,
-                source: 'SYSTEM',
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              });
-            }
-          }
-        }
-
-        if (fallbackList.length > 0) {
-          JoyRedis.setLedgerCache(tenantId, periodCacheKey, fallbackList, 180).catch(() => {});
-          return fallbackList;
-        }
-
+        // Return ONLY actual database attendance records — zero pre-filling
         return mapped;
       } catch (err) {
         console.warn('[attendanceApi] getDailyAttendanceForPeriodAsync notice:', err);
@@ -474,6 +504,9 @@ export const attendanceApi = {
   },
 
   getDailyAttendance: (date?: string, department?: string, status?: string, search?: string): AttendanceDaily[] => {
+    const isUuid = (val: any) =>
+      typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
     let list: AttendanceDaily[] = [];
     if (_dailyCache?.data && _dailyCache.data.length > 0) {
       list = [..._dailyCache.data];
@@ -484,6 +517,15 @@ export const attendanceApi = {
       }
     }
 
+    // Strictly discard any non-UUID or CE0* seeded worker records even before workforce_employees is populated
+    if (isSupabaseEnabled) {
+      list = list.filter(
+        item =>
+          isUuid(item.employee_id) &&
+          !String(item.employee_code || '').toUpperCase().startsWith('CE0')
+      );
+    }
+
     // Trigger background rehydration from Supabase if cache is cold
     if (isSupabaseEnabled && !_dailyInFlight && (!_dailyCache || Date.now() - _dailyCache.timestamp > 15000)) {
       _dailyInFlight = attendanceApi.getDailyAttendanceAsync(date).finally(() => {
@@ -491,17 +533,23 @@ export const attendanceApi = {
       });
     }
 
-    // Purge mock/legacy attendance records: only keep records strictly matching existing employees in directory
+    // Purge mock/legacy attendance records: only keep records strictly matching existing UUID employees in directory
     try {
       const rawEmployees = localStorage.getItem('workforce_employees');
       if (rawEmployees) {
         const employees: any[] = JSON.parse(rawEmployees);
-        const realEmployees = employees.filter(e => e.status !== 'Terminated' && e.status !== 'Exited');
+        const realEmployees = employees.filter(
+          e =>
+            e.status !== 'Terminated' &&
+            e.status !== 'Exited' &&
+            (!isSupabaseEnabled || isUuid(e.id)) &&
+            !String(e.employee_code || '').toUpperCase().startsWith('CE0')
+        );
 
         const cleaned: AttendanceDaily[] = [];
         const seenEmpKeys = new Set<string>();
 
-        const targetDate = date || new Date().toISOString().split('T')[0];
+        const targetDate = date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
         for (const item of list) {
           // Robust matching across ID, Code, Name, and Composite Keys
@@ -553,10 +601,12 @@ export const attendanceApi = {
                 early_checkout_minutes: item.early_checkout_minutes ?? calc.earlyMinutes,
                 overtime_minutes: item.overtime_minutes ?? calc.overtimeMinutes,
                 status: resolvedStatus,
-                source: (item.source || item.check_in_source || (hasPunch ? 'MOBILE_GPS' : undefined)) as any,
+                source: (item.source || item.check_in_source || (hasPunch ? 'MOBILE' : undefined)) as any,
+                check_in_source: (item.check_in_source || item.source || (hasPunch ? 'MOBILE' : undefined)) as any,
+                check_out_source: item.check_out_source,
               });
             }
-          } else {
+          } else if (!isSupabaseEnabled || isUuid(item.employee_id)) {
             const rawIn = item.first_check_in || (item as any).in_time || (item as any).check_in;
             const rawOut = item.last_check_out || (item as any).out_time || (item as any).check_out;
             const hasPunch = !!rawIn || !!rawOut;
@@ -580,7 +630,9 @@ export const attendanceApi = {
                 first_check_in: rawIn ? formatCleanTime(rawIn) : undefined,
                 last_check_out: rawOut ? formatCleanTime(rawOut) : undefined,
                 status: resolvedStatus as any,
-                source: (item.source || (hasPunch ? 'MOBILE_GPS' : undefined)) as any,
+                source: (item.source || item.check_in_source || (hasPunch ? 'MOBILE' : undefined)) as any,
+                check_in_source: (item.check_in_source || item.source || (hasPunch ? 'MOBILE' : undefined)) as any,
+                check_out_source: item.check_out_source,
               });
             }
           }
@@ -943,11 +995,12 @@ export const attendanceApi = {
   async getRegularizationsAsync(): Promise<RegularizationRequest[]> {
     if (isSupabaseEnabled) {
       try {
+        await ensureSupabaseSession();
         const { data, error } = await supabase
           .from('attendance_regularizations')
           .select('*')
           .order('created_at', { ascending: false });
-        if (!error && Array.isArray(data) && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           const mapped: RegularizationRequest[] = data.map((r: any) => ({
             id: r.id,
             employee_id: r.employee_id,

@@ -194,33 +194,21 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     return () => unsub();
   }, [selectedDate]);
 
-  // Event-driven cache invalidation and live loading is managed via hrEventBus above
+  // Continuous background refresh every 4 seconds for zero-drift sync with Flutter Mobile App
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadData();
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [selectedDate]);
 
-  // Scoped and filtered employees & attendance records
+  // Scoped and filtered employees & attendance records (strictly real UUID employees from DB only)
   const filteredData = useMemo(() => {
-    const existingEmpIds = new Set(employees.map(e => (e.id || '').toLowerCase()));
-    const extraEmps: any[] = [];
-    for (const r of dailyRecords) {
-      if (!r.employee_id) continue;
-      const lowerId = r.employee_id.toLowerCase();
-      const lowerCode = (r.employee_code || '').toLowerCase();
-      if (!existingEmpIds.has(lowerId) && (!lowerCode || !existingEmpIds.has(lowerCode))) {
-        extraEmps.push({
-          id: r.employee_id,
-          employee_code: r.employee_code || r.employee_id,
-          display_name: (r as any).employee_name || r.employee_code || r.employee_id,
-          name: (r as any).employee_name || r.employee_code || r.employee_id,
-          first_name: ((r as any).employee_name || '').split(' ')[0] || r.employee_id,
-          last_name: ((r as any).employee_name || '').split(' ').slice(1).join(' ') || '',
-          department_name: (r as any).department_name || 'Operations',
-          branch_name: (r as any).location_name || 'Coimbatore HQ',
-          employment_source: 'DIRECT',
-        });
-        existingEmpIds.add(lowerId);
-        if (lowerCode) existingEmpIds.add(lowerCode);
-      }
-    }
-    const combinedEmployees = [...employees, ...extraEmps];
+    const isUuid = (val: any) =>
+      typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+    const combinedEmployees = employees.filter(
+      e => isUuid(e.id) && !String(e.employee_code || '').toUpperCase().startsWith('CE0')
+    );
 
     return combinedEmployees.filter(emp => {
       const empDept = emp.department_name || emp.department || 'People & HR';
@@ -298,57 +286,61 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       const isOff = roster.is_weekly_off;
       let resolvedRecord = record;
 
-      // Auto-reconcile with raw biometric punch ledger if check-out or punches exist for this date
-      const rawClassificationPunches: ClassifiedPunchEvent[] = [
-        ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.id, selectedDate),
-        ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.employee_code, selectedDate),
-      ];
+      // When Supabase is enabled, rely strictly on authoritative Supabase dailyRecords
+      // so employees who have not logged in / checked in never inherit localStorage simulation punches.
+      const rawClassificationPunches: ClassifiedPunchEvent[] = isSupabaseEnabled
+        ? []
+        : [
+            ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.id, selectedDate),
+            ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.employee_code, selectedDate),
+          ];
 
-      // Also pull directly from biometric gateway raw punches for instant real-time synchronization
-      const gatewayPunches: ClassifiedPunchEvent[] = (biometricGatewayService.getRawPunches(500) || [])
-        .filter((p) => {
-          const pTime = p.punch_time || '';
-          const pDate = pTime ? attendanceTimeService.getAttendanceDate(pTime, 'Asia/Kolkata') : '';
-          if (pDate !== selectedDate) return false;
-          const eId = (emp.id || '').toLowerCase();
-          const eCode = (emp.employee_code || '').toLowerCase();
-          const eDigits = eCode.replace(/\D/g, '') || eId.replace(/\D/g, '');
-          const pEmpId = (p.employee_id || '').toLowerCase();
-          const pPin = (p.biometric_pin || '').toLowerCase();
-          const pDigits = pPin.replace(/\D/g, '');
-          return (
-            pEmpId === eId ||
-            pEmpId === eCode ||
-            pPin === eId ||
-            pPin === eCode ||
-            (eDigits.length > 0 && pDigits.length > 0 && eDigits === pDigits)
-          );
-        })
-        .map((p) => {
-          const timeStr = attendanceTimeService.formatAttendanceTime(
-            (p as any).raw_payload?.device_timestamp_raw || p.punch_time,
-            'Asia/Kolkata',
-            true
-          );
-          return {
-            id: p.id,
-            organization_id: '',
-            employee_id: emp.id,
-            employee_name: emp.display_name || emp.name,
-            employee_code: emp.employee_code,
-            device_id: p.device_id,
-            device_name: p.device_name || 'eSSL AI-FACE MAGNUM',
-            device_user_id: p.biometric_pin,
-            event_timestamp: p.punch_time,
-            event_time_str: timeStr,
-            source: 'BIOMETRIC' as PunchSource,
-            verification_method: (p.verification_mode?.toUpperCase() || 'FINGERPRINT') as any,
-            classification: (p.punch_direction === 'OUT' ? 'CHECK_OUT' : 'CHECK_IN') as any,
-            classification_reason: 'Live Biometric Gateway Event',
-            is_duplicate: false,
-            created_at: p.created_at || p.punch_time,
-          } as ClassifiedPunchEvent;
-        });
+      const gatewayPunches: ClassifiedPunchEvent[] = isSupabaseEnabled
+        ? []
+        : (biometricGatewayService.getRawPunches(500) || [])
+            .filter((p) => {
+              const pTime = p.punch_time || '';
+              const pDate = pTime ? attendanceTimeService.getAttendanceDate(pTime, 'Asia/Kolkata') : '';
+              if (pDate !== selectedDate) return false;
+              const eId = (emp.id || '').toLowerCase();
+              const eCode = (emp.employee_code || '').toLowerCase();
+              const eDigits = eCode.replace(/\D/g, '') || eId.replace(/\D/g, '');
+              const pEmpId = (p.employee_id || '').toLowerCase();
+              const pPin = (p.biometric_pin || '').toLowerCase();
+              const pDigits = pPin.replace(/\D/g, '');
+              return (
+                pEmpId === eId ||
+                pEmpId === eCode ||
+                pPin === eId ||
+                pPin === eCode ||
+                (eDigits.length > 0 && pDigits.length > 0 && eDigits === pDigits)
+              );
+            })
+            .map((p) => {
+              const timeStr = attendanceTimeService.formatAttendanceTime(
+                (p as any).raw_payload?.device_timestamp_raw || p.punch_time,
+                'Asia/Kolkata',
+                true
+              );
+              return {
+                id: p.id,
+                organization_id: '',
+                employee_id: emp.id,
+                employee_name: emp.display_name || emp.name,
+                employee_code: emp.employee_code,
+                device_id: p.device_id,
+                device_name: p.device_name || 'eSSL AI-FACE MAGNUM',
+                device_user_id: p.biometric_pin,
+                event_timestamp: p.punch_time,
+                event_time_str: timeStr,
+                source: 'BIOMETRIC' as PunchSource,
+                verification_method: (p.verification_mode?.toUpperCase() || 'FINGERPRINT') as any,
+                classification: (p.punch_direction === 'OUT' ? 'CHECK_OUT' : 'CHECK_IN') as any,
+                classification_reason: 'Live Biometric Gateway Event',
+                is_duplicate: false,
+                created_at: p.created_at || p.punch_time,
+              } as ClassifiedPunchEvent;
+            });
 
       const allMatchingPunchesMap = new Map<string, ClassifiedPunchEvent>();
       for (const p of [...rawClassificationPunches, ...gatewayPunches]) {
@@ -401,6 +393,17 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           const outSrc = checkOutSrc || (lastOut ? 'BIOMETRIC' : undefined);
           const overallSrc: PunchSource = (inSrc || 'BIOMETRIC') as PunchSource;
 
+          const liveGrossMins = lastOut
+            ? calc.grossMinutes
+            : (resolvedRecord?.gross_working_minutes && resolvedRecord.gross_working_minutes > 0
+                ? resolvedRecord.gross_working_minutes
+                : calc.grossMinutes);
+          const liveNetMins = lastOut
+            ? calc.netMinutes
+            : (resolvedRecord?.net_working_minutes && resolvedRecord.net_working_minutes > 0
+                ? resolvedRecord.net_working_minutes
+                : calc.netMinutes);
+
           resolvedRecord = {
             id: resolvedRecord?.id || `att-dyn-${emp.id}-${selectedDate}`,
             employee_id: emp.id,
@@ -417,13 +420,13 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             expected_check_out: shift.end_time,
             first_check_in: firstIn,
             last_check_out: lastOut,
-            gross_working_minutes: lastOut ? calc.grossMinutes : 0,
-            net_working_minutes: lastOut ? calc.netMinutes : 0,
+            gross_working_minutes: liveGrossMins,
+            net_working_minutes: liveNetMins,
             total_break_minutes: resolvedRecord?.total_break_minutes || 0,
-            late_minutes: calc.lateMinutes,
+            late_minutes: resolvedRecord?.late_minutes ?? calc.lateMinutes,
             early_checkout_minutes: lastOut ? calc.earlyMinutes : 0,
             overtime_minutes: lastOut ? calc.overtimeMinutes : 0,
-            status: (lastOut ? 'Present' : (calc.lateMinutes > 0 ? 'Late (Working)' : 'Working')) as any,
+            status: 'Present',
             source: overallSrc,
             check_in_source: inSrc as PunchSource,
             check_out_source: outSrc as PunchSource,
@@ -490,8 +493,12 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
   // Aggregate stats for the active filtered set
   const totalInFilter = filteredData.length;
-  const presentCount = filteredData.filter(d => d.record.status === 'Present' || d.record.status === 'Checked Out').length;
-  const notCheckedInCount = filteredData.filter(d => d.record.status === 'Not Checked In').length;
+  const presentCount = filteredData.filter(
+    d => d.record.status === 'Present' || d.record.status === 'Checked Out' || !!d.record.first_check_in
+  ).length;
+  const notCheckedInCount = filteredData.filter(
+    d => d.record.status === 'Not Checked In' && !d.record.first_check_in
+  ).length;
   const lateCount = filteredData.filter(d => d.record.late_minutes > 0 || d.record.status === 'Late').length;
   const absentCount = filteredData.filter(d => d.record.status === 'Absent').length;
   const onLeaveCount = filteredData.filter(d => d.record.status === 'On Leave').length;
@@ -995,7 +1002,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                           {record.first_check_in && !record.last_check_out ? (
                             <span className="text-emerald-700 font-semibold text-xs flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                              In Progress
+                              In Progress ({formatMinutesToHoursStr(record.net_working_minutes)})
                             </span>
                           ) : (
                             formatMinutesToHoursStr(record.net_working_minutes)

@@ -727,8 +727,10 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
                   </span>
                   {weekRanges.map((w) => {
                     const weekDays = dailyRows.filter((d) => d.dateStr >= w.start_date && d.dateStr <= w.end_date);
-                    const weekPresent = weekDays.filter((d) => d.status === 'Present' || d.status === 'Late').length;
-                    const weekScheduled = weekDays.filter((d) => !d.isWeeklyOff).length;
+                    const weekPresent = weekDays.filter(
+                      (d) => d.status === 'Present' || d.status === 'Late' || d.status === 'Checked In' || d.status === 'Regularized'
+                    ).length;
+                    const weekScheduled = weekDays.filter((d) => !d.isWeeklyOff && d.status !== 'Pre-Joining').length;
                     const isCurrentWeek = weekDays.some((d) => d.isToday);
 
                     return (

@@ -42,7 +42,9 @@
     "supabase:db:push": "supabase db push",
     "supabase:db:pull": "supabase db pull",
     "supabase:functions:serve": "supabase functions serve --env-file .env.local",
-    "supabase:functions:deploy": "supabase functions deploy"
+    "supabase:functions:deploy": "supabase functions deploy",
+    "flutter:web": "powershell -NoProfile -Command \"$env:PATH += ';C:\\Windows\\System32\\WindowsPowerShell\\v1.0'; Set-Location flutter_app; flutter run -d chrome --web-port 8080\"",
+    "flutter:logs": "node scripts/flutter-live-logs.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.23.0",

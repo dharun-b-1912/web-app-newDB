@@ -7,7 +7,7 @@ import { useState, useEffect, createContext, useContext, ReactNode } from 'react
 import { User } from '../types';
 import { authService, AuthSessionUser, AuthResult, AuthContextMode } from '../services/auth/authService';
 import { roleResolutionService } from '../services/auth/roleResolutionService';
-import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { supabase, isSupabaseEnabled, ensureSupabaseSession } from '../lib/supabase';
 import {
   bindSessionFingerprint,
   validateSessionIntegrity,
@@ -161,17 +161,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               setMustChangePassword(Boolean(finalUser.must_change_password));
             }
           } else if (cachedUser && (cachedUser.id || cachedUser.auth_user_id)) {
-            // Authentic verified local/cached session
-            const integrity = validateSessionIntegrity(cachedUser.id);
-            if (!integrity.isValid) {
-              await authService.signOut();
-              if (isMounted) setUser(null);
-              return;
-            }
-            bindSessionFingerprint(cachedUser.id);
-            if (isMounted) {
-              setUser(cachedUser);
-              setMustChangePassword(Boolean(cachedUser.must_change_password));
+            // Heal missing Supabase JWT session for cached user so RLS queries work
+            const healedSession = await ensureSupabaseSession();
+            if (healedSession?.user) {
+              bindSessionFingerprint(healedSession.user.id);
+              const finalUser = await resolveDynamicSessionUser(healedSession.user, cachedUser);
+              if (isMounted) {
+                setUser(finalUser);
+                setMustChangePassword(Boolean(finalUser?.must_change_password));
+              }
+            } else {
+              // Authentic verified local/cached session fallback
+              const integrity = validateSessionIntegrity(cachedUser.id);
+              if (!integrity.isValid) {
+                await authService.signOut();
+                if (isMounted) setUser(null);
+                return;
+              }
+              bindSessionFingerprint(cachedUser.id);
+              if (isMounted) {
+                setUser(cachedUser);
+                setMustChangePassword(Boolean(cachedUser.must_change_password));
+              }
             }
           } else {
             // No real Supabase session -> purge local cached user so fake session is never active

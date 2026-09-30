@@ -198,33 +198,11 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
     if (isSupabaseEnabled) {
       const startDate = `${monthKey}-01`;
       const endDate = `${monthKey}-${String(daysInMonth).padStart(2, '0')}`;
-      Promise.resolve(
-        supabase
-          .from('attendance_daily')
-          .select('*')
-          .gte('attendance_date', startDate)
-          .lte('attendance_date', endDate)
-      )
-        .then(({ data, error }: any) => {
-          if (!error && data && data.length > 0) {
-            try {
-              const currentList = JSON.parse(localStorage.getItem('workforceos_attendance_daily_v2') || '[]');
-              const merged = [...currentList];
-              for (const row of data) {
-                const rDate = row.attendance_date || row.date;
-                const mappedRow = { ...row, date: rDate };
-                const idx = merged.findIndex((a: any) => a.id === mappedRow.id || (a.employee_id === mappedRow.employee_id && (a.date || a.attendance_date) === rDate));
-                if (idx >= 0) {
-                  merged[idx] = { ...merged[idx], ...mappedRow };
-                } else {
-                  merged.unshift(mappedRow);
-                }
-              }
-              localStorage.setItem('workforceos_attendance_daily_v2', JSON.stringify(merged));
-              localStorage.setItem('workforceos_attendance_daily_v2_org-joy-01', JSON.stringify(merged));
-              const refreshedRecords = attendanceApi.getDailyAttendance();
-              setDailyRecords(refreshedRecords);
-            } catch {}
+      attendanceApi
+        .getDailyAttendanceForPeriodAsync(startDate, endDate)
+        .then(periodRecords => {
+          if (Array.isArray(periodRecords)) {
+            setDailyRecords(periodRecords);
           }
         })
         .catch(() => {});

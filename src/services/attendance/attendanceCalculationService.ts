@@ -294,25 +294,20 @@ class AttendanceCalculationService {
               workedDurationStr = 'Missing Punch';
               missingPunchCount++;
             } else if (isToday) {
-              // Check if current hour has exceeded shift end
-              const now = new Date();
-              const curHour = now.getHours();
-              if (curHour >= 19) {
-                status = 'Missing Punch';
-                statusBadgeVariant = 'warning';
-                workedMinutes = 0;
-                workedDurationStr = 'Missing Punch';
-                missingPunchCount++;
+              status = 'Checked In';
+              statusBadgeVariant = 'info';
+              if (workedMinutes > 0) {
+                const hrs = Math.floor(workedMinutes / 60);
+                const mins = workedMinutes % 60;
+                workedDurationStr = `${hrs}h ${mins}m (In Progress)`;
               } else {
-                status = 'Checked In';
-                statusBadgeVariant = 'info';
                 workedDurationStr = 'In Progress';
               }
             } else {
               status = 'Scheduled';
               statusBadgeVariant = 'default';
             }
-          } else if (rawRec?.status === 'Present' || rawRec?.status === 'PRESENT' || (firstIn && lastOut)) {
+          } else if (firstIn && lastOut) {
             if (rawRec?.status === 'Late' || lateMinutes > 0) {
               status = 'Late';
               statusBadgeVariant = 'warning';
@@ -320,11 +315,7 @@ class AttendanceCalculationService {
               status = 'Present';
               statusBadgeVariant = 'success';
             }
-            if (!firstIn && !lastOut) {
-              firstIn = '08:58 AM';
-              lastOut = '06:05 PM';
-            }
-            workedMinutes = rawRec?.net_working_minutes || rawRec?.gross_working_minutes || 480;
+            workedMinutes = rawRec?.net_working_minutes || rawRec?.gross_working_minutes || 0;
           } else if (isToday && (firstIn || rawRec?.status === 'Checked In')) {
             status = 'Checked In';
             statusBadgeVariant = 'info';

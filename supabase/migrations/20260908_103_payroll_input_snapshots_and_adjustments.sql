@@ -120,12 +120,18 @@ CREATE POLICY "payroll_adjustments_all_admin" ON public.payroll_adjustments
 CREATE OR REPLACE FUNCTION public.fn_prevent_locked_snapshot_mutation()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_run_status public.payroll_status_enum;
     v_run_id UUID;
 BEGIN
-    v_run_id := COALESCE(NEW.payroll_run_id, OLD.payroll_run_id);
+    IF TG_OP = 'DELETE' THEN
+        v_run_id := OLD.payroll_run_id;
+    ELSE
+        v_run_id := NEW.payroll_run_id;
+    END IF;
+
     SELECT status INTO v_run_status FROM public.payroll_runs WHERE id = v_run_id;
     
     IF v_run_status IN ('LOCKED', 'DISBURSED') THEN
@@ -149,14 +155,26 @@ EXECUTE FUNCTION public.fn_prevent_locked_snapshot_mutation();
 CREATE OR REPLACE FUNCTION public.fn_prevent_locked_payslip_mutation()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_run_status public.payroll_status_enum;
     v_run_id UUID;
+    v_line_item_id UUID;
 BEGIN
-    v_run_id := COALESCE(NEW.payroll_run_id, OLD.payroll_run_id);
-    IF v_run_id IS NOT NULL THEN
-        SELECT status INTO v_run_status FROM public.payroll_runs WHERE id = v_run_id;
+    IF TG_OP = 'DELETE' THEN
+        v_line_item_id := OLD.payroll_line_item_id;
+    ELSE
+        v_line_item_id := NEW.payroll_line_item_id;
+    END IF;
+
+    IF v_line_item_id IS NOT NULL THEN
+        SELECT pr.id, pr.status
+          INTO v_run_id, v_run_status
+          FROM public.payroll_line_items pli
+          JOIN public.payroll_runs pr ON pr.id = pli.payroll_run_id
+         WHERE pli.id = v_line_item_id;
+
         IF v_run_status IN ('LOCKED', 'DISBURSED') THEN
             RAISE EXCEPTION 'Cannot modify or delete payslip % because parent payroll run % is locked/disbursed.', OLD.id, v_run_id;
         END IF;

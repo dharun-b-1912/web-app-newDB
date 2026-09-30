@@ -17,7 +17,7 @@
   Asset,
   Vendor,
 } from '../types';
-import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { supabase, isSupabaseEnabled, ensureSupabaseSession } from '../lib/supabase';
 import { hrEventBus } from './hrEventBus';
 import { logger } from './diagnostics/loggerService';
 import { CorrelationService } from './diagnostics/correlationService';
@@ -148,6 +148,63 @@ export const DEFAULT_LOCATIONS: Location[] = [
 ];
 
 const _nodeApiFallback = new Map<string, string>();
+
+// Synchronous module-load cleanup: strip all pre-seeded 21 workers & fabricated attendance caches before any component renders
+(function purgeSeededLocalStateSync() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const PURGE_TOKEN = 'wf_strict_zero_seed_v8';
+    const shouldFullPurge = localStorage.getItem('wf_zero_seed_token') !== PURGE_TOKEN;
+
+    const allKeys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k) allKeys.push(k);
+    }
+
+    for (const k of allKeys) {
+      if (
+        k.startsWith('workforce_21_workers') ||
+        k.startsWith('workforce_attendance_inputs') ||
+        k.startsWith('workforce_excel_test_data') ||
+        (shouldFullPurge && (
+          k.startsWith('workforceos_attendance_daily_v2') ||
+          k.startsWith('workforceos_attendance_regularizations_v2') ||
+          k.startsWith('workforce_payroll_runs') ||
+          k.startsWith('workforce_payroll_salaries') ||
+          k.startsWith('workforce_payroll_canteen') ||
+          k.startsWith('workforce_payroll_advances') ||
+          k.startsWith('joy_redis_') ||
+          k.startsWith('upstash_redis_')
+        ))
+      ) {
+        localStorage.removeItem(k);
+      }
+    }
+
+    // Always sanitize workforce_employees in localStorage to remove any CE0* or non-UUID seeded workers
+    const rawEmps = localStorage.getItem('workforce_employees');
+    if (rawEmps) {
+      const parsed = JSON.parse(rawEmps);
+      if (Array.isArray(parsed)) {
+        const cleanEmps = parsed.filter((e: any) => {
+          const id = String(e?.id || '');
+          const code = String(e?.employee_code || '').toUpperCase();
+          const email = String(e?.work_email || '').toLowerCase();
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+          return isUuid && !code.startsWith('CE0') && !email.includes('@plant.joycorporatesolutions.com');
+        });
+        if (cleanEmps.length !== parsed.length) {
+          localStorage.setItem('workforce_employees', JSON.stringify(cleanEmps));
+        }
+      }
+    }
+
+    if (shouldFullPurge) {
+      localStorage.setItem('wf_zero_seed_token', PURGE_TOKEN);
+    }
+  } catch (_) {}
+})();
 
 function getStorage<T>(key: string, defaultValue: T): T {
   try {
@@ -948,9 +1005,28 @@ export const api = {
       list = [...api._empCache.data];
     } else {
       list = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+      if (isSupabaseEnabled && list.length > 0) {
+        const cleanOnly = list.filter((e: any) =>
+          isValidUUID(e?.id) &&
+          !String(e?.employee_code || '').toUpperCase().startsWith('CE0') &&
+          !String(e?.work_email || '').toLowerCase().includes('@plant.joycorporatesolutions.com')
+        );
+        if (cleanOnly.length !== list.length) {
+          list = cleanOnly;
+          setStorage(KEYS.EMPLOYEES, list);
+        }
+      }
       if (list.length > 0) {
         api._empCache = { data: list, timestamp: Date.now() };
       }
+    }
+
+    if (isSupabaseEnabled) {
+      list = list.filter((e: any) =>
+        isValidUUID(e?.id) &&
+        !String(e?.employee_code || '').toUpperCase().startsWith('CE0') &&
+        !String(e?.work_email || '').toLowerCase().includes('@plant.joycorporatesolutions.com')
+      );
     }
 
     return filterEmployeesLocalHelper(list, params);
@@ -983,6 +1059,7 @@ export const api = {
     const fetchPromise = (async () => {
       if (isSupabaseEnabled) {
         try {
+          await ensureSupabaseSession();
           let q = supabase.from('employees').select('*');
           const filterObj = typeof params === 'string' ? { companyId: params } : params;
           if (filterObj?.companyId && filterObj.companyId !== 'all') {
@@ -1125,9 +1202,11 @@ export const api = {
               } catch (_) {}
             }
 
-            const remoteIds = new Set(data.map((e: any) => e.id));
-            const unsyncedLocal = localList.filter((e) => !remoteIds.has(e.id));
-            const combined = [...data, ...unsyncedLocal];
+            const combined = data.filter((e: any) =>
+              isValidUUID(e?.id) &&
+              !String(e?.employee_code || '').toUpperCase().startsWith('CE0') &&
+              !String(e?.work_email || '').toLowerCase().includes('@plant.joycorporatesolutions.com')
+            );
             const resultList = filterObj ? filterEmployeesLocalHelper(combined, filterObj) : combined;
             if (isUnfiltered) {
               setStorage(KEYS.EMPLOYEES, combined);

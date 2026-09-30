@@ -70,9 +70,9 @@ const AppContent: React.FC = () => {
   // Initialize Realtime Sync Engine for live automatic data replication and purge old legacy mock remnants
   useEffect(() => {
     // One-time cleanup of old mock / test datasets from localStorage
-    const PURGE_VERSION = 'wf_purge_v3_clean_realtime';
+    const PURGE_VERSION = 'wf_purge_v8_strict_zero_seed';
     if (localStorage.getItem('wf_storage_version') !== PURGE_VERSION) {
-      const keysToPurge = [
+      const prefixesToPurge = [
         'workforce_employee_onboardings',
         'workforce_onboarding_tasks',
         'workforce_onboarding_policies',
@@ -83,17 +83,34 @@ const AppContent: React.FC = () => {
         'workforce_vendor_saved_views',
         'workforce_excel_test_data',
         'workforce_employees',
+        'workforce_21_workers',
+        'workforceos_attendance_daily_v2',
+        'workforceos_attendance_regularizations_v2',
+        'workforce_attendance_inputs',
+        'workforce_payroll_runs',
+        'workforce_payroll_salaries',
+        'workforce_payroll_canteen',
+        'workforce_payroll_advances',
+        'joy_redis_',
+        'upstash_redis_',
         'workforce_companies',
         'workforce_departments',
         'workforce_designations',
         'workforce_branches',
         'workforce_locations',
       ];
-      keysToPurge.forEach((k) => {
-        try {
-          localStorage.removeItem(k);
-        } catch (_) { }
-      });
+      try {
+        const allKeys: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k) allKeys.push(k);
+        }
+        for (const k of allKeys) {
+          if (prefixesToPurge.some((p) => k === p || k.startsWith(p))) {
+            localStorage.removeItem(k);
+          }
+        }
+      } catch (_) {}
       localStorage.setItem('wf_storage_version', PURGE_VERSION);
     }
 

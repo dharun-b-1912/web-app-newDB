@@ -74,3 +74,5 @@ Essl Support files/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+*.aab
+*.apk

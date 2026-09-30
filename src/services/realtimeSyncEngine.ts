@@ -131,10 +131,16 @@ class RealtimeSyncEngine {
     });
     this.disposers.push(unsubRegularization);
 
-    // 3. Daily Attendance (Flutter Mobile & Biometric Live Punches)
+    // 3. Daily Attendance & Raw Punches (Flutter Mobile & Biometric Live Punches)
     const unsubAttendance = realtimeChannelManager.subscribeToTable('attendance_daily', (payload) => {
-      const row = payload.new || payload.old;
-      if (!row) return;
+      const rawRow = payload.new || payload.old;
+      if (!rawRow) return;
+      const canonicalDate = rawRow.attendance_date || rawRow.date;
+      const row = {
+        ...rawRow,
+        date: canonicalDate,
+        attendance_date: canonicalDate,
+      };
 
       const getAttendanceKeys = () => {
         const s = new Set([
@@ -160,7 +166,7 @@ class RealtimeSyncEngine {
           try {
             const stored = localStorage.getItem(k);
             const list = stored ? JSON.parse(stored) : [];
-            const filtered = list.filter((a: any) => a.id !== row.id && !(a.employee_id === row.employee_id && a.date === row.date));
+            const filtered = list.filter((a: any) => a.id !== row.id && !(a.employee_id === row.employee_id && (a.date === canonicalDate || a.attendance_date === canonicalDate)));
             localStorage.setItem(k, JSON.stringify(filtered));
           } catch {}
         }
@@ -172,8 +178,8 @@ class RealtimeSyncEngine {
             const list = stored ? JSON.parse(stored) : [];
             const idx = list.findIndex((a: any) => 
               a.id === row.id || 
-              (a.employee_id && row.employee_id && a.employee_id === row.employee_id && a.date === row.date) ||
-              (a.employee_code && row.employee_code && a.employee_code === row.employee_code && a.date === row.date)
+              (a.employee_id && row.employee_id && a.employee_id === row.employee_id && (a.date === canonicalDate || a.attendance_date === canonicalDate)) ||
+              (a.employee_code && row.employee_code && a.employee_code === row.employee_code && (a.date === canonicalDate || a.attendance_date === canonicalDate))
             );
             if (idx >= 0) {
               list[idx] = { ...list[idx], ...row };
@@ -184,15 +190,23 @@ class RealtimeSyncEngine {
           } catch {}
         }
         if (payload.eventType === 'INSERT') {
-          hrEventBus.publish('attendance.recorded', payload.new, { actorId: 'supabase-realtime' });
-          hrEventBus.publish('attendance.punch_received', payload.new, { actorId: 'supabase-realtime' });
+          hrEventBus.publish('attendance.recorded', row, { actorId: 'supabase-realtime' });
+          hrEventBus.publish('attendance.punch_received', row, { actorId: 'supabase-realtime' });
         } else if (payload.eventType === 'UPDATE') {
-          hrEventBus.publish('attendance.updated', payload.new, { actorId: 'supabase-realtime' });
-          hrEventBus.publish('attendance.punch_received', payload.new, { actorId: 'supabase-realtime' });
+          hrEventBus.publish('attendance.updated', row, { actorId: 'supabase-realtime' });
+          hrEventBus.publish('attendance.punch_received', row, { actorId: 'supabase-realtime' });
         }
       }
     });
     this.disposers.push(unsubAttendance);
+
+    const unsubPunches = realtimeChannelManager.subscribeToTable('attendance_punches', (payload) => {
+      const row = payload.new || payload.old;
+      if (!row) return;
+      hrEventBus.publish('attendance.punch_received', row, { actorId: 'supabase-realtime' });
+      hrEventBus.publish('attendance.updated', row, { actorId: 'supabase-realtime' });
+    });
+    this.disposers.push(unsubPunches);
 
     // 4. Leave Requests (Canonical Table)
     const unsubLeave = realtimeChannelManager.subscribeToTable('leave_requests', (payload) => {
@@ -402,7 +416,7 @@ class RealtimeSyncEngine {
     this.disposers.push(unsubVendorContracts);
 
     // 13. Vendor Employees / Contract Workers
-    const unsubVendorWorkers = realtimeChannelManager.subscribeToTable('vendor_employees', (payload) => {
+    const unsubVendorWorkers = realtimeChannelManager.subscribeToTable('vendor_workers', (payload) => {
       const row = payload.new || payload.old;
       if (row) {
         hrEventBus.publish('vendor.worker_updated', row, { actorId: 'supabase-realtime' });
@@ -419,8 +433,8 @@ class RealtimeSyncEngine {
     });
     this.disposers.push(unsubVendorInvoices);
 
-    // 15. Approvals / Approval Requests
-    const unsubApprovals = realtimeChannelManager.subscribeToTable('approval_requests', (payload) => {
+    // 15. Approvals / Approval Instances
+    const unsubApprovals = realtimeChannelManager.subscribeToTable('approval_instances', (payload) => {
       const row = payload.new || payload.old;
       if (row) {
         hrEventBus.publish('approval.requested', row, { actorId: 'supabase-realtime' });

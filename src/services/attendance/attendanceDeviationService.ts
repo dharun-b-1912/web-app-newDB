@@ -5,7 +5,7 @@
 // Zero-Mock Database-Driven Metrics, Seamless Regularization Desk Integration
 // ============================================================================
 
-import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { supabase, isSupabaseEnabled, ensureSupabaseSession } from '../../lib/supabase';
 import { getActiveOrgId } from './biometricCommandService';
 import { attendanceRegularizationService } from './attendanceRegularizationService';
 import { hrEventBus } from '../hrEventBus';
@@ -218,18 +218,34 @@ class AttendanceDeviationService {
     // 1. Fetch Real Daily Attendance from Supabase and Evaluate (Authoritative Source)
     if (isSupabaseEnabled) {
       try {
-        const { data: dailyRows } = await supabase
-          .from('attendance_daily')
-          .select('*')
-          .order('attendance_date', { ascending: false })
-          .limit(50);
+        await ensureSupabaseSession();
+        const [{ data: dailyRows }, { data: empList }] = await Promise.all([
+          supabase
+            .from('attendance_daily')
+            .select('*')
+            .order('attendance_date', { ascending: false })
+            .limit(50),
+          supabase
+            .from('employees')
+            .select('id, employee_code, first_name, last_name, display_name'),
+        ]);
+
+        const empMap = new Map((empList || []).map((e: any) => [e.id, e]));
 
         // Fetch regularizations to sync regularization status
         const regularizations = await attendanceRegularizationService.fetchRequestsFromDb(tenantId);
 
         if (dailyRows && dailyRows.length > 0) {
           for (const row of dailyRows) {
-            const dev = this.evaluateRow(row, regularizations, tenantId);
+            const emp = empMap.get(row.employee_id);
+            const enrichedRow = emp
+              ? {
+                  ...row,
+                  employee_code: emp.employee_code || row.employee_code,
+                  employee_name: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || row.employee_name,
+                }
+              : row;
+            const dev = this.evaluateRow(enrichedRow, regularizations, tenantId);
             if (dev) {
               deviationsMap.set(getEmpDateKey(dev), dev);
             }

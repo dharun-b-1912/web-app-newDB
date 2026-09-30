@@ -955,21 +955,19 @@ async getPayrollRunsAsync(tenantId = getActiveOrgId()): Promise<PayrollRun[]> {
 getPayrollRuns(tenantId = getActiveOrgId()): PayrollRun[] {
   let list = getStore<PayrollRun[]>(STORAGE_KEYS.RUNS, [], tenantId);
 
-  // Filter out any ghost unpopulated runs with 0 employees and no pay period
+  // Filter out any ghost unpopulated runs or legacy 21-worker seeded runs
   const validList = (list || []).filter((r: any) =>
+    r.id !== 'PRUN-2026-08' &&
+    r.run_number !== 'RUN-2026-08' &&
+    Number(r.total_employees) !== 21 &&
     (Number(r.total_employees || (r.employee_records?.length ?? 0)) > 0 || Number(r.total_gross || (r as any).total_gross_pay || 0) > 0) &&
     Boolean(r.pay_period || r.period_name) &&
     (r.pay_period || r.period_name).trim() !== '' &&
     (r.pay_period || r.period_name).trim().toLowerCase() !== 'to'
   );
 
-  if (validList.length === 0) {
-    LiveDataPayrollVerificationService.seed21WorkersIntoPlatform();
-    list = getStore<PayrollRun[]>(STORAGE_KEYS.RUNS, [], tenantId);
-  } else {
-    list = validList;
-    setStore(STORAGE_KEYS.RUNS, validList, tenantId);
-  }
+  list = validList;
+  setStore(STORAGE_KEYS.RUNS, validList, tenantId);
 
   const normalized: PayrollRun[] = (list || []).map((r: any) => ({
     id: r.id || 'run-default',
@@ -1060,11 +1058,7 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
     payoutDate: string,  // "2026-08-31"
     tenantId = getActiveOrgId()
   ): Promise<PayrollRun> {
-    let salaries = await this.getEmployeeSalaries(tenantId);
-    if (!salaries || salaries.length === 0) {
-      LiveDataPayrollVerificationService.seed21WorkersIntoPlatform();
-      salaries = await this.getEmployeeSalaries(tenantId);
-    }
+    const salaries = await this.getEmployeeSalaries(tenantId);
     const statutory = this.getStatutoryConfig(tenantId);
     const allLoans = this.getLoans(tenantId);
     const allAdvances = this.getSalaryAdvances(tenantId);
