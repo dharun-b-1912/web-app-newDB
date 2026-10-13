@@ -43,6 +43,8 @@ import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
 import { realtimeChannelManager } from '../../../services/realtime/realtimeChannelManager';
 import { attendanceClassificationEngine, ClassifiedPunchEvent } from '../../../services/attendance/attendanceClassificationEngine';
 import { biometricGatewayService } from '../../../services/attendance/biometricGatewayService';
+import { SendAttendanceReportModal } from '../components/SendAttendanceReportModal';
+import { attendanceReportExportService } from '../../../services/attendance/attendanceReportExportService';
 
 interface EmployeeAttendanceViewProps {
   filterState?: GlobalAttendanceFilterState;
@@ -105,6 +107,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     }
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isSendReportOpen, setIsSendReportOpen] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState<boolean>(() => employees.length === 0);
 
   const checkIsVendor = (emp: any): boolean => {
@@ -552,7 +555,15 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
   };
 
   const handleExportCsv = () => {
-    showToast(`✓ Exported ${filteredData.length} filtered employee attendance records to CSV.`);
+    try {
+      const csvStr = attendanceReportExportService.generateCsvContent(filteredData);
+      const safeComp = (api.getActiveCompany()?.name || 'Joy Corporate Solutions').replace(/[^a-zA-Z0-9]/g, '_');
+      const filename = `${safeComp}_Daily_Attendance_${selectedDate}.csv`;
+      attendanceReportExportService.downloadFile(csvStr, filename, 'text/csv;charset=utf-8;');
+      showToast(`✓ Exported and downloaded ${filteredData.length} filtered employee attendance records to CSV.`, 'success');
+    } catch (e: any) {
+      showToast(`Export error: ${e.message}`, 'error');
+    }
   };
 
   const handleClearTileFilterOnly = () => {
@@ -594,6 +605,16 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsSendReportOpen(true)}
+            leftIcon={<Send className="w-3.5 h-3.5 text-emerald-600" />}
+            className="text-xs font-bold border-emerald-300 text-emerald-950 bg-emerald-50/70 hover:bg-emerald-100 hover:border-emerald-400 shadow-2xs"
+          >
+            Send Report to HR
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
@@ -1123,6 +1144,18 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           </Table>
         </div>
       </Card>
+
+      {/* 4. SEND ATTENDANCE & PUNCH REPORT MODAL */}
+      <SendAttendanceReportModal
+        isOpen={isSendReportOpen}
+        onClose={() => setIsSendReportOpen(false)}
+        filteredRows={filteredData}
+        allRows={filteredData}
+        selectedIds={selectedIds}
+        reportDate={selectedDate}
+        companyName={api.getActiveCompany()?.name || 'Joy Corporate Solutions'}
+        punches={(biometricGatewayService.getRawPunches(500) as any) || []}
+      />
     </div>
   );
 };
