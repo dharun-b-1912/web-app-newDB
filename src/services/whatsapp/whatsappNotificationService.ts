@@ -107,14 +107,14 @@ export class WhatsAppNotificationService {
 
     const bannerImageUrl = params.imageUrl || 'https://app.joypeoplehr.com/joy-people-hr-logo.png';
 
-    // ── Attempt 1: Template message (bypasses 24-hr window completely) ────────
-    // Works for ANY employee phone without them ever messaging us first.
-    // Requires: Meta Business Verification + template APPROVED status.
-    // Template: joy_hr_welcome_v2 — body vars: {{1}}=name, {{2}}=employee_code
+    // ── Attempt 1: Approved Meta Template (bypasses 24-hr window completely) ───
+    // Template: joy_onboarding_candidate_invite_v1 (APPROVED on Meta Cloud API)
+    // Variables: {{1}}=Name, {{2}}=Company, {{3}}=Designation, {{4}}=Joining Date
     try {
-      const templatePayload = {
+      const todayFormatted = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const approvedPayload = {
         to: params.phone,
-        templateName: 'joy_hr_welcome_v2',
+        templateName: 'joy_onboarding_candidate_invite_v1',
         languageCode: 'en_US',
         category: 'UTILITY' as const,
         organizationId: params.organizationId || '0c621892-e938-4707-9957-13534ea32c19',
@@ -124,20 +124,22 @@ export class WhatsAppNotificationService {
             type: 'body' as const,
             parameters: [
               { type: 'text' as const, text: empName },
-              { type: 'text' as const, text: empCode },
+              { type: 'text' as const, text: company },
+              { type: 'text' as const, text: role },
+              { type: 'text' as const, text: todayFormatted },
             ],
           },
         ],
         metadata: { eventType: 'EMPLOYEE_WELCOME_ONBOARDING' },
       };
-      const tplRes = await whatsAppClient.sendTemplate(templatePayload);
+      const tplRes = await whatsAppClient.sendTemplate(approvedPayload);
       if (tplRes.success) {
-        console.info('[WhatsAppWelcome] Template sent successfully to', params.phone);
+        console.info('[WhatsAppWelcome] Approved onboarding template sent successfully to', params.phone);
         return tplRes;
       }
-      console.warn('[WhatsAppWelcome] Template send failed (likely pending approval), trying interactive fallback:', tplRes.error);
+      console.warn('[WhatsAppWelcome] Primary template send failed, trying fallback:', tplRes.error);
     } catch (tplErr: any) {
-      console.warn('[WhatsAppWelcome] Template error:', tplErr.message);
+      console.warn('[WhatsAppWelcome] Primary template error:', tplErr.message);
     }
 
     const interactiveBody =
@@ -145,10 +147,14 @@ export class WhatsAppNotificationService {
       `_WhatsApp Employee Self-Service_\n\n` +
       `🎉 *Welcome to ${company}!* 👋\n` +
       `Hi *${empName}*, welcome to the Joy PeopleHR family!\n` +
-      `Your employee onboarding is complete. We're happy to have you with us.\n\n` +
-      `👤 *Your Employee Profile*\n` +
-      `🆔 *Employee Code:* ${empCode}\n` +
-      `💼 *Role:* ${role}\n\n` +
+      `Your employee account is activated and ready to use.\n\n` +
+      `👤 *Your Login Credentials*\n` +
+      `🆔 *Employee ID:* ${empCode}\n` +
+      `🔑 *Default Password:* joypeoplehr\n` +
+      `💼 *Designation:* ${role}\n\n` +
+      `📲 *Download Mobile App (Android):*\n` +
+      `https://play.google.com/store/apps/details?id=com.joypeoplehr.app\n\n` +
+      `🌐 *Web Portal:* ${portal}\n\n` +
       `🌟 *Your HR Assistant is Ready!*\n` +
       `You can use this chat to access your HR services quickly:\n` +
       `📄 *1. Payslip* – View or download monthly salary statement\n` +
@@ -158,8 +164,7 @@ export class WhatsAppNotificationService {
       `🌐 *5. HR Portal* – Access your complete employee dashboard\n\n` +
       `How would you like to continue? 👇\n` +
       `1️⃣ Payslip  2️⃣ Leave  3️⃣ Attendance  4️⃣ News  5️⃣ Portal\n\n` +
-      `💬 Tap a button below or reply with a number (1-5)\n` +
-      `🔗 Portal: ${portal}\n\n` +
+      `💬 Tap a button below or reply with a number (1-5)\n\n` +
       `📱 Save this number as Joy PeopleHR HR Assistant`;
 
     try {

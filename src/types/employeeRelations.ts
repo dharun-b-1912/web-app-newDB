@@ -392,6 +392,7 @@ export interface HelpdeskTicket {
   employee_id: string;
   employee_name: string;
   employee_email?: string;
+  department?: string;
   category: string;
   subject: string;
   description: string;
@@ -399,6 +400,7 @@ export interface HelpdeskTicket {
   status: TicketStatus;
   assigned_to?: string;
   assigned_name?: string;
+  assigned_to_name?: string;
   sla_due_at?: string;
   created_at: string;
   updated_at: string;

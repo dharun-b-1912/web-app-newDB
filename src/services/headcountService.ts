@@ -31,7 +31,12 @@ export const headcountService = {
       if (context.companyId && emp.company_id && context.companyId !== 'ALL') {
         const c1 = context.companyId.toLowerCase().replace(/[^a-z0-9]/g, '');
         const c2 = emp.company_id.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (c1 !== c2 && !c1.includes(c2) && !c2.includes(c1) && emp.company_id !== 'comp-joy-01') {
+        const isJoyPrimary1 = c1 === 'compjoy01' || c1.includes('2030277f') || c1.includes('joy');
+        const isJoyPrimary2 = c2 === 'compjoy01' || c2.includes('2030277f') || c2.includes('joy');
+
+        if (isJoyPrimary1 && isJoyPrimary2) {
+          // Both point to Joy Corporate Solutions primary company entity
+        } else if (c1 !== c2 && !c1.includes(c2) && !c2.includes(c1) && emp.company_id !== 'comp-joy-01' && emp.company_id !== '2030277f-a6a1-427f-beaf-4fc677a3bae2') {
           return false;
         }
       }

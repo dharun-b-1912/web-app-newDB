@@ -50,18 +50,18 @@ export class StatutoryFormGeneratorService {
     org: string = 'Enterprise Organization'
   ): string {
     const empAny = emp as any;
-    const fullName = empAny.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Murugan P';
-    const dob = empAny.date_of_birth || empAny.dob || '1988-04-12';
-    const gender = empAny.gender || 'Male';
-    const fatherName = empAny.father_name || empAny.father_or_spouse_name || 'Paramasivam';
-    const maritalStatus = empAny.marital_status || 'Married';
-    const email = empAny.email || empAny.work_email || 'employee@divyamanpower.in';
-    const mobile = empAny.phone || empAny.mobile_phone || '+91 98401 23456';
-    const uan = pf?.previous_uan || '101293847562';
-    const pan = pf?.pan_number || empAny.pan || 'ABCDE1234F';
-    const aadhaar = pf?.aadhaar_number || 'XXXX-XXXX-8921';
-    const bankAcc = pf?.bank_account_no || '918273645019';
-    const ifsc = pf?.bank_ifsc || 'SBIN0001234';
+    const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || empAny.name || 'Employee';
+    const dob = empAny.dob || empAny.date_of_birth || empAny.profile?.date_of_birth || empAny.profile?.dob || 'Not Provided';
+    const gender = empAny.gender || empAny.profile?.gender || 'Male';
+    const fatherName = empAny.father_name || empAny.father_or_spouse_name || empAny.profile?.father_name || empAny.emergency_contacts?.[0]?.name || 'Not Provided';
+    const maritalStatus = empAny.marital_status || empAny.profile?.marital_status || 'Single';
+    const email = emp.work_email || emp.personal_email || empAny.profile?.personal_email || empAny.email || 'Not Provided';
+    const mobile = emp.phone || emp.primary_mobile || empAny.profile?.phone || empAny.mobile_phone || 'Not Provided';
+    const uan = pf?.previous_uan || empAny.statutory?.uan || empAny.statutory?.uan_number || empAny.uan || 'Pending';
+    const pan = pf?.pan_number || empAny.statutory?.pan || empAny.statutory?.pan_number || empAny.pan || 'Not Provided';
+    const aadhaar = pf?.aadhaar_number || empAny.statutory?.aadhaar_number || 'XXXX-XXXX-XXXX';
+    const bankAcc = pf?.bank_account_no || empAny.bank?.account_number || empAny.account_number || 'Not Provided';
+    const ifsc = pf?.bank_ifsc || empAny.bank?.ifsc || empAny.bank?.ifsc_code || empAny.ifsc || 'Not Provided';
 
     return `
       <div style="font-family: 'Times New Roman', Times, serif; color: #111827; padding: 24px; max-width: 800px; margin: 0 auto; line-height: 1.4; border: 1px solid #d1d5db; background: #fff;">
@@ -167,9 +167,9 @@ export class StatutoryFormGeneratorService {
     org: string = 'Enterprise Organization'
   ): string {
     const empAny = emp as any;
-    const fullName = empAny.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Murugan P';
-    const fatherName = empAny.father_name || 'Paramasivam';
-    const dob = empAny.date_of_birth || empAny.dob || '1988-04-12';
+    const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || empAny.name || 'Employee';
+    const fatherName = empAny.father_name || empAny.father_or_spouse_name || empAny.profile?.father_name || empAny.emergency_contacts?.[0]?.name || 'Not Provided';
+    const dob = empAny.dob || empAny.date_of_birth || empAny.profile?.date_of_birth || empAny.profile?.dob || 'Not Provided';
     const epfNominees = nominations.filter((n) => n.nomination_type === 'EPF');
     const epsNominees = nominations.filter((n) => n.nomination_type === 'EPS');
 
@@ -258,7 +258,7 @@ export class StatutoryFormGeneratorService {
     org: string = 'Enterprise Organization'
   ): string {
     const empAny = emp as any;
-    const fullName = empAny.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Murugan P';
+    const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || empAny.name || 'Employee';
     const gratuityNominees = nominations.filter((n) => n.nomination_type === 'GRATUITY');
 
     return `
@@ -331,7 +331,7 @@ export class StatutoryFormGeneratorService {
     org: string = 'Enterprise Organization'
   ): string {
     const empAny = emp as any;
-    const fullName = empAny.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Murugan P';
+    const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || empAny.name || 'Employee';
     const wageNominees = nominations.filter((n) => n.nomination_type === 'WAGES');
 
     return `
@@ -389,15 +389,19 @@ export class StatutoryFormGeneratorService {
     org: string = 'Enterprise Organization'
   ): string {
     const empAny = emp as any;
-    const fullName = empAny.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Murugan P';
-    const orderNo = appt?.appointment_order_no || 'DMR-APPT-2026-001';
-    const doj = appt?.date_of_joining || '2026-08-01';
-    const desig = appt?.designation_title || 'Senior Security Officer';
-    const basic = Number(appt?.basic_wage || 12500).toLocaleString('en-IN');
-    const vda = Number(appt?.vda_allowance || 3200).toLocaleString('en-IN');
-    const hra = Number(appt?.hra_allowance || 4500).toLocaleString('en-IN');
-    const spl = Number(appt?.special_allowance || 2800).toLocaleString('en-IN');
-    const gross = Number(appt?.gross_wage || 24000).toLocaleString('en-IN');
+    const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || empAny.name || 'Employee';
+    const orderNo = appt?.appointment_order_no || `JCS-APPT-${emp.employee_code || '2026'}`;
+    const doj = appt?.date_of_joining || emp.employment?.doj || emp.doj || new Date().toISOString().split('T')[0];
+    const desig = appt?.designation_title || emp.designation_title || emp.designation || 'Specialist';
+    const monthlyGross = Number(appt?.gross_wage || emp.compensation?.monthly_ctc || emp.monthly_ctc || (emp.annual_ctc ? Math.round(emp.annual_ctc / 12) : 25000));
+    const basicWage = Math.round(monthlyGross * 0.5);
+    const hraWage = Math.round(basicWage * 0.4);
+    const splWage = Math.max(0, monthlyGross - basicWage - hraWage);
+    const basic = basicWage.toLocaleString('en-IN');
+    const vda = '0';
+    const hra = hraWage.toLocaleString('en-IN');
+    const spl = splWage.toLocaleString('en-IN');
+    const gross = monthlyGross.toLocaleString('en-IN');
 
     return `
       <div style="font-family: 'Times New Roman', Times, serif; color: #111827; padding: 24px; max-width: 800px; margin: 0 auto; line-height: 1.4; border: 1px solid #d1d5db; background: #fff;">
@@ -478,12 +482,12 @@ export class StatutoryFormGeneratorService {
     org: string = 'Enterprise Organization'
   ): string {
     const empAny = emp as any;
-    const fullName = empAny.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Murugan P';
-    const dob = empAny.date_of_birth || empAny.dob || '1988-04-12';
-    const gender = empAny.gender || 'Male';
-    const bloodGroup = empAny.blood_group || 'O+';
-    const doj = appt?.date_of_joining || '2026-08-01';
-    const desig = appt?.designation_title || 'Senior Security Officer';
+    const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || empAny.name || 'Employee';
+    const dob = empAny.dob || empAny.date_of_birth || empAny.profile?.date_of_birth || 'Not Provided';
+    const gender = empAny.gender || empAny.profile?.gender || 'Male';
+    const bloodGroup = empAny.profile?.blood_group || empAny.blood_group || 'O+';
+    const doj = appt?.date_of_joining || emp.employment?.doj || emp.doj || new Date().toISOString().split('T')[0];
+    const desig = appt?.designation_title || emp.designation_title || emp.designation || 'Specialist';
 
     return `
       <div style="font-family: Arial, sans-serif; color: #111827; padding: 24px; max-width: 800px; margin: 0 auto; line-height: 1.4; border: 1px solid #d1d5db; background: #fff;">
@@ -514,13 +518,13 @@ export class StatutoryFormGeneratorService {
             <td style="padding: 6px; border: 1px solid #e5e7eb; font-weight: bold;">Gender & Blood Group</td>
             <td style="padding: 6px; border: 1px solid #e5e7eb;">${gender} / ${bloodGroup}</td>
             <td style="padding: 6px; border: 1px solid #e5e7eb; font-weight: bold;">EPFO UAN</td>
-            <td style="padding: 6px; border: 1px solid #e5e7eb; font-weight: bold;">${pf?.previous_uan || 'Pending'}</td>
+            <td style="padding: 6px; border: 1px solid #e5e7eb; font-weight: bold;">${pf?.previous_uan || empAny.statutory?.uan || empAny.statutory?.uan_number || 'Pending'}</td>
           </tr>
           <tr>
             <td style="padding: 6px; border: 1px solid #e5e7eb; font-weight: bold;">PAN & Aadhaar</td>
-            <td style="padding: 6px; border: 1px solid #e5e7eb;">${pf?.pan_number || 'ABCDE1234F'} | ${pf?.aadhaar_number || 'XXXX-8921'}</td>
+            <td style="padding: 6px; border: 1px solid #e5e7eb;">${pf?.pan_number || empAny.statutory?.pan || empAny.statutory?.pan_number || 'Not Provided'} | ${pf?.aadhaar_number || empAny.statutory?.aadhaar_number || 'XXXX-XXXX-XXXX'}</td>
             <td style="padding: 6px; border: 1px solid #e5e7eb; font-weight: bold;">Bank Account</td>
-            <td style="padding: 6px; border: 1px solid #e5e7eb;">${pf?.bank_account_no || '918273645019'} (${pf?.bank_ifsc || 'SBIN0001234'})</td>
+            <td style="padding: 6px; border: 1px solid #e5e7eb;">${pf?.bank_account_no || empAny.bank?.account_number || 'Not Provided'} (${pf?.bank_ifsc || empAny.bank?.ifsc || empAny.bank?.ifsc_code || 'Not Provided'})</td>
           </tr>
         </table>
 

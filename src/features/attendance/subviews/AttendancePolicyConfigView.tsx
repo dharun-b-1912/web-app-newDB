@@ -62,7 +62,7 @@ export const AttendancePolicyConfigView: React.FC = () => {
   const [pType, setPType] = useState<AttendancePolicy['policy_type']>('GENERAL');
   const [pDesc, setPDesc] = useState('Standard operational attendance policy for manufacturing shift lines.');
   const [pEffectiveFrom, setPEffectiveFrom] = useState('2026-09-01');
-  const [pScopeType, setPScopeType] = useState<'ORGANIZATION' | 'DEPARTMENT' | 'LOCATION' | 'SHIFT'>('ORGANIZATION');
+  const [pScopeType, setPScopeType] = useState<'ORGANIZATION' | 'DEPARTMENTS' | 'LOCATIONS' | 'EMPLOYEE_GROUPS' | 'INDIVIDUALS'>('ORGANIZATION');
   const [pScopeIds, setPScopeIds] = useState<string[]>([]);
   const [pGraceIn, setPGraceIn] = useState(15);
   const [pLateThreshold, setPLateThreshold] = useState(30);
@@ -94,17 +94,27 @@ export const AttendancePolicyConfigView: React.FC = () => {
   const [isAuditDrawerOpen, setIsAuditDrawerOpen] = useState(false);
 
   const loadPolicies = () => {
-    const list = attendanceRosterService.getPolicies();
-    setPolicies(list);
-    if (list.length > 0 && !selectedPolicy) {
-      setSelectedPolicy(list[0]);
+    try {
+      const list = attendanceRosterService.getPolicies();
+      setPolicies(list || []);
+      if (list && list.length > 0 && !selectedPolicy) {
+        setSelectedPolicy(list[0]);
+      }
+    } catch (err) {
+      console.warn('[AttendancePolicyConfigView] error loading policies:', err);
     }
   };
 
   useEffect(() => {
     loadPolicies();
-    const unsub = hrEventBus.subscribe('*', () => loadPolicies());
-    return () => unsub();
+    const unsub = hrEventBus.subscribe('attendance.policy_updated', () => loadPolicies());
+    const unsub2 = hrEventBus.subscribe('policy.created', () => loadPolicies());
+    const unsub3 = hrEventBus.subscribe('policy.version_published', () => loadPolicies());
+    return () => {
+      unsub();
+      unsub2();
+      unsub3();
+    };
   }, []);
 
   const filteredPolicies = useMemo(() => {
@@ -424,12 +434,12 @@ export const AttendancePolicyConfigView: React.FC = () => {
                     <td className="p-3 font-mono font-bold text-[#07563D]">v{pol.version}</td>
                     <td className="p-3 font-mono text-gray-600 whitespace-nowrap">{pol.effective_from}</td>
                     <td className="p-3 text-gray-700">
-                      <div className="font-semibold text-gray-900">{pol.check_in_rules.grace_minutes}m Late Grace • {pol.check_out_rules.early_checkout_grace_minutes}m Early Grace</div>
-                      <div className="text-[10px] text-gray-400">{pol.late_deduction_rules.late_count_trigger} Lates = {pol.late_deduction_rules.deduction_amount_days}d LOP</div>
+                      <div className="font-semibold text-gray-900">{(pol.check_in_rules?.grace_minutes ?? 15)}m Late Grace • {(pol.check_out_rules?.early_checkout_grace_minutes ?? 10)}m Early Grace</div>
+                      <div className="text-[10px] text-gray-400">{(pol.late_deduction_rules?.late_count_trigger ?? 3)} Lates = {(pol.late_deduction_rules?.deduction_amount_days ?? 0.5)}d LOP</div>
                     </td>
                     <td className="p-3 text-gray-600">
-                      <div>{pol.approval_workflow?.levels[0]?.role || 'Reporting Manager'}</div>
-                      <div className="text-[10px] text-gray-400 font-mono">{pol.approval_workflow?.levels[0]?.sla_hours || 24}h SLA Escalation</div>
+                      <div>{pol.approval_workflow?.levels?.[0]?.role || 'Reporting Manager'}</div>
+                      <div className="text-[10px] text-gray-400 font-mono">{pol.approval_workflow?.levels?.[0]?.sla_hours || 24}h SLA Escalation</div>
                     </td>
                     <td className="p-3 whitespace-nowrap">
                       {pol.status === 'ACTIVE' ? (
@@ -615,9 +625,10 @@ export const AttendancePolicyConfigView: React.FC = () => {
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold"
                   >
                     <option value="ORGANIZATION">Entire Organization (All Employees)</option>
-                    <option value="DEPARTMENT">Specific Department</option>
-                    <option value="LOCATION">Branch / Plant Location</option>
-                    <option value="SHIFT">Specific Shift Template</option>
+                    <option value="DEPARTMENTS">Specific Department</option>
+                    <option value="LOCATIONS">Branch / Plant Location</option>
+                    <option value="EMPLOYEE_GROUPS">Employee Groups</option>
+                    <option value="INDIVIDUALS">Specific Individuals</option>
                   </select>
                 </div>
 
@@ -808,7 +819,7 @@ export const AttendancePolicyConfigView: React.FC = () => {
             <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
               <span className="font-bold text-emerald-900">Active Rule Profile: {simPolicy.policy_code} (v{simPolicy.version})</span>
               <p className="text-emerald-700 mt-0.5">
-                Grace: {simPolicy.check_in_rules.grace_minutes}m IN, {simPolicy.check_out_rules.early_checkout_grace_minutes}m OUT • Deduction: {simPolicy.late_deduction_rules.deduction_amount_days}d
+                Grace: {simPolicy.check_in_rules?.grace_minutes ?? 15}m IN, {simPolicy.check_out_rules?.early_checkout_grace_minutes ?? 10}m OUT • Deduction: {simPolicy.late_deduction_rules?.deduction_amount_days ?? 0.5}d
               </p>
             </div>
 

@@ -173,31 +173,41 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
         <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-xs">
           <span className="text-[11px] font-semibold text-[#64748B] block">Active Contracts</span>
           <strong className="text-2xl font-bold text-[#047857] block mt-1">{metrics.active}</strong>
-          <span className="text-[10px] text-[#047857] font-semibold">96.2% Retention</span>
+          <span className="text-[10px] text-[#047857] font-semibold">
+            {subscriptions.length > 0 ? Math.round((metrics.active / subscriptions.length) * 100) : 0}% of Total Portfolio
+          </span>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-xs">
           <span className="text-[11px] font-semibold text-[#64748B] block">Trial Subscriptions</span>
           <strong className="text-2xl font-bold text-[#2563EB] block mt-1">{metrics.trial}</strong>
-          <span className="text-[10px] text-[#2563EB] font-semibold">14-Day Full Access</span>
+          <span className="text-[10px] text-[#2563EB] font-semibold">
+            {metrics.trial > 0 ? `${metrics.trial} active prospect trials` : 'No active trials'}
+          </span>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-xs">
           <span className="text-[11px] font-semibold text-[#64748B] block">Past Due</span>
           <strong className="text-2xl font-bold text-[#DC2626] block mt-1">{metrics.past_due}</strong>
-          <span className="text-[10px] text-[#DC2626] font-semibold">Payment Dunning</span>
+          <span className="text-[10px] text-[#DC2626] font-semibold">
+            {metrics.past_due > 0 ? 'Requires dunning follow-up' : 'All accounts current'}
+          </span>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-xs">
           <span className="text-[11px] font-semibold text-[#64748B] block">Renewing Soon (30d)</span>
           <strong className="text-2xl font-bold text-[#D97706] block mt-1">{metrics.renewing_soon}</strong>
-          <span className="text-[10px] text-[#D97706] font-semibold">Auto-Debit Pending</span>
+          <span className="text-[10px] text-[#D97706] font-semibold">
+            {metrics.renewing_soon > 0 ? `${metrics.renewing_soon} renewal(s) pending` : 'No immediate renewals'}
+          </span>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-[#E2E8F0] shadow-xs">
           <span className="text-[11px] font-semibold text-[#64748B] block">Cancelled</span>
           <strong className="text-2xl font-bold text-[#64748B] block mt-1">{metrics.cancelled}</strong>
-          <span className="text-[10px] text-[#64748B]">Historical Records</span>
+          <span className="text-[10px] text-[#64748B]">
+            {metrics.cancelled > 0 ? `${metrics.cancelled} churned records` : 'Zero churn'}
+          </span>
         </div>
       </div>
 

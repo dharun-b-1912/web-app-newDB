@@ -248,7 +248,7 @@ class WorkLocationService {
       }
     }
 
-    return 'fc1782e6-fb46-47e8-a428-9da95e5a4f6f'; // Canonical Carenow Branch ID fallback
+    return '';
   }
 
   // ==========================================================================

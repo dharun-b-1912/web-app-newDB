@@ -205,7 +205,7 @@ export const WorkspaceAttendanceCard: React.FC<Props> = ({
                 <p className="text-xs text-emerald-200">
                   {todayAttendance?.first_check_in ? new Date(todayAttendance.first_check_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'} → {todayAttendance?.last_check_out ? new Date(todayAttendance.last_check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
                 </p>
-                {todayAttendance?.unauthorized_checkout && (
+                {(todayAttendance as any)?.unauthorized_checkout && (
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-300 bg-amber-950/40 border border-amber-500/30 rounded-lg px-2 py-1 mt-1">
                     <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     <span>Recorded outside assigned location. Overtime for today is set to 0.</span>

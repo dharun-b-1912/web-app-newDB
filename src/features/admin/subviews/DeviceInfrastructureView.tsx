@@ -262,7 +262,7 @@ export const DeviceInfrastructureView: React.FC = () => {
                     <TableCell className="text-xs text-gray-700">{c.device_name || c.device_id}</TableCell>
                     <TableCell className="text-xs font-semibold text-gray-900">{c.command_type}</TableCell>
                     <TableCell>
-                      <Badge variant={c.status === 'COMPLETED' ? 'emerald' : c.status === 'PENDING' ? 'amber' : 'gray'} size="sm">
+                      <Badge variant={(c.status as string) === 'COMPLETED' ? 'emerald' : (c.status as string) === 'PENDING' ? 'amber' : 'gray'} size="sm">
                         {c.status}
                       </Badge>
                     </TableCell>

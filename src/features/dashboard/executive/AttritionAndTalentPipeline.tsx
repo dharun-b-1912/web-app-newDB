@@ -144,10 +144,10 @@ export const AttritionAndTalentPipeline: React.FC<Props> = ({
               <div className="space-y-1.5">
                 {openJobs.slice(0, 3).map((job) => (
                   <div key={job.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 text-xs">
-                    <span className="font-bold text-gray-800">{job.title}</span>
+                    <span className="font-bold text-gray-800">{job.title || job.job_title}</span>
                     <span className="text-gray-500">{job.department_id || 'Engineering'}</span>
                     <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded">
-                      {job.openings_count} Openings
+                      {job.openings_count ?? job.number_of_openings} Openings
                     </span>
                   </div>
                 ))}

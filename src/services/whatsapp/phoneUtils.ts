@@ -71,3 +71,48 @@ export function maskBankAccount(accountNo: string | null | undefined): string {
   const last4 = clean.slice(-4);
   return `XXXX${last4}`;
 }
+
+/**
+ * Extracts a candidate phone number from free-form user message.
+ * Supports "9876543210", "+91 9876543210", "919876543210", etc.
+ */
+export function extractPhoneNumberCandidate(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const text = input.trim();
+  // Look for potential 10 to 12 digit numbers optionally prefixed with +91 or 91
+  const matches = text.match(/(?:\+?91[\s-]?)?[6-9]\d{9}/g);
+  if (matches && matches.length > 0) {
+    try {
+      return normalizeIndianPhone(matches[0]);
+    } catch {
+      return null;
+    }
+  }
+
+  // Also check if entire input stripped of non-digits forms a valid mobile
+  const digits = text.replace(/\D/g, '');
+  if (digits.length >= 10 && digits.length <= 12) {
+    try {
+      return normalizeIndianPhone(digits);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Formats canonical phone to user-friendly E.164 with space (e.g. "+91 98765 43210")
+ */
+export function formatDisplayPhone(phone: string | null | undefined): string {
+  if (!phone) return '';
+  try {
+    const norm = normalizeIndianPhone(phone);
+    const last10 = norm.slice(-10);
+    return `+91 ${last10.slice(0, 5)} ${last10.slice(5)}`;
+  } catch {
+    return phone || '';
+  }
+}
+

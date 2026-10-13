@@ -339,7 +339,7 @@ export const WizardSuccessScreen: React.FC<Props> = ({
               className="flex-1 px-3 py-2 text-xs font-bold text-white bg-[#07563D] hover:bg-[#064e37] rounded-xl flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
             >
               <Mail className="w-3.5 h-3.5" />
-              {isSendingEmail ? 'Sending...' : 'Send Resend Email'}
+              {isSendingEmail ? 'Sending...' : 'Send Activation Email'}
             </button>
           )}
 

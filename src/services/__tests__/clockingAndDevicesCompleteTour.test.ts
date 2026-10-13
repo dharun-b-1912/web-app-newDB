@@ -81,21 +81,24 @@ describe('Joy PeopleHR — CLOCKING & DEVICES Comprehensive Tour', () => {
 
   describe('Gate 3: Device Actions & Latency Probe Resilience', () => {
     it('tests device connection asynchronously without locking thread', async () => {
-      const probeRes = await biometricGatewayService.testDeviceConnection('bio-dev-cbe-aiface-01');
+      const dev = biometricGatewayService.getBiometricDevices()[0];
+      const probeRes = await biometricGatewayService.testDeviceConnection(dev?.id || '40576a24-8c22-43ee-95b8-b74ab380c968');
       expect(probeRes).toBeDefined();
       expect(typeof probeRes.success).toBe('boolean');
       expect(typeof probeRes.message).toBe('string');
     });
 
     it('synchronizes device clock with UTC instant', async () => {
-      const syncRes = await biometricGatewayService.syncDeviceClock('bio-dev-cbe-aiface-01');
+      const dev = biometricGatewayService.getBiometricDevices()[0];
+      const syncRes = await biometricGatewayService.syncDeviceClock(dev?.id || '40576a24-8c22-43ee-95b8-b74ab380c968');
       expect(syncRes).toBeDefined();
       expect(syncRes.success).toBe(true);
       expect(syncRes.message).toContain('synchronized');
     });
 
     it('unlocks terminal admin lock on physical hardware', async () => {
-      const unlockRes = await biometricGatewayService.unlockTerminalAdmin('bio-dev-cbe-aiface-01');
+      const dev = biometricGatewayService.getBiometricDevices()[0];
+      const unlockRes = await biometricGatewayService.unlockTerminalAdmin(dev?.id || '40576a24-8c22-43ee-95b8-b74ab380c968');
       expect(unlockRes).toBeDefined();
       expect(unlockRes.success).toBe(true);
       expect(unlockRes.message).toContain('unlocked');

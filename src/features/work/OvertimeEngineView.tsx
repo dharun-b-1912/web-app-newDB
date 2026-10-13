@@ -142,31 +142,6 @@ export const OvertimeEngineView: React.FC = () => {
         </div>
       </div>
 
-      {/* Operational Industry Presets Bar */}
-      <div className="bg-gray-50/80 p-2.5 rounded-2xl border border-gray-200/70 flex items-center gap-1.5 overflow-x-auto">
-        <span className="text-[11px] font-black uppercase tracking-wider text-gray-500 px-2 shrink-0">
-          Operational Mode:
-        </span>
-        {(Object.keys(PRESET_NAMES) as IndustryPreset[]).map(preset => {
-          const Icon = PRESET_ICONS[preset];
-          const isSelected = activePreset === preset;
-          return (
-            <button
-              key={preset}
-              onClick={() => handleSwitchPreset(preset)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
-                isSelected
-                  ? 'bg-white text-[#07563D] shadow-xs border border-emerald-200'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
-              }`}
-            >
-              <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-[#07563D]' : 'text-gray-400'}`} />
-              <span>{PRESET_NAMES[preset]}</span>
-            </button>
-          );
-        })}
-      </div>
-
       {/* Manufacturing Plant Operational Live Card (Active when Manufacturing Mode is active) */}
       {activePreset === 'MANUFACTURING' && (
         <Card className="p-5 bg-gradient-to-br from-emerald-950 via-gray-900 to-gray-900 text-white rounded-2xl border border-emerald-900 shadow-md">

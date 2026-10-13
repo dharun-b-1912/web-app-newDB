@@ -12,6 +12,7 @@ import {
   LeavePolicy,
   LeaveRequest,
   LeaveType,
+  LedgerTransactionType,
   AccrualExecutionLog,
   LeaveException,
 } from '../types/leave';
@@ -20,6 +21,7 @@ import { hrEventBus } from './hrEventBus';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
 import { notificationService } from './notification/notificationService';
 import { leaveEngine } from './leave/leaveEngine';
+import { api } from './api';
 
 const STORAGE_KEYS = {
   LEAVE_TYPES: 'workforce_leave_types_v2',
@@ -1657,7 +1659,51 @@ export const leaveApi = {
 
   // --- Entitlements & Ledger ---
   getEntitlements: (): LeaveEntitlement[] => {
-    return getStored(STORAGE_KEYS.ENTITLEMENTS, initialEntitlements);
+    let list = getStored<LeaveEntitlement[]>(STORAGE_KEYS.ENTITLEMENTS, initialEntitlements);
+    if (!list || list.length === 0) {
+      const employees = api.getEmployeesSync ? api.getEmployeesSync() : [];
+      if (employees && employees.length > 0) {
+        const leaveTypes = leaveApi.getLeaveTypes();
+        const generated: LeaveEntitlement[] = [];
+        for (const emp of employees) {
+          const empName = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee';
+          const deptName = emp.department_name || (emp as any).department_id || 'Engineering';
+
+          for (const lt of leaveTypes) {
+            if (!lt.is_active) continue;
+            const quota = (lt as any).default_annual_quota || (lt as any).days_allowed || 12;
+            generated.push({
+              id: `ent-${emp.id}-${lt.id}`,
+              employee_id: emp.id,
+              employee_name: empName,
+              department_name: deptName,
+              leave_type_id: lt.id,
+              leave_type_name: lt.name,
+              policy_id: 'pol-std-01',
+              policy_name: 'Standard Leave Policy',
+              period: '2026',
+              opening_balance: quota,
+              granted: quota,
+              accrued: 0,
+              carried_forward: 0,
+              adjustments: 0,
+              used: 0,
+              pending: 0,
+              encashed: 0,
+              expired: 0,
+              closing_balance: quota,
+              available_balance: quota,
+              updated_at: new Date().toISOString(),
+            });
+          }
+        }
+        if (generated.length > 0) {
+          list = generated;
+          setStored(STORAGE_KEYS.ENTITLEMENTS, list);
+        }
+      }
+    }
+    return list;
   },
 
   async getLedgerAsync(employeeId?: string): Promise<LeaveLedgerTransaction[]> {
@@ -1667,22 +1713,34 @@ export const leaveApi = {
         if (employeeId && isValidUUID(employeeId)) {
           q = q.eq('employee_id', employeeId);
         }
-        const { data, error } = await q;
+        let { data, error } = await q;
+        if (error && (error as any).code === '42P01') {
+          // Alternative schema: leave_ledger_transactions
+          let altQ = supabase.from('leave_ledger_transactions').select('*').order('created_at', { ascending: false });
+          if (employeeId && isValidUUID(employeeId)) {
+            altQ = altQ.eq('employee_id', employeeId);
+          }
+          const altRes = await altQ;
+          if (!altRes.error && Array.isArray(altRes.data)) {
+            data = altRes.data;
+            error = null;
+          }
+        }
         if (!error && Array.isArray(data) && data.length > 0) {
           const mapped: LeaveLedgerTransaction[] = data.map((d: any) => ({
             id: d.id,
             employee_id: d.employee_id,
-            employee_name: 'Employee',
+            employee_name: d.employee_name || 'Employee',
             leave_type_id: d.leave_type_id,
-            leave_type_name: 'Leave',
-            date: d.transaction_date,
-            transaction_type: mapCanonicalToLedgerType(d.entry_type),
-            amount: Number(d.units) || 0,
-            balance_after: Number(d.running_balance_after) || 0,
-            reference_id: d.leave_request_id || d.id,
-            actor_id: 'system',
-            actor_name: 'System',
-            reason: d.remarks || '',
+            leave_type_name: d.leave_type_name || 'Leave',
+            date: d.transaction_date || d.date,
+            transaction_type: mapCanonicalToLedgerType(d.entry_type || d.transaction_type),
+            amount: Number(d.units ?? d.amount) || 0,
+            balance_after: Number(d.running_balance_after ?? d.balance_after) || 0,
+            reference_id: d.leave_request_id || d.reference_id || d.id,
+            actor_id: d.actor_id || 'system',
+            actor_name: d.actor_name || 'System',
+            reason: d.remarks || d.reason || '',
             created_at: d.created_at,
           }));
           _ledgerCache = { data: mapped, timestamp: Date.now() };
@@ -1700,11 +1758,33 @@ export const leaveApi = {
     if (_ledgerCache?.data && _ledgerCache.data.length > 0) {
       return [..._ledgerCache.data];
     }
-    const list = getStored(STORAGE_KEYS.LEDGER, initialLedger);
-    if (list.length > 0) {
+    let list = getStored<LeaveLedgerTransaction[]>(STORAGE_KEYS.LEDGER, initialLedger);
+    if (!list || list.length === 0) {
+      const entitlements = leaveApi.getEntitlements();
+      if (entitlements.length > 0) {
+        list = entitlements.map((ent) => ({
+          id: `ledger-init-${ent.id}`,
+          employee_id: ent.employee_id,
+          employee_name: ent.employee_name,
+          leave_type_id: ent.leave_type_id,
+          leave_type_name: ent.leave_type_name,
+          date: '2026-01-01',
+          transaction_type: 'Opening' as LedgerTransactionType,
+          amount: ent.opening_balance,
+          balance_after: ent.opening_balance,
+          reference_id: `SYS-INIT-2026`,
+          actor_id: 'system',
+          actor_name: 'System Provisioning',
+          reason: 'Annual leave quota allocation for active workforce',
+          created_at: new Date().toISOString(),
+        }));
+        setStored(STORAGE_KEYS.LEDGER, list);
+      }
+    }
+    if (list && list.length > 0) {
       _ledgerCache = { data: list, timestamp: Date.now() };
     }
-    return list;
+    return list || [];
   },
 
   saveEntitlement: (ent: LeaveEntitlement): LeaveEntitlement => {

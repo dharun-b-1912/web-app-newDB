@@ -272,7 +272,7 @@ export const CommunicationHubView: React.FC = () => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    {getTypeBadge(comm.communication_type)}
+                    {getTypeBadge(comm.communication_type as any)}
                     {comm.priority === 'URGENT' && <Badge variant="danger">URGENT</Badge>}
                     {comm.requires_acknowledgement && (
                       <span className="px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-md text-[10px] font-bold">
@@ -302,7 +302,7 @@ export const CommunicationHubView: React.FC = () => {
                   {comm.requires_acknowledgement && (
                     <div className="flex items-center gap-1 text-emerald-700 font-bold">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>{comm.acknowledged_count || 0} Acknowledged</span>
+                      <span>{((comm as any).acknowledged_count ?? (comm.acknowledged_by?.length || 0))} Acknowledged</span>
                     </div>
                   )}
                 </div>

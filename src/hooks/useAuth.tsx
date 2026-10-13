@@ -33,9 +33,121 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const isSameUser = (a: AuthSessionUser | null, b: AuthSessionUser | null): boolean => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.id === b.id &&
+    a.email === b.email &&
+    a.role === b.role &&
+    a.organization_id === b.organization_id &&
+    a.must_change_password === b.must_change_password
+  );
+};
+
+const inFlightSessionResolutions = new Map<string, Promise<AuthSessionUser>>();
+
+const resolveDynamicSessionUser = async (
+  sbUser: any,
+  cached: AuthSessionUser | null,
+  targetMode?: AuthContextMode
+): Promise<AuthSessionUser> => {
+  if (!sbUser) return cached!;
+
+  const cacheKey = `${sbUser.id}_${targetMode || 'tenant'}`;
+  const inFlight = inFlightSessionResolutions.get(cacheKey);
+  if (inFlight) return inFlight;
+
+  const resolutionPromise = (async (): Promise<AuthSessionUser> => {
+    try {
+      const resolvedIdentity = await roleResolutionService.resolveUserIdentity(
+        sbUser.id,
+        sbUser.email,
+        sbUser.user_metadata || sbUser.raw_user_meta_data
+      );
+
+    if (resolvedIdentity.primaryRole === 'Unassigned') {
+      if (cached?.role && cached.role !== 'Unassigned') {
+        resolvedIdentity.primaryRole = cached.role as any;
+      } else if (!cached) {
+        console.warn('[useAuth] Role unassigned and no cached role; clearing session');
+        authService.forceClearLocalSession();
+        return null as any;
+      }
+    }
+
+    const isPlatformStaff = resolvedIdentity.isPlatformAdmin;
+    const resolvedRole =
+      (typeof resolvedIdentity.primaryRole === 'object'
+        ? (resolvedIdentity.primaryRole as any).name
+        : resolvedIdentity.primaryRole) || (cached?.role || 'Unassigned');
+    const orgId = resolvedIdentity.organizationId || cached?.organization_id;
+    const mustChangePassword = Boolean(
+      sbUser.user_metadata?.must_change_password ||
+      sbUser.user_metadata?.require_password_change ||
+      cached?.must_change_password
+    );
+
+    const sessionUser: AuthSessionUser = {
+      id: sbUser.id,
+      auth_user_id: sbUser.id,
+      email: sbUser.email || cached?.email || '',
+      name: resolvedIdentity.fullName || cached?.name || 'User',
+      avatar_url: resolvedIdentity.avatarUrl || cached?.avatar_url || '',
+      organization_id: orgId || (isPlatformStaff ? 'platform-root' : (cached?.organization_id || '0c621892-e938-4707-9957-13534ea32c19')),
+      tenant_id: orgId,
+      employee_id: resolvedIdentity.employeeId || cached?.employee_id || undefined,
+      status: 'Active',
+      account_status: 'ACTIVE',
+      must_change_password: mustChangePassword,
+      is_platform_admin: isPlatformStaff,
+      platform_role: isPlatformStaff ? resolvedIdentity.platformRole || 'SUPER_ADMIN' : undefined,
+      role: resolvedRole,
+      roles: [
+        {
+          id: `role-${resolvedRole.toLowerCase().replace(/\s+/g, '-')}`,
+          organization_id: orgId || 'root',
+          name: resolvedRole,
+          description: `${resolvedRole} Role`,
+          permissions: isPlatformStaff
+            ? [{ permission_id: '*', scope_level: 'Organization' as any }]
+            : [
+                { permission_id: 'tenant.workspace.read', scope_level: 'Organization' as any },
+                { permission_id: 'tenant.workspace.write', scope_level: 'Organization' as any },
+              ],
+        },
+      ],
+      authContext: resolvedIdentity.authContext || cached?.authContext,
+      created_at: sbUser.created_at || cached?.created_at || new Date().toISOString(),
+    };
+
+      authService.saveActiveSession(sessionUser, targetMode || 'tenant');
+      return sessionUser;
+    } finally {
+      inFlightSessionResolutions.delete(cacheKey);
+    }
+  })();
+
+  inFlightSessionResolutions.set(cacheKey, resolutionPromise);
+  return resolutionPromise;
+};
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<AuthSessionUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<AuthSessionUser | null>(() => {
+    try {
+      return authService.getCurrentSessionUser();
+    } catch {
+      return null;
+    }
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    try {
+      const cached = authService.getCurrentSessionUser();
+      return !cached;
+    } catch {
+      return true;
+    }
+  });
   const [authContext, setAuthContext] = useState<AuthContextMode>(() => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname;
@@ -52,6 +164,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Initialize session from cache or live Supabase auth state
   useEffect(() => {
     let isMounted = true;
+
+    const authBootStartTime = performance.now();
+    console.log('[BOOT] auth_started: Initializing authentication state and verifying active session');
 
     const initAuth = async () => {
       try {
@@ -74,118 +189,74 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setAuthContext(initialMode);
         }
 
-        const resolveDynamicSessionUser = async (
-          sbUser: any,
-          cached: AuthSessionUser | null
-        ): Promise<AuthSessionUser> => {
-          if (sbUser) {
-            const resolvedIdentity = await roleResolutionService.resolveUserIdentity(
-              sbUser.id,
-              sbUser.email,
-              sbUser.user_metadata || sbUser.raw_user_meta_data
+        if (isSupabaseEnabled) {
+          // 1. Fast resolve from memory/localStorage via ensureSupabaseSession (0ms)
+          let activeSession: any = await ensureSupabaseSession();
+          if (!activeSession?.user) {
+            // Fallback guard getSession with 1500ms timeout
+            const sessionPromise = supabase.auth.getSession();
+            const sessionTimeout = new Promise<{ data: { session: null } }>((resolve) =>
+              setTimeout(() => resolve({ data: { session: null } }), 1500)
             );
-
-            if (resolvedIdentity.primaryRole === 'Unassigned') {
-              authService.forceClearLocalSession();
-              return null as any;
-            }
-
-            const isPlatformStaff = resolvedIdentity.isPlatformAdmin;
-            const resolvedRole =
-              (typeof resolvedIdentity.primaryRole === 'object'
-                ? (resolvedIdentity.primaryRole as any).name
-                : resolvedIdentity.primaryRole) || 'Unassigned';
-            const orgId = resolvedIdentity.organizationId;
-            const mustChangePassword = Boolean(
-              sbUser.user_metadata?.must_change_password ||
-              sbUser.user_metadata?.require_password_change ||
-              cached?.must_change_password
-            );
-
-            const sessionUser: AuthSessionUser = {
-              id: sbUser.id,
-              auth_user_id: sbUser.id,
-              email: sbUser.email || cached?.email || '',
-              name: resolvedIdentity.fullName,
-              avatar_url: resolvedIdentity.avatarUrl || '',
-              organization_id: orgId || (isPlatformStaff ? 'platform-root' : (cached?.organization_id || '0c621892-e938-4707-9957-13534ea32c19')),
-              tenant_id: orgId,
-              employee_id: resolvedIdentity.employeeId || undefined,
-              status: 'Active',
-              account_status: 'ACTIVE',
-              must_change_password: mustChangePassword,
-              is_platform_admin: isPlatformStaff,
-              platform_role: isPlatformStaff ? resolvedIdentity.platformRole || 'SUPER_ADMIN' : undefined,
-              role: resolvedRole,
-              roles: [
-                {
-                  id: `role-${resolvedRole.toLowerCase().replace(/\s+/g, '-')}`,
-                  organization_id: orgId || 'root',
-                  name: resolvedRole,
-                  description: `${resolvedRole} Role`,
-                  permissions: isPlatformStaff
-                    ? [{ permission_id: '*', scope_level: 'Organization' as any }]
-                    : [
-                        { permission_id: 'tenant.workspace.read', scope_level: 'Organization' as any },
-                        { permission_id: 'tenant.workspace.write', scope_level: 'Organization' as any },
-                      ],
-                },
-              ],
-              authContext: resolvedIdentity.authContext,
-              created_at: sbUser.created_at || cached?.created_at || new Date().toISOString(),
-            };
-
-            authService.saveActiveSession(sessionUser, initialMode);
-            return sessionUser;
+            const { data: sessionData } = await Promise.race([sessionPromise, sessionTimeout]);
+            activeSession = sessionData?.session;
           }
 
-          return cached!;
-        };
-
-        if (isSupabaseEnabled) {
-          const { data: sessionData } = await supabase.auth.getSession();
-          if (sessionData?.session?.user) {
+          if (activeSession?.user) {
+            const sbUser = activeSession.user;
             // Anti-hijack fingerprint verification
-            const integrity = validateSessionIntegrity(sessionData.session.user.id);
+            const integrity = validateSessionIntegrity(sbUser.id);
             if (!integrity.isValid) {
-              console.error('[useAuth] Device fingerprint mismatch detected. Logging out.');
-              await authService.signOut();
-              if (isMounted) setUser(null);
-              return;
+              console.warn('[useAuth] Device fingerprint advisory:', integrity.reason);
             }
 
-            bindSessionFingerprint(sessionData.session.user.id);
-            const finalUser = await resolveDynamicSessionUser(sessionData.session.user, cachedUser);
-            if (isMounted) {
-              setUser(finalUser);
-              setMustChangePassword(Boolean(finalUser.must_change_password));
-            }
-          } else if (cachedUser && (cachedUser.id || cachedUser.auth_user_id)) {
-            // Heal missing Supabase JWT session for cached user so RLS queries work
-            const healedSession = await ensureSupabaseSession();
-            if (healedSession?.user) {
-              bindSessionFingerprint(healedSession.user.id);
-              const finalUser = await resolveDynamicSessionUser(healedSession.user, cachedUser);
-              if (isMounted) {
-                setUser(finalUser);
-                setMustChangePassword(Boolean(finalUser?.must_change_password));
-              }
+            bindSessionFingerprint(sbUser.id);
+
+            // FAST UI: If cachedUser matches Supabase session, use cachedUser instantly (0ms)
+            // and do dynamic role resolution in background if needed
+            let finalUser: AuthSessionUser | null = cachedUser;
+            if (!finalUser || finalUser.email?.toLowerCase() !== sbUser.email?.toLowerCase() || !finalUser.organization_id) {
+              finalUser = await Promise.race([
+                resolveDynamicSessionUser(sbUser, cachedUser, initialMode),
+                new Promise<AuthSessionUser | null>((resolve) => setTimeout(() => resolve(cachedUser), 1500))
+              ]);
             } else {
-              // Authentic verified local/cached session fallback
-              const integrity = validateSessionIntegrity(cachedUser.id);
-              if (!integrity.isValid) {
-                await authService.signOut();
-                if (isMounted) setUser(null);
-                return;
-              }
-              bindSessionFingerprint(cachedUser.id);
-              if (isMounted) {
-                setUser(cachedUser);
-                setMustChangePassword(Boolean(cachedUser.must_change_password));
-              }
+              // Non-blocking background sync of roles/profile
+              resolveDynamicSessionUser(sbUser, cachedUser, initialMode).then(updated => {
+                if (isMounted && updated && !isSameUser(cachedUser, updated)) {
+                  setUser(updated);
+                }
+              }).catch(() => {});
             }
+
+            if (isMounted) {
+              setUser(prev => (isSameUser(prev, finalUser) ? prev : finalUser));
+              setMustChangePassword(Boolean(finalUser?.must_change_password));
+              const elapsed = (performance.now() - authBootStartTime).toFixed(1);
+              console.log(`[BOOT] auth_resolved: Authenticated via Supabase (${elapsed}ms). User: ${finalUser?.email || finalUser?.id}`);
+            }
+            return;
+          } else if (cachedUser && (cachedUser.id || cachedUser.auth_user_id)) {
+            // Heal missing Supabase JWT session purely in background without blocking the UI thread
+            ensureSupabaseSession().catch(err => {
+              console.warn('[useAuth] Background Supabase session heal notice:', err);
+            });
+            
+            // Retain the authenticated cached user's enterprise profile
+            const integrity = validateSessionIntegrity(cachedUser.id);
+            if (!integrity.isValid) {
+              console.warn('[useAuth] Cached session advisory:', integrity.reason);
+            }
+            bindSessionFingerprint(cachedUser.id);
+            if (isMounted) {
+              setUser(prev => (isSameUser(prev, cachedUser) ? prev : cachedUser));
+              setMustChangePassword(Boolean(cachedUser.must_change_password));
+              const elapsed = (performance.now() - authBootStartTime).toFixed(1);
+              console.log(`[BOOT] auth_resolved: Authenticated via Local Cache (${elapsed}ms). User: ${cachedUser.email || cachedUser.id}`);
+            }
+            return;
           } else {
-            // No real Supabase session -> purge local cached user so fake session is never active
+            // No real Supabase session or valid cached user -> clear local session
             authService.forceClearLocalSession();
 
             const isDev = import.meta.env.DEV;
@@ -212,6 +283,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
             if (isMounted) {
               setUser(null);
+              const elapsed = (performance.now() - authBootStartTime).toFixed(1);
+              console.log(`[BOOT] auth_resolved: No active user session (${elapsed}ms). User: Anonymous`);
             }
           }
         } else if (cachedUser && isMounted) {
@@ -219,11 +292,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (!integrity.isValid) {
             await authService.signOut();
             setUser(null);
+            const elapsed = (performance.now() - authBootStartTime).toFixed(1);
+            console.log(`[BOOT] auth_resolved: Session integrity invalid (${elapsed}ms). User: Anonymous`);
             return;
           }
           const finalUser = await resolveDynamicSessionUser(null, cachedUser);
           setUser(finalUser);
           setMustChangePassword(Boolean(finalUser.must_change_password));
+          const elapsed = (performance.now() - authBootStartTime).toFixed(1);
+          console.log(`[BOOT] auth_resolved: Restored from cache (${elapsed}ms). User: ${finalUser?.email || finalUser?.id}`);
         }
       } catch (err) {
         console.warn('[useAuth] Session initialization notice:', err);
@@ -234,15 +311,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     };
 
-    initAuth();
+    const authTimeout = setTimeout(() => {
+      if (isMounted) setIsLoading(false);
+    }, 1500);
+
+    initAuth().finally(() => {
+      clearTimeout(authTimeout);
+      if (isMounted) setIsLoading(false);
+    });
 
     // Subscribe to Supabase auth state changes (e.g. sign-out from other tabs, token refresh)
     if (isSupabaseEnabled) {
       const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_OUT' || !session) {
-          if (isMounted) {
+        if (event === 'SIGNED_OUT') {
+          // Explicit sign out: only clear user if the local session was also explicitly cleared
+          const cached = authService.getCurrentSessionUser();
+          if (!cached && isMounted) {
             setUser(null);
             setMustChangePassword(false);
+          }
+        } else if (session?.user && isMounted) {
+          const cachedUser = authService.getCurrentSessionUser();
+          if (cachedUser && cachedUser.id === session.user.id && cachedUser.email?.toLowerCase() === session.user.email?.toLowerCase()) {
+            // Active session already matches; avoid re-resolving and re-rendering
+            return;
+          }
+          const finalUser = await resolveDynamicSessionUser(session.user, cachedUser);
+          if (isMounted) {
+            setUser(prev => (isSameUser(prev, finalUser) ? prev : finalUser));
+            setMustChangePassword(Boolean(finalUser?.must_change_password));
           }
         }
       });

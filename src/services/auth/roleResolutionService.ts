@@ -108,6 +108,9 @@ export const roleResolutionService = {
 
     if (isSupabaseEnabled && !isPlatformAdmin) {
       try {
+        const profAbort = new AbortController();
+        const profTimer = setTimeout(() => profAbort.abort(), 4000);
+
         // First try finding by auth_user_id
         if (authUserId) {
           const { data: profById } = await supabase
@@ -136,6 +139,7 @@ export const roleResolutionService = {
               )
             `)
             .eq('auth_user_id', authUserId)
+            .abortSignal(profAbort.signal)
             .maybeSingle();
 
           if (profById) {
@@ -171,7 +175,9 @@ export const roleResolutionService = {
               )
             `)
             .eq('email', emailLower)
+            .abortSignal(profAbort.signal)
             .maybeSingle();
+          clearTimeout(profTimer);
 
           if (profByEmail) {
             profileRow = profByEmail;
@@ -323,8 +329,8 @@ export const roleResolutionService = {
       name: authContext.identity.fullName,
       phone: authContext.identity.phone,
       avatar_url: authContext.identity.avatarUrl || '',
-      organization_id: authContext.tenant?.organizationId || 'org-default',
-      tenant_id: authContext.tenant?.organizationId || 'org-default',
+      organization_id: authContext.tenant?.organizationId || '0c621892-e938-4707-9957-13534ea32c19',
+      tenant_id: authContext.tenant?.organizationId || '0c621892-e938-4707-9957-13534ea32c19',
       employee_id: authContext.employeeId,
       status: authContext.accountStatus === 'ACTIVE' ? 'Active' : authContext.accountStatus === 'PENDING_ACTIVATION' ? 'Invited' : 'Suspended',
       account_status: authContext.accountStatus as any,

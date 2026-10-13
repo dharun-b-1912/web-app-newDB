@@ -208,15 +208,20 @@ export const APP_ROUTES = {
     incidents: '/platform/incidents',
     staff: '/platform/staff',
     revenue: '/platform/revenue',
+    quotations: '/platform/quotations',
     subscriptions: '/platform/subscriptions',
-    billing: '/platform/billing',
+    invoices: '/platform/invoices',
+    billing: '/platform/invoices',
+    plans: '/platform/plans',
+    addons: '/platform/addons',
+    pricingCalculator: '/platform/pricing-calculator',
+    catalogue: '/platform/catalogue',
     usage: '/platform/usage',
     health: '/platform/health',
     launchScope: '/platform/launch-scope',
     modules: '/platform/modules',
     roadmap: '/platform/roadmap',
     features: '/platform/features',
-    plans: '/platform/plans',
     security: '/platform/security',
     sessions: '/platform/sessions',
     audit: '/platform/audit',
@@ -304,13 +309,13 @@ export const ROUTE_MANIFEST: RouteDefinition[] = [
   { id: 'breaks-workhours', label: 'Breaks & Work Hours', canonicalPath: '/breaks', section: 'WORK & OVERTIME', aliases: ['/breaks-workhours'] },
 
   // ── SHIFT & SCHEDULING ──
-  { id: 'shifts', label: 'Shift Master', canonicalPath: '/shifts', section: 'SHIFT & SCHEDULING', aliases: ['/shift-master', '/shifts/master'] },
+  { id: 'shifts', label: 'Shift Master', canonicalPath: '/shifts', section: 'SHIFT & SCHEDULING', aliases: ['/shift-master', '/shifts/master'], exact: true },
   { id: 'roster', label: 'Shift Roster & Matrix', canonicalPath: '/shifts/roster', section: 'SHIFT & SCHEDULING', aliases: ['/roster', '/shift-roster'] },
   { id: 'shift-calendar', label: 'Shift Calendar', canonicalPath: '/shifts/calendar', section: 'SHIFT & SCHEDULING', aliases: ['/shift-calendar'] },
   { id: 'policies', label: 'Attendance Policies', canonicalPath: '/policies', section: 'SHIFT & SCHEDULING', aliases: ['/attendance-policies', '/shifts/policies'] },
 
   // ── CLOCKING & DEVICES ──
-  { id: 'biometric', label: 'Biometric Devices', canonicalPath: '/biometric', section: 'CLOCKING & DEVICES', aliases: ['/biometric/devices', '/biometric-devices'] },
+  { id: 'biometric', label: 'Biometric Devices', canonicalPath: '/biometric', section: 'CLOCKING & DEVICES', aliases: ['/biometric/devices', '/biometric-devices'], exact: true },
   { id: 'attendance-rules', label: 'Biometric Rules & Automation', canonicalPath: '/biometric/rules', section: 'CLOCKING & DEVICES', aliases: ['/attendance-rules', '/biometric-rules', '/rules-engine'] },
   { id: 'gps', label: 'GPS & Mobile Channel', canonicalPath: '/biometric/gps', section: 'CLOCKING & DEVICES', aliases: ['/gps', '/gps-attendance'] },
   { id: 'face-attendance', label: 'Face Recognition', canonicalPath: '/biometric/face', section: 'CLOCKING & DEVICES', aliases: ['/face-attendance', '/face-recognition'] },
@@ -416,6 +421,26 @@ export const ROUTE_MANIFEST: RouteDefinition[] = [
   { id: 'admin-notifications', label: 'Notification Settings', canonicalPath: '/admin/notifications', section: 'AUTOMATION & ADMIN', aliases: ['/admin-notifications'] },
   { id: 'company-onboarding', label: 'Company Setup Wizard', canonicalPath: '/company-onboarding', section: 'AUTOMATION & ADMIN' },
   { id: 'trust-legal', label: 'Trust & Legal Center', canonicalPath: '/legal', section: 'AUTOMATION & ADMIN', aliases: ['/trust-legal', '/legal-center'] },
+
+  // ── PLATFORM & SAAS CONTROL PLANE ──
+  { id: 'platform-dashboard', label: 'Platform Command Center', canonicalPath: '/platform/dashboard', section: 'PLATFORM', aliases: ['/platform', '/platform-dashboard', '/platform/dashboard'] },
+  { id: 'platform-tenants', label: 'Organizations & Tenants', canonicalPath: '/platform/tenants', section: 'PLATFORM', aliases: ['/platform-tenants', '/platform/organizations'] },
+  { id: 'platform-tenant-health', label: 'Tenant Health', canonicalPath: '/platform/health', section: 'PLATFORM', aliases: ['/platform-tenant-health', '/platform/health', '/platform/tenant-health'] },
+  { id: 'saas-revenue', label: 'Revenue & Growth', canonicalPath: '/platform/revenue', section: 'PLATFORM', aliases: ['/platform-revenue', '/platform/revenue', '/saas-revenue'] },
+  { id: 'platform-quotations', label: 'Commercial Quotations', canonicalPath: '/platform/quotations', section: 'PLATFORM', aliases: ['/platform-quotations', '/quotations', '/saas-quotations'] },
+  { id: 'platform-subscriptions', label: 'Subscriptions', canonicalPath: '/platform/subscriptions', section: 'PLATFORM', aliases: ['/platform-subscriptions', '/platform/subscriptions'] },
+  { id: 'platform-invoices', label: 'SaaS Invoices & Billing', canonicalPath: '/platform/invoices', section: 'PLATFORM', aliases: ['/platform-invoices', '/platform/billing', '/platform-billing', '/saas-invoices'] },
+  { id: 'platform-plans', label: 'Plans & Pricing', canonicalPath: '/platform/plans', section: 'PLATFORM', aliases: ['/platform-plans', '/platform/pricing', '/platform-pricing'] },
+  { id: 'platform-addons', label: 'Add-ons Catalogue', canonicalPath: '/platform/addons', section: 'PLATFORM', aliases: ['/platform-addons', '/saas-addons'] },
+  { id: 'platform-pricing-calculator', label: 'Pricing Calculator', canonicalPath: '/platform/pricing-calculator', section: 'PLATFORM', aliases: ['/platform-pricing-calculator', '/pricing-calculator'] },
+  { id: 'platform-catalogue', label: 'SaaS Feature Catalogue', canonicalPath: '/platform/catalogue', section: 'PLATFORM', aliases: ['/platform-catalogue', '/platform/feature-catalogue', '/platform-feature-catalogue', '/product-catalogue'] },
+  { id: 'platform-features', label: 'Engineering Feature Flags', canonicalPath: '/platform/features', section: 'PLATFORM', aliases: ['/platform-features', '/platform/flags', '/platform-flags'] },
+  { id: 'platform-usage', label: 'Usage & Metering', canonicalPath: '/platform/usage', section: 'PLATFORM', aliases: ['/platform-usage', '/platform/metering'] },
+  { id: 'platform-security', label: 'Security Center', canonicalPath: '/platform/security', section: 'PLATFORM', aliases: ['/platform-security'] },
+  { id: 'platform-sessions', label: 'Active Sessions', canonicalPath: '/platform/sessions', section: 'PLATFORM', aliases: ['/platform-sessions'] },
+  { id: 'platform-audit', label: 'Audit Log', canonicalPath: '/platform/audit', section: 'PLATFORM', aliases: ['/platform-audit'] },
+  { id: 'platform-staff', label: 'Platform Staff & IAM', canonicalPath: '/platform/staff', section: 'PLATFORM', aliases: ['/platform-staff'] },
+  { id: 'platform-incidents', label: 'Incidents', canonicalPath: '/platform/incidents', section: 'PLATFORM', aliases: ['/platform-incidents'] },
 ];
 
 /**
@@ -531,7 +556,9 @@ export function isActiveRoute(itemId: string, currentNavOrPath: string): boolean
     }
 
     if (normCurrent === normTarget) return true;
-    if (normCurrent.startsWith(`${normTarget}/`)) return true;
+    if (!currentDef || currentDef.id === itemDef.id) {
+      if (normCurrent.startsWith(`${normTarget}/`)) return true;
+    }
   }
 
   // 4. Legacy and sub-navigation mappings

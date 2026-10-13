@@ -40,6 +40,21 @@ export const Step1Identity: React.FC<Props> = ({
   const [emailError, setEmailError] = useState<string>('');
   const [codeError, setCodeError] = useState<string>('');
 
+  // Synchronize internal state whenever parent formData updates or rehydrates
+  useEffect(() => {
+    const primary = formData.work_email || formData.personal_email || '';
+    if (primary && primary !== activeEmail) {
+      setActiveEmail(primary);
+    }
+    if (formData.email_type) {
+      setEmailType(formData.email_type);
+    } else if (formData.work_email) {
+      setEmailType('WORK');
+    } else if (formData.personal_email) {
+      setEmailType('PERSONAL');
+    }
+  }, [formData.work_email, formData.personal_email, formData.email_type]);
+
   const generateNewCode = () => {
     const randomNum = Math.floor(100 + Math.random() * 900);
     const newCode = `JCS-0${randomNum}`;
@@ -64,13 +79,13 @@ export const Step1Identity: React.FC<Props> = ({
       onChange({
         email_type: 'WORK',
         work_email: activeEmail,
-        personal_email: '',
+        personal_email: formData.personal_email || '',
       });
     } else if (newType === 'PERSONAL') {
       onChange({
         email_type: 'PERSONAL',
         personal_email: activeEmail,
-        work_email: '',
+        work_email: activeEmail || formData.work_email || '',
       });
     }
   };
@@ -78,9 +93,17 @@ export const Step1Identity: React.FC<Props> = ({
   const handleEmailValueChange = (val: string) => {
     setActiveEmail(val);
     if (emailType === 'WORK') {
-      onChange({ work_email: val, personal_email: '', email_type: 'WORK' });
+      onChange({
+        work_email: val,
+        personal_email: formData.personal_email || '',
+        email_type: 'WORK',
+      });
     } else if (emailType === 'PERSONAL') {
-      onChange({ personal_email: val, work_email: '', email_type: 'PERSONAL' });
+      onChange({
+        personal_email: val,
+        work_email: val,
+        email_type: 'PERSONAL',
+      });
     }
   };
 

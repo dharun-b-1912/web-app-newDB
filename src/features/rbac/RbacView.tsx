@@ -913,7 +913,7 @@ export const RbacView: React.FC = () => {
           </div>
 
           <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-[11px] text-[#07563D]">
-            <strong>Tenant Scope Protection</strong>: This user will automatically be bound to <strong>{organization?.legal_name || activeLegalEntity?.legal_name || 'Current Organization'}</strong> (<code className="font-mono">{organization?.id || activeLegalEntity?.organization_id || 'Active Tenant'}</code>). No manual tenant selection is required.
+            <strong>Tenant Scope Protection</strong>: This user will automatically be bound to <strong>{organization?.name || activeLegalEntity?.legal_name || 'Current Organization'}</strong> (<code className="font-mono">{organization?.id || activeLegalEntity?.organization_id || 'Active Tenant'}</code>). No manual tenant selection is required.
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">

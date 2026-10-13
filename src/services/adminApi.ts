@@ -23,6 +23,7 @@ import { governanceAuditService } from './governance/governanceAuditService';
 
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
 import { platformAuthInvitationService } from './platform/platformAuthInvitationService';
+import { featureEntitlementService } from './tenant/featureEntitlementService';
 import { userAuthProvisionerService } from './auth/userAuthProvisionerService';
 
 const INVITATIONS_STORAGE_KEY = 'joy_invitations_v1';
@@ -262,6 +263,48 @@ export const adminApi = {
   },
 
   /**
+   * Updates an existing user profile and account status.
+   */
+  async updateUser(id: string, updates: Partial<AdminUser>): Promise<boolean> {
+    if (isSupabaseEnabled && supabase) {
+      try {
+        const dbUpdates: any = {};
+        if (updates.name) dbUpdates.full_name = updates.name;
+        if (updates.status) dbUpdates.status = updates.status;
+        if (updates.email) dbUpdates.email = updates.email;
+        if (Object.keys(dbUpdates).length > 0) {
+          await supabase.from('user_profiles').update(dbUpdates).eq('id', id);
+        }
+      } catch (err) {
+        console.warn('[AdminApi] Database updateUser error:', err);
+      }
+    }
+    if (updates.status) {
+      try {
+        await api.updateEmployeeStatus(id, updates.status);
+      } catch (_) {}
+    }
+    return true;
+  },
+
+  /**
+   * Deletes a user profile and revokes access.
+   */
+  async deleteUser(id: string): Promise<boolean> {
+    if (isSupabaseEnabled && supabase) {
+      try {
+        await supabase.from('user_profiles').delete().eq('id', id);
+      } catch (err) {
+        console.warn('[AdminApi] Database deleteUser error:', err);
+      }
+    }
+    try {
+      await api.deleteEmployee(id);
+    } catch (_) {}
+    return true;
+  },
+
+  /**
    * Retrieves all dynamic system and custom roles from the RBAC engine.
    */
   getRoles(): AdminRole[] {
@@ -414,10 +457,11 @@ export const adminApi = {
   getSubscription(): SubscriptionInfo {
     const org = api.getOrganizationSync ? api.getOrganizationSync() : null;
     const employees = api.getEmployeesSync ? api.getEmployeesSync() : [];
+    const activePlan = featureEntitlementService.getCurrentTenantPlan();
     return {
-      plan_name: `Joy PeopleHR ${org?.plan || 'Enterprise'} Tier`,
+      plan_name: `Joy PeopleHR ${activePlan} Tier`,
       billing_cycle: 'Annual',
-      employee_limit: 1000,
+      employee_limit: activePlan === 'Starter' ? 50 : activePlan === 'Professional' ? 200 : activePlan === 'Business' ? 500 : 2500,
       active_employees: employees.length || 24,
       renewal_date: '2027-01-01',
       status: (org?.status === 'PastDue' || org?.status === 'Trial') ? org.status : 'Active',

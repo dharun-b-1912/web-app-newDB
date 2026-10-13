@@ -91,14 +91,52 @@ function setStore<T>(baseKey: string, val: T, tenantId = getActiveOrgId()): void
 
 const DEFAULT_SHIFTS: ShiftMaster[] = [
   {
+    id: 'shift-general-01',
+    tenant_id: 'org-joy-01',
+    shift_code: 'GEN-09',
+    shift_name: 'General Shift (09:30 AM – 06:30 PM)',
+    description: 'Standard corporate day schedule (09:30 - 18:30) with 15 mins late grace and 1 hour lunch break.',
+    shift_type: 'FIXED',
+    start_time: '09:30',
+    end_time: '18:30',
+    scheduled_duration_minutes: 540,
+    net_working_minutes: 480,
+    cross_midnight: false,
+    attendance_date_cutoff: '06:00',
+    grace_in_minutes: 15,
+    grace_out_minutes: 15,
+    early_out_tolerance_minutes: 15,
+    late_threshold_minutes: 30,
+    min_hours_full_day: 8,
+    min_hours_half_day: 4,
+    break_mode: 'FIXED',
+    breaks: [
+      { id: 'brk-gen-1', name: 'Lunch Break', start_time: '13:00', end_time: '14:00', duration_minutes: 60, is_paid: false },
+    ],
+    ot_enabled: true,
+    min_ot_threshold_minutes: 30,
+    weekday_ot_rate: 1.0,
+    weekly_off_ot_rate: 1.5,
+    holiday_ot_rate: 2.0,
+    max_ot_daily_minutes: 240,
+    requires_manager_approval: true,
+    requires_hr_approval: false,
+    applies_to: { type: 'ORGANIZATION', ids: [] },
+    effective_from: '2026-01-01',
+    status: 'ACTIVE',
+    version: 1,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
     id: 'shift-gen-09',
     tenant_id: 'org-joy-01',
     shift_code: 'GEN-09',
     shift_name: 'General Day Shift (Corporate)',
     description: 'Standard 9-hour corporate schedule with 1 hour lunch and 15 mins late grace.',
     shift_type: 'FIXED',
-    start_time: '09:00',
-    end_time: '18:00',
+    start_time: '09:30',
+    end_time: '18:30',
     scheduled_duration_minutes: 540,
     net_working_minutes: 480,
     cross_midnight: false,
@@ -121,6 +159,44 @@ const DEFAULT_SHIFTS: ShiftMaster[] = [
     max_ot_daily_minutes: 240,
     requires_manager_approval: true,
     requires_hr_approval: false,
+    applies_to: { type: 'ORGANIZATION', ids: [] },
+    effective_from: '2026-01-01',
+    status: 'ACTIVE',
+    version: 1,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'shift-morning-02',
+    tenant_id: 'org-joy-01',
+    shift_code: 'MOR-06',
+    shift_name: 'Morning Operations (06:00 AM – 02:30 PM)',
+    description: 'Early morning shift for production, logistics and operations with 10 mins grace and 30m break.',
+    shift_type: 'ROTATIONAL',
+    start_time: '06:00',
+    end_time: '14:30',
+    scheduled_duration_minutes: 510,
+    net_working_minutes: 480,
+    cross_midnight: false,
+    attendance_date_cutoff: '04:00',
+    grace_in_minutes: 10,
+    grace_out_minutes: 10,
+    early_out_tolerance_minutes: 10,
+    late_threshold_minutes: 20,
+    min_hours_full_day: 8,
+    min_hours_half_day: 4,
+    break_mode: 'PUNCH_BASED',
+    breaks: [
+      { id: 'brk-mor-1', name: 'Meal Break', start_time: '10:00', end_time: '10:30', duration_minutes: 30, is_paid: false },
+    ],
+    ot_enabled: true,
+    min_ot_threshold_minutes: 15,
+    weekday_ot_rate: 1.5,
+    weekly_off_ot_rate: 2.0,
+    holiday_ot_rate: 2.0,
+    max_ot_daily_minutes: 180,
+    requires_manager_approval: true,
+    requires_hr_approval: true,
     applies_to: { type: 'ORGANIZATION', ids: [] },
     effective_from: '2026-01-01',
     status: 'ACTIVE',
@@ -167,6 +243,44 @@ const DEFAULT_SHIFTS: ShiftMaster[] = [
     updated_at: new Date().toISOString(),
   },
   {
+    id: 'shift-evening-03',
+    tenant_id: 'org-joy-01',
+    shift_code: 'EVE-14',
+    shift_name: 'Evening Shift (02:00 PM – 10:30 PM)',
+    description: 'Afternoon to evening operations schedule (14:00 to 22:30).',
+    shift_type: 'ROTATIONAL',
+    start_time: '14:00',
+    end_time: '22:30',
+    scheduled_duration_minutes: 510,
+    net_working_minutes: 480,
+    cross_midnight: false,
+    attendance_date_cutoff: '12:00',
+    grace_in_minutes: 10,
+    grace_out_minutes: 10,
+    early_out_tolerance_minutes: 10,
+    late_threshold_minutes: 20,
+    min_hours_full_day: 8,
+    min_hours_half_day: 4,
+    break_mode: 'PUNCH_BASED',
+    breaks: [
+      { id: 'brk-eve-1', name: 'Dinner Break', start_time: '18:00', end_time: '18:30', duration_minutes: 30, is_paid: false },
+    ],
+    ot_enabled: true,
+    min_ot_threshold_minutes: 15,
+    weekday_ot_rate: 1.5,
+    weekly_off_ot_rate: 2.0,
+    holiday_ot_rate: 2.0,
+    max_ot_daily_minutes: 180,
+    requires_manager_approval: true,
+    requires_hr_approval: true,
+    applies_to: { type: 'ORGANIZATION', ids: [] },
+    effective_from: '2026-01-01',
+    status: 'ACTIVE',
+    version: 1,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
     id: 'shift-eve-14',
     tenant_id: 'org-joy-01',
     shift_code: 'EVE-14',
@@ -198,6 +312,44 @@ const DEFAULT_SHIFTS: ShiftMaster[] = [
     requires_manager_approval: true,
     requires_hr_approval: true,
     applies_to: { type: 'DEPARTMENTS', ids: ['Production', 'Assembly'] },
+    effective_from: '2026-01-01',
+    status: 'ACTIVE',
+    version: 1,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'shift-night-04',
+    tenant_id: 'org-joy-01',
+    shift_code: 'NGT-22',
+    shift_name: 'Night / Offshore Shift (10:00 PM – 06:30 AM)',
+    description: 'Graveyard / 24x7 shift spanning across midnight (22:00 to 06:30 next day).',
+    shift_type: 'NIGHT_SHIFT',
+    start_time: '22:00',
+    end_time: '06:30',
+    scheduled_duration_minutes: 510,
+    net_working_minutes: 480,
+    cross_midnight: true,
+    attendance_date_cutoff: '06:00',
+    grace_in_minutes: 15,
+    grace_out_minutes: 15,
+    early_out_tolerance_minutes: 15,
+    late_threshold_minutes: 30,
+    min_hours_full_day: 8,
+    min_hours_half_day: 4,
+    break_mode: 'PUNCH_BASED',
+    breaks: [
+      { id: 'brk-ngt-1', name: 'Midnight Meal', start_time: '02:00', end_time: '02:30', duration_minutes: 30, is_paid: false },
+    ],
+    ot_enabled: true,
+    min_ot_threshold_minutes: 30,
+    weekday_ot_rate: 1.5,
+    weekly_off_ot_rate: 2.0,
+    holiday_ot_rate: 2.0,
+    max_ot_daily_minutes: 180,
+    requires_manager_approval: true,
+    requires_hr_approval: true,
+    applies_to: { type: 'ORGANIZATION', ids: [] },
     effective_from: '2026-01-01',
     status: 'ACTIVE',
     version: 1,
@@ -296,6 +448,21 @@ const DEFAULT_POLICIES: AttendancePolicy[] = [
     night_shift_rules: {
       cutoff_hour: 6,
     },
+    regularization_rules: {
+      allowed_within_days: 3,
+      max_backdated_days: 30,
+      requires_reason: true,
+      requires_attachment: false,
+      approver_role: 'Reporting Manager',
+    },
+    approval_workflow: {
+      levels: [
+        { stage: 'Stage 1: Direct Approval', role: 'Reporting Manager', sla_hours: 24 },
+        { stage: 'Stage 2: HR Signoff', role: 'HR Administrator', sla_hours: 48 },
+      ],
+      auto_escalate: true,
+      reminder_hours: 12,
+    },
     applies_to: { type: 'ORGANIZATION', ids: [] },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -351,6 +518,21 @@ const DEFAULT_POLICIES: AttendancePolicy[] = [
     night_shift_rules: {
       cutoff_hour: 6,
     },
+    regularization_rules: {
+      allowed_within_days: 3,
+      max_backdated_days: 15,
+      requires_reason: true,
+      requires_attachment: false,
+      approver_role: 'Plant Manager',
+    },
+    approval_workflow: {
+      levels: [
+        { stage: 'Stage 1: Plant Lead', role: 'Plant Manager', sla_hours: 12 },
+        { stage: 'Stage 2: Operations HR', role: 'Operations HR', sla_hours: 24 },
+      ],
+      auto_escalate: true,
+      reminder_hours: 8,
+    },
     applies_to: { type: 'DEPARTMENTS', ids: ['Production', 'Manufacturing', 'Assembly'] },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -369,12 +551,74 @@ class AttendanceRosterService {
       setStore(STORAGE_KEYS.SHIFTS, tenantShifts, tenantId);
       return tenantShifts;
     }
+    // Self-healing migration: Ensure all standard shifts are present in the list
+    const existingIds = new Set(list.map(s => s.id));
+    let hasAdditions = false;
+    for (const def of DEFAULT_SHIFTS) {
+      if (!existingIds.has(def.id)) {
+        list.push({ ...def, tenant_id: tenantId });
+        hasAdditions = true;
+      }
+    }
+    if (hasAdditions) {
+      setStore(STORAGE_KEYS.SHIFTS, list, tenantId);
+    }
     return list;
   }
 
-  getShiftById(shiftId: string, tenantId = getActiveOrgId()): ShiftMaster | null {
+  getShiftById(shiftId?: string | null, tenantId = getActiveOrgId()): ShiftMaster | null {
+    if (!shiftId) return null;
     const shifts = this.getShifts(tenantId);
-    return shifts.find(s => s.id === shiftId || s.shift_code === shiftId) || null;
+    const cleaned = String(shiftId).trim();
+    const lower = cleaned.toLowerCase();
+
+    // 1. Direct match by id or shift_code
+    let match = shifts.find(s => s.id === cleaned || s.shift_code === cleaned);
+    if (match) return match;
+
+    // 2. Case-insensitive id or code
+    match = shifts.find(s => s.id.toLowerCase() === lower || s.shift_code.toLowerCase() === lower);
+    if (match) return match;
+
+    // 3. Known ID Alias Mapping
+    const aliasMap: Record<string, string> = {
+      'shift-general-01': 'shift-gen-09',
+      'shift-gen-09': 'shift-general-01',
+      'f847c561-4bbb-4b9f-a2dd-003162897eef': 'shift-gen-09',
+      'shift-morning-02': 'shift-mor-06',
+      'shift-mor-06': 'shift-morning-02',
+      'shift-evening-03': 'shift-eve-14',
+      'shift-eve-14': 'shift-evening-03',
+      'shift-night-04': 'shift-ngt-22',
+      'shift-ngt-22': 'shift-night-04',
+      'gen-09': 'shift-gen-09',
+      'gen-10': 'shift-gen-10',
+      'mor-06': 'shift-mor-06',
+      'eve-14': 'shift-eve-14',
+      'ngt-22': 'shift-ngt-22',
+    };
+    const targetAlias = aliasMap[lower];
+    if (targetAlias) {
+      match = shifts.find(s => s.id.toLowerCase() === targetAlias.toLowerCase() || s.shift_code.toLowerCase() === targetAlias.toLowerCase());
+      if (match) return match;
+    }
+
+    // 4. Name or keyword match
+    match = shifts.find(s => {
+      const sName = s.shift_name.toLowerCase();
+      const sCode = s.shift_code.toLowerCase();
+      if (lower.includes('morning') && (sCode.includes('mor') || sName.includes('morning'))) return true;
+      if (lower.includes('evening') && (sCode.includes('eve') || sName.includes('evening'))) return true;
+      if (lower.includes('night') && (sCode.includes('ngt') || sName.includes('night'))) return true;
+      if (lower.includes('offshore') && (sCode.includes('ngt') || sName.includes('offshore'))) return true;
+      if (lower.includes('gen-10') && (sCode === 'gen-10' || sName.includes('gen-10') || sName.includes('corporate )'))) return true;
+      if (lower.includes('general') && (sCode.includes('gen') || sName.includes('general'))) return true;
+      return sName.includes(lower) || lower.includes(sName);
+    });
+    if (match) return match;
+
+    // 5. Fallback
+    return shifts[0] || DEFAULT_SHIFTS[0] || null;
   }
 
   saveShift(
@@ -504,32 +748,67 @@ class AttendanceRosterService {
     return list.filter(r => r.date >= startDate && r.date <= endDate);
   }
 
-  getRosterForEmployeeOnDate(employeeId: string, date: string, tenantId = getActiveOrgId()): EmployeeRosterEntry {
-    const list = getStore<EmployeeRosterEntry[]>(STORAGE_KEYS.ROSTERS, [], tenantId);
-    const match = list.find(r => r.employee_id === employeeId && r.date === date);
+  getRosterForEmployeeOnDate(
+    employeeId: string,
+    date: string,
+    tenantId = getActiveOrgId(),
+    employeeObj?: any
+  ): EmployeeRosterEntry {
+    // Dynamically retrieve employee assignment
+    let emp = employeeObj;
+    if (!emp && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('workforce_employees');
+        if (raw) {
+          const emps = JSON.parse(raw);
+          emp = emps.find((e: any) =>
+            (e.id && String(e.id).toLowerCase() === String(employeeId).toLowerCase()) ||
+            (e.employee_code && String(e.employee_code).toLowerCase() === String(employeeId).toLowerCase())
+          );
+        }
+      } catch (_) {}
+    }
 
-    if (match) return match;
+    const assignedShiftId =
+      emp?.employment?.shift_id ||
+      emp?.shift_id ||
+      emp?.profile?.shift_id ||
+      emp?.employment?.shift_name ||
+      emp?.shift_name;
+
+    const list = getStore<EmployeeRosterEntry[]>(STORAGE_KEYS.ROSTERS, [], tenantId);
+    const match = list.find(r => (r.employee_id === employeeId || r.employee_code === employeeId) && r.date === date);
+
+    // If there is an explicit daily override, honor it
+    if (match && match.is_override) return match;
+
+    const resolvedShift = (assignedShiftId ? this.getShiftById(assignedShiftId, tenantId) : null) ||
+      (match ? this.getShiftById(match.shift_id, tenantId) : null) ||
+      this.getShifts(tenantId)[0] ||
+      DEFAULT_SHIFTS[0];
 
     // Default Fallback: General Day Shift Monday-Friday, Saturday/Sunday Off
     const dayOfWeek = new Date(date).getDay(); // 0 = Sun, 6 = Sat
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-    const defaultShift = this.getShifts(tenantId)[0] || DEFAULT_SHIFTS[0];
+
+    const empName = emp?.display_name || emp?.name || `${emp?.first_name || ''} ${emp?.last_name || ''}`.trim() || match?.employee_name || 'Employee';
+    const empCode = emp?.employee_code || match?.employee_code || `EMP-${employeeId.replace(/\D/g, '') || '001'}`;
 
     return {
-      id: `roster-dyn-${employeeId}-${date}`,
+      id: match?.id || `roster-dyn-${employeeId}-${date}`,
       tenant_id: tenantId,
       employee_id: employeeId,
-      employee_code: `EMP-${employeeId.replace(/\D/g, '') || '001'}`,
-      employee_name: 'Employee',
+      employee_code: empCode,
+      employee_name: empName,
       date,
-      shift_id: defaultShift.id,
-      shift_code: defaultShift.shift_code,
-      shift_name: defaultShift.shift_name,
-      shift_type: defaultShift.shift_type,
-      is_weekly_off: isWeekend,
-      is_holiday: false,
+      shift_id: resolvedShift.id,
+      shift_code: resolvedShift.shift_code,
+      shift_name: resolvedShift.shift_name,
+      shift_type: resolvedShift.shift_type,
+      is_weekly_off: match ? match.is_weekly_off : isWeekend,
+      is_holiday: match ? match.is_holiday : false,
       is_override: false,
-      assigned_by: 'System Auto-Default',
+      assigned_by: emp ? 'Employee Profile Assignment' : (match?.assigned_by || 'System Auto-Default'),
       updated_at: new Date().toISOString(),
     };
   }

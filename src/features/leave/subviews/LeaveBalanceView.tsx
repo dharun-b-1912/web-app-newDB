@@ -298,7 +298,7 @@ export const LeaveBalanceView: React.FC = () => {
                           variant={
                             tx.transaction_type === 'Accrual' || tx.transaction_type === 'Grant'
                               ? 'emerald'
-                              : tx.transaction_type === 'Debit' || tx.transaction_type === 'Encashment'
+                              : (tx.transaction_type as string) === 'Debit' || tx.transaction_type === 'Consumption' || tx.transaction_type === 'Encashment'
                               ? 'rose'
                               : 'blue'
                           }

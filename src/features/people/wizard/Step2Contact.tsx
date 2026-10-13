@@ -108,22 +108,29 @@ export const Step2Contact: React.FC<Props> = ({ formData, onChange }) => {
 
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">
-              Blood Group
+              Blood Group <span className="text-gray-400 font-normal">(Optional)</span>
             </label>
-            <select
-              value={formData.blood_group}
-              onChange={(e) => onChange({ blood_group: e.target.value })}
-              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium"
-            >
-              <option value="O+">O Positive (O+)</option>
-              <option value="O-">O Negative (O-)</option>
-              <option value="A+">A Positive (A+)</option>
-              <option value="A-">A Negative (A-)</option>
-              <option value="B+">B Positive (B+)</option>
-              <option value="B-">B Negative (B-)</option>
-              <option value="AB+">AB Positive (AB+)</option>
-              <option value="AB-">AB Negative (AB-)</option>
-            </select>
+            <input
+              list="blood_group_options"
+              type="text"
+              placeholder="Type or pick (e.g. B+, O+, A+, AB+)"
+              value={formData.blood_group || ''}
+              onChange={(e) => onChange({ blood_group: e.target.value.toUpperCase().trim() })}
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold text-gray-900"
+            />
+            <datalist id="blood_group_options">
+              <option value="O+" />
+              <option value="O-" />
+              <option value="A+" />
+              <option value="A-" />
+              <option value="B+" />
+              <option value="B-" />
+              <option value="AB+" />
+              <option value="AB-" />
+              <option value="A1+" />
+              <option value="A1B+" />
+              <option value="Bombay Blood Group" />
+            </datalist>
           </div>
         </div>
 

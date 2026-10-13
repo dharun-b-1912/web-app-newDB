@@ -95,6 +95,31 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     }
   });
   const [employees, setEmployees] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>(() => {
+    try {
+      return api.getDepartmentsSync();
+    } catch {
+      return [];
+    }
+  });
+
+  const deptMap = useMemo(() => {
+    const map = new Map<string, string>();
+    departments.forEach((d: any) => {
+      if (d?.id && d?.name) map.set(String(d.id).toLowerCase().trim(), String(d.name).trim());
+    });
+    return map;
+  }, [departments]);
+
+  const getEmpDepartmentName = useCallback((emp: any) => {
+    if (!emp) return '';
+    const dId = String(emp.department_id || emp.employment?.department_id || '').toLowerCase().trim();
+    if (dId && deptMap.has(dId)) {
+      return deptMap.get(dId)!;
+    }
+    return (emp.department_name || emp.department || emp.employment?.department_name || '').trim();
+  }, [deptMap]);
+
   const [assignments, setAssignments] = useState<EmployeeWorkLocationAssignment[]>(() => {
     try {
       return workLocationService.getAllAssignments();
@@ -153,6 +178,12 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
 
     const evts = workLocationService.getLocationEvents();
     setLocationEvents(evts);
+
+    api.getDepartments().then((depts) => {
+      if (depts && depts.length > 0) {
+        setDepartments(depts);
+      }
+    }).catch(() => []);
 
     api.getEmployees().then((emps) => {
       setEmployees(emps);
@@ -658,7 +689,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                   >
                     {employees.map((emp) => (
                       <option key={emp.id} value={emp.id}>
-                        {emp.display_name || emp.name} ({emp.employee_code || 'WF-EMP'}) - {emp.department_name || emp.department || 'Operations'}
+                        {emp.display_name || emp.name} ({emp.employee_code || 'WF-EMP'}) - {getEmpDepartmentName(emp) || 'General'}
                       </option>
                     ))}
                   </select>
@@ -930,7 +961,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                         <strong className="text-gray-900 block">{emp.display_name || emp.name}</strong>
                         <span className="text-[11px] text-gray-400 font-mono">{emp.employee_code || 'WF-EMP'}</span>
                       </td>
-                      <td className="p-3.5 text-gray-700 font-medium">{emp.department_name || emp.department || 'Operations'}</td>
+                      <td className="p-3.5 text-gray-700 font-medium">{getEmpDepartmentName(emp) || 'General'}</td>
                       <td className="p-3.5">
                         {isMapped && assignedLocations.length > 0 ? (
                           <div className="flex flex-wrap gap-1.5">
@@ -1569,7 +1600,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                     {selectedEmpForMapping.display_name || selectedEmpForMapping.name}
                   </strong>
                   <span className="text-[11px] text-blue-700 font-mono">
-                    {selectedEmpForMapping.employee_code || selectedEmpForMapping.id} • {selectedEmpForMapping.department_name || 'Operations'}
+                    {selectedEmpForMapping.employee_code || selectedEmpForMapping.id} • {getEmpDepartmentName(selectedEmpForMapping) || 'General'}
                   </span>
                 </div>
 

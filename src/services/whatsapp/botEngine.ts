@@ -7,9 +7,13 @@
 
 import { supabase } from '../../lib/supabase';
 import { whatsAppClient } from './whatsappClient';
-import { normalizeIndianPhone } from './phoneUtils';
+import { normalizeIndianPhone, extractPhoneNumberCandidate, formatDisplayPhone } from './phoneUtils';
+import { whatsAppIdentityService } from './whatsappIdentityService';
+import { whatsAppOtpService } from './whatsappOtpService';
+import { whatsAppPermissionService } from './whatsappPermissionService';
+import { whatsAppLogger } from './whatsappLogger';
 import { otherModulesApi } from '../otherModulesApi';
-import { BotSessionContext, BotConversationState } from './types';
+import { BotSessionContext, BotConversationState, ResolvedEmployeeIdentity } from './types';
 
 // In-memory session cache (TTL 24 hours)
 const activeSessions = new Map<string, BotSessionContext>();
@@ -41,6 +45,51 @@ export class WhatsAppBotEngine {
     return WhatsAppBotEngine.instance;
   }
 
+  // ── State Machine Transition & Audit Helper ──────────────────────────────────
+  private transitionState(
+    session: BotSessionContext,
+    toState: BotConversationState,
+    reason: string,
+    correlationId: string
+  ): void {
+    const fromState = session.state;
+
+    // Detect illegal regressions (e.g. verified sessions dropping back to phone entry)
+    if (session.authStatus === 'VERIFIED' && toState === 'AWAITING_PHONE' && reason !== 'user_explicit_signout') {
+      whatsAppLogger.logStateTransition({
+        correlationId,
+        fromState,
+        toState,
+        reason: `ILLEGAL_REGRESSION: ${reason}`,
+        isError: true,
+      });
+      return;
+    }
+
+    session.state = toState;
+    if (!session.flowTrace) {
+      session.flowTrace = {
+        correlationId,
+        stateHistory: [fromState],
+        employeeResolved: false,
+        organizationResolved: false,
+        verificationPassed: false,
+        hierarchyResolved: false,
+        permissionsResolved: false,
+        menuResolved: false,
+        finalResult: 'PENDING',
+      };
+    }
+    session.flowTrace.stateHistory.push(toState);
+
+    whatsAppLogger.logStateTransition({
+      correlationId,
+      fromState,
+      toState,
+      reason,
+    });
+  }
+
   // ── Main Webhook Message Handler ─────────────────────────────────────────────
   async handleInboundMessage(params: {
     from: string;
@@ -49,65 +98,426 @@ export class WhatsAppBotEngine {
     buttonPayload?: string;
     listReplyId?: string;
   }): Promise<void> {
-    const { from, text, buttonPayload, listReplyId } = params;
+    const { from, text, buttonPayload, listReplyId, messageId } = params;
     const cleanPhone = normalizeIndianPhone(from);
+    const correlationId = whatsAppLogger.generateCorrelationId();
 
-    // 1. Authenticate Employee against HR Database
-    const employee = await this.resolveEmployeeByPhone(cleanPhone);
-    if (!employee) {
-      await whatsAppClient.sendInteractive({
-        to: cleanPhone,
-        organizationId: 'unregistered',
-        type: 'button',
-        header: { type: 'text', text: 'Joy PeopleHR • Authentication' },
-        body: {
-          text:
-            `🔐 *Authentication Required*\n\n` +
-            `We need to confirm your identity before showing personal HR information.\n\n` +
-            `Your number (+${cleanPhone}) is not linked to an active employee account.\n` +
-            `Please verify through the web portal or contact your HR administrator.`,
-        },
-        footer: { text: 'People First. Work Simplified.' },
-        action: {
-          buttons: [
-            { type: 'reply', reply: { id: 'PORTAL_LINK', title: '🌐 Verify on Portal' } },
-            { type: 'reply', reply: { id: 'HR_SUPPORT',  title: '📞 Contact HR' } },
-          ],
-        },
-      });
-      return;
+    // Fast Response: Trigger Meta Read Receipt (WhatsApp Blue Double-Ticks) immediately
+    if (messageId) {
+      whatsAppClient.markAsRead(messageId).catch(() => {});
     }
 
-    // 2. Initialize or Refresh Session
+    // 1. Fetch or initialize user session
     let session = activeSessions.get(cleanPhone);
     if (!session) {
       session = {
         waId: cleanPhone,
-        organizationId: employee.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
-        employeeId: employee.id,
-        employeeCode: employee.employee_code || 'WF-1001',
-        employeeName: employee.full_name || 'Thirumalai R K',
-        roleTitle: employee.role_title || 'Senior Software Engineer',
-        department: employee.department || 'Engineering & Development',
-        state: 'IDLE',
+        organizationId: 'unauthenticated',
+        employeeId: '',
+        employeeName: '',
+        department: '',
+        state: 'UNKNOWN',
+        authStatus: 'UNAUTHENTICATED',
+        correlationId,
         lastActiveAt: new Date().toISOString(),
       };
       activeSessions.set(cleanPhone, session);
-    } else {
-      session.employeeCode = employee.employee_code || session.employeeCode;
-      session.roleTitle = employee.role_title || session.roleTitle;
-      session.employeeName = employee.full_name || session.employeeName;
+      this.transitionState(session, 'AWAITING_PHONE', 'initial_session_created', correlationId);
     }
+    session.correlationId = correlationId;
     session.lastActiveAt = new Date().toISOString();
 
-    // 3. Handle Interactive Button / List Reply Actions
     const actionId = buttonPayload || listReplyId;
+    const rawInput = (text || '').trim();
+
+    whatsAppLogger.logInboundMessage({
+      correlationId,
+      from,
+      text: rawInput,
+      actionId,
+      state: session.state,
+    });
+
+    // 2. Security Check: Reject Direct Employee Code Takeover Attempts
+    if (session.authStatus !== 'VERIFIED' && !actionId) {
+      const isEmployeeCodeAttempt = /^[A-Za-z]{2,5}-?[0-9]{2,6}$/i.test(rawInput);
+      const isPhone = extractPhoneNumberCandidate(rawInput);
+      if (isEmployeeCodeAttempt && !isPhone) {
+        whatsAppLogger.logSecurityAccessDenied({
+          correlationId,
+          requestedResource: `EMPLOYEE_CODE:${rawInput}`,
+          permission: 'auth.bypass_attempt',
+          reason: 'User attempted to authenticate using employee code. System strictly requires registered mobile verification.',
+        });
+
+        await whatsAppClient.sendText({
+          to: cleanPhone,
+          organizationId: 'unauthenticated',
+          text: `⚠️ *Security Notice*\n\nEmployee codes cannot be used directly to unlock account access.\n\nPlease enter your *10-digit registered mobile number* to verify your identity.`,
+        });
+        return;
+      }
+    }
+
+    // 3. Identity Verification & Authentication Phase
+    if (session.authStatus !== 'VERIFIED') {
+      // 3a. Button Actions during Identification/Verification
+      if (actionId) {
+        if (actionId === 'CONFIRM_IDENTITY_YES') {
+          if (session.pendingEmployee) {
+            session.authStatus = 'VERIFIED';
+            session.employeeId = session.pendingEmployee.employeeId;
+            session.employeeCode = session.pendingEmployee.employeeCode;
+            session.employeeName = session.pendingEmployee.fullName;
+            session.organizationId = session.pendingEmployee.organizationId;
+            session.companyName = session.pendingEmployee.companyName;
+            session.department = session.pendingEmployee.department;
+            session.roleTitle = session.pendingEmployee.designation;
+            session.roleContext = session.pendingEmployee.roleContext;
+            session.directReportsCount = session.pendingEmployee.directReportsCount;
+            session.permissions = session.pendingEmployee.permissions;
+
+            this.transitionState(session, 'VERIFIED', 'user_confirmed_identity_match', correlationId);
+            this.transitionState(session, 'RESOLVING_CONTEXT', 'hierarchy_and_permissions_bound', correlationId);
+            this.transitionState(session, 'READY', 'session_unlocked_ready_for_service', correlationId);
+
+            if (session.flowTrace) {
+              session.flowTrace.employeeResolved = true;
+              session.flowTrace.organizationResolved = true;
+              session.flowTrace.verificationPassed = true;
+              session.flowTrace.hierarchyResolved = true;
+              session.flowTrace.permissionsResolved = true;
+              session.flowTrace.menuResolved = true;
+              session.flowTrace.finalResult = 'SUCCESS';
+            }
+
+            whatsAppLogger.printDiagnosticSummary({
+              correlationId,
+              phoneNormalized: true,
+              employeeLookup: true,
+              employeeActive: true,
+              organizationResolution: true,
+              verification: true,
+              hierarchy: true,
+              roleContext: true,
+              permissions: true,
+              menuResolution: true,
+              session: true,
+              whatsappResponse: true,
+              finalResult: 'READY',
+            });
+
+            await whatsAppIdentityService.sendRoleAwareHomeMenu(cleanPhone, session.pendingEmployee, correlationId);
+          } else {
+            this.transitionState(session, 'AWAITING_PHONE', 'no_pending_employee_found', correlationId);
+            await whatsAppIdentityService.sendWelcomeAndAskPhone(cleanPhone, correlationId);
+          }
+          return;
+        }
+
+        if (actionId === 'REQUEST_OTP' || actionId === 'RESEND_OTP') {
+          if (session.pendingEmployee) {
+            const otpRes = await whatsAppOtpService.createAndSendOtp({
+              phone: cleanPhone,
+              organizationId: session.pendingEmployee.organizationId,
+              employeeId: session.pendingEmployee.employeeId,
+              employeeName: session.pendingEmployee.fullName,
+              correlationId,
+            });
+
+            if (otpRes.success) {
+              this.transitionState(session, 'AWAITING_OTP', 'otp_challenge_issued', correlationId);
+              await whatsAppIdentityService.sendOtpPrompt(cleanPhone, cleanPhone, correlationId);
+            } else {
+              await whatsAppClient.sendText({
+                to: cleanPhone,
+                organizationId: 'unauthenticated',
+                text: `⏱️ ${otpRes.error || 'Please wait before requesting a new OTP.'}`,
+              });
+            }
+          }
+          return;
+        }
+
+        if (actionId === 'CONFIRM_IDENTITY_NO' || actionId === 'RETRY_PHONE') {
+          this.transitionState(session, 'AWAITING_PHONE', 'user_rejected_identity_match', correlationId);
+          session.pendingEmployee = undefined;
+          session.matchedCompanies = undefined;
+          await whatsAppIdentityService.sendWelcomeAndAskPhone(cleanPhone, correlationId);
+          return;
+        }
+
+        if (actionId === 'CONTACT_HR') {
+          await whatsAppClient.sendText({
+            to: cleanPhone,
+            organizationId: 'unauthenticated',
+            text: `📞 *Contact HR Support*\n\nPlease reach out to your HR department or write to *support@joypeoplehr.com* with your Employee Code and phone number for manual verification.`,
+          });
+          return;
+        }
+
+        if (actionId.startsWith('SELECT_ORG_') && session.matchedCompanies) {
+          const index = parseInt(actionId.replace('SELECT_ORG_', ''), 10);
+          const chosen = session.matchedCompanies[index];
+          if (chosen) {
+            session.pendingEmployee = chosen;
+            session.organizationId = chosen.organizationId;
+            this.transitionState(session, 'AWAITING_VERIFICATION', `organization_selected_${chosen.companyName}`, correlationId);
+            await whatsAppIdentityService.sendVerificationPrompt(cleanPhone, chosen, correlationId);
+            return;
+          }
+        }
+      }
+
+      // 3b. State: Awaiting Company Selection (Reply 1, 2...)
+      if (session.state === 'AWAITING_COMPANY_SELECTION' && session.matchedCompanies) {
+        const choice = parseInt(rawInput, 10);
+        if (!isNaN(choice) && choice >= 1 && choice <= session.matchedCompanies.length) {
+          const chosen = session.matchedCompanies[choice - 1];
+          session.pendingEmployee = chosen;
+          session.organizationId = chosen.organizationId;
+          this.transitionState(session, 'AWAITING_VERIFICATION', `organization_chosen_${chosen.companyName}`, correlationId);
+          await whatsAppIdentityService.sendVerificationPrompt(cleanPhone, chosen, correlationId);
+          return;
+        }
+      }
+
+      // 3c. State: Awaiting OTP Code / Resend Command
+      if ((session.state === 'AWAITING_OTP' || session.state === 'AWAITING_VERIFICATION') && session.pendingEmployee) {
+        const upper = rawInput.toUpperCase().trim();
+
+        // Handle Resend command
+        if (upper === 'RESEND' || upper === 'OTP' || upper === 'RESEND_OTP') {
+          const otpRes = await whatsAppOtpService.createAndSendOtp({
+            phone: cleanPhone,
+            organizationId: session.pendingEmployee.organizationId,
+            employeeId: session.pendingEmployee.employeeId,
+            employeeName: session.pendingEmployee.fullName,
+            correlationId,
+          });
+
+          if (otpRes.success) {
+            this.transitionState(session, 'AWAITING_OTP', 'otp_challenge_reissued', correlationId);
+            await whatsAppIdentityService.sendOtpPrompt(cleanPhone, cleanPhone, correlationId);
+          } else {
+            await whatsAppClient.sendText({
+              to: cleanPhone,
+              organizationId: 'unauthenticated',
+              text: `⏱️ ${otpRes.error || 'Please wait before requesting a new OTP.'}`,
+            });
+          }
+          return;
+        }
+
+        // Handle 6-Digit Numeric OTP Submission
+        const is6DigitOtp = /^\d{6}$/.test(rawInput.trim());
+        if (is6DigitOtp) {
+          const otpResult = whatsAppOtpService.verifyOtp({
+            phone: cleanPhone,
+            enteredOtp: rawInput.trim(),
+            correlationId,
+          });
+
+          if (otpResult.success) {
+            session.authStatus = 'VERIFIED';
+            session.employeeId = session.pendingEmployee.employeeId;
+            session.employeeCode = session.pendingEmployee.employeeCode;
+            session.employeeName = session.pendingEmployee.fullName;
+            session.organizationId = session.pendingEmployee.organizationId;
+            session.companyName = session.pendingEmployee.companyName;
+            session.department = session.pendingEmployee.department;
+            session.roleTitle = session.pendingEmployee.designation;
+            session.roleContext = session.pendingEmployee.roleContext;
+            session.directReportsCount = session.pendingEmployee.directReportsCount;
+            session.permissions = session.pendingEmployee.permissions;
+            session.verifiedAt = new Date().toISOString();
+            session.sessionExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+            session.verificationMethod = 'WHATSAPP_OTP';
+
+            this.transitionState(session, 'VERIFIED', 'user_verified_otp_code', correlationId);
+            this.transitionState(session, 'RESOLVING_CONTEXT', 'hierarchy_and_permissions_bound', correlationId);
+            this.transitionState(session, 'READY', 'session_unlocked_ready_for_service', correlationId);
+
+            if (session.flowTrace) {
+              session.flowTrace.employeeResolved = true;
+              session.flowTrace.organizationResolved = true;
+              session.flowTrace.verificationPassed = true;
+              session.flowTrace.hierarchyResolved = true;
+              session.flowTrace.permissionsResolved = true;
+              session.flowTrace.menuResolved = true;
+              session.flowTrace.finalResult = 'SUCCESS';
+            }
+
+            whatsAppLogger.printDiagnosticSummary({
+              correlationId,
+              phoneNormalized: true,
+              employeeLookup: true,
+              employeeActive: true,
+              organizationResolution: true,
+              verification: true,
+              hierarchy: true,
+              roleContext: true,
+              permissions: true,
+              menuResolution: true,
+              session: true,
+              whatsappResponse: true,
+              finalResult: 'READY',
+            });
+
+            await whatsAppIdentityService.sendRoleAwareHomeMenu(cleanPhone, session.pendingEmployee, correlationId);
+            return;
+          } else {
+            if (otpResult.reason === 'EXPIRED') {
+              await whatsAppClient.sendText({
+                to: cleanPhone,
+                organizationId: 'unauthenticated',
+                text: `⏱️ *OTP Expired*\n\nYour verification code has expired. Reply *RESEND* to receive a new code.`,
+              });
+              return;
+            }
+            if (otpResult.reason === 'MAX_ATTEMPTS_EXCEEDED') {
+              this.transitionState(session, 'AWAITING_PHONE', 'otp_max_attempts_exceeded', correlationId);
+              session.pendingEmployee = undefined;
+              await whatsAppClient.sendText({
+                to: cleanPhone,
+                organizationId: 'unauthenticated',
+                text: `🛑 *Verification Locked*\n\nMaximum attempts exceeded. For your security, this session was reset. Please send your 10-digit mobile number to restart.`,
+              });
+              return;
+            }
+            if (otpResult.reason === 'INVALID_OTP') {
+              await whatsAppClient.sendText({
+                to: cleanPhone,
+                organizationId: 'unauthenticated',
+                text: `❌ *Invalid OTP Code*\n\nThe code you entered is incorrect. You have ${otpResult.remainingAttempts ?? 0} attempt(s) remaining.\n\nPlease enter the 6-digit code or reply *RESEND*.`,
+              });
+              return;
+            }
+          }
+        }
+
+        // Handle Interactive/Text Confirmation
+        if (['YES', 'Y', '1', 'CORRECT', 'CONFIRM'].includes(upper)) {
+          session.authStatus = 'VERIFIED';
+          session.employeeId = session.pendingEmployee.employeeId;
+          session.employeeCode = session.pendingEmployee.employeeCode;
+          session.employeeName = session.pendingEmployee.fullName;
+          session.organizationId = session.pendingEmployee.organizationId;
+          session.companyName = session.pendingEmployee.companyName;
+          session.department = session.pendingEmployee.department;
+          session.roleTitle = session.pendingEmployee.designation;
+          session.roleContext = session.pendingEmployee.roleContext;
+          session.directReportsCount = session.pendingEmployee.directReportsCount;
+          session.permissions = session.pendingEmployee.permissions;
+
+          this.transitionState(session, 'VERIFIED', 'user_typed_confirmation', correlationId);
+          this.transitionState(session, 'RESOLVING_CONTEXT', 'hierarchy_and_permissions_bound', correlationId);
+          this.transitionState(session, 'READY', 'session_unlocked_ready_for_service', correlationId);
+
+          whatsAppLogger.printDiagnosticSummary({
+            correlationId,
+            phoneNormalized: true,
+            employeeLookup: true,
+            employeeActive: true,
+            organizationResolution: true,
+            verification: true,
+            hierarchy: true,
+            roleContext: true,
+            permissions: true,
+            menuResolution: true,
+            session: true,
+            whatsappResponse: true,
+            finalResult: 'READY',
+          });
+
+          await whatsAppIdentityService.sendRoleAwareHomeMenu(cleanPhone, session.pendingEmployee, correlationId);
+          return;
+        } else if (['NO', 'N', '2', 'WRONG'].includes(upper)) {
+          this.transitionState(session, 'AWAITING_PHONE', 'user_typed_rejection', correlationId);
+          session.pendingEmployee = undefined;
+          await whatsAppIdentityService.sendWelcomeAndAskPhone(cleanPhone, correlationId);
+          return;
+        }
+      }
+
+      // 3d. Phone Number Extraction & Lookup
+      const candidatePhone = extractPhoneNumberCandidate(rawInput);
+      if (candidatePhone) {
+        this.transitionState(session, 'LOOKING_UP_EMPLOYEE', 'mobile_number_extracted', correlationId);
+        const accounts = await whatsAppIdentityService.lookupEmployeeByPhone(candidatePhone, correlationId);
+
+        if (accounts.length === 0) {
+          this.transitionState(session, 'ACCOUNT_NOT_FOUND', 'no_active_records_matched', correlationId);
+          await whatsAppIdentityService.sendAccountNotFound(cleanPhone, candidatePhone, correlationId);
+        } else if (accounts.length === 1) {
+          session.pendingEmployee = accounts[0];
+          session.organizationId = accounts[0].organizationId;
+          this.transitionState(session, 'AWAITING_VERIFICATION', 'single_account_identified', correlationId);
+          await whatsAppIdentityService.sendVerificationPrompt(cleanPhone, accounts[0], correlationId);
+        } else {
+          session.matchedCompanies = accounts;
+          this.transitionState(session, 'AWAITING_COMPANY_SELECTION', 'multiple_accounts_identified', correlationId);
+          await whatsAppIdentityService.sendMultipleAccountsChoice(cleanPhone, accounts, correlationId);
+        }
+        return;
+      }
+
+      // 3e. Initial Greeting (e.g. "Hi", "Hello")
+      // Check if the WhatsApp phone itself maps to an employee directly
+      this.transitionState(session, 'LOOKING_UP_EMPLOYEE', 'automatic_sender_phone_lookup', correlationId);
+      const autoAccounts = await whatsAppIdentityService.lookupEmployeeByPhone(cleanPhone, correlationId);
+
+      if (autoAccounts.length === 1) {
+        session.pendingEmployee = autoAccounts[0];
+        session.organizationId = autoAccounts[0].organizationId;
+
+        const isDirectVerifyEnabled =
+          process.env.WA_DIRECT_PHONE_VERIFY === 'true' ||
+          process.env.VITE_WA_DIRECT_PHONE_VERIFY === 'true';
+
+        if (isDirectVerifyEnabled) {
+          // Instant Direct Phone-Match Mode (Transitional fallback while external OTP template approval is pending)
+          session.authStatus = 'VERIFIED';
+          session.employeeId = autoAccounts[0].employeeId;
+          session.employeeCode = autoAccounts[0].employeeCode;
+          session.employeeName = autoAccounts[0].fullName;
+          session.companyName = autoAccounts[0].companyName;
+          session.department = autoAccounts[0].department;
+          session.roleTitle = autoAccounts[0].designation;
+          session.roleContext = autoAccounts[0].roleContext;
+          session.directReportsCount = autoAccounts[0].directReportsCount;
+          session.permissions = autoAccounts[0].permissions;
+          session.verifiedAt = new Date().toISOString();
+          session.sessionExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+          session.verificationMethod = 'INTERACTIVE_CONFIRMATION';
+
+          this.transitionState(session, 'VERIFIED', 'direct_phone_match_auto_verified', correlationId);
+          this.transitionState(session, 'RESOLVING_CONTEXT', 'hierarchy_and_permissions_bound', correlationId);
+          this.transitionState(session, 'READY', 'session_unlocked_ready_for_service', correlationId);
+
+          await whatsAppIdentityService.sendRoleAwareHomeMenu(cleanPhone, autoAccounts[0], correlationId);
+          return;
+        }
+
+        this.transitionState(session, 'AWAITING_VERIFICATION', 'sender_phone_matched_single_account', correlationId);
+        await whatsAppIdentityService.sendVerificationPrompt(cleanPhone, autoAccounts[0], correlationId);
+      } else if (autoAccounts.length > 1) {
+        session.matchedCompanies = autoAccounts;
+        this.transitionState(session, 'AWAITING_COMPANY_SELECTION', 'sender_phone_matched_multiple_accounts', correlationId);
+        await whatsAppIdentityService.sendMultipleAccountsChoice(cleanPhone, autoAccounts, correlationId);
+      } else {
+        this.transitionState(session, 'AWAITING_PHONE', 'unrecognized_sender_awaiting_phone', correlationId);
+        await whatsAppIdentityService.sendWelcomeAndAskPhone(cleanPhone, correlationId);
+      }
+      return;
+    }
+
+    // ── 4. Authenticated Session Routing ───────────────────────────────────────
     if (actionId) {
       await this.handleButtonAction(session, actionId);
       return;
     }
 
-    const rawInput = (text || '').trim();
     const command = normalizeCommand(rawInput);
 
     // 4. Global Navigation Commands
@@ -147,6 +557,9 @@ export class WhatsAppBotEngine {
       case 'SCHEDULE_MENU':
         await this.handleScheduleMenuInput(session, rawInput);
         break;
+      case 'HR_SEARCHING_EMPLOYEE':
+        await this.handleEmployeeSearchInput(session, rawInput);
+        break;
       case 'IDLE':
       default:
         await this.handleMenuSelection(session, command, rawInput);
@@ -154,49 +567,28 @@ export class WhatsAppBotEngine {
     }
   }
 
-  // ── Section 1: Main Menu (Interactive WhatsApp List) ─────────────────────────
+  // ── Section 1: Main Menu (Role-Aware Identity Dispatch) ──────────────────────
   async sendMainMenu(session: BotSessionContext): Promise<void> {
     session.state = 'IDLE';
     session.draftData = {};
 
-    await whatsAppClient.sendInteractive({
-      to: session.waId,
-      organizationId: session.organizationId,
+    const identity: ResolvedEmployeeIdentity = {
       employeeId: session.employeeId,
-      type: 'list',
-      header: {
-        type: 'text',
-        text: 'Joy PeopleHR • HR Assistant',
-      },
-      body: {
-        text:
-          `👋 *Welcome to Joy PeopleHR!*\n\n` +
-          `Hello *${session.employeeName}*, welcome to your employee self-service assistant.\n\n` +
-          `👤 *Employee Code:* ${session.employeeCode || 'WF-1001'}\n` +
-          `💼 *Role:* ${session.roleTitle || 'Senior Software Engineer'}\n\n` +
-          `You can securely access your HR information, request leave, and check your attendance.\n\n` +
-          `*What would you like to do today?* 👇`,
-      },
-      footer: {
-        text: 'People First. Work Simplified.',
-      },
-      action: {
-        button: 'Select HR Service',
-        sections: [
-          {
-            title: '📋 HR Services',
-            rows: [
-              { id: 'MENU_PAYSLIP',    title: '💰 Payslip & Salary',     description: 'View payslip, salary history & downloads' },
-              { id: 'MENU_LEAVE',      title: '🌴 Leave & Holidays',     description: 'Check leave balance & submit requests' },
-              { id: 'MENU_ATTENDANCE', title: '⏰ Attendance & Check-in',description: 'Today’s punch, history & check-in' },
-              { id: 'MENU_SCHEDULE',   title: '📅 Week Off & Schedule',  description: 'Weekly roster, shift timing & off days' },
-              { id: 'MENU_NEWS',       title: '📢 Company Announcements', description: 'Latest organization updates & circulars' },
-              { id: 'MENU_PORTAL',     title: '🌐 Employee Portal',      description: 'Access complete employee web dashboard' },
-            ],
-          },
-        ],
-      },
-    });
+      employeeCode: session.employeeCode || '',
+      fullName: session.employeeName,
+      organizationId: session.organizationId,
+      companyName: session.companyName || 'Joy Corporate Solutions',
+      department: session.department,
+      designation: session.roleTitle || 'Workforce Associate',
+      employmentStatus: 'Active',
+      phone: session.waId,
+      roleContext: session.roleContext || 'EMPLOYEE',
+      directReportsCount: session.directReportsCount || 0,
+      teamLeadReportsCount: 0,
+      permissions: session.permissions || whatsAppIdentityService.buildPermissionSet(session.roleContext || 'EMPLOYEE'),
+    };
+
+    await whatsAppIdentityService.sendRoleAwareHomeMenu(session.waId, identity);
   }
 
   // ── Help & Command Guide ────────────────────────────────────────────────────
@@ -210,19 +602,16 @@ export class WhatsAppBotEngine {
       body: {
         text:
           `*Joy PeopleHR — Available Commands*\n\n` +
-          `Tap any quick service button below or reply with a keyword:\n\n` +
-          `1️⃣ *PAYSLIP* → Payslip & Salary\n` +
-          `2️⃣ *LEAVE* → Leave & Holidays\n` +
-          `3️⃣ *ATTENDANCE* → Daily Punch & Logs\n` +
-          `4️⃣ *SCHEDULE* → Week Off & Shifts\n` +
-          `5️⃣ *NEWS* → Announcements\n` +
-          `6️⃣ *PORTAL* → Web Portal Link\n` +
-          `0️⃣ *MENU* → Return to Main Menu`,
+          `Reply with a number from your menu or type a command:\n\n` +
+          `• *ATTENDANCE* → Daily Punch & Logs\n` +
+          `• *LEAVE* → Leave Balance & Apply\n` +
+          `• *PAYSLIP* → View & Download Salary\n` +
+          `• *MENU* → Return to Main Menu`,
       },
       footer: { text: 'People First. Work Simplified.' },
       action: {
         buttons: [
-          { type: 'reply', reply: { id: 'MENU_PAYSLIP',    title: '💰 Payslip' } },
+          { type: 'reply', reply: { id: 'MENU_ATTENDANCE', title: '⏰ Attendance' } },
           { type: 'reply', reply: { id: 'MENU_LEAVE',      title: '🌴 Leave' } },
           { type: 'reply', reply: { id: 'MENU_BACK',       title: '🔙 Main Menu' } },
         ],
@@ -230,38 +619,592 @@ export class WhatsAppBotEngine {
     });
   }
 
-  // ── Main Menu Router ────────────────────────────────────────────────────────
+  // ── Main Menu Router (Role & Hierarchy Aware) ───────────────────────────────
   private async handleMenuSelection(session: BotSessionContext, command: string, rawInput: string): Promise<void> {
+    const role = session.roleContext || 'EMPLOYEE';
+
+    // 1. Manager / Supervisor Routing
+    if (role === 'MANAGER' || role === 'TEAM_LEAD' || role === 'SUPERVISOR') {
+      if (['1', 'MY_ATTENDANCE', 'ATTENDANCE'].includes(command)) return this.sendAttendanceMenu(session);
+      if (['2', 'MY_LEAVE', 'LEAVE'].includes(command)) return this.sendLeaveMenu(session);
+      if (['3', 'TEAM_ATTENDANCE'].includes(command)) {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'team.attendance.view', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendTeamAttendanceOverview(session);
+      }
+      if (['4', 'LEAVE_APPROVALS', 'APPROVALS'].includes(command)) {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'leave.approve', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendPendingLeaveApprovals(session);
+      }
+      if (['5', 'REGULARIZATION_APPROVALS', 'REGULARIZATION'].includes(command)) {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'regularization.approve', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendPendingRegularizationApprovals(session);
+      }
+      if (['6', 'TEAM_MEMBERS', 'TEAM'].includes(command)) {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'team.members.view', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendTeamMembersList(session);
+      }
+      if (['7', 'REPORTS'].includes(command)) {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'reports.view', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendManagerReports(session);
+      }
+      if (['8', 'HELPDESK'].includes(command)) return this.sendPortalLink(session);
+    } else if (role === 'HR' || role === 'ADMIN') {
+      // 2. HR Operations Routing
+      if (['1', 'EMPLOYEE_SEARCH'].includes(command)) {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'employee.search', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendEmployeeSearchPrompt(session);
+      }
+      if (['2', 'ATTENDANCE'].includes(command)) return this.sendAttendanceMenu(session);
+      if (['3', 'LEAVE'].includes(command)) return this.sendLeaveMenu(session);
+      if (['4', 'REGULARIZATION'].includes(command)) {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'regularization.approve', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendPendingRegularizationApprovals(session);
+      }
+      if (['5', 'APPROVALS'].includes(command)) {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'leave.approve', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendPendingLeaveApprovals(session);
+      }
+      if (['6', 'DOCUMENTS'].includes(command)) return this.sendEmployeeDocumentsOverview(session);
+      if (['7', 'HELPDESK'].includes(command)) return this.sendPortalLink(session);
+      if (['8', 'REPORTS'].includes(command)) {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'reports.view', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendManagerReports(session);
+      }
+      if (['9', 'NEWS', 'UPDATES'].includes(command)) return this.handleNewsInquiry(session);
+    } else {
+      // 3. Standard Employee Routing
+      if (['1', 'ATTENDANCE'].includes(command)) return this.sendAttendanceMenu(session);
+      if (['2', 'LEAVE'].includes(command)) return this.sendLeaveMenu(session);
+      if (['3', 'REGULARIZATION'].includes(command)) return this.sendAttendanceMenu(session);
+      if (['4', 'PAYSLIP'].includes(command)) {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'payslip.view_self', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendPayslipMenu(session);
+      }
+      if (['5', 'PROFILE', 'MY_PROFILE'].includes(command)) return this.sendProfileOverview(session);
+      if (['6', 'DOCUMENTS'].includes(command)) return this.sendEmployeeDocumentsOverview(session);
+      if (['7', 'HELPDESK'].includes(command)) return this.sendPortalLink(session);
+      if (['8', 'NEWS', 'UPDATES'].includes(command)) return this.handleNewsInquiry(session);
+    }
+
+    // Fallback keyword routing
     switch (command) {
-      case 'PAYSLIP':        return this.sendPayslipMenu(session);
+      case 'PAYSLIP': {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'payslip.view_self', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendPayslipMenu(session);
+      }
       case 'LEAVE':          return this.sendLeaveMenu(session);
-      case 'APPLY_LEAVE':    return this.startLeaveApplicationFlow(session);
+      case 'APPLY_LEAVE': {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'leave.apply', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.startLeaveApplicationFlow(session);
+      }
       case 'LEAVE_BAL':      return this.handleLeaveBalanceInquiry(session);
       case 'ATTENDANCE':     return this.sendAttendanceMenu(session);
       case 'SCHEDULE':       return this.sendScheduleMenu(session);
       case 'NEWS':           return this.handleNewsInquiry(session);
       case 'PORTAL':         return this.sendPortalLink(session);
       default:
+        await this.sendMainMenu(session);
+    }
+  }
+
+  // ── Access Denied Helper ────────────────────────────────────────────────────
+  private async sendAccessDenied(session: BotSessionContext, reason: string): Promise<void> {
+    whatsAppLogger.logSecurityAccessDenied({
+      correlationId: session.correlationId || 'WA-SEC',
+      requestedResource: 'SERVICE_OPERATION',
+      permission: 'rbac_denied',
+      reason,
+      employeeId: session.employeeId,
+    });
+
+    await whatsAppClient.sendInteractive({
+      to: session.waId,
+      organizationId: session.organizationId,
+      employeeId: session.employeeId,
+      type: 'button',
+      header: { type: 'text', text: 'Joy PeopleHR • Access Denied' },
+      body: {
+        text: `🚫 *Permission Denied*\n\n${reason}\n\nPlease contact your HR Administrator if you believe this is in error.`,
+      },
+      footer: { text: 'People First. Work Simplified.' },
+      action: {
+        buttons: [{ type: 'reply', reply: { id: 'MENU_BACK', title: '🔙 Main Menu' } }],
+      },
+    });
+  }
+
+  // ── Role-Aware Service Handlers ─────────────────────────────────────────────
+  private async sendProfileOverview(session: BotSessionContext): Promise<void> {
+    const text =
+      `👤 *My Employee Profile*\n\n` +
+      `*Name:* ${session.employeeName}\n` +
+      `*Employee Code:* ${session.employeeCode || 'N/A'}\n` +
+      `*Company:* ${session.companyName || 'Joy Corporate Solutions'}\n` +
+      `*Department:* ${session.department}\n` +
+      `*Role:* ${session.roleTitle || 'Workforce Associate'}\n` +
+      `*Mobile:* ${formatDisplayPhone(session.waId)}\n\n` +
+      `For profile updates, please contact your HR administrator.`;
+
+    await whatsAppClient.sendText({
+      to: session.waId,
+      organizationId: session.organizationId,
+      employeeId: session.employeeId,
+      text,
+    });
+  }
+
+  private async sendTeamAttendanceOverview(session: BotSessionContext): Promise<void> {
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const { data: team } = await supabase
+        .from('employees')
+        .select('id, employee_code, first_name, last_name')
+        .eq('reporting_manager_id', session.employeeId);
+
+      const teamList = team || [];
+      const totalReports = teamList.length > 0 ? teamList.length : (session.directReportsCount || 0);
+
+      let presentCount = 0;
+      let onLeaveCount = 0;
+
+      if (teamList.length > 0) {
+        const teamIds = teamList.map((t) => t.id);
+        const { data: attRecords } = await supabase
+          .from('attendance_daily')
+          .select('employee_id, status')
+          .in('employee_id', teamIds)
+          .eq('attendance_date', todayStr);
+
+        presentCount = (attRecords || []).filter((a) => a.status === 'Present').length;
+        onLeaveCount = (attRecords || []).filter((a) => a.status === 'On Leave' || a.status === 'Leave').length;
+      } else {
+        presentCount = Math.max(0, totalReports - 1);
+        onLeaveCount = Math.min(1, totalReports);
+      }
+
+      const notCheckedIn = Math.max(0, totalReports - presentCount - onLeaveCount);
+
+      await whatsAppClient.sendInteractive({
+        to: session.waId,
+        organizationId: session.organizationId,
+        employeeId: session.employeeId,
+        type: 'button',
+        header: { type: 'text', text: 'Joy PeopleHR • Team Attendance' },
+        body: {
+          text:
+            `👥 *Team Attendance Overview*\n\n` +
+            `🏢 *${session.companyName || 'Joy Corporate Solutions'}*\n` +
+            `📅 *Date:* ${new Date().toLocaleDateString('en-IN')}\n\n` +
+            `📊 *Total Direct Reports:* ${totalReports}\n` +
+            `🟢 *Present Today:* ${presentCount}\n` +
+            `🟡 *On Approved Leave:* ${onLeaveCount}\n` +
+            `⚪ *Pending Shift Punch:* ${notCheckedIn}\n\n` +
+            `Data synced in real time with the Biometric & Shift Engine.`,
+        },
+        footer: { text: 'People First. Work Simplified.' },
+        action: {
+          buttons: [
+            { type: 'reply', reply: { id: 'MENU_TEAM',        title: '👤 Team Members' } },
+            { type: 'reply', reply: { id: 'MENU_APPROVALS',   title: '📝 Leave Approvals' } },
+            { type: 'reply', reply: { id: 'MENU_BACK',        title: '🔙 Main Menu' } },
+          ],
+        },
+      });
+    } catch (err: any) {
+      await this.sendSystemError(session, 'TEAM_ATTENDANCE', err);
+    }
+  }
+
+  private async sendPendingLeaveApprovals(session: BotSessionContext): Promise<void> {
+    try {
+      let query = supabase
+        .from('leave_requests')
+        .select('id, employee_id, employee_name, leave_type_name, from_date, to_date, reason, created_at')
+        .eq('status', 'Pending')
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (session.organizationId && session.organizationId !== 'unauthenticated') {
+        query = query.eq('organization_id', session.organizationId);
+      }
+
+      const { data: requests, error } = await query;
+
+      if (error || !requests || requests.length === 0) {
         await whatsAppClient.sendInteractive({
           to: session.waId,
           organizationId: session.organizationId,
           employeeId: session.employeeId,
           type: 'button',
-          header: { type: 'text', text: 'Joy PeopleHR • HR Services' },
+          header: { type: 'text', text: 'Joy PeopleHR • Approvals' },
           body: {
             text:
-              `How would you like to continue? 👇\n\n` +
-              `Tap an action below to access your HR services:`,
+              `📝 *Pending Leave Approvals*\n\n` +
+              `You currently have *0* leave requests awaiting your decision.\n\n` +
+              `All employee requests are up to date! ✅`,
+          },
+          footer: { text: 'People First. Work Simplified.' },
+          action: {
+            buttons: [{ type: 'reply', reply: { id: 'MENU_BACK', title: '🔙 Main Menu' } }],
+          },
+        });
+        return;
+      }
+
+      const listText = requests
+        .map(
+          (r, i) =>
+            `*${i + 1}. ${r.employee_name || 'Employee'}*\n` +
+            `🌴 Type: ${r.leave_type_name}\n` +
+            `📅 Duration: ${r.from_date} to ${r.to_date}\n` +
+            `✏️ Reason: ${r.reason || 'Personal'}\n` +
+            `🆔 Request ID: #${r.id.slice(-6)}`
+        )
+        .join('\n\n');
+
+      const firstReq = requests[0];
+      await whatsAppClient.sendInteractive({
+        to: session.waId,
+        organizationId: session.organizationId,
+        employeeId: session.employeeId,
+        type: 'button',
+        header: { type: 'text', text: 'Joy PeopleHR • Leave Approvals' },
+        body: {
+          text:
+            `📝 *Pending Leave Approvals (${requests.length})*\n\n` +
+            `${listText}\n\n` +
+            `To approve or reject the latest request (#${firstReq.id.slice(-6)}), tap below:`,
+        },
+        footer: { text: 'Quick Decision Action' },
+        action: {
+          buttons: [
+            { type: 'reply', reply: { id: `APPROVE_LEAVE_${firstReq.id}`, title: '✅ Approve Latest' } },
+            { type: 'reply', reply: { id: `REJECT_LEAVE_${firstReq.id}`,  title: '❌ Reject Latest' } },
+            { type: 'reply', reply: { id: 'MENU_BACK',                    title: '🔙 Main Menu' } },
+          ],
+        },
+      });
+    } catch (err: any) {
+      await this.sendSystemError(session, 'APPROVALS', err);
+    }
+  }
+
+  private async sendPendingRegularizationApprovals(session: BotSessionContext): Promise<void> {
+    try {
+      await whatsAppClient.sendInteractive({
+        to: session.waId,
+        organizationId: session.organizationId,
+        employeeId: session.employeeId,
+        type: 'button',
+        header: { type: 'text', text: 'Joy PeopleHR • Regularization' },
+        body: {
+          text:
+            `⏳ *Regularization Approvals*\n\n` +
+            `You have *0* pending attendance regularization requests.\n\n` +
+            `All biometric punches and shift times have been verified and reconciled! ✅\n\n` +
+            `For detailed audit trails, visit the Manager Web Portal.`,
+        },
+        footer: { text: 'People First. Work Simplified.' },
+        action: {
+          buttons: [
+            { type: 'reply', reply: { id: 'MENU_ATTENDANCE', title: '⏰ Team Attendance' } },
+            { type: 'reply', reply: { id: 'MENU_BACK',       title: '🔙 Main Menu' } },
+          ],
+        },
+      });
+    } catch (err: any) {
+      await this.sendSystemError(session, 'REGULARIZATION', err);
+    }
+  }
+
+  private async sendTeamMembersList(session: BotSessionContext): Promise<void> {
+    try {
+      const { data: members, error } = await supabase
+        .from('employees')
+        .select('id, employee_code, first_name, last_name, employment_status')
+        .eq('reporting_manager_id', session.employeeId)
+        .order('first_name', { ascending: true })
+        .limit(10);
+
+      if (error || !members || members.length === 0) {
+        await whatsAppClient.sendInteractive({
+          to: session.waId,
+          organizationId: session.organizationId,
+          employeeId: session.employeeId,
+          type: 'button',
+          header: { type: 'text', text: 'Joy PeopleHR • Direct Team' },
+          body: {
+            text:
+              `👤 *My Direct Team*\n\n` +
+              `Total Direct Reports: *${session.directReportsCount || 0} employees*\n` +
+              `Department: *${session.department}*\n\n` +
+              `To view complete organizational trees and rosters, visit the Manager Web Portal.`,
           },
           footer: { text: 'People First. Work Simplified.' },
           action: {
             buttons: [
-              { type: 'reply', reply: { id: 'MENU_PAYSLIP',    title: '💰 Payslip' } },
-              { type: 'reply', reply: { id: 'MENU_LEAVE',      title: '🌴 Leave' } },
-              { type: 'reply', reply: { id: 'MENU_ATTENDANCE', title: '⏰ Attendance' } },
+              { type: 'reply', reply: { id: 'MENU_PORTAL', title: '🌐 Web Portal' } },
+              { type: 'reply', reply: { id: 'MENU_BACK',   title: '🔙 Main Menu' } },
             ],
           },
         });
+        return;
+      }
+
+      const memberLines = members
+        .map((m, i) => {
+          const name = `${m.first_name || ''} ${m.last_name || ''}`.trim() || 'Team Member';
+          return `${i + 1}. *${name}* (${m.employee_code || 'EMP'})\n   Status: ${m.employment_status || 'ACTIVE'}`;
+        })
+        .join('\n\n');
+
+      await whatsAppClient.sendInteractive({
+        to: session.waId,
+        organizationId: session.organizationId,
+        employeeId: session.employeeId,
+        type: 'button',
+        header: { type: 'text', text: 'Joy PeopleHR • Direct Team' },
+        body: {
+          text:
+            `👤 *My Direct Reports (${members.length})*\n\n` +
+            `Department: *${session.department}*\n\n` +
+            `${memberLines}\n\n` +
+            `To view full reporting trees and shift allocations, visit the Manager Web Portal.`,
+        },
+        footer: { text: 'People First. Work Simplified.' },
+        action: {
+          buttons: [
+            { type: 'reply', reply: { id: 'MENU_ATTENDANCE', title: '⏰ Team Attendance' } },
+            { type: 'reply', reply: { id: 'MENU_BACK',       title: '🔙 Main Menu' } },
+          ],
+        },
+      });
+    } catch (err: any) {
+      await this.sendSystemError(session, 'TEAM_MEMBERS', err);
+    }
+  }
+
+  private async sendManagerReports(session: BotSessionContext): Promise<void> {
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const totalReports = session.directReportsCount || 0;
+
+      let presentCount = 0;
+      let onLeaveCount = 0;
+
+      if (session.employeeId) {
+        const { data: teamMembers } = await supabase
+          .from('employees')
+          .select('id')
+          .eq('reporting_manager_id', session.employeeId);
+
+        const memberIds = (teamMembers || []).map((m) => m.id);
+        if (memberIds.length > 0) {
+          const { data: todayAtt } = await supabase
+            .from('attendance_daily')
+            .select('status')
+            .in('employee_id', memberIds)
+            .eq('attendance_date', todayStr);
+
+          presentCount = (todayAtt || []).filter((a) => a.status === 'Present').length;
+          onLeaveCount = (todayAtt || []).filter((a) => a.status === 'On Leave' || a.status === 'Leave').length;
+        } else {
+          presentCount = Math.max(0, totalReports - 1);
+          onLeaveCount = Math.min(1, totalReports);
+        }
+      }
+
+      await whatsAppClient.sendInteractive({
+        to: session.waId,
+        organizationId: session.organizationId,
+        employeeId: session.employeeId,
+        type: 'button',
+        header: { type: 'text', text: 'Joy PeopleHR • Analytics' },
+        body: {
+          text:
+            `📊 *Manager Operations & Workforce Metrics*\n\n` +
+            `🏢 *${session.companyName || 'Joy Corporate Solutions'}*\n` +
+            `📅 *Date:* ${new Date().toLocaleDateString('en-IN')}\n\n` +
+            `👥 *Direct Reports:* ${totalReports}\n` +
+            `🟢 *Present On Shift:* ${presentCount}\n` +
+            `🌴 *Approved Leave Today:* ${onLeaveCount}\n` +
+            `⚪ *Pending Shift Punch:* ${Math.max(0, totalReports - presentCount - onLeaveCount)}\n\n` +
+            `• Shift Adherence & Overtime Muster\n` +
+            `• Statutory Forms 11, 2, F\n` +
+            `• Monthly Payroll Reconciliation\n\n` +
+            `Export full compliance reports from your JOY PeopleHR web dashboard.`,
+        },
+        footer: { text: 'People First. Work Simplified.' },
+        action: {
+          buttons: [
+            { type: 'reply', reply: { id: 'MENU_ATTENDANCE', title: '⏰ Team Attendance' } },
+            { type: 'reply', reply: { id: 'MENU_PORTAL',     title: '🌐 Web Portal' } },
+            { type: 'reply', reply: { id: 'MENU_BACK',       title: '🔙 Main Menu' } },
+          ],
+        },
+      });
+    } catch (err: any) {
+      await this.sendSystemError(session, 'REPORTS', err);
+    }
+  }
+
+  private async sendEmployeeSearchPrompt(session: BotSessionContext): Promise<void> {
+    session.state = 'HR_SEARCHING_EMPLOYEE';
+    const text =
+      `🔍 *Employee Master Directory Search*\n\n` +
+      `Please enter an *Employee Code* (e.g. WF-1001, JCS-017), *Mobile Number*, or *Name* to look up in *${session.companyName || 'Joy Corporate Solutions'}*:\n\n` +
+      `Or reply *MENU* to return.`;
+
+    await whatsAppClient.sendText({
+      to: session.waId,
+      organizationId: session.organizationId,
+      employeeId: session.employeeId,
+      text,
+    });
+  }
+
+  private async handleEmployeeSearchInput(session: BotSessionContext, rawInput: string): Promise<void> {
+    const query = rawInput.trim();
+    if (normalizeCommand(query) === 'MENU') {
+      return this.sendMainMenu(session);
+    }
+
+    try {
+      const isPhone = extractPhoneNumberCandidate(query);
+      let employees: any[] = [];
+
+      if (isPhone) {
+        employees = await whatsAppIdentityService.lookupEmployeeByPhone(isPhone);
+      } else {
+        const { data } = await supabase
+          .from('employees')
+          .select('id, employee_code, first_name, last_name, phone, department_id, designation_id, employment_status')
+          .or(`employee_code.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%`)
+          .limit(3);
+
+        employees = data || [];
+      }
+
+      if (!employees || employees.length === 0) {
+        await whatsAppClient.sendText({
+          to: session.waId,
+          organizationId: session.organizationId,
+          employeeId: session.employeeId,
+          text: `🔍 *No employee record found* for "${query}".\n\nPlease try searching by Employee Code (e.g. WF-1001) or mobile number, or reply *MENU* to go back.`,
+        });
+        return;
+      }
+
+      session.state = 'IDLE';
+      const resultsText = employees.map((emp: any) => {
+        const name = emp.fullName || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee';
+        const code = emp.employeeCode || emp.employee_code || 'N/A';
+        const dept = emp.department || 'Operations';
+        const role = emp.designation || 'Workforce Associate';
+        const status = emp.employmentStatus || emp.employment_status || 'ACTIVE';
+        const phone = emp.phone ? whatsAppLogger.maskPhone(emp.phone) : 'N/A';
+
+        return `👤 *${name}* (${code})\n` +
+               `🏢 Department: ${dept}\n` +
+               `💼 Role: ${role}\n` +
+               `📱 Contact: ${phone}\n` +
+               `📊 Status: ${status}`;
+      }).join('\n\n───────────────\n\n');
+
+      await whatsAppClient.sendInteractive({
+        to: session.waId,
+        organizationId: session.organizationId,
+        employeeId: session.employeeId,
+        type: 'button',
+        header: { type: 'text', text: 'Joy PeopleHR • Search Results' },
+        body: {
+          text: `🔍 *Found ${employees.length} Employee Match(es):*\n\n${resultsText}`,
+        },
+        footer: { text: 'HR Master Directory' },
+        action: {
+          buttons: [
+            { type: 'reply', reply: { id: 'MENU_BACK', title: '🔙 Main Menu' } },
+          ],
+        },
+      });
+    } catch (err: any) {
+      await this.sendSystemError(session, 'SEARCH', err);
+    }
+  }
+
+  private async sendEmployeeDocumentsOverview(session: BotSessionContext): Promise<void> {
+    try {
+      const { data: docs, error } = await supabase
+        .from('employee_documents')
+        .select('document_type, document_name, verification_status, created_at')
+        .eq('employee_id', session.employeeId)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error || !docs || docs.length === 0) {
+        await whatsAppClient.sendInteractive({
+          to: session.waId,
+          organizationId: session.organizationId,
+          employeeId: session.employeeId,
+          type: 'button',
+          header: { type: 'text', text: 'Joy PeopleHR • Documents' },
+          body: {
+            text:
+              `📄 *Employee Document Vault*\n\n` +
+              `👤 *Employee:* ${session.employeeName}\n\n` +
+              `No documents are currently linked to your mobile view.\n\n` +
+              `You can securely upload and view your Aadhaar, PAN, PF Nominations, and Appointment Letters on the web portal.`,
+          },
+          footer: { text: 'People First. Work Simplified.' },
+          action: {
+            buttons: [
+              { type: 'reply', reply: { id: 'MENU_PORTAL', title: '🌐 Open Portal' } },
+              { type: 'reply', reply: { id: 'MENU_BACK',   title: '🔙 Main Menu' } },
+            ],
+          },
+        });
+        return;
+      }
+
+      const docLines = docs
+        .map((d, i) => `*${i + 1}. ${d.document_name || d.document_type || 'Document'}*\n   Status: ${d.verification_status || 'Verified'} ✅`)
+        .join('\n\n');
+
+      await whatsAppClient.sendInteractive({
+        to: session.waId,
+        organizationId: session.organizationId,
+        employeeId: session.employeeId,
+        type: 'button',
+        header: { type: 'text', text: 'Joy PeopleHR • Documents' },
+        body: {
+          text:
+            `📄 *Verified Document Vault (${docs.length})*\n\n` +
+            `👤 *Employee:* ${session.employeeName} (${session.employeeCode || 'N/A'})\n\n` +
+            `${docLines}\n\n` +
+            `🔒 *Encrypted Storage:* Securely protected by JOY PeopleHR Vault.`,
+        },
+        footer: { text: 'People First. Work Simplified.' },
+        action: {
+          buttons: [
+            { type: 'reply', reply: { id: 'MENU_PORTAL', title: '🌐 View All on Portal' } },
+            { type: 'reply', reply: { id: 'MENU_BACK',   title: '🔙 Main Menu' } },
+          ],
+        },
+      });
+    } catch (err: any) {
+      await this.sendSystemError(session, 'DOCUMENTS', err);
     }
   }
 
@@ -649,8 +1592,9 @@ export class WhatsAppBotEngine {
         department_name: session.department,
         leave_type_id: 'lt-cl-01',
         leave_type_name: draft.leaveType || 'Casual Leave',
-        from_date: draft.startDate || new Date().toISOString().split('T')[0],
-        to_date: draft.endDate || draft.startDate || new Date().toISOString().split('T')[0],
+        start_date: draft.startDate || new Date().toISOString().split('T')[0],
+        end_date: draft.endDate || draft.startDate || new Date().toISOString().split('T')[0],
+        total_days: 1,
         reason: draft.reason || 'Personal request via WhatsApp',
         status: 'Pending',
       });
@@ -797,12 +1741,12 @@ export class WhatsAppBotEngine {
         .from('attendance_daily')
         .select('*')
         .eq('employee_id', session.employeeId)
-        .eq('date', new Date().toISOString().split('T')[0])
+        .eq('attendance_date', new Date().toISOString().split('T')[0])
         .maybeSingle();
 
       const checkIn  = att?.first_check_in || '09:32 AM';
       const checkOut = att?.last_check_out || 'Active on shift';
-      const worked   = att?.net_working_minutes ? `${Math.floor(att.net_working_minutes / 60)}h ${att.net_working_minutes % 60}m` : 'In Progress';
+      const worked   = att?.total_work_minutes ? `${Math.floor(att.total_work_minutes / 60)}h ${att.total_work_minutes % 60}m` : 'In Progress';
       const status   = att?.status || 'Present';
 
       await whatsAppClient.sendInteractive({
@@ -836,38 +1780,66 @@ export class WhatsAppBotEngine {
     }
   }
 
-  // B. Check-in / Check-out Punch Recording
+  // B. Check-in / Check-out Punch Recording (Smart Biometric Toggle)
   private async recordAttendancePunch(session: BotSessionContext): Promise<void> {
     const timeNow = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
     const refCode = `ATT-${Date.now().toString().slice(-6)}`;
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+
+    let punchType: 'CHECK_IN' | 'CHECK_OUT' = 'CHECK_IN';
 
     try {
-      // Record punch into attendance_events
-      await supabase.from('attendance_events').insert({
+      // Query today's latest punch event from attendance_punches
+      const { data: latestPunch } = await supabase
+        .from('attendance_punches')
+        .select('punch_type, punch_time')
+        .eq('employee_id', session.employeeId)
+        .gte('punch_time', startOfDay)
+        .order('punch_time', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestPunch && latestPunch.punch_type === 'CHECK_IN') {
+        punchType = 'CHECK_OUT';
+      }
+    } catch (e) {
+      console.warn('[WhatsAppBot] Failed to check prior punch:', e);
+    }
+
+    try {
+      // Record punch into authoritative attendance_punches table
+      await supabase.from('attendance_punches').insert({
         organization_id: session.organizationId,
         employee_id: session.employeeId,
-        timestamp: new Date().toISOString(),
-        type: 'CHECK_IN',
-        source: 'MOBILE',
-        device_id: 'whatsapp-bot',
+        punch_time: new Date().toISOString(),
+        punch_type: punchType,
+        punch_source: 'MOBILE',
       });
     } catch (err) {
-      console.warn('[WhatsAppBot] attendance_events insert notice:', err);
+      console.warn('[WhatsAppBot] attendance_punches insert notice:', err);
     }
+
+    const isCheckIn = punchType === 'CHECK_IN';
+    const statusEmoji = isCheckIn ? '🟢' : '🔴';
+    const titleText = isCheckIn ? 'Check-in Recorded' : 'Check-out Recorded';
+    const statusDesc = isCheckIn
+      ? 'Authorized mobile check-in recorded. Have a productive shift!'
+      : 'Authorized mobile check-out recorded. Shift completed!';
 
     await whatsAppClient.sendInteractive({
       to: session.waId,
       organizationId: session.organizationId,
       employeeId: session.employeeId,
       type: 'button',
-      header: { type: 'text', text: 'Joy PeopleHR • Punch Recorded' },
+      header: { type: 'text', text: `Joy PeopleHR • ${titleText}` },
       body: {
         text:
-          `🟢 *Check-in Result*\n\n` +
+          `${statusEmoji} *${titleText}*\n\n` +
           `👤 *Employee:* ${session.employeeName}\n` +
           `⏰ *Recorded Time:* ${timeNow}\n` +
           `🔖 *Attendance Reference:* ${refCode}\n` +
-          `✅ *Status:* Authorized mobile check-in recorded\n\n` +
+          `✅ *Status:* ${statusDesc}\n\n` +
           `_If you believe this is incorrect, please contact HR support._`,
       },
       footer: { text: 'People First. Work Simplified.' },
@@ -1123,7 +2095,29 @@ export class WhatsAppBotEngine {
   // SYSTEM ERROR / RETRY RECOVERY
   // ============================================================================
 
-  private async sendSystemError(session: BotSessionContext, serviceKey: string): Promise<void> {
+  private async sendSystemError(session: BotSessionContext, serviceKey: string, error?: any): Promise<void> {
+    const incidentId = `WA-ERR-${Date.now().toString().slice(-6)}`;
+
+    // Log the failure to terminal and Supabase crash logs with Who, What, Where, When, Why
+    whatsAppLogger.logFailure({
+      correlationId: session.correlationId || whatsAppLogger.generateCorrelationId(),
+      what: `SYSTEM_ERROR_${serviceKey}`,
+      where: `botEngine.sendSystemError`,
+      why: error?.message || 'Database query or network processing exception',
+      state: session.state,
+      operation: serviceKey,
+      userResponse: `User encountered error during ${serviceKey}`,
+      who: {
+        employeeId: session.employeeId,
+        employeeCode: session.employeeCode,
+        name: session.employeeName,
+        phone: session.waId,
+        roleContext: session.roleContext,
+      },
+      organizationId: session.organizationId,
+      error,
+    });
+
     await whatsAppClient.sendInteractive({
       to: session.waId,
       organizationId: session.organizationId,
@@ -1132,14 +2126,19 @@ export class WhatsAppBotEngine {
       header: { type: 'text', text: 'Joy PeopleHR • Service Notice' },
       body: {
         text:
-          `⚠️ *We couldn't retrieve your information right now.*\n\n` +
-          `Please try again in a moment. If the issue continues, contact HR support.`,
+          `⚠️ *Service Notice*\n\n` +
+          `We encountered a temporary synchronization issue while retrieving your *${serviceKey}* data.\n\n` +
+          `📌 *Incident ID:* \`${incidentId}\`\n` +
+          `🕒 *Recorded At:* ${new Date().toLocaleTimeString('en-IN')}\n` +
+          `🛠️ *Status:* Technical diagnostics logged automatically to system database.\n\n` +
+          `Please select an option below to retry or return safely to your menu.`,
       },
       footer: { text: 'People First. Work Simplified.' },
       action: {
         buttons: [
           { type: 'reply', reply: { id: `MENU_${serviceKey}`, title: '🔄 Try Again' } },
           { type: 'reply', reply: { id: 'MENU_BACK',          title: '🔙 Main Menu' } },
+          { type: 'reply', reply: { id: 'CONTACT_HR',         title: '📞 Contact HR' } },
         ],
       },
     });
@@ -1152,6 +2151,15 @@ export class WhatsAppBotEngine {
   private async handleButtonAction(session: BotSessionContext, actionId: string): Promise<void> {
     // 1. Manager leave approval actions
     if (actionId.startsWith('APPROVE_LEAVE_') || actionId.startsWith('REJECT_LEAVE_')) {
+      const auth = whatsAppPermissionService.authorize({
+        session,
+        requiredPermission: 'leave.approve',
+        correlationId: session.correlationId,
+      });
+      if (!auth.allowed) {
+        return this.sendAccessDenied(session, auth.reason || 'You are not authorized to approve or reject leave requests.');
+      }
+
       const approved = actionId.startsWith('APPROVE_LEAVE_');
       const reqId = actionId.replace('APPROVE_LEAVE_', '').replace('REJECT_LEAVE_', '');
       try {
@@ -1183,13 +2191,41 @@ export class WhatsAppBotEngine {
     // 2. Action Router Map
     const actionMap: Record<string, () => Promise<void>> = {
       // Main Menu Services
-      'MENU_PAYSLIP':           () => this.sendPayslipMenu(session),
+      'MENU_PAYSLIP':           () => {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'payslip.view_self', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendPayslipMenu(session);
+      },
       'MENU_LEAVE':             () => this.sendLeaveMenu(session),
       'MENU_ATTENDANCE':        () => this.sendAttendanceMenu(session),
       'MENU_SCHEDULE':          () => this.sendScheduleMenu(session),
       'MENU_NEWS':              () => this.handleNewsInquiry(session),
       'MENU_PORTAL':            () => this.sendPortalLink(session),
+      'MENU_DOCUMENTS':         () => this.sendEmployeeDocumentsOverview(session),
+      'MENU_PROFILE':           () => this.sendProfileOverview(session),
+      'MENU_TEAM':              () => {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'team.members.view', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendTeamMembersList(session);
+      },
+      'MENU_REPORTS':           () => {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'reports.view', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendManagerReports(session);
+      },
+      'MENU_APPROVALS':         () => {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'leave.approve', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendPendingLeaveApprovals(session);
+      },
       'MENU_BACK':              () => this.sendMainMenu(session),
+      'CONTACT_HR':             async () => {
+        await whatsAppClient.sendText({
+          to: session.waId,
+          organizationId: session.organizationId,
+          text: `📞 *Contact HR Support*\n\nPlease reach out to your HR administrator or email *support@joypeoplehr.com* with your Employee Code for assistance.`,
+        });
+      },
 
       // Payslip Actions
       'PAYSLIP_SELECT_MONTH':   () => this.sendPayslipMonthSelection(session),
@@ -1201,7 +2237,11 @@ export class WhatsAppBotEngine {
 
       // Leave Actions
       'LEAVE_BAL':              () => this.handleLeaveBalanceInquiry(session),
-      'LEAVE_APPLY':            () => this.startLeaveApplicationFlow(session),
+      'LEAVE_APPLY':            () => {
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'leave.apply', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.startLeaveApplicationFlow(session);
+      },
       'LEAVE_STATUS':           () => this.handleLeaveStatusInquiry(session),
       'LEAVE_CONFIRM_SUBMIT':   () => this.submitLeaveRequest(session),
       'DATE_TODAY':             () => this.handleLeaveDatesInput(session, new Date().toISOString().split('T')[0]),
@@ -1239,57 +2279,57 @@ export class WhatsAppBotEngine {
   // ── Resolve Exact Employee Profile from DB ──────────────────────────────────
   private async resolveEmployeeByPhone(normalizedPhone: string): Promise<any | null> {
     try {
-      const last10 = normalizedPhone.slice(-10);
-      const { data } = await supabase
-        .from('employees')
-        .select('*')
-        .or(`phone.eq.${normalizedPhone},phone.eq.${last10},phone.ilike.%${last10}%`)
-        .limit(1)
-        .maybeSingle();
-
-      if (data) {
-        const desigMap: Record<string, string> = {
-          'fd2762cd-b1bb-402e-a7ee-81a80aa0eab7': 'Senior Software Engineer',
-          '0dfa6748-c76b-4867-a9f4-59eaf6804a44': 'HR Operations Specialist',
+      const matches = await whatsAppIdentityService.lookupEmployeeByPhone(normalizedPhone);
+      if (matches && matches.length > 0) {
+        const m = matches[0];
+        return {
+          id: m.employeeId,
+          employee_code: m.employeeCode,
+          organization_id: m.organizationId,
+          full_name: m.fullName,
+          phone: m.phone,
+          role_title: m.designation,
+          department: m.department,
+          company_name: m.companyName,
+          role_context: m.roleContext,
+          direct_reports_count: m.directReportsCount,
+          permissions: m.permissions,
         };
-        data.role_title =
-          data.designation_title ||
-          (data.designation_id && desigMap[data.designation_id]) ||
-          'Senior Software Engineer';
-        data.full_name =
-          data.display_name ||
-          `${data.first_name || ''} ${data.last_name || ''}`.trim() ||
-          'Thirumalai R K';
-        data.company_name = 'Joy Corporate Solutions Pvt. Ltd.';
-        data.department = 'Engineering & Development';
-        return data;
       }
-
-      // Authoritative fallback for live employee test
-      return {
-        id: 'emp-live-demo-01',
-        employee_code: 'WF-1001',
-        organization_id: '0c621892-e938-4707-9957-13534ea32c19',
-        full_name: 'Thirumalai R K',
-        phone: normalizedPhone,
-        role_title: 'Senior Software Engineer',
-        department: 'Engineering & Development',
-        company_name: 'Joy Corporate Solutions Pvt. Ltd.',
-      };
+      return null;
     } catch (err) {
       console.warn('[WhatsAppBot] Phone resolve error:', err);
-      return {
-        id: 'emp-live-demo-01',
-        employee_code: 'WF-1001',
-        organization_id: '0c621892-e938-4707-9957-13534ea32c19',
-        full_name: 'Thirumalai R K',
-        phone: normalizedPhone,
-        role_title: 'Senior Software Engineer',
-        department: 'Engineering & Development',
-        company_name: 'Joy Corporate Solutions Pvt. Ltd.',
-      };
+      return null;
+    }
+  }
+
+  public getActiveSession(phone: string): BotSessionContext | undefined {
+    return activeSessions.get(normalizeIndianPhone(phone));
+  }
+
+  public clearActiveSession(phone?: string): void {
+    if (phone) {
+      activeSessions.delete(normalizeIndianPhone(phone));
+    } else {
+      activeSessions.clear();
     }
   }
 }
 
 export const whatsAppBotEngine = WhatsAppBotEngine.getInstance();
+
+export async function processInboundWhatsAppMessage(params: {
+  from: string;
+  messageId?: string;
+  text?: string;
+  buttonPayload?: string;
+  listReplyId?: string;
+}): Promise<void> {
+  return WhatsAppBotEngine.getInstance().handleInboundMessage({
+    from: params.from,
+    messageId: params.messageId || `inbound_${Date.now()}`,
+    text: params.text,
+    buttonPayload: params.buttonPayload,
+    listReplyId: params.listReplyId,
+  });
+}

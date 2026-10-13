@@ -281,7 +281,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
     let notCheckedIn = 0;
 
     for (const emp of scopedEmployees) {
-      const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate);
+      const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate, undefined, emp);
       const isWeeklyOff = roster.is_weekly_off;
       const isExpected = !isWeeklyOff;
 
@@ -650,8 +650,8 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
               const currentShift = attendanceRosterService.getShiftById(currentRoster.shift_id, user?.organization_id) || {
                 shift_name: currentRoster.shift_name,
                 shift_code: currentRoster.shift_code,
-                start_time: '09:00',
-                end_time: '18:00',
+                start_time: '09:30',
+                end_time: '18:30',
                 net_working_minutes: 480,
               };
               const isNight = currentRoster.shift_code.includes('NGT');
@@ -744,9 +744,9 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
                 All Channels ({totalHeadcount})
               </button>
               {(() => {
-                const bioCount = dailyRecords.filter((r) => r.source === 'BIOMETRIC' || r.source === 'HARDWARE_TERMINAL').length;
+                const bioCount = dailyRecords.filter((r) => r.source === 'BIOMETRIC' || (r.source as string) === 'HARDWARE_TERMINAL').length;
                 const faceCount = dailyRecords.filter((r) => r.source?.includes('FACE')).length;
-                const mobileCount = dailyRecords.filter((r) => r.source === 'MOBILE' || r.source === 'MOBILE_GPS' || r.source === 'MOBILE_GPS_FACE').length;
+                const mobileCount = dailyRecords.filter((r) => r.source === 'MOBILE' || (r.source as string) === 'MOBILE_GPS' || (r.source as string) === 'MOBILE_GPS_FACE').length;
                 const webCount = dailyRecords.filter((r) => r.source === 'WEB' || r.source === 'MANUAL' || r.source === 'SYSTEM').length;
 
                 return (
@@ -989,7 +989,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
                 </TableCell>
                 <TableCell>
                   <div className="text-xs font-semibold text-gray-800">{r.department}</div>
-                  <div className="text-[10px] text-indigo-700 font-semibold">{r.vendor_name || 'Direct Payroll'}</div>
+                  <div className="text-[10px] text-indigo-700 font-semibold">{(r as any).vendor_name || 'Direct Payroll'}</div>
                 </TableCell>
                 <TableCell>
                   <div className="text-xs font-semibold text-gray-900">{r.shift_name}</div>

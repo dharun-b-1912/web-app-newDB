@@ -6,9 +6,10 @@ import { Breadcrumb } from '../../components/shell/Breadcrumb';
 import { Building2, Globe, Shield, Lock, Sliders, Database, Key } from 'lucide-react';
 import { useTenant } from '../../hooks/useTenant';
 import { useToast } from '../../components/ui/Toast';
+import { api } from '../../services/api';
 
 export const SettingsView: React.FC = () => {
-  const { organization, activeCompany, updateOrganization } = useTenant();
+  const { organization, activeCompany, reloadTenant } = useTenant();
   const { showToast } = useToast();
 
   const [orgName, setOrgName] = useState(organization?.name || 'Joy Corporate Solutions');
@@ -18,11 +19,12 @@ export const SettingsView: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await updateOrganization({
+      await api.updateOrganization({
         name: orgName,
         industry,
         default_currency: currency,
       });
+      await reloadTenant();
       showToast('Organization settings updated');
     } catch {
       showToast('Error saving settings', 'error');

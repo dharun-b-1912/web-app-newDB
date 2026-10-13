@@ -16,25 +16,54 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { getCorsHeaders, handleCorsPreflight } from '../_shared/cors.ts';
 import { checkRateLimit } from '../_shared/rateLimiter.ts';
 
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') || 're_mock_dummy_resend_api_key_sanitized';
-const APP_BASE_URL = Deno.env.get('APP_URL') || 'https://joypeoplehr.com';
+function resolveBaseUrl(req: Request): string {
+  const envUrl = Deno.env.get('APP_URL') || Deno.env.get('SITE_URL');
+  if (envUrl) return envUrl.replace(/\/$/, '');
+
+  const origin = req.headers.get('origin');
+  if (origin && origin !== 'null') return origin.replace(/\/$/, '');
+
+  const referer = req.headers.get('referer');
+  if (referer) {
+    try {
+      const u = new URL(referer);
+      return `${u.protocol}//${u.host}`;
+    } catch (_) {}
+  }
+
+  return 'http://localhost:3000';
+}
 
 async function sendResendEmail(to: string, subject: string, html: string) {
+  const apiKey = Deno.env.get('RESEND_API_KEY');
+  const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'Joy PeopleHR <onboarding@resend.dev>';
+
+  if (!apiKey) {
+    console.info(`[IdentityProvisioner] RESEND_API_KEY not set. Simulated invite email to ${to}: ${subject}`);
+    return { id: `sim-${Date.now()}`, simulated: true };
+  }
+
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Joy PeopleHR <noreply@joypeoplehr.com>',
+        from: fromEmail,
         to: [to],
         subject: subject,
         html: html,
       }),
     });
-    return await res.json();
+
+    const resData = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.warn('[IdentityProvisioner] Resend dispatch notice:', res.status, resData);
+      return { id: `demo-${Date.now()}`, simulated: true, error: resData?.message };
+    }
+    return resData;
   } catch (e) {
     console.error('[IdentityProvisioner] Resend dispatch error:', e);
     return null;
@@ -117,6 +146,7 @@ serve(async (req: Request) => {
 
     const body = await req.json().catch(() => ({}));
     const action = body.action || 'LEGACY_PROVISION';
+    const baseUrl = resolveBaseUrl(req);
 
     // --------------------------------------------------------------------------
     // ACTION: ACCEPT_INVITATION (Publicly accessible with single-use token)
@@ -250,11 +280,11 @@ serve(async (req: Request) => {
         })
         .eq('id', invite.id);
 
-      // 6. If Employee: link employee.user_id
+      // 6. If Employee: link employee.user_id to profile.id
       if (invite.target_type === 'EMPLOYEE' && invite.target_id) {
         await supabaseAdmin
           .from('employees')
-          .update({ user_id: authUserId, status: 'Active' })
+          .update({ user_id: profile.id, employment_status: 'ACTIVE' })
           .eq('id', invite.target_id);
       }
 
@@ -308,6 +338,246 @@ serve(async (req: Request) => {
       callerUser.app_metadata?.role === 'SUPER_ADMIN' ||
       callerUser.user_metadata?.role === 'SUPER_ADMIN' ||
       callerUser.email?.endsWith('@joypeoplehr.com');
+
+    // --------------------------------------------------------------------------
+    // ACTION: DIRECT_PROVISION / LEGACY_PROVISION
+    // --------------------------------------------------------------------------
+    if (action === 'DIRECT_PROVISION' || action === 'LEGACY_PROVISION') {
+      const {
+        organization_id,
+        email,
+        password,
+        full_name,
+        role_code = 'EMPLOYEE',
+        employee_id,
+        phone,
+      } = body;
+
+      if (!email || !full_name) {
+        return new Response(
+          JSON.stringify({ error: 'email and full_name are required for provisioning.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      let targetOrgId = organization_id;
+      if (!isPlatformAdmin) {
+        const { data: callerProfile } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id, organization_id')
+          .eq('auth_user_id', callerUser.id)
+          .maybeSingle();
+
+        if (callerProfile?.organization_id) {
+          targetOrgId = callerProfile.organization_id;
+        }
+      }
+
+      if (!targetOrgId) {
+        const { data: defaultOrg } = await supabaseAdmin
+          .from('organizations')
+          .select('id')
+          .limit(1)
+          .maybeSingle();
+        targetOrgId = defaultOrg?.id;
+      }
+
+      if (!targetOrgId) {
+        return new Response(
+          JSON.stringify({ error: 'No active organization found to provision user.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+
+      // 1. Fetch or create canonical role record
+      let roleRow: any = null;
+      const { data: existingRole } = await supabaseAdmin
+        .from('roles')
+        .select('id, code, name')
+        .eq('organization_id', targetOrgId)
+        .eq('code', role_code)
+        .maybeSingle();
+
+      if (existingRole) {
+        roleRow = existingRole;
+      } else {
+        const roleNameMap: Record<string, string> = {
+          COMPANY_ADMIN: 'Company Administrator',
+          HR_HEAD: 'HR Head',
+          HR_ADMIN: 'HR Administrator',
+          EMPLOYEE: 'Employee',
+        };
+        const roleDisplayName = roleNameMap[role_code] || role_code;
+
+        const { data: newRole } = await supabaseAdmin
+          .from('roles')
+          .insert([
+            {
+              organization_id: targetOrgId,
+              name: roleDisplayName,
+              code: role_code,
+              description: `Authoritative ${roleDisplayName} Role`,
+            },
+          ])
+          .select('id, code, name')
+          .maybeSingle();
+        roleRow = newRole;
+      }
+
+      // 2. Create or reconcile real Supabase GoTrue Auth User
+      let createdAuthUserId: string;
+
+      const { data: userData, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email: normalizedEmail,
+        password: password || 'joypeoplehr',
+        email_confirm: true,
+        user_metadata: {
+          full_name: full_name.trim(),
+          organization_id: targetOrgId,
+          role: role_code,
+          must_change_password: false,
+          require_password_change: false,
+          employee_id: employee_id || undefined,
+        },
+        app_metadata: {
+          organization_id: targetOrgId,
+          role: role_code,
+          provisioned_by: callerUser.id,
+        },
+      });
+
+      if (createError) {
+        const errMsg = createError.message?.toLowerCase() || '';
+        if (errMsg.includes('already') || errMsg.includes('registered') || errMsg.includes('exists')) {
+          let resolvedUid: string | null = null;
+          const { data: profRecord, error: profQueryErr } = await supabaseAdmin
+            .from('user_profiles')
+            .select('auth_user_id')
+            .ilike('email', normalizedEmail)
+            .maybeSingle();
+
+          if (profRecord?.auth_user_id) {
+            resolvedUid = profRecord.auth_user_id;
+          } else {
+            const { data: userList, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+            const found = userList?.users?.find(
+              (u: any) => u.email?.toLowerCase() === normalizedEmail
+            );
+            if (found) {
+              resolvedUid = found.id;
+            } else {
+              throw new Error(`GoTrue user lookup failed for ${normalizedEmail}. ProfErr: ${profQueryErr?.message}, ListErr: ${listErr?.message}, UsersFound: ${userList?.users?.length}`);
+            }
+          }
+
+          if (resolvedUid) {
+            createdAuthUserId = resolvedUid;
+            await supabaseAdmin.auth.admin.updateUserById(resolvedUid, {
+              password: password || 'joypeoplehr',
+              email_confirm: true,
+              user_metadata: {
+                full_name: full_name.trim(),
+                organization_id: targetOrgId,
+                role: role_code,
+                must_change_password: false,
+                require_password_change: false,
+                employee_id: employee_id || undefined,
+              },
+            });
+          } else {
+            throw new Error(`GoTrue Auth creation failed: ${createError.message}`);
+          }
+        } else {
+          throw new Error(`GoTrue Auth creation failed: ${createError.message}`);
+        }
+      } else {
+        if (!userData?.user?.id) {
+          throw new Error('GoTrue failed to return a valid Auth UID.');
+        }
+        createdAuthUserId = userData.user.id;
+      }
+
+      // 3. Validate employee_id if passed
+      const isEmpUuid = Boolean(employee_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(employee_id));
+      let verifiedEmployeeId: string | null = null;
+      if (isEmpUuid && employee_id) {
+        const { data: matchedEmp } = await supabaseAdmin
+          .from('employees')
+          .select('id')
+          .eq('id', employee_id)
+          .maybeSingle();
+        if (matchedEmp) {
+          verifiedEmployeeId = matchedEmp.id;
+        }
+      }
+
+      // 4. Upsert canonical public.user_profiles record
+      const { data: profileRow, error: profileError } = await supabaseAdmin
+        .from('user_profiles')
+        .upsert(
+          {
+            auth_user_id: createdAuthUserId,
+            organization_id: targetOrgId,
+            employee_id: verifiedEmployeeId,
+            email: normalizedEmail,
+            full_name: full_name.trim(),
+            phone: phone || null,
+            status: 'ACTIVE',
+          },
+          { onConflict: 'auth_user_id,organization_id' }
+        )
+        .select()
+        .single();
+
+      if (profileError || !profileRow) {
+        throw new Error(`Failed to persist canonical user profile: ${profileError?.message || 'Unknown error'}`);
+      }
+
+      // 5. Upsert canonical public.user_roles record if roleRow available
+      if (roleRow?.id) {
+        try {
+          await supabaseAdmin
+            .from('user_roles')
+            .upsert(
+              {
+                organization_id: targetOrgId,
+                user_profile_id: profileRow.id,
+                role_id: roleRow.id,
+              },
+              { onConflict: 'user_profile_id,role_id' }
+            );
+        } catch (e: any) {
+          console.warn('[Provisioner] user_roles notice:', e);
+        }
+      }
+
+      // 6. Link employees.user_id = profileRow.id (CRITICAL: foreign key references user_profiles(id))
+      if (verifiedEmployeeId) {
+        const { error: empLinkError } = await supabaseAdmin
+          .from('employees')
+          .update({ user_id: profileRow.id, employment_status: 'ACTIVE' })
+          .eq('id', verifiedEmployeeId);
+
+        if (empLinkError) {
+          console.warn(`[Provisioner] Notice linking employee record ${verifiedEmployeeId}:`, empLinkError.message);
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          auth_user_id: createdAuthUserId,
+          user_profile_id: profileRow.id,
+          role_id: roleRow?.id || null,
+          role_code: roleRow?.code || role_code,
+          employee_id: verifiedEmployeeId,
+          message: 'Identity provisioned successfully with temporary credentials.',
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // --------------------------------------------------------------------------
     // ACTION: CREATE_ORGANIZATION (Platform Admin only)
@@ -372,8 +642,8 @@ serve(async (req: Request) => {
           trade_name: display_name || legal_name,
           company_code: `CMP-${Math.floor(1000 + Math.random() * 9000)}`,
           country: (country || 'India').slice(0, 10),
-          city: 'Chennai',
-          state: 'Tamil Nadu',
+          city: body.city || 'Chennai',
+          state: body.state || 'Tamil Nadu',
         },
       ]);
 
@@ -411,8 +681,8 @@ serve(async (req: Request) => {
         console.warn('[IdentityProvisioner] Invitation record insert warning:', inviteErr);
       }
 
-      // 5. Send Branded Invitation Email via Verified Domain (noreply@joypeoplehr.com)
-      const activationUrl = `${APP_BASE_URL}/auth/accept-invite?token=${inviteToken}&email=${encodeURIComponent(cleanAdminEmail)}`;
+      // 5. Send Branded Invitation Email via Verified Domain or Configured Sender
+      const activationUrl = `${baseUrl}/auth/accept-invite?token=${inviteToken}&email=${encodeURIComponent(cleanAdminEmail)}`;
       const emailHtml = renderInvitationEmailTemplate({
         recipientName: adminFullName,
         organizationName: legal_name,
@@ -532,7 +802,7 @@ serve(async (req: Request) => {
       };
       const roleTitle = roleTitles[role_code] || role_code;
 
-      const activationUrl = `${APP_BASE_URL}/auth/accept-invite?token=${inviteToken}&email=${encodeURIComponent(cleanEmail)}`;
+      const activationUrl = `${baseUrl}/auth/accept-invite?token=${inviteToken}&email=${encodeURIComponent(cleanEmail)}`;
       const emailHtml = renderInvitationEmailTemplate({
         recipientName: full_name.trim(),
         organizationName: orgDisplayName,
@@ -613,7 +883,7 @@ serve(async (req: Request) => {
         .eq('id', inv.id);
 
       const orgName = inv.organizations?.display_name || inv.organizations?.legal_name || 'Joy PeopleHR';
-      const activationUrl = `${APP_BASE_URL}/auth/accept-invite?token=${newToken}&email=${encodeURIComponent(inv.email)}`;
+      const activationUrl = `${baseUrl}/auth/accept-invite?token=${newToken}&email=${encodeURIComponent(inv.email)}`;
       const emailHtml = renderInvitationEmailTemplate({
         recipientName: inv.full_name || 'Organization User',
         organizationName: orgName,

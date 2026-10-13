@@ -20,36 +20,45 @@ export class GlobalErrorInterceptor {
       // Ignore cross-origin script error noise with no message
       if (!event.message && !event.error) return;
 
-      const isChunkError =
-        event.message?.includes('Loading chunk') ||
-        event.message?.includes('Failed to fetch dynamically imported module');
+      try {
+        const isChunkError =
+          event.message?.includes('Loading chunk') ||
+          event.message?.includes('Failed to fetch dynamically imported module');
 
-      const moduleName = isChunkError ? 'CHUNK_LOADER' : 'GLOBAL_RUNTIME';
+        const moduleName = isChunkError ? 'CHUNK_LOADER' : 'GLOBAL_RUNTIME';
 
-      ErrorReferenceService.recordError(
-        event.error || new Error(event.message),
-        moduleName,
-        event.message || 'Unhandled Script Runtime Error',
-        {
-          filename: event.filename,
-          lineno: event.lineno,
-          colno: event.colno,
-          isChunkError,
-        }
-      );
+        ErrorReferenceService.recordError(
+          event.error || new Error(event.message),
+          moduleName,
+          event.message || 'Unhandled Script Runtime Error',
+          {
+            filename: event.filename,
+            lineno: event.lineno,
+            colno: event.colno,
+            isChunkError,
+          }
+        );
+      } catch (handlerErr) {
+        // Fallback console log if telemetry recorder itself fails
+        console.error('[GlobalErrorInterceptor] Handler error:', handlerErr);
+      }
     });
 
     // 2. Unhandled Promise Rejections (e.g. Supabase, fetch timeouts)
     window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
-      const reason = event.reason;
-      const errorObj = reason instanceof Error ? reason : new Error(String(reason));
+      try {
+        const reason = event.reason;
+        const errorObj = reason instanceof Error ? reason : new Error(String(reason));
 
-      ErrorReferenceService.recordError(
-        errorObj,
-        'ASYNC_PROMISE',
-        'Unhandled Async Promise Rejection',
-        { rawReason: typeof reason === 'object' ? JSON.stringify(reason) : String(reason) }
-      );
+        ErrorReferenceService.recordError(
+          errorObj,
+          'ASYNC_PROMISE',
+          'Unhandled Async Promise Rejection',
+          { rawReason: typeof reason === 'object' ? JSON.stringify(reason) : String(reason) }
+        );
+      } catch (handlerErr) {
+        console.error('[GlobalErrorInterceptor] Unhandled rejection handler error:', handlerErr);
+      }
     });
 
     ObservabilityLogger.app('INTERCEPTOR_INIT', 'Global error and rejection interceptor active', {

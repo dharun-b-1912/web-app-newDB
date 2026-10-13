@@ -109,11 +109,12 @@ export const RoleManagementView: React.FC = () => {
     setSelectedEmployeeId(empId);
     const emp = employees.find(e => e.id === empId);
     if (emp) {
-      setEmployeeName(emp.name);
-      setEmployeeCode(emp.code || 'JOY-0100');
-      setWorkEmail(emp.email);
-      setDepartment(emp.department);
-      setDesignation(emp.designation);
+      const empAny = emp as any;
+      setEmployeeName(empAny.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim());
+      setEmployeeCode(emp.employee_code || empAny.code || 'JOY-0100');
+      setWorkEmail(empAny.email || emp.work_email || '');
+      setDepartment(empAny.department || emp.department_id || '');
+      setDesignation(empAny.designation || emp.designation_id || '');
     }
   };
 
@@ -488,11 +489,17 @@ export const RoleManagementView: React.FC = () => {
                       className="w-full px-3 py-2 rounded-xl border border-gray-200 font-medium bg-white"
                     >
                       <option value="">-- Choose employee from list --</option>
-                      {employees.map(e => (
-                        <option key={e.id} value={e.id}>
-                          {e.name} ({e.email}) - {e.department}
-                        </option>
-                      ))}
+                      {employees.map(e => {
+                        const eAny = e as any;
+                        const empDisplayName = eAny.name || `${e.first_name || ''} ${e.last_name || ''}`.trim();
+                        const empEmail = eAny.email || e.work_email || '';
+                        const empDept = eAny.department || e.department_id || '';
+                        return (
+                          <option key={e.id} value={e.id}>
+                            {empDisplayName} ({empEmail}) - {empDept}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
 

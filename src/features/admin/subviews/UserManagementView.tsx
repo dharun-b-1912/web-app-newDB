@@ -10,8 +10,9 @@ import { AdminUser, UserInvitation } from '../../../types/admin';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
-import { Users, Mail, Plus, ShieldCheck, Trash2, Send, Search, CheckCircle2 } from 'lucide-react';
+import { Users, Mail, Plus, ShieldCheck, Trash2, Send, Search, CheckCircle2, Pencil, AlertTriangle } from 'lucide-react';
 import { useToast } from '../../../components/ui/Toast';
+import { cn } from '../../../lib/utils';
 
 export const UserManagementView: React.FC = () => {
   const { showToast } = useToast();
@@ -29,6 +30,68 @@ export const UserManagementView: React.FC = () => {
   const [inviteRole, setInviteRole] = useState<string>('HR Head');
   const [inviteDept, setInviteDept] = useState<string>('Human Resources');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Edit User State
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+  const [editUserName, setEditUserName] = useState('');
+  const [editUserDept, setEditUserDept] = useState('');
+  const [editUserRole, setEditUserRole] = useState('');
+  const [editUserStatus, setEditUserStatus] = useState<AdminUser['status']>('Active');
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<AdminUser | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleOpenEditUser = (u: AdminUser) => {
+    setEditingUser(u);
+    setEditUserName(u.name);
+    setEditUserDept(u.department_name);
+    setEditUserRole(u.role_name);
+    setEditUserStatus(u.status || 'Active');
+  };
+
+  const handleSaveEditUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    try {
+      await adminApi.updateUser(editingUser.id, {
+        name: editUserName,
+        department_name: editUserDept,
+        role_name: editUserRole,
+        status: editUserStatus,
+      });
+      showToast(`User ${editUserName} updated successfully!`, 'success');
+      setEditingUser(null);
+      await refreshData();
+    } catch {
+      showToast('Failed to update user', 'error');
+    }
+  };
+
+  const handleToggleUserStatus = async (u: AdminUser) => {
+    const isCurrentlyActive = u.status === 'Active';
+    const newStatus: AdminUser['status'] = isCurrentlyActive ? 'Deactivated' : 'Active';
+    try {
+      await adminApi.updateUser(u.id, { status: newStatus as any });
+      showToast(`User ${u.name} set to ${newStatus}`, 'success');
+      await refreshData();
+    } catch {
+      showToast('Failed to update user status', 'error');
+    }
+  };
+
+  const handleDeleteUserConfirmed = async () => {
+    if (!confirmDeleteUser) return;
+    setIsDeleting(true);
+    try {
+      await adminApi.deleteUser(confirmDeleteUser.id);
+      showToast(`User ${confirmDeleteUser.name} deleted`, 'success');
+      setConfirmDeleteUser(null);
+      await refreshData();
+    } catch {
+      showToast('Failed to delete user', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const refreshData = async () => {
     try {
@@ -186,6 +249,7 @@ export const UserManagementView: React.FC = () => {
                 <th className="p-4 text-center">MFA Status</th>
                 <th className="p-4 font-mono">Last Session</th>
                 <th className="p-4 text-center">Account Status</th>
+                <th className="p-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-xs">
@@ -210,7 +274,49 @@ export const UserManagementView: React.FC = () => {
                     </span>
                   </td>
                   <td className="p-4 font-mono text-gray-600 text-[11px]">{user.last_login}</td>
-                  <td className="p-4 text-center"><Badge variant="emerald">{user.status}</Badge></td>
+                  <td className="p-4 text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <Badge variant={user.status === 'Active' ? 'emerald' : 'gray'}>{user.status}</Badge>
+                      <button
+                        type="button"
+                        title={user.status === 'Active' ? 'Click to Disable Account' : 'Click to Enable Account'}
+                        onClick={() => handleToggleUserStatus(user)}
+                        className={cn(
+                          "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                          user.status === 'Active' ? "bg-emerald-600" : "bg-gray-300"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                            user.status === 'Active' ? "translate-x-3" : "translate-x-0"
+                          )}
+                        />
+                      </button>
+                    </div>
+                  </td>
+                  <td className="p-4 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleOpenEditUser(user)}
+                        className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                        title="Edit User"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setConfirmDeleteUser(user)}
+                        className="h-7 w-7 p-0 text-rose-600 hover:text-rose-800 hover:bg-rose-50"
+                        title="Delete User"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -250,7 +356,7 @@ export const UserManagementView: React.FC = () => {
                     <td className="p-4"><Badge variant="secondary" size="sm">{inv.role_name}</Badge></td>
                     <td className="p-4 text-gray-700">{inv.department_name}</td>
                     <td className="p-4 text-gray-500">{inv.invited_by}</td>
-                    <td className="p-4 font-mono text-gray-500 text-[11px]">{new Date(inv.created_at).toLocaleDateString()}</td>
+                    <td className="p-4 font-mono text-gray-500 text-[11px]">{new Date(inv.created_at || inv.expiration_date).toLocaleDateString()}</td>
                     <td className="p-4 text-center"><Badge variant="warning">{inv.status}</Badge></td>
                     <td className="p-4 text-center">
                       <Button
@@ -408,6 +514,128 @@ export const UserManagementView: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Modal: Edit User */}
+      {editingUser && (
+        <Modal
+          isOpen={Boolean(editingUser)}
+          onClose={() => setEditingUser(null)}
+          title={`Edit User: ${editingUser.name}`}
+          description={`Update profile attributes and role assignments for ${editingUser.email}`}
+        >
+          <form onSubmit={handleSaveEditUser} className="p-6 space-y-4">
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-gray-900">Full Name *</label>
+              <input
+                type="text"
+                value={editUserName}
+                onChange={(e) => setEditUserName(e.target.value)}
+                required
+                className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-gray-900">Assigned Role</label>
+                <select
+                  value={editUserRole}
+                  onChange={(e) => setEditUserRole(e.target.value)}
+                  className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white font-medium"
+                >
+                  <option value="Company Admin">Company Admin</option>
+                  <option value="HR Head">HR Head</option>
+                  <option value="HR Admin">HR Admin</option>
+                  <option value="Manager">Manager</option>
+                  <option value="Employee">Employee</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-gray-900">Department</label>
+                <select
+                  value={editUserDept}
+                  onChange={(e) => setEditUserDept(e.target.value)}
+                  className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white font-medium"
+                >
+                  <option value="Human Resources">Human Resources</option>
+                  <option value="Engineering">Engineering</option>
+                  <option value="Finance & Accounts">Finance & Accounts</option>
+                  <option value="Operations">Operations</option>
+                  <option value="Sales & Marketing">Sales & Marketing</option>
+                  <option value="Administration">Administration</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-gray-900">Account Status</label>
+              <select
+                value={editUserStatus}
+                onChange={(e) => setEditUserStatus(e.target.value as AdminUser['status'])}
+                className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white font-medium"
+              >
+                <option value="Active">Active</option>
+                <option value="Deactivated">Deactivated</option>
+                <option value="Suspended">Suspended</option>
+                <option value="Locked">Locked</option>
+                <option value="Invited">Invited</option>
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+              <Button variant="outline" size="sm" type="button" onClick={() => setEditingUser(null)}>
+                Cancel
+              </Button>
+              <Button size="sm" type="submit" className="bg-[#07563D] hover:bg-[#053e2c] text-white">
+                Save Changes
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Modal: Delete User Confirmation */}
+      {confirmDeleteUser && (
+        <Modal
+          isOpen={Boolean(confirmDeleteUser)}
+          onClose={() => setConfirmDeleteUser(null)}
+          title="Delete User Account"
+        >
+          <div className="space-y-4 p-2">
+            <div className="flex items-center gap-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs">
+              <AlertTriangle className="w-5 h-5 shrink-0 text-rose-600" />
+              <div>
+                <p className="font-bold">Permanent Account Revocation</p>
+                <p className="text-rose-700 mt-0.5">
+                  Are you sure you want to remove user account for <strong className="text-gray-900">{confirmDeleteUser.name}</strong> ({confirmDeleteUser.email})?
+                  This will revoke all authentication tokens and access privileges.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmDeleteUser(null)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleDeleteUserConfirmed}
+                disabled={isDeleting}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
+              >
+                {isDeleting ? 'Deleting...' : 'Confirm & Delete'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

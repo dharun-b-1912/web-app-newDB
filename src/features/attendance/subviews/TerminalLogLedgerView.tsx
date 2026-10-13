@@ -580,12 +580,32 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
                     >
                       {/* Event Time */}
                       <TableCell className="pl-6 font-mono font-bold text-gray-900">
-                        <div>
-                          <span>{attendanceTimeService.formatAttendanceTime(ev.event_time_utc, 'Asia/Kolkata', true)}</span>
-                          <span className="block text-[9px] text-gray-400 font-mono font-normal">
-                            UTC: {ev.event_time_utc.split('T')[1]?.replace('Z', '')}
-                          </span>
-                        </div>
+                        {(() => {
+                          const dateMeta = attendanceTimeService.formatAttendanceDateWithRelative(ev.event_time_utc, 'Asia/Kolkata');
+                          const timeStr = attendanceTimeService.formatAttendanceTime(ev.event_time_utc, 'Asia/Kolkata', true);
+                          return (
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                {dateMeta.isToday ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-600 text-white uppercase tracking-wider">
+                                    Today
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-gray-100 text-gray-700">
+                                    {dateMeta.relativeLabel}
+                                  </span>
+                                )}
+                                <span>{timeStr}</span>
+                                <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
+                                  IST
+                                </span>
+                              </div>
+                              <span className="block text-[9px] text-gray-400 font-mono font-normal mt-0.5">
+                                {dateMeta.formattedDateWithYear} (UTC: {ev.event_time_utc.split('T')[1]?.replace('Z', '')})
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </TableCell>
 
                       {/* Received Time */}

@@ -238,10 +238,79 @@ export interface MetaWebhookPayload {
 }
 
 // ============================================================================
-// Bot State & Session Context
+// Bot State, Identity & Session Context
 // ============================================================================
 
+export type WhatsAppRoleContext = 'EMPLOYEE' | 'TEAM_LEAD' | 'SUPERVISOR' | 'MANAGER' | 'HR' | 'ADMIN';
+
+export type WhatsAppPermission =
+  | 'attendance.view_self'
+  | 'attendance.check_in'
+  | 'attendance.check_out'
+  | 'leave.view_self'
+  | 'leave.apply'
+  | 'leave.cancel'
+  | 'regularization.apply'
+  | 'regularization.view_self'
+  | 'payslip.view_self'
+  | 'profile.view_self'
+  | 'documents.view_self'
+  | 'helpdesk.create'
+  | 'helpdesk.create_ticket'
+  | 'company_updates.view'
+  | 'team.attendance.view'
+  | 'team.leave.view'
+  | 'team.members.view'
+  | 'shift.roster.view'
+  | 'leave.approve'
+  | 'regularization.approve'
+  | 'employee.search'
+  | 'employee.view'
+  | 'employee.documents.view'
+  | 'reports.view'
+  | 'policy.broadcast';
+
+export interface ResolvedEmployeeIdentity {
+  employeeId: string;
+  employeeCode: string;
+  fullName: string;
+  organizationId: string;
+  companyName: string;
+  department: string;
+  designation: string;
+  employmentStatus: string;
+  phone: string;
+  roleContext: WhatsAppRoleContext;
+  directReportsCount: number;
+  teamLeadReportsCount: number;
+  managerId?: string | null;
+  managerName?: string | null;
+  permissions: WhatsAppPermission[];
+}
+
+export type WhatsAppAuthStatus =
+  | 'UNAUTHENTICATED'
+  | 'AWAITING_PHONE'
+  | 'LOOKING_UP_EMPLOYEE'
+  | 'ACCOUNT_NOT_FOUND'
+  | 'ACCOUNT_FOUND'
+  | 'AWAITING_COMPANY_SELECTION'
+  | 'AWAITING_VERIFICATION'
+  | 'AWAITING_OTP'
+  | 'VERIFIED';
+
 export type BotConversationState =
+  | 'UNKNOWN'
+  | 'AWAITING_PHONE'
+  | 'LOOKING_UP_EMPLOYEE'
+  | 'ACCOUNT_NOT_FOUND'
+  | 'ACCOUNT_FOUND'
+  | 'AWAITING_COMPANY_SELECTION'
+  | 'AWAITING_VERIFICATION'
+  | 'AWAITING_OTP'
+  | 'VERIFIED'
+  | 'RESOLVING_CONTEXT'
+  | 'READY'
   | 'IDLE'
   | 'AWAITING_MENU_CHOICE'
   | 'PAYSLIP_MENU'
@@ -255,7 +324,38 @@ export type BotConversationState =
   | 'SCHEDULE_MENU'
   | 'ANNOUNCEMENTS_MENU'
   | 'AWAITING_POLICY_QUERY'
-  | 'AWAITING_TICKET_DESCRIPTION';
+  | 'AWAITING_TICKET_DESCRIPTION'
+  | 'HR_SEARCHING_EMPLOYEE';
+
+export interface WhatsAppFlowTrace {
+  correlationId: string;
+  stateHistory: BotConversationState[];
+  employeeResolved: boolean;
+  organizationResolved: boolean;
+  verificationPassed: boolean;
+  hierarchyResolved: boolean;
+  permissionsResolved: boolean;
+  menuResolved: boolean;
+  finalResult: 'SUCCESS' | 'FAILED' | 'REJECTED' | 'PENDING';
+  errorReason?: string;
+}
+
+export interface WhatsAppAuditEvent {
+  id: string;
+  correlationId: string;
+  whatsappMessageId?: string;
+  organizationId?: string;
+  employeeId?: string;
+  eventType: string;
+  previousState?: BotConversationState | string;
+  newState?: BotConversationState | string;
+  action?: string;
+  result: 'SUCCESS' | 'FAILED' | 'REJECTED' | 'DENIED' | 'PENDING';
+  errorCode?: string;
+  durationMs?: number;
+  metadata?: Record<string, any>;
+  createdAt: string;
+}
 
 export interface BotSessionContext {
   waId: string;
@@ -265,8 +365,18 @@ export interface BotSessionContext {
   employeeName: string;
   roleTitle?: string;
   department: string;
+  companyName?: string;
   state: BotConversationState;
+  authStatus?: WhatsAppAuthStatus;
+  roleContext?: WhatsAppRoleContext;
+  directReportsCount?: number;
+  permissions?: WhatsAppPermission[];
+  matchedCompanies?: ResolvedEmployeeIdentity[];
+  pendingEmployee?: ResolvedEmployeeIdentity;
+  correlationId?: string;
+  flowTrace?: WhatsAppFlowTrace;
   draftData?: {
+    enteredPhone?: string;
     leaveType?: string;
     startDate?: string;
     endDate?: string;
@@ -275,6 +385,16 @@ export interface BotSessionContext {
     ticketCategory?: string;
     ticketQuery?: string;
   };
+  otpChallenge?: {
+    challengeId: string;
+    expiresAt: number;
+    attempts: number;
+    maxAttempts: number;
+    lastSentAt: number;
+  };
+  sessionExpiresAt?: string;
+  verifiedAt?: string;
+  verificationMethod?: 'WHATSAPP_OTP' | 'SMS_OTP' | 'INTERACTIVE_CONFIRMATION' | 'ADMIN_BYPASS';
   lastActiveAt: string;
 }
 

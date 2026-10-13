@@ -105,10 +105,16 @@ export const WorkforceOverviewView: React.FC<Props> = ({ onNavigate }) => {
 
   // Idempotent Real-time Event Subscription
   useEffect(() => {
-    const unsub = hrEventBus.subscribe('*', () => {
+    const unsubWorkforce = hrEventBus.subscribe('workforce.*', () => {
       loadWorkforceData(true);
     });
-    return () => unsub();
+    const unsubEmp = hrEventBus.subscribe('employee.*', () => {
+      loadWorkforceData(true);
+    });
+    return () => {
+      unsubWorkforce();
+      unsubEmp();
+    };
   }, [loadWorkforceData]);
 
   // 1. KPI Aggregation from Authoritative Engines
@@ -457,7 +463,17 @@ export const WorkforceOverviewView: React.FC<Props> = ({ onNavigate }) => {
 
       {/* 9. Today's Workforce Operational Status */}
       <TodayWorkforceStatus
-        data={bundle.dailyStatus}
+        data={{
+          total: bundle.dailyStatus.totalWorkforce,
+          present: bundle.dailyStatus.presentCount,
+          late: bundle.dailyStatus.lateCount,
+          leave: bundle.dailyStatus.onLeaveCount,
+          wfh: bundle.dailyStatus.wfhCount,
+          field: bundle.dailyStatus.fieldCount,
+          absent: bundle.dailyStatus.absentCount,
+          notMarked: bundle.dailyStatus.notMarkedCount,
+          presentPct: bundle.dailyStatus.presentRatePct,
+        }}
         onOpenAttendance={() => navigate('attendance')}
       />
 

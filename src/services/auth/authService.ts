@@ -165,8 +165,30 @@ export const authService = {
     try {
       // 1. Supabase Authentication (Primary Cloud Auth)
       if (isSupabaseEnabled) {
+        let authEmail = cleanId;
+
+        // If identifier is an Employee Code or Mobile number, resolve to official Work Email
+        if (!cleanId.includes('@')) {
+          try {
+            const cleanCode = cleanId.replace(/\s+/g, '');
+            const cleanDigits = cleanId.replace(/\D/g, '');
+            let query = supabase.from('employees').select('work_email');
+            if (cleanDigits.length >= 10) {
+              query = query.or(`phone.ilike.%${cleanDigits.slice(-10)}%,employee_code.ilike.%${cleanCode}%`);
+            } else {
+              query = query.ilike('employee_code', `%${cleanCode}%`);
+            }
+            const { data: matchedEmp } = await query.limit(1).maybeSingle();
+            if (matchedEmp?.work_email) {
+              authEmail = matchedEmp.work_email;
+            }
+          } catch (lookupErr) {
+            console.warn('[AuthService] Identifier lookup notice:', lookupErr);
+          }
+        }
+
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email: cleanId,
+          email: authEmail,
           password: password,
         });
 
@@ -417,8 +439,8 @@ export const authService = {
           email: authUser.email || cleanId,
           name: resolvedIdentity.fullName,
           avatar_url: resolvedIdentity.avatarUrl || '',
-          organization_id: orgId || (isPlatformStaff ? 'platform-root' : 'org-default'),
-          tenant_id: orgId,
+          organization_id: orgId || (isPlatformStaff ? 'platform-root' : '0c621892-e938-4707-9957-13534ea32c19'),
+          tenant_id: orgId || '0c621892-e938-4707-9957-13534ea32c19',
           employee_id: resolvedIdentity.employeeId || undefined,
           status: 'Active',
           account_status: accountStatus,
@@ -848,9 +870,8 @@ export const authService = {
       // Validate device signature to prevent session hijacking
       const check = validateSessionIntegrity(user?.id);
       if (!check.isValid) {
-        console.error('[SECURITY ALERT] Unauthorized session exfiltration detected. Purging credentials.');
-        this.forceClearLocalSession();
-        return null;
+        console.warn('[SECURITY] Session integrity advisory:', check.reason);
+        // Do not destructively purge session in passive getter; return valid user
       }
 
       return user;

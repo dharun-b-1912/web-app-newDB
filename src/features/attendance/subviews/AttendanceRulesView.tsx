@@ -66,11 +66,7 @@ interface AttendanceRulesViewProps {
 
 export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavigateSubPath }) => {
   const { showToast } = useToast();
-
-  let tenantContext: any = null;
-  try {
-    tenantContext = useTenant();
-  } catch (_) {}
+  const tenantContext = useTenant();
 
   const activeOrgId = tenantContext?.organization?.id || getActiveOrgId();
   const activeOrgName = tenantContext?.organization?.name || 'JOY Corporation';
@@ -289,18 +285,15 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
   // Handle Save Exception
   const handleSaveException = (e: React.FormEvent) => {
     e.preventDefault();
-    const emp = employees.find((x) => x.id === exEmpId) || {
-      id: exEmpId,
-      display_name: 'Dharun B',
-      employee_code: 'JCS-017',
-    };
+    const emp = employees.find((x) => x.id === exEmpId);
+    if (!emp) return;
 
     attendanceRuleEngineService.createEmployeeException(
       {
         employee_id: emp.id,
-        employee_name: emp.display_name || emp.name,
-        employee_code: emp.employee_code,
-        department: emp.department_name || 'Operations',
+        employee_name: emp.display_name || emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim(),
+        employee_code: emp.employee_code || emp.id,
+        department: emp.department_name || emp.department || '',
         exception_type: exType,
         title: exTitle || (exType === 'GRACE_OVERRIDE' ? `${exGraceMinutes}m Grace Override` : 'Custom Schedule Override'),
         reason: exReason || 'Temporary project requirement',
@@ -825,7 +818,7 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
                     {employees.length > 0 ? (
                       employees.map((emp) => (
                         <option key={emp.id} value={emp.id}>
-                          {emp.display_name || emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.employee_code} ({emp.employee_code || emp.id} • {emp.department_name || emp.department || 'Operations'})
+                          {emp.display_name || emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.employee_code} ({emp.employee_code || emp.id}{emp.department_name ? ` • ${emp.department_name}` : ''})
                         </option>
                       ))
                     ) : (
@@ -1281,7 +1274,7 @@ export const AttendanceRulesView: React.FC<AttendanceRulesViewProps> = ({ onNavi
                   <option value="">-- Select Employee --</option>
                   {employees.map((emp) => (
                     <option key={emp.id} value={emp.id}>
-                      {emp.display_name || emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.employee_code} ({emp.employee_code || emp.id} • {emp.department_name || emp.department || 'Operations'})
+                      {emp.display_name || emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.employee_code} ({emp.employee_code || emp.id}{emp.department_name ? ` • ${emp.department_name}` : ''})
                     </option>
                   ))}
                 </select>

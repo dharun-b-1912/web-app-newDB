@@ -12,3 +12,7 @@ export * from './botEngine';
 export * from './flowsEngine';
 export * from './webhookHandler';
 export * from './whatsappNotificationService';
+export * from './whatsappIdentityService';
+export * from './whatsappOtpService';
+export * from './whatsappPermissionService';
+export * from './whatsappLogger';

@@ -33,6 +33,9 @@ import {
   Landmark,
   Mail,
   Hash,
+  Pencil,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { Department, Team, Company, Branch, Employee } from '../../types';
 import { organizationStructureService } from '../../services/organization/organizationStructureService';
@@ -71,11 +74,16 @@ export const DepartmentsAndTeamsView: React.FC<Props> = ({
   const [teamMembers, setTeamMembers] = useState<Employee[]>([]);
   const [isTeamDrawerOpen, setIsTeamDrawerOpen] = useState(false);
 
-  // Modals
+  // Modals & Editing States
   const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
+  const [editingDept, setEditingDept] = useState<Department | null>(null);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [isAssignHeadModalOpen, setIsAssignHeadModalOpen] = useState(false);
   const [newHeadId, setNewHeadId] = useState('');
+  const [confirmDeleteDept, setConfirmDeleteDept] = useState<Department | null>(null);
+  const [confirmDeleteTeam, setConfirmDeleteTeam] = useState<Team | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Form States - Department
   const [deptCompanyId, setDeptCompanyId] = useState('');
@@ -207,23 +215,111 @@ export const DepartmentsAndTeamsView: React.FC<Props> = ({
     setIsTeamDrawerOpen(true);
   };
 
-  const handleCreateDepartment = async (e: React.FormEvent) => {
+  const handleOpenEditDept = (dept: Department) => {
+    setEditingDept(dept);
+    setDeptCompanyId(dept.company_id || '');
+    setDeptBranchId(dept.branch_id || '');
+    setDeptName(dept.name);
+    setDeptCode(dept.code);
+    setDeptCostCenter(dept.cost_center_code || '');
+    setDeptDescription(dept.description || '');
+    setDeptHeadId(dept.head_employee_id || '');
+    setIsDeptModalOpen(true);
+  };
+
+  const handleOpenEditTeam = (team: Team) => {
+    setEditingTeam(team);
+    setTeamDeptId(team.department_id);
+    setTeamName(team.name);
+    setTeamCode(team.code);
+    setTeamDescription(team.description || '');
+    setTeamLeadId(team.team_lead_employee_id || '');
+    setIsTeamModalOpen(true);
+  };
+
+  const handleToggleDeptStatus = async (dept: Department) => {
+    const newStatus = (dept.status === 'Inactive' ? 'Active' : 'Inactive');
+    try {
+      await organizationStructureService.updateDepartment(dept.id, { status: newStatus as any });
+      showToast(`Department ${dept.name} marked as ${newStatus}`);
+      loadData();
+    } catch {
+      showToast('Error updating department status', 'error');
+    }
+  };
+
+  const handleToggleTeamStatus = async (team: Team) => {
+    const newStatus = (team.status === 'Inactive' ? 'Active' : 'Inactive');
+    try {
+      await organizationStructureService.updateTeam(team.id, { status: newStatus as any });
+      showToast(`Team ${team.name} marked as ${newStatus}`);
+      loadData();
+    } catch {
+      showToast('Error updating team status', 'error');
+    }
+  };
+
+  const handleDeleteDeptConfirmed = async () => {
+    if (!confirmDeleteDept) return;
+    setIsDeleting(true);
+    try {
+      await organizationStructureService.deleteDepartment(confirmDeleteDept.id);
+      showToast(`Department ${confirmDeleteDept.name} deleted`);
+      setConfirmDeleteDept(null);
+      loadData();
+    } catch {
+      showToast('Error deleting department', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteTeamConfirmed = async () => {
+    if (!confirmDeleteTeam) return;
+    setIsDeleting(true);
+    try {
+      await organizationStructureService.deleteTeam(confirmDeleteTeam.id);
+      showToast(`Team ${confirmDeleteTeam.name} deleted`);
+      setConfirmDeleteTeam(null);
+      loadData();
+    } catch {
+      showToast('Error deleting team', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleSaveDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!deptCompanyId || !deptName || !deptCode) return;
 
     try {
-      await organizationStructureService.createDepartment({
-        organization_id: organizationId,
-        company_id: deptCompanyId,
-        branch_id: deptBranchId || undefined,
-        name: deptName,
-        code: deptCode,
-        cost_center_code: deptCostCenter,
-        description: deptDescription,
-        head_employee_id: deptHeadId || undefined,
-      });
-      showToast(`Department ${deptName} created successfully!`);
+      if (editingDept) {
+        await organizationStructureService.updateDepartment(editingDept.id, {
+          company_id: deptCompanyId,
+          branch_id: deptBranchId || undefined,
+          name: deptName,
+          code: deptCode,
+          cost_center_code: deptCostCenter,
+          description: deptDescription,
+          head_employee_id: deptHeadId || undefined,
+        });
+        showToast(`Department ${deptName} updated successfully!`);
+      } else {
+        await organizationStructureService.createDepartment({
+          organization_id: organizationId,
+          company_id: deptCompanyId,
+          branch_id: deptBranchId || undefined,
+          name: deptName,
+          code: deptCode,
+          cost_center_code: deptCostCenter,
+          description: deptDescription,
+          head_employee_id: deptHeadId || undefined,
+        });
+        showToast(`Department ${deptName} created successfully!`);
+      }
       setIsDeptModalOpen(false);
+      setEditingDept(null);
       setDeptName('');
       setDeptCode('');
       setDeptCostCenter('');
@@ -231,32 +327,44 @@ export const DepartmentsAndTeamsView: React.FC<Props> = ({
       setDeptHeadId('');
       loadData();
     } catch {
-      showToast('Error creating department', 'error');
+      showToast('Error saving department', 'error');
     }
   };
 
-  const handleCreateTeam = async (e: React.FormEvent) => {
+  const handleSaveTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teamDeptId || !teamName || !teamCode) return;
 
     try {
-      await organizationStructureService.createTeam({
-        organization_id: organizationId,
-        department_id: teamDeptId,
-        name: teamName,
-        code: teamCode,
-        description: teamDescription,
-        team_lead_employee_id: teamLeadId || undefined,
-      });
-      showToast(`Team ${teamName} registered successfully!`);
+      if (editingTeam) {
+        await organizationStructureService.updateTeam(editingTeam.id, {
+          department_id: teamDeptId,
+          name: teamName,
+          code: teamCode,
+          description: teamDescription,
+          team_lead_employee_id: teamLeadId || undefined,
+        });
+        showToast(`Team ${teamName} updated successfully!`);
+      } else {
+        await organizationStructureService.createTeam({
+          organization_id: organizationId,
+          department_id: teamDeptId,
+          name: teamName,
+          code: teamCode,
+          description: teamDescription,
+          team_lead_employee_id: teamLeadId || undefined,
+        });
+        showToast(`Team ${teamName} registered successfully!`);
+      }
       setIsTeamModalOpen(false);
+      setEditingTeam(null);
       setTeamName('');
       setTeamCode('');
       setTeamDescription('');
       setTeamLeadId('');
       loadData();
     } catch {
-      showToast('Error creating team', 'error');
+      showToast('Error saving team', 'error');
     }
   };
 
@@ -442,22 +550,61 @@ export const DepartmentsAndTeamsView: React.FC<Props> = ({
                       </span>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={dept.status === 'Active' ? 'emerald' : 'gray'} className="text-[10px]">
-                        {dept.status || 'Active'}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={dept.status === 'Active' ? 'emerald' : 'gray'} className="text-[10px]">
+                          {dept.status || 'Active'}
+                        </Badge>
+                        <button
+                          type="button"
+                          title={dept.status === 'Inactive' ? 'Click to Activate' : 'Click to Deactivate'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleDeptStatus(dept);
+                          }}
+                          className={cn(
+                            "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                            dept.status !== 'Inactive' ? "bg-emerald-600" : "bg-gray-300"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                              dept.status !== 'Inactive' ? "translate-x-3" : "translate-x-0"
+                            )}
+                          />
+                        </button>
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={e => {
-                          e.stopPropagation();
-                          handleOpenDepartmentDetail(dept);
-                        }}
-                        className="text-xs text-[#07563D] hover:bg-emerald-50 font-bold"
-                      >
-                        View Details
-                      </Button>
+                      <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleOpenDepartmentDetail(dept)}
+                          className="h-7 w-7 p-0 text-[#07563D] hover:bg-emerald-50"
+                          title="View Details"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleOpenEditDept(dept)}
+                          className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                          title="Edit Department"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setConfirmDeleteDept(dept)}
+                          className="h-7 w-7 p-0 text-rose-600 hover:text-rose-800 hover:bg-rose-50"
+                          title="Delete Department"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -540,22 +687,61 @@ export const DepartmentsAndTeamsView: React.FC<Props> = ({
                       </span>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={t.status === 'Active' ? 'emerald' : 'gray'} className="text-[10px]">
-                        {t.status || 'Active'}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={t.status === 'Active' ? 'emerald' : 'gray'} className="text-[10px]">
+                          {t.status || 'Active'}
+                        </Badge>
+                        <button
+                          type="button"
+                          title={t.status === 'Inactive' ? 'Click to Activate' : 'Click to Deactivate'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleTeamStatus(t);
+                          }}
+                          className={cn(
+                            "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                            t.status !== 'Inactive' ? "bg-emerald-600" : "bg-gray-300"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                              t.status !== 'Inactive' ? "translate-x-3" : "translate-x-0"
+                            )}
+                          />
+                        </button>
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={e => {
-                          e.stopPropagation();
-                          handleOpenTeamDetail(t);
-                        }}
-                        className="text-xs text-[#07563D] hover:bg-emerald-50 font-bold"
-                      >
-                        View Details
-                      </Button>
+                      <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleOpenTeamDetail(t)}
+                          className="h-7 w-7 p-0 text-[#07563D] hover:bg-emerald-50"
+                          title="View Details"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleOpenEditTeam(t)}
+                          className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                          title="Edit Team"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setConfirmDeleteTeam(t)}
+                          className="h-7 w-7 p-0 text-rose-600 hover:text-rose-800 hover:bg-rose-50"
+                          title="Delete Team"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -911,13 +1097,17 @@ export const DepartmentsAndTeamsView: React.FC<Props> = ({
       )}
 
       {/* Modal: Add Department */}
+      {/* Modal: Add/Edit Department */}
       <Modal
         isOpen={isDeptModalOpen}
-        onClose={() => setIsDeptModalOpen(false)}
-        title="Add Functional Department"
-        description="Register a new organizational unit and assign a cost center code"
+        onClose={() => {
+          setIsDeptModalOpen(false);
+          setEditingDept(null);
+        }}
+        title={editingDept ? "Edit Department" : "Add Functional Department"}
+        description={editingDept ? `Update details and cost center for ${editingDept.name}` : "Register a new organizational unit and assign a cost center code"}
       >
-        <form onSubmit={handleCreateDepartment} className="p-6 space-y-4">
+        <form onSubmit={handleSaveDepartment} className="p-6 space-y-4">
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">Parent Legal Entity *</label>
             <select
@@ -1000,24 +1190,35 @@ export const DepartmentsAndTeamsView: React.FC<Props> = ({
           </div>
 
           <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-            <Button type="button" variant="outline" size="sm" onClick={() => setIsDeptModalOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsDeptModalOpen(false);
+                setEditingDept(null);
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" variant="primary" size="sm" className="bg-[#07563D] hover:bg-[#0b7a57] text-white">
-              Create Department
+              {editingDept ? 'Update Department' : 'Create Department'}
             </Button>
           </div>
         </form>
       </Modal>
 
-      {/* Modal: Add Team */}
+      {/* Modal: Add/Edit Team */}
       <Modal
         isOpen={isTeamModalOpen}
-        onClose={() => setIsTeamModalOpen(false)}
-        title="Add Team / Squad"
-        description="Create a focused squad or operational unit under a department"
+        onClose={() => {
+          setIsTeamModalOpen(false);
+          setEditingTeam(null);
+        }}
+        title={editingTeam ? "Edit Team / Squad" : "Add Team / Squad"}
+        description={editingTeam ? `Update team settings for ${editingTeam.name}` : "Create a focused squad or operational unit under a department"}
       >
-        <form onSubmit={handleCreateTeam} className="p-6 space-y-4">
+        <form onSubmit={handleSaveTeam} className="p-6 space-y-4">
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">Parent Department *</label>
             <select
@@ -1088,11 +1289,19 @@ export const DepartmentsAndTeamsView: React.FC<Props> = ({
           </div>
 
           <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
-            <Button type="button" variant="outline" size="sm" onClick={() => setIsTeamModalOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsTeamModalOpen(false);
+                setEditingTeam(null);
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" variant="primary" size="sm" className="bg-[#07563D] hover:bg-[#0b7a57] text-white">
-              Create Team
+              {editingTeam ? 'Update Team' : 'Create Team'}
             </Button>
           </div>
         </form>
@@ -1133,6 +1342,89 @@ export const DepartmentsAndTeamsView: React.FC<Props> = ({
           </div>
         </form>
       </Modal>
+
+      {/* Modal: Delete Department Confirmation */}
+      {confirmDeleteDept && (
+        <Modal
+          isOpen={Boolean(confirmDeleteDept)}
+          onClose={() => setConfirmDeleteDept(null)}
+          title="Delete Department"
+        >
+          <div className="space-y-4 p-2">
+            <div className="flex items-center gap-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs">
+              <AlertTriangle className="w-5 h-5 shrink-0 text-rose-600" />
+              <div>
+                <p className="font-bold">Confirm Department Removal</p>
+                <p className="text-rose-700 mt-0.5">
+                  Are you sure you want to delete <strong className="text-gray-900">{confirmDeleteDept.name} ({confirmDeleteDept.code})</strong>?
+                  Associated team mappings will need to be reallocated.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmDeleteDept(null)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleDeleteDeptConfirmed}
+                disabled={isDeleting}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
+              >
+                {isDeleting ? 'Deleting...' : 'Confirm & Delete'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal: Delete Team Confirmation */}
+      {confirmDeleteTeam && (
+        <Modal
+          isOpen={Boolean(confirmDeleteTeam)}
+          onClose={() => setConfirmDeleteTeam(null)}
+          title="Delete Team / Squad"
+        >
+          <div className="space-y-4 p-2">
+            <div className="flex items-center gap-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs">
+              <AlertTriangle className="w-5 h-5 shrink-0 text-rose-600" />
+              <div>
+                <p className="font-bold">Confirm Team Removal</p>
+                <p className="text-rose-700 mt-0.5">
+                  Are you sure you want to delete squad <strong className="text-gray-900">{confirmDeleteTeam.name} ({confirmDeleteTeam.code})</strong>?
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmDeleteTeam(null)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleDeleteTeamConfirmed}
+                disabled={isDeleting}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
+              >
+                {isDeleting ? 'Deleting...' : 'Confirm & Delete'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

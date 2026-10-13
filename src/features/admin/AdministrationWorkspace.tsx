@@ -57,13 +57,32 @@ export const AdministrationWorkspace: React.FC<AdministrationWorkspaceProps> = (
   const [integrationsSubTab, setIntegrationsSubTab] = useState<'connected' | 'api'>(
     initialSubTab === 'api' ? 'api' : 'connected'
   );
-  const [settingsSubTab, setSettingsSubTab] = useState<'general' | 'notifications' | 'subscription' | 'billing'>('general');
+  const [settingsSubTab, setSettingsSubTab] = useState<'general' | 'notifications' | 'subscription' | 'billing'>(
+    initialSubTab === 'notifications'
+      ? 'notifications'
+      : initialSubTab === 'subscription'
+      ? 'subscription'
+      : initialSubTab === 'billing'
+      ? 'billing'
+      : 'general'
+  );
 
   useEffect(() => {
     if (initialTab) {
       setActiveTab(initialTab);
     }
-  }, [initialTab]);
+    if (initialSubTab) {
+      if (initialSubTab === 'roles' || initialSubTab === 'permissions' || initialSubTab === 'users') {
+        setAccessSubTab(initialSubTab);
+      }
+      if (initialSubTab === 'api' || initialSubTab === 'connected') {
+        setIntegrationsSubTab(initialSubTab);
+      }
+      if (['general', 'notifications', 'subscription', 'billing'].includes(initialSubTab)) {
+        setSettingsSubTab(initialSubTab as any);
+      }
+    }
+  }, [initialTab, initialSubTab]);
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto p-4 sm:p-6 pb-24">

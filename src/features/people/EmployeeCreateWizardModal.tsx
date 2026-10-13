@@ -15,11 +15,12 @@ import {
   WorkMode,
   EmployeeStatus,
 } from '../../types';
-import { api } from '../../services/api';
+import { api, isValidUUID } from '../../services/api';
 import { onboardingService } from '../../services/onboardingService';
 import { hrEventBus } from '../../services/hrEventBus';
 import { payrollApi, fetchStatutoryConfigFromDb } from '../../services/payrollApi';
 import { payrollCalculationEngine } from '../../services/payroll/payrollCalculationEngine';
+import { organizationStructureService } from '../../services/organization/organizationStructureService';
 
 // Wizard Subcomponents
 import { WizardProgressHeader, WIZARD_STEPS } from './wizard/WizardProgressHeader';
@@ -90,7 +91,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
 
     // Step 7: Employee App Access & Login
     enable_app_access: true,
-    auth_method: 'EMPLOYEE_ID_PASSWORD' as 'EMPLOYEE_ID_PASSWORD' | 'MOBILE_OTP' | 'EMAIL_PASSWORD',
+    auth_method: 'EMAIL_PASSWORD' as 'EMPLOYEE_ID_PASSWORD' | 'MOBILE_OTP' | 'EMAIL_PASSWORD',
     require_password_change: true,
     require_device_verification: true,
 
@@ -98,7 +99,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     alternate_phone: '',
     marital_status: 'Single',
     nationality: 'Indian',
-    blood_group: 'O+',
+    blood_group: '',
     preferred_language: 'English',
     current_line1: '',
     current_line2: '',
@@ -158,8 +159,9 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     payroll_group_id: 'pg-monthly-main',
     salary_effective_from: new Date().toISOString().split('T')[0],
     pf_applicable: true,
-    esi_applicable: true,
+    esi_applicable: false,
     pt_applicable: true,
+    tds_applicable: true,
 
     // Step 4: Organization & Reporting
     reporting_manager_id: '',
@@ -167,8 +169,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     team_lead_id: '',
     team_lead_name: '',
     hr_owner_id: '',
-    business_unit: 'Enterprise Software',
-    cost_center: 'CC-ENG-101',
+    business_unit: '',
+    cost_center: '',
 
     // Step 5: Emergency, Bank & Statutory
     emergency_name: '',
@@ -178,9 +180,9 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     emergency_email: '',
     emergency_address: '',
     family_members: [] as FamilyMemberItem[],
-    bank_name: 'HDFC Bank',
+    bank_name: '',
     account_number: '',
-    ifsc: 'HDFC0001234',
+    ifsc: '',
     account_holder_name: '',
     account_type: 'SALARY' as 'SALARY' | 'SAVINGS' | 'CURRENT',
     pan: '',
@@ -210,9 +212,10 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       middle_name: (p as any).middle_name || (emp as any).middle_name || '',
       last_name: emp.last_name || '',
       preferred_name: (p as any).display_name || emp.display_name || '',
-      work_email: emp.work_email || '',
-      personal_email: p.personal_email || '',
-      phone: p.phone || (p as any).primary_mobile || '',
+      work_email: emp.work_email || (p as any).work_email || '',
+      personal_email: emp.personal_email || p.personal_email || (p as any).personal_email || '',
+      email_type: (emp.work_email ? 'WORK' : (emp.personal_email || p.personal_email) ? 'PERSONAL' : 'WORK') as 'PERSONAL' | 'WORK' | 'NONE',
+      phone: p.phone || (p as any).primary_mobile || (emp as any).phone || '',
       dob: p.date_of_birth || '',
       gender: p.gender || 'Male',
 
@@ -220,7 +223,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       alternate_phone: p.alternate_phone || '',
       marital_status: p.marital_status || 'Single',
       nationality: p.nationality || 'Indian',
-      blood_group: p.blood_group || 'O+',
+      blood_group: p.blood_group || '',
       preferred_language: p.preferred_language || 'English',
       current_line1: currAddr.line1 || (typeof p.current_address === 'string' ? p.current_address : ''),
       current_line2: currAddr.line2 || '',
@@ -248,38 +251,71 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       vendor_start_date: e.vendor_start_date || '',
       vendor_end_date: e.vendor_end_date || '',
       status: (emp.status || 'Active') as EmployeeStatus,
-      department_id: emp.department_id || '',
-      department_name: emp.department_name || '',
-      designation_id: emp.designation_id || '',
-      designation_title: emp.designation_title || '',
+      department_id: emp.department_id || (e as any).department_id || '',
+      department_name: emp.department_name || (e as any).department_name || (emp as any).department || '',
+      designation_id: emp.designation_id || (e as any).designation_id || '',
+      designation_title: emp.designation_title || (e as any).designation_title || (emp as any).designation || '',
       branch_id: emp.branch_id || '',
       location_id: (emp as any).location_id || '',
       work_mode: (e.work_mode || 'Hybrid') as WorkMode,
       job_level: e.job_level || 'Mid Level',
       grade: e.grade || 'G3',
-      probation_months: e.probation_period_months || 6,
-      notice_period_days: e.notice_period_days || 60,
+      probation_months: e.probation_period_months !== undefined ? e.probation_period_months : ((e as any).probation_months !== undefined ? (e as any).probation_months : 6),
+      notice_period_days: e.notice_period_days !== undefined ? e.notice_period_days : 60,
 
       // Work Assignment
-      shift_id: (e as any).shift_id || 'shift-general-01',
-      shift_name: (e as any).shift_name || 'General Shift (09:30 AM – 06:30 PM)',
-      attendance_policy_id: (e as any).attendance_policy_id || 'pol-standard-office',
-      leave_policy_id: (e as any).leave_policy_id || 'leave-pol-std-2026',
-      leave_policy_name: (e as any).leave_policy_name || 'Standard Full-Time Leave Policy',
+      shift_id: (emp as any)?.shift_id || (e as any)?.shift_id || (emp as any)?.work_assignment?.shift_id || 'shift-general-01',
+      shift_name: (emp as any)?.shift_name || (e as any)?.shift_name || (emp as any)?.work_assignment?.shift_name || 'General Shift (09:30 AM – 06:30 PM)',
+      attendance_policy_id: (emp as any)?.attendance_policy_id || (e as any)?.attendance_policy_id || (emp as any)?.work_assignment?.attendance_policy_id || 'pol-standard-office',
+      leave_policy_id: (emp as any)?.leave_policy_id || (e as any)?.leave_policy_id || 'leave-pol-std-2026',
+      leave_policy_name: (emp as any)?.leave_policy_name || (e as any)?.leave_policy_name || 'Standard Full-Time Leave Policy',
 
       // Compensation & CTC
-      compensation_basis: ((e as any).compensation_basis || 'CTC_INCLUSIVE') as 'CTC_INCLUSIVE' | 'GROSS_BASED',
-      salary_structure_code: (e as any).salary_structure_code || 'CORP_STD_01',
-      salary_structure_name: (e as any).salary_structure_name || 'Corporate Standard CTC Structure',
-      annual_ctc: Number(e.ctc || (e as any).annual_ctc || (emp as any).ctc || (emp as any).annual_ctc || (p as any).annual_ctc || 1200000),
-      monthly_ctc: Math.round(Number(e.ctc || (e as any).annual_ctc || (emp as any).ctc || (emp as any).annual_ctc || (p as any).annual_ctc || 1200000) / 12),
+      compensation_basis: ((e as any).compensation_basis || (emp as any).compensation_basis || 'CTC_INCLUSIVE') as 'CTC_INCLUSIVE' | 'GROSS_BASED',
+      salary_structure_code: (e as any).salary_structure_code || (emp as any).salary_structure_code || (emp as any).salary_structure_id || 'CORP_STD_01',
+      salary_structure_name: (e as any).salary_structure_name || (emp as any).salary_structure_name || 'Corporate Standard CTC Structure',
+      annual_ctc: Number(
+        (e as any).annual_ctc ||
+        e.ctc ||
+        (emp as any).annual_ctc ||
+        (emp as any).ctc ||
+        (emp as any).salary_assignment?.annual_ctc ||
+        (p as any).annual_ctc ||
+        1200000
+      ),
+      monthly_ctc: Math.round(Number(
+        (e as any).annual_ctc ||
+        e.ctc ||
+        (emp as any).annual_ctc ||
+        (emp as any).ctc ||
+        (emp as any).salary_assignment?.annual_ctc ||
+        (p as any).annual_ctc ||
+        1200000
+      ) / 12),
       currency: (e as any).currency || 'INR',
       pay_frequency: (e as any).pay_frequency || 'MONTHLY',
       payroll_group_id: (e as any).payroll_group_id || 'pg-monthly-main',
       salary_effective_from: (e as any).salary_effective_from || e.doj || new Date().toISOString().split('T')[0],
-      pf_applicable: (emp as any).statutory?.pf_applicable !== undefined ? (emp as any).statutory?.pf_applicable : ((e as any).pf_applicable !== false),
-      esi_applicable: (emp as any).statutory?.esi_applicable !== undefined ? (emp as any).statutory?.esi_applicable : ((e as any).esi_applicable !== false),
-      pt_applicable: (emp as any).statutory?.pt_applicable !== undefined ? (emp as any).statutory?.pt_applicable : ((e as any).pt_applicable !== false),
+      pf_applicable: (emp as any).statutory?.pf_applicable !== undefined
+        ? Boolean((emp as any).statutory.pf_applicable)
+        : ((emp as any).statutory?.is_pf_eligible !== undefined
+          ? Boolean((emp as any).statutory.is_pf_eligible)
+          : ((e as any).pf_applicable !== false)),
+      esi_applicable: (emp as any).statutory?.esi_applicable !== undefined
+        ? Boolean((emp as any).statutory.esi_applicable)
+        : ((emp as any).statutory?.is_esi_eligible !== undefined
+          ? Boolean((emp as any).statutory.is_esi_eligible)
+          : Boolean((e as any).esi_applicable)),
+      pt_applicable: (emp as any).statutory?.pt_applicable !== undefined
+        ? Boolean((emp as any).statutory.pt_applicable)
+        : ((emp as any).statutory?.is_pt_eligible !== undefined
+          ? Boolean((emp as any).statutory.is_pt_eligible)
+          : ((e as any).pt_applicable !== false)),
+      tds_applicable: (emp as any).statutory?.tds_applicable !== undefined
+        ? Boolean((emp as any).statutory.tds_applicable)
+        : ((emp as any).statutory?.is_tds_eligible !== undefined
+          ? Boolean((emp as any).statutory.is_tds_eligible)
+          : ((e as any).tds_applicable !== false)),
 
       // Step 4: Organization & Reporting
       reporting_manager_id: e.reporting_manager_id || '',
@@ -287,8 +323,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       team_lead_id: e.team_lead_id || '',
       team_lead_name: e.team_lead_name || '',
       hr_owner_id: (e as any).hr_owner_id || '',
-      business_unit: (e as any).business_unit || 'Enterprise Software',
-      cost_center: e.cost_center_code || 'CC-ENG-101',
+      business_unit: (e as any).business_unit || '',
+      cost_center: e.cost_center_code || '',
 
       // Step 5: Emergency, Bank & Statutory
       emergency_name: primaryEmergency.name || '',
@@ -318,7 +354,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
 
       // Step 7: Employee App Access & Login
       enable_app_access: (emp as any).app_access?.enable_app_access !== false,
-      auth_method: ((emp as any).app_access?.auth_method || 'EMPLOYEE_ID_PASSWORD') as 'EMPLOYEE_ID_PASSWORD' | 'MOBILE_OTP' | 'EMAIL_PASSWORD',
+      auth_method: ((emp as any).app_access?.auth_method || 'EMAIL_PASSWORD') as 'EMPLOYEE_ID_PASSWORD' | 'MOBILE_OTP' | 'EMAIL_PASSWORD',
       require_password_change: (emp as any).app_access?.require_password_change !== false,
       require_device_verification: (emp as any).app_access?.require_device_verification !== false,
     };
@@ -326,12 +362,15 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
 
   const [formData, setFormData] = useState(() => getEmployeeFormData(employeeToEdit || null));
 
+  // Safe merge: only hydrate fields that are currently empty so in-progress edits are never wiped
   const mergeFreshFormData = useCallback((freshEmp: Employee) => {
     const freshData = getEmployeeFormData(freshEmp);
     setFormData((prev) => {
       const nextData = { ...prev };
       for (const [k, v] of Object.entries(freshData)) {
-        if (v !== '' && v !== null && v !== undefined && (!Array.isArray(v) || v.length > 0)) {
+        const prevVal = (prev as any)[k];
+        const isPrevEmpty = prevVal === '' || prevVal === null || prevVal === undefined;
+        if (isPrevEmpty && v !== '' && v !== null && v !== undefined && (!Array.isArray(v) || v.length > 0)) {
           (nextData as any)[k] = v;
         }
       }
@@ -339,53 +378,73 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     });
   }, [getEmployeeFormData]);
 
-  // Reset form data when employeeToEdit or isOpen changes & deep rehydrate from database
+  const prevIsOpenRef = React.useRef(false);
+  const loadedEmpIdRef = React.useRef<string | null>(null);
+
+  // Reset form data only when modal opens or selected employee ID changes (prevents resets on parent re-renders)
   useEffect(() => {
     if (isOpen) {
-      if (employeeToEdit) {
-        setFormData(getEmployeeFormData(employeeToEdit));
-        // Deep rehydrate from Supabase to load emergency contacts, bank, statutory, addresses & salary
-        api.getEmployeeById(employeeToEdit.id).then((deepEmp) => {
-          if (deepEmp) {
-            mergeFreshFormData(deepEmp);
-          }
-        }).catch((err) => {
-          console.warn('[WizardModal] Deep employee rehydration notice:', err);
-        });
-      } else {
-        setFormData(getInitialFormData());
+      const isJustOpened = !prevIsOpenRef.current;
+      const isDifferentEmp = employeeToEdit?.id !== loadedEmpIdRef.current;
+
+      if (isJustOpened || isDifferentEmp) {
+        prevIsOpenRef.current = true;
+        loadedEmpIdRef.current = employeeToEdit?.id || null;
+
+        if (employeeToEdit) {
+          setFormData(getEmployeeFormData(employeeToEdit));
+          // Deep rehydrate from Supabase to load emergency contacts, bank, statutory, addresses & salary
+          api.getEmployeeById(employeeToEdit.id).then((deepEmp) => {
+            if (deepEmp) {
+              mergeFreshFormData(deepEmp);
+            }
+          }).catch((err) => {
+            console.warn('[WizardModal] Deep employee rehydration notice:', err);
+          });
+        } else {
+          setFormData(getInitialFormData());
+        }
+        setCurrentStep(1);
+        setDraftEmployee(null);
+        setFinalizedEmployee(null);
       }
-      setCurrentStep(1);
-      setDraftEmployee(null);
-      setFinalizedEmployee(null);
+    } else {
+      prevIsOpenRef.current = false;
+      loadedEmpIdRef.current = null;
     }
-  }, [isOpen, employeeToEdit, getEmployeeFormData, mergeFreshFormData]);
+  }, [isOpen, employeeToEdit?.id, getEmployeeFormData, mergeFreshFormData]);
 
   // Load Master Data & Restore Draft
   useEffect(() => {
     if (!isOpen) return;
 
-    // Listen for dynamically created designations
+    // Listen for dynamically created designations and departments
     const handleDesigCreated = (e: any) => {
       if (e?.detail) {
         setDesignations((prev) => [e.detail, ...prev.filter((d) => d.id !== e.detail.id)]);
       }
     };
+    const handleDeptCreated = (e: any) => {
+      if (e?.detail) {
+        setDepartments((prev) => [e.detail, ...prev.filter((d) => d.id !== e.detail.id)]);
+      }
+    };
     window.addEventListener('designation:created', handleDesigCreated);
+    window.addEventListener('department:created', handleDeptCreated);
 
     const companyId = activeCompany?.id;
     Promise.all([
-      api.getDepartments(companyId).catch(() => []),
+      organizationStructureService.getDepartments(companyId, organization?.id).catch(() => api.getDepartments(companyId)),
       api.getDesignations(companyId).catch(() => []),
       api.getBranches(companyId).catch(() => []),
       api.getLocations().catch(() => []),
       api.getEmployees(companyId ? { companyId } : undefined).catch(() => []),
     ]).then(([depts, desigs, brs, locs, emps]) => {
-      setDepartments(depts);
-      setDesignations(desigs);
-      setBranches(brs);
-      setLocations(locs);
-      setExistingEmployees(emps);
+      setDepartments(depts || []);
+      setDesignations(desigs || []);
+      setBranches(brs || []);
+      setLocations(locs || []);
+      setExistingEmployees(emps || []);
 
       // Restore saved draft only when creating new employee
       if (!employeeToEdit) {
@@ -414,8 +473,9 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
 
     return () => {
       window.removeEventListener('designation:created', handleDesigCreated);
+      window.removeEventListener('department:created', handleDeptCreated);
     };
-  }, [isOpen, activeCompany?.id, employeeToEdit]);
+  }, [isOpen, activeCompany?.id, organization?.id, employeeToEdit]);
 
   const updateFormData = (fields: Partial<typeof formData>) => {
     setFormData((prev) => ({ ...prev, ...fields }));
@@ -462,7 +522,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       if (targetEmpId) {
         const updated = await api.saveEmployeeOnboardingStep(targetEmpId, activeOrgId, currentStep, formData);
         if (updated) {
-          mergeFreshFormData(updated);
+          setDraftEmployee(updated);
         }
         setDraftLastSavedText(`✓ Saved to database just now`);
         showToast('Employee step saved to database.', 'info');
@@ -489,9 +549,12 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         showToast('Please enter the employee Last Name.', 'error');
         return false;
       }
-      if (!formData.work_email.trim()) {
-        showToast('Please enter a valid Work Email.', 'error');
-        return false;
+      if (formData.email_type !== 'NONE') {
+        const hasEmail = Boolean(formData.work_email?.trim() || formData.personal_email?.trim());
+        if (!hasEmail) {
+          showToast('Please enter an official or personal email address (or select "No Email").', 'error');
+          return false;
+        }
       }
       if (!formData.phone.trim()) {
         showToast('Please enter the primary Mobile Number.', 'error');
@@ -510,7 +573,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         showToast('Please assign an organizational Department.', 'error');
         return false;
       }
-      if (!formData.designation_id) {
+      if (!formData.designation_id && !formData.designation_title?.trim()) {
         showToast('Please assign an official Designation.', 'error');
         return false;
       }
@@ -521,15 +584,50 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     } else if (currentStep === 4) {
       // Primary Reporting Manager is optional
     } else if (currentStep === 5) {
-      if (!formData.emergency_name.trim() || !formData.emergency_phone.trim()) {
-        showToast('Please provide a Primary Emergency Contact Name and Phone.', 'error');
-        return false;
-      }
+      // Primary Emergency Contact is optional
     }
     return true;
   };
 
   const handleNext = async () => {
+    // Auto-resolve pending typed designation if user entered one on Step 3
+    if (currentStep === 3 && formData.designation_title?.trim()) {
+      const trimmedTitle = formData.designation_title.trim();
+      const matched = designations.find((d) => d.title.toLowerCase() === trimmedTitle.toLowerCase());
+      if (matched) {
+        formData.designation_id = matched.id;
+        formData.designation_title = matched.title;
+        setFormData((prev) => ({ ...prev, designation_id: matched.id, designation_title: matched.title }));
+      } else if (!formData.designation_id || !isValidUUID(formData.designation_id)) {
+        try {
+          const compId = activeCompany?.id && isValidUUID(activeCompany.id) ? activeCompany.id : '2030277f-a6a1-427f-beaf-4fc677a3bae2';
+          const created = await api.createDesignation({
+            title: trimmedTitle,
+            company_id: compId,
+          });
+          if (created) {
+            setDesignations((prev) => [created, ...prev.filter((d) => d.id !== created.id)]);
+            formData.designation_id = created.id;
+            formData.designation_title = created.title;
+            setFormData((prev) => ({ ...prev, designation_id: created.id, designation_title: created.title }));
+          }
+        } catch (desErr) {
+          console.warn('[WizardModal] Auto designation creation notice:', desErr);
+        }
+      }
+    }
+
+    // Also auto-resolve department by name if entered on Step 3
+    if (currentStep === 3 && formData.department_name?.trim()) {
+      const trimmedDept = formData.department_name.trim();
+      const matchedDept = departments.find((d) => d.name.toLowerCase() === trimmedDept.toLowerCase());
+      if (matchedDept) {
+        formData.department_id = matchedDept.id;
+        formData.department_name = matchedDept.name;
+        setFormData((prev) => ({ ...prev, department_id: matchedDept.id, department_name: matchedDept.name }));
+      }
+    }
+
     if (!validateCurrentStep()) return;
 
     // Deterministic Step Save Contract
@@ -542,7 +640,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       try {
         const updated = await api.saveEmployeeOnboardingStep(targetEmpId, activeOrgId, currentStep, formData);
         if (updated) {
-          mergeFreshFormData(updated);
+          setDraftEmployee(updated);
         }
         localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({
           step: Math.min(currentStep + 1, 7),
@@ -562,12 +660,15 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       setIsSavingDraft(true);
       setDraftLastSavedText('Saving to database...');
       try {
+        const resolvedWorkEmail = formData.work_email.trim() || formData.personal_email.trim();
+        const resolvedPersonalEmail = formData.personal_email.trim() || formData.work_email.trim();
         const draftEmp = await api.createEmployee({
           first_name: formData.first_name.trim(),
           middle_name: formData.middle_name.trim(),
           last_name: formData.last_name.trim(),
           display_name: formData.preferred_name || `${formData.first_name} ${formData.last_name}`.trim(),
-          work_email: formData.work_email.trim(),
+          work_email: resolvedWorkEmail,
+          personal_email: resolvedPersonalEmail,
           phone: formData.phone.trim(),
           organization_id: activeOrgId,
           company_id: activeCompany?.id || `comp-${activeOrgId.replace('org-', '')}`,
@@ -576,9 +677,13 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         });
         if (draftEmp?.id) {
           setDraftEmployee(draftEmp);
-          const updated = await api.saveEmployeeOnboardingStep(draftEmp.id, activeOrgId, 1, formData);
+          const updated = await api.saveEmployeeOnboardingStep(draftEmp.id, activeOrgId, 1, {
+            ...formData,
+            work_email: resolvedWorkEmail,
+            personal_email: resolvedPersonalEmail,
+          });
           if (updated) {
-            mergeFreshFormData(updated);
+            setDraftEmployee(updated);
           }
           localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({
             step: 2,
@@ -621,7 +726,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         const activeOrgId = organization?.id || activeCompany?.organization_id || 'org-joy-01';
         const updated = await api.saveEmployeeOnboardingStep(targetEmpId, activeOrgId, currentStep, formData);
         if (updated) {
-          mergeFreshFormData(updated);
+          setDraftEmployee(updated);
         }
         localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({
           step: targetStep,
@@ -652,8 +757,37 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     setIsSubmitting(true);
 
     try {
-      const selectedDept = departments.find((d) => d.id === formData.department_id);
-      const selectedDesig = designations.find((d) => d.id === formData.designation_id);
+      let selectedDept = departments.find((d) => d.id === formData.department_id);
+      if (!selectedDept && formData.department_name) {
+        selectedDept = departments.find((d) => d.name.trim().toLowerCase() === formData.department_name.trim().toLowerCase());
+      }
+      if (!selectedDept && formData.department_name?.trim()) {
+        try {
+          selectedDept = await organizationStructureService.createDepartment({
+            name: formData.department_name.trim(),
+            code: formData.department_name.trim().slice(0, 4).toUpperCase(),
+            status: 'Active',
+          });
+          if (selectedDept) setDepartments((prev) => [selectedDept!, ...prev]);
+        } catch (_) {}
+      }
+
+      let selectedDesig = designations.find((d) => d.id === formData.designation_id);
+      if (!selectedDesig && formData.designation_title) {
+        selectedDesig = designations.find((d) => d.title.trim().toLowerCase() === formData.designation_title.trim().toLowerCase());
+      }
+      if (!selectedDesig && formData.designation_title?.trim()) {
+        try {
+          const compId = activeCompany?.id || '2030277f-a6a1-427f-beaf-4fc677a3bae2';
+          selectedDesig = await api.createDesignation({
+            title: formData.designation_title.trim(),
+            code: formData.designation_title.trim().replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6) || 'DESIG',
+            company_id: compId,
+          });
+          if (selectedDesig) setDesignations((prev) => [selectedDesig!, ...prev]);
+        } catch (_) {}
+      }
+
       const selectedBranch = branches.find((b) => b.id === formData.branch_id);
       const selectedLocation = locations.find((l) => l.id === formData.location_id);
 
@@ -679,13 +813,13 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           middle_name: formData.middle_name.trim(),
           last_name: formData.last_name.trim(),
           preferred_name: formData.preferred_name || `${formData.first_name} ${formData.last_name}`.trim(),
-          work_email: formData.work_email.trim(),
+          work_email: (formData.work_email || formData.personal_email || employeeToEdit?.work_email || '').trim(),
           phone: formData.phone.trim(),
           dob: formData.dob,
           gender: formData.gender,
         },
         contact: {
-          personal_email: formData.personal_email,
+          personal_email: (formData.personal_email || formData.work_email || employeeToEdit?.personal_email || '').trim(),
           alternate_phone: formData.alternate_phone,
           marital_status: formData.marital_status,
           nationality: formData.nationality,
@@ -719,10 +853,10 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           client_company_id: formData.client_company_id || undefined,
           site_id: formData.site_id || undefined,
           status: formData.status,
-          department_id: formData.department_id,
-          department_name: selectedDept?.name || formData.department_name || 'Engineering',
-          designation_id: formData.designation_id,
-          designation_title: formData.designation_title || selectedDesig?.title || (formData.designation_id && !formData.designation_id.startsWith('desig-') ? formData.designation_id : null) || 'Staff Specialist',
+          department_id: selectedDept?.id || formData.department_id,
+          department_name: selectedDept?.name || formData.department_name || 'General',
+          designation_id: selectedDesig?.id || formData.designation_id,
+          designation_title: selectedDesig?.title || formData.designation_title || 'Staff',
           branch_id: formData.branch_id || branches[0]?.id,
           branch_name: selectedBranch?.name || 'Headquarters',
           location_id: formData.location_id || locations[0]?.id,
@@ -783,6 +917,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           pf_applicable: formData.pf_applicable !== false,
           esi_applicable: formData.esi_applicable === true,
           pt_applicable: formData.pt_applicable !== false,
+          tds_applicable: formData.tds_applicable !== false,
           tax_regime: formData.tax_regime || 'NEW',
         },
         performance: {
@@ -810,6 +945,11 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           last_name: payload.identity.last_name,
           display_name: payload.identity.preferred_name || `${payload.identity.first_name} ${payload.identity.last_name}`.trim(),
           work_email: payload.identity.work_email,
+          personal_email: payload.contact.personal_email || undefined,
+          phone: payload.identity.phone,
+          primary_mobile: payload.identity.phone,
+          reporting_manager_id: payload.reporting.reporting_manager_id || null,
+          reporting_manager_name: payload.reporting.reporting_manager_name || '',
           avatar_url: payload.identity.photo_url,
           status: payload.employment.status,
           employment_type: payload.employment.employment_type,
@@ -825,6 +965,11 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           designation_title: payload.employment.designation_title,
           branch_id: payload.employment.branch_id,
           branch_name: payload.employment.branch_name,
+          shift_id: formData.shift_id,
+          shift_name: formData.shift_name,
+          attendance_policy_id: formData.attendance_policy_id,
+          leave_policy_id: formData.leave_policy_id,
+          leave_policy_name: formData.leave_policy_name,
           profile: {
             ...payload.contact,
             first_name: payload.identity.first_name,
@@ -864,6 +1009,15 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
             family_members: payload.emergency.family_members,
           },
           employment: {
+            ...payload.employment,
+            department_id: payload.employment.department_id,
+            department_name: payload.employment.department_name,
+            designation_id: payload.employment.designation_id,
+            designation_title: payload.employment.designation_title,
+            branch_id: payload.employment.branch_id,
+            branch_name: payload.employment.branch_name,
+            location_id: payload.employment.location_id,
+            work_location_name: payload.employment.work_location_name,
             doj: payload.employment.doj,
             employment_type: payload.employment.employment_type,
             employment_source: payload.employment.employment_source,
@@ -913,6 +1067,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
             pf_applicable: formData.pf_applicable !== false,
             esi_applicable: formData.esi_applicable === true,
             pt_applicable: formData.pt_applicable !== false,
+            tds_applicable: formData.tds_applicable !== false,
             tax_regime: formData.tax_regime || 'NEW',
           },
           updated_at: new Date().toISOString(),
@@ -932,6 +1087,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
             pfApplicable: formData.pf_applicable !== false,
             esiApplicable: formData.esi_applicable === true,
             ptApplicable: formData.pt_applicable !== false,
+            tdsApplicable: formData.tds_applicable !== false,
             statutoryConfig: statConfig,
           });
 
@@ -950,9 +1106,9 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
             basic_monthly: breakdown.basic,
             net_monthly_estimate: breakdown.netMonthlyPay,
             payment_mode: 'BankTransfer',
-            bank_name: formData.bank_name || 'HDFC Bank Ltd',
+            bank_name: formData.bank_name || '',
             account_number: formData.account_number || '',
-            ifsc_code: formData.ifsc || 'HDFC0001234',
+            ifsc_code: formData.ifsc || '',
             pan_number: formData.pan || '',
             pf_uan: formData.uan || '',
             esic_number: formData.esi_number || '',
@@ -1070,9 +1226,9 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           notice_period_days: payload.employment.notice_period_days,
         },
         bank: {
-          bank_name: formData.bank_name || 'HDFC Bank Ltd',
+          bank_name: formData.bank_name || '',
           account_number: formData.account_number || '',
-          ifsc: formData.ifsc || 'HDFC0001234',
+          ifsc: formData.ifsc || '',
           account_holder_name: formData.account_holder_name || `${payload.identity.first_name} ${payload.identity.last_name}`.trim(),
           account_type: formData.account_type || 'SALARY',
         },
@@ -1081,6 +1237,10 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           uan: formData.uan || '',
           pf_number: formData.pf_number || '',
           esi_number: formData.esi_number || '',
+          pf_applicable: formData.pf_applicable !== false,
+          esi_applicable: formData.esi_applicable === true,
+          pt_applicable: formData.pt_applicable !== false,
+          tds_applicable: formData.tds_applicable !== false,
           tax_regime: formData.tax_regime || 'NEW',
         },
         created_at: new Date().toISOString(),

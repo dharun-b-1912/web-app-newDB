@@ -154,7 +154,7 @@ export const WorkspacePersonalHeader: React.FC<Props> = ({
             <Button
               variant="outline"
               size="sm"
-              onClick={onCheckOut}
+              onClick={() => onCheckOut()}
               disabled={isProcessing}
               leftIcon={isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Square className="w-3.5 h-3.5 text-rose-600 fill-current" />}
               className="w-full sm:w-auto text-xs font-bold border-rose-200 text-rose-700 hover:bg-rose-50"
@@ -175,7 +175,7 @@ export const WorkspacePersonalHeader: React.FC<Props> = ({
             <Button
               variant="primary"
               size="sm"
-              onClick={onCheckIn}
+              onClick={() => onCheckIn()}
               disabled={isProcessing}
               leftIcon={isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
               className="w-full sm:w-auto text-xs font-bold shadow-sm bg-[#07563D] hover:bg-[#064e37]"

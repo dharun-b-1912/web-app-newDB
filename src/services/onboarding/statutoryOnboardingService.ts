@@ -3,6 +3,7 @@
 // Real Supabase Database CRUD — Zero LocalStorage, Zero Hardcoded Fallbacks
 // ============================================================================
 
+import { api } from '../api';
 import { supabase } from '../../lib/supabase';
 import {
   OnboardingInvitation,
@@ -42,33 +43,30 @@ export class StatutoryOnboardingService {
   /**
    * Fetch all employees in onboarding state or active employees
    */
-  public static async getEmployeesForOnboarding(organizationId: string): Promise<Employee[]> {
-    if (!organizationId) return [];
+  public static async getEmployeesForOnboarding(organizationId?: string): Promise<Employee[]> {
+    try {
+      const emps = await api.getEmployees();
+      if (emps && emps.length > 0) {
+        return emps;
+      }
+    } catch (err) {
+      console.warn('[StatutoryOnboardingService] api.getEmployees notice:', err);
+    }
 
     try {
-      const { data, error } = await supabase
+      let q = supabase
         .from('employees')
-        .select(`
-          id,
-          first_name,
-          last_name,
-          employee_code,
-          work_email,
-          phone,
-          department_id,
-          designation_id,
-          department_name,
-          designation_title,
-          status,
-          date_of_joining,
-          employment_type,
-          organization_id
-        `)
-        .eq('organization_id', organizationId)
+        .select('id, first_name, middle_name, last_name, display_name, employee_code, work_email, personal_email, phone, department_id, designation_id, employment_status, doj, employment_type, organization_id, company_id')
         .order('created_at', { ascending: false });
 
+      if (organizationId) {
+        q = q.eq('organization_id', organizationId);
+      }
+
+      const { data, error } = await q;
+
       if (error) {
-        console.warn('[StatutoryOnboardingService] getEmployees error:', error.message);
+        console.warn('[StatutoryOnboardingService] getEmployees fallback error:', error.message);
         return [];
       }
 

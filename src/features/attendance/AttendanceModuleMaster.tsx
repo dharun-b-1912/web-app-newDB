@@ -1,4 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
+import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
 import { AttendanceDashboardView } from './subviews/AttendanceDashboardView';
 import { EmployeeAttendanceView } from './subviews/EmployeeAttendanceView';
 import { AttendanceHistoryView } from './subviews/AttendanceHistoryView';
@@ -66,6 +67,7 @@ export interface GlobalAttendanceFilterState {
 
 // High-fidelity instant skeleton fallback to make tab transitions feel instantaneous and responsive
 interface AttendanceModuleMasterProps {
+  initialTab?: string;
   currentSubPath?: string;
   onNavigateSubPath?: (subPath: string, params?: Record<string, string>, replace?: boolean) => void;
 }
@@ -117,9 +119,11 @@ const AttendanceSubViewSkeleton: React.FC = () => (
 );
 
 export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
-  currentSubPath = 'attendance-dashboard',
+  initialTab,
+  currentSubPath = initialTab || 'attendance-dashboard',
   onNavigateSubPath,
 }) => {
+  console.log('[DEBUG_FLOW] AttendanceModuleMaster rendering with currentSubPath:', currentSubPath);
   const [selectedEmployeeProfileId, setSelectedEmployeeProfileId] = useState<string | null>(null);
   const [selectedProfileDate, setSelectedProfileDate] = useState<string | undefined>(undefined);
 
@@ -148,6 +152,56 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     if (subPath === 'exceptions' || subPath === 'attendance/exceptions') {
       return 'exceptions';
     }
+    if (subPath === 'shifts' || subPath === 'shifts/master' || subPath === '/shifts' || subPath === '/shifts/master' || subPath === 'shift-master') {
+      return 'shifts';
+    }
+    if (subPath === 'roster' || subPath === 'shifts/roster' || subPath === '/shifts/roster' || subPath === 'shift-roster') {
+      return 'roster';
+    }
+    if (subPath === 'shift-calendar' || subPath === 'shifts/calendar' || subPath === '/shifts/calendar' || subPath === 'calendar') {
+      return 'shift-calendar';
+    }
+    if (subPath === 'policies' || subPath === 'shifts/policies' || subPath === '/policies' || subPath === '/shifts/policies' || subPath === 'attendance-policies') {
+      return 'policies';
+    }
+    if (subPath === 'calculation-audit' || subPath === 'audit/ledger' || subPath === '/audit/ledger') {
+      return 'calculation-audit';
+    }
+    if (subPath === 'attendance-corrections' || subPath === 'audit/corrections' || subPath === '/audit/corrections') {
+      return 'attendance-corrections';
+    }
+    if (subPath === 'approval-history' || subPath === 'audit/approvals' || subPath === '/audit/approvals') {
+      return 'approval-history';
+    }
+    if (subPath === 'attendance-activity-logs' || subPath === 'audit/activity' || subPath === '/audit/activity') {
+      return 'attendance-activity-logs';
+    }
+    if (
+      subPath === 'attendance-rules' ||
+      subPath === 'biometric/rules' ||
+      subPath === '/biometric/rules' ||
+      subPath === 'rules' ||
+      subPath === 'biometric-rules' ||
+      subPath === 'rules-engine' ||
+      subPath === '/attendance-rules' ||
+      subPath === '/biometric-rules' ||
+      subPath === '/rules-engine'
+    ) {
+      return 'attendance-rules';
+    }
+    if (
+      subPath === 'biometric' ||
+      subPath === '/biometric' ||
+      subPath === 'biometric-devices' ||
+      subPath === '/biometric-devices' ||
+      subPath === 'biometric/devices' ||
+      subPath === '/biometric/devices' ||
+      subPath === 'device-enrollment' ||
+      subPath === 'device-sync' ||
+      subPath === 'punch-mapping'
+    ) {
+      return 'biometric';
+    }
     return subPath;
   };
 
@@ -155,11 +209,13 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
 
   // Keep localTab in sync whenever currentSubPath prop changes from router navigation
   useEffect(() => {
-    setLocalTab(resolveTab(currentSubPath));
+    if (currentSubPath) {
+      setLocalTab(resolveTab(currentSubPath));
+    }
   }, [currentSubPath]);
 
-  // Derive activeTab directly from localTab / currentSubPath for instantaneous subview switching
-  const activeTab = resolveTab(localTab || currentSubPath);
+  // Router prop currentSubPath takes strict precedence over local state to guarantee synchronization
+  const activeTab = resolveTab(currentSubPath || localTab);
 
   // Read initial filter state from URL if available
   const parseFiltersFromUrl = (): GlobalAttendanceFilterState => {
@@ -252,6 +308,16 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
         setLocalTab('regularization');
       } else if (urlPath.includes('/attendance/exceptions')) {
         setLocalTab('exceptions');
+      } else if (urlPath.includes('/biometric/rules') || urlPath.includes('/attendance-rules')) {
+        setLocalTab('attendance-rules');
+      } else if (urlPath.includes('/biometric/gps') || urlPath.includes('/gps')) {
+        setLocalTab('gps');
+      } else if (urlPath.includes('/biometric/face') || urlPath.includes('/face')) {
+        setLocalTab('face-attendance');
+      } else if (urlPath.includes('/biometric/geofences') || urlPath.includes('/geofences')) {
+        setLocalTab('geofences');
+      } else if (urlPath.startsWith('/biometric')) {
+        setLocalTab('biometric');
       }
     };
 
@@ -411,7 +477,13 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
           />
         );
       case 'policies':
-        return <AttendancePolicyConfigView />;
+      case 'shifts/policies':
+      case 'attendance-policies':
+        return (
+          <ErrorBoundary>
+            <AttendancePolicyConfigView />
+          </ErrorBoundary>
+        );
       case 'attendance-rules':
       case 'rules':
       case 'biometric-rules':
@@ -422,6 +494,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       case 'device-enrollment':
       case 'device-sync':
       case 'punch-mapping':
+        console.log('[DEBUG_FLOW] Rendering BiometricIntegrationView component');
         return (
           <BiometricIntegrationView
             currentTab={activeTab}
@@ -438,6 +511,8 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
           />
         );
       case 'face-attendance':
+      case 'biometric/face':
+      case 'face':
       case 'face-enrollment':
       case 'face-devices':
       case 'face-logs':
@@ -488,15 +563,21 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
           />
         );
       case 'calculation-audit':
+      case 'audit/ledger':
       case 'attendance-corrections':
+      case 'audit/corrections':
       case 'approval-history':
+      case 'audit/approvals':
       case 'attendance-activity-logs':
+      case 'audit/activity':
         return (
-          <AuditControlView
-            currentTab={activeTab}
-            onNavigateSubPath={sub => handleSelectTab(sub)}
-            onOpenEmployeeProfile={id => setSelectedEmployeeProfileId(id)}
-          />
+          <ErrorBoundary>
+            <AuditControlView
+              currentTab={activeTab}
+              onNavigateSubPath={sub => handleSelectTab(sub)}
+              onOpenEmployeeProfile={id => setSelectedEmployeeProfileId(id)}
+            />
+          </ErrorBoundary>
         );
       case 'regularization':
         return (
@@ -531,6 +612,46 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
         );
     }
   };
+
+  // Clocking & Devices dedicated full-page workspaces have their own enterprise header & telemetry
+  const isDedicatedClockingView = [
+    'biometric',
+    'biometric-devices',
+    'device-enrollment',
+    'device-sync',
+    'punch-mapping',
+    'terminal-logs',
+    'device-logs',
+    'attendance-rules',
+    'rules',
+    'biometric-rules',
+    'rules-engine',
+    'gps',
+    'face-attendance',
+    'geofences',
+  ].includes(activeTab);
+
+  if (isDedicatedClockingView) {
+    return (
+      <div className="space-y-6">
+        <Suspense fallback={<AttendanceSubViewSkeleton />}>
+          {renderActiveSubview()}
+        </Suspense>
+        <Suspense fallback={null}>
+          <EmployeeAttendanceProfileDrawer
+            employeeId={selectedEmployeeProfileId}
+            initialDate={selectedProfileDate || activeFilters.date}
+            onClose={() => {
+              setSelectedEmployeeProfileId(null);
+              setSelectedProfileDate(undefined);
+            }}
+            onNavigateEmployee={id => setSelectedEmployeeProfileId(id)}
+            onNavigateSubPath={sub => handleSelectTab(sub)}
+          />
+        </Suspense>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

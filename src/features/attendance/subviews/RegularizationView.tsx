@@ -235,8 +235,8 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
       await attendanceRegularizationService.submitRequest({
         employeeId: selectedEmpId,
         employeeCode: match?.employee_code || selectedEmpId,
-        employeeName: match ? `${match.first_name || ''} ${match.last_name || ''}`.trim() : 'Dharun B',
-        department: match?.department_name || 'Development',
+        employeeName: match ? (match.display_name || `${match.first_name || ''} ${match.last_name || ''}`.trim()) : 'Staff Member',
+        department: match?.department_name || match?.department || '',
         date: reqDate,
         requestedIn: reqIn,
         requestedOut: reqOut,
@@ -684,7 +684,7 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
               >
                 {employeesList.map((emp) => (
                   <option key={emp.id} value={emp.id}>
-                    {emp.first_name} {emp.last_name} ({emp.employee_code || emp.id}) — {emp.department_name || 'Development'}
+                    {emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name} ({emp.employee_code || emp.id}){emp.department_name ? ` — ${emp.department_name}` : ''}
                   </option>
                 ))}
               </select>

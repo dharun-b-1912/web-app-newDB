@@ -9,10 +9,12 @@ import {
   Building2,
   Users,
   Filter,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { EmployeeList } from './EmployeeList';
 import { EmployeeCreateWizardModal } from './EmployeeCreateWizardModal';
 import { EmployeeProfileDrawer } from './EmployeeProfileDrawer';
+import { BulkEmployeeImportModal } from './bulk/BulkEmployeeImportModal';
 import { Employee } from '../../types';
 import { api } from '../../services/api';
 import { useTenant } from '../../hooks/useTenant';
@@ -36,6 +38,8 @@ export const PeopleView: React.FC = () => {
 
   // Modals / Drawers
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [employeeToEdit, setEmployeeToEdit] = useState<Employee | null>(null);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   const loadData = async () => {
@@ -82,6 +86,14 @@ export const PeopleView: React.FC = () => {
     setEmployees((prev) => {
       if (prev.some((e) => e.id === newEmp.id)) return prev;
       return [newEmp, ...prev];
+    });
+  };
+
+  const handleBulkImportComplete = (created: Employee[]) => {
+    setEmployees((prev) => {
+      const existingIds = new Set(prev.map((e) => e.id));
+      const newlyCreated = created.filter((e) => !existingIds.has(e.id));
+      return [...newlyCreated, ...prev];
     });
   };
 
@@ -249,13 +261,23 @@ export const PeopleView: React.FC = () => {
 
         <div className="flex items-center gap-2">
           {hasPermission('people', 'create') && (
-            <Button
-              onClick={() => setIsCreateOpen(true)}
-              leftIcon={<UserPlus className="w-4 h-4" />}
-              className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs shadow-xs"
-            >
-              Onboard Employee
-            </Button>
+            <>
+              <Button
+                onClick={() => setIsBulkImportOpen(true)}
+                variant="outline"
+                leftIcon={<FileSpreadsheet className="w-4 h-4 text-[#07563D]" />}
+                className="text-xs font-bold border-gray-300 hover:bg-emerald-50 text-gray-700 hover:text-[#07563D] shadow-2xs"
+              >
+                Bulk Import Employees
+              </Button>
+              <Button
+                onClick={() => setIsCreateOpen(true)}
+                leftIcon={<UserPlus className="w-4 h-4" />}
+                className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs shadow-xs"
+              >
+                + Add Employee
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -438,13 +460,40 @@ export const PeopleView: React.FC = () => {
           setSelectedEmployee(emp);
           setIsDrawerOpen(true);
         }}
+        onEditEmployee={(emp) => {
+          setEmployeeToEdit(emp);
+          setIsCreateOpen(true);
+        }}
+        onDeleteEmployee={async (emp) => {
+          await api.deleteEmployee(emp.id);
+          setEmployees((prev) => prev.filter((e) => e.id !== emp.id));
+        }}
+        onToggleStatus={async (emp, newStatus) => {
+          await api.updateEmployeeStatus(emp.id, newStatus);
+          setEmployees((prev) => prev.map((e) => (e.id === emp.id ? { ...e, status: newStatus as any } : e)));
+        }}
       />
 
       {/* Onboard Wizard Modal */}
       <EmployeeCreateWizardModal
         isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
+        onClose={() => {
+          setIsCreateOpen(false);
+          setEmployeeToEdit(null);
+        }}
+        employeeToEdit={employeeToEdit}
         onCreated={handleEmployeeCreated}
+        onUpdated={(updated) => {
+          handleEmployeeUpdated(updated);
+          setEmployeeToEdit(null);
+        }}
+      />
+
+      {/* Bulk Employee Import Modal */}
+      <BulkEmployeeImportModal
+        isOpen={isBulkImportOpen}
+        onClose={() => setIsBulkImportOpen(false)}
+        onImportComplete={handleBulkImportComplete}
       />
 
       {/* Detail Drawer */}

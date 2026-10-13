@@ -210,7 +210,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
 
   const isVendor = employee.employment_source === 'VENDOR' || employee.employment?.employment_source === 'VENDOR';
   const joinDate = employee.employment?.doj || employee.created_at?.split('T')[0] || '2025-01-15';
-  const managerName = employee.employment?.reporting_manager_name || 'Not assigned';
+  const managerName = employee.employment?.reporting_manager_name || employee.reporting_manager_name || (employee as any).manager_name || 'Not assigned';
   const workLocation = employee.employment?.work_location || 'Joy Corporate Solutions Private Limited (HQ)';
   const isArchived = employee.status === 'Archived';
 
@@ -1097,7 +1097,11 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                     onClick={async () => {
                       setIsProcessingAuth(true);
                       try {
-                        const phone = authStatus?.phone || employee.profile?.phone || (employee as any).phone || '+919791817437';
+                        const phone = authStatus?.phone || employee.profile?.phone || (employee as any).phone || '';
+                        if (!phone) {
+                          showToast('No phone number recorded for this employee.', 'error');
+                          return;
+                        }
                         const res = await employeeAuthService.requestPasswordResetOtp(phone, employee.organization_id, {
                           name: `${employee.first_name} ${employee.last_name}`,
                           email: employee.work_email,
@@ -1124,7 +1128,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                     onClick={async () => {
                       setIsProcessingAuth(true);
                       try {
-                        const phone = authStatus?.phone || employee.profile?.phone || (employee as any).phone || '+919791817437';
+                        const phone = authStatus?.phone || employee.profile?.phone || (employee as any).phone || '';
                         const email = employee.work_email || (employee.profile as any)?.personal_email;
                         const res = await employeeAuthService.provisionEmployeeAuth({
                           tenantId: employee.organization_id || 'org-joy-01',

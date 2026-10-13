@@ -187,6 +187,18 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
     }
   }, [isOpen, device, loadEnterpriseUsers]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   // Realtime Sync & Mapping Event Listeners
   useEffect(() => {
     if (!isOpen || !device) return;
@@ -217,7 +229,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
         if (evt.summary) {
           setLastSyncSummary(evt.summary);
         }
-        showToast(evt.message, evt.status === 'COMPLETED' ? 'default' : 'error');
+        showToast(evt.message, evt.status === 'COMPLETED' ? 'success' : 'error');
         loadEnterpriseUsers();
         loadHistory();
       }
@@ -429,8 +441,12 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
               {isSyncing ? 'Syncing...' : 'Refresh From Device'}
             </Button>
             <button
+              type="button"
+              id="close-device-users-modal-btn"
+              aria-label="Close directory"
+              title="Close directory"
               onClick={onClose}
-              className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition"
+              className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -1162,7 +1178,7 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
             <Badge variant="emerald" className="text-[9px]">Face Metadata ✓</Badge>
             <Badge variant="emerald" className="text-[9px]">Groups & TZ ✓</Badge>
           </div>
-          <Button variant="outline" size="sm" onClick={onClose} className="rounded-xl">
+          <Button id="done-device-users-modal-btn" variant="outline" size="sm" onClick={onClose} className="rounded-xl">
             Done
           </Button>
         </div>

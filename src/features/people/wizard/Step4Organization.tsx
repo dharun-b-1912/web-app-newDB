@@ -94,41 +94,65 @@ export const Step4Organization: React.FC<Props> = ({
       </div>
 
       <div className="p-5 rounded-2xl bg-white border border-gray-200 shadow-2xs space-y-5">
-        {/* Legal Entity & Business Unit */}
+        {/* Legal Entity, Business Unit & Cost Center with Explanatory Guidance */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1">
-              Legal Entity / Company
-            </label>
-            <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-200 text-xs font-bold text-gray-800 truncate">
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-gray-700">
+                Legal Entity
+              </label>
+              <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.2 rounded">
+                Employer
+              </span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-200 text-xs font-bold text-gray-800 truncate" title="Registered corporate company holding employment contracts and tax obligations.">
               {activeCompany?.legal_name || 'Joy Corporate Solutions Pvt Ltd'}
             </div>
+            <p className="text-[10px] text-gray-400 mt-1">
+              Official corporate entity for PF/ESI & payroll compliance.
+            </p>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1">
-              Business Unit
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-gray-700">
+                Business Unit (BU)
+              </label>
+              <span className="text-[10px] text-gray-400 font-normal">
+                Optional
+              </span>
+            </div>
             <input
               type="text"
-              placeholder="e.g. Enterprise Solutions / Cloud"
+              placeholder="e.g. Technology, Operations, Staffing"
               value={formData.business_unit}
               onChange={(e) => onChange({ business_unit: e.target.value })}
               className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none"
             />
+            <p className="text-[10px] text-gray-400 mt-1">
+              Internal business division or product line.
+            </p>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1">
-              Cost Center Code
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-gray-700">
+                Cost Center Code
+              </label>
+              <span className="text-[10px] text-gray-400 font-normal">
+                Optional
+              </span>
+            </div>
             <input
               type="text"
-              placeholder="e.g. CC-ENG-2026"
+              placeholder="e.g. CC-OPS-101, CC-CLIENT-A"
               value={formData.cost_center}
               onChange={(e) => onChange({ cost_center: e.target.value })}
               className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none"
             />
+            <p className="text-[10px] text-gray-400 mt-1">
+              Financial accounting code for allocating payroll expense.
+            </p>
           </div>
         </div>
 
@@ -154,7 +178,7 @@ export const Step4Organization: React.FC<Props> = ({
               <option value="">-- Choose Reporting Manager --</option>
               {filteredManagers.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.first_name} {m.last_name} — {m.designation_title || 'Lead'} ({m.department_name || 'Dept'})
+                  {m.first_name} {m.last_name} — {m.designation_title || (m as any).designation || 'Lead'} ({m.department_name || (m as any).department || 'Dept'})
                 </option>
               ))}
             </select>
@@ -191,7 +215,7 @@ export const Step4Organization: React.FC<Props> = ({
               <option value="">-- Choose Team Lead / Supervisor --</option>
               {filteredTeamLeads.map((tl) => (
                 <option key={tl.id} value={tl.id}>
-                  {tl.first_name} {tl.last_name} — {tl.designation_title || 'TL'} ({tl.department_name || 'Dept'})
+                  {tl.first_name} {tl.last_name} — {tl.designation_title || (tl as any).designation || 'TL'} ({tl.department_name || (tl as any).department || 'Dept'})
                 </option>
               ))}
             </select>

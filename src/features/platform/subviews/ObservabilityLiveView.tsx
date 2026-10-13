@@ -98,9 +98,9 @@ export const ObservabilityLiveView: React.FC = () => {
   const handleLookupRef = (codeToSearch?: string) => {
     const code = codeToSearch || refSearchCode;
     if (!code) return;
-    const result = ErrorReferenceService.getByReferenceId(code);
-    if (result) {
-      setInspectedRef(result);
+    const result = ErrorReferenceService.getByReferenceId(code, 'SUPER_ADMIN');
+    if (result && 'timestamp' in result) {
+      setInspectedRef(result as RecordedErrorReference);
       setActiveSubTab('ref_lookup');
     } else {
       showToast(`No recorded diagnostic event found for ${code}`);

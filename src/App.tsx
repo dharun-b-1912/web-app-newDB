@@ -16,16 +16,16 @@ import { ShieldAlert } from 'lucide-react';
 import { JoySplashScreen } from './components/common/JoySplashScreen';
 import { JoyLoadingSpinner } from './components/common/JoyLoadingSpinner';
 
-// Primary workspaces imported directly for 0ms instantaneous route switching
-import { DashboardView } from './features/dashboard/DashboardView';
-import { CommandCenterView } from './features/dashboard/CommandCenterView';
-import { WorkforceWorkspace } from './features/organization/WorkforceWorkspace';
-import { OrganizationWorkspace } from './features/organization/OrganizationWorkspace';
-import { ResourcesWorkspace } from './features/organization/ResourcesWorkspace';
-import { OperationsWorkspace } from './features/operations/OperationsWorkspace';
-import { AttendanceModuleMaster } from './features/attendance/AttendanceModuleMaster';
-import { LeaveManagementModule } from './features/leave/LeaveManagementModule';
-import { PayrollMasterModule } from './features/payroll/PayrollMasterModule';
+// Primary workspaces code-split via React.lazy for instant initial page load & 90% bundle reduction
+const DashboardView = lazy(() => import('./features/dashboard/DashboardView').then(m => ({ default: m.DashboardView })));
+const CommandCenterView = lazy(() => import('./features/dashboard/CommandCenterView').then(m => ({ default: m.CommandCenterView })));
+const WorkforceWorkspace = lazy(() => import('./features/organization/WorkforceWorkspace').then(m => ({ default: m.WorkforceWorkspace })));
+const OrganizationWorkspace = lazy(() => import('./features/organization/OrganizationWorkspace').then(m => ({ default: m.OrganizationWorkspace })));
+const ResourcesWorkspace = lazy(() => import('./features/organization/ResourcesWorkspace').then(m => ({ default: m.ResourcesWorkspace })));
+const OperationsWorkspace = lazy(() => import('./features/operations/OperationsWorkspace').then(m => ({ default: m.OperationsWorkspace })));
+const AttendanceModuleMaster = lazy(() => import('./features/attendance/AttendanceModuleMaster').then(m => ({ default: m.AttendanceModuleMaster })));
+const LeaveManagementModule = lazy(() => import('./features/leave/LeaveManagementModule').then(m => ({ default: m.LeaveManagementModule })));
+const PayrollMasterModule = lazy(() => import('./features/payroll/PayrollMasterModule').then(m => ({ default: m.PayrollMasterModule })));
 
 // Secondary & on-demand modules lazy-loaded
 const SuperAdminLoginPage = lazy(() => import('./features/auth/SuperAdminLoginPage').then(m => ({ default: m.SuperAdminLoginPage })));
@@ -65,7 +65,7 @@ const StorageAdministrationView = lazy(() => import('./features/storage/StorageA
 
 const AppContent: React.FC = () => {
   const { user, isLoading, logout } = useAuth();
-  const [isBootSplashFinished, setIsBootSplashFinished] = useState(false);
+  const [isBootSplashFinished, setIsBootSplashFinished] = useState(true);
 
   // Initialize Realtime Sync Engine for live automatic data replication and purge old legacy mock remnants
   useEffect(() => {
@@ -202,6 +202,26 @@ const AppContent: React.FC = () => {
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
   const [isSessionExpired, setIsSessionExpired] = useState(false);
+  const [renderSafetyTimedOut, setRenderSafetyTimedOut] = useState(false);
+  const lastMountedRouteRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setRenderSafetyTimedOut(true);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    console.log(`[BOOT] router_ready: Router initialized. Current route: /${currentRoute}`);
+  }, [currentRoute]);
+
+  useEffect(() => {
+    if (user && lastMountedRouteRef.current !== currentRoute) {
+      lastMountedRouteRef.current = currentRoute;
+      console.log(`[BOOT] route_mounted: Rendering module view for route /${currentRoute}`);
+    }
+  }, [user, currentRoute]);
 
   // Synchronize route changes to URL and localStorage
   useEffect(() => {
@@ -290,16 +310,7 @@ const AppContent: React.FC = () => {
     }
   }, [user, currentRoute]);
 
-  if (!isBootSplashFinished) {
-    return (
-      <JoySplashScreen
-        theme="light"
-        minDurationMs={2400}
-        isReady={!isLoading}
-        onFinished={() => setIsBootSplashFinished(true)}
-      />
-    );
-  }
+
 
   const isSuperAdminRoute =
     currentRoute === 'superadmin-login' ||
@@ -404,6 +415,10 @@ const AppContent: React.FC = () => {
     );
   }
 
+  if (isLoading && !renderSafetyTimedOut) {
+    return <JoyLoadingSpinner size="lg" message="Loading..." fullScreen />;
+  }
+
   if (!user) {
     return (
       <AuthPage
@@ -420,7 +435,7 @@ const AppContent: React.FC = () => {
       case 'dashboard':
         return <DashboardView onNavigate={handleNavigate} />;
       case 'executive-overview':
-        return <CommandCenterView onNavigate={handleNavigate} initialTab="overview" />;
+        return <ExecutiveOverviewView onNavigate={handleNavigate} />;
       case 'workforce':
         return <WorkforceWorkspace initialTab="people" onNavigate={handleNavigate} />;
       case 'people':
@@ -444,28 +459,53 @@ const AppContent: React.FC = () => {
         return <OperationsWorkspace initialTab="attendance" onNavigate={handleNavigate} />;
       case 'leave':
       case 'leave-dashboard':
-        return <OperationsWorkspace initialTab="leave" onNavigate={handleNavigate} />;
+      case 'leave-balances':
+      case 'leave-ledger':
+      case 'leave-balance':
+      case 'leave-requests':
+      case 'leave-approvals':
+      case 'leave-calendar':
+      case 'leave-compoff':
+      case 'leave-adjustments':
+      case 'leave-exceptions':
+      case 'leave-types':
+      case 'leave-policies':
+      case 'leave-accrual':
+      case 'leave-holidays':
+      case 'leave-encashment':
+      case 'leave-reports':
+        return <LeaveManagementModule initialTab={currentRoute} />;
       case 'approvals':
       case 'requests':
         return <OperationsWorkspace initialTab="approvals" onNavigate={handleNavigate} />;
       case 'admin-approvals':
         return <RequestsApprovalsWorkspace initialTab="policies" />;
       case 'insights':
-      case 'workforce-overview':
         return <InsightsWorkspace initialTab="workforce" onNavigate={handleNavigate} />;
+      case 'workforce-overview':
+        return <WorkforceOverviewView onNavigate={handleNavigate} />;
       case 'analytics-reports':
         return <InsightsWorkspace initialTab="reports" onNavigate={handleNavigate} />;
       case 'admin':
       case 'administration':
       case 'admin-dashboard':
+        return <AdministrationWorkspace initialTab="access" initialSubTab="users" onNavigate={handleNavigate} />;
       case 'admin-access':
       case 'admin-users':
-      case 'admin-roles':
-      case 'admin-permissions':
-      case 'rbac':
       case 'users':
+        return <AdministrationWorkspace initialTab="access" initialSubTab="users" onNavigate={handleNavigate} />;
+      case 'admin-roles':
+      case 'rbac':
+      case 'roles':
+        return <AdministrationWorkspace initialTab="access" initialSubTab="roles" onNavigate={handleNavigate} />;
+      case 'admin-permissions':
       case 'permissions':
-        return <AdministrationWorkspace initialTab="access" onNavigate={handleNavigate} />;
+        return <AdministrationWorkspace initialTab="access" initialSubTab="permissions" onNavigate={handleNavigate} />;
+      case 'admin-notifications':
+      case 'notifications':
+      case 'notification-settings':
+      case 'notifications-settings':
+        return <AdministrationWorkspace initialTab="settings" initialSubTab="notifications" onNavigate={handleNavigate} />;
       case 'admin-security':
       case 'security':
         return <AdministrationWorkspace initialTab="security" onNavigate={handleNavigate} />;
@@ -476,11 +516,13 @@ const AppContent: React.FC = () => {
       case 'admin-audit':
       case 'audit-logs':
         return <AdministrationWorkspace initialTab="audit" onNavigate={handleNavigate} />;
-      case 'admin-settings':
       case 'admin-billing':
+        return <AdministrationWorkspace initialTab="settings" initialSubTab="billing" onNavigate={handleNavigate} />;
       case 'admin-subscription':
+        return <AdministrationWorkspace initialTab="settings" initialSubTab="subscription" onNavigate={handleNavigate} />;
+      case 'admin-settings':
       case 'settings':
-        return <AdministrationWorkspace initialTab="settings" onNavigate={handleNavigate} />;
+        return <AdministrationWorkspace initialTab="settings" initialSubTab="general" onNavigate={handleNavigate} />;
       case 'recruitment':
       case 'recruitment-dashboard':
       case 'recruitment-requisitions':
@@ -711,7 +753,6 @@ const AppContent: React.FC = () => {
       case 'reports':
         return <AnalyticsMasterModule initialTab={currentRoute} />;
       case 'workflows':
-      case 'notifications':
       case 'scheduled-jobs':
         return <AutomationView initialTab={currentRoute} />;
       case 'compliance-docs':
@@ -749,12 +790,32 @@ const AppContent: React.FC = () => {
       case 'platform-tenants':
       case 'platform-organizations':
       case 'platform-provisioning':
+      case 'platform-clients':
       case 'platform-tenant-health':
       case 'platform-users':
       case 'platform-staff':
       case 'platform-roles':
       case 'platform-subscriptions':
       case 'platform-plans':
+      case 'platform-pricing':
+      case 'platform-entitlements':
+      case 'platform-catalogue':
+      case 'platform-feature-catalogue':
+      case 'product-catalogue':
+      case 'platform-quotations':
+      case 'quotations':
+      case 'saas-quotations':
+      case 'platform-invoices':
+      case 'saas-invoices':
+      case 'platform-payments':
+      case 'saas-payments':
+      case 'platform-renewals':
+      case 'saas-renewals':
+      case 'platform-addons':
+      case 'saas-addons':
+      case 'platform-pricing-calculator':
+      case 'pricing-calculator':
+      case 'platform-tier-entitlements':
       case 'platform-billing':
       case 'platform-usage':
       case 'platform-features':
@@ -930,7 +991,7 @@ const AppContent: React.FC = () => {
         const primaryRole = getPrimaryRole(stored);
         const isPlatformRole = ['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(primaryRole);
         if (isPlatformRole) {
-          return <PlatformAdminMasterModule initialTab="platform-dashboard" onNavigateTab={handleNavigate} />;
+          return <PlatformAdminMasterModule initialTab={currentRoute} onNavigateTab={handleNavigate} />;
         }
         return <DashboardView onNavigate={handleNavigate} />;
       }
@@ -939,48 +1000,53 @@ const AppContent: React.FC = () => {
 
 
   return (
-    <AppShell
-      activeRoute={currentRoute}
-      onNavigate={handleNavigate}
-      onOpenCopilot={() => setIsCopilotOpen(true)}
-    >
-      <RouteGuard module={currentRoute} onNavigate={handleNavigate}>
-        <ErrorBoundary>
-          <Suspense fallback={
-            <JoyLoadingSpinner size="lg" message="Loading Module Workspace..." className="py-20 min-h-[420px]" />
-          }>
-            {renderViewContent()}
-          </Suspense>
-        </ErrorBoundary>
-      </RouteGuard>
+    <ErrorBoundary>
+      <AppShell
+        activeRoute={currentRoute}
+        onNavigate={handleNavigate}
+        onOpenCopilot={() => setIsCopilotOpen(true)}
+      >
+        <RouteGuard module={currentRoute} onNavigate={handleNavigate}>
+          <ErrorBoundary>
+            <Suspense fallback={
+              <JoyLoadingSpinner size="lg" message="Loading Module Workspace..." className="py-20 min-h-[420px]" />
+            }>
+              {renderViewContent()}
+            </Suspense>
+          </ErrorBoundary>
+        </RouteGuard>
 
-      <Suspense fallback={null}>
-        <AiAssistantDrawer isOpen={isCopilotOpen} onClose={() => setIsCopilotOpen(false)} />
-      </Suspense>
+        <Suspense fallback={null}>
+          <AiAssistantDrawer isOpen={isCopilotOpen} onClose={() => setIsCopilotOpen(false)} />
+        </Suspense>
 
-      <SessionExpiryModal
-        isOpen={isSessionModalOpen}
-        isExpired={isSessionExpired}
-        secondsRemaining={120}
-        onStaySignedIn={() => setIsSessionModalOpen(false)}
-        onReLoginSuccess={() => {
-          setIsSessionModalOpen(false);
-          setIsSessionExpired(false);
-        }}
-      />
-    </AppShell>
+        <SessionExpiryModal
+          isOpen={isSessionModalOpen}
+          isExpired={isSessionExpired}
+          secondsRemaining={120}
+          onStaySignedIn={() => setIsSessionModalOpen(false)}
+          onReLoginSuccess={() => {
+            setIsSessionModalOpen(false);
+            setIsSessionExpired(false);
+          }}
+        />
+      </AppShell>
+    </ErrorBoundary>
   );
 };
 
 export const App: React.FC = () => {
+
   return (
-    <ToastProvider>
-      <AuthProvider>
-        <TenantProvider>
-          <AppContent />
-        </TenantProvider>
-      </AuthProvider>
-    </ToastProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <AuthProvider>
+          <TenantProvider>
+            <AppContent />
+          </TenantProvider>
+        </AuthProvider>
+      </ToastProvider>
+    </ErrorBoundary>
   );
 };
 

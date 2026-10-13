@@ -980,7 +980,7 @@ export const MyProfileView: React.FC = () => {
                           {doc.verificationStatus === 'Verified' ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
                           {doc.verificationStatus}
                         </span>
-                        {doc.storagePath && (
+                        {(doc.fileUrl || (doc as any).storagePath) && (
                           <button
                             onClick={() => handleViewDocument(doc)}
                             title="View / Download"

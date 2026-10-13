@@ -14,6 +14,13 @@ import { PlatformDashboardView } from './subviews/PlatformDashboardView';
 import { TenantsView } from './subviews/TenantsView';
 import { SubscriptionsView } from './subviews/SubscriptionsView';
 import { TierEntitlementsView } from './subviews/TierEntitlementsView';
+import { PlansAndPricingView } from './subviews/PlansAndPricingView';
+import { FeatureCatalogueView } from './subviews/FeatureCatalogueView';
+import { PricingCalculatorView } from './subviews/PricingCalculatorView';
+import { AddonsCatalogueView } from './subviews/AddonsCatalogueView';
+import { QuotationsView } from './subviews/QuotationsView';
+import { SaaSInvoicesView } from './subviews/SaaSInvoicesView';
+import { CommercialClientsView } from './subviews/CommercialClientsView';
 import { BillingView } from './subviews/BillingView';
 import { UsageMeteringView } from './subviews/UsageMeteringView';
 import { FeatureFlagsView } from './subviews/FeatureFlagsView';
@@ -43,6 +50,7 @@ import { DevelopmentRoadmapView } from './subviews/DevelopmentRoadmapView';
 import { LaunchScopeDashboardView } from './subviews/LaunchScopeDashboardView';
 import { TenantHealthView } from './subviews/TenantHealthView';
 import { AwsCostAnalysisView } from './subviews/AwsCostAnalysisView';
+import { PlatformNotFoundView } from './components/PlatformNotFoundView';
 
 export interface NavigationPayload {
   tenantId?: string;
@@ -61,10 +69,19 @@ export interface PlatformAdminMasterModuleProps {
 const TAB_TITLES: Record<string, string> = {
   'platform-dashboard': 'Control Center',
   'platform-tenants': 'Tenants & Organizations',
+  'platform-clients': 'Clients',
   'platform-tenant-health': 'Tenant Health & Churn Risk',
   'platform-subscriptions': 'Subscriptions',
-  'platform-plans': 'Plans & Entitlements',
-  'platform-billing': 'Billing & Invoices',
+  'platform-quotations': 'Quotations',
+  'platform-invoices': 'Invoices & Billing',
+  'platform-payments': 'Payments & Collections',
+  'platform-plans': 'Plans & Pricing',
+  'platform-pricing-calculator': 'Pricing Calculator',
+  'pricing-calculator': 'Pricing Calculator',
+  'platform-catalogue': 'Feature Catalogue',
+  'platform-feature-catalogue': 'Feature Catalogue',
+  'platform-addons': 'Add-ons',
+  'platform-billing': 'Invoices & Billing',
   'platform-usage': 'Usage & Metering',
   'platform-features': 'Feature Flags',
   'platform-security': 'Security Center',
@@ -96,6 +113,7 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
   onNavigateTab,
   onNavigate,
 }) => {
+  const { isConnected } = usePlatformRealtime();
   const urlState = parseRouteFromUrl();
   const [activeTab, setActiveTab] = useState(urlState.route || initialTab);
   const [navPayload, setNavPayload] = useState<NavigationPayload | undefined>(() => {
@@ -115,12 +133,21 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
     syncUrlWithRoute(tab, payload as any);
     if (onNavigateTab) onNavigateTab(tab, payload);
     if (onNavigate) onNavigate(tab, payload);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      const mainEl = document.querySelector('main');
+      if (mainEl) mainEl.scrollTop = 0;
+    }
   };
 
   // Sync activeTab whenever initialTab prop changes
   React.useEffect(() => {
     if (initialTab && initialTab !== activeTab) {
       setActiveTab(initialTab);
+      if (typeof window !== 'undefined') {
+        const mainEl = document.querySelector('main');
+        if (mainEl) mainEl.scrollTop = 0;
+      }
     }
   }, [initialTab]);
 
@@ -135,8 +162,80 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
     return () => window.removeEventListener('platform:navigate', handleCustomNav);
   }, []);
 
-  // Real-time connection badge status
-  const { isConnected } = usePlatformRealtime();
+  // Synchronize browser document title with current platform route
+  React.useEffect(() => {
+    const titles: Record<string, string> = {
+      'platform-dashboard': 'Joy PeopleHR — Platform Control Center',
+      'platform': 'Joy PeopleHR — Platform Control Center',
+      'platform-addons': 'Joy PeopleHR — Add-ons',
+      'platform-pricing-calculator': 'Joy PeopleHR — Pricing Calculator',
+      'pricing-calculator': 'Joy PeopleHR — Pricing Calculator',
+      'platform-plans': 'Joy PeopleHR — Plans & Pricing',
+      'platform-quotations': 'Joy PeopleHR — Quotations',
+      'quotations': 'Joy PeopleHR — Quotations',
+      'platform-subscriptions': 'Joy PeopleHR — Subscriptions',
+      'platform-invoices': 'Joy PeopleHR — Invoices',
+      'platform-billing': 'Joy PeopleHR — Invoices & Billing',
+      'platform-payments': 'Joy PeopleHR — Payments & Collections',
+      'platform-features': 'Joy PeopleHR — Feature Flags',
+      'platform-catalogue': 'Joy PeopleHR — Feature Catalogue',
+      'platform-feature-catalogue': 'Joy PeopleHR — Feature Catalogue',
+      'saas-revenue': 'Joy PeopleHR — Revenue & Growth',
+      'platform-tenants': 'Joy PeopleHR — Organizations',
+      'platform-clients': 'Joy PeopleHR — Clients',
+      'platform-usage': 'Joy PeopleHR — Usage & Metering',
+    };
+    if (titles[currentTab]) {
+      document.title = titles[currentTab];
+    } else if (TAB_TITLES[currentTab]) {
+      document.title = `Joy PeopleHR — ${TAB_TITLES[currentTab]}`;
+    }
+  }, [currentTab]);
+
+  const getCategoryForTab = (tab: string): string => {
+    if (
+      tab === 'platform-plans' ||
+      tab === 'platform-pricing' ||
+      tab === 'platform-addons' ||
+      tab === 'saas-addons' ||
+      tab === 'platform-pricing-calculator' ||
+      tab === 'pricing-calculator' ||
+      tab === 'platform-quotations' ||
+      tab === 'quotations' ||
+      tab === 'saas-quotations' ||
+      tab === 'platform-subscriptions' ||
+      tab === 'platform-invoices' ||
+      tab === 'platform-billing' ||
+      tab === 'invoices' ||
+      tab === 'saas-invoices' ||
+      tab === 'platform-payments' ||
+      tab === 'saas-revenue' ||
+      tab === 'platform-revenue' ||
+      tab === 'platform-usage' ||
+      tab === 'platform-clients'
+    ) {
+      return 'SaaS Business';
+    }
+    if (
+      tab === 'platform-catalogue' ||
+      tab === 'platform-feature-catalogue' ||
+      tab === 'product-catalogue' ||
+      tab === 'platform-features' ||
+      tab === 'platform-flags' ||
+      tab === 'platform-modules' ||
+      tab === 'platform-roadmap'
+    ) {
+      return 'Product';
+    }
+    if (
+      tab === 'platform-security' ||
+      tab === 'platform-sessions' ||
+      tab === 'platform-audit'
+    ) {
+      return 'Security';
+    }
+    return 'Operations';
+  };
 
   const renderContent = () => {
     switch (currentTab) {
@@ -167,15 +266,66 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
           />
         );
       case 'platform-plans':
+      case 'platform-pricing':
       case 'platform-entitlements':
+        return (
+          <PlansAndPricingView
+            onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)}
+          />
+        );
+      case 'platform-pricing-calculator':
+      case 'pricing-calculator':
+        return (
+          <PricingCalculatorView
+            onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)}
+          />
+        );
+      case 'platform-catalogue':
+      case 'platform-feature-catalogue':
+      case 'product-catalogue':
+        return (
+          <FeatureCatalogueView
+            onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)}
+          />
+        );
+      case 'platform-addons':
+      case 'saas-addons':
+        return (
+          <AddonsCatalogueView
+            onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)}
+          />
+        );
+      case 'platform-tier-entitlements':
         return (
           <TierEntitlementsView
             onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)}
           />
         );
+      case 'platform-clients':
+      case 'saas-clients':
+      case 'clients':
+        return (
+          <CommercialClientsView
+            onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)}
+          />
+        );
+      case 'platform-quotations':
+      case 'quotations':
+      case 'saas-quotations':
+        return (
+          <QuotationsView
+            onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)}
+          />
+        );
       case 'platform-billing':
       case 'platform-invoices':
-        return <BillingView onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)} />;
+      case 'invoices':
+      case 'saas-invoices':
+        return (
+          <SaaSInvoicesView
+            onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)}
+          />
+        );
       case 'platform-usage':
       case 'platform-metering':
         return (
@@ -186,7 +336,7 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
         );
       case 'platform-features':
       case 'platform-flags':
-        return <FeatureFlagsView />;
+        return <FeatureFlagsView onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)} />;
       case 'platform-modules':
       case 'platform-registry':
       case 'platform-product':
@@ -289,7 +439,13 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
       case 'aws-cost-analysis':
         return <AwsCostAnalysisView onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)} />;
       default:
-        return <PlatformDashboardView onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)} />;
+        // Proper 404 View: NEVER silently fall back to Control Center!
+        return (
+          <PlatformNotFoundView
+            attemptedRoute={currentTab}
+            onNavigateHome={(route) => handleSelectTab(route)}
+          />
+        );
     }
   };
 
@@ -308,6 +464,8 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
             <Home className="w-3.5 h-3.5" />
             <span>Platform Admin</span>
           </button>
+          <span className="text-[#90A1B9]">›</span>
+          <span className="text-[#64748B] font-semibold">{getCategoryForTab(currentTab)}</span>
           <span className="text-[#90A1B9]">›</span>
           <span className="font-semibold text-[#0F172B]">
             {TAB_TITLES[currentTab] || currentTab}

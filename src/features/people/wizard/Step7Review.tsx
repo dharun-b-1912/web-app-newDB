@@ -38,13 +38,13 @@ export const Step7Review: React.FC<Props> = ({
   onUpdateAppAccess,
 }) => {
   const deptName =
-    departments.find((d) => d.id === formData.department_id)?.name ||
     formData.department_name ||
-    'Engineering';
+    departments.find((d) => d.id === formData.department_id)?.name ||
+    'General';
 
   const desigTitle =
-    designations.find((d) => d.id === formData.designation_id)?.title ||
     formData.designation_title ||
+    designations.find((d) => d.id === formData.designation_id)?.title ||
     'Software Engineer';
 
   const annualCtc = formData.annual_ctc || 1200000;
@@ -78,12 +78,13 @@ export const Step7Review: React.FC<Props> = ({
       pfApplicable: formData.pf_applicable !== false,
       esiApplicable: formData.esi_applicable === true,
       ptApplicable: formData.pt_applicable !== false,
+      tdsApplicable: formData.tds_applicable !== false,
       statutoryConfig,
     });
-  }, [annualCtc, monthlyCtc, formData.compensation_basis, formData.salary_structure_code, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, statutoryConfig]);
+  }, [annualCtc, monthlyCtc, formData.compensation_basis, formData.salary_structure_code, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, formData.tds_applicable, statutoryConfig]);
 
   const enableAppAccess = formData.enable_app_access !== false;
-  const authMethod = formData.auth_method || 'EMPLOYEE_ID_PASSWORD';
+  const authMethod = formData.auth_method || 'EMAIL_PASSWORD';
   const requirePasswordChange = formData.require_password_change !== false;
   const requireDeviceVerification = formData.require_device_verification !== false;
 
@@ -182,8 +183,19 @@ export const Step7Review: React.FC<Props> = ({
           <div>Basic: <strong className="text-white">₹{liveCalculation.basic.toLocaleString('en-IN')}</strong></div>
           <div>HRA: <strong className="text-white">₹{liveCalculation.hra.toLocaleString('en-IN')}</strong></div>
           <div>Special Allowance: <strong className="text-white">₹{liveCalculation.specialAllowance.toLocaleString('en-IN')}</strong></div>
-          <div>Employee EPF: <strong className="text-rose-200">₹{liveCalculation.epfEmployee.toLocaleString('en-IN')}</strong></div>
+          <div>Employee EPF: <strong className={liveCalculation.epfEmployee > 0 ? "text-rose-200" : "text-emerald-300"}>₹{liveCalculation.epfEmployee.toLocaleString('en-IN')}</strong></div>
         </div>
+
+        {(liveCalculation.professionalTax > 0 || (liveCalculation.estimatedTdsMonthly > 0 && formData.tds_applicable !== false)) && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] pt-1 text-emerald-200 border-t border-emerald-800/40">
+            {liveCalculation.professionalTax > 0 && (
+              <span>Professional Tax (PT): <strong className="text-rose-200">-₹{liveCalculation.professionalTax.toLocaleString('en-IN')}</strong></span>
+            )}
+            {liveCalculation.estimatedTdsMonthly > 0 && formData.tds_applicable !== false && (
+              <span>Income Tax (TDS): <strong className="text-rose-200">-₹{liveCalculation.estimatedTdsMonthly.toLocaleString('en-IN')}</strong> <span className="text-[10px] text-emerald-300">({formData.tax_regime || 'NEW'} Regime projection)</span></span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* DEDICATED STEP 7: EMPLOYEE APP ACCESS & AUTHENTICATION CONFIGURATION */}
@@ -488,7 +500,7 @@ export const Step7Review: React.FC<Props> = ({
             <div className="flex justify-between">
               <span className="text-gray-500">Disbursement Bank:</span>
               <span className="font-bold text-gray-900">
-                {formData.bank_name ? `${formData.bank_name} (${formData.ifsc || 'IFSC'})` : 'HDFC Bank (Default)'}
+                {formData.bank_name ? `${formData.bank_name} (${formData.ifsc || 'IFSC'})` : formData.ifsc ? `Bank (${formData.ifsc})` : 'Not provided'}
               </span>
             </div>
             <div className="flex justify-between">
@@ -504,9 +516,9 @@ export const Step7Review: React.FC<Props> = ({
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Tax Regime / EPF:</span>
+              <span className="text-gray-500">Tax &amp; Statutory:</span>
               <span className="font-bold text-[#07563D]">
-                {formData.tax_regime || 'NEW'} Regime · {formData.pf_applicable !== false ? 'EPF Active' : 'No EPF'}
+                {formData.tax_regime || 'NEW'} · {formData.tds_applicable !== false ? 'TDS Active' : 'No TDS'} · {formData.pf_applicable !== false ? 'EPF Active' : 'No EPF'}
               </span>
             </div>
           </div>

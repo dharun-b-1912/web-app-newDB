@@ -38,10 +38,11 @@ interface LeaveManagementModuleProps {
 }
 
 const resolveTabId = (route?: string): string => {
-  if (!route || route === 'leave') return 'dashboard';
+  if (!route || route === 'leave' || route === 'leave-dashboard') return 'dashboard';
   const clean = route.replace(/^leave-/, '');
-  if (clean === 'approval') return 'approvals';
-  if (clean === 'balance') return 'balances';
+  if (clean === 'approval' || clean === 'approvals') return 'approvals';
+  if (clean === 'balance' || clean === 'balances' || clean === 'balance-ledger' || clean === 'balances-ledger' || clean === 'ledger') return 'balances';
+  if (clean === 'compoff' || clean === 'comp-off') return 'compoff';
   return clean;
 };
 

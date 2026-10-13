@@ -361,6 +361,8 @@ class ResendEmailService {
     const baseUrl = getAppBaseUrl();
     const activationLink = params.activationUrl || `${baseUrl}/activate?token=${encodeURIComponent(params.activationToken)}&emp=${encodeURIComponent(params.employeeId)}&email=${encodeURIComponent(params.to)}`;
 
+    const tempPass = params.tempPassword || 'joypeoplehr';
+
     const html = `
 <!DOCTYPE html>
 <html>
@@ -412,28 +414,45 @@ class ResendEmailService {
           <span class="creds-label">Auth Method:</span>
           <span class="creds-value">${params.authMethod || 'Employee ID + Password'}</span>
         </div>
-        ${
-          params.tempPassword
-            ? `<div class="creds-row">
-                <span class="creds-label">Temporary Password:</span>
-                <span class="creds-value">${params.tempPassword}</span>
-              </div>`
-            : ''
-        }
+        <div class="creds-row">
+          <span class="creds-label">Default / Temporary Password:</span>
+          <span class="creds-value">${tempPass}</span>
+        </div>
+      </div>
+
+      <!-- Google Play Store Mobile App Banner -->
+      <div style="background: linear-gradient(135deg, #f0fdf4 0%, #e6f4ea 100%); border: 1.5px solid #a7f3d0; border-radius: 12px; padding: 20px; margin: 20px 0; text-align: center;">
+        <div style="display: inline-block; background: #07563D; color: #ffffff; font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 999px; text-transform: uppercase; margin-bottom: 8px;">
+          📲 Android Mobile App
+        </div>
+        <h3 style="margin: 4px 0 8px 0; font-size: 16px; font-weight: 800; color: #064e3b;">
+          Download Joy PeopleHR on Google Play Store
+        </h3>
+        <p style="margin: 0 0 16px 0; font-size: 13px; color: #047857; line-height: 1.5;">
+          Punch daily attendance with geofencing, submit leave applications, view work shifts, and download payslips directly on your mobile device.
+        </p>
+        <div style="text-align: center;">
+          <a href="https://play.google.com/store/apps/details?id=com.joypeoplehr.app" target="_blank" style="display: inline-block; background: #07563D; color: #ffffff !important; font-weight: 700; font-size: 14px; text-decoration: none; padding: 12px 26px; border-radius: 10px; box-shadow: 0 4px 6px -1px rgba(7, 86, 61, 0.25);">
+            ▶ Download on Google Play Store
+          </a>
+        </div>
+        <p style="margin: 12px 0 0 0; font-size: 12px; color: #065f46;">
+          After installing, sign in using your Employee ID <strong>${params.employeeId}</strong> and default password <strong>${tempPass}</strong>.
+        </p>
       </div>
 
       <div style="margin: 20px 0; padding: 14px 18px; background-color: #E6F4EA; border: 1.5px dashed #07563D; border-radius: 12px; text-align: center;">
-        <div style="font-size: 11px; font-weight: 800; color: #07563D; text-transform: uppercase; margin-bottom: 4px;">🔑 One-Time Activation Code</div>
+        <div style="font-size: 11px; font-weight: 800; color: #07563D; text-transform: uppercase; margin-bottom: 4px;">🔑 One-Time Web Portal Activation Code</div>
         <div style="font-family: monospace; font-size: 18px; font-weight: 800; color: #07563D; background: #ffffff; padding: 6px 14px; border-radius: 6px; display: inline-block; border: 1px solid #A3D9C9; user-select: all;">${params.activationToken}</div>
-        <p style="margin: 6px 0 0 0; font-size: 11px; color: #07563D;">Enter this code in the portal or click the button below to activate.</p>
+        <p style="margin: 6px 0 0 0; font-size: 11px; color: #07563D;">Enter this code in the portal or click the button below to activate via web.</p>
       </div>
 
       <div style="text-align: center;">
-        <a href="${activationLink}" class="btn" target="_blank">Activate Account & Set Password</a>
+        <a href="${activationLink}" class="btn" target="_blank">Activate Account & Set Password (Web Portal)</a>
       </div>
 
       <div class="security-note">
-        <strong>Security Notice:</strong> This activation link is single-use and will expire in 24 hours. For security compliance, you will be required to change your temporary password on first login.
+        <strong>Security Notice:</strong> For security compliance, you can change your default password anytime from your profile settings in the app or portal.
       </div>
     </div>
     

@@ -87,7 +87,7 @@ export const DeviceDiagnosticDetailsModal: React.FC<DeviceDiagnosticDetailsModal
           res.status === 'ONLINE'
             ? `Device health check passed (${res.latency_ms}ms latency).`
             : `Hardware diagnostic detected ${res.status.replace(/_/g, ' ')}!`,
-          res.status === 'ONLINE' ? 'default' : 'error'
+          res.status === 'ONLINE' ? 'info' : 'error'
         );
         onDiagnosticUpdated();
       } catch (err: any) {

@@ -2,7 +2,7 @@ import React from 'react';
 import { cn } from '../../lib/utils';
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  variant?: 'emerald' | 'amber' | 'rose' | 'blue' | 'gray' | 'purple' | 'secondary' | 'outline' | 'danger' | 'neutral' | 'info' | 'success' | 'warning' | 'primary';
+  variant?: 'emerald' | 'amber' | 'rose' | 'blue' | 'gray' | 'purple' | 'indigo' | 'secondary' | 'outline' | 'danger' | 'neutral' | 'info' | 'success' | 'warning' | 'primary';
   size?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
   key?: React.Key;
@@ -21,6 +21,7 @@ export const Badge = ({ className, variant = 'emerald', size = 'md', children, .
     danger: 'bg-rose-50 text-rose-800 border-rose-200/80',
     blue: 'bg-sky-50 text-sky-800 border-sky-200/80',
     info: 'bg-sky-50 text-sky-800 border-sky-200/80',
+    indigo: 'bg-indigo-50 text-indigo-800 border-indigo-200/80',
     gray: 'bg-gray-100 text-gray-700 border-gray-200',
     neutral: 'bg-gray-100 text-gray-700 border-gray-200',
     secondary: 'bg-gray-100 text-gray-700 border-gray-200',

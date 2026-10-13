@@ -21,6 +21,7 @@ import { onboardingService } from '../../services/onboardingService';
 import { hrEventBus } from '../../services/hrEventBus';
 import { api } from '../../services/api';
 import { EmployeeCreateWizardModal } from '../people/EmployeeCreateWizardModal';
+import { BulkEmployeeImportModal } from '../people/bulk/BulkEmployeeImportModal';
 import { DivyaManpowerOnboardingTab } from './components/DivyaManpowerOnboardingTab';
 import {
   UserPlus,
@@ -103,6 +104,7 @@ export const OnboardingView: React.FC = () => {
 
   // Modals
   const [isCreateWizardOpen, setIsCreateWizardOpen] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isRejectDocModalOpen, setIsRejectDocModalOpen] = useState(false);
   const [rejectDocId, setRejectDocId] = useState('');
   const [rejectReason, setRejectReason] = useState('');
@@ -301,6 +303,15 @@ export const OnboardingView: React.FC = () => {
               <Layers className="w-3.5 h-3.5" /> Enterprise Pipeline
             </button>
           </div>
+
+          <Button
+            onClick={() => setIsBulkImportOpen(true)}
+            variant="outline"
+            leftIcon={<FileSpreadsheet className="w-4 h-4 text-[#07563D]" />}
+            className="font-bold border-gray-300 hover:bg-emerald-50 text-gray-700 hover:text-[#07563D]"
+          >
+            Bulk Import
+          </Button>
 
           <Button
             onClick={() => setIsCreateWizardOpen(true)}
@@ -926,6 +937,15 @@ export const OnboardingView: React.FC = () => {
         isOpen={isCreateWizardOpen}
         onClose={() => setIsCreateWizardOpen(false)}
         onCreated={() => {
+          loadData();
+        }}
+      />
+
+      {/* Bulk Employee Import Pipeline Modal */}
+      <BulkEmployeeImportModal
+        isOpen={isBulkImportOpen}
+        onClose={() => setIsBulkImportOpen(false)}
+        onImportComplete={() => {
           loadData();
         }}
       />

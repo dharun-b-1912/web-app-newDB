@@ -34,6 +34,7 @@ export interface Step5FormData {
   pf_applicable?: boolean;
   esi_applicable?: boolean;
   pt_applicable?: boolean;
+  tds_applicable?: boolean;
   tax_regime?: 'NEW' | 'OLD';
 }
 
@@ -93,12 +94,11 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">
-              Contact Person Full Name <span className="text-rose-500">*</span>
+              Contact Person Full Name <span className="text-gray-400 font-normal">(Optional)</span>
             </label>
             <input
               type="text"
-              required
-              placeholder="e.g. Priya Kumar"
+              placeholder="e.g. Priya Kumar (Optional)"
               value={formData.emergency_name}
               onChange={(e) => onChange({ emergency_name: e.target.value })}
               className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none"
@@ -107,13 +107,14 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
 
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">
-              Relationship <span className="text-rose-500">*</span>
+              Relationship <span className="text-gray-400 font-normal">(Optional)</span>
             </label>
             <select
               value={formData.emergency_relation}
               onChange={(e) => onChange({ emergency_relation: e.target.value })}
               className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium"
             >
+              <option value="">-- Choose Relationship (Optional) --</option>
               <option value="Spouse">Spouse</option>
               <option value="Parent (Father/Mother)">Parent (Father/Mother)</option>
               <option value="Sibling (Brother/Sister)">Sibling (Brother/Sister)</option>
@@ -125,15 +126,14 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
 
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">
-              Emergency Phone Number <span className="text-rose-500">*</span>
+              Emergency Phone Number <span className="text-gray-400 font-normal">(Optional)</span>
             </label>
             <input
               type="tel"
-              required
-              placeholder="+91 98765 43210"
+              placeholder="+91 98765 43210 (Optional)"
               value={formData.emergency_phone}
               onChange={(e) => onChange({ emergency_phone: e.target.value })}
-              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold"
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium"
             />
           </div>
         </div>
@@ -177,11 +177,11 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">
-              Bank Name <span className="text-gray-400 font-normal">(e.g. HDFC Bank)</span>
+              Bank Name <span className="text-gray-400 font-normal">(e.g. State Bank of India, HDFC, ICICI)</span>
             </label>
             <input
               type="text"
-              placeholder="HDFC Bank / ICICI / SBI"
+              placeholder="State Bank of India / HDFC / ICICI"
               value={formData.bank_name || ''}
               onChange={(e) => onChange({ bank_name: e.target.value })}
               className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium"
@@ -194,7 +194,7 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
             </label>
             <input
               type="text"
-              placeholder="50100239481923"
+              placeholder="Enter Account Number"
               value={formData.account_number || ''}
               onChange={(e) => onChange({ account_number: e.target.value })}
               className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold"
@@ -207,9 +207,36 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
             </label>
             <input
               type="text"
-              placeholder="HDFC0001234"
+              placeholder="e.g. SBIN0001234 or HDFC0001234"
               value={formData.ifsc || ''}
-              onChange={(e) => onChange({ ifsc: e.target.value.toUpperCase() })}
+              onChange={(e) => {
+                const val = e.target.value.toUpperCase();
+                const prefix = val.trim().slice(0, 4);
+                const ifscBankMap: Record<string, string> = {
+                  SBIN: 'State Bank of India',
+                  SBI0: 'State Bank of India',
+                  HDFC: 'HDFC Bank',
+                  ICIC: 'ICICI Bank',
+                  UTIB: 'Axis Bank',
+                  KKBK: 'Kotak Mahindra Bank',
+                  BARB: 'Bank of Baroda',
+                  PUNB: 'Punjab National Bank',
+                  CNRB: 'Canara Bank',
+                  UBIN: 'Union Bank of India',
+                  IOBA: 'Indian Overseas Bank',
+                  IDIB: 'Indian Bank',
+                  KVBL: 'Karur Vysya Bank',
+                  YESB: 'Yes Bank',
+                  INDB: 'IndusInd Bank',
+                  FDRL: 'Federal Bank',
+                };
+                const detected = ifscBankMap[prefix] || (val.startsWith('SBI') ? 'State Bank of India' : null);
+                if (detected && (!formData.bank_name || formData.bank_name === 'HDFC Bank')) {
+                  onChange({ ifsc: val, bank_name: detected });
+                } else {
+                  onChange({ ifsc: val });
+                }
+              }}
               className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold uppercase"
             />
           </div>
@@ -297,9 +324,9 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
           </div>
         </div>
 
-        {/* Toggles for PF / ESI / PT */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-gray-100">
-          <label className="flex items-center gap-2.5 p-3 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer">
+        {/* Toggles for PF / ESI / PT / TDS */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-gray-100">
+          <label className="flex items-center gap-2.5 p-3 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer hover:bg-emerald-50/30 transition-colors">
             <input
               type="checkbox"
               checked={formData.pf_applicable !== false}
@@ -308,11 +335,11 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
             />
             <div>
               <p className="text-xs font-bold text-gray-900">EPF Applicable</p>
-              <p className="text-[10px] text-gray-500">12% Employee & Employer Contribution</p>
+              <p className="text-[10px] text-gray-500">12% Employee & Employer</p>
             </div>
           </label>
 
-          <label className="flex items-center gap-2.5 p-3 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer">
+          <label className="flex items-center gap-2.5 p-3 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer hover:bg-emerald-50/30 transition-colors">
             <input
               type="checkbox"
               checked={formData.esi_applicable === true}
@@ -321,11 +348,11 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
             />
             <div>
               <p className="text-xs font-bold text-gray-900">ESIC Applicable</p>
-              <p className="text-[10px] text-gray-500">Medical cover for wages ≤ ₹21,000</p>
+              <p className="text-[10px] text-gray-500">Medical cover (≤ ₹21k)</p>
             </div>
           </label>
 
-          <label className="flex items-center gap-2.5 p-3 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer">
+          <label className="flex items-center gap-2.5 p-3 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer hover:bg-emerald-50/30 transition-colors">
             <input
               type="checkbox"
               checked={formData.pt_applicable !== false}
@@ -334,7 +361,20 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
             />
             <div>
               <p className="text-xs font-bold text-gray-900">Professional Tax (PT)</p>
-              <p className="text-[10px] text-gray-500">State statutory half-yearly slab</p>
+              <p className="text-[10px] text-gray-500">State statutory slab</p>
+            </div>
+          </label>
+
+          <label className="flex items-center gap-2.5 p-3 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer hover:bg-emerald-50/30 transition-colors">
+            <input
+              type="checkbox"
+              checked={formData.tds_applicable !== false}
+              onChange={(e) => onChange({ tds_applicable: e.target.checked })}
+              className="w-4 h-4 rounded text-[#07563D] focus:ring-0"
+            />
+            <div>
+              <p className="text-xs font-bold text-gray-900">TDS / Income Tax</p>
+              <p className="text-[10px] text-gray-500">Tax withholding projection</p>
             </div>
           </label>
         </div>

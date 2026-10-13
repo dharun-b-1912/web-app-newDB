@@ -93,22 +93,40 @@ export const getAppBaseUrl = (): string => {
 };
 
 let _sessionHealPromise: Promise<any> | null = null;
+let _sessionVerifiedTimestamp: number = 0;
+let _cachedActiveSession: any = null;
 
 /**
  * Ensures the browser has a valid, authenticated Supabase JWT session.
- * If localStorage has a cached Workforce user (or we are in local dev) but
- * Supabase Auth has no session token, automatically authenticates so RLS
- * queries (attendance_daily, attendance_punches, employees, etc.) never fail silently as anon.
+ * Atomically single-flighted and cached for 60 seconds so parallel calls from
+ * multiple components never spam redundant signInWithPassword or getSession calls.
  */
 export const ensureSupabaseSession = async (): Promise<any> => {
   if (!isSupabaseEnabled) return null;
 
-  try {
-    const { data } = await supabase.auth.getSession();
-    if (data?.session?.user) {
-      return data.session;
-    }
-  } catch (_) {}
+  const now = Date.now();
+  if (_cachedActiveSession && now - _sessionVerifiedTimestamp < 60_000) {
+    return _cachedActiveSession;
+  }
+
+  // FAST PATH: Read existing valid session from localStorage in 0.01ms (prevents waiting for GoTrue lock/network)
+  if (typeof window !== 'undefined') {
+    try {
+      const rawSb = localStorage.getItem(`sb-${supabaseProject}-auth-token`);
+      if (rawSb) {
+        const parsed = JSON.parse(rawSb);
+        const session = parsed?.currentSession || parsed;
+        if (session?.access_token && session?.user) {
+          const expSec = session.expires_at || 0;
+          if (!expSec || expSec * 1000 > now + 30_000) {
+            _cachedActiveSession = session;
+            _sessionVerifiedTimestamp = now;
+            return session;
+          }
+        }
+      }
+    } catch (_) {}
+  }
 
   if (_sessionHealPromise) {
     return _sessionHealPromise;
@@ -116,9 +134,25 @@ export const ensureSupabaseSession = async (): Promise<any> => {
 
   _sessionHealPromise = (async () => {
     try {
+      // Bounded getSession with 1500ms timeout
+      const sessionPromise = supabase.auth.getSession();
+      const sessionTimeout = new Promise<{ data: { session: any } }>((resolve) =>
+        setTimeout(() => resolve({ data: { session: null } }), 1500)
+      );
+      const { data } = await Promise.race([sessionPromise, sessionTimeout]);
+
+      if (data?.session?.user) {
+        _cachedActiveSession = data.session;
+        _sessionVerifiedTimestamp = Date.now();
+        return data.session;
+      }
+
       let targetEmail = '';
       if (typeof window !== 'undefined') {
         try {
+          if (localStorage.getItem('workforce_logged_out') === 'true') {
+            return null;
+          }
           const rawUser = localStorage.getItem('workforce_current_user');
           if (rawUser) {
             const parsed = JSON.parse(rawUser);
@@ -131,6 +165,7 @@ export const ensureSupabaseSession = async (): Promise<any> => {
 
       const knownAccounts: Record<string, string> = {
         'marimuthu@joycorporatesolutions.com': 'joypeoplehr',
+        'mari.muthu@joycorporatesolutions.com': 'joypeoplehr',
         'dharun@joyglobalcorp.com': 'joypeoplehr',
         'danya@joycorporatesolutions.com': 'joypeoplehr',
         'thirumalairk28@gmail.com': 'joypeoplehr',
@@ -143,12 +178,19 @@ export const ensureSupabaseSession = async (): Promise<any> => {
       const passwordToUse =
         knownAccounts[emailToUse] || meta.env?.VITE_DEV_AUTH_PASSWORD || 'joypeoplehr';
 
-      const { data: signInData, error } = await supabase.auth.signInWithPassword({
+      // Bounded signInWithPassword with 3000ms timeout
+      const signInPromise = supabase.auth.signInWithPassword({
         email: emailToUse,
         password: passwordToUse,
       });
+      const signInTimeout = new Promise<{ data: any; error: any }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: new Error('Auth timeout') }), 3000)
+      );
+      const { data: signInData, error } = await Promise.race([signInPromise, signInTimeout]);
 
       if (!error && signInData?.session) {
+        _cachedActiveSession = signInData.session;
+        _sessionVerifiedTimestamp = Date.now();
         return signInData.session;
       }
     } catch (err) {

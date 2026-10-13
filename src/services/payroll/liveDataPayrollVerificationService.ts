@@ -491,11 +491,11 @@ export class LiveDataPayrollVerificationService {
     // Dispatch global events to refresh all UI views
     if (typeof window !== 'undefined') {
       try {
-        window.dispatchEvent(new CustomEvent('employee:created'));
-        window.dispatchEvent(new CustomEvent('employee:updated'));
-        window.dispatchEvent(new CustomEvent('payroll:refresh'));
-        window.dispatchEvent(new CustomEvent('payroll.calculated', { detail: augustRun }));
-        window.dispatchEvent(new Event('storage'));
+        (globalThis as any).dispatchEvent(new CustomEvent('employee:created'));
+        (globalThis as any).dispatchEvent(new CustomEvent('employee:updated'));
+        (globalThis as any).dispatchEvent(new CustomEvent('payroll:refresh'));
+        (globalThis as any).dispatchEvent(new CustomEvent('payroll.calculated', { detail: augustRun }));
+        (globalThis as any).dispatchEvent(new Event('storage'));
       } catch (_) {}
     }
 

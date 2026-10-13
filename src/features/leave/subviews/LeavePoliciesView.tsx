@@ -30,7 +30,7 @@ export const LeavePoliciesView: React.FC = () => {
   const [policies, setPolicies] = useState<LeavePolicy[]>([]);
   const [types, setTypes] = useState<LeaveType[]>([]);
   const [selectedPolicyId, setSelectedPolicyId] = useState<string>('');
-  const [conflicts, setConflicts] = useState<string[]>([]);
+  const [conflicts, setConflicts] = useState<any[]>([]);
 
   // Simulation State
   const [simDays, setSimDays] = useState<number>(4);
@@ -72,7 +72,7 @@ export const LeavePoliciesView: React.FC = () => {
       effective_from: '2026-01-01',
       status: 'Active',
       priority: policies.length + 1,
-      precedence_rule: 'SpecificOverGeneral',
+      precedence_rule: 'MostSpecificWins',
       version: 1,
       rules: types.slice(0, 3).map(t => ({
         leave_type_id: t.id,

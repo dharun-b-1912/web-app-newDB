@@ -1463,7 +1463,7 @@ export const PlatformAccountMasterView: React.FC<PlatformAccountMasterViewProps>
                       </div>
                     </div>
                     <div className="text-right font-mono text-[11px] text-gray-400">
-                      {new Date(event.timestamp).toLocaleTimeString()}
+                      {new Date(event.timestamp || event.occurred_at || event.created_at).toLocaleTimeString()}
                     </div>
                   </div>
                 ))}

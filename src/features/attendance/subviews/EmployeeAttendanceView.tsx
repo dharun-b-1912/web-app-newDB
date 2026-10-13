@@ -185,13 +185,33 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     };
   }, [selectedDate]);
 
-  // HR Event Bus listener
+  // HR Event Bus listener & real-time employee/shift updates
   useEffect(() => {
-    const unsub = hrEventBus.subscribe('attendance.*', () => {
+    const unsubAtt = hrEventBus.subscribe('attendance.*', () => {
       attendanceApi.invalidateCache();
       loadData();
     });
-    return () => unsub();
+    const unsubEmp = hrEventBus.subscribe('employee.*', () => {
+      attendanceApi.invalidateCache();
+      loadData();
+    });
+    const unsubShift = hrEventBus.subscribe('shift.*', () => {
+      attendanceApi.invalidateCache();
+      loadData();
+    });
+
+    const handleWindowEmpUpdate = () => {
+      attendanceApi.invalidateCache();
+      loadData();
+    };
+    window.addEventListener('employee:updated', handleWindowEmpUpdate);
+
+    return () => {
+      unsubAtt();
+      unsubEmp();
+      unsubShift();
+      window.removeEventListener('employee:updated', handleWindowEmpUpdate);
+    };
   }, [selectedDate]);
 
   // Continuous background refresh every 4 seconds for zero-drift sync with Flutter Mobile App
@@ -229,7 +249,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         return (rEmpId && (rEmpId === eId || rEmpId === eCode)) ||
           (rEmpCode && (rEmpCode === eCode || rEmpCode === eId));
       });
-      const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate);
+      const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate, undefined, emp);
 
       const resolvedStatus = record?.status || (roster.is_weekly_off ? 'Weekly Off' : 'Not Checked In');
       const resolvedShiftCode = roster.shift_code || 'GEN-09';
@@ -274,12 +294,14 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         return (rEmpId && (rEmpId === eId || rEmpId === eCode)) ||
           (rEmpCode && (rEmpCode === eCode || rEmpCode === eId));
       });
-      const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate);
-      const shift = attendanceRosterService.getShiftById(roster.shift_id) || {
+      const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate, undefined, emp);
+      const targetShiftId = emp.shift_id || emp.employment?.shift_id || roster.shift_id;
+      const shift = attendanceRosterService.getShiftById(targetShiftId) || {
         shift_name: roster.shift_name,
         shift_code: roster.shift_code,
-        start_time: '09:00',
-        end_time: '18:00',
+        start_time: '09:30',
+        end_time: '18:30',
+        scheduled_duration_minutes: 540,
         cross_midnight: roster.shift_code.includes('NGT'),
       };
 
@@ -288,17 +310,13 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
       // When Supabase is enabled, rely strictly on authoritative Supabase dailyRecords
       // so employees who have not logged in / checked in never inherit localStorage simulation punches.
-      const rawClassificationPunches: ClassifiedPunchEvent[] = isSupabaseEnabled
-        ? []
-        : [
-            ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.id, selectedDate),
-            ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.employee_code, selectedDate),
-          ];
+      const rawClassificationPunches: ClassifiedPunchEvent[] = [
+        ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.id, selectedDate),
+        ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.employee_code, selectedDate),
+      ];
 
-      const gatewayPunches: ClassifiedPunchEvent[] = isSupabaseEnabled
-        ? []
-        : (biometricGatewayService.getRawPunches(500) || [])
-            .filter((p) => {
+      const gatewayPunches: ClassifiedPunchEvent[] = (biometricGatewayService.getRawPunches(500) || [])
+        .filter((p) => {
               const pTime = p.punch_time || '';
               const pDate = pTime ? attendanceTimeService.getAttendanceDate(pTime, 'Asia/Kolkata') : '';
               if (pDate !== selectedDate) return false;
@@ -370,7 +388,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         let checkOutSrc = resolvedRecord?.check_out_source;
 
         // Check for legitimate checkout punches (explicit OUT action OR at/after scheduled shift end)
-        const shiftEndMins = timeStringToMinutes(shift.end_time) || 1080;
+        const shiftEndMins = timeStringToMinutes(shift.end_time) || 1110;
         const validOutPunch = sortedPunches.find((p) => {
           const pMins = timeStringToMinutes(p.event_time_str);
           const isExplicitOut = p.classification === 'CHECK_OUT' || (p as any).punch_direction === 'OUT';
@@ -386,8 +404,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         if (firstIn) {
           const inMins = timeStringToMinutes(firstIn);
           const outMins = timeStringToMinutes(lastOut);
-          const expIn = timeStringToMinutes(shift.start_time) || 540;
-          const expOut = timeStringToMinutes(shift.end_time) || 1080;
+          const expIn = timeStringToMinutes(shift.start_time) || 570;
+          const expOut = timeStringToMinutes(shift.end_time) || 1110;
           const calc = processAttendanceStatus(inMins, outMins, expIn, expOut);
 
           const outSrc = checkOutSrc || (lastOut ? 'BIOMETRIC' : undefined);
@@ -409,7 +427,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             employee_id: emp.id,
             employee_code: emp.employee_code || `WF-${emp.id}`,
             employee_name: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name,
-            department: emp.department_name || emp.department || 'Operations',
+            department: emp.department_name || emp.department || 'General',
             designation: emp.designation_title || emp.designation || 'Staff',
             organization_id: emp.organization_id || '',
             company_id: emp.company_id || '',
@@ -423,10 +441,10 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             gross_working_minutes: liveGrossMins,
             net_working_minutes: liveNetMins,
             total_break_minutes: resolvedRecord?.total_break_minutes || 0,
-            late_minutes: resolvedRecord?.late_minutes ?? calc.lateMinutes,
+            late_minutes: calc.lateMinutes,
             early_checkout_minutes: lastOut ? calc.earlyMinutes : 0,
             overtime_minutes: lastOut ? calc.overtimeMinutes : 0,
-            status: 'Present',
+            status: (lastOut ? 'Present' : (calc.lateMinutes > 0 ? 'Late' : 'Present')) as any,
             source: overallSrc,
             check_in_source: inSrc as PunchSource,
             check_out_source: outSrc as PunchSource,
@@ -437,17 +455,21 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       } else if (resolvedRecord && resolvedRecord.first_check_in && (!resolvedRecord.net_working_minutes || resolvedRecord.net_working_minutes === 0 || resolvedRecord.last_check_out)) {
         const inMins = timeStringToMinutes(resolvedRecord.first_check_in);
         const outMins = timeStringToMinutes(resolvedRecord.last_check_out);
-        const expIn = timeStringToMinutes(shift.start_time) || 540;
-        const expOut = timeStringToMinutes(shift.end_time) || 1080;
+        const expIn = timeStringToMinutes(shift.start_time) || 570;
+        const expOut = timeStringToMinutes(shift.end_time) || 1110;
         const calc = processAttendanceStatus(inMins, outMins, expIn, expOut);
         resolvedRecord = {
           ...resolvedRecord,
+          shift_id: roster.shift_id,
+          shift_name: roster.shift_name,
+          expected_check_in: shift.start_time,
+          expected_check_out: shift.end_time,
           gross_working_minutes: calc.grossMinutes,
           net_working_minutes: calc.netMinutes,
-          late_minutes: resolvedRecord.late_minutes ?? calc.lateMinutes,
-          early_checkout_minutes: resolvedRecord.early_checkout_minutes ?? calc.earlyMinutes,
-          overtime_minutes: resolvedRecord.overtime_minutes ?? calc.overtimeMinutes,
-          status: resolvedRecord.last_check_out ? 'Present' : resolvedRecord.status || calc.status,
+          late_minutes: calc.lateMinutes,
+          early_checkout_minutes: calc.earlyMinutes,
+          overtime_minutes: calc.overtimeMinutes,
+          status: resolvedRecord.last_check_out ? 'Present' : (calc.lateMinutes > 0 ? 'Late' : resolvedRecord.status || calc.status),
         };
       }
 
@@ -461,7 +483,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           employee_id: emp.id,
           employee_code: emp.employee_code || `WF-${emp.id}`,
           employee_name: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name,
-          department: emp.department_name || emp.department || 'Operations',
+          department: emp.department_name || emp.department || 'General',
           designation: emp.designation_title || emp.designation || 'Staff',
           organization_id: emp.organization_id || '',
           company_id: emp.company_id || '',
@@ -895,7 +917,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                 filteredData.map(({ emp, record, roster, shift }) => {
                   const empName = emp.display_name || emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
                   const empCode = emp.employee_code || `WF-${emp.id}`;
-                  const dept = emp.department_name || emp.department || 'Operations';
+                  const dept = emp.department_name || emp.department || 'General';
                   const designation = emp.designation_title || emp.designation || 'Staff';
                   const vendor = emp.vendor_name || 'Direct Payroll';
                   const isNight = shift.cross_midnight || shift.shift_code.includes('NGT');
@@ -943,7 +965,9 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                         <div className="text-gray-700 font-mono font-semibold">
                           {shift.start_time} - {shift.end_time}
                         </div>
-                        <div className="text-[10px] text-gray-400">8h 00m standard</div>
+                        <div className="text-[10px] text-gray-400">
+                          {shift.scheduled_duration_minutes ? `${Math.floor(shift.scheduled_duration_minutes / 60)}h ${shift.scheduled_duration_minutes % 60 ? `${shift.scheduled_duration_minutes % 60}m ` : ''}standard` : '8h 00m standard'}
+                        </div>
                       </TableCell>
 
                       {/* Check-In */}

@@ -472,8 +472,10 @@ export interface EmployeeProfile {
   last_name?: string;
   display_name?: string;
   preferred_name?: string;
+  work_email?: string;
   personal_email?: string;
   phone?: string;
+  primary_mobile?: string;
   alternate_phone?: string;
   date_of_birth?: string;
   gender?: string;
@@ -514,7 +516,13 @@ export interface EmploymentDetails {
   job_level?: string;
   grade?: string;
   designation_title?: string;
+  designation_id?: string;
   department_name?: string;
+  department_id?: string;
+  branch_id?: string;
+  branch_name?: string;
+  location_id?: string;
+  work_location_name?: string;
   business_unit_id?: string;
   business_unit_name?: string;
   cost_center_code?: string;
@@ -572,6 +580,8 @@ export interface EmployeeStatutory {
   pf_applicable?: boolean;
   esi_applicable?: boolean;
   pt_applicable?: boolean;
+  tds_applicable?: boolean;
+  is_tds_eligible?: boolean;
   tax_regime?: 'NEW' | 'OLD';
 }
 
@@ -584,8 +594,10 @@ export interface Employee {
   branch_name?: string;
   department_id: string;
   department_name?: string;
+  department?: string;
   designation_id: string;
   designation_title?: string;
+  designation?: string;
   user_id?: string | null;
   employee_code: string;
   first_name: string;
@@ -593,6 +605,9 @@ export interface Employee {
   middle_name?: string;
   display_name?: string;
   work_email: string;
+  personal_email?: string;
+  phone?: string;
+  primary_mobile?: string;
   avatar_url?: string;
   avatar_asset_id?: string | null;
   avatar_version?: number;
@@ -600,16 +615,28 @@ export interface Employee {
   employment_status?: string;
   employment_type: EmploymentType;
   reporting_manager_id?: string | null;
+  reporting_manager_name?: string;
   employment_source?: EmploymentSource;
   vendor_id?: string;
   vendor_name?: string;
   vendor_employee_code?: string;
   client_company_id?: string;
   site_id?: string;
+  shift_id?: string;
+  shift_name?: string;
+  attendance_policy_id?: string;
+  leave_policy_id?: string;
+  leave_policy_name?: string;
+  doj?: string;
+  annual_ctc?: number;
+  monthly_ctc?: number;
+  ctc?: number;
+  compensation?: any;
   profile: EmployeeProfile;
   employment: EmploymentDetails;
   bank?: EmployeeBankAccount;
   statutory?: EmployeeStatutory;
+  emergency_contacts?: EmergencyContact[];
   created_at?: string;
   updated_at?: string;
   updated_by?: string;

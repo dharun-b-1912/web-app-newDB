@@ -94,7 +94,7 @@ export const EssDocumentsView: React.FC = () => {
                       <FileText className="w-4 h-4 text-[#07563D] shrink-0" />
                       <div>
                         <span>{doc.type}</span>
-                        <span className="block text-[10px] text-gray-400 font-normal font-mono">{doc.fileName} ({doc.fileSize})</span>
+                        <span className="block text-[10px] text-gray-400 font-normal font-mono">{doc.fileName} ({(doc as any).fileSize || 'PDF'})</span>
                       </div>
                     </div>
                   </td>

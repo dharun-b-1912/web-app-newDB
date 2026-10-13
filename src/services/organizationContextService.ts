@@ -82,6 +82,22 @@ export const DEFAULT_LEGAL_ENTITIES: Company[] = [
 ];
 
 class OrganizationContextService {
+  private static cachedOrgs: Organization[] | null = null;
+  private static cachedEntities: Company[] | null = null;
+  private static cacheTimestamp: number = 0;
+  private static inFlightResolvePromise: Map<string, Promise<EffectiveUserContext>> = new Map();
+  private static cachedUserContext: Map<string, { ctx: EffectiveUserContext; timestamp: number }> = new Map();
+
+  /**
+   * Clear cache on explicit tenant switch
+   */
+  public static clearCache(): void {
+    OrganizationContextService.cachedOrgs = null;
+    OrganizationContextService.cachedEntities = null;
+    OrganizationContextService.cacheTimestamp = 0;
+    OrganizationContextService.cachedUserContext.clear();
+  }
+
   /**
    * Extract current subdomain slug safely if accessing via a custom tenant subdomain.
    * Examples:
@@ -111,151 +127,183 @@ class OrganizationContextService {
   /**
    * Resolves the authoritative multi-tenant context for a user session.
    * Validates organization and legal entity hierarchy directly against DB.
+   * Single-flight deduplicated and cached for 2 minutes to protect the browser HTTP pool.
    */
   async resolveUserContext(user: User): Promise<EffectiveUserContext> {
-    const primaryRole = getPrimaryRole(user);
-    const isPlatformAdmin = primaryRole === 'Super Admin' || user.role === 'Super Admin' || (user as any).is_platform_admin === true;
-    const roleName = primaryRole !== 'Unassigned' ? primaryRole : ((user as any).roleCode || (user as any).primaryRole || user.role || 'Unassigned');
+    const userKey = `${user?.id || 'anon'}_${user?.organization_id || ''}_${user?.role || ''}`;
+    const now = Date.now();
 
-    let allOrgs: Organization[] = [];
-    let allEntities: Company[] = [];
+    const cachedEntry = OrganizationContextService.cachedUserContext.get(userKey);
+    if (cachedEntry && now - cachedEntry.timestamp < 120_000) {
+      return cachedEntry.ctx;
+    }
 
-    // 1. Fetch live organizations and legal entities directly from Supabase
-    if (isSupabaseEnabled) {
+    const inFlight = OrganizationContextService.inFlightResolvePromise.get(userKey);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const resolvePromise = (async (): Promise<EffectiveUserContext> => {
       try {
-        const [orgRes, compRes] = await Promise.all([
-          supabase.from('organizations').select('*'),
-          supabase.from('companies').select('*'),
-        ]);
-        if (orgRes.data && orgRes.data.length > 0) {
-          // Normalize org fields: Supabase uses display_name/legal_name, not name
-          allOrgs = orgRes.data.map((o: any) => ({
-            ...o,
-            name: o.display_name || o.legal_name || o.name || 'Joy Corporate Solutions',
-            status: o.status === 'ACTIVE' ? 'Active' : (o.status || 'Active'),
-          })) as Organization[];
-        }
-        if (compRes.data && compRes.data.length > 0) {
-          // Normalize company fields: Supabase uses registered_address, pan_number, cin_number
-          allEntities = compRes.data.map((c: any) => ({
-            ...c,
-            legal_name: c.legal_name || c.trade_name,
-            trade_name: c.trade_name || c.legal_name,
-            address: c.registered_address || c.address || '',
-            status: c.is_active === false ? 'Inactive' : 'Active',
-          })) as Company[];
-        }
-      } catch (err) {
-        console.warn('[OrgContextService] Supabase context query notice:', err);
-      }
+        const primaryRole = getPrimaryRole(user);
+        const isPlatformAdmin = primaryRole === 'Super Admin' || user.role === 'Super Admin' || (user as any).is_platform_admin === true;
+        const roleName = primaryRole !== 'Unassigned' ? primaryRole : ((user as any).roleCode || (user as any).primaryRole || user.role || 'Unassigned');
 
-      // If companies table is RLS-blocked (returns 0), try deriving company_id from employees
-      if (allEntities.length === 0 && isSupabaseEnabled) {
-        try {
-          const { data: empSample } = await supabase
-            .from('employees')
-            .select('company_id, organization_id')
-            .limit(1)
-            .maybeSingle();
-          if (empSample?.company_id) {
-            // Construct a minimal company entity from the employee's company_id
-            allEntities = [{
-              id: empSample.company_id,
-              organization_id: empSample.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
-              legal_name: 'Joy Corporate Solutions Pvt Ltd',
-              trade_name: 'Joy Corporate Solutions',
-              statutory_registration_no: 'U72900TZ2024PTC012345',
-              tax_id: 'AAACJ1234F',
-              country: 'India',
-              city: 'Coimbatore',
-              currency: 'INR',
-              timezone: 'Asia/Kolkata',
-              address: 'Avinashi Road, Peelamedu, Coimbatore, Tamil Nadu 641004',
-              status: 'Active',
-              created_at: '2024-01-01T00:00:00Z',
-            }];
+        let allOrgs: Organization[] = [];
+        let allEntities: Company[] = [];
+
+        // Check memory cache for orgs and entities (120s TTL)
+        if (
+          OrganizationContextService.cachedOrgs &&
+          OrganizationContextService.cachedEntities &&
+          now - OrganizationContextService.cacheTimestamp < 120_000
+        ) {
+          allOrgs = OrganizationContextService.cachedOrgs;
+          allEntities = OrganizationContextService.cachedEntities;
+        } else if (isSupabaseEnabled) {
+          // 1. Fetch live organizations and legal entities directly from Supabase with bounded timeout
+          try {
+            const rawOrgId = user.organization_id || (user as any).organizationId;
+            const isUuid = typeof rawOrgId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawOrgId);
+            const userOrgId = isUuid ? rawOrgId : '0c621892-e938-4707-9957-13534ea32c19';
+            let orgQ = supabase.from('organizations').select('*');
+            let compQ = supabase.from('companies').select('*');
+            if (rawOrgId !== 'platform-root') {
+              orgQ = orgQ.eq('id', userOrgId);
+              compQ = compQ.eq('organization_id', userOrgId);
+            }
+
+            const abortCtrl = new AbortController();
+            const tid = setTimeout(() => abortCtrl.abort(), 4000);
+
+            const [orgRes, compRes] = await Promise.all([
+              orgQ.abortSignal(abortCtrl.signal),
+              compQ.abortSignal(abortCtrl.signal),
+            ]);
+            clearTimeout(tid);
+
+            if (orgRes.data && orgRes.data.length > 0) {
+              allOrgs = orgRes.data.map((o: any) => ({
+                ...o,
+                name: o.display_name || o.legal_name || o.name || 'Joy Corporate Solutions',
+                status: o.status === 'ACTIVE' ? 'Active' : (o.status || 'Active'),
+              })) as Organization[];
+            }
+            if (compRes.data && compRes.data.length > 0) {
+              allEntities = compRes.data.map((c: any) => ({
+                ...c,
+                legal_name: c.legal_name || c.trade_name,
+                trade_name: c.trade_name || c.legal_name,
+                address: c.registered_address || c.address || '',
+                status: c.is_active === false ? 'Inactive' : 'Active',
+              })) as Company[];
+            }
+          } catch (err) {
+            console.warn('[OrgContextService] Supabase context query notice:', err);
           }
-        } catch (_) {}
+
+          if (allOrgs.length > 0) OrganizationContextService.cachedOrgs = allOrgs;
+          if (allEntities.length > 0) OrganizationContextService.cachedEntities = allEntities;
+          OrganizationContextService.cacheTimestamp = Date.now();
+        }
+
+      // 2. Authoritative Active Organization Selection: strictly enforce user.organization_id
+      let activeOrg: Organization | null = null;
+      const userOrgId = user.organization_id || (user as any).organizationId;
+
+      if (userOrgId) {
+        activeOrg = allOrgs.find((o) => o.id === userOrgId) || null;
+        if (!activeOrg) {
+          // Construct authentic tenant organization descriptor preserving the user's real organization_id
+          activeOrg = {
+            id: userOrgId,
+            name: (user as any).organization_name || (user as any).tenant_name || (userOrgId === '0c621892-e938-4707-9957-13534ea32c19' ? 'Joy Corporate Solutions' : 'Authorized Organization'),
+            slug: `tenant-${userOrgId.slice(0, 8)}`,
+            status: 'Active',
+            plan: 'Enterprise',
+            default_currency: 'INR',
+            timezone: 'Asia/Kolkata',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          allOrgs = [activeOrg, ...allOrgs];
+        }
       }
-    }
 
-    // Fallback to defaults if empty (e.g. local development or database not populated)
-    if (allOrgs.length === 0) {
-      allOrgs = DEFAULT_ORGANIZATIONS;
-    }
-    if (allEntities.length === 0) {
-      allEntities = DEFAULT_LEGAL_ENTITIES;
-    }
-
-    // 2. Determine Active Organization via User DB Profile, Subdomain or Saved Preference
-    let activeOrg: Organization | null = null;
-    const userOrgId = user.organization_id || (user as any).organizationId;
-
-    if (userOrgId) {
-      activeOrg = allOrgs.find((o) => o.id === userOrgId) || null;
-    }
-
-    if (!activeOrg) {
-      const subdomainSlug = this.detectSubdomainSlug();
-      if (subdomainSlug) {
-        activeOrg = allOrgs.find((o) => {
-          const oSlug = (o.slug || '').toLowerCase();
-          const oId = (o.id || '').toLowerCase().replace(/^org-/, '');
-          return oSlug === subdomainSlug || oId === subdomainSlug;
-        }) || null;
+      if (!activeOrg) {
+        const subdomainSlug = this.detectSubdomainSlug();
+        if (subdomainSlug) {
+          activeOrg = allOrgs.find((o) => {
+            const oSlug = (o.slug || '').toLowerCase();
+            const oId = (o.id || '').toLowerCase().replace(/^org-/, '');
+            return oSlug === subdomainSlug || oId === subdomainSlug;
+          }) || null;
+        }
       }
-    }
 
-    if (!activeOrg && allOrgs.length > 0) {
-      const savedOrgId = localStorage.getItem(STORAGE_KEYS.ACTIVE_ORG_ID);
-      activeOrg = allOrgs.find((o) => o.id === savedOrgId) || allOrgs[0] || null;
-    }
+      if (!activeOrg && allOrgs.length > 0) {
+        activeOrg = allOrgs[0];
+      }
 
-    if (!activeOrg) {
-      activeOrg = DEFAULT_ORGANIZATIONS[0];
-    }
+      if (!activeOrg) {
+        activeOrg = DEFAULT_ORGANIZATIONS[0];
+      }
 
-    // 3. Filter authorized Legal Entities by Role Scope
-    let authorizedEntities: Company[] = [];
+      // 3. Filter authorized Legal Entities by Role Scope
+      let authorizedEntities: Company[] = [];
 
-    if (activeOrg?.id) {
-      authorizedEntities = allEntities.filter((e) => e.organization_id === activeOrg?.id);
-    }
-    if (authorizedEntities.length === 0) {
-      authorizedEntities = allEntities.length > 0 ? allEntities : DEFAULT_LEGAL_ENTITIES;
-    }
+      if (activeOrg?.id) {
+        authorizedEntities = allEntities.filter((e) => e.organization_id === activeOrg?.id);
+      }
+      if (authorizedEntities.length === 0) {
+        authorizedEntities = allEntities.length > 0 ? allEntities : DEFAULT_LEGAL_ENTITIES.map(e => ({
+          ...e,
+          organization_id: activeOrg?.id || e.organization_id,
+        }));
+      }
 
-    // 4. Determine Active Legal Entity
-    let activeLegalEntity: Company | null = null;
-    if (authorizedEntities.length > 0) {
-      const savedEntityId = localStorage.getItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID);
-      activeLegalEntity = authorizedEntities.find((e) => e.id === savedEntityId) || authorizedEntities[0] || null;
-    }
-    if (!activeLegalEntity) {
-      activeLegalEntity = authorizedEntities[0] || DEFAULT_LEGAL_ENTITIES[0];
-    }
+      // 4. Determine Active Legal Entity
+      let activeLegalEntity: Company | null = null;
+      if (authorizedEntities.length > 0) {
+        activeLegalEntity = authorizedEntities[0];
+      }
+      if (!activeLegalEntity) {
+        activeLegalEntity = DEFAULT_LEGAL_ENTITIES[0];
+      }
 
-    // Persist verified context back to local session pointer
-    if (activeOrg?.id) {
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_ORG_ID, activeOrg.id);
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.ACTIVE_ORG_ID);
-    }
-    if (activeLegalEntity?.id) {
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID, activeLegalEntity.id);
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID);
-    }
+      // Persist verified context back to local session pointer
+      if (typeof localStorage !== 'undefined') {
+        if (activeOrg?.id) {
+          localStorage.setItem(STORAGE_KEYS.ACTIVE_ORG_ID, activeOrg.id);
+        }
+        if (activeLegalEntity?.id) {
+          localStorage.setItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID, activeLegalEntity.id);
+        }
+      }
 
-    return {
-      userId: user.id,
-      organizations: allOrgs,
-      activeOrganization: activeOrg,
-      authorizedLegalEntities: authorizedEntities,
-      activeLegalEntity: activeLegalEntity,
-      roleTitle: this.formatCleanRoleTitle(roleName),
-      isPlatformAdmin,
-    };
+        const finalContext: EffectiveUserContext = {
+          userId: user?.id || 'anon',
+          organizations: allOrgs,
+          activeOrganization: activeOrg,
+          authorizedLegalEntities: authorizedEntities,
+          activeLegalEntity: activeLegalEntity,
+          roleTitle: this.formatCleanRoleTitle(roleName),
+          isPlatformAdmin,
+        };
+
+        OrganizationContextService.cachedUserContext.set(userKey, {
+          ctx: finalContext,
+          timestamp: Date.now(),
+        });
+
+        return finalContext;
+      } finally {
+        OrganizationContextService.inFlightResolvePromise.delete(userKey);
+      }
+    })();
+
+    OrganizationContextService.inFlightResolvePromise.set(userKey, resolvePromise);
+    return resolvePromise;
   }
 
   /**
@@ -277,6 +325,7 @@ class OrganizationContextService {
     localStorage.setItem(STORAGE_KEYS.ACTIVE_ORG_ID, targetOrg.id);
 
     // Refresh context for target org
+    OrganizationContextService.clearCache();
     const newContext = await this.resolveUserContext(user);
 
     this.logContextAudit(user, {
@@ -314,6 +363,7 @@ class OrganizationContextService {
     localStorage.setItem(STORAGE_KEYS.ACTIVE_LEGAL_ENTITY_ID, targetEntity.id);
     api.setActiveCompany(targetEntity);
 
+    OrganizationContextService.clearCache();
     const newContext = await this.resolveUserContext(user);
 
     this.logContextAudit(user, {

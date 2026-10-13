@@ -263,6 +263,44 @@ export class WhatsAppClient {
   }
 
   /**
+   * Marks an inbound message as read (Triggers Blue Double-Ticks in WhatsApp)
+   */
+  async markAsRead(messageId: string): Promise<boolean> {
+    if (!messageId) return false;
+
+    const isMock =
+      (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') ||
+      !this.config.metaAccessToken ||
+      this.config.metaAccessToken.startsWith('mock_') ||
+      this.config.provider === 'MOCK_SANDBOX';
+
+    if (isMock) {
+      console.log(`[WhatsAppClient:MockSandbox] Marked message ${messageId} as read (blue tick).`);
+      return true;
+    }
+
+    try {
+      const url = `https://graph.facebook.com/${this.config.metaApiVersion}/${this.config.metaPhoneNumberId}/messages`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.config.metaAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          status: 'read',
+          message_id: messageId,
+        }),
+      });
+      return response.ok;
+    } catch (err) {
+      console.warn('[WhatsAppClient] Failed to send read receipt (markAsRead):', err);
+      return false;
+    }
+  }
+
+  /**
    * Internal HTTP Dispatch Engine with Provider Routing & DB Logging
    */
   private async dispatchHttpMessage(params: {
@@ -277,6 +315,7 @@ export class WhatsAppClient {
 
     // Check if running in Mock / Development sandbox
     const isMock =
+      (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') ||
       !this.config.metaAccessToken ||
       this.config.metaAccessToken.startsWith('mock_') ||
       this.config.provider === 'MOCK_SANDBOX';
@@ -337,6 +376,7 @@ export class WhatsAppClient {
       }
 
       const messageId = data.messages?.[0]?.id || null;
+      console.log(`[WhatsAppClient] Meta API Dispatched successfully to ${to} | WAMID: ${messageId}`);
 
       await this.logDispatch({
         organizationId,

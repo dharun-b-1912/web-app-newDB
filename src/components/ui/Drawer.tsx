@@ -9,6 +9,7 @@ export interface DrawerProps {
   subtitle?: string;
   children: React.ReactNode;
   width?: 'md' | 'lg' | 'xl' | '2xl' | '3xl';
+  size?: 'md' | 'lg' | 'xl' | '2xl' | '3xl';
 }
 
 export const Drawer: React.FC<DrawerProps> = ({
@@ -18,7 +19,9 @@ export const Drawer: React.FC<DrawerProps> = ({
   subtitle,
   children,
   width = 'xl',
+  size,
 }) => {
+  const effectiveWidth = size || width;
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -55,7 +58,7 @@ export const Drawer: React.FC<DrawerProps> = ({
         <div
           className={cn(
             'w-screen bg-white shadow-2xl border-l border-gray-100 flex flex-col z-10 animate-in slide-in-from-right duration-250',
-            widths[width]
+            widths[effectiveWidth]
           )}
         >
           {/* Drawer Header */}

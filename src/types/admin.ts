@@ -18,6 +18,9 @@ export interface UserInvitation {
   employee_name: string;
   role_name: string;
   company_name: string;
+  department_name?: string;
+  invited_by?: string;
+  created_at?: string;
   expiration_date: string;
   status: 'Pending' | 'Sent' | 'Accepted' | 'Expired';
 }

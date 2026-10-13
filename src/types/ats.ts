@@ -115,6 +115,7 @@ export interface JobOpening {
   requisition_id?: string;
   job_code?: string;
   job_title: string;
+  title?: string;
   designation_id?: string;
   designation_title?: string;
   department_id?: string;
@@ -125,6 +126,7 @@ export interface JobOpening {
   employment_type?: string;
   job_level?: string;
   number_of_openings: number;
+  openings_count?: number;
   positions_filled?: number;
   hiring_manager_id?: string;
   hiring_manager_name?: string;

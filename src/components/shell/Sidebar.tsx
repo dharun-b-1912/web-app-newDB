@@ -91,18 +91,16 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { usePermission } from '../../hooks/usePermission';
-import {
-  platformTenantService,
-  platformIncidentService,
-  platformBillingService,
-  platformCustomerHealthService,
-  platformJobService,
-} from '../../services/platform';
+import { platformTenantService } from '../../services/platform/platformTenantService';
+import { platformIncidentService } from '../../services/platform/platformIncidentService';
+import { platformBillingService } from '../../services/platform/platformBillingService';
+import { platformCustomerHealthService } from '../../services/platform/platformCustomerHealthService';
+import { platformJobService } from '../../services/platform/platformJobService';
 import { api } from '../../services/api';
 import { onboardingService } from '../../services/onboardingService';
 import { hrEventBus } from '../../services/hrEventBus';
 import { supabase } from '../../lib/supabase';
-import { canUseFeature } from '../../services/tenant/featureEntitlementService';
+import { canUseFeature, featureEntitlementService } from '../../services/tenant/featureEntitlementService';
 import { moduleRegistryService } from '../../services/platform/moduleRegistryService';
 import { isActiveRoute } from '../../lib/router/routeRegistry';
 import { JoyLogo } from '../common/JoyLogo';
@@ -171,32 +169,59 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'late-early' && (currentNav === 'late-early')) return true;
   if (itemId === 'regularization' && (currentNav === 'regularization')) return true;
   if (itemId === 'exceptions' && (currentNav === 'exceptions')) return true;
-  if (itemId === 'shifts' && (currentNav === 'shifts' || currentNav === 'shift-master')) return true;
-  if (itemId === 'roster' && (currentNav === 'roster' || currentNav === 'shift-roster' || currentNav === 'shift-calendar')) return true;
-  if (itemId === 'policies' && (currentNav === 'policies' || currentNav === 'attendance-policies')) return true;
-  if (itemId === 'biometric' && (currentNav === 'biometric' || currentNav === 'biometric-devices' || currentNav === 'device-enrollment' || currentNav === 'device-sync' || currentNav === 'device-logs')) return true;
-  if (itemId === 'attendance-rules' && (currentNav === 'attendance-rules' || currentNav === 'rules' || currentNav === 'biometric-rules' || currentNav === 'rules-engine')) return true;
-  if (itemId === 'gps' && (currentNav === 'gps' || currentNav === 'gps-attendance' || currentNav === 'mobile-clocking')) return true;
-  if (itemId === 'geofences' && (currentNav === 'geofences' || currentNav === 'geofencing' || currentNav === 'geofence-boundaries')) return true;
-  if (itemId === 'face-attendance' && (currentNav === 'face-attendance' || currentNav === 'face-enrollment' || currentNav === 'face-devices' || currentNav === 'face-recognition')) return true;
-  if (itemId === 'calculation-audit' && (currentNav === 'calculation-audit' || currentNav === 'payroll-inputs' || currentNav === 'payable-days' || currentNav === 'lop-desk' || currentNav === 'payroll-freeze')) return true;
-  if (itemId === 'attendance-corrections' && (currentNav === 'attendance-corrections')) return true;
-  if (itemId === 'approval-history' && (currentNav === 'approval-history')) return true;
-  if (itemId === 'attendance-activity-logs' && (currentNav === 'attendance-activity-logs')) return true;
+  if (itemId === 'shifts' && (currentNav === 'shifts' || currentNav === 'shift-master' || currentNav === '/shifts')) return true;
+  if (itemId === 'roster' && (currentNav === 'roster' || currentNav === 'shift-roster' || currentNav === 'shifts/roster' || currentNav === '/shifts/roster')) return true;
+  if (itemId === 'shift-calendar' && (currentNav === 'shift-calendar' || currentNav === 'calendar' || currentNav === 'shifts/calendar' || currentNav === '/shifts/calendar')) return true;
+  if (itemId === 'policies' && (currentNav === 'policies' || currentNav === 'attendance-policies' || currentNav === 'shifts/policies' || currentNav === '/policies' || currentNav === '/shifts/policies')) return true;
+  // Clocking & Devices mappings with strict mutual exclusivity
+  if (itemId === 'biometric') {
+    if (
+      currentNav === 'attendance-rules' ||
+      currentNav === 'rules' ||
+      currentNav === 'biometric-rules' ||
+      currentNav === 'rules-engine' ||
+      currentNav === 'biometric/rules' ||
+      currentNav === '/biometric/rules' ||
+      currentNav === '/attendance-rules' ||
+      currentNav === 'gps' ||
+      currentNav === 'biometric/gps' ||
+      currentNav === '/biometric/gps' ||
+      currentNav === 'face-attendance' ||
+      currentNav === 'biometric/face' ||
+      currentNav === '/biometric/face' ||
+      currentNav === 'geofences' ||
+      currentNav === 'biometric/geofences' ||
+      currentNav === '/biometric/geofences'
+    ) return false;
+    if (currentNav === 'biometric' || currentNav === 'biometric-devices' || currentNav === '/biometric' || currentNav === '/biometric/devices' || currentNav === 'device-enrollment' || currentNav === 'device-sync' || currentNav === 'device-logs') return true;
+  }
+  if (itemId === 'attendance-rules') {
+    if (currentNav === 'biometric' || currentNav === '/biometric' || currentNav === 'biometric-devices' || currentNav === '/biometric/devices') return false;
+    if (currentNav === 'attendance-rules' || currentNav === 'rules' || currentNav === 'biometric-rules' || currentNav === 'rules-engine' || currentNav === 'biometric/rules' || currentNav === '/biometric/rules' || currentNav === '/attendance-rules') return true;
+  }
+  if (itemId === 'gps' && (currentNav === 'gps' || currentNav === 'gps-attendance' || currentNav === 'mobile-clocking' || currentNav === 'biometric/gps' || currentNav === '/biometric/gps')) return true;
+  if (itemId === 'geofences' && (currentNav === 'geofences' || currentNav === 'geofencing' || currentNav === 'geofence-boundaries' || currentNav === 'biometric/geofences' || currentNav === '/biometric/geofences')) return true;
+  if (itemId === 'face-attendance' && (currentNav === 'face-attendance' || currentNav === 'face-enrollment' || currentNav === 'face-devices' || currentNav === 'face-recognition' || currentNav === 'biometric/face' || currentNav === '/biometric/face')) return true;
+  if (itemId === 'calculation-audit' && (currentNav === 'calculation-audit' || currentNav === 'payroll-inputs' || currentNav === 'payable-days' || currentNav === 'lop-desk' || currentNav === 'payroll-freeze' || currentNav === 'audit/ledger' || currentNav === '/audit/ledger')) return true;
+  if (itemId === 'attendance-corrections' && (currentNav === 'attendance-corrections' || currentNav === 'audit/corrections' || currentNav === '/audit/corrections' || currentNav === 'corrections')) return true;
+  if (itemId === 'approval-history' && (currentNav === 'approval-history' || currentNav === 'audit/approvals' || currentNav === '/audit/approvals' || currentNav === 'approvals')) return true;
+  if (itemId === 'attendance-activity-logs' && (currentNav === 'attendance-activity-logs' || currentNav === 'audit/activity' || currentNav === '/audit/activity' || currentNav === 'activity-logs')) return true;
 
   // Work & Overtime mappings
   if (itemId === 'overtime' && (currentNav === 'overtime' || currentNav === 'work-overtime')) return true;
-  if (itemId === 'overtime-requests' && (currentNav === 'overtime-requests')) return true;
+  if (itemId === 'overtime-requests' && (currentNav === 'overtime-requests' || currentNav === 'ot-requests')) return true;
   if (itemId === 'wfh' && (currentNav === 'wfh')) return true;
   if (itemId === 'breaks-workhours' && (currentNav === 'breaks-workhours' || currentNav === 'breaks')) return true;
 
   // People & Org mappings
-  if (itemId === 'people' && (currentNav === 'people')) return true;
+  if (itemId === 'people' && (currentNav === 'people' || currentNav === 'workforce' || currentNav === 'employees')) return true;
+  if (itemId === 'organization' && (currentNav === 'organization' || currentNav === 'departments' || currentNav === 'designations')) return true;
   if (itemId === 'storage-admin' && (currentNav === 'storage-admin' || currentNav === 'storage' || currentNav === 'storage/vault' || currentNav === 'vendor-storage' || currentNav === 'vendor/storage')) return true;
   if (itemId === 'documents' && (currentNav === 'documents')) return true;
-  if (itemId === 'assets' && (currentNav === 'assets')) return true;
+  if (itemId === 'assets' && (currentNav === 'assets' || currentNav === 'company-asset-master' || currentNav === 'asset-master' || currentNav === 'company-assets')) return true;
   if (itemId === 'onboarding' && (currentNav === 'onboarding')) return true;
   if (itemId === 'offboarding' && (currentNav === 'offboarding')) return true;
+  if (itemId === 'my-workspace' && (currentNav === 'my-workspace' || currentNav === 'workspace')) return true;
 
   // Performance mappings
   if (itemId === 'performance-dashboard' && (currentNav === 'performance' || currentNav === 'performance-dashboard')) return true;
@@ -205,8 +230,8 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'lms-dashboard' && (currentNav === 'lms' || currentNav === 'lms-dashboard')) return true;
 
   // Workspace & Modern SaaS mappings
-  if (itemId === 'command-center' && (currentNav === 'command-center' || currentNav === 'executive-overview' || currentNav === 'dashboard')) return true;
-  if (itemId === 'resources' && (currentNav === 'resources' || currentNav === 'documents' || currentNav === 'assets')) return true;
+  if (itemId === 'command-center' && (currentNav === 'command-center' || currentNav === 'executive-overview')) return true;
+  if (itemId === 'resources' && currentNav === 'resources') return true;
   if (itemId === 'approvals' && (currentNav === 'approvals' || currentNav === 'requests' || currentNav === 'admin-approvals' || currentNav === 'leave-approval')) return true;
   if (itemId === 'admin-access' && (currentNav === 'admin-access' || currentNav === 'admin-roles' || currentNav === 'admin-users' || currentNav === 'admin-permissions' || currentNav === 'admin' || currentNav === 'rbac' || currentNav === 'roles' || currentNav === 'users')) return true;
 
@@ -217,7 +242,7 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'admin-permissions' && (currentNav === 'admin-permissions' || currentNav === 'permissions')) return true;
   if (itemId === 'admin-workflows' && (currentNav === 'admin-workflows' || currentNav === 'workflows')) return true;
   if (itemId === 'admin-approvals' && (currentNav === 'admin-approvals' || currentNav === 'approvals')) return true;
-  if (itemId === 'admin-notifications' && (currentNav === 'admin-notifications')) return true;
+  if (itemId === 'admin-notifications' && (currentNav === 'admin-notifications' || currentNav === 'notifications' || currentNav === 'notification-settings' || currentNav === 'notifications-settings')) return true;
   if (itemId === 'admin-audit' && (currentNav === 'admin-audit' || currentNav === 'audit-logs')) return true;
   if (itemId === 'admin-security' && (currentNav === 'admin-security' || currentNav === 'security')) return true;
   if (itemId === 'admin-api' && (currentNav === 'admin-api' || currentNav === 'api')) return true;
@@ -225,18 +250,23 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'admin-subscription' && (currentNav === 'admin-subscription' || currentNav === 'subscription')) return true;
   if (itemId === 'admin-billing' && (currentNav === 'admin-billing' || currentNav === 'billing')) return true;
   if (itemId === 'admin-settings' && (currentNav === 'admin-settings' || currentNav === 'settings')) return true;
-  if (itemId === 'notifications' && (currentNav === 'notifications')) return true;
+  if (itemId === 'notifications' && (currentNav === 'notifications' || currentNav === 'admin-notifications' || currentNav === 'notification-settings' || currentNav === 'notifications-settings')) return true;
 
   // SaaS Platform mappings
   if (itemId === 'platform-dashboard' && (currentNav === 'platform' || currentNav === 'platform-dashboard')) return true;
+  if (itemId === 'platform-clients' && (currentNav === 'platform-clients' || currentNav === 'clients' || currentNav === 'saas-clients')) return true;
   if (itemId === 'platform-tenants' && (currentNav === 'platform-tenants' || currentNav === 'platform-organizations' || currentNav === 'platform-provisioning')) return true;
   if (itemId === 'platform-tenant-health' && (currentNav === 'platform-tenant-health' || currentNav === 'platform-health')) return true;
   if (itemId === 'saas-revenue' && (currentNav === 'saas-revenue' || (currentNav.startsWith('saas-') && currentNav !== 'saas-subscriptions'))) return true;
+  if (itemId === 'platform-quotations' && (currentNav === 'platform-quotations' || currentNav === 'quotations' || currentNav === 'saas-quotations')) return true;
   if (itemId === 'platform-subscriptions' && (currentNav === 'platform-subscriptions' || currentNav === 'saas-subscriptions')) return true;
-  if (itemId === 'platform-billing' && (currentNav === 'platform-billing' || currentNav === 'platform-invoices')) return true;
+  if ((itemId === 'platform-invoices' || itemId === 'platform-billing') && (currentNav === 'platform-invoices' || currentNav === 'platform-billing' || currentNav === 'invoices' || currentNav === 'saas-invoices')) return true;
+  if (itemId === 'platform-plans' && (currentNav === 'platform-plans' || currentNav === 'platform-pricing' || currentNav === 'platform-entitlements')) return true;
+  if (itemId === 'platform-addons' && (currentNav === 'platform-addons' || currentNav === 'saas-addons')) return true;
+  if (itemId === 'platform-pricing-calculator' && (currentNav === 'platform-pricing-calculator' || currentNav === 'pricing-calculator')) return true;
+  if (itemId === 'platform-catalogue' && (currentNav === 'platform-catalogue' || currentNav === 'platform-feature-catalogue' || currentNav === 'product-catalogue')) return true;
   if (itemId === 'platform-usage' && (currentNav === 'platform-usage' || currentNav === 'platform-metering')) return true;
   if (itemId === 'platform-features' && (currentNav === 'platform-features' || currentNav === 'platform-flags')) return true;
-  if (itemId === 'platform-plans' && (currentNav === 'platform-plans')) return true;
   if (itemId === 'platform-security' && (currentNav === 'platform-security')) return true;
   if (itemId === 'platform-sessions' && (currentNav === 'platform-sessions')) return true;
   if (itemId === 'platform-audit' && (currentNav === 'platform-audit')) return true;
@@ -362,6 +392,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
   const [employeeCount, setEmployeeCount] = useState<number>(0);
   const [onboardingCount, setOnboardingCount] = useState<number>(0);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
+  const [, setEntitlementVersion] = useState<number>(0);
+
+  // Subscribe to live tenant plan and feature entitlement updates
+  useEffect(() => {
+    const handleEntitlementChange = () => {
+      setEntitlementVersion((v) => v + 1);
+    };
+    window.addEventListener('tenant:plan_updated', handleEntitlementChange);
+    window.addEventListener('tenant:features_updated', handleEntitlementChange);
+    window.addEventListener('tenant:addons_updated', handleEntitlementChange);
+    window.addEventListener('organization:context_updated', handleEntitlementChange);
+
+    return () => {
+      window.removeEventListener('tenant:plan_updated', handleEntitlementChange);
+      window.removeEventListener('tenant:features_updated', handleEntitlementChange);
+      window.removeEventListener('tenant:addons_updated', handleEntitlementChange);
+      window.removeEventListener('organization:context_updated', handleEntitlementChange);
+    };
+  }, []);
 
   const isRefreshingRef = useRef(false);
   const refreshCountsDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -443,36 +492,37 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'platform-dashboard', label: 'Command Center', icon: LayoutDashboard },
         { id: 'platform-tenants', label: 'Organizations', icon: Building2, badge: orgCount > 0 ? orgCount : undefined },
-        { id: 'platform-incidents', label: 'Incidents', icon: ShieldAlert, badge: activeIncidentsCount > 0 ? activeIncidentsCount : undefined, badgeVariant: 'danger' },
         { id: 'platform-staff', label: 'Platform Staff & IAM', icon: Users },
+        { id: 'platform-incidents', label: 'Incidents', icon: ShieldAlert, badge: activeIncidentsCount > 0 ? activeIncidentsCount : undefined, badgeVariant: 'danger' },
       ],
     },
     {
       groupName: 'SAAS BUSINESS',
       items: [
         { id: 'saas-revenue', label: 'Revenue & Growth', icon: LineChart },
+        { id: 'platform-clients', label: 'Clients', icon: Building2 },
+        { id: 'platform-quotations', label: 'Quotations', icon: FileText },
         { id: 'platform-subscriptions', label: 'Subscriptions', icon: Package },
-        { id: 'platform-billing', label: 'Billing & Invoices', icon: CreditCard, badge: overdueInvoicesCount > 0 ? overdueInvoicesCount : undefined, badgeVariant: 'danger' },
+        { id: 'platform-invoices', label: 'Invoices & Billing', icon: CreditCard, badge: overdueInvoicesCount > 0 ? overdueInvoicesCount : undefined, badgeVariant: 'danger' },
+        { id: 'platform-plans', label: 'Plans & Pricing', icon: Layers },
+        { id: 'platform-addons', label: 'Add-ons', icon: Sparkles },
+        { id: 'platform-pricing-calculator', label: 'Pricing Calculator', icon: Calculator },
         { id: 'platform-usage', label: 'Usage & Metering', icon: BarChart3 },
-        { id: 'platform-tenant-health', label: 'Tenant Health', icon: HeartPulse, badge: atRiskHealthCount > 0 ? atRiskHealthCount : undefined, badgeVariant: 'warning' },
       ],
     },
     {
       groupName: 'PRODUCT',
       items: [
-        { id: 'platform-launch-scope', label: 'Launch Scope (Sep 26)', icon: Target },
-        { id: 'platform-modules', label: 'Module Registry', icon: Layers },
-        { id: 'platform-roadmap', label: 'Development Roadmap', icon: Workflow },
+        { id: 'platform-catalogue', label: 'Feature Catalogue', icon: BookOpen },
         { id: 'platform-features', label: 'Feature Flags', icon: SlidersHorizontal },
-        { id: 'platform-plans', label: 'Plans & Entitlements', icon: Layers },
       ],
     },
     {
       groupName: 'SECURITY',
       items: [
         { id: 'platform-security', label: 'Security Center', icon: ShieldCheck },
-        { id: 'platform-sessions', label: 'Active Sessions', icon: Laptop },
         { id: 'platform-audit', label: 'Audit Log', icon: History },
+        { id: 'platform-sessions', label: 'Active Sessions', icon: Laptop },
       ],
     },
     {
@@ -495,24 +545,40 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
 
   const standardGroups: NavGroup[] = [
     {
+      groupName: 'MY WORKSPACE',
+      items: [
+        { id: 'my-workspace', label: 'My Workspace', icon: Sparkles },
+      ],
+    },
+    {
       groupName: 'DASHBOARD',
       items: [
         { id: 'dashboard', label: 'HR Dashboard', icon: LayoutDashboard },
         { id: 'workforce-overview', label: 'Workforce Overview', icon: LineChart },
         { id: 'executive-overview', label: 'Executive HR Overview', icon: BarChart3 },
-        { id: 'my-workspace', label: 'My Workspace', icon: Sparkles },
       ],
     },
     {
       groupName: 'PEOPLE & CORE HR',
       items: [
+        { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus, badge: onboardingCount > 0 ? onboardingCount : undefined },
         { id: 'people', label: 'Employee Management', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
         { id: 'organization', label: 'Organization Architecture', icon: Building2 },
         { id: 'storage-admin', label: 'Document Vault & Storage', icon: Lock, badge: 'Vault' },
         { id: 'documents', label: 'Documents & E-Sign', icon: FileText },
         { id: 'assets', label: 'Asset Management', icon: Package },
-        { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus, badge: onboardingCount > 0 ? onboardingCount : undefined },
         { id: 'offboarding', label: 'Offboarding & Exit', icon: UserMinus },
+      ],
+    },
+    {
+      groupName: 'CORE ATTENDANCE',
+      items: [
+        { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
+        { id: 'attendance-employees', label: 'Employee Attendance', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'history', label: 'Attendance History & Ledger', icon: History },
+        { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
+        { id: 'regularization', label: 'Regularization Desk', icon: FileText },
+        { id: 'exceptions', label: 'Exceptions Queue', icon: ShieldAlert },
       ],
     },
     {
@@ -554,17 +620,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
-      groupName: 'CORE ATTENDANCE',
-      items: [
-        { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
-        { id: 'attendance-employees', label: 'Employee Attendance', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
-        { id: 'history', label: 'Attendance History & Ledger', icon: History },
-        { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
-        { id: 'regularization', label: 'Regularization Desk', icon: FileText },
-        { id: 'exceptions', label: 'Exceptions Queue', icon: ShieldAlert },
-      ],
-    },
-    {
       groupName: 'LEAVE',
       items: [
         { id: 'leave', label: 'Leave Management', icon: CalendarDays },
@@ -589,6 +644,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
+      groupName: 'PAYROLL',
+      items: [
+        { id: 'payroll-dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard },
+        { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
+        { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
+        { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
+        { id: 'payroll-earnings', label: 'Earnings & Overtime', icon: TrendingUp },
+        { id: 'payroll-deductions', label: 'Deductions, Loans & LOP', icon: Minus },
+        { id: 'payroll-claims', label: 'Expense Claims & Approvals', icon: Receipt },
+        { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
+        { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
+        { id: 'payroll-disbursement', label: 'Bank Disbursement', icon: CreditCard },
+        { id: 'payroll-documents', label: 'Digital Payslips & Docs', icon: FileText },
+        { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
+      ],
+    },
+    {
       groupName: 'CLOCKING & DEVICES',
       items: [
         { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
@@ -605,23 +677,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'attendance-corrections', label: 'Attendance Corrections', icon: FileEdit },
         { id: 'approval-history', label: 'Approval History', icon: History },
         { id: 'attendance-activity-logs', label: 'System Activity Logs', icon: Terminal },
-      ],
-    },
-    {
-      groupName: 'PAYROLL',
-      items: [
-        { id: 'payroll-dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard },
-        { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
-        { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
-        { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
-        { id: 'payroll-earnings', label: 'Earnings & Overtime', icon: TrendingUp },
-        { id: 'payroll-deductions', label: 'Deductions, Loans & LOP', icon: Minus },
-        { id: 'payroll-claims', label: 'Expense Claims & Approvals', icon: Receipt },
-        { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
-        { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
-        { id: 'payroll-disbursement', label: 'Bank Disbursement', icon: CreditCard },
-        { id: 'payroll-documents', label: 'Digital Payslips & Docs', icon: FileText },
-        { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
       ],
     },
     {
@@ -789,23 +844,39 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
   // ─── HR HEAD: Full HR operations — no system admin config ────────────────
   const hrHeadGroups: NavGroup[] = [
     {
+      groupName: 'MY WORKSPACE',
+      items: [
+        { id: 'my-workspace', label: 'My Workspace', icon: Sparkles },
+      ],
+    },
+    {
       groupName: 'DASHBOARD',
       items: [
         { id: 'dashboard', label: 'HR Dashboard', icon: LayoutDashboard },
         { id: 'workforce-overview', label: 'Workforce Overview', icon: LineChart },
         { id: 'executive-overview', label: 'Executive HR Overview', icon: BarChart3 },
-        { id: 'my-workspace', label: 'My Workspace', icon: Sparkles },
       ],
     },
     {
       groupName: 'PEOPLE & CORE HR',
       items: [
+        { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus, badge: onboardingCount > 0 ? onboardingCount : undefined },
         { id: 'people', label: 'Employee Management', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
         { id: 'organization', label: 'Organization Architecture', icon: Building2 },
         { id: 'documents', label: 'Documents & E-Sign', icon: FileText },
         { id: 'assets', label: 'Asset Management', icon: Package },
-        { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus, badge: onboardingCount > 0 ? onboardingCount : undefined },
         { id: 'offboarding', label: 'Offboarding & Exit', icon: UserMinus },
+      ],
+    },
+    {
+      groupName: 'CORE ATTENDANCE',
+      items: [
+        { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
+        { id: 'attendance-employees', label: 'Employee Attendance', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'history', label: 'Attendance History & Ledger', icon: History },
+        { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
+        { id: 'regularization', label: 'Regularization Desk', icon: FileText },
+        { id: 'exceptions', label: 'Exceptions Queue', icon: ShieldAlert },
       ],
     },
     {
@@ -839,17 +910,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
-      groupName: 'CORE ATTENDANCE',
-      items: [
-        { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
-        { id: 'attendance-employees', label: 'Employee Attendance', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
-        { id: 'history', label: 'Attendance History & Ledger', icon: History },
-        { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
-        { id: 'regularization', label: 'Regularization Desk', icon: FileText },
-        { id: 'exceptions', label: 'Exceptions Queue', icon: ShieldAlert },
-      ],
-    },
-    {
       groupName: 'LEAVE',
       items: [
         { id: 'leave', label: 'Leave Management', icon: CalendarDays },
@@ -874,6 +934,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       ],
     },
     {
+      groupName: 'PAYROLL',
+      items: [
+        { id: 'payroll-dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard },
+        { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
+        { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
+        { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
+        { id: 'payroll-earnings', label: 'Earnings & Overtime', icon: TrendingUp },
+        { id: 'payroll-deductions', label: 'Deductions, Loans & LOP', icon: Minus },
+        { id: 'payroll-claims', label: 'Expense Claims & Approvals', icon: Receipt },
+        { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
+        { id: 'payroll-disbursement', label: 'Bank Disbursement', icon: CreditCard },
+        { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
+        { id: 'payroll-documents', label: 'Digital Payslips & Docs', icon: FileText },
+        { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
+      ],
+    },
+    {
       groupName: 'CLOCKING & DEVICES',
       items: [
         { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
@@ -891,23 +968,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'approval-history', label: 'Approval History', icon: History },
         { id: 'attendance-activity-logs', label: 'System Activity Logs', icon: Terminal },
         { id: 'realtime-health', label: 'Realtime Sync Health', icon: Activity },
-      ],
-    },
-    {
-      groupName: 'PAYROLL',
-      items: [
-        { id: 'payroll-dashboard', label: 'Payroll Dashboard', icon: LayoutDashboard },
-        { id: 'payroll-settings', label: 'Payroll Settings', icon: Settings },
-        { id: 'payroll-statutory', label: 'Statutory & Tax Rules', icon: ShieldCheck },
-        { id: 'payroll-salary', label: 'Salary Structures & Staff', icon: Building2 },
-        { id: 'payroll-earnings', label: 'Earnings & Overtime', icon: TrendingUp },
-        { id: 'payroll-deductions', label: 'Deductions, Loans & LOP', icon: Minus },
-        { id: 'payroll-claims', label: 'Expense Claims & Approvals', icon: Receipt },
-        { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
-        { id: 'payroll-disbursement', label: 'Bank Disbursement', icon: CreditCard },
-        { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
-        { id: 'payroll-documents', label: 'Digital Payslips & Docs', icon: FileText },
-        { id: 'payroll-fnf', label: 'Full & Final (F&F)', icon: UserMinus },
       ],
     },
     {
@@ -1238,59 +1298,42 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     return hrHeadGroups; // fallback
   })();
 
-  // Dynamic tenant-level feature entitlement resolution
-  const isRecruitmentEnabledForTenant = canUseFeature('recruitment');
-  const isPerformanceEnabledForTenant = canUseFeature('performance');
-  const isLndEnabledForTenant = canUseFeature('lms');
-  const isAnalyticsEnabledForTenant = canUseFeature('analytics');
-  const isTravelExpenseEnabledForTenant = canUseFeature('travel_expense');
-
+  // Dynamic tenant-level subscription and feature entitlement resolution
   const filteredNavGroups = navGroups
-    .filter(group => {
-      // 1. Centralized Module Registry Group Visibility
+    .filter((group) => {
+      // 1. Centralized Module Registry Group Visibility (Launch Scope / Paused Status)
       if (!moduleRegistryService.isNavGroupVisible(group.groupName, primaryRole)) {
         return false;
       }
 
+      // 2. Tenant Subscription Plan Entitlement for the Group
       if (!isPlatformAdmin) {
-        if (group.groupName === 'RECRUITMENT & ATS' && !isRecruitmentEnabledForTenant) return false;
-        if (group.groupName === 'PERFORMANCE' && !isPerformanceEnabledForTenant) return false;
-        if (group.groupName === 'LEARNING & DEVELOPMENT' && !isLndEnabledForTenant) return false;
-        if (group.groupName === 'ANALYTICS & REPORTS' && !isAnalyticsEnabledForTenant) return false;
-        if (group.groupName === 'TRAVEL & EXPENSE' && !isTravelExpenseEnabledForTenant) return false;
+        if (!featureEntitlementService.isNavGroupEntitled(group.groupName)) {
+          return false;
+        }
       }
       return true;
     })
-    .map(group => ({
+    .map((group) => ({
       ...group,
-      items: group.items.filter(item => {
-
-        // 2. Centralized Module Registry Item Visibility & Dependency Check
+      items: group.items.filter((item) => {
+        // 1. Centralized Module Registry Item Visibility & Dependency Check
         if (!moduleRegistryService.isNavItemVisible(item.id, primaryRole)) {
           return false;
         }
 
+        // 2. Tenant Subscription Entitlement: verify module is purchased by tenant
         if (!isPlatformAdmin) {
-          if (!isRecruitmentEnabledForTenant && (item.id === 'recruitment' || item.id.startsWith('recruitment-') || item.id === 'career-dev')) {
-            return false;
-          }
-          if (!isPerformanceEnabledForTenant && (item.id.startsWith('performance-') || item.id === 'ess-performance' || item.id === 'tl-performance')) {
-            return false;
-          }
-          if (!isLndEnabledForTenant && (item.id.startsWith('lms-') || item.id === 'ess-learning' || item.id === 'tl-training')) {
-            return false;
-          }
-          if (!isAnalyticsEnabledForTenant && item.id.startsWith('analytics-')) {
-            return false;
-          }
-          if (!isTravelExpenseEnabledForTenant && (item.id === 'other-travel' || item.id.startsWith('travel-'))) {
+          if (!featureEntitlementService.isModuleEntitledForCurrentTenant(item.id)) {
             return false;
           }
         }
+
+        // 3. User RBAC Permission
         return canViewModule(item.id);
       }),
     }))
-    .filter(group => group.items.length > 0);
+    .filter((group) => group.items.length > 0);
 
   return (
     <aside
@@ -1366,7 +1409,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
                           onClick={() => onSelectNav?.(item.id)}
                           title={item.label}
                           className={cn(
-                            'relative w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs transition-all cursor-pointer group',
+                            'relative w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs transition-all cursor-pointer group focus:outline-none',
                             isActive
                               ? 'bg-emerald-50/90 text-[#07563D] font-bold border border-emerald-200/90 shadow-xs ring-1 ring-emerald-500/10'
                               : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/70 font-medium',

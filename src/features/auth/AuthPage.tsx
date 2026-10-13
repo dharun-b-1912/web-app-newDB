@@ -46,14 +46,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialContext = 'tenant', o
         setAuthContextMode('admin');
       } else if (currentPath === '/platform-login' || currentPath === '/superadmin') {
         setAuthContextMode('platform');
-      } else if (currentPath !== '/login' && !currentPath.includes('activate') && !currentPath.includes('reset-password')) {
-        const slug =
-          authContext === 'admin'
-            ? '/admin/login'
-            : authContext === 'platform'
-            ? '/platform-login'
-            : '/login';
-        window.history.replaceState({ route: slug }, '', slug);
       }
     }
   }, []);

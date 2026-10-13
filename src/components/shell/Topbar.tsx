@@ -48,7 +48,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onOpenSearch, onOpenAiAssistant,
 
   const isVendorPortal =
     primaryRole === 'Vendor Admin' ||
-    primaryRole === 'Vendor Partner' ||
+    (primaryRole as string) === 'Vendor Partner' ||
     (user as any)?.role === 'Vendor Admin' ||
     (user as any)?.userType === 'VENDOR' ||
     Boolean((user as any)?.vendor_id) ||

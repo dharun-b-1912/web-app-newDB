@@ -114,19 +114,6 @@ export const OperationsWorkspace: React.FC<OperationsWorkspaceProps> = ({
             <CheckSquare className="w-4 h-4" />
             <span>Requests & Approvals</span>
           </button>
-
-          <button
-            onClick={() => setActiveTab('devices')}
-            className={cn(
-              'px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
-              activeTab === 'devices'
-                ? 'bg-white text-[#064E3B] shadow-md'
-                : 'text-emerald-100/80 hover:text-white hover:bg-white/10'
-            )}
-          >
-            <Cpu className="w-4 h-4" />
-            <span>Biometric Terminals & IoT</span>
-          </button>
         </div>
       </div>
 
@@ -143,9 +130,6 @@ export const OperationsWorkspace: React.FC<OperationsWorkspaceProps> = ({
         )}
         {activeTab === 'approvals' && (
           <RequestsApprovalsWorkspace initialTab="inbox" />
-        )}
-        {activeTab === 'devices' && (
-          <AttendanceModuleMaster initialTab="biometric" />
         )}
       </div>
     </div>

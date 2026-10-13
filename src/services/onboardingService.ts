@@ -721,10 +721,10 @@ export const onboardingService = {
       vendor_employee_code: payload.employment?.vendor_employee_code || undefined,
       client_company_id: payload.employment?.client_company_id || undefined,
       site_id: payload.employment?.site_id || undefined,
-      department_id: payload.employment?.department_id || 'dept-eng',
-      department_name: payload.employment?.department_name || 'Engineering',
-      designation_id: payload.employment?.designation_id || 'desig-se',
-      designation_title: payload.employment?.designation_title || 'Software Engineer',
+      department_id: payload.employment?.department_id,
+      department_name: payload.employment?.department_name || '',
+      designation_id: payload.employment?.designation_id,
+      designation_title: payload.employment?.designation_title || '',
       branch_id: payload.employment?.branch_id || 'br-hq',
       branch_name: payload.employment?.branch_name || 'Headquarters',
       profile: {
@@ -733,13 +733,13 @@ export const onboardingService = {
         last_name: payload.identity?.last_name || '',
         display_name: payload.identity?.preferred_name,
         personal_email: payload.contact?.personal_email,
-        phone: payload.identity?.phone || '+919791817437',
+        phone: payload.identity?.phone || payload.contact?.phone || '',
         alternate_phone: payload.contact?.alternate_phone,
         date_of_birth: payload.identity?.dob,
         gender: payload.identity?.gender || 'Male',
         marital_status: payload.contact?.marital_status || 'Single',
         nationality: payload.contact?.nationality || 'Indian',
-        blood_group: payload.contact?.blood_group || 'O+',
+        blood_group: payload.contact?.blood_group || '',
         preferred_language: payload.contact?.preferred_language || 'English',
         current_address: {
           line1: payload.contact?.current_line1 || '',
@@ -817,6 +817,7 @@ export const onboardingService = {
         pf_applicable: payload.statutory?.pf_applicable !== false,
         esi_applicable: payload.statutory?.esi_applicable === true,
         pt_applicable: payload.statutory?.pt_applicable !== false,
+        tds_applicable: payload.statutory?.tds_applicable !== false,
         tax_regime: payload.statutory?.tax_regime || 'NEW',
       },
       created_at: new Date().toISOString(),
@@ -852,6 +853,7 @@ export const onboardingService = {
         pfApplicable: payload.statutory?.pf_applicable !== false,
         esiApplicable: payload.statutory?.esi_applicable === true,
         ptApplicable: payload.statutory?.pt_applicable !== false,
+        tdsApplicable: payload.statutory?.tds_applicable !== false,
         statutoryConfig: statConfig,
       });
 
@@ -887,7 +889,7 @@ export const onboardingService = {
     // 4. Provision Employee App Access Account
     const appAccessConfig = payload.app_access || { enable_app_access: true };
     const emailToDispatch = newEmp.work_email || (newEmp.profile as any)?.personal_email;
-    const phoneToDispatch = newEmp.profile?.phone || '+919791817437';
+    const phoneToDispatch = newEmp.profile?.phone || (newEmp as any).phone || '';
 
     if (appAccessConfig.enable_app_access !== false && emailToDispatch) {
       const authResult = await employeeAuthService.provisionEmployeeAuth({

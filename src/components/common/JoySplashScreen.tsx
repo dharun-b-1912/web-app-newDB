@@ -52,10 +52,30 @@ export const JoySplashScreen: React.FC<JoySplashScreenProps> = ({
   useEffect(() => {
     const startTime = performance.now();
     let animFrame: number;
+    const maxSafetyDurationMs = Math.min(minDurationMs + 400, 1400);
+
+    const triggerExit = () => {
+      if (isFinishedCalledRef.current) return;
+      isFinishedCalledRef.current = true;
+      setProgress(100);
+      setStageIndex(4);
+      setIsFadingOut(true);
+      setTimeout(() => {
+        if (onFinished) {
+          onFinished();
+        }
+      }, 350);
+    };
 
     const tick = (now: number) => {
       const elapsed = now - startTime;
       const rawRatio = Math.min(elapsed / minDurationMs, 1);
+
+      // Force finish if max safety duration exceeded to guarantee zero UI lock
+      if (elapsed >= maxSafetyDurationMs) {
+        triggerExit();
+        return;
+      }
 
       // If background initialization is not ready yet, hold at 90%
       const effectiveCap = isReady ? 1 : 0.90;
@@ -77,19 +97,8 @@ export const JoySplashScreen: React.FC<JoySplashScreenProps> = ({
       }
 
       // When reaching 100% and background ready, trigger smooth exit
-      if (currentRatio >= 1 && isReady && !isFinishedCalledRef.current) {
-        isFinishedCalledRef.current = true;
-        setProgress(100);
-        setStageIndex(4);
-
-        setTimeout(() => {
-          setIsFadingOut(true);
-          setTimeout(() => {
-            if (onFinished) {
-              onFinished();
-            }
-          }, 500);
-        }, 350);
+      if (currentRatio >= 1 && (isReady || elapsed >= minDurationMs)) {
+        triggerExit();
         return;
       }
 

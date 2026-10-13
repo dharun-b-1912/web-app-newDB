@@ -3,7 +3,20 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { GlobalErrorInterceptor } from './services/observability/globalErrorInterceptor';
-import { supabaseProject, supabaseUrl } from './lib/supabase';
+import { supabaseProject, supabaseUrl, ensureSupabaseSession } from './lib/supabase';
+
+// ── SESSION PRE-WARM ────────────────────────────────────────────────────────
+// Fire Supabase session restoration immediately at boot — before React mounts.
+// This ensures auth is resolved (or in-flight) before any component calls
+// getEmployees() or syncPunchesFromSupabase(), eliminating the AbortError caused
+// by the 5-second AbortController firing before the 34-second signInWithPassword.
+if (typeof window !== 'undefined') {
+  ensureSupabaseSession().catch(() => {});
+}
+
+if (typeof window !== 'undefined') {
+  console.log(`[BOOT] start: Application bootstrapping at ${window.location.pathname}${window.location.search} (origin=${window.location.origin})`);
+}
 
 // Initialize zero-leakage global observability interceptor
 GlobalErrorInterceptor.initialize();
@@ -68,8 +81,16 @@ if (typeof window !== 'undefined') {
   };
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+console.log('[BOOT] root_mounting: Mounting React root to DOM node #root');
+
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  console.error('[BOOT] FATAL: #root container element missing from DOM!');
+} else {
+  createRoot(rootElement).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+  console.log('[BOOT] root_mounted: React root created and render scheduled');
+}

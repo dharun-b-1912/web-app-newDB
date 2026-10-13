@@ -44,24 +44,27 @@ function getTenantStorageKey(baseKey: string, tenantId = getActiveOrgId()): stri
   return `${baseKey}_${tenantId}`;
 }
 
-// LocalStorage helpers with tenant isolation
+// High-speed in-memory store with safe fallback to prevent browser QuotaExceeded errors and lag
+const inMemoryAttendanceCache = new Map<string, any>();
+
 function loadStorage<T>(baseKey: string, seed: T, tenantId = getActiveOrgId()): T {
   try {
     const key = getTenantStorageKey(baseKey, tenantId);
-    const raw = localStorage.getItem(key);
-    if (!raw) {
-      // Legacy fallback check
-      const legacy = localStorage.getItem(baseKey);
-      if (legacy) {
-        try {
-          const parsed = JSON.parse(legacy);
-          localStorage.setItem(key, legacy);
-          return parsed;
-        } catch (_) {}
-      }
+    if (inMemoryAttendanceCache.has(key)) {
+      return inMemoryAttendanceCache.get(key) as T;
+    }
+    if (typeof localStorage === 'undefined') {
+      inMemoryAttendanceCache.set(key, seed);
       return seed;
     }
-    return JSON.parse(raw);
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+      inMemoryAttendanceCache.set(key, seed);
+      return seed;
+    }
+    const parsed = JSON.parse(raw);
+    inMemoryAttendanceCache.set(key, parsed);
+    return parsed;
   } catch {
     return seed;
   }
@@ -70,11 +73,19 @@ function loadStorage<T>(baseKey: string, seed: T, tenantId = getActiveOrgId()): 
 function saveStorage<T>(baseKey: string, data: T, tenantId = getActiveOrgId()): void {
   try {
     const key = getTenantStorageKey(baseKey, tenantId);
+    inMemoryAttendanceCache.set(key, data);
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(key, JSON.stringify(data));
+      try {
+        localStorage.setItem(key, JSON.stringify(data));
+      } catch (e: any) {
+        // Safe quota exceeded recovery — data is already safe in memory and Supabase
+        if (e?.name === 'QuotaExceededError' || e?.code === 22) {
+          // In-memory cache handles all queries smoothly
+        }
+      }
     }
-  } catch (e) {
-    console.error('Failed to save to localStorage', e);
+  } catch (_) {
+    // In-memory cache handles state
   }
 }
 
@@ -90,8 +101,15 @@ export const attendanceApi = {
     if (isSupabaseEnabled) {
       try {
         await ensureSupabaseSession();
+        const tenantId = getActiveOrgId();
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 4000);
 
-        let q = supabase.from('attendance_daily').select('*');
+        let q = supabase
+          .from('attendance_daily')
+          .select('*')
+          .eq('organization_id', tenantId)
+          .abortSignal(ctrl.signal);
         if (date) q = q.eq('attendance_date', date);
         const { data } = await q;
 
@@ -100,22 +118,11 @@ export const attendanceApi = {
         try {
           const { data: empList } = await supabase
             .from('employees')
-            .select('id, organization_id, company_id, employee_code, first_name, last_name, display_name, avatar_url, department_id, designation_id, employment_status');
+            .select('id, organization_id, company_id, employee_code, first_name, last_name, display_name, avatar_url, department_id, designation_id, employment_status')
+            .eq('organization_id', tenantId)
+            .abortSignal(ctrl.signal);
           if (empList && empList.length > 0) {
             empMap = new Map(empList.map((e: any) => [e.id, e]));
-            // Ensure localStorage workforce_employees has real UUID employees if empty or polluted
-            try {
-              const rawLocal = localStorage.getItem('workforce_employees');
-              const parsedLocal: any[] = rawLocal ? JSON.parse(rawLocal) : [];
-              const uuidLocal = parsedLocal.filter((e: any) =>
-                typeof e?.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(e.id)
-              );
-              if (uuidLocal.length === 0) {
-                localStorage.setItem('workforce_employees', JSON.stringify(empList));
-              } else if (uuidLocal.length !== parsedLocal.length) {
-                localStorage.setItem('workforce_employees', JSON.stringify(uuidLocal));
-              }
-            } catch (_) {}
           }
         } catch { }
 
@@ -132,7 +139,10 @@ export const attendanceApi = {
           let pq = supabase
             .from('attendance_punches')
             .select('employee_id, organization_id, punch_type, verification_mode, punch_source, device_id, punch_time')
-            .order('punch_time', { ascending: true });
+            .eq('organization_id', tenantId)
+            .order('punch_time', { ascending: true })
+            .limit(500)
+            .abortSignal(ctrl.signal);
           if (date) {
             const startRange = new Date(`${date}T00:00:00Z`);
             startRange.setHours(startRange.getHours() - 14);
@@ -141,6 +151,7 @@ export const attendanceApi = {
             pq = pq.gte('punch_time', startRange.toISOString()).lte('punch_time', endRange.toISOString());
           }
           const { data: punches } = await pq;
+          clearTimeout(tid);
           if (punches) {
             for (const p of punches) {
               if (date) {
@@ -335,18 +346,25 @@ export const attendanceApi = {
         const endRange = new Date(`${endDate}T23:59:59Z`);
         endRange.setHours(endRange.getHours() + 14);
 
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 4000);
+
         let pq = supabase
           .from('attendance_punches')
           .select('employee_id, organization_id, punch_type, verification_mode, punch_source, device_id, punch_time')
+          .eq('organization_id', tenantId)
           .gte('punch_time', startRange.toISOString())
           .lte('punch_time', endRange.toISOString())
-          .order('punch_time', { ascending: true });
+          .order('punch_time', { ascending: true })
+          .limit(500)
+          .abortSignal(ctrl.signal);
 
         if (employeeId) {
           pq = pq.eq('employee_id', employeeId);
         }
 
         const { data: punches } = await pq;
+        clearTimeout(tid);
         const punchMap = new Map<string, {
           employeeId: string;
           punchDate: string;
@@ -567,9 +585,10 @@ export const attendanceApi = {
             const empKey = `${matchedEmp.id || matchedEmp.employee_code}_${item.date || targetDate}`;
             if (!seenEmpKeys.has(empKey)) {
               seenEmpKeys.add(empKey);
-              const roster = attendanceRosterService.getRosterForEmployeeOnDate(matchedEmp.id, item.date || targetDate);
-              const shiftStart = roster.shift_code.includes('NGT') ? '10:00 PM' : roster.shift_code.includes('MOR') ? '06:00 AM' : '09:00 AM';
-              const shiftEnd = roster.shift_code.includes('NGT') ? '06:00 AM' : roster.shift_code.includes('MOR') ? '02:30 PM' : '06:00 PM';
+              const roster = attendanceRosterService.getRosterForEmployeeOnDate(matchedEmp.id, item.date || targetDate, undefined, matchedEmp);
+              const shiftDef = attendanceRosterService.getShiftById(roster.shift_id);
+              const shiftStart = shiftDef?.start_time || '09:30';
+              const shiftEnd = shiftDef?.end_time || '18:30';
 
               const rawIn = item.first_check_in || (item as any).in_time || (item as any).check_in;
               const rawOut = item.last_check_out || (item as any).out_time || (item as any).check_out;
@@ -577,8 +596,8 @@ export const attendanceApi = {
               const hasPunch = !!rawIn || !!rawOut;
               const inMins = rawIn ? timeStringToMinutes(rawIn) : null;
               const outMins = rawOut ? timeStringToMinutes(rawOut) : null;
-              const expectedInMins = timeStringToMinutes(shiftStart) || 540;
-              const expectedOutMins = timeStringToMinutes(shiftEnd) || 1080;
+              const expectedInMins = timeStringToMinutes(shiftStart) || 570;
+              const expectedOutMins = timeStringToMinutes(shiftEnd) || 1110;
               const calc = processAttendanceStatus(inMins, outMins, expectedInMins, expectedOutMins);
               const resolvedStatus = hasPunch ? (item.status || calc.status || 'Present') : (roster.is_weekly_off ? 'Weekly Off' : item.status || 'Not Checked In');
 
@@ -597,7 +616,7 @@ export const attendanceApi = {
                 last_check_out: rawOut ? formatCleanTime(rawOut) : undefined,
                 gross_working_minutes: (item.gross_working_minutes && item.gross_working_minutes > 0) ? item.gross_working_minutes : calc.grossMinutes,
                 net_working_minutes: (item.net_working_minutes && item.net_working_minutes > 0) ? item.net_working_minutes : calc.netMinutes,
-                late_minutes: item.late_minutes ?? calc.lateMinutes,
+                late_minutes: calc.lateMinutes,
                 early_checkout_minutes: item.early_checkout_minutes ?? calc.earlyMinutes,
                 overtime_minutes: item.overtime_minutes ?? calc.overtimeMinutes,
                 status: resolvedStatus,
@@ -643,10 +662,11 @@ export const attendanceApi = {
           const empKey = `${emp.id}_${targetDate}`;
           if (!seenEmpKeys.has(empKey)) {
             seenEmpKeys.add(empKey);
-            const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, targetDate);
+            const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, targetDate, undefined, emp);
             const isOff = roster.is_weekly_off;
-            const shiftStart = roster.shift_code.includes('NGT') ? '10:00 PM' : roster.shift_code.includes('MOR') ? '06:00 AM' : '09:00 AM';
-            const shiftEnd = roster.shift_code.includes('NGT') ? '06:00 AM' : roster.shift_code.includes('MOR') ? '02:30 PM' : '06:00 PM';
+            const shiftDef = attendanceRosterService.getShiftById(roster.shift_id);
+            const shiftStart = shiftDef?.start_time || '09:30';
+            const shiftEnd = shiftDef?.end_time || '18:30';
 
             cleaned.push({
               id: `att-dyn-${emp.id}-${targetDate}`,
@@ -957,14 +977,31 @@ export const attendanceApi = {
       existing.updated_at = new Date().toISOString();
       list[existingIdx] = existing;
       saveStorage(STORAGE_KEY_DAILY, list);
+      _dailyCache = null;
+      JoyRedis.invalidateLedgerCache(getActiveOrgId()).catch(() => {});
       return existing;
     } else {
+      let empName = 'Employee';
+      let empCode = `WF-${payload.employeeId}`;
+      try {
+        const rawEmps = localStorage.getItem('workforce_employees');
+        if (rawEmps) {
+          const parsed = JSON.parse(rawEmps);
+          const found = parsed.find((e: any) => e.id === payload.employeeId || e.employee_code === payload.employeeId);
+          if (found) {
+            empName = found.display_name || `${found.first_name || ''} ${found.last_name || ''}`.trim() || found.name;
+            empCode = found.employee_code || empCode;
+          }
+        }
+      } catch (_) {}
+
       const roster = attendanceRosterService.getRosterForEmployeeOnDate(payload.employeeId, todayStr);
+      const shiftDef = attendanceRosterService.getShiftById(roster.shift_id);
       const newItem: AttendanceDaily = {
         id: `att-bio-${Date.now()}`,
         employee_id: payload.employeeId,
-        employee_code: `WF-${payload.employeeId}`,
-        employee_name: 'Employee',
+        employee_code: empCode,
+        employee_name: empName,
         department: 'Operations',
         designation: 'Staff',
         organization_id: getActiveOrgId(),
@@ -972,8 +1009,8 @@ export const attendanceApi = {
         date: todayStr,
         shift_id: roster.shift_id,
         shift_name: `${roster.shift_name} (${roster.shift_code})`,
-        expected_check_in: '09:00 AM',
-        expected_check_out: '06:00 PM',
+        expected_check_in: shiftDef?.start_time || '09:30',
+        expected_check_out: shiftDef?.end_time || '18:30',
         first_check_in: timeStr,
         gross_working_minutes: 0,
         net_working_minutes: 0,
@@ -988,6 +1025,23 @@ export const attendanceApi = {
       };
       list.unshift(newItem);
       saveStorage(STORAGE_KEY_DAILY, list);
+      _dailyCache = null;
+      JoyRedis.invalidateLedgerCache(getActiveOrgId()).catch(() => {});
+
+      if (isSupabaseEnabled) {
+        Promise.resolve(
+          supabase.from('attendance_daily').upsert({
+            id: newItem.id,
+            organization_id: getActiveOrgId(),
+            employee_id: newItem.employee_id,
+            attendance_date: todayStr,
+            status: 'PRESENT',
+            first_check_in: timeStr,
+            updated_at: new Date().toISOString(),
+          })
+        ).catch(() => {});
+      }
+
       return newItem;
     }
   },

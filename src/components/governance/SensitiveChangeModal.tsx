@@ -168,7 +168,7 @@ export const SensitiveChangeModal: React.FC<SensitiveChangeModalProps> = ({
           <Button
             size="sm"
             onClick={handleConfirm}
-            loading={isSubmitting}
+            isLoading={isSubmitting}
             className="bg-[#07563D] hover:bg-[#053e2c] text-white"
             leftIcon={<Lock className="w-3.5 h-3.5" />}
           >

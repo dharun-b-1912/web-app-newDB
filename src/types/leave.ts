@@ -185,6 +185,7 @@ export interface LeaveEntitlement {
   accrued: number;
   carried_forward: number;
   adjustments: number;
+  adjusted?: number;
   used: number;
   pending: number;
   encashed: number;

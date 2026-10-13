@@ -48,6 +48,7 @@ export interface CalculationInput {
   pfApplicable?: boolean;
   esiApplicable?: boolean;
   ptApplicable?: boolean;
+  tdsApplicable?: boolean;
   lwfApplicable?: boolean;
   payrollMonth?: number;
   isManagerial?: boolean;
@@ -850,13 +851,17 @@ export class PayrollCalculationEngine {
       statutoryConfig
     );
 
-    const tdsEval = StatutoryRuleEngine.evaluateProjectedTDS(
-      grossMonthly,
-      grossMonthly * 12,
-      resolvedInput.taxRegime || 'NEW'
-    );
+    const isTdsActive = resolvedInput.tdsApplicable !== false;
+    const tdsEval = isTdsActive
+      ? StatutoryRuleEngine.evaluateProjectedTDS(
+          grossMonthly,
+          grossMonthly * 12,
+          resolvedInput.taxRegime || 'NEW'
+        )
+      : { monthlyTdsWithholding: 0, totalAnnualTaxLiability: 0, effectiveTaxRate: 0, slabBreakdown: [] };
 
     const ptAmount = resolvedInput.ptApplicable !== false ? ptEval.ptAmount : 0;
+    const tdsAmount = isTdsActive ? tdsEval.monthlyTdsWithholding : 0;
 
     // LWF Assessment via Statutory Rule Engine
     const lwfState = resolvedInput.state || statutoryConfig?.lwf_state_jurisdiction || 'Tamil Nadu';
@@ -878,7 +883,7 @@ export class PayrollCalculationEngine {
       pfEval.employee_contribution +
       esiEval.employee_contribution +
       ptAmount +
-      tdsEval.monthlyTdsWithholding +
+      tdsAmount +
       lwfEmployee;
 
     const totalEmployerContributions =
@@ -914,7 +919,7 @@ export class PayrollCalculationEngine {
       { componentCode: 'PF_EE', componentName: `Employee EPF (${(pfEmployeeRate * 100)}%)`, type: 'DEDUCTION', monthlyAmount: pfEval.employee_contribution, annualAmount: pfEval.employee_contribution * 12, calculationBasis: `${(pfEmployeeRate * 100)}% of Basic (capped at ₹${pfWageCeiling.toLocaleString('en-IN')})`, taxable: false, isStatutory: true },
       { componentCode: 'ESI_EE', componentName: `Employee ESIC (${(esiEmployeeRate * 100)}%)`, type: 'DEDUCTION', monthlyAmount: esiEval.employee_contribution, annualAmount: esiEval.employee_contribution * 12, calculationBasis: `${(esiEmployeeRate * 100)}% of Gross`, taxable: false, isStatutory: true },
       { componentCode: 'PT', componentName: 'Professional Tax (PT)', type: 'DEDUCTION', monthlyAmount: ptAmount, annualAmount: ptAmount * 12, calculationBasis: ptEval.slabDescription, taxable: false, isStatutory: true },
-      { componentCode: 'TDS', componentName: 'Estimated TDS', type: 'DEDUCTION', monthlyAmount: tdsEval.monthlyTdsWithholding, annualAmount: tdsEval.totalAnnualTaxLiability, calculationBasis: 'Annualized Slab Projection', taxable: false, isStatutory: true },
+      ...(isTdsActive && tdsAmount > 0 ? [{ componentCode: 'TDS', componentName: 'Estimated TDS', type: 'DEDUCTION' as const, monthlyAmount: tdsAmount, annualAmount: tdsEval.totalAnnualTaxLiability, calculationBasis: 'Annualized Slab Projection', taxable: false, isStatutory: true }] : []),
       ...(lwfEmployee > 0 ? [{ componentCode: 'LWF_EE', componentName: 'Labour Welfare Fund (LWF)', type: 'DEDUCTION' as const, monthlyAmount: lwfEmployee, annualAmount: lwfEmployee * 12, calculationBasis: 'State Statutory Board Slab', taxable: false, isStatutory: true }] : []),
     ];
 
@@ -944,7 +949,7 @@ export class PayrollCalculationEngine {
       epfEmployee: pfEval.employee_contribution,
       esicEmployee: esiEval.employee_contribution,
       professionalTax: ptAmount,
-      estimatedTdsMonthly: tdsEval.monthlyTdsWithholding,
+      estimatedTdsMonthly: tdsAmount,
       epfEmployer: pfEval.employer_pf_amount,
       esicEmployer: esiEval.employer_contribution,
       lwfEmployee,

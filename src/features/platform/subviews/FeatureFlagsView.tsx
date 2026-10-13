@@ -38,6 +38,7 @@ import {
   Sparkles,
   FileText,
   Save,
+  BookOpen,
 } from 'lucide-react';
 import {
   ProductCapability,
@@ -51,7 +52,11 @@ import { Button } from '../../../components/ui/Button';
 import { Switch } from '../../../components/ui/Switch';
 import { cn } from '../../../lib/utils';
 
-export const FeatureFlagsView: React.FC = () => {
+export interface FeatureFlagsViewProps {
+  onNavigateTab?: (tab: string, payload?: any) => void;
+}
+
+export const FeatureFlagsView: React.FC<FeatureFlagsViewProps> = ({ onNavigateTab }) => {
   // -------------------------------------------------------------
   // State Management
   // -------------------------------------------------------------
@@ -148,18 +153,30 @@ export const FeatureFlagsView: React.FC = () => {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#E7EAF0] pb-5">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-[#0F172B] tracking-tight">Feature Flags & Capabilities</h1>
+            <h1 className="text-2xl font-bold text-[#0F172B] tracking-tight">Engineering Feature Flags & Release Controls</h1>
             <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-full bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0]">
               <span className="h-2 w-2 rounded-full bg-[#10B981] animate-pulse" />
-              ● Feature Engine Healthy
+              ● Release Engine Active
             </span>
           </div>
           <p className="text-[13.5px] text-[#64748B] mt-1 max-w-3xl">
-            Manage product capabilities, controlled rollouts, plan access, tenant overrides, and feature lifecycle.
+            Internal engineering flighting, Canary rollouts, Beta cohorts, and automated circuit-breaker kill switches. Commercial plan entitlements and pricing are governed in the SaaS Product Catalogue.
           </p>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (onNavigateTab) onNavigateTab('platform-catalogue');
+            }}
+            className="flex items-center gap-1.5 border-[#047857]/30 bg-[#ECFDF5] text-[#047857] hover:bg-[#D1FAE5] font-semibold"
+          >
+            <BookOpen className="h-4 w-4 text-[#047857]" />
+            SaaS Feature Catalogue
+          </Button>
+
           <Button
             variant="outline"
             size="sm"

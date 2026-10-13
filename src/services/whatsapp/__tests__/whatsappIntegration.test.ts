@@ -4,7 +4,7 @@
 // Validates Normalization, HSM Templates, Flow Schema, Webhook Ingress & Bot FSM
 // ============================================================================
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   normalizeIndianPhone,
   isValidIndianMobile,
@@ -15,6 +15,7 @@ import {
   LEAVE_APPLICATION_FLOW_SCHEMA,
   whatsAppWebhookHandler,
   whatsAppNotificationService,
+  whatsAppClient,
 } from '../index';
 
 describe('WhatsApp Integration Suite — Joy PeopleHR', () => {
@@ -135,6 +136,11 @@ describe('WhatsApp Integration Suite — Joy PeopleHR', () => {
   // --------------------------------------------------------------------------
   describe('WhatsApp Notification Service', () => {
     it('dispatches Payslip notification without errors', async () => {
+      vi.spyOn(whatsAppClient, 'sendTemplate').mockResolvedValue({
+        success: true,
+        messageId: 'mock-ps-01',
+      });
+
       const res = await whatsAppNotificationService.sendMonthlyPayslip({
         organizationId: 'org-test-01',
         employeeId: 'emp-001',

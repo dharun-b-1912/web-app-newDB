@@ -220,7 +220,7 @@
       v_emp_id, v_org_id, v_comp_id, v_branch_id, v_dept_id, v_desig_id,
       v_manager_emp_id, v_profile_id, 'JCS-099', 'Arjun', NULL, 'Kumar',
       'Arjun Kumar', v_email, 'arjun.kumar.demo@joypeoplehr.com', '9840123456', 'MALE',
-      '1996-10-12', '2024-10-05', '2025-04-05',
+      NULL, '2024-01-15', NULL,
       'FULL_TIME', 'ACTIVE', NOW(), NOW()
     )
     ON CONFLICT (id) DO UPDATE SET
@@ -252,10 +252,7 @@
     SET employee_id = v_emp_id, updated_at = NOW()
     WHERE id = v_profile_id;
 
-    -- Ensure colleague celebrations (Birthdays & Work Anniversaries in next 30 days)
-    UPDATE public.employees SET dob = '1998-10-08', doj = '2023-10-14' WHERE id = '0ce6436c-e9b4-4e0e-9102-93ea238be0df';
-    UPDATE public.employees SET dob = '2001-10-18', doj = '2024-10-22' WHERE id = '6815193e-2ad5-46ff-ae8e-b09353c565d7';
-    UPDATE public.employees SET dob = '1999-10-03', doj = '2025-10-09' WHERE id = '0dc8993f-c0cc-4143-aedc-d4893e41b001';
+
 
     -- =======================================================================================
     -- 3. EXTENDED PROFILE, ADDRESSES, EMERGENCY CONTACT, BANK & STATUTORY DETAILS
@@ -817,50 +814,9 @@
     END IF;
 
     -- =======================================================================================
-    -- 11. IN-APP NOTIFICATIONS & BROADCAST ANNOUNCEMENTS
-    -- =======================================================================================
-    DELETE FROM public.notification_events WHERE recipient_user_id = v_auth_uid;
-    INSERT INTO public.notification_events (
-      id, organization_id, recipient_user_id, channel, title, message,
-      action_url, is_read, is_sent, sent_at, created_at
-    ) VALUES
-    (
-      'ec000000-0000-4000-8000-fcad91430001', v_org_id, v_auth_uid, 'IN_APP',
-      'September 2026 Payslip Published',
-      'Your salary slip for September 2026 (Net Pay: ₹70,500) is now available for download under Payslips.',
-      '/payslips', false, true, NOW() - INTERVAL '2 hours', NOW() - INTERVAL '2 hours'
-    ),
-    (
-      'ec000000-0000-4000-8000-fcad91430002', v_org_id, v_auth_uid, 'IN_APP',
-      'Casual Leave Approved (Sep 10 – Sep 11)',
-      'Your 2-day Casual Leave request has been approved by Reporting Manager Dharun B.',
-      '/leaves', false, true, NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days'
-    ),
-    (
-      'ec000000-0000-4000-8000-fcad91430003', v_org_id, v_auth_uid, 'IN_APP',
-      'Welcome to Joy PeopleHR Self-Service',
-      'Your geofenced work location at Joy Corporate Solutions HQ (Coimbatore) is active for mobile GPS attendance.',
-      '/attendance', true, true, NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'
-    );
 
-    -- Ensure at least 2 Organization Broadcast Announcements exist (recipient_user_id IS NULL)
-    INSERT INTO public.notification_events (
-      id, organization_id, recipient_user_id, channel, title, message,
-      action_url, is_read, is_sent, sent_at, created_at
-    ) VALUES
-    (
-      'ec000000-0000-4000-8000-000000000101', v_org_id, NULL, 'IN_APP',
-      'Q3 2026 Townhall & Engineering Excellence Awards',
-      'Join us this Friday at 4:00 PM IST at the Coimbatore HQ Auditorium for the Q3 Townhall and Quarterly Recognition Awards.',
-      NULL, false, true, NOW() - INTERVAL '4 hours', NOW() - INTERVAL '4 hours'
-    ),
-    (
-      'ec000000-0000-4000-8000-000000000102', v_org_id, NULL, 'IN_APP',
-      'September 2026 Attendance & Expense Cut-Off Notice',
-      'Please submit all pending attendance regularizations and expense reimbursement claims before 6:00 PM today.',
-      NULL, false, true, NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'
-    )
-    ON CONFLICT (id) DO NOTHING;
+
+
 
   END $$;
 

@@ -121,7 +121,7 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({
 
   // Real-time synchronization via hrEventBus
   useEffect(() => {
-    const unsub = hrEventBus.subscribe('*', () => {
+    const unsub = hrEventBus.subscribe('attendance.*', () => {
       loadCalendarData();
       if (selectedDateStr) loadDrawerEmployees(selectedDateStr);
     });

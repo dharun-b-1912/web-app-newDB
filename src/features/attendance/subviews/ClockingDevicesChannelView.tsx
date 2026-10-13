@@ -184,7 +184,7 @@ export const ClockingDevicesChannelView: React.FC<ClockingDevicesChannelViewProp
                     <strong className="text-gray-900 block">{emp.display_name || emp.name}</strong>
                     <span className="text-[11px] text-gray-400 font-mono">{emp.employee_code || 'WF-EMP'}</span>
                   </td>
-                  <td className="p-3 text-gray-700">{emp.department_name || emp.department || 'Operations'}</td>
+                  <td className="p-3 text-gray-700">{emp.department_name || emp.department || 'General'}</td>
                   <td className="p-3 font-mono font-bold text-gray-900">PIN-{1000 + idx}</td>
                   <td className="p-3">
                     <Badge variant="blue" size="sm">Fingerprint + RFID</Badge>

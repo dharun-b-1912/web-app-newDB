@@ -136,13 +136,8 @@ export class AttendanceTimeService {
 
     // 3. Explicit ISO string with UTC 'Z' or offset (e.g. "2026-09-12T03:42:34.000Z" or "+05:30")
     if (/^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}/.test(str)) {
-      let iso = str.includes('T') ? str : str.replace(' ', 'T');
-      if (!iso.endsWith('Z') && !iso.includes('+') && !iso.match(/-\d{2}:\d{2}$/)) {
-        // If ambiguous string with dash, treat as device local
-        return AttendanceTimeService.normalizeDeviceTimestamp(str.replace('T', ' '), tz);
-      }
-
-      const parsedDate = new Date(iso);
+      const isoCandidate = str.includes('T') ? str : str.replace(' ', 'T');
+      const parsedDate = new Date(isoCandidate);
       if (!isNaN(parsedDate.getTime())) {
         const utcIso = parsedDate.toISOString();
         return {
@@ -171,8 +166,19 @@ export class AttendanceTimeService {
         if (!isPm && h === 12) h = 0;
       }
 
-      const localStr = `${todayDateStr} ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-      return AttendanceTimeService.normalizeDeviceTimestamp(localStr, tz);
+      const approxDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), h, m, s));
+      const offsetMinutes = AttendanceTimeService.getTimezoneOffsetMinutes(tz, approxDate);
+      const utcEpochMs = approxDate.getTime() - offsetMinutes * 60000;
+      const utcIso = new Date(utcEpochMs).toISOString();
+
+      return {
+        eventTimestampUtc: utcIso,
+        deviceTimestampRaw: `${todayDateStr} ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`,
+        deviceTimezone: tz,
+        attendanceDate: todayDateStr,
+        businessLocalTimeStr: AttendanceTimeService.formatAttendanceTime(utcIso, tz, true),
+        minutesFromMidnight: h * 60 + m,
+      };
     }
 
     // Fallback
@@ -280,10 +286,42 @@ export class AttendanceTimeService {
     return new Date(d.getTime() + offsetMs);
   }
 
+  private static _formatterCache = new Map<string, Intl.DateTimeFormat>();
+  private static _todayMemo: { date: string; expires: number; tz: string } = { date: '', expires: 0, tz: '' };
+  private static _yesterdayMemo: { date: string; expires: number; tz: string } = { date: '', expires: 0, tz: '' };
+  private static _relativeFormatCache = new Map<string, {
+    isToday: boolean;
+    isYesterday: boolean;
+    relativeLabel: string;
+    formattedDate: string;
+    formattedDateWithYear: string;
+    isoDate: string;
+  }>();
+
+  private static getFormatter(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+    const key = `${locale}|${options.timeZone || ''}|${options.year || ''}|${options.month || ''}|${options.day || ''}|${options.hour || ''}|${options.minute || ''}|${options.second || ''}|${options.hour12 ?? ''}`;
+    let fmt = AttendanceTimeService._formatterCache.get(key);
+    if (!fmt) {
+      fmt = new Intl.DateTimeFormat(locale, options);
+      AttendanceTimeService._formatterCache.set(key, fmt);
+    }
+    return fmt;
+  }
+
   /**
    * Determines the authoritative business attendance date (YYYY-MM-DD) in the organization timezone
    */
   public static getAttendanceDate(utcIsoOrDate: string | Date = new Date(), timezone: string = AttendanceTimeService.DEFAULT_TIMEZONE): string {
+    const tz = timezone || AttendanceTimeService.DEFAULT_TIMEZONE;
+
+    // Fast path: if string is already formatted as YYYY-MM-DD or contains local date prefix
+    if (typeof utcIsoOrDate === 'string' && (tz.includes('Kolkata') || tz.includes('IST') || tz.includes('India'))) {
+      const match = utcIsoOrDate.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (match && !utcIsoOrDate.endsWith('Z') && !utcIsoOrDate.includes('+') && !utcIsoOrDate.includes('T')) {
+        return match[1];
+      }
+    }
+
     const d = typeof utcIsoOrDate === 'string' ? new Date(utcIsoOrDate) : utcIsoOrDate;
     if (isNaN(d.getTime())) {
       const fallback = new Date();
@@ -291,13 +329,13 @@ export class AttendanceTimeService {
     }
 
     try {
-      const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: timezone || AttendanceTimeService.DEFAULT_TIMEZONE,
+      const fmt = AttendanceTimeService.getFormatter('en-CA', {
+        timeZone: tz,
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
-      }).formatToParts(d);
-
+      });
+      const parts = fmt.formatToParts(d);
       const p: Record<string, string> = {};
       parts.forEach((part) => { p[part.type] = part.value; });
       return `${p.year}-${p.month}-${p.day}`;
@@ -346,21 +384,120 @@ export class AttendanceTimeService {
       return withSeconds ? `${hh}:${m}:${s} ${suffix}` : `${hh}:${m} ${suffix}`;
     }
 
+    // If raw date string without timezone components (e.g. "YYYY-MM-DD HH:mm:ss")
+    const localMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (localMatch) {
+      let h = parseInt(localMatch[4], 10);
+      const m = localMatch[5];
+      const s = localMatch[6] || '00';
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      h = h % 12 === 0 ? 12 : h % 12;
+      const hh = String(h).padStart(2, '0');
+      return withSeconds ? `${hh}:${m}:${s} ${ampm}` : `${hh}:${m} ${ampm}`;
+    }
+
     try {
-      const norm = AttendanceTimeService.normalizeDeviceTimestamp(str, timezone);
-      const date = new Date(norm.eventTimestampUtc);
-      if (!isNaN(date.getTime())) {
-        return new Intl.DateTimeFormat('en-US', {
+      const parsed = raw instanceof Date ? raw : new Date(str);
+      if (!isNaN(parsed.getTime())) {
+        return AttendanceTimeService.getFormatter('en-US', {
           timeZone: timezone || AttendanceTimeService.DEFAULT_TIMEZONE,
           hour: '2-digit',
           minute: '2-digit',
           second: withSeconds ? '2-digit' : undefined,
           hour12: true,
-        }).format(date);
+        }).format(parsed);
       }
     } catch (_) {}
 
     return str;
+  }
+
+  /**
+   * Formats attendance date with relative descriptor ('Today', 'Yesterday', or 'DD MMM YYYY')
+   * in business timezone (IST / Asia/Kolkata).
+   */
+  public static formatAttendanceDateWithRelative(
+    raw: string | Date | undefined,
+    timezone: string = AttendanceTimeService.DEFAULT_TIMEZONE
+  ): {
+    isToday: boolean;
+    isYesterday: boolean;
+    relativeLabel: string;
+    formattedDate: string;
+    formattedDateWithYear: string;
+    isoDate: string;
+  } {
+    const tz = timezone || AttendanceTimeService.DEFAULT_TIMEZONE;
+    const cacheKey = `${String(raw)}|${tz}`;
+    const cached = AttendanceTimeService._relativeFormatCache.get(cacheKey);
+    if (cached) return cached;
+
+    const nowMs = Date.now();
+    let todayIsoDate = (AttendanceTimeService._todayMemo.tz === tz && AttendanceTimeService._todayMemo.expires > nowMs)
+      ? AttendanceTimeService._todayMemo.date
+      : '';
+    if (!todayIsoDate) {
+      todayIsoDate = AttendanceTimeService.getAttendanceDate(new Date(nowMs).toISOString(), tz);
+      AttendanceTimeService._todayMemo = { date: todayIsoDate, expires: nowMs + 60000, tz };
+    }
+
+    let yesterdayIsoDate = (AttendanceTimeService._yesterdayMemo.tz === tz && AttendanceTimeService._yesterdayMemo.expires > nowMs)
+      ? AttendanceTimeService._yesterdayMemo.date
+      : '';
+    if (!yesterdayIsoDate) {
+      yesterdayIsoDate = AttendanceTimeService.getAttendanceDate(new Date(nowMs - 86400000).toISOString(), tz);
+      AttendanceTimeService._yesterdayMemo = { date: yesterdayIsoDate, expires: nowMs + 60000, tz };
+    }
+
+    const norm = AttendanceTimeService.normalizeDeviceTimestamp(raw, tz);
+    const punchDate = norm.attendanceDate || todayIsoDate;
+
+    const isToday = punchDate === todayIsoDate;
+    const isYesterday = punchDate === yesterdayIsoDate;
+
+    const dateObj = new Date(norm.eventTimestampUtc);
+    let formattedDate = punchDate;
+    let formattedDateWithYear = punchDate;
+
+    if (!isNaN(dateObj.getTime())) {
+      try {
+        formattedDate = AttendanceTimeService.getFormatter('en-IN', {
+          timeZone: tz,
+          day: '2-digit',
+          month: 'short',
+        }).format(dateObj);
+
+        formattedDateWithYear = AttendanceTimeService.getFormatter('en-IN', {
+          timeZone: tz,
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        }).format(dateObj);
+      } catch (_) {}
+    }
+
+    let relativeLabel = formattedDateWithYear;
+    if (isToday) {
+      relativeLabel = 'Today';
+    } else if (isYesterday) {
+      relativeLabel = 'Yesterday';
+    }
+
+    const result = {
+      isToday,
+      isYesterday,
+      relativeLabel,
+      formattedDate,
+      formattedDateWithYear,
+      isoDate: punchDate,
+    };
+
+    if (AttendanceTimeService._relativeFormatCache.size > 500) {
+      AttendanceTimeService._relativeFormatCache.clear();
+    }
+    AttendanceTimeService._relativeFormatCache.set(cacheKey, result);
+
+    return result;
   }
 
   /**

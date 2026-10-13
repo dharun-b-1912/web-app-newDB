@@ -93,8 +93,8 @@ export interface AttendancePolicy {
   max_wfh_days_per_month: number;
   geofence_enabled: boolean;
   allowed_radius_meters: number;
-  office_latitude: number;
-  office_longitude: number;
+  office_latitude?: number;
+  office_longitude?: number;
   night_shift_enabled: boolean;
   night_shift_cutoff_hour: number; // e.g. 6 AM
   assignment_type: 'Company' | 'Branch' | 'Department' | 'Employee';
@@ -153,6 +153,7 @@ export interface WfhRequest {
 export interface BiometricDevice {
   id: string;
   device_name: string;
+  name?: string;
   device_type: 'Fingerprint' | 'Facial Recognition' | 'RFID Card' | 'Palm Vein';
   vendor: 'ZKTeco' | 'Matrix COSEC' | 'Suprema' | 'Hikvision' | 'Custom API';
   model: string;
@@ -165,6 +166,8 @@ export interface BiometricDevice {
   last_sync: string;
   last_sync_at?: string;
   sync_frequency_mins: number;
+  firmware_version?: string;
+  gateway_node_id?: string;
 }
 
 export interface BiometricSyncLog {

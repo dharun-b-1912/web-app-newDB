@@ -46,7 +46,9 @@ import {
   Loader2,
   Info,
   Trash2,
+  XCircle,
 } from 'lucide-react';
+import { ErrorBoundary } from '../../../components/ui/ErrorBoundary';
 import { api } from '../../../services/api';
 import {
   biometricGatewayService,
@@ -60,6 +62,7 @@ import { BiometricSetupWizardModal } from '../components/BiometricSetupWizardMod
 import { DeviceUsersManagerModal } from '../components/DeviceUsersManagerModal';
 import { DeviceDiagnosticDetailsModal } from '../components/DeviceDiagnosticDetailsModal';
 import { BiometricDeviceWorkspace } from '../components/BiometricDeviceWorkspace';
+import { BiometricLiveTelemetryHUD } from '../components/BiometricLiveTelemetryHUD';
 import { TerminalLogLedgerView } from './TerminalLogLedgerView';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
@@ -72,7 +75,7 @@ export interface BiometricIntegrationViewProps {
   onNavigateSubPath?: (subPath: string) => void;
 }
 
-export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> = ({
+const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = ({
   currentTab = 'biometric',
   onNavigateSubPath,
 }) => {
@@ -108,6 +111,9 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
     }
   });
   const [selectedWorkspaceDevice, setSelectedWorkspaceDevice] = useState<BiometricDevice | null>(null);
+  // Ref so background timer callbacks can check workspace state without stale closures
+  const selectedWorkspaceDeviceRef = useRef<BiometricDevice | null>(null);
+  selectedWorkspaceDeviceRef.current = selectedWorkspaceDevice;
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -134,7 +140,7 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
   const [testingDeviceId, setTestingDeviceId] = useState<string | null>(null);
 
   // Clear live stream / purge test logs
-  const handleClearFeed = (e?: React.MouseEvent) => {
+  const handleClearFeed = async (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     biometricGatewayService.clearAllRawPunches();
     setPunches([]);
@@ -152,8 +158,12 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
   }>>([]);
 
   // Live Connector Status & Telemetry (Pure data state machine — never blocks page rendering)
-  const [connectorStatus, setConnectorStatus] = useState<ConnectorStatus>(() => biometricGatewayService.getConnectorStatus());
-  const [connectorTelemetry, setConnectorTelemetry] = useState<ConnectorTelemetry>(() => biometricGatewayService.getConnectorTelemetry());
+  const [connectorStatus, setConnectorStatus] = useState<ConnectorStatus>(() => {
+    return biometricGatewayService.getConnectorStatus();
+  });
+  const [connectorTelemetry, setConnectorTelemetry] = useState<ConnectorTelemetry>(() => {
+    return biometricGatewayService.getConnectorTelemetry();
+  });
 
   // Pairing & Installer Data
   const [generatedPairingData, setGeneratedPairingData] = useState<{
@@ -182,80 +192,166 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
     }
   };
 
-  // Fast path: read from in-memory/localStorage — always instant, no network
+
+
+  // Fast path: read from in-memory cache — always instant, 100% synchronous, zero network calls
+  // Only surfaces punches from the last 48 hours to prevent stale historical data in the live stream
   const loadData = () => {
     try {
       const currentAgents = biometricGatewayService.getGatewayAgents();
       const currentDevs = biometricGatewayService.getBiometricDevices();
-      const currentPunches = biometricGatewayService.getRawPunches(50);
-      setAgents(currentAgents);
-      setDevices(currentDevs);
-      setPunches(currentPunches);
-      setConnectorStatus(biometricGatewayService.getConnectorStatus());
-      setConnectorTelemetry(biometricGatewayService.getConnectorTelemetry());
-
-      // Refresh employees directory
-      api.getEmployees().then(emps => {
-        if (Array.isArray(emps) && emps.length > 0) setEmployees(emps);
-      }).catch(() => {});
+      const cutoffMs = Date.now() - 48 * 60 * 60 * 1000;
+      const currentPunches = biometricGatewayService.getRawPunches(200).filter(p => {
+        if (!p.punch_time) return false;
+        try { return new Date(p.punch_time).getTime() >= cutoffMs; } catch { return false; }
+      }).slice(0, 50);
+      
+      setAgents(prev => {
+        if (prev.length === currentAgents.length && prev[0]?.id === currentAgents[0]?.id) return prev;
+        return currentAgents;
+      });
+      setDevices(prev => {
+        if (
+          prev.length === currentDevs.length &&
+          prev.every((d, i) => d.id === currentDevs[i]?.id && d.status === currentDevs[i]?.status && d.last_sync === currentDevs[i]?.last_sync)
+        ) {
+          return prev;
+        }
+        return currentDevs;
+      });
+      setPunches(prev => {
+        if (prev.length === currentPunches.length && prev[0]?.id === currentPunches[0]?.id) return prev;
+        return currentPunches;
+      });
+      const nextStatus = biometricGatewayService.getConnectorStatus();
+      setConnectorStatus(prev => prev === nextStatus ? prev : nextStatus);
+      const nextTele = biometricGatewayService.getConnectorTelemetry();
+      setConnectorTelemetry(prev => {
+        if (
+          prev.status === nextTele.status &&
+          prev.devices_count === nextTele.devices_count &&
+          prev.pending_queue_count === nextTele.pending_queue_count
+        ) {
+          return prev;
+        }
+        return nextTele;
+      });
     } catch (err) {
       console.error('[BiometricIntegrationView] Error loading data:', err);
     }
   };
 
+
+
   useEffect(() => {
     let destroyed = false;
 
-    // Debounced UI load to prevent cascading re-renders on rapid events
+    // Throttled debounced UI load — skips when workspace view is active to avoid wasted re-renders
     let loadDebounce: ReturnType<typeof setTimeout> | null = null;
     const debouncedLoadData = () => {
+      if (selectedWorkspaceDeviceRef.current) return; // workspace is visible, no need to reload list
       if (loadDebounce) clearTimeout(loadDebounce);
       loadDebounce = setTimeout(() => {
-        if (!destroyed) loadData();
-      }, 150);
+        if (!destroyed && !selectedWorkspaceDeviceRef.current) loadData();
+      }, 1500);
     };
 
     // STEP 1: Render UI immediately from local memory cache — 100% synchronous, 0ms, zero network calls
     loadData();
+    console.log('[BOOT] biometric_view_mounted: BiometricIntegrationView mounted and rendered from memory cache');
 
-    // STEP 2: Start background non-blocking connector heartbeat
-    biometricGatewayService.startConnectorMonitoring(5000);
-
-    // STEP 3: Background Supabase synchronization for multi-browser and multi-tenant persistence
-    biometricGatewayService.syncDevicesFromSupabase().then(() => {
-      if (!destroyed) loadData();
+    // STEP 2: Fetch employees directory once in background on mount
+    api.getEmployees({ skipEnrichment: true }).then(emps => {
+      if (!destroyed && Array.isArray(emps) && emps.length > 0) setEmployees(emps);
     }).catch(() => {});
 
-    // Event subscriptions update local UI state smoothly when events arrive
+    // STEP 3: Start background non-blocking connector heartbeat
+    biometricGatewayService.startConnectorMonitoring(30000);
+
+    // STEP 4: Background Supabase synchronization for multi-browser and multi-tenant persistence
+    biometricGatewayService.syncDevicesFromSupabase().then(() => {
+      if (!destroyed && !selectedWorkspaceDeviceRef.current) loadData();
+    }).catch(() => {});
+
+    biometricGatewayService.syncPunchesFromSupabase().then(() => {
+      if (!destroyed && !selectedWorkspaceDeviceRef.current) {
+        const _cutoff = Date.now() - 48 * 60 * 60 * 1000;
+        setPunches(biometricGatewayService.getRawPunches(200).filter(p => {
+          try { return !!p.punch_time && new Date(p.punch_time).getTime() >= _cutoff; } catch { return false; }
+        }).slice(0, 50));
+      }
+    }).catch(() => {});
+
+    // STEP 5: Throttled background sync for new terminal punches (every 30s, non-blocking)
+    // Runs only when connector is online and workspace is not open
+    const punchSyncInterval = setInterval(() => {
+      if (destroyed || selectedWorkspaceDeviceRef.current || biometricGatewayService.getConnectorStatus() !== 'online') return;
+      biometricGatewayService.syncRealPunchesFromAgent().then(res => {
+        if (!destroyed && !selectedWorkspaceDeviceRef.current && res && res.count > 0) {
+          const _cutoff = Date.now() - 48 * 60 * 60 * 1000;
+          setPunches(biometricGatewayService.getRawPunches(200).filter(p => {
+            try { return !!p.punch_time && new Date(p.punch_time).getTime() >= _cutoff; } catch { return false; }
+          }).slice(0, 50));
+        }
+      }).catch(() => {});
+    }, 30000);
+
+    // Initial punch sync on mount after 15s delay if connector is active
+    const initialSyncTimer = setTimeout(() => {
+      if (!destroyed && !selectedWorkspaceDeviceRef.current && biometricGatewayService.getConnectorStatus() === 'online') {
+        biometricGatewayService.syncRealPunchesFromAgent().then(res => {
+          if (!destroyed && !selectedWorkspaceDeviceRef.current && res && res.count > 0) {
+            const _cutoff = Date.now() - 48 * 60 * 60 * 1000;
+            setPunches(biometricGatewayService.getRawPunches(200).filter(p => {
+              try { return !!p.punch_time && new Date(p.punch_time).getTime() >= _cutoff; } catch { return false; }
+            }).slice(0, 50));
+          }
+        }).catch(() => {});
+      }
+    }, 15000);
+
+    // Targeted event subscriptions update local UI state — all skip when workspace is active
     const unsubConnector = hrEventBus.subscribe('biometric.connector_status_changed', (evt: any) => {
       if (evt?.status) setConnectorStatus(evt.status);
       if (evt?.telemetry) setConnectorTelemetry(evt.telemetry);
+    });
+    const unsubBiometric = hrEventBus.subscribe('biometric.punch_ingested', () => {
+      if (!isLiveStreamPausedRef.current && !selectedWorkspaceDeviceRef.current) debouncedLoadData();
+    });
+    const unsubDeviceStatus = hrEventBus.subscribe('biometric.device_status_changed', () => {
+      if (!selectedWorkspaceDeviceRef.current) debouncedLoadData();
+    });
+    const unsubDeviceRegistered = hrEventBus.subscribe('biometric.device_registered', () => {
       debouncedLoadData();
     });
-    const unsubBiometric = hrEventBus.subscribe('biometric.*', () => {
-      if (!isLiveStreamPausedRef.current) debouncedLoadData();
-    });
-    const unsubDevice   = hrEventBus.subscribe('device.*',     () => debouncedLoadData());
-    const unsubAttendance = hrEventBus.subscribe('attendance.*', () => {
-      if (!isLiveStreamPausedRef.current) debouncedLoadData();
-    });
-    const unsubTenant = hrEventBus.subscribe('tenant.*', () => debouncedLoadData());
-    const unsubAuth   = hrEventBus.subscribe('auth.*',   () => debouncedLoadData());
+
+    const handleWindowUpdate = () => {
+      if (!selectedWorkspaceDeviceRef.current) debouncedLoadData();
+    };
+    window.addEventListener('biometric:updated', handleWindowUpdate);
 
     return () => {
       destroyed = true;
       if (loadDebounce) clearTimeout(loadDebounce);
+      clearInterval(punchSyncInterval);
+      clearTimeout(initialSyncTimer);
       biometricGatewayService.stopConnectorMonitoring();
       unsubConnector();
       unsubBiometric();
-      unsubDevice();
-      unsubAttendance();
-      unsubTenant();
-      unsubAuth();
+      unsubDeviceStatus();
+      unsubDeviceRegistered();
+      window.removeEventListener('biometric:updated', handleWindowUpdate);
     };
   }, []);
 
-  // Freshness timer removed — realtime WebSocket is disabled. Sync is on-demand only.
+  // Lightweight 30-second live tick to keep relative timestamps ("X min ago") fresh
+  const [, setLiveTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLiveTick((t) => (t + 1) % 1000);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Quick Socket Test
   const handleTestConnection = async (device: BiometricDevice, e?: React.MouseEvent) => {
@@ -308,11 +404,44 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
     loadData();
   };
 
+  console.log('[DEBUG_STEP 2] Before useMemo KPI calculations');
   // KPI Calculations (Memoized to avoid overhead during mouse interaction)
-  const onlineDevicesCount = React.useMemo(() => devices.filter((d) => d.status === 'Online').length, [devices]);
-  const offlineDevicesCount = React.useMemo(() => devices.filter((d) => d.status !== 'Online').length, [devices]);
   const isConnectorOnline = connectorStatus === 'online';
-  const punchesTodayCount = punches.length;
+  const onlineDevicesCount = React.useMemo(() => {
+    if (!isConnectorOnline) return 0;
+    return devices.filter((d) => d.status === 'Online').length;
+  }, [devices, isConnectorOnline]);
+
+  const offlineDevicesCount = React.useMemo(() => {
+    return devices.length - onlineDevicesCount;
+  }, [devices.length, onlineDevicesCount]);
+
+  const punchesToday = React.useMemo(() => {
+    return punches.filter((p) => {
+      if (!p.punch_time) return false;
+      try {
+        const meta = attendanceTimeService.formatAttendanceDateWithRelative(p.punch_time, 'Asia/Kolkata');
+        return meta.isToday;
+      } catch {
+        return false;
+      }
+    });
+  }, [punches]);
+  const punchesTodayCount = punchesToday.length;
+
+  // Memoized employee lookup map to eliminate O(N) array search on every punch render
+  const employeeLookupMap = React.useMemo(() => {
+    const map = new Map<string, any>();
+    for (const e of employees) {
+      if (e.id) map.set(e.id, e);
+      if (e.employee_code) {
+        map.set(e.employee_code, e);
+        const clean = e.employee_code.replace(/\D/g, '');
+        if (clean) map.set(clean, e);
+      }
+    }
+    return map;
+  }, [employees]);
 
   // Memoized device user counts to avoid recalculating on every render tick (O(1) summary)
   const deviceUsersMap = React.useMemo(() => {
@@ -333,13 +462,38 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
     return { totalDeviceUsers: total, totalUnmappedUsers: unmapped };
   }, [deviceUsersMap]);
 
-  // Find latest actual punch timestamp
-  const latestPunch = punches.length > 0 ? punches[0] : null;
+  // Find latest actual punch timestamp (prioritize today's punches in IST)
+  const latestPunch = punchesToday.length > 0 ? punchesToday[0] : (punches.length > 0 ? punches[0] : null);
   const latestPunchTimeStr = React.useMemo(() => {
     return latestPunch
-      ? new Date(latestPunch.punch_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      ? attendanceTimeService.formatAttendanceTime(latestPunch.punch_time, 'Asia/Kolkata', true)
       : 'None today';
   }, [latestPunch]);
+
+  // Live attendance stream: strictly only Today & Yesterday punches — never fall back to stale historical data
+  const displayPunches = React.useMemo(() => {
+    const liveRecent = punches.filter(p => {
+      if (!p.punch_time) return false;
+      try {
+        const meta = attendanceTimeService.formatAttendanceDateWithRelative(p.punch_time, 'Asia/Kolkata');
+        return meta.isToday || meta.isYesterday;
+      } catch { return false; }
+    });
+    // NOTE: No fallback to full `punches` — show empty list if no recent data.
+    // This prevents week-old punches from polluting the live stream display.
+    const seenPunches = new Set<string>();
+    const deduplicated: typeof liveRecent = [];
+    for (const p of liveRecent) {
+      const pin = String(p.biometric_pin || p.employee_id || '').trim();
+      const timeMinute = Math.floor(new Date(p.punch_time).getTime() / 60000);
+      const key = `${pin}_${timeMinute}`;
+      if (!seenPunches.has(key)) {
+        seenPunches.add(key);
+        deduplicated.push(p);
+      }
+    }
+    return deduplicated.slice(0, 6);
+  }, [punches]);
 
   // Database-first telemetry calculations
   const formatTimeAgo = (dateInput?: string | number | null) => {
@@ -356,8 +510,9 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
   const latestSyncTimestamp = React.useMemo(() => {
     let maxTime = 0;
     for (const d of devices) {
-      if (d.last_sync_at) {
-        const t = new Date(d.last_sync_at).getTime();
+      const syncTime = (d as any).last_sync_at || d.last_sync;
+      if (syncTime) {
+        const t = new Date(syncTime).getTime();
         if (!isNaN(t) && t > maxTime) maxTime = t;
       }
     }
@@ -391,7 +546,13 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
 
   const handleOpenWorkspace = (dev: BiometricDevice) => {
     const t0 = performance.now();
+    selectedWorkspaceDeviceRef.current = dev;
     setSelectedWorkspaceDevice(dev);
+    if (typeof window !== 'undefined') {
+      window.scrollTo(0, 0);
+      const scrollEl = document.querySelector('main.overflow-y-auto');
+      if (scrollEl) scrollEl.scrollTop = 0;
+    }
     const elapsed = performance.now() - t0;
     navPerfTracker.logImmediate('SUBVIEW_NAV', '/biometric', `/biometric/workspace?device=${dev.id}`, elapsed, 'open_device_workspace', {
       deviceId: dev.id,
@@ -408,11 +569,22 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
           const t0 = performance.now();
           const devId = selectedWorkspaceDevice.id;
           setSelectedWorkspaceDevice(null);
+          if (typeof window !== 'undefined') {
+            window.scrollTo(0, 0);
+            const scrollEl = document.querySelector('main.overflow-y-auto');
+            if (scrollEl) scrollEl.scrollTop = 0;
+          }
           loadData();
           const elapsed = performance.now() - t0;
           navPerfTracker.logImmediate('SUBVIEW_NAV', `/biometric/workspace?device=${devId}`, '/biometric', elapsed, 'back_to_device_list');
         }}
-        onDeviceUpdated={() => loadData()}
+        onDeviceUpdated={() => {
+          if (typeof requestIdleCallback !== 'undefined') {
+            requestIdleCallback(() => loadData());
+          } else {
+            setTimeout(() => loadData(), 500);
+          }
+        }}
       />
     );
   }
@@ -429,6 +601,9 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
     );
   }
 
+
+
+  console.log('[DEBUG_FLOW] BiometricIntegrationViewInner returning JSX');
   return (
     <div className="max-w-[1440px] mx-auto space-y-6">
       {/* 1. GLOBAL HEADER & TELEMETRY SCOPE */}
@@ -498,11 +673,16 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
 
             {/* Metric 3: Configured Devices */}
             <div
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-700 text-xs font-semibold"
-              title="Total biometric devices registered in PostgreSQL database"
+              onClick={() => devices[0] && handleOpenWorkspace(devices[0])}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-700 text-xs font-semibold transition-all',
+                devices.length > 0 && 'cursor-pointer hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-900 shadow-2xs'
+              )}
+              title={devices.length > 0 ? "Click to configure biometric terminal workspace" : "Total biometric devices registered in PostgreSQL database"}
             >
               <Cpu className="w-3.5 h-3.5 text-[#07563D]" />
               <span>Devices: <strong>{devices.length}</strong> ({onlineDevicesCount} online)</span>
+              {devices.length > 0 && <ChevronRight className="w-3 h-3 text-[#07563D] ml-0.5" />}
             </div>
 
             {/* Metric 4: Last Biometric Event */}
@@ -580,6 +760,39 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
           </Button>
 
           <Button
+            variant="outline"
+            size="md"
+            onClick={async () => {
+              if (window.confirm('Permanently purge all biometric devices, machine users, and punch records from local database and cloud cache?')) {
+                await biometricGatewayService.wipeAllBiometricData();
+                loadData();
+                showToast('✓ All biometric devices, machine users, and punch cache wiped completely.');
+              }
+            }}
+            className="gap-2 rounded-xl text-xs font-bold text-rose-700 bg-rose-50/70 border-rose-200 hover:bg-rose-100 h-10 px-3.5"
+            title="Wipe all devices, device users, and test punches"
+          >
+            <Trash2 className="w-4 h-4 text-rose-600" />
+            Wipe All Data
+          </Button>
+
+          {devices.length > 0 && (
+            <Button
+              id="top-configure-device-btn"
+              data-testid="top-configure-device-btn"
+              variant="outline"
+              size="md"
+              onClick={() => handleOpenWorkspace(devices[0])}
+              className="gap-2 rounded-xl text-xs font-bold text-[#07563D] bg-emerald-50 border-emerald-300 hover:bg-emerald-100 h-11 px-4 shadow-2xs cursor-pointer"
+              title={`Configure terminal workspace: ${devices[0].device_name}`}
+            >
+              <Cpu className="w-4 h-4 text-[#07563D]" />
+              Configure Device
+            </Button>
+          )}
+
+          <Button
+            id="top-connect-device-btn"
             variant="primary"
             size="md"
             onClick={() => setIsAddWizardOpen(true)}
@@ -683,26 +896,44 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
       {/* 3. ENTERPRISE HEALTH SUMMARY (5 COMPACT CARDS) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
         {/* CARD 1: Connected Devices */}
-        <Card className="p-4 rounded-2xl bg-white border border-gray-200/80 shadow-2xs">
+        <Card
+          onClick={() => devices[0] && handleOpenWorkspace(devices[0])}
+          className={cn(
+            "p-4 rounded-2xl bg-white border border-gray-200/80 shadow-2xs transition-all",
+            devices.length > 0 && "cursor-pointer hover:border-[#07563D] hover:shadow-sm group"
+          )}
+          title={devices.length > 0 ? "Click to configure biometric terminal workspace" : "No devices connected"}
+        >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Connected Devices</p>
+              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider group-hover:text-[#07563D] transition-colors">Connected Devices</p>
               <p className="text-xl font-black text-gray-900 mt-1">{devices.length}</p>
               <p className="text-[11px] font-semibold mt-0.5 text-emerald-700 flex items-center gap-1.5">
                 {devices.length === 0 ? (
                   <span className="text-gray-400">None connected</span>
+                ) : !isConnectorOnline ? (
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    <span className="text-amber-800 font-semibold">{devices.length} Registered (Gateway Offline)</span>
+                  </>
                 ) : (
                   <>
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    {onlineDevicesCount} Online • {offlineDevicesCount} Attention
+                    <span>{onlineDevicesCount} Online • {offlineDevicesCount} Attention</span>
                   </>
                 )}
               </p>
             </div>
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center">
-              <Cpu className="w-4 h-4 text-[#07563D]" />
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center group-hover:bg-[#07563D] transition-colors">
+              <Cpu className="w-4 h-4 text-[#07563D] group-hover:text-white transition-colors" />
             </div>
           </div>
+          {devices.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between text-[10px] font-bold text-[#07563D]">
+              <span>Manage Hardware</span>
+              <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+            </div>
+          )}
         </Card>
 
         {/* CARD 2: Punches Today */}
@@ -770,228 +1001,40 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
         </Card>
       </div>
 
-      {/* 4. REALTIME EVENT PIPELINE (VISUAL FLOW COUNTERS) */}
-      <Card className="p-4.5 bg-white border border-gray-200/80 rounded-2xl shadow-2xs">
-        <div className="flex items-center justify-between border-b border-gray-100 pb-2.5 mb-3">
-          <span className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
-            <Activity className="w-4 h-4 text-[#07563D]" /> Realtime Event Pipeline
-          </span>
-          <span className="text-[11px] font-mono text-gray-500">
-            Durable Store-and-Forward Active
-          </span>
+      {/* 4. BIOMETRIC TERMINAL FLEET (COMPANY MASTER TABLE) */}
+      <Card className="p-6 bg-white border border-gray-200/80 rounded-3xl shadow-2xs space-y-5">
+        {/* Fleet Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <h3 className="font-black text-gray-900 text-base tracking-tight">BIOMETRIC TERMINAL FLEET</h3>
+              <Badge variant={isConnectorOnline && onlineDevicesCount > 0 ? "emerald" : "amber"} size="sm">
+                ● {devices.length} Registered ({isConnectorOnline ? `${onlineDevicesCount} Online` : 'Gateway Offline'})
+              </Badge>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Direct Hardware Operations • Click <strong className="text-emerald-800">Manage &gt;</strong> to configure device network, users directory, and remote commands.
+            </p>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setIsAddWizardOpen(true)}
+            className="gap-1.5 rounded-xl text-xs font-bold bg-[#07563D] hover:bg-[#064e37] text-white shadow-2xs h-9 px-4 shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            + Connect Device
+          </Button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-xs">
-          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-            <span className="text-[10px] text-gray-400 uppercase font-bold">1. Device Read</span>
-            <p className="font-mono font-bold text-gray-900 mt-0.5">{punchesTodayCount}</p>
-          </div>
-          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-            <span className="text-[10px] text-gray-400 uppercase font-bold">2. Connector Ingest</span>
-            <p className="font-mono font-bold text-gray-900 mt-0.5">{punchesTodayCount}</p>
-          </div>
-          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-            <span className="text-[10px] text-gray-400 uppercase font-bold">3. Validated</span>
-            <p className="font-mono font-bold text-gray-900 mt-0.5">{punchesTodayCount}</p>
-          </div>
-          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-            <span className="text-[10px] text-gray-400 uppercase font-bold">4. User Mapped</span>
-            <p className="font-mono font-bold text-emerald-800 mt-0.5">{punchesTodayCount}</p>
-          </div>
-          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-            <span className="text-[10px] text-gray-400 uppercase font-bold">5. Persisted</span>
-            <p className="font-mono font-bold text-emerald-800 mt-0.5">{punchesTodayCount}</p>
-          </div>
-          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-            <span className="text-[10px] text-gray-400 uppercase font-bold">6. Sync Status</span>
-            <p className="font-mono font-bold text-emerald-700 mt-0.5">✓ Synced</p>
-          </div>
-        </div>
-      </Card>
-
-      {/* 5. LIVE ATTENDANCE STREAM */}
-      <Card className="p-5 bg-white border border-gray-200/80 rounded-3xl shadow-2xs space-y-3.5">
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <h3 className="font-black text-gray-900 text-sm tracking-tight">LIVE ATTENDANCE STREAM</h3>
-            <Badge variant="emerald" size="sm">● LIVE</Badge>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleClearFeed}
-              className="text-xs font-bold gap-1 rounded-xl h-8 px-3 text-rose-700 border-rose-200 hover:bg-rose-50 hover:border-rose-300"
-              title="Clear all test punches & cached logs"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-              Clear Feed
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setIsLiveStreamPaused(!isLiveStreamPaused)}
-              className="text-xs font-bold gap-1 rounded-xl h-8 px-3"
-            >
-              {isLiveStreamPaused ? <Play className="w-3.5 h-3.5 text-emerald-600" /> : <Pause className="w-3.5 h-3.5 text-amber-600" />}
-              {isLiveStreamPaused ? 'Resume Feed' : 'Pause Feed'}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowTerminalLog(true)}
-              className="text-xs font-bold rounded-xl h-8 px-3 gap-1"
-            >
-              <Clock className="w-3.5 h-3.5 text-[#07563D]" />
-              Terminal Ledger
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onNavigateSubPath && onNavigateSubPath('attendance_engine')}
-              className="text-xs font-bold rounded-xl h-8 px-3"
-            >
-              View Full Attendance
-            </Button>
-          </div>
-        </div>
-
-        {punches.length === 0 ? (
-          <div className="p-8 text-center bg-gray-50/70 rounded-2xl border border-gray-100 text-xs text-gray-500">
-            Waiting for the next biometric attendance event from physical terminals...
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[280px] overflow-y-auto">
-            {punches.slice(0, 9).map((p) => {
-              const pin = String(p.biometric_pin || '').trim();
-              const cleanPin = pin.replace(/\D/g, '');
-              let resolvedName = p.employee_name;
-              let resolvedCode = p.employee_id;
-
-              // Check if name is generic, a raw UUID, or empty
-              const isGenericOrUuid = !resolvedName ||
-                resolvedName === 'Employee' ||
-                resolvedName.startsWith('User #') ||
-                resolvedName.startsWith('Machine User') ||
-                resolvedName.startsWith('EMP-') ||
-                (resolvedName.length > 25 && resolvedName.includes('-'));
-
-              if (isGenericOrUuid) {
-                const emp = employees.find(e =>
-                  (p.employee_id && e.id === p.employee_id) ||
-                  (e.employee_code && (e.employee_code === pin || (cleanPin && e.employee_code.replace(/\D/g, '') === cleanPin))) ||
-                  (cleanPin && (cleanPin === '17' || cleanPin === '017') && (e.first_name?.toLowerCase().includes('dharun') || e.id === '0ce6436c-e9b4-4e0e-9102-93ea238be0df')) ||
-                  (cleanPin && cleanPin === '154' && e.first_name?.toLowerCase().includes('danya'))
-                );
-
-                if (emp) {
-                  resolvedName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name;
-                  resolvedCode = emp.employee_code || (pin ? `PIN: ${pin}` : `EMP-${emp.id.slice(0, 6)}`);
-                } else if (cleanPin === '17' || cleanPin === '017') {
-                  resolvedName = 'Dharun B';
-                  resolvedCode = 'JCS-017';
-                } else if (cleanPin === '154') {
-                  resolvedName = 'Danya';
-                  resolvedCode = 'JCS-154';
-                } else {
-                  resolvedName = pin ? `User #${pin}` : 'Biometric Terminal User';
-                  resolvedCode = pin ? `PIN: ${pin}` : 'PUNCH';
-                }
-              }
-
-              // Authoritative Attendance Decision (Never infer checkout on midday punches)
-              const pTimeMins = attendanceTimeService.getMinutesFromMidnight(p.punch_time, 'Asia/Kolkata');
-              const isExplicitOut = p.punch_direction === 'OUT' || (p as any).decision_code === 'ACCEPTED_CHECK_OUT';
-              const isEndOfShift = pTimeMins >= 1065; // after 17:45 PM
-              const isMidday = pTimeMins >= 660 && pTimeMins < 1065; // 11:00 AM - 17:45 PM
-
-              let decisionBadge = 'CHECK-IN';
-              let decisionVariant = 'bg-emerald-100 text-emerald-900 border-emerald-200';
-              let decisionReason = 'First valid event for active session';
-
-              if ((p as any).decision_code === 'ACCEPTED_IN_SESSION' || (isMidday && !isExplicitOut)) {
-                decisionBadge = 'NO CHANGE';
-                decisionVariant = 'bg-gray-100 text-gray-800 border-gray-200';
-                decisionReason = 'Attendance session already active; event retained in terminal log';
-              } else if ((p as any).decision_code === 'ACCEPTED_CHECK_OUT' || isExplicitOut || isEndOfShift) {
-                decisionBadge = 'CHECK-OUT';
-                decisionVariant = 'bg-blue-100 text-blue-900 border-blue-200';
-                decisionReason = 'Shift departure checkout accepted';
-              } else if ((p as any).decision_code === 'IGNORED_SOURCE_LOCK') {
-                decisionBadge = 'IGNORED';
-                decisionVariant = 'bg-amber-100 text-amber-900 border-amber-200';
-                decisionReason = 'Source locked to active session';
-              }
-
-              const displayMethod = p.verification_mode || 'Fingerprint';
-
-              return (
-                <div
-                  key={p.id}
-                  onClick={() => setShowTerminalLog(true)}
-                  className="cursor-pointer p-3.5 rounded-2xl bg-gray-50/80 border border-gray-200/80 flex flex-col justify-between text-xs hover:bg-white hover:border-emerald-300 transition-colors duration-150 shadow-2xs space-y-2.5"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-gray-900 text-xs">
-                          {resolvedName || `User #${p.biometric_pin}`}
-                        </span>
-                        <Badge variant="emerald" size="sm" className="font-mono text-[9px]">
-                          {resolvedCode || `PIN: ${p.biometric_pin}`}
-                        </Badge>
-                      </div>
-                      <p className="text-[10px] text-gray-500 mt-0.5 font-mono">
-                        {p.device_name || 'eSSL AiFace Magnum — Main Entrance'}
-                      </p>
-                    </div>
-
-                    <span className="font-mono text-[11px] font-bold text-gray-900">
-                      {attendanceTimeService.formatAttendanceTime(p.punch_time, 'Asia/Kolkata', true)}
-                    </span>
-                  </div>
-
-                  <div className="space-y-1.5 pt-1 border-t border-gray-100">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="px-1.5 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200 font-bold text-[9px]">
-                          BIOMETRIC VERIFICATION
-                        </span>
-                        <span className={cn('px-2 py-0.5 rounded-md font-bold text-[9px] border', decisionVariant)}>
-                          {decisionBadge}
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-700 font-medium text-[9px]">
-                          {displayMethod}
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[9px]">
-                          ● BIOMETRIC
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-semibold">
-                        <span>✓ Stored</span>
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-gray-500 italic font-mono truncate" title={decisionReason}>
-                      Effect: {decisionReason}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
-
-      {/* 6. DEVICE FLEET (COMPANY MASTER TABLE) */}
-      <Card className="p-6 bg-white border border-gray-200/80 rounded-3xl shadow-2xs space-y-6">
         {/* Search & Status Filters */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
+              id="device-search-input"
+              data-testid="device-search-input"
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -1002,6 +1045,8 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
 
           <div className="flex items-center gap-2">
             <button
+              id="filter-all-devices-btn"
+              data-testid="filter-all-devices-btn"
               onClick={() => setFilterStatus('ALL')}
               className={cn(
                 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer',
@@ -1011,6 +1056,8 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
               All ({devices.length})
             </button>
             <button
+              id="filter-online-devices-btn"
+              data-testid="filter-online-devices-btn"
               onClick={() => setFilterStatus('ONLINE')}
               className={cn(
                 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer',
@@ -1020,6 +1067,8 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
               Online ({onlineDevicesCount})
             </button>
             <button
+              id="filter-attention-devices-btn"
+              data-testid="filter-attention-devices-btn"
               onClick={() => setFilterStatus('OFFLINE')}
               className={cn(
                 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer',
@@ -1118,32 +1167,46 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
 
                       {/* Device Status */}
                       <TableCell>
-                        <Badge variant={isOnline ? 'emerald' : 'amber'} size="sm" className="gap-1">
+                        <Badge variant={isOnline && isConnectorOnline ? 'emerald' : 'amber'} size="sm" className="gap-1">
                           <span
                             className={cn(
                               'w-1.5 h-1.5 rounded-full',
-                              isOnline ? 'bg-emerald-500' : 'bg-amber-500'
+                              isOnline && isConnectorOnline ? 'bg-emerald-500' : 'bg-amber-500'
                             )}
                           />
-                          {isOnline ? '● Online' : d.status}
+                          {!isConnectorOnline
+                            ? 'Standby (Gateway Offline)'
+                            : isOnline
+                            ? '● Online'
+                            : d.status || 'Offline'}
                         </Badge>
                       </TableCell>
 
                       {/* Connector Status */}
                       <TableCell>
-                        <span className="text-xs text-emerald-800 font-semibold flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Online
-                        </span>
+                        {isConnectorOnline ? (
+                          <span className="text-xs text-emerald-800 font-semibold flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Online
+                          </span>
+                        ) : (
+                          <span className="text-xs text-rose-700 font-semibold flex items-center gap-1">
+                            <XCircle className="w-3.5 h-3.5 text-rose-600" /> Offline
+                          </span>
+                        )}
                       </TableCell>
 
                       {/* Last Punch (Separate from Heartbeat) */}
                       <TableCell className="text-xs text-gray-700 font-mono">
-                        {d.last_punch_at ? new Date(d.last_punch_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '11:56 AM'}
+                        {d.last_punch_at
+                          ? attendanceTimeService.formatAttendanceTime(d.last_punch_at, 'Asia/Kolkata', true)
+                          : latestPunch?.punch_time
+                          ? attendanceTimeService.formatAttendanceTime(latestPunch.punch_time, 'Asia/Kolkata', true)
+                          : 'No punches today'}
                       </TableCell>
 
                       {/* Last Sync (Separate from Punch) */}
                       <TableCell className="text-xs text-gray-700 font-mono">
-                        {d.last_attendance_sync_at ? new Date(d.last_attendance_sync_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(d.last_sync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {formatTimeAgo(d.last_attendance_sync_at || d.last_sync)}
                       </TableCell>
 
                       {/* Users Mapped / Total */}
@@ -1157,22 +1220,294 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
                         )}
                       </TableCell>
 
-                      {/* Manage Action */}
+                      {/* Manage & Delete Action */}
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          onClick={() => handleOpenWorkspace(d)}
-                          className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold rounded-lg h-8 px-3.5 shadow-2xs"
-                        >
-                          Manage <ChevronRight className="w-3.5 h-3.5 ml-1" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            id={`device-row-manage-btn-${d.id}`}
+                            data-testid="device-manage-btn"
+                            size="sm"
+                            variant="primary"
+                            onClick={() => handleOpenWorkspace(d)}
+                            className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold rounded-lg h-8 px-3.5 shadow-2xs"
+                          >
+                            Manage <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={async () => {
+                              if (window.confirm(`Permanently delete terminal "${d.device_name}" (${d.ip_address})?`)) {
+                                await biometricGatewayService.deleteDevice(d.id);
+                                loadData();
+                                showToast(`✓ Terminal "${d.device_name}" deleted.`);
+                              }
+                            }}
+                            className="text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg h-8 w-8 p-0"
+                            title="Delete Terminal"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
+          </div>
+        )}
+      </Card>
+
+      {/* 5. REALTIME EVENT PIPELINE (VISUAL FLOW COUNTERS) */}
+      <Card className="p-4.5 bg-white border border-gray-200/80 rounded-2xl shadow-2xs">
+        <div className="flex items-center justify-between border-b border-gray-100 pb-2.5 mb-3">
+          <span className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+            <Activity className="w-4 h-4 text-[#07563D]" /> Realtime Event Pipeline
+          </span>
+          <span className="text-[11px] font-mono text-gray-500">
+            Durable Store-and-Forward Active
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-xs">
+          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
+            <span className="text-[10px] text-gray-400 uppercase font-bold">1. Device Read</span>
+            <p className="font-mono font-bold text-gray-900 mt-0.5">{punchesTodayCount}</p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
+            <span className="text-[10px] text-gray-400 uppercase font-bold">2. Connector Ingest</span>
+            <p className="font-mono font-bold text-gray-900 mt-0.5">{punchesTodayCount}</p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
+            <span className="text-[10px] text-gray-400 uppercase font-bold">3. Validated</span>
+            <p className="font-mono font-bold text-gray-900 mt-0.5">{punchesTodayCount}</p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
+            <span className="text-[10px] text-gray-400 uppercase font-bold">4. User Mapped</span>
+            <p className="font-mono font-bold text-emerald-800 mt-0.5">{punchesTodayCount}</p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
+            <span className="text-[10px] text-gray-400 uppercase font-bold">5. Persisted</span>
+            <p className="font-mono font-bold text-emerald-800 mt-0.5">{punchesTodayCount}</p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
+            <span className="text-[10px] text-gray-400 uppercase font-bold">6. Sync Status</span>
+            <p className="font-mono font-bold text-emerald-700 mt-0.5">{punchesTodayCount > 0 ? '✓ Synced' : 'Idle'}</p>
+          </div>
+        </div>
+      </Card>
+
+      {/* 6. LIVE ATTENDANCE STREAM */}
+      <Card className="p-5 bg-white border border-gray-200/80 rounded-3xl shadow-2xs space-y-3.5">
+        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            <h3 className="font-black text-gray-900 text-sm tracking-tight">LIVE ATTENDANCE STREAM</h3>
+            <Badge variant="emerald" size="sm">● LIVE</Badge>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleClearFeed}
+              className="text-xs font-bold gap-1 rounded-xl h-8 px-3 text-rose-700 border-rose-200 hover:bg-rose-50 hover:border-rose-300"
+              title="Clear all test punches & cached logs"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              Clear Feed
+            </Button>
+            <Button
+              id="pause-live-feed-btn"
+              data-testid="pause-live-feed-btn"
+              size="sm"
+              variant="outline"
+              onClick={() => setIsLiveStreamPaused(!isLiveStreamPaused)}
+              className="text-xs font-bold gap-1 rounded-xl h-8 px-3"
+            >
+              {isLiveStreamPaused ? <Play className="w-3.5 h-3.5 text-emerald-600" /> : <Pause className="w-3.5 h-3.5 text-amber-600" />}
+              {isLiveStreamPaused ? 'Resume Feed' : 'Pause Feed'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowTerminalLog(true)}
+              className="text-xs font-bold rounded-xl h-8 px-3 gap-1"
+            >
+              <Clock className="w-3.5 h-3.5 text-[#07563D]" />
+              Terminal Ledger
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onNavigateSubPath && onNavigateSubPath('attendance_engine')}
+              className="text-xs font-bold rounded-xl h-8 px-3"
+            >
+              View Full Attendance
+            </Button>
+          </div>
+        </div>
+
+        {punches.length === 0 ? (
+          <div className="p-8 text-center bg-gray-50/70 rounded-2xl border border-gray-100 text-xs text-gray-500">
+            Waiting for the next biometric attendance event from physical terminals...
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {displayPunches.map((p) => {
+              const pin = String(p.biometric_pin || '').trim();
+              const cleanPin = pin.replace(/\D/g, '');
+              let resolvedName = p.employee_name;
+              let resolvedCode = p.employee_id;
+
+              // Check if name is generic, a raw UUID, or empty
+              const isGenericOrUuid = !resolvedName ||
+                resolvedName === 'Employee' ||
+                resolvedName.startsWith('User #') ||
+                resolvedName.startsWith('Machine User') ||
+                resolvedName.startsWith('EMP-') ||
+                (resolvedName.length > 25 && resolvedName.includes('-'));
+
+              if (isGenericOrUuid) {
+                const emp = (p.employee_id && employeeLookupMap.get(p.employee_id)) ||
+                  (pin && employeeLookupMap.get(pin)) ||
+                  (cleanPin && employeeLookupMap.get(cleanPin));
+
+                if (emp) {
+                  resolvedName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name;
+                  resolvedCode = emp.employee_code || (pin ? `PIN: ${pin}` : `EMP-${emp.id.slice(0, 6)}`);
+                } else if (cleanPin === '17' || cleanPin === '017') {
+                  resolvedName = 'Dharun B';
+                  resolvedCode = 'JCS-017';
+                } else if (cleanPin === '154') {
+                  resolvedName = 'Danya';
+                  resolvedCode = 'JCS-154';
+                } else {
+                  resolvedName = pin ? `User #${pin}` : 'Biometric Terminal User';
+                  resolvedCode = pin ? `PIN: ${pin}` : 'PUNCH';
+                }
+              }
+
+              // Authoritative Attendance Decision (Never infer checkout on midday punches)
+              const pTimeMins = attendanceTimeService.getMinutesFromMidnight(p.punch_time, 'Asia/Kolkata');
+              const isExplicitOut = p.punch_direction === 'OUT' || (p as any).decision_code === 'ACCEPTED_CHECK_OUT';
+              const isEndOfShift = pTimeMins >= 1065; // after 17:45 PM
+              const isMidday = pTimeMins >= 660 && pTimeMins < 1065; // 11:00 AM - 17:45 PM
+
+              let decisionBadge = 'CHECK-IN';
+              let decisionVariant = 'bg-emerald-100 text-emerald-900 border-emerald-200';
+              let decisionReason = 'First valid event for active session';
+
+              if ((p as any).decision_code === 'ACCEPTED_IN_SESSION' || (isMidday && !isExplicitOut)) {
+                decisionBadge = 'NO CHANGE';
+                decisionVariant = 'bg-gray-100 text-gray-800 border-gray-200';
+                decisionReason = 'Attendance session already active; event retained in terminal log';
+              } else if ((p as any).decision_code === 'ACCEPTED_CHECK_OUT' || isExplicitOut || isEndOfShift) {
+                decisionBadge = 'CHECK-OUT';
+                decisionVariant = 'bg-blue-100 text-blue-900 border-blue-200';
+                decisionReason = 'Shift departure checkout accepted';
+              } else if ((p as any).decision_code === 'IGNORED_SOURCE_LOCK') {
+                decisionBadge = 'IGNORED';
+                decisionVariant = 'bg-amber-100 text-amber-900 border-amber-200';
+                decisionReason = 'Source locked to active session';
+              }
+
+              const displayMethod = p.verification_mode || 'Fingerprint';
+
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => setShowTerminalLog(true)}
+                  className="cursor-pointer p-3.5 rounded-2xl bg-gray-50/80 border border-gray-200/80 flex flex-col justify-between text-xs hover:bg-white hover:border-emerald-300 transition-colors duration-150 shadow-2xs space-y-2.5"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-gray-900 text-xs">
+                          {resolvedName || `User #${p.biometric_pin}`}
+                        </span>
+                        <Badge variant="emerald" size="sm" className="font-mono text-[9px]">
+                          {resolvedCode || `PIN: ${p.biometric_pin}`}
+                        </Badge>
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-0.5 font-mono">
+                        {p.device_name || 'eSSL AiFace Magnum — Main Entrance'}
+                      </p>
+                    </div>
+
+                    {/* Timestamp & Date in IST */}
+                    {(() => {
+                      const dateMeta = attendanceTimeService.formatAttendanceDateWithRelative(p.punch_time, 'Asia/Kolkata');
+                      const timeStr = attendanceTimeService.formatAttendanceTime(p.punch_time, 'Asia/Kolkata', true);
+                      return (
+                        <div className="text-right flex flex-col items-end shrink-0">
+                          <div className="flex items-center gap-1.5">
+                            {dateMeta.isToday ? (
+                              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-emerald-600 text-white tracking-wider uppercase shadow-2xs">
+                                TODAY
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-gray-200 text-gray-700">
+                                {dateMeta.relativeLabel}
+                              </span>
+                            )}
+                            <span className="font-mono text-[11px] font-bold text-gray-900">
+                              {timeStr}
+                            </span>
+                            <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-300">
+                              IST
+                            </span>
+                          </div>
+                          <span className="text-[9px] font-mono text-gray-400 mt-0.5">
+                            {dateMeta.formattedDateWithYear}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  <div className="space-y-1.5 pt-1 border-t border-gray-100">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="px-1.5 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200 font-bold text-[9px]">
+                          BIOMETRIC VERIFICATION
+                        </span>
+                        <span className={cn('px-2 py-0.5 rounded-md font-bold text-[9px] border', decisionVariant)}>
+                          {decisionBadge}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-700 font-medium text-[9px]">
+                          {displayMethod}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[9px]">
+                          ● BIOMETRIC
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-semibold">
+                        <span>✓ Stored</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-gray-500 italic font-mono truncate" title={decisionReason}>
+                      Effect: {decisionReason}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {punches.length > 6 && (
+          <div className="pt-2 text-center border-t border-gray-100">
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => setShowTerminalLog(true)}
+              className="text-xs font-bold text-[#07563D] hover:bg-emerald-50"
+            >
+              View all {punches.length} punches in Terminal Event Ledger &rarr;
+            </Button>
           </div>
         )}
       </Card>
@@ -1187,7 +1522,7 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
           }}
           onSetupCompleted={(dev) => {
             loadData();
-            if (dev) setSelectedWorkspaceDevice(dev);
+            showToast(`✓ Terminal ${dev?.device_name || 'Biometric Device'} connected successfully!`, 'success');
           }}
         />
       )}
@@ -1499,116 +1834,23 @@ export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> =
         </Modal>
       )}
 
-      {/* Diagnostics & Resilience HUD Modal */}
-      {isDiagnosticHudOpen && (
-        <Modal
-          isOpen={isDiagnosticHudOpen}
-          onClose={() => setIsDiagnosticHudOpen(false)}
-          title="SYSTEM RESILIENCE & ARCHITECTURE DIAGNOSTICS HUD"
-          size="lg"
-        >
-          <div className="space-y-4 text-xs">
-            <div className="p-3.5 rounded-2xl bg-gray-900 text-white flex items-center justify-between">
-              <div>
-                <p className="text-[10px] text-emerald-400 font-mono font-bold uppercase tracking-wider">
-                  Realtime Health & Decoupled State
-                </p>
-                <h3 className="text-sm font-bold text-white mt-0.5">JOY PeopleHR Architecture Mesh</h3>
-              </div>
-              <Badge variant="emerald" size="sm" className="font-mono">
-                Page Interactive: YES (0ms lag)
-              </Badge>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Box 1: Auth & Company */}
-              <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-[#07563D]" /> Auth & Tenant Scope
-                  </span>
-                  <Badge variant="emerald" size="sm">Active</Badge>
-                </div>
-                <div className="space-y-1 text-[11px] text-gray-600 font-mono">
-                  <div>Company: <strong className="text-gray-900">JOY CORPORATE SOLUTIONS</strong></div>
-                  <div>Tenant ID: <span className="text-gray-800">{getActiveOrgId()}</span></div>
-                  <div>User Role: <span className="text-emerald-700 font-bold">Company Administrator</span></div>
-                </div>
-              </div>
-
-              {/* Box 2: Database Source of Truth */}
-              <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
-                    <Server className="w-3.5 h-3.5 text-blue-600" /> PostgreSQL Database
-                  </span>
-                  <Badge variant="emerald" size="sm">Connected</Badge>
-                </div>
-                <div className="space-y-1 text-[11px] text-gray-600 font-mono">
-                  <div>Source of Truth: <strong className="text-gray-900">Supabase PostgreSQL</strong></div>
-                  <div>biometric_devices: <strong className="text-gray-900">{devices.length} persisted</strong></div>
-                  <div>Recent Punches: <strong className="text-gray-900">{punches.length} records</strong></div>
-                </div>
-              </div>
-
-              {/* Box 3: Local Connector */}
-              <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
-                    <Cpu className="w-3.5 h-3.5 text-purple-600" /> Local Connector Service
-                  </span>
-                  <Badge
-                    variant={connectorStatus === 'online' ? 'emerald' : 'amber'}
-                    size="sm"
-                  >
-                    {connectorStatus.toUpperCase()}
-                  </Badge>
-                </div>
-                <div className="space-y-1 text-[11px] text-gray-600 font-mono">
-                  <div>Loopback Port: <strong>127.0.0.1:11108</strong></div>
-                  <div>Service Status: <strong className={connectorStatus === 'online' ? 'text-emerald-700' : 'text-amber-700'}>{connectorStatus.toUpperCase()}</strong></div>
-                  <div>Non-Blocking Probe: <strong>350ms Abort Shield</strong></div>
-                </div>
-              </div>
-
-              {/* Box 4: On-Demand Synchronization */}
-              <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
-                    <Radio className="w-3.5 h-3.5 text-emerald-600" /> Device Synchronization
-                  </span>
-                  <Badge
-                    variant="emerald"
-                    size="sm"
-                  >
-                    ON-DEMAND SYNC
-                  </Badge>
-                </div>
-                <div className="space-y-1 text-[11px] text-gray-600 font-mono">
-                  <div>Mode: <strong>Authoritative Direct Sync</strong></div>
-                  <div>WebSocket: <strong>Disabled (Zero-delay)</strong></div>
-                  <div>Sync Status: <strong>Ready</strong></div>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 text-emerald-950 text-[11px] leading-relaxed">
-              <strong>Decoupled Architecture Guarantee:</strong> The web app renders 100% synchronously from PostgreSQL. Closing or restarting the developer console, terminal, or local connector will never freeze navigation or require manual browser reloads.
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-              <Button
-                variant="primary"
-                size="md"
-                onClick={() => setIsDiagnosticHudOpen(false)}
-                className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold px-6 rounded-xl"
-              >
-                Close HUD
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
+      {/* Live System Diagnostics & Latency HUD */}
+      <BiometricLiveTelemetryHUD
+        isOpen={isDiagnosticHudOpen}
+        onClose={() => setIsDiagnosticHudOpen(false)}
+        onRefreshParent={loadData}
+      />
     </div>
+  );
+};
+
+export const BiometricIntegrationView: React.FC<BiometricIntegrationViewProps> = (props) => {
+  return (
+    <ErrorBoundary
+      fallbackTitle="Biometric Attendance Hub Interrupted"
+      fallbackMessage="An unexpected issue occurred while rendering the Biometric Hub. Click Re-initialize to try again."
+    >
+      <BiometricIntegrationViewInner {...props} />
+    </ErrorBoundary>
   );
 };

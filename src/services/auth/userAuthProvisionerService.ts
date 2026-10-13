@@ -79,6 +79,7 @@ export const userAuthProvisionerService = {
           Authorization: `Bearer ${session.access_token}`,
         },
         body: {
+          action: 'DIRECT_PROVISION',
           organization_id: params.organizationId,
           company_id: params.companyId,
           email: cleanEmail,

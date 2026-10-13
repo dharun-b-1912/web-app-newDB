@@ -990,8 +990,10 @@ export const platformWebhooksMeshService = {
     return { success: true, new_secret_masked: ep.secret_masked };
   },
 
-  async rotateSecret(endpointId: string, reason: string = 'Key Rotation') {
-    return this.rotateEndpointSecret(endpointId, reason);
+  async rotateSecret(endpointId: string, graceHoursOrReason: number | string = 48) {
+    const reason = typeof graceHoursOrReason === 'number' ? `Grace period: ${graceHoursOrReason}h` : graceHoursOrReason;
+    const res = await this.rotateEndpointSecret(endpointId, reason);
+    return { ...res, newSecret: res.new_secret_masked };
   },
 
   async toggleEndpointStatus(endpointId: string, newStatus: 'Active' | 'Paused' | 'Disabled' | string, reason: string = 'Status change requested', actor: string = 'Platform Admin'): Promise<{ success: boolean; error?: string }> {

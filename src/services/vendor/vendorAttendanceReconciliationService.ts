@@ -121,8 +121,20 @@ export interface InvoiceAttendanceAuditResult {
 }
 
 export class VendorAttendanceReconciliationService {
-  // loadArjunaNaturalsReconciliation was removed — no benchmark fixture data.
-  // All reconciliation is now done via reconcileAttendanceDataset with real DB inputs.
+  /**
+   * Compatibility loader for test fixtures and tenant reconciliation runs
+   */
+  public static loadArjunaNaturalsReconciliation(params: any): AttendanceReconciliationSummary {
+    return this.reconcileAttendanceDataset({
+      organizationId: params.organizationId || 'org-arjuna-01',
+      vendorId: params.vendorId || 'vendor-divya-01',
+      clientSiteId: params.clientSiteId || 'site-arjuna-01',
+      clientSiteName: params.clientSiteName || 'Arjuna Naturals Aluva HQ',
+      periodMonth: params.periodMonth || '2026-07',
+      workers: params.workers || [],
+      ...params,
+    });
+  }
 
 
   /**

@@ -355,15 +355,15 @@ class EmployeeAuthService {
     loginIdentifier?: string;
   }): Promise<ProvisionEmployeeAuthResult> {
     const tenantId = payload.tenantId || 'org-joy-01';
-    const rawPhone = payload.phone || '+919791817437';
-    const normalizedPhone = normalizePhoneNumber(rawPhone);
+    const rawPhone = payload.phone || '';
+    const normalizedPhone = rawPhone ? normalizePhoneNumber(rawPhone) : '';
     const loginIdentifier = payload.loginIdentifier || payload.employeeId;
     const activationToken = `${loginIdentifier.toLowerCase()}-act-${Math.floor(100000 + Math.random() * 900000)}`;
 
     const identities = this.getIdentities();
     
     let existingIdx = identities.findIndex(
-      (i) => i.tenant_id === tenantId && (i.employee_id === payload.employeeId || i.phone === normalizedPhone)
+      (i) => i.tenant_id === tenantId && (i.employee_id === payload.employeeId || (Boolean(normalizedPhone) && i.phone === normalizedPhone))
     );
 
     const now = new Date().toISOString();
@@ -799,13 +799,13 @@ class EmployeeAuthService {
     tenantId: string = 'org-joy-01',
     employeeDetails?: { name?: string; email?: string; phone?: string; id?: string }
   ): Promise<{ success: boolean; phone: string }> {
-    const rawInput = phoneOrEmailOrId || employeeDetails?.phone || employeeDetails?.email || employeeDetails?.id || '+919791817437';
-    const norm = normalizePhoneNumber(rawInput);
+    const rawInput = phoneOrEmailOrId || employeeDetails?.phone || employeeDetails?.email || employeeDetails?.id || '';
+    const norm = rawInput ? normalizePhoneNumber(rawInput) : '';
     const identities = this.getIdentities();
     
     let identity = identities.find(
       (i) =>
-        i.phone === norm ||
+        (norm && i.phone === norm) ||
         (employeeDetails?.id && i.employee_id === employeeDetails.id) ||
         (employeeDetails?.email && i.email?.toLowerCase() === employeeDetails.email.toLowerCase()) ||
         (rawInput && i.email?.toLowerCase() === rawInput.toLowerCase()) ||
@@ -943,7 +943,7 @@ class EmployeeAuthService {
         id: `ident-${employeeId || Date.now().toString(36)}`,
         tenant_id: tenantId,
         employee_id: employeeId,
-        phone: fallbackInfo?.phone ? normalizePhoneNumber(fallbackInfo.phone) : '+919791817437',
+        phone: fallbackInfo?.phone ? normalizePhoneNumber(fallbackInfo.phone) : '',
         email: fallbackInfo?.email,
         role: fallbackInfo?.role || 'Employee',
         status: 'SUSPENDED',
@@ -1010,7 +1010,7 @@ class EmployeeAuthService {
         id: `ident-${employeeId || Date.now().toString(36)}`,
         tenant_id: tenantId,
         employee_id: employeeId,
-        phone: fallbackInfo?.phone ? normalizePhoneNumber(fallbackInfo.phone) : '+919791817437',
+        phone: fallbackInfo?.phone ? normalizePhoneNumber(fallbackInfo.phone) : '',
         email: fallbackInfo?.email,
         role: fallbackInfo?.role || 'Employee',
         status: 'ACTIVE',
@@ -1067,7 +1067,7 @@ class EmployeeAuthService {
         id: `ident-${employeeId}`,
         tenant_id: tenantId,
         employee_id: employeeId,
-        phone: '+919791817437',
+        phone: '',
         role: 'Employee',
         status: 'DISABLED',
         activation_status: 'FAILED',
@@ -1115,7 +1115,7 @@ class EmployeeAuthService {
     if (found) return found;
 
     // Return synthesized valid identity if not yet explicitly stored
-    const normPhone = fallbackInfo?.phone ? normalizePhoneNumber(fallbackInfo.phone) : '+919791817437';
+    const normPhone = fallbackInfo?.phone ? normalizePhoneNumber(fallbackInfo.phone) : '';
     const initialIdentity: EmployeeAuthIdentity = {
       id: `ident-${employeeId || Date.now().toString(36)}`,
       tenant_id: tenantId,

@@ -24,7 +24,7 @@ import {
 import { realtimeChannelManager, ChannelSubscriptionInfo, RealtimeStatus } from '../../services/realtime/realtimeChannelManager';
 import { logger, StructuredLogEntry } from '../../services/diagnostics/loggerService';
 import { CorrelationService } from '../../services/diagnostics/correlationService';
-import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { supabase, isSupabaseEnabled, supabaseHost, supabaseProject } from '../../lib/supabase';
 import { hrEventBus } from '../../services/hrEventBus';
 import { api } from '../../services/api';
 
@@ -229,7 +229,9 @@ export const RealtimeHealthView: React.FC = () => {
             <Server className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-lg font-bold text-gray-900">{isSupabaseEnabled ? 'Connected & Active' : 'Offline / Mock'}</div>
-          <div className="text-xs text-gray-500 font-mono truncate">ysiajemrqakfngasehhi.supabase.co</div>
+          <div className="text-xs text-gray-500 font-mono truncate" title={`${supabaseProject} (${supabaseHost})`}>
+            DB: <span className="font-semibold text-emerald-800">{supabaseProject}</span>
+          </div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-xs space-y-2">

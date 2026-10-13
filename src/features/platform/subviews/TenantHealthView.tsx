@@ -481,7 +481,7 @@ export const TenantHealthView: React.FC<TenantHealthViewProps> = ({ onNavigateTa
                 />
                 <Scatter
                   data={scatterData}
-                  onClick={(e) => {
+                  onClick={(e: any) => {
                     if (e && e.raw) setSelectedTenant(e.raw);
                   }}
                   className="cursor-pointer"

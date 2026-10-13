@@ -84,7 +84,7 @@ export const hrMetricsEngine = {
     const companyId = context?.companyId;
 
     const [
-      rawEmployees,
+      rawEmployeesFetched,
       departments,
       branches,
       locations,
@@ -101,10 +101,18 @@ export const hrMetricsEngine = {
       atsService.getJobs(),
     ]);
 
-    const scopedEmployees = headcountService.filterEmployees(rawEmployees, context);
-    const totalCount = headcountService.getTotalHeadcount(rawEmployees, context);
-    const activeCount = headcountService.getActiveHeadcount(rawEmployees, context);
-    const dailyStatus = workforceStatusEngine.getDailyStatusSnapshot(todayStr, rawEmployees, attendanceRecords, leaveRequests, context);
+    let rawEmployees = rawEmployeesFetched;
+    if (rawEmployees.length === 0) {
+      rawEmployees = await api.getEmployees().catch(() => []);
+    }
+
+    let scopedEmployees = headcountService.filterEmployees(rawEmployees, context);
+    if (scopedEmployees.length === 0 && rawEmployees.length > 0 && (!context?.departmentId || context.departmentId === 'ALL') && (!context?.search || !context.search.trim())) {
+      scopedEmployees = rawEmployees;
+    }
+    const totalCount = headcountService.getTotalHeadcount(scopedEmployees, context);
+    const activeCount = headcountService.getActiveHeadcount(scopedEmployees, context);
+    const dailyStatus = workforceStatusEngine.getDailyStatusSnapshot(todayStr, scopedEmployees, attendanceRecords, leaveRequests, context);
     const movement = workforceMovementEngine.getMovementMetrics(scopedEmployees);
     const departmentDistribution = headcountService.getHeadcountByDepartment(departments, rawEmployees, context);
     const locationDistribution = headcountService.getHeadcountByLocation(branches, rawEmployees, context);
@@ -140,7 +148,7 @@ export const hrMetricsEngine = {
     const companyId = context?.companyId;
 
     const [
-      rawEmployees,
+      rawEmployeesFetched,
       departments,
       attendanceRecords,
       leaveRequests,
@@ -153,9 +161,17 @@ export const hrMetricsEngine = {
       atsService.getJobs(),
     ]);
 
-    const scopedEmployees = headcountService.filterEmployees(rawEmployees, context);
-    const headcount = headcountService.getTotalHeadcount(rawEmployees, context);
-    const dailyAvailability = workforceStatusEngine.getDailyStatusSnapshot(todayStr, rawEmployees, attendanceRecords, leaveRequests, context);
+    let rawEmployees = rawEmployeesFetched;
+    if (rawEmployees.length === 0) {
+      rawEmployees = await api.getEmployees().catch(() => []);
+    }
+
+    let scopedEmployees = headcountService.filterEmployees(rawEmployees, context);
+    if (scopedEmployees.length === 0 && rawEmployees.length > 0) {
+      scopedEmployees = rawEmployees;
+    }
+    const headcount = headcountService.getTotalHeadcount(scopedEmployees, context);
+    const dailyAvailability = workforceStatusEngine.getDailyStatusSnapshot(todayStr, scopedEmployees, attendanceRecords, leaveRequests, context);
     const movement = workforceMovementEngine.getMovementMetrics(scopedEmployees);
     const attritionMetrics = attritionService.getAttritionMetrics(scopedEmployees);
     const complianceHealth = hrDataHealthService.getHealthReport(scopedEmployees);

@@ -72,6 +72,7 @@ export interface AuditEventRecord {
   event_hash?: string;
   created_at: string;
   occurred_at: string;
+  timestamp?: string;
 }
 
 export interface AuditSummaryKPIs {

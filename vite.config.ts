@@ -33,11 +33,28 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {
-        ignored: ['**/flutter_app/**', '**/scratch/**', '**/.agents/**', '**/.git/**'],
+        ignored: [
+          '**/dist/**',
+          '**/flutter_app/**',
+          '**/scratch/**',
+          '**/.agents/**',
+          '**/.git/**',
+          '**/Test Data/**',
+          '**/*.pdf',
+          '**/*.apk',
+          '**/test-results/**',
+          '**/playwright-report/**',
+          '**/*.webm',
+          '**/*.png',
+          '**/*.log',
+          '**/scripts/**',
+          '**/tests/**',
+        ],
       },
     },
     build: {
       sourcemap: false,
+      modulePreload: false,
       chunkSizeWarningLimit: 2000,
       rollupOptions: {
         output: {
@@ -50,6 +67,8 @@ export default defineConfig(() => {
               if (id.includes('motion')) return 'vendor-motion';
               if (id.includes('@radix-ui')) return 'vendor-radix';
               if (id.includes('pdfjs-dist')) return 'vendor-pdf';
+              if (id.includes('xlsx') || id.includes('exceljs')) return 'vendor-excel';
+              if (id.includes('jspdf') || id.includes('html2canvas')) return 'vendor-pdf-export';
               return 'vendor-libs';
             }
             if (

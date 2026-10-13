@@ -105,7 +105,7 @@ export const WizardProgressHeader: React.FC<Props> = ({
           disabled={isSavingDraft}
           className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer"
         >
-          <Save className="w-3.5 h-3.5 text-gray-500" /> Save Progress
+          <Save className="w-3.5 h-3.5 text-gray-500" /> Save Draft
         </button>
       </div>
     </div>

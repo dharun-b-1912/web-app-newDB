@@ -81,16 +81,20 @@ class InMemoryL1Cache {
 
 const memoryL1 = new InMemoryL1Cache();
 
-// Initialize Upstash Client with Free-Tier retry and backoff optimizations
+// In browser client runtime, remote Upstash Redis HTTP roundtrips saturate the browser's 6-connection HTTP pool,
+// trigger 429 quota exhaustion, and hang for tens of seconds when rate-limited.
+// The browser runtime strictly uses the high-speed L1 in-memory presentation cache, while server/Node runtimes connect to Upstash.
+const isBrowserRuntime = typeof window !== 'undefined';
+
+// Initialize Upstash Client with Free-Tier retry and backoff optimizations (Node/Server only)
 let redisInstance: Redis | null = null;
-if (REDIS_URL && REDIS_TOKEN && REDIS_URL.startsWith('http')) {
+if (!isBrowserRuntime && REDIS_URL && REDIS_TOKEN && REDIS_URL.startsWith('http')) {
   try {
     redisInstance = new Redis({
       url: REDIS_URL,
       token: REDIS_TOKEN,
       retry: {
-        retries: 2,
-        backoff: (retryCount) => Math.min(1000, Math.exp(retryCount) * 50),
+        retries: 0,
       },
     });
   } catch (err) {
@@ -98,22 +102,42 @@ if (REDIS_URL && REDIS_TOKEN && REDIS_URL.startsWith('http')) {
   }
 }
 
-// Circuit breaker for Upstash free-tier daily command limits or transient network issues
+const withTimeout = <T>(promise: Promise<T>, ms = 800): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('Redis request timeout')), ms)),
+  ]);
+};
+
+// Circuit breaker for Upstash free-tier daily command limits, invalid tokens, or network stalls
 class CircuitBreaker {
   private isTripped = false;
   private tripUntil = 0;
 
   recordFailure(error: any) {
+    if (isBrowserRuntime) return;
     const msg = String(error?.message || error || '').toLowerCase();
-    // Check for daily quota exhaustion or 429 rate limit
-    if (msg.includes('daily request limit') || msg.includes('quota') || msg.includes('429')) {
-      console.warn('[JoyRedis Quota Guard] Free tier limit reached. Auto-switching to local memory cache for 5 minutes.');
+    // Immediate long-term trip on invalid auth token or wrong password
+    if (msg.includes('wrongpass') || msg.includes('unauthorized') || msg.includes('401') || msg.includes('invalid') || msg.includes('missing auth token')) {
+      console.warn('[JoyRedis Quota Guard] Invalid or unauthorized Upstash token. Disabling remote calls and using high-speed in-memory cache.');
+      this.isTripped = true;
+      this.tripUntil = Date.now() + 24 * 60 * 60 * 1000; // 24 hour quiet period
+      return;
+    }
+    // Check for daily quota exhaustion or 429 rate limit or network timeout
+    if (msg.includes('daily request limit') || msg.includes('quota') || msg.includes('429') || msg.includes('timeout')) {
+      console.warn('[JoyRedis Quota Guard] Free tier limit or timeout. Auto-switching to local memory cache for 5 minutes.');
       this.isTripped = true;
       this.tripUntil = Date.now() + 5 * 60 * 1000; // 5 min quiet period
+      return;
     }
+    // Any other failure: temporary trip for 60s
+    this.isTripped = true;
+    this.tripUntil = Date.now() + 60 * 1000;
   }
 
   shouldBypassRedis(): boolean {
+    if (isBrowserRuntime) return true;
     if (!this.isTripped) return false;
     if (Date.now() > this.tripUntil) {
       this.isTripped = false;
@@ -153,7 +177,7 @@ class JoyRedisService {
     // 2. Check Upstash Redis (if configured and circuit breaker not tripped)
     if (redisInstance && !quotaBreaker.shouldBypassRedis()) {
       try {
-        const val = (await redisInstance.get<T>(key)) as T | null;
+        const val = (await withTimeout(redisInstance.get<T>(key))) as T | null;
         if (val !== null) {
           // Populate L1 cache for micro-window to save commands on rapid subsequent reads
           memoryL1.set(key, val, this.L1_MICRO_TTL);
@@ -189,9 +213,9 @@ class JoyRedisService {
       try {
         let res: any;
         if (opts?.nx) {
-          res = await (redisInstance as any).set(key, value, { nx: true, ex: effectiveTtl });
+          res = await withTimeout((redisInstance as any).set(key, value, { nx: true, ex: effectiveTtl }));
         } else {
-          res = await (redisInstance as any).set(key, value, { ex: effectiveTtl });
+          res = await withTimeout((redisInstance as any).set(key, value, { ex: effectiveTtl }));
         }
         return res as 'OK' | null;
       } catch (err) {
@@ -211,7 +235,7 @@ class JoyRedisService {
 
     if (redisInstance && keys.length > 0 && !quotaBreaker.shouldBypassRedis()) {
       try {
-        return await redisInstance.del(...keys);
+        return await withTimeout(redisInstance.del(...keys));
       } catch (err) {
         quotaBreaker.recordFailure(err);
       }
@@ -347,6 +371,33 @@ class JoyRedisService {
 
   async invalidateDeviceUsersCache(deviceId: string): Promise<void> {
     await this.del(`joy:bio:users:${deviceId}`);
+  }
+
+  /**
+   * 5. Biometric Punches & Devices Cloud Cache (Zero-Lag Multi-Client Sync via Upstash Redis)
+   */
+  async getLivePunchesCache<T>(): Promise<T | null> {
+    return this.get<T>('joy:bio:punches:live');
+  }
+
+  async setLivePunchesCache<T>(data: T, ttlSeconds = 86400): Promise<void> {
+    await this.set('joy:bio:punches:live', data, { ex: ttlSeconds });
+  }
+
+  async getDevicesCache<T>(): Promise<T | null> {
+    return this.get<T>('joy:bio:devices:list');
+  }
+
+  async setDevicesCache<T>(data: T, ttlSeconds = 600): Promise<void> {
+    await this.set('joy:bio:devices:list', data, { ex: ttlSeconds });
+  }
+
+  async setDeviceHeartbeat(serialNumber: string): Promise<void> {
+    await this.set(`joy:bio:device:${serialNumber}:heartbeat`, new Date().toISOString(), { ex: 3600 });
+  }
+
+  async getDeviceHeartbeat(serialNumber: string): Promise<string | null> {
+    return this.get<string>(`joy:bio:device:${serialNumber}:heartbeat`);
   }
 }
 

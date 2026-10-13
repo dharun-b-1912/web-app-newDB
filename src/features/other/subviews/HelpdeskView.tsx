@@ -131,7 +131,7 @@ export const HelpdeskView: React.FC = () => {
 
   // Operational metrics
   const metrics = useMemo(() => {
-    const open = tickets.filter((t) => t.status === 'OPEN' || t.status === 'REOPENED').length;
+    const open = tickets.filter((t) => (t.status as string) === 'OPEN' || (t.status as string) === 'REOPENED' || t.status === 'SUBMITTED').length;
     const unassigned = tickets.filter((t) => !t.assigned_to_name && t.status !== 'RESOLVED' && t.status !== 'CLOSED').length;
     const high = tickets.filter((t) => (t.priority === 'HIGH' || t.priority === 'URGENT') && t.status !== 'CLOSED' && t.status !== 'RESOLVED').length;
     const inProgress = tickets.filter((t) => t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED').length;
@@ -443,7 +443,7 @@ export const HelpdeskView: React.FC = () => {
                     className={`p-3 rounded-xl border ${
                       m.visibility === 'INTERNAL'
                         ? 'bg-amber-50/70 border-amber-200 text-amber-950 ml-4'
-                        : m.sender_role === 'HR' || m.sender_role === 'ADMIN'
+                        : (m.sender_role as string) === 'HR' || (m.sender_role as string) === 'ADMIN' || m.sender_role === 'SYSTEM'
                         ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950 ml-4'
                         : 'bg-white border-gray-200 text-gray-900 mr-4'
                     }`}

@@ -3,6 +3,7 @@ import { usePermission } from '../../hooks/usePermission';
 import { ShieldAlert, ArrowLeft, Lock, Info, HelpCircle, Sparkles, LayoutDashboard } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { moduleRegistryService } from '../../services/platform/moduleRegistryService';
+import { featureEntitlementService } from '../../services/tenant/featureEntitlementService';
 
 export interface RouteGuardProps {
   module: string;
@@ -72,8 +73,8 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
             <Button
               variant="primary"
               size="sm"
-              onClick={() => onNavigate ? onNavigate(resolvedFallback) : undefined}
-              className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs font-bold gap-2 rounded-xl shadow-xs"
+              onClick={() => (onNavigate ? onNavigate(resolvedFallback) : undefined)}
+              className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs font-bold gap-2 rounded-xl shadow-xs cursor-pointer"
             >
               <LayoutDashboard className="w-4 h-4" />
               Return to Dashboard
@@ -84,10 +85,13 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
     );
   }
 
-  // 2. Role-Based Access Control
-  const isAllowed = hasPermission(module, action);
+  // 2. Tenant Subscription Plan & Feature Entitlement Guard
+  const isPlatformStaff =
+    isSuperAdmin ||
+    ['Super Admin', 'Platform Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(
+      primaryRole
+    );
 
-  // Gracefully bypass internal auth/accept-invite routes that might linger during redirection
   const isAuthOrUtilityRoute =
     !module ||
     module === 'login' ||
@@ -95,6 +99,88 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
     module.includes('accept-invite') ||
     module.includes('auth') ||
     module.includes('invitation');
+
+  if (!isPlatformStaff && !isAuthOrUtilityRoute) {
+    const isEntitled = featureEntitlementService.isModuleEntitledForCurrentTenant(module);
+    if (!isEntitled) {
+      const currentPlan = featureEntitlementService.getCurrentTenantPlan();
+      const requiredPlan = featureEntitlementService.getRequiredPlanForModule(module);
+      const moduleDisplayName = featureEntitlementService.getModuleDisplayName(module);
+
+      return (
+        <div className="min-h-[65vh] flex items-center justify-center p-6 animate-in fade-in zoom-in-95 duration-200">
+          <div className="max-w-lg w-full p-8 text-center rounded-3xl border border-emerald-100 shadow-2xl bg-gradient-to-b from-white via-emerald-50/20 to-gray-50/50">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-[#07563D] text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-900/10">
+              <Sparkles className="w-8 h-8" />
+            </div>
+
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 font-black text-[10px] uppercase tracking-wider mb-2">
+              Subscription Plan Upgrade Required
+            </span>
+
+            <h2 className="text-xl font-black text-gray-900 tracking-tight">
+              {moduleDisplayName}
+            </h2>
+
+            <p className="text-xs text-gray-600 mt-2 leading-relaxed max-w-md mx-auto">
+              This module and its associated data tables are not included in your organization's current{' '}
+              <span className="font-bold text-gray-900">{currentPlan}</span> subscription plan.
+            </p>
+
+            {/* Plan Tier Contrast Card */}
+            <div className="mt-5 p-4 bg-white border border-emerald-100/80 rounded-2xl text-left text-xs shadow-xs space-y-2">
+              <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                <span className="text-gray-400 font-medium">Your Current Plan:</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-700 font-bold text-[11px]">
+                  {currentPlan}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                <span className="text-gray-400 font-medium">Required Tier:</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 font-black text-[11px]">
+                  {requiredPlan} Plan or Dedicated Add-on
+                </span>
+              </div>
+              <div className="pt-1 flex items-center gap-2 text-[11px] text-gray-500">
+                <Info className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>Contact your Joy PeopleHR Account Manager or upgrade your subscription to unlock this workspace immediately.</span>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent('platform:open_upgrade_modal', {
+                      detail: { module, requiredPlan, currentPlan },
+                    })
+                  );
+                }}
+                className="w-full sm:w-auto bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs font-bold gap-2 rounded-xl shadow-xs cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Request Module Upgrade
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => (onNavigate ? onNavigate(resolvedFallback) : undefined)}
+                className="w-full sm:w-auto border-gray-200 text-gray-700 text-xs font-semibold gap-2 rounded-xl hover:bg-gray-100 cursor-pointer"
+              >
+                <LayoutDashboard className="w-3.5 h-3.5" />
+                Return to Dashboard
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+  }
+
+  // 3. Role-Based Access Control
+  const isAllowed = hasPermission(module, action);
 
   // Vendor Admin has explicit authorization over all vendor modules
   const isVendorAllowed =

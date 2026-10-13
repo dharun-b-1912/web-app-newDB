@@ -630,24 +630,52 @@ class OrganizationStructureService {
   }
 
   /**
-   * Updates an existing Department in SQL database (e.g. assign Head, change cost center).
+   * Updates an existing Department in SQL database (e.g. rename, change code, assign Head, status).
    */
   async updateDepartment(id: string, updates: Partial<Department>): Promise<Department | null> {
     if (isSupabaseEnabled && supabase) {
       try {
-        const dbUpdates: any = { ...updates };
-        delete dbUpdates.employee_count;
-        delete dbUpdates.team_count;
+        // Sanitize columns strictly to columns existing in PostgreSQL 'departments' table
+        const dbUpdates: any = {};
+        if (updates.name) dbUpdates.name = updates.name;
+        if (updates.code) dbUpdates.code = updates.code;
+        if (updates.company_id && isValidUUID(updates.company_id)) dbUpdates.company_id = updates.company_id;
+        if (updates.head_employee_id !== undefined) {
+          dbUpdates.head_employee_id = updates.head_employee_id && isValidUUID(updates.head_employee_id) ? updates.head_employee_id : null;
+        }
+        if (updates.parent_department_id !== undefined) {
+          dbUpdates.parent_department_id = updates.parent_department_id && isValidUUID(updates.parent_department_id) ? updates.parent_department_id : null;
+        }
+        if (updates.status !== undefined) {
+          dbUpdates.is_active = updates.status !== 'Inactive';
+        }
 
         const { data, error } = await supabase
           .from('departments')
           .update(dbUpdates)
           .eq('id', id)
           .select()
-          .single();
+          .maybeSingle();
+
         if (!error && data) {
-          hrEventBus.emit('organization.department_created', { department: data });
-          return data;
+          const merged: Department = {
+            id: data.id,
+            company_id: data.company_id,
+            name: data.name,
+            code: data.code,
+            head_employee_id: data.head_employee_id,
+            parent_department_id: data.parent_department_id,
+            status: data.is_active === false ? 'Inactive' : 'Active',
+            cost_center_code: updates.cost_center_code || '',
+            description: updates.description || '',
+          };
+
+          const current = getLocalStore<Department[]>(DEPT_STORAGE_KEY, []);
+          setLocalStore(DEPT_STORAGE_KEY, [merged, ...current.filter(d => d.id !== id)]);
+          hrEventBus.emit('organization.department_created', { department: merged });
+          return merged;
+        } else if (error) {
+          console.warn('[OrganizationStructureService] updateDepartment Supabase error:', error.message || error);
         }
       } catch (err) {
         console.warn('[OrganizationStructureService] updateDepartment error:', err);
@@ -664,7 +692,6 @@ class OrganizationStructureService {
         hrEventBus.emit('organization.department_created', { department: updated });
         return updated;
       } else {
-        // Fetch from api and store
         const depts = await this.getDepartments();
         const found = depts.find(d => d.id === id);
         if (found) {
@@ -676,6 +703,41 @@ class OrganizationStructureService {
       }
     } catch (_) {}
     return null;
+  }
+
+  /**
+   * Deletes a department, safely reassigning orphaned employee references if present.
+   */
+  async deleteDepartment(id: string): Promise<boolean> {
+    if (isSupabaseEnabled && supabase) {
+      try {
+        // Find another department to reassign any employees attached to this department
+        const { data: fallbackDept } = await supabase
+          .from('departments')
+          .select('id')
+          .neq('id', id)
+          .limit(1)
+          .maybeSingle();
+
+        if (fallbackDept?.id) {
+          await supabase
+            .from('employees')
+            .update({ department_id: fallbackDept.id })
+            .eq('department_id', id);
+        }
+
+        const { error } = await supabase.from('departments').delete().eq('id', id);
+        if (error) {
+          console.warn('[OrganizationStructureService] deleteDepartment db error:', error.message || error);
+        }
+      } catch (err) {
+        console.warn('[OrganizationStructureService] deleteDepartment error:', err);
+      }
+    }
+    const current = getLocalStore<Department[]>(DEPT_STORAGE_KEY, []);
+    setLocalStore(DEPT_STORAGE_KEY, current.filter(d => d.id !== id));
+    hrEventBus.emit('organization.department_deleted', { id });
+    return true;
   }
 
   /**
@@ -732,6 +794,23 @@ class OrganizationStructureService {
       return updated;
     }
     return null;
+  }
+
+  /**
+   * Deletes a team.
+   */
+  async deleteTeam(id: string): Promise<boolean> {
+    if (isSupabaseEnabled && supabase) {
+      try {
+        await supabase.from('teams').delete().eq('id', id);
+      } catch (err) {
+        console.warn('[OrganizationStructureService] deleteTeam db error:', err);
+      }
+    }
+    const current = getLocalStore<Team[]>(TEAM_STORAGE_KEY, []);
+    setLocalStore(TEAM_STORAGE_KEY, current.filter(t => t.id !== id));
+    hrEventBus.emit('organization.team_deleted', { id });
+    return true;
   }
 
   /**

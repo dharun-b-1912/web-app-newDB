@@ -107,7 +107,7 @@ export const WorkspaceDocumentsModal: React.FC<Props> = ({
                     </div>
                     <div className="min-w-0">
                       <p className="font-bold text-gray-900 truncate">{doc.type}</p>
-                      <p className="text-[11px] text-gray-500 truncate">{doc.fileName} • {doc.fileSize} • {doc.uploadedAt}</p>
+                      <p className="text-[11px] text-gray-500 truncate">{doc.fileName} • {(doc as any).fileSize || 'PDF'} • {doc.uploadedAt}</p>
                     </div>
                   </div>
 

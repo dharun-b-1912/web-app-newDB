@@ -6,6 +6,9 @@ import { api } from '../../../services/api';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { ClientMasterService } from '../../../services/clientBilling/clientMasterService';
 import { ClientMaster, ClientContract } from '../../../types/clientBilling';
+import { organizationStructureService } from '../../../services/organization/organizationStructureService';
+import { attendanceRosterService } from '../../../services/attendance/attendanceRosterService';
+import { ShiftMaster } from '../../../types/shiftRoster';
 import {
   Briefcase,
   Building2,
@@ -47,6 +50,7 @@ export interface Step3FormData {
   site_name?: string;
   status: EmployeeStatus;
   department_id: string;
+  department_name?: string;
   designation_id: string;
   designation_title?: string;
   branch_id: string;
@@ -78,6 +82,7 @@ export interface Step3FormData {
   pf_applicable?: boolean;
   esi_applicable?: boolean;
   pt_applicable?: boolean;
+  tds_applicable?: boolean;
 }
 
 const EMPLOYMENT_SOURCES: { id: EmploymentSource; label: string; desc: string }[] = [
@@ -107,12 +112,22 @@ const SALARY_STRUCTURES = [
   },
 ];
 
-const SHIFT_OPTIONS = [
-  { id: 'shift-general-01', name: 'General Shift (09:30 AM – 06:30 PM)', timings: '09:30 - 18:30' },
-  { id: 'shift-morning-02', name: 'Morning Operations (06:00 AM – 02:30 PM)', timings: '06:00 - 14:30' },
-  { id: 'shift-evening-03', name: 'Evening Shift (02:00 PM – 10:30 PM)', timings: '14:00 - 22:30' },
-  { id: 'shift-night-04', name: 'Night / Offshore Shift (10:00 PM – 06:30 AM)', timings: '22:00 - 06:30' },
-];
+function formatShiftOptionLabel(s: ShiftMaster): string {
+  const formatTime = (t: string) => {
+    if (!t) return '';
+    const [hStr, mStr] = t.split(':');
+    const h = parseInt(hStr, 10);
+    const m = mStr || '00';
+    if (isNaN(h)) return t;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${String(h12).padStart(2, '0')}:${m} ${ampm}`;
+  };
+
+  const name = s.shift_name.replace(/\(.*?\)/g, '').trim();
+  const times = `${formatTime(s.start_time)} – ${formatTime(s.end_time)}`;
+  return `${name} (${times})`;
+}
 
 const ATTENDANCE_POLICIES = [
   { id: 'pol-standard-office', name: 'Standard Office Policy (15 Min Grace, Biometric)' },
@@ -151,14 +166,159 @@ export const Step3Employment: React.FC<Props> = ({
 }) => {
   const [isCustomDesig, setIsCustomDesig] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
-  const [customGrade, setCustomGrade] = useState('L3 - Mid Level');
   const [isSavingDesig, setIsSavingDesig] = useState(false);
+
+  // Designation Dropdown States (Live Backend Sourced)
+  const [availableDesignations, setAvailableDesignations] = useState<Designation[]>(designations || []);
+
+  // Live Backend Sourced Shifts from Shift Master
+  const [availableShifts, setAvailableShifts] = useState<ShiftMaster[]>(() => {
+    try {
+      const list = attendanceRosterService.getShifts();
+      if (list && list.length > 0) return list.filter((s) => s.status !== 'INACTIVE');
+    } catch (_) {}
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      const list = attendanceRosterService.getShifts();
+      if (list && list.length > 0) {
+        setAvailableShifts(list.filter((s) => s.status !== 'INACTIVE'));
+      }
+    } catch (_) {}
+  }, []);
+
+  const currentShiftId = useMemo(() => {
+    if (!formData.shift_id) {
+      return availableShifts[0]?.id || 'shift-general-01';
+    }
+    // Direct match by ID
+    const direct = availableShifts.find((s) => s.id === formData.shift_id);
+    if (direct) return direct.id;
+
+    // Match via service getShiftById
+    const resolved = attendanceRosterService.getShiftById(formData.shift_id);
+    if (resolved && availableShifts.some((s) => s.id === resolved.id)) {
+      return resolved.id;
+    }
+
+    // Match by code or name
+    const byCodeOrName = availableShifts.find(
+      (s) =>
+        s.shift_code.toLowerCase() === formData.shift_id?.toLowerCase() ||
+        (formData.shift_name && s.shift_name.toLowerCase().includes(formData.shift_name.toLowerCase()))
+    );
+    if (byCodeOrName) return byCodeOrName.id;
+
+    return formData.shift_id;
+  }, [formData.shift_id, formData.shift_name, availableShifts]);
+
+  const handleSaveCustomDesig = async (overrideTitle?: string) => {
+    const raw = (overrideTitle !== undefined ? overrideTitle : customTitle).trim();
+    if (!raw) return;
+
+    // Check if designation already exists in availableDesignations
+    const existingMatch = availableDesignations.find((d) => d.title.trim().toLowerCase() === raw.toLowerCase());
+    if (existingMatch) {
+      onChange({
+        designation_id: existingMatch.id,
+        designation_title: existingMatch.title,
+      });
+      setCustomTitle('');
+      setIsCustomDesig(false);
+      return;
+    }
+
+    setIsSavingDesig(true);
+    try {
+      const activeComp = api.getActiveCompany();
+      const compId = activeComp?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeComp.id) ? activeComp.id : '2030277f-a6a1-427f-beaf-4fc677a3bae2';
+      const created = await api.createDesignation({
+        title: raw,
+        code: raw.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6) || 'DESIG',
+        company_id: compId,
+      });
+      if (created) {
+        setAvailableDesignations((prev) => {
+          const map = new Map<string, Designation>();
+          map.set(created.id, created);
+          prev.forEach((d) => { if (!map.has(d.id)) map.set(d.id, d); });
+          return Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title));
+        });
+        onChange({
+          designation_id: created.id,
+          designation_title: created.title,
+        });
+        setCustomTitle('');
+        setIsCustomDesig(false);
+      }
+    } catch (err) {
+      console.warn('Failed to add custom designation:', err);
+    } finally {
+      setIsSavingDesig(false);
+    }
+  };
+
+  // Department Dropdown States (Live Backend Sourced)
+  const [availableDepartments, setAvailableDepartments] = useState<Department[]>(departments || []);
+  const [isCustomDept, setIsCustomDept] = useState(false);
+  const [customDeptName, setCustomDeptName] = useState('');
+  const [isSavingDept, setIsSavingDept] = useState(false);
+
+  useEffect(() => {
+    api.getDesignations().then((list) => {
+      if (list && list.length > 0) {
+        setAvailableDesignations((prev) => {
+          const map = new Map<string, Designation>();
+          list.forEach((d) => map.set(d.id, d));
+          (designations || []).forEach((d) => { if (!map.has(d.id)) map.set(d.id, d); });
+          prev.forEach((d) => { if (!map.has(d.id)) map.set(d.id, d); });
+          return Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title));
+        });
+      }
+    }).catch(() => {});
+
+    const handleDesigAdded = (e: any) => {
+      if (e?.detail) {
+        setAvailableDesignations((prev) => {
+          const map = new Map<string, Designation>();
+          map.set(e.detail.id, e.detail);
+          prev.forEach((d) => { if (!map.has(d.id)) map.set(d.id, d); });
+          return Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title));
+        });
+      }
+    };
+    window.addEventListener('designation:created', handleDesigAdded);
+    return () => window.removeEventListener('designation:created', handleDesigAdded);
+  }, [designations]);
 
   // Database-Driven Vendor & Contract States
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [isLoadingVendors, setIsLoadingVendors] = useState<boolean>(false);
   const [clients, setClients] = useState<ClientMaster[]>([]);
   const [allContracts, setAllContracts] = useState<ClientContract[]>([]);
+
+  useEffect(() => {
+    // Dynamically fetch and merge all authoritative departments created in the system
+    organizationStructureService.getDepartments().then((list) => {
+      if (list && list.length > 0) {
+        setAvailableDepartments((prev) => {
+          const map = new Map<string, Department>();
+          list.forEach((d) => map.set(d.id, d));
+          (departments || []).forEach((d) => { if (!map.has(d.id)) map.set(d.id, d); });
+          prev.forEach((d) => { if (!map.has(d.id)) map.set(d.id, d); });
+          return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+        });
+      }
+    }).catch(() => {
+      api.getDepartments().then((list) => {
+        if (list && list.length > 0) {
+          setAvailableDepartments(list.sort((a, b) => a.name.localeCompare(b.name)));
+        }
+      }).catch(() => {});
+    });
+  }, [departments]);
 
   useEffect(() => {
     setIsLoadingVendors(true);
@@ -305,11 +465,12 @@ export const Step3Employment: React.FC<Props> = ({
       structureCode: salaryStructureCode,
       compensationBasis: formData.compensation_basis || 'CTC_INCLUSIVE',
       pfApplicable: formData.pf_applicable !== false,
-      esiApplicable: formData.esi_applicable !== false,
+      esiApplicable: formData.esi_applicable === true,
       ptApplicable: formData.pt_applicable !== false,
+      tdsApplicable: formData.tds_applicable !== false,
       statutoryConfig,
     });
-  }, [annualCtc, monthlyCtc, salaryStructureCode, formData.compensation_basis, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, statutoryConfig]);
+  }, [annualCtc, monthlyCtc, salaryStructureCode, formData.compensation_basis, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, formData.tds_applicable, statutoryConfig]);
 
   const handleAnnualCtcChange = (value: number) => {
     const validAnnual = Math.max(0, value);
@@ -561,7 +722,7 @@ export const Step3Employment: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Department & Designation */}
+        {/* Department & Designation (Direct Typing + Datalist Suggestions) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">
@@ -569,124 +730,199 @@ export const Step3Employment: React.FC<Props> = ({
             </label>
             <select
               required
-              value={formData.department_id}
-              onChange={(e) => onChange({ department_id: e.target.value })}
-              className="w-full px-3 py-2.5 text-xs bg-gray-50/50 hover:bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold text-gray-900"
+              value={
+                (() => {
+                  const currentDeptName = (formData.department_name || '').trim().toLowerCase();
+                  if (currentDeptName) {
+                    const match = availableDepartments.find((d) => d.name.trim().toLowerCase() === currentDeptName);
+                    if (match) return match.id;
+                  }
+                  if (formData.department_id) {
+                    const match = availableDepartments.find((d) => d.id === formData.department_id);
+                    if (match) return match.id;
+                  }
+                  return formData.department_id || '';
+                })()
+              }
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === '__ADD_NEW__') {
+                  setIsCustomDept(true);
+                  return;
+                }
+                const match = availableDepartments.find((d) => d.id === val);
+                onChange({
+                  department_id: val,
+                  department_name: match ? match.name : '',
+                });
+                setIsCustomDept(false);
+              }}
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-semibold text-gray-900 cursor-pointer"
             >
-              <option value="">-- Select Organizational Department --</option>
-              {departments.map((dept) => (
+              <option value="">-- Select Existing Department --</option>
+              {formData.department_name && !availableDepartments.some((d) => d.name.trim().toLowerCase() === formData.department_name?.trim().toLowerCase()) && (
+                <option value={formData.department_id || formData.department_name}>
+                  {formData.department_name}
+                </option>
+              )}
+              {availableDepartments.map((dept) => (
                 <option key={dept.id} value={dept.id}>
-                  {dept.name} ({dept.code || 'DEPT'})
+                  {dept.name} {dept.code ? `(${dept.code})` : ''}
                 </option>
               ))}
+              <option value="__ADD_NEW__">+ Add / Type New Department...</option>
             </select>
+
+            {isCustomDept && (
+              <div className="flex items-center gap-2 mt-2 p-2 bg-emerald-50/50 border border-emerald-200 rounded-xl">
+                <input
+                  type="text"
+                  placeholder="Enter new department name (e.g. Quality Assurance)"
+                  value={customDeptName}
+                  onChange={(e) => setCustomDeptName(e.target.value)}
+                  className="flex-1 px-3 py-1.5 text-xs bg-white border border-emerald-300 rounded-lg focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium text-gray-900"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  disabled={isSavingDept || !customDeptName.trim()}
+                  onClick={async () => {
+                    const trimmed = customDeptName.trim();
+                    if (!trimmed) return;
+                    setIsSavingDept(true);
+                    try {
+                      const created = await organizationStructureService.createDepartment({
+                        name: trimmed,
+                        code: trimmed.slice(0, 4).toUpperCase(),
+                        status: 'Active',
+                      });
+                      if (created) {
+                        setAvailableDepartments((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+                        onChange({
+                          department_id: created.id,
+                          department_name: created.name,
+                        });
+                        setCustomDeptName('');
+                        setIsCustomDept(false);
+                      }
+                    } catch (err) {
+                      console.warn('Failed to add custom department:', err);
+                    } finally {
+                      setIsSavingDept(false);
+                    }
+                  }}
+                  className="px-3 py-1.5 text-xs font-bold bg-[#07563D] text-white rounded-lg hover:bg-[#064e37] disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingDept ? 'Adding...' : 'Add'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomDept(false);
+                    setCustomDeptName('');
+                  }}
+                  className="px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-700 font-medium cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-bold text-gray-700">
-                Designation / Official Job Title <span className="text-rose-500">*</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => setIsCustomDesig(!isCustomDesig)}
-                className="text-[11px] font-bold text-[#07563D] hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                {isCustomDesig ? '← Select Existing' : '+ Add New / Type Custom'}
-              </button>
-            </div>
-
-            {isCustomDesig ? (
-              <div className="space-y-2 p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl animate-in fade-in">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Enter designation title (e.g. Flutter Developer, Site Supervisor)"
-                    value={customTitle}
-                    onChange={(e) => setCustomTitle(e.target.value)}
-                    className="flex-1 px-3 py-2 text-xs bg-white border border-emerald-300 rounded-lg focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold text-gray-900"
-                  />
-                  <select
-                    value={customGrade}
-                    onChange={(e) => setCustomGrade(e.target.value)}
-                    className="w-36 px-2 py-2 text-xs bg-white border border-emerald-300 rounded-lg focus:outline-none font-semibold text-gray-800"
-                  >
-                    <option value="L1 - Entry Level">L1 - Entry</option>
-                    <option value="L2 - Associate">L2 - Associate</option>
-                    <option value="L3 - Mid Level">L3 - Mid Level</option>
-                    <option value="L4 - Senior">L4 - Senior</option>
-                    <option value="L5 - Lead / Specialist">L5 - Lead</option>
-                    <option value="L6 - Manager">L6 - Manager</option>
-                    <option value="L7 - Director">L7 - Director</option>
-                    <option value="L8 - Executive">L8 - Executive</option>
-                  </select>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-emerald-800 font-medium">
-                    Will be saved into organization catalog & assigned immediately
-                  </span>
-                  <button
-                    type="button"
-                    disabled={isSavingDesig || !customTitle.trim()}
-                    onClick={async () => {
-                      if (!customTitle.trim()) return;
-                      setIsSavingDesig(true);
-                      try {
-                        const created = await api.createDesignation({
-                          title: customTitle.trim(),
-                          code: 'DESG-' + customTitle.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 5),
-                          company_id: 'comp-joy-01',
-                          grade: customGrade,
-                        });
-                        onChange({
-                          designation_id: created.id,
-                          designation_title: created.title,
-                          grade: customGrade,
-                        });
-                        setIsCustomDesig(false);
-                        setCustomTitle('');
-                      } catch (err) {
-                        console.warn('Failed to create designation:', err);
-                      } finally {
-                        setIsSavingDesig(false);
-                      }
-                    }}
-                    className="px-3 py-1.5 bg-[#07563D] hover:bg-[#054430] text-white text-xs font-bold rounded-lg flex items-center gap-1 shadow-sm disabled:opacity-50 cursor-pointer"
-                  >
-                    <Check className="w-3.5 h-3.5" /> Save & Assign
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <select
-                required
-                value={formData.designation_id}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === '__ADD_NEW__') {
-                    setIsCustomDesig(true);
-                  } else {
-                    const match = designations.find((d) => d.id === val);
-                    onChange({
-                      designation_id: val,
-                      designation_title: match?.title || val,
-                      grade: match?.grade || formData.grade,
-                    });
+            <label className="block text-xs font-bold text-gray-700 mb-1">
+              Designation / Official Job Title <span className="text-rose-500">*</span>
+            </label>
+            <select
+              required
+              value={
+                (() => {
+                  const currentTitle = (formData.designation_title || '').trim().toLowerCase();
+                  if (currentTitle) {
+                    const match = availableDesignations.find((d) => d.title.trim().toLowerCase() === currentTitle);
+                    if (match) return match.id;
                   }
-                }}
-                className="w-full px-3 py-2.5 text-xs bg-gray-50/50 hover:bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold text-gray-900"
-              >
-                <option value="">-- Select Official Designation --</option>
-                {designations.map((desig) => (
-                  <option key={desig.id} value={desig.id}>
-                    {desig.title} ({desig.grade || 'Grade'})
-                  </option>
-                ))}
-                <option value="__ADD_NEW__" className="font-bold text-[#07563D]">
-                  ➕ + Add New Custom Designation...
+                  if (formData.designation_id) {
+                    const match = availableDesignations.find((d) => d.id === formData.designation_id);
+                    if (match) return match.id;
+                  }
+                  return formData.designation_id || '';
+                })()
+              }
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === '__add_new__') {
+                  setIsCustomDesig(true);
+                  return;
+                }
+                setIsCustomDesig(false);
+                setCustomTitle('');
+                const matched = availableDesignations.find((d) => d.id === val);
+                if (matched) {
+                  onChange({
+                    designation_id: matched.id,
+                    designation_title: matched.title,
+                  });
+                } else {
+                  onChange({ designation_id: val, designation_title: '' });
+                }
+              }}
+              className="w-full px-3 py-2.5 text-xs bg-gray-50/50 hover:bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold text-gray-900"
+            >
+              <option value="">-- Choose Designation --</option>
+              {formData.designation_title && !availableDesignations.some((d) => d.title.trim().toLowerCase() === formData.designation_title?.trim().toLowerCase()) && (
+                <option value={formData.designation_id || formData.designation_title}>
+                  {formData.designation_title}
                 </option>
-              </select>
+              )}
+              {availableDesignations.map((desig) => (
+                <option key={desig.id} value={desig.id}>
+                  {desig.title}
+                </option>
+              ))}
+              <option value="__add_new__" className="text-[#07563D] font-bold">
+                + Add / Type New Designation...
+              </option>
+            </select>
+
+            {isCustomDesig && (
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-2 p-2 bg-emerald-50/50 border border-emerald-200 rounded-xl">
+                <input
+                  type="text"
+                  placeholder="Enter designation title (e.g. Senior Software Engineer, Operations Specialist)"
+                  value={customTitle}
+                  onChange={(e) => {
+                    setCustomTitle(e.target.value);
+                    onChange({ designation_title: e.target.value });
+                  }}
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      await handleSaveCustomDesig();
+                    }
+                  }}
+                  className="flex-1 px-3 py-1.5 text-xs bg-white border border-emerald-300 rounded-lg focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium text-gray-900"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  disabled={isSavingDesig || !customTitle.trim()}
+                  onClick={() => handleSaveCustomDesig()}
+                  className="px-3.5 py-1.5 text-xs font-bold bg-[#07563D] text-white rounded-lg hover:bg-[#064e37] disabled:opacity-50 cursor-pointer shadow-xs transition-colors"
+                >
+                  {isSavingDesig ? 'Adding...' : 'Add Designation'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomDesig(false);
+                    setCustomTitle('');
+                  }}
+                  className="px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-700 font-medium cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -810,16 +1046,20 @@ export const Step3Employment: React.FC<Props> = ({
               Assigned Shift <span className="text-rose-500">*</span>
             </label>
             <select
-              value={formData.shift_id || 'shift-general-01'}
+              value={currentShiftId}
               onChange={(e) => {
-                const s = SHIFT_OPTIONS.find((opt) => opt.id === e.target.value);
-                onChange({ shift_id: e.target.value, shift_name: s?.name });
+                const s = availableShifts.find((opt) => opt.id === e.target.value) ||
+                  attendanceRosterService.getShiftById(e.target.value);
+                onChange({
+                  shift_id: e.target.value,
+                  shift_name: s?.shift_name || e.target.value,
+                });
               }}
               className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium text-gray-900"
             >
-              {SHIFT_OPTIONS.map((s) => (
+              {availableShifts.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name}
+                  {formatShiftOptionLabel(s)}
                 </option>
               ))}
             </select>
@@ -1014,6 +1254,71 @@ export const Step3Employment: React.FC<Props> = ({
               />
             </div>
             <p className="text-[10px] text-gray-500 mt-1">Monthly wage budget before statutory split.</p>
+          </div>
+        </div>
+
+        {/* Statutory Applicability Quick Toggles */}
+        <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-2xs space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-black text-gray-900 uppercase tracking-wider">
+              <ShieldCheck className="w-4 h-4 text-[#07563D]" />
+              Statutory Deductions Applicability
+            </div>
+            <span className="text-[10px] text-gray-500 font-medium">Toggle statutory components for monthly payroll computation</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <label className="flex items-center gap-2 p-2.5 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer hover:bg-emerald-50/40 transition-colors">
+              <input
+                type="checkbox"
+                checked={formData.pf_applicable !== false}
+                onChange={(e) => onChange({ pf_applicable: e.target.checked })}
+                className="w-4 h-4 rounded text-[#07563D] focus:ring-0"
+              />
+              <div>
+                <p className="text-xs font-bold text-gray-900">EPF</p>
+                <p className="text-[10px] text-gray-500">12% PF Basket</p>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-2 p-2.5 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer hover:bg-emerald-50/40 transition-colors">
+              <input
+                type="checkbox"
+                checked={formData.esi_applicable === true}
+                onChange={(e) => onChange({ esi_applicable: e.target.checked })}
+                className="w-4 h-4 rounded text-[#07563D] focus:ring-0"
+              />
+              <div>
+                <p className="text-xs font-bold text-gray-900">ESIC</p>
+                <p className="text-[10px] text-gray-500">Medical Cover</p>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-2 p-2.5 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer hover:bg-emerald-50/40 transition-colors">
+              <input
+                type="checkbox"
+                checked={formData.pt_applicable !== false}
+                onChange={(e) => onChange({ pt_applicable: e.target.checked })}
+                className="w-4 h-4 rounded text-[#07563D] focus:ring-0"
+              />
+              <div>
+                <p className="text-xs font-bold text-gray-900">Prof. Tax (PT)</p>
+                <p className="text-[10px] text-gray-500">State PT Slab</p>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-2 p-2.5 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer hover:bg-emerald-50/40 transition-colors">
+              <input
+                type="checkbox"
+                checked={formData.tds_applicable !== false}
+                onChange={(e) => onChange({ tds_applicable: e.target.checked })}
+                className="w-4 h-4 rounded text-[#07563D] focus:ring-0"
+              />
+              <div>
+                <p className="text-xs font-bold text-gray-900">TDS / Tax</p>
+                <p className="text-[10px] text-gray-500">Income Tax Deduction</p>
+              </div>
+            </label>
           </div>
         </div>
 

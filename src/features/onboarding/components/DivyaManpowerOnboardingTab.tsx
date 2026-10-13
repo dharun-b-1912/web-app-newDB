@@ -48,8 +48,8 @@ export const DivyaManpowerOnboardingTab: React.FC = () => {
   const { showToast } = useToast();
   const { organization, activeLegalEntity } = useTenant();
 
-  const orgId = organization?.id || 'org-main';
-  const orgName = activeLegalEntity?.name || organization?.name || 'Your Enterprise Organization';
+  const orgId = organization?.id || (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || '0c621892-e938-4707-9957-13534ea32c19') : '0c621892-e938-4707-9957-13534ea32c19');
+  const orgName = activeLegalEntity?.name || organization?.name || 'Joy Corporate Solutions Pvt Ltd';
 
   // Live Database State
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -254,7 +254,7 @@ export const DivyaManpowerOnboardingTab: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-2xs">
           <span className="text-xs font-semibold text-gray-500 block">Organization Pipeline</span>
-          <span className="text-2xl font-bold text-gray-900 mt-1 block">{employees.length} Candidates</span>
+          <span className="text-2xl font-bold text-gray-900 mt-1 block">{employees.length} Employees</span>
           <span className="text-[11px] text-emerald-600 font-semibold mt-1 flex items-center gap-1">
             <Building2 className="w-3 h-3" /> {orgName}
           </span>
@@ -293,8 +293,9 @@ export const DivyaManpowerOnboardingTab: React.FC = () => {
         <div className="lg:col-span-4 space-y-4">
           <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-2xs">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
-                Candidate Pipeline
+              <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-[#07563D]" />
+                Workforce & Onboarding Pipeline ({filteredEmployees.length})
               </h3>
               <button
                 onClick={loadLiveData}
@@ -541,10 +542,37 @@ export const DivyaManpowerOnboardingTab: React.FC = () => {
 
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => {
+                    const html = StatutoryFormGeneratorService.generateFormHtml(
+                      selectedFormType,
+                      activeEmployee,
+                      candidatePfDecl,
+                      candidateNominees,
+                      candidateAppt,
+                      orgName
+                    );
+                    const blob = new Blob([html], { type: 'text/html' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    const formLabel = formList.find((f) => f.type === selectedFormType)?.label.replace(/[^a-zA-Z0-9]/g, '_') || 'Statutory_Form';
+                    const empName = `${activeEmployee.first_name || ''}_${activeEmployee.last_name || ''}`.trim() || 'Employee';
+                    a.href = url;
+                    a.download = `${formLabel}_${empName}.html`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    showToast('Statutory declaration downloaded successfully!', 'success');
+                  }}
+                  className="px-3 py-1.5 bg-[#07563D] hover:bg-[#064e37] text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5" /> Download (.html)
+                </button>
+                <button
                   onClick={() => window.print()}
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs"
                 >
-                  <Printer className="w-3.5 h-3.5" /> Print / Export PDF
+                  <Printer className="w-3.5 h-3.5" /> Print / PDF
                 </button>
                 <button
                   onClick={() => setIsPreviewOpen(false)}

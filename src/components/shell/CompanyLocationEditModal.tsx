@@ -25,6 +25,7 @@ import {
 export interface CompanyLocationEditModalProps {
   isOpen: boolean;
   onClose: () => void;
+  company?: any;
 }
 
 export const CompanyLocationEditModal: React.FC<CompanyLocationEditModalProps> = ({

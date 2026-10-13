@@ -102,7 +102,7 @@ export const CookiePreferencesModal: React.FC<CookiePreferencesModalProps> = ({
             <div className="pt-1">
               <Switch
                 checked={preferences.analytics}
-                onChange={(checked) => setPreferences((p) => ({ ...p, analytics: checked }))}
+                onCheckedChange={(checked) => setPreferences((p) => ({ ...p, analytics: checked }))}
               />
             </div>
           </div>
@@ -118,7 +118,7 @@ export const CookiePreferencesModal: React.FC<CookiePreferencesModalProps> = ({
             <div className="pt-1">
               <Switch
                 checked={preferences.functional}
-                onChange={(checked) => setPreferences((p) => ({ ...p, functional: checked }))}
+                onCheckedChange={(checked) => setPreferences((p) => ({ ...p, functional: checked }))}
               />
             </div>
           </div>
