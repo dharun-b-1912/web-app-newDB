@@ -277,7 +277,7 @@ class ResendEmailService {
       attachments: payload.attachments,
     });
 
-    const apiKey = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_RESEND_API_KEY) || 're_mock_dummy_resend_api_key_sanitized';
+    const apiKey = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_RESEND_API_KEY) || '';
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,

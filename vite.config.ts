@@ -24,7 +24,7 @@ export default defineConfig(() => {
           secure: true,
           rewrite: (path) => path.replace(/^\/api\/resend/, ''),
           headers: {
-            Authorization: `Bearer ${process.env.RESEND_API_KEY || 're_mock_dummy_resend_api_key_sanitized'}`,
+            Authorization: `Bearer ${process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY || ''}`,
           },
         },
       },

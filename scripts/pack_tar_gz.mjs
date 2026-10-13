@@ -66,23 +66,55 @@ function createTarHeader(name, size, mode = 0o644, type = '0') {
 const ignoredPatterns = [
   'node_modules',
   '.git',
+  '.agents',
+  'scratch',
+  'flutter_app',
   '1.FlutterApp',
   '1.FlutterApp new version (27-08).rar',
+  'Essl Support files',
   'dist',
   'deploy_package.tar.gz',
   'deploy_package.tar',
+  'deploy_source.tar.gz',
+  'test_pack.tar.gz',
+  'playwright-report',
+  'test-results',
+  'coverage',
   '.DS_Store',
   'Thumbs.db',
   '*.pdf',
   '*.rar',
+  '*.apk',
+  '*.aab',
+  '*.tar.gz',
+  '*.zip',
+  '*.dll',
+  'JoyPeopleHR-mapping*',
+  'Whatapp resouncers*',
+  'server_whatsapp_bot_phase1.js',
+  'public/downloads',
+  '*.csv',
+  'tests',
+  'e2e',
+  'cypress',
+  'scripts/joy-attendance-connector.cjs',
 ];
 
 function shouldIgnore(relPath) {
   const normalized = relPath.replace(/\\/g, '/');
+  // Never ignore any source code inside src/
+  if (normalized.startsWith('src/')) {
+    return false;
+  }
   return ignoredPatterns.some((pattern) => {
     if (pattern.startsWith('*.')) {
       const ext = pattern.slice(1);
       return normalized.endsWith(ext);
+    }
+    if (pattern.includes('*')) {
+      const regex = new RegExp('^' + pattern.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
+      const basename = path.basename(normalized);
+      return regex.test(normalized) || regex.test(basename);
     }
     return normalized === pattern || normalized.startsWith(pattern + '/') || normalized.includes('/' + pattern + '/');
   });
