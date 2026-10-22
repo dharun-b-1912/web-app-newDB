@@ -242,7 +242,7 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'admin-permissions' && (currentNav === 'admin-permissions' || currentNav === 'permissions')) return true;
   if (itemId === 'admin-workflows' && (currentNav === 'admin-workflows' || currentNav === 'workflows')) return true;
   if (itemId === 'admin-approvals' && (currentNav === 'admin-approvals' || currentNav === 'approvals')) return true;
-  if (itemId === 'admin-notifications' && (currentNav === 'admin-notifications' || currentNav === 'notifications' || currentNav === 'notification-settings' || currentNav === 'notifications-settings')) return true;
+  if (itemId === 'admin-notifications' && (currentNav === 'admin-notifications' || currentNav === 'notification-settings' || currentNav === 'notifications-settings')) return true;
   if (itemId === 'admin-audit' && (currentNav === 'admin-audit' || currentNav === 'audit-logs')) return true;
   if (itemId === 'admin-security' && (currentNav === 'admin-security' || currentNav === 'security')) return true;
   if (itemId === 'admin-api' && (currentNav === 'admin-api' || currentNav === 'api')) return true;
@@ -250,7 +250,7 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'admin-subscription' && (currentNav === 'admin-subscription' || currentNav === 'subscription')) return true;
   if (itemId === 'admin-billing' && (currentNav === 'admin-billing' || currentNav === 'billing')) return true;
   if (itemId === 'admin-settings' && (currentNav === 'admin-settings' || currentNav === 'settings')) return true;
-  if (itemId === 'notifications' && (currentNav === 'notifications' || currentNav === 'admin-notifications' || currentNav === 'notification-settings' || currentNav === 'notifications-settings')) return true;
+  if (itemId === 'notifications' && currentNav === 'notifications') return true;
 
   // SaaS Platform mappings
   if (itemId === 'platform-dashboard' && (currentNav === 'platform' || currentNav === 'platform-dashboard')) return true;
@@ -767,8 +767,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'company-onboarding', label: 'Company Setup Wizard', icon: Sparkles },
         { id: 'trust-legal', label: 'Trust & Legal Center', icon: ShieldCheck },
         { id: 'admin-roles', label: 'Role Management', icon: KeyRound },
-        { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
-        { id: 'admin-notifications', label: 'Notification Settings', icon: SlidersHorizontal },
+        { id: 'admin-notifications', label: 'Notification Rules & Delivery', icon: SlidersHorizontal },
       ],
     },
   ];
@@ -1055,8 +1054,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'AUTOMATION & ADMIN',
       items: [
         { id: 'admin-roles', label: 'Role Management', icon: KeyRound },
-        { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
-        { id: 'admin-notifications', label: 'Notification Settings', icon: SlidersHorizontal },
+        { id: 'admin-notifications', label: 'Notification Rules & Delivery', icon: SlidersHorizontal },
       ],
     },
   ];

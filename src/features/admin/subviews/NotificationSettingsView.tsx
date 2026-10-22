@@ -414,7 +414,7 @@ export const NotificationSettingsView: React.FC = () => {
                 In-App Realtime Stream
               </span>
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Connected
+                Base Plan (Free)
               </span>
             </div>
             <div className="mt-2.5">
@@ -424,7 +424,7 @@ export const NotificationSettingsView: React.FC = () => {
           </div>
           <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400 font-mono">
             <span>Latency: &lt; 85ms</span>
-            <span className="text-emerald-700 font-sans font-medium">100% Operational</span>
+            <span className="text-emerald-700 font-sans font-medium">Included Unlimited</span>
           </div>
         </div>
 
@@ -437,7 +437,7 @@ export const NotificationSettingsView: React.FC = () => {
                 Enterprise SMTP Gateway
               </span>
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                Verified
+                Base Plan (Free)
               </span>
             </div>
             <div className="mt-2.5">
@@ -447,7 +447,7 @@ export const NotificationSettingsView: React.FC = () => {
           </div>
           <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400 font-mono">
             <span>DKIM / SPF: Valid</span>
-            <span className="text-blue-700 font-sans font-medium">Outlook & Gmail Ready</span>
+            <span className="text-blue-700 font-sans font-medium">Included Unlimited</span>
           </div>
         </div>
 
@@ -459,18 +459,18 @@ export const NotificationSettingsView: React.FC = () => {
                 <WhatsAppIcon className="w-4 h-4 text-[#25D366]" />
                 WhatsApp Business API
               </span>
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Official Meta
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                Subscription Add-On
               </span>
             </div>
             <div className="mt-2.5">
               <span className="text-lg font-black text-gray-900 block">Cloud API v20.0</span>
-              <span className="text-gray-500 text-[11px] block mt-0.5">Official Graph Gateway</span>
+              <span className="text-gray-500 text-[11px] block mt-0.5">Official Meta API & 2-Way Bot</span>
             </div>
           </div>
           <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400 font-mono">
-            <span>WABA ID: Verified</span>
-            <span className="text-emerald-700 font-sans font-medium">99.7% Delivery</span>
+            <span>Billing: Meta Graph Credits</span>
+            <span className="text-emerald-700 font-sans font-medium">Add-On Active</span>
           </div>
         </div>
 
@@ -482,8 +482,8 @@ export const NotificationSettingsView: React.FC = () => {
                 <SmsBubbleIcon className="w-4 h-4 text-amber-500" />
                 Enterprise SMS Gateway
               </span>
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                DLT TRAI
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                Subscription Add-On
               </span>
             </div>
             <div className="mt-2.5">
@@ -492,9 +492,34 @@ export const NotificationSettingsView: React.FC = () => {
             </div>
           </div>
           <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400 font-mono">
-            <span>DLT Header: Registered</span>
-            <span className="text-amber-700 font-sans font-medium">Prepaid Ready</span>
+            <span>Billing: DLT Prepaid Pack</span>
+            <span className="text-amber-700 font-sans font-medium">Add-On Active</span>
           </div>
+        </div>
+      </div>
+
+      {/* SaaS Channel Tier & Subscription Policy Banner */}
+      <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-[#07563D] p-4 rounded-2xl text-white shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-xl bg-white/10 text-emerald-300 shrink-0">
+            <Sparkles className="w-5 h-5 text-emerald-300" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-white flex items-center gap-2">
+              <span>Channel Licensing & Multi-Tenant Subscription Architecture</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">
+                SaaS Usage Tiering
+              </span>
+            </h4>
+            <p className="text-[11px] text-emerald-100/80 mt-0.5">
+              <strong>In-App & Email</strong> are standard and included in all active tenant subscriptions. <strong>WhatsApp Business</strong> and <strong>SMS Gateways</strong> operate as metered subscription add-ons backed by your organization's prepaid messaging credit wallet.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 text-xs">
+          <span className="text-[11px] text-emerald-200/90 font-mono bg-white/10 px-2.5 py-1 rounded-lg">
+            Plan: Enterprise &bull; Add-Ons: WhatsApp + SMS Enabled
+          </span>
         </div>
       </div>
 
@@ -996,8 +1021,11 @@ export const NotificationSettingsView: React.FC = () => {
                   />
                 </div>
                 <div className="mt-2">
-                  <span className="font-bold text-xs text-gray-900 block">In-App Alert</span>
-                  <span className="text-[10px] text-gray-500 block">Realtime Bell</span>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-gray-900">In-App Alert</span>
+                    <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100 px-1 rounded">Base Plan</span>
+                  </div>
+                  <span className="text-[10px] text-gray-500 block mt-0.5">Realtime Bell</span>
                 </div>
               </div>
 
@@ -1021,8 +1049,11 @@ export const NotificationSettingsView: React.FC = () => {
                   />
                 </div>
                 <div className="mt-2">
-                  <span className="font-bold text-xs text-gray-900 block">Email SMTP</span>
-                  <span className="text-[10px] text-gray-500 block">Hostinger Secure</span>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-gray-900">Email SMTP</span>
+                    <span className="text-[9px] font-bold text-blue-800 bg-blue-100 px-1 rounded">Base Plan</span>
+                  </div>
+                  <span className="text-[10px] text-gray-500 block mt-0.5">Hostinger Secure</span>
                 </div>
               </div>
 
@@ -1046,8 +1077,11 @@ export const NotificationSettingsView: React.FC = () => {
                   />
                 </div>
                 <div className="mt-2">
-                  <span className="font-bold text-xs text-gray-900 block">WhatsApp</span>
-                  <span className="text-[10px] text-gray-500 block">Official Meta API</span>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-gray-900">WhatsApp</span>
+                    <span className="text-[9px] font-bold text-amber-800 bg-amber-100 px-1 rounded">Add-On</span>
+                  </div>
+                  <span className="text-[10px] text-gray-500 block mt-0.5">Meta API (Usage-Based)</span>
                 </div>
               </div>
 
@@ -1071,8 +1105,11 @@ export const NotificationSettingsView: React.FC = () => {
                   />
                 </div>
                 <div className="mt-2">
-                  <span className="font-bold text-xs text-gray-900 block">SMS Gateway</span>
-                  <span className="text-[10px] text-gray-500 block">Airtel IQ DLT</span>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-gray-900">SMS Gateway</span>
+                    <span className="text-[9px] font-bold text-amber-800 bg-amber-100 px-1 rounded">Add-On</span>
+                  </div>
+                  <span className="text-[10px] text-gray-500 block mt-0.5">Airtel DLT Pack</span>
                 </div>
               </div>
             </div>
