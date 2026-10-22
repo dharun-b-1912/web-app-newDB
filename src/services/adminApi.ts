@@ -85,7 +85,7 @@ export const adminApi = {
             const roleName = p.user_roles?.[0]?.roles?.name || p.user_roles?.[0]?.roles?.code || p.role || 'Employee';
             const emp = (p.employee_id && empsById.get(p.employee_id)) || (p.email && empsByEmail.get(p.email.trim().toLowerCase()));
             const empCode = emp?.employee_code || (p.employee_id ? `EMP-${p.employee_id.slice(0, 8)}` : `AUTH-${p.auth_user_id?.slice(0, 8) || 'USR'}`);
-            const deptName = (emp?.departments as any)?.name || (roleName.includes('Admin') ? 'Administration' : roleName.includes('HR') ? 'Human Resources' : 'Operations');
+            const deptName = (emp?.departments as any)?.name || (roleName.includes('Admin') ? 'MANAGEMENT' : (emp?.department_name || 'Development'));
 
             return {
               id: p.id,
@@ -395,6 +395,37 @@ export const adminApi = {
                     user_profile_id: id,
                     role_id: matchedRole.id,
                   });
+              }
+            }
+          }
+        }
+
+        if (updates.department_name) {
+          const { data: prof } = await supabase
+            .from('user_profiles')
+            .select('id, organization_id, employee_id, email')
+            .eq('id', id)
+            .maybeSingle();
+
+          if (prof?.organization_id) {
+            const { data: dept } = await supabase
+              .from('departments')
+              .select('id')
+              .eq('organization_id', prof.organization_id)
+              .ilike('name', updates.department_name.trim())
+              .maybeSingle();
+
+            if (dept) {
+              if (prof.employee_id) {
+                await supabase
+                  .from('employees')
+                  .update({ department_id: dept.id })
+                  .eq('id', prof.employee_id);
+              } else if (prof.email) {
+                await supabase
+                  .from('employees')
+                  .update({ department_id: dept.id })
+                  .or(`work_email.eq.${prof.email},personal_email.eq.${prof.email}`);
               }
             }
           }
