@@ -310,6 +310,8 @@ const LOCAL_STORAGE_KEY = 'joy_notification_rules_v1';
 
 export class UniversalNotificationEngine {
   private static instance: UniversalNotificationEngine;
+  private remoteTableChecked: boolean = false;
+  private isRemoteTableAvailable: boolean = true;
 
   private constructor() {}
 
@@ -318,6 +320,13 @@ export class UniversalNotificationEngine {
       UniversalNotificationEngine.instance = new UniversalNotificationEngine();
     }
     return UniversalNotificationEngine.instance;
+  }
+
+  /**
+   * Returns whether the public.notification_rules PostgreSQL table is active
+   */
+  public isTableMigrated(): boolean {
+    return this.isRemoteTableAvailable;
   }
 
   /**
@@ -335,7 +344,9 @@ export class UniversalNotificationEngine {
     } catch {}
 
     // Fallback to defaults
-    return DEFAULT_RULES.map(r => ({ ...r, organization_id: orgId }));
+    const defaults = DEFAULT_RULES.map(r => ({ ...r, organization_id: orgId }));
+    this.setLocalRules(orgId, defaults);
+    return defaults;
   }
 
   /**
@@ -353,7 +364,7 @@ export class UniversalNotificationEngine {
    * seamlessly to local state if migration is pending.
    */
   public async getRules(orgId: string = CANONICAL_ORG_ID): Promise<NotificationRule[]> {
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && (!this.remoteTableChecked || this.isRemoteTableAvailable)) {
       try {
         const { data, error } = await supabase
           .from('notification_rules')
@@ -361,12 +372,22 @@ export class UniversalNotificationEngine {
           .eq('organization_id', orgId)
           .order('created_at', { ascending: true });
 
-        if (!error && data && data.length > 0) {
-          this.setLocalRules(orgId, data as NotificationRule[]);
-          return data as NotificationRule[];
+        if (error) {
+          if (error.code === 'PGRST205' || error.message?.includes('schema cache')) {
+            this.isRemoteTableAvailable = false;
+            this.remoteTableChecked = true;
+          }
+        } else {
+          this.isRemoteTableAvailable = true;
+          this.remoteTableChecked = true;
+          if (data && data.length > 0) {
+            this.setLocalRules(orgId, data as NotificationRule[]);
+            return data as NotificationRule[];
+          }
         }
       } catch (err) {
-        console.warn('[NotificationEngine] Remote table fetch fallback to local cache:', err);
+        this.isRemoteTableAvailable = false;
+        this.remoteTableChecked = true;
       }
     }
 

@@ -366,6 +366,28 @@ export const NotificationSettingsView: React.FC = () => {
         </div>
       </div>
 
+      {/* Migration Notice Banner if table is not yet in PostgreSQL */}
+      {!universalNotificationEngine.isTableMigrated() && (
+        <div className="bg-emerald-50/80 border border-emerald-200/80 p-3 rounded-xl flex items-center justify-between text-xs text-emerald-900 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-emerald-700 shrink-0" />
+            <span>
+              <strong>Universal Engine Active:</strong> All 10 pre-configured rules across Email, WhatsApp, SMS, and In-App are live. (To enable PostgreSQL persistence, run <code className="font-mono bg-white px-1.5 py-0.5 rounded text-[11px] border border-emerald-200">20261022_157_universal_notification_rules.sql</code> in your Supabase SQL editor).
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard?.writeText('20261022_157_universal_notification_rules.sql');
+              showToast('Migration name copied to clipboard!', 'info');
+            }}
+            className="text-[11px] font-bold text-emerald-800 underline hover:text-emerald-950 cursor-pointer ml-3 shrink-0"
+          >
+            Copy SQL Name
+          </button>
+        </div>
+      )}
+
       {/* 2. Channel Provider Health & Status HUD */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* In-App Stream */}
