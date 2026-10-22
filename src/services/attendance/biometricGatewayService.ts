@@ -3767,15 +3767,14 @@ class BiometricGatewayService {
       (a, b) => new Date(a.punch_time).getTime() - new Date(b.punch_time).getTime()
     );
 
-    // Build state map per date
+    // Build state map per date with Shift & 4-Hour Minimum Work Duration Logic
     const stateMap = new Map<string, 'IN' | 'OUT'>();
-    const dailyCount = new Map<string, number>();
+    const firstPunchMap = new Map<string, string>(); // dateKey -> first punch ISO timestamp
 
     for (const p of chronologicalPunches) {
       const dev = devices.find(d => d.id === p.device_id || d.serial_number === (p as any).deviceSerial);
       const dateKey = p.punch_time ? p.punch_time.slice(0, 10) : 'today';
-      const c = dailyCount.get(dateKey) || 0;
-      dailyCount.set(dateKey, c + 1);
+      const firstPunchTime = firstPunchMap.get(dateKey);
 
       let resolvedState: 'IN' | 'OUT' = 'IN';
       if (dev?.direction_mode === 'CHECK_IN') {
@@ -3784,9 +3783,28 @@ class BiometricGatewayService {
         resolvedState = 'OUT';
       } else if (p.punch_direction === 'IN' || p.punch_direction === 'OUT') {
         resolvedState = p.punch_direction;
+      } else if (!firstPunchTime) {
+        // First valid punch of the date is ALWAYS Check-In
+        resolvedState = 'IN';
+        if (p.punch_time) {
+          firstPunchMap.set(dateKey, p.punch_time);
+        }
       } else {
-        // Alternating session state: 1st punch = IN, 2nd punch = OUT, 3rd = IN...
-        resolvedState = c % 2 === 0 ? 'IN' : 'OUT';
+        // Subsequent punch on same day:
+        // Confirmed business rules:
+        // 1. Minimum work duration before check-out: Strictly 4 hours (240 minutes)
+        // 2. Check-out Window: 30 minutes before shift end or after 4 hours of work
+        const elapsedMins = (new Date(p.punch_time).getTime() - new Date(firstPunchTime).getTime()) / 60000;
+        const punchDt = new Date(p.punch_time);
+        const istHour = (punchDt.getUTCHours() + 5.5 + punchDt.getUTCMinutes() / 60) % 24;
+
+        // If at least 4 hours (240 mins) have elapsed AND it's afternoon/shift end window (>= 13:00 IST), eligible for OUT
+        if (elapsedMins >= 240 && istHour >= 13.0) {
+          resolvedState = 'OUT';
+        } else {
+          // Punches within 4 hours (e.g. 5 mins, 10 mins, tea break) stay IN (in-session verification)
+          resolvedState = 'IN';
+        }
       }
       stateMap.set(p.id, resolvedState);
     }

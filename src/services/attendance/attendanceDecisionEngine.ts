@@ -10,6 +10,7 @@ import { attendanceRosterService } from './attendanceRosterService';
 import { ShiftMaster } from '../../types/shiftRoster';
 import { getActiveOrgId } from './biometricCommandService';
 import { attendanceTimeService } from './attendanceTimeService';
+import { universalNotificationEngine } from '../notification/universalNotificationEngine';
 import {
   evaluateChannelLock,
   resolveChannel,
@@ -582,7 +583,10 @@ class AttendanceDecisionEngine {
     // SCENARIO 1: NO ACTIVE SESSION (First Valid Punch of the Day)
     // ========================================================================
     if (!session || !session.first_in_at) {
-      const graceIn = shift.grace_in_minutes ?? 10;
+      const graceIn = shift.grace_in_minutes ?? 30; // Confirmed: 30-minute grace window
+      const lateMins = this.calculateLateMinutes(timestamp, shift.start_time, graceIn);
+      const initialStatus: AttendanceSessionStatus = lateMins > 0 ? 'LATE' : 'CHECKED_IN';
+
       const newSession: AttendanceSession = {
         id: `sess-${Date.now()}-${resolvedEmployee.id}`,
         organization_id: orgId,
@@ -594,7 +598,7 @@ class AttendanceDecisionEngine {
         first_in_at: timestamp,
         last_out_at: null,
 
-        attendance_status: 'CHECKED_IN',
+        attendance_status: initialStatus,
 
         // Channel locking — lock to the first punch's channel
         locked_channel: resolveChannel(source),
@@ -616,7 +620,7 @@ class AttendanceDecisionEngine {
         shift_end: shift.end_time,
 
         grace_minutes: graceIn,
-        late_minutes: this.calculateLateMinutes(timestamp, shift.start_time, graceIn),
+        late_minutes: lateMins,
         early_minutes: 0,
 
         break_minutes: 0,
@@ -658,7 +662,7 @@ class AttendanceDecisionEngine {
         method,
         raw_payload: params.rawPayload,
         decision_code: 'ACCEPTED_CHECK_IN',
-        decision_reason: `First valid event of workday. Session locked to ${source} (${method}).`,
+        decision_reason: `First valid event of workday. Session locked to ${source} (${method}).${lateMins > 0 ? ` Marked Late by ${lateMins} mins (Shift Start: ${shift.start_time}, Grace: ${graceIn}m).` : ''}`,
         session_id: newSession.id,
         received_at: new Date().toISOString(),
       };
@@ -667,12 +671,34 @@ class AttendanceDecisionEngine {
       this.saveState();
       this.dispatchRealtime(newSession, acceptedRaw);
 
+      // Trigger automatic late notification to Employee and Reporting Manager / TL
+      if (lateMins > 0) {
+        universalNotificationEngine.dispatch({
+          organizationId: orgId,
+          eventTrigger: 'PUNCH_LATE',
+          module: 'ATTENDANCE',
+          variables: {
+            employee_name: resolvedEmployee.name,
+            employee_code: resolvedEmployee.code,
+            date: eventDate,
+            time: new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            shift_start: shift.start_time,
+            late_by_mins: lateMins,
+            action_url: '/attendance?tab=regularization',
+          },
+          recipients: [
+            { employeeId: resolvedEmployee.id, employeeName: resolvedEmployee.name, role: 'EMPLOYEE' },
+            { employeeId: (resolvedEmployee as any).reporting_manager_id, role: 'MANAGER' },
+          ],
+        }).catch(() => {});
+      }
+
       return {
         success: true,
         event: acceptedRaw,
         session: newSession,
         decisionCode: 'ACCEPTED_CHECK_IN',
-        decisionReason: `Attendance Checked In via ${source} (${method}). Session locked.`,
+        decisionReason: `Attendance Checked In via ${source} (${method}). Session locked.${lateMins > 0 ? ` Arrived Late by ${lateMins}m.` : ''}`,
         isDuplicate: false,
         isIgnoredForLock: false,
         timerRunning: true,
@@ -865,15 +891,16 @@ class AttendanceDecisionEngine {
     }
     const currentMinsUtcOrLocal = punchH * 60 + punchM;
     const currentMinsIst = attendanceTimeService.getMinutesFromMidnight(timestamp, 'Asia/Kolkata');
-    const thresholdMins = shiftEndMins - (shift.early_out_tolerance_minutes ?? 15);
-    const isAfter4pm = currentMinsIst >= 16 * 60; // 16:00 (4:00 PM onwards Check-Out window)
-    const isPastOrNearShiftEnd = currentMinsUtcOrLocal >= thresholdMins || currentMinsIst >= thresholdMins || isAfter4pm;
+    // Confirmed by User: Check-Out window starts 30 minutes before shift end (e.g. 17:30 for an 18:00 shift)
+    const earlyOutTol = shift.early_out_tolerance_minutes ?? 30;
+    const checkoutWindowThreshold = shiftEndMins - earlyOutTol;
+    const isPastOrNearShiftEnd = currentMinsUtcOrLocal >= checkoutWindowThreshold || currentMinsIst >= checkoutWindowThreshold;
 
-    // A punch is eligible for checkout ONLY if:
-    // 1. Explicit user checkout action / OUT direction, OR
-    // 2. Scheduled shift window is completing / completed (near/past shift end, or 4:00 PM+ window).
-    // Midday punches (11:00 AM - 4:00 PM) during working hours are NEVER auto-converted to CHECK-OUT.
-    const isEligibleForCheckout = isExplicitOut || isPastOrNearShiftEnd;
+    // Confirmed by User:
+    // 1. Minimum Work Duration before Check-Out: Strictly 4 hours (240 minutes)
+    // 2. Check-out Window: 30 minutes before shift end
+    const hasWorkedMinimum4Hours = elapsedMinutes >= 240;
+    const isEligibleForCheckout = (isExplicitOut && hasWorkedMinimum4Hours) || (isPastOrNearShiftEnd && hasWorkedMinimum4Hours);
 
     // If NOT eligible for checkout (e.g. 12:37:29 PM midday verification during 09:00-18:00 shift)
     if (!isEligibleForCheckout) {
@@ -990,14 +1017,7 @@ class AttendanceDecisionEngine {
   }
 
   private calculateLateMinutes(firstInIso: string, shiftStartTime: string, graceMins: number): number {
-    const d = new Date(firstInIso);
-    let punchH = d.getUTCHours();
-    let punchM = d.getUTCMinutes();
-    if (!firstInIso.endsWith('Z')) {
-      punchH = d.getHours();
-      punchM = d.getMinutes();
-    }
-    const punchMins = punchH * 60 + punchM;
+    const punchMins = attendanceTimeService.getMinutesFromMidnight(firstInIso, 'Asia/Kolkata');
     const [sH, sM] = shiftStartTime.split(':').map((x) => parseInt(x, 10));
     const shiftMins = (sH || 9) * 60 + (sM || 0);
     const diff = punchMins - shiftMins;

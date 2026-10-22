@@ -510,6 +510,40 @@ class BiometricEventPipelineService {
             const durationMins = Math.max(0, Math.round((punchTime.getTime() - inTime.getTime()) / (1000 * 60)));
             const isOvernight = punchTime.getDate() !== inTime.getDate();
 
+            // Confirmed Rule: Minimum Work Duration is 4 hours (240 mins) before check-out can close session
+            if (durationMins < 240 && payload.deviceDirectionMode !== 'CHECK_OUT') {
+              resultEvent = {
+                event_id: eventId,
+                tenant_id: tenantId,
+                organisation_id: tenantId,
+                device_id: payload.deviceId,
+                device_name: payload.deviceName,
+                device_serial: payload.deviceSerial,
+                device_ip: payload.deviceIp,
+                device_location: payload.deviceLocation,
+                device_branch: payload.deviceBranch,
+                device_direction_mode: payload.deviceDirectionMode,
+                employee_id: empId,
+                employee_name: empName,
+                employee_code: empCode,
+                biometric_user_id: payload.biometricUserId,
+                event_type: 'CHECK_IN',
+                device_timestamp: punchTime.toISOString(),
+                server_received_at: new Date().toISOString(),
+                source,
+                raw_payload: payload.rawPayload,
+                event_hash: eventHash,
+                processing_status: 'PROCESSED',
+                status_reason: `In-session biometric verification (${durationMins}m elapsed < 240m min work). Session kept active.`,
+                session_id: openSession.id,
+                work_date: workDate,
+              };
+              resultSessionId = openSession.id;
+              rawLedger.unshift(resultEvent);
+              setStore(STORAGE_KEYS_PIPELINE.RAW_EVENTS, rawLedger.slice(0, 2000));
+              return;
+            }
+
             openSession.check_out_event_id = eventId;
             openSession.check_out_time = punchTime.toISOString();
             openSession.check_out_device_id = payload.deviceId;

@@ -195,14 +195,14 @@ class AttendanceIngestionService {
           } catch (_) {}
         }
 
-        // Only promote to CHECK_OUT if at least 3.5 hours (210 mins) have elapsed AND it's afternoon (>= 13:00 IST)
+        // Only promote to CHECK_OUT if at least 4.0 hours (240 mins) have elapsed AND it's afternoon/shift exit window
         if (source === 'BIOMETRIC' && priorCheckInTime && punchType !== 'CHECK_OUT') {
           const cInMs = new Date(priorCheckInTime).getTime();
           const pMs = new Date(punchTime).getTime();
           const diffMins = !isNaN(cInMs) && !isNaN(pMs) ? (pMs - cInMs) / 60000 : 0;
           const punchDt = new Date(punchTime);
           const istHour = (punchDt.getUTCHours() + 5.5 + punchDt.getUTCMinutes() / 60) % 24;
-          if (diffMins >= 210 && istHour >= 13.0) {
+          if (diffMins >= 240 && istHour >= 13.0) {
             punchType = 'CHECK_OUT';
           }
         }
@@ -236,7 +236,7 @@ class AttendanceIngestionService {
           };
 
           // Monitor mode smart check-out resolution for Biometric:
-          // If RPC returned DUPLICATE_CHECK_IN for biometric scan, but employee checked in >= 3.5 hours ago and it's afternoon (>= 13:00 IST):
+          // If RPC returned DUPLICATE_CHECK_IN for biometric scan, but employee checked in >= 4 hours (240 mins) ago and it's afternoon (>= 13:00 IST):
           if (
             !res.accepted &&
             source === 'BIOMETRIC' &&
@@ -250,7 +250,7 @@ class AttendanceIngestionService {
             const punchDt = new Date(punchTime);
             const istHour = (punchDt.getUTCHours() + 5.5 + punchDt.getUTCMinutes() / 60) % 24;
 
-            if (elapsedMinutes >= 210 && istHour >= 13.0) {
+            if (elapsedMinutes >= 240 && istHour >= 13.0) {
               const { data: outData, error: outError } = await supabase.rpc('ingest_attendance_event', {
                 p_organization_id: orgId,
                 p_employee_id: request.employeeId,

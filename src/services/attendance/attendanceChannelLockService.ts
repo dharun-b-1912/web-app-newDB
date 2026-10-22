@@ -272,9 +272,12 @@ export function evaluateChannelLock(params: {
   // Check if this punch is a valid checkout (explicit OUT, or near/past shift end)
   const isExplicitCheckout = params.punchIntent === 'CHECK_OUT';
   const isNearShiftEnd = params.isNearShiftEnd ?? false;
-  const hasBeenInsideMinimumWindow = (params.elapsedMinutesSinceCheckIn ?? 0) >= 30; // At least 30m since check-in
+  const elapsedMins = params.elapsedMinutesSinceCheckIn ?? 0;
+  // Strictly enforce 4 hours (240 minutes) minimum work duration before any check-out can take place
+  const hasMetMinimumWorkDuration = elapsedMins >= 240;
 
-  const isEligibleForCheckout = isExplicitCheckout || (isNearShiftEnd && hasBeenInsideMinimumWindow);
+  // A checkout is ONLY eligible if 4 hours of work have passed AND (explicit checkout intent OR near/after shift end)
+  const isEligibleForCheckout = (isExplicitCheckout && hasMetMinimumWorkDuration) || (isNearShiftEnd && hasMetMinimumWorkDuration);
 
   if (isEligibleForCheckout) {
     return {
@@ -283,7 +286,7 @@ export function evaluateChannelLock(params: {
       method: params.incomingMethod || incomingChannel,
       sessionId: params.currentSession.sessionId,
       sessionChannel,
-      reason: `Same-channel checkout accepted via ${incomingChannel} (${params.incomingMethod || ''}). Last-Out principle: session stays open until a later valid checkout.`,
+      reason: `Same-channel checkout accepted via ${incomingChannel} (${params.incomingMethod || ''}). Last-Out principle: session updated with latest checkout time.`,
       isCountedForAttendance: true,
       isStoredAsEvidence: true,
     };
@@ -296,7 +299,7 @@ export function evaluateChannelLock(params: {
     method: params.incomingMethod || incomingChannel,
     sessionId: params.currentSession.sessionId,
     sessionChannel,
-    reason: `Same-channel in-session event (${incomingChannel} / ${params.incomingMethod || ''}). Session already active. Stored as biometric verification evidence.`,
+    reason: `Same-channel in-session event (${incomingChannel} / ${params.incomingMethod || ''}). Session remains active (minimum 4-hour working window not reached or within working hours). Stored as biometric verification evidence.`,
     isCountedForAttendance: false,
     isStoredAsEvidence: true,
   };
