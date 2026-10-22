@@ -1,42 +1,781 @@
 {
   "192.168.1.201": [
     {
-      "uid": "017",
       "userId": "017",
+      "pin": "017",
       "biometric_pin": "017",
-      "name": "Dharun B",
-      "privilege": "USER",
-      "passwordConfigured": false,
-      "cardNumber": null,
+      "name": "Dharun  B",
+      "cardno": "61",
       "faceEnrolled": true,
-      "face_enrolled": true,
-      "faceCount": 1,
-      "face_count": 1,
       "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "61",
+      "card_number": "61",
+      "has_face_enrolled": true,
       "fingerprints_count": 1,
+      "sync_status": "SYNCED",
       "enabled": true,
-      "groupId": "1",
-      "timezone": "Asia/Kolkata",
-      "source": "PHYSICAL_DEVICE_ZKTECO_LIVE"
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "ENROLLED",
+          "uid": "61",
+          "source": "DEVICE_QUERY"
+        }
+      }
     },
     {
-      "uid": "154",
       "userId": "154",
+      "pin": "154",
       "biometric_pin": "154",
       "name": "Danya",
-      "privilege": "USER",
-      "passwordConfigured": false,
-      "cardNumber": "10982341",
-      "faceEnrolled": false,
-      "face_enrolled": false,
-      "faceCount": 0,
-      "face_count": 0,
+      "cardno": "3212737",
+      "faceEnrolled": true,
       "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "3212737",
+      "card_number": "3212737",
+      "has_face_enrolled": true,
       "fingerprints_count": 1,
+      "sync_status": "SYNCED",
       "enabled": true,
-      "groupId": "1",
-      "timezone": "Asia/Kolkata",
-      "source": "PHYSICAL_DEVICE_ZKTECO_LIVE"
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "ENROLLED",
+          "uid": "3212737",
+          "source": "DEVICE_QUERY"
+        }
+      }
+    },
+    {
+      "userId": "103",
+      "pin": "103",
+      "biometric_pin": "103",
+      "name": "AGILAN",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "114",
+      "pin": "114",
+      "biometric_pin": "114",
+      "name": "MARIMUTHU T",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "12",
+      "pin": "12",
+      "biometric_pin": "12",
+      "name": "MUTHU KUMAR P",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "13",
+      "pin": "13",
+      "biometric_pin": "13",
+      "name": "shalini j",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "14",
+      "pin": "14",
+      "biometric_pin": "14",
+      "name": "GOPIKA D",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "8",
+      "pin": "8",
+      "biometric_pin": "8",
+      "name": "HARIPRIYA R",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "118",
+      "pin": "118",
+      "biometric_pin": "118",
+      "name": "SAKTHIVEL S",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "18",
+      "pin": "18",
+      "biometric_pin": "18",
+      "name": "VASANTHKUMAR V",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "153",
+      "pin": "153",
+      "biometric_pin": "153",
+      "name": "RANJITH P",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "26",
+      "pin": "26",
+      "biometric_pin": "26",
+      "name": "monishraj a",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "102",
+      "pin": "102",
+      "biometric_pin": "102",
+      "name": "praveen b",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "9",
+      "pin": "9",
+      "biometric_pin": "9",
+      "name": "pandeeshwari s",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "20",
+      "pin": "20",
+      "biometric_pin": "20",
+      "name": "Thirumalai RK",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "15",
+      "pin": "15",
+      "biometric_pin": "15",
+      "name": "SARAVANAKUMAR B",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "16",
+      "pin": "16",
+      "biometric_pin": "16",
+      "name": "PRIYANKA",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "22",
+      "pin": "22",
+      "biometric_pin": "22",
+      "name": "NISHANTH N",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "25",
+      "pin": "25",
+      "biometric_pin": "25",
+      "name": "Hari",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "115",
+      "pin": "115",
+      "biometric_pin": "115",
+      "name": "MUTHU ASWIN",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
+    },
+    {
+      "userId": "099",
+      "pin": "099",
+      "biometric_pin": "099",
+      "name": "Arjun Kumar",
+      "cardno": "",
+      "faceEnrolled": true,
+      "fingerprintCount": 1,
+      "privilege": "USER",
+      "source": "LOCAL_REGISTRY",
+      "role_type": "NORMAL_USER",
+      "role_name": "Normal User (Authentication Only)",
+      "cardNumber": "",
+      "card_number": "",
+      "has_face_enrolled": true,
+      "fingerprints_count": 1,
+      "sync_status": "SYNCED",
+      "enabled": true,
+      "credentials": {
+        "face": {
+          "status": "ENROLLED",
+          "source": "DEVICE_EVENT",
+          "templateCount": 1,
+          "protocolNote": "Verified via device event"
+        },
+        "fingerprint": {
+          "status": "ENROLLED",
+          "count": 1,
+          "source": "DEVICE_QUERY"
+        },
+        "card": {
+          "status": "NOT_ENROLLED",
+          "uid": null,
+          "source": null
+        }
+      }
     }
   ]
 }

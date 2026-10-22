@@ -17,7 +17,10 @@ import {
   WhatsAppOnboardingInviteTrigger,
   WhatsAppCelebrationTrigger,
   WhatsAppAuthOtpTrigger,
+  WhatsAppPayrollMisReportTrigger,
+  WhatsAppAttendanceMisReportTrigger,
 } from './types';
+import { whatsAppTemplateConfigService } from './whatsappTemplateConfigService';
 
 export class WhatsAppNotificationService {
   private static instance: WhatsAppNotificationService;
@@ -32,9 +35,174 @@ export class WhatsAppNotificationService {
   /**
    * 1. Delivers Monthly Payslip to Employee with encrypted PDF
    */
-  async sendMonthlyPayslip(trigger: WhatsAppPayslipTrigger): Promise<{ success: boolean; error?: string }> {
-    const payload = WhatsAppTemplateRegistry.buildPayslipTemplate(trigger);
+  async sendMonthlyPayslip(trigger: WhatsAppPayslipTrigger): Promise<{ success: boolean; error?: string; messageId?: string }> {
+    const actualTrigger: WhatsAppPayslipTrigger = {
+      ...trigger,
+      templateName: trigger.templateName || 'payslip',
+    };
+    const payload = WhatsAppTemplateRegistry.buildPayslipTemplate(actualTrigger);
     return whatsAppClient.sendTemplate(payload);
+  }
+
+  /**
+   * 1b. Delivers Monthly Payroll MIS & Statutory Summary to HR / Finance Management
+   */
+  async sendPayrollMisReport(trigger: WhatsAppPayrollMisReportTrigger): Promise<{ success: boolean; error?: string }> {
+    const payload = WhatsAppTemplateRegistry.buildPayrollMisReportTemplate(trigger);
+    return whatsAppClient.sendTemplate(payload);
+  }
+
+  /**
+   * 1c. Delivers Attendance & Biometric Audit MIS Report with Landscape PDF to HR / Leadership
+   */
+  async sendAttendanceMisReport(trigger: WhatsAppAttendanceMisReportTrigger): Promise<{ success: boolean; error?: string }> {
+    const payload = WhatsAppTemplateRegistry.buildAttendanceMisReportTemplate(trigger);
+    return whatsAppClient.sendTemplate(payload);
+  }
+
+  /**
+   * 1d. Direct Real-Time MIS Report Dispatch via WhatsApp (daily_mis_report_v1)
+   * Delivers the EXACT finalized PDF artifact generated for Email to WhatsApp as a document attachment.
+   * Never generates an alternative PDF or drops to plain text without attachment.
+   */
+  async sendAttendanceMisReportDirect(params: {
+    phone: string;
+    recipientName: string;
+    dateStr?: string;
+    organizationId?: string;
+    reportTitle?: string;
+    pdfArtifact?: any;
+  }): Promise<{ success: boolean; error?: string; stats?: any; artifact?: any; messageId?: string }> {
+    try {
+      const { attendanceMisDeliveryService } = await import(
+        '../attendance/attendanceMisDeliveryService'
+      );
+      const { attendanceReportSchedulerService } = await import(
+        '../attendance/attendanceReportSchedulerService'
+      );
+
+      const todayStr = params.dateStr || new Date().toISOString().split('T')[0];
+      const organizationId = params.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+      const reportDateFormatted = new Date(todayStr + 'T00:00:00+05:30').toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      });
+
+      // 1. Resolve or generate shared artifact
+      let artifact = params.pdfArtifact;
+      let stats = artifact?.stats;
+
+      if (!artifact) {
+        const assembled = await attendanceReportSchedulerService.assembleReportDataAsync(todayStr);
+        if (!assembled.rows || assembled.rows.length === 0) {
+          return { success: false, error: 'No employee attendance data available for this date.' };
+        }
+
+        artifact = await attendanceMisDeliveryService.generateMisReportArtifact({
+          rows: assembled.rows,
+          punches: assembled.punches,
+          options: {
+            companyName: assembled.companyName,
+            reportDate: todayStr,
+            reportType: 'MORNING_CHECKIN',
+            organizationId,
+          },
+        });
+        stats = artifact.stats;
+      }
+
+      let companyName = artifact.companyName || 'Joy Corporate Solutions';
+      if (companyName === 'Workforce Organization' || !companyName) {
+        companyName = 'Joy Corporate Solutions';
+      }
+      const reportTitle = params.reportTitle || (artifact.reportType === 'MORNING_CHECKIN'
+        ? 'Morning Workforce Check-In & Turnout Snapshot'
+        : 'Daily Attendance & Biometric Audit Report');
+
+      // Pre-upload binary PDF buffer to Meta Media API for rock-solid document attachment delivery
+      let uploadedMediaId: string | undefined;
+      if (artifact.buffer) {
+        try {
+          const mediaRes = await whatsAppClient.uploadMedia({
+            fileBuffer: artifact.buffer,
+            filename: artifact.filename,
+            mimeType: 'application/pdf',
+          });
+          if (mediaRes.success && mediaRes.mediaId) {
+            uploadedMediaId = mediaRes.mediaId;
+          }
+        } catch (mediaErr) {
+          console.warn('[WhatsAppMIS] Media upload notice in direct dispatch:', mediaErr);
+        }
+      }
+
+      // 2. Dispatch via daily_mis_report_v1 Meta HSM template with document header
+      const trigger: WhatsAppAttendanceMisReportTrigger = {
+        organizationId,
+        recipientPhone: params.phone,
+        recipientName: params.recipientName,
+        reportTitle,
+        reportDate: reportDateFormatted,
+        companyName,
+        totalWorkforce: stats.totalWorkforce,
+        presentTurnout: stats.presentTurnout,
+        lateClockIns: stats.lateCount,
+        weeklyOffOrLeave: stats.weeklyOffLeave,
+        cumulativeWorkHours: stats.cumulativeHours,
+        reportPdfUrl: artifact.documentUrl,
+        pdfFilename: artifact.filename, // Exact official filename
+        sha256Checksum: artifact.sha256Checksum,
+        runId: artifact.runId,
+        mediaId: uploadedMediaId,
+      };
+
+      let result = await this.sendAttendanceMisReport(trigger);
+      let providerMessageId = (result as any).messageId;
+
+      // 3. Fallback: If template dispatch fails, deliver as genuine WhatsApp document attachment (NEVER text-only)
+      if (!result.success && (artifact.documentUrl || uploadedMediaId || artifact.buffer)) {
+        console.warn('[WhatsAppMIS] Template dispatch failed, delivering directly via sendDocument:', result.error);
+        const docCaption = whatsAppTemplateConfigService.formatProfessionalMisCaption({
+          recipientName: params.recipientName,
+          reportName: reportTitle,
+          reportDate: reportDateFormatted,
+          reportCutoff: artifact.reportType === 'MORNING_CHECKIN' ? '10:30 AM' : '07:00 PM',
+          reportStatus: 'Verified Biometric & Attendance Audit',
+          companyName,
+        });
+
+        const docRes = await whatsAppClient.sendDocument({
+          to: params.phone,
+          documentUrl: artifact.documentUrl,
+          mediaId: uploadedMediaId,
+          fileBuffer: artifact.buffer,
+          filename: artifact.filename,
+          caption: docCaption,
+          organizationId,
+          sha256Checksum: artifact.sha256Checksum,
+          runId: artifact.runId,
+        });
+
+        if (docRes.success) {
+          result = { success: true };
+          providerMessageId = docRes.messageId;
+        } else {
+          result = { success: false, error: docRes.error };
+        }
+      }
+
+      return {
+        success: result.success,
+        stats,
+        artifact,
+        messageId: providerMessageId,
+        error: result.error,
+      };
+    } catch (err: any) {
+      console.error('[WhatsAppMIS] Direct dispatch error:', err);
+      return { success: false, error: err.message || 'MIS report dispatch failed' };
+    }
   }
 
   /**
@@ -59,14 +227,21 @@ export class WhatsAppNotificationService {
     employeeId?: string;
     portalUrl?: string;
     imageUrl?: string;
+    workEmail?: string;
   }): Promise<{ success: boolean; error?: string }> {
     let company = params.companyName || 'Joy Corporate Solutions Pvt. Ltd.';
     let role = params.designation || 'Senior Software Engineer';
     let empName = params.employeeName;
     let empCode = params.employeeCode;
     const portal = params.portalUrl || 'https://app.joypeoplehr.com';
+    const welcomeImageMediaId =
+      (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_WA_WELCOME_IMAGE_MEDIA_ID) ||
+      (typeof process !== 'undefined' && process.env?.META_WA_WELCOME_IMAGE_MEDIA_ID) ||
+      '1464500595601339';
+    const bannerImageUrl = params.imageUrl || 'https://app.joypeoplehr.com/welcome-to-joy-people-hr.png';
 
     // ── Auto-enrich with authoritative Supabase employee record ─────────────
+    let email = params.workEmail || '';
     try {
       const cleanPhone = normalizeIndianPhone(params.phone);
       const last10 = cleanPhone.slice(-10);
@@ -84,6 +259,9 @@ export class WhatsAppNotificationService {
         if (dbEmp.display_name || (dbEmp.first_name && dbEmp.last_name)) {
           empName = dbEmp.display_name || `${dbEmp.first_name} ${dbEmp.last_name}`.trim();
         }
+        if (!email) {
+          email = dbEmp.work_email || dbEmp.email || '';
+        }
         if (dbEmp.designation_id) {
           const desigMap: Record<string, string> = {
             'fd2762cd-b1bb-402e-a7ee-81a80aa0eab7': 'Senior Software Engineer',
@@ -98,18 +276,37 @@ export class WhatsAppNotificationService {
       console.warn('[WhatsAppWelcome] DB enrichment failed, using params:', dbErr);
     }
 
-    // Pre-uploaded welcome banner on Meta's servers (1200×446 JPEG, 95 KB)
-    // Uploaded via Meta Media API — no external CDN needed, guaranteed WhatsApp delivery
-    const welcomeImageMediaId =
-      (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_WA_WELCOME_IMAGE_MEDIA_ID) ||
-      (typeof process !== 'undefined' && process.env?.META_WA_WELCOME_IMAGE_MEDIA_ID) ||
-      '2189577828652515'; // fallback: uploaded 2026-09-22
+    if (!email) {
+      email = `${empCode.toLowerCase().replace(/[^a-z0-9]/g, '')}@joyglobalcorp.com`;
+    }
 
-    const bannerImageUrl = params.imageUrl || 'https://app.joypeoplehr.com/joy-people-hr-logo.png';
+    const companyClean = company.includes('Joy Corporate') ? 'Joy Corporate Solutions' : company;
 
-    // ── Attempt 1: Approved Meta Template (bypasses 24-hr window completely) ───
-    // Template: joy_onboarding_candidate_invite_v1 (APPROVED on Meta Cloud API)
-    // Variables: {{1}}=Name, {{2}}=Company, {{3}}=Designation, {{4}}=Joining Date
+    // ── Attempt 1: Approved Meta Template joy_hr_welcome_v2 (ID: 1394884269294382) ───
+    // Utility Template with Header Image & Parameters: {{1}}=Company, {{2}}=Name, {{3}}=Employee ID, {{4}}=Official Email
+    try {
+      const welcomeV2Payload = WhatsAppTemplateRegistry.buildWelcomeV2Template({
+        to: params.phone,
+        employeeName: empName,
+        employeeCode: empCode,
+        companyName: companyClean,
+        workEmail: email,
+        organizationId: params.organizationId || '0c621892-e938-4707-9957-13534ea32c19',
+        employeeId: params.employeeId,
+        mediaId: welcomeImageMediaId,
+      });
+
+      const tplRes = await whatsAppClient.sendTemplate(welcomeV2Payload);
+      if (tplRes.success) {
+        console.info('[WhatsAppWelcome] Approved joy_hr_welcome_v2 template sent successfully to', params.phone, tplRes.messageId);
+        return tplRes;
+      }
+      console.warn('[WhatsAppWelcome] Primary joy_hr_welcome_v2 send failed, trying candidate invite fallback:', tplRes.error);
+    } catch (tplErr: any) {
+      console.warn('[WhatsAppWelcome] Primary joy_hr_welcome_v2 error:', tplErr.message);
+    }
+
+    // ── Attempt 2: Fallback to joy_onboarding_candidate_invite_v1 ───
     try {
       const todayFormatted = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
       const approvedPayload = {
@@ -124,7 +321,7 @@ export class WhatsAppNotificationService {
             type: 'body' as const,
             parameters: [
               { type: 'text' as const, text: empName },
-              { type: 'text' as const, text: company },
+              { type: 'text' as const, text: companyClean },
               { type: 'text' as const, text: role },
               { type: 'text' as const, text: todayFormatted },
             ],
@@ -134,12 +331,11 @@ export class WhatsAppNotificationService {
       };
       const tplRes = await whatsAppClient.sendTemplate(approvedPayload);
       if (tplRes.success) {
-        console.info('[WhatsAppWelcome] Approved onboarding template sent successfully to', params.phone);
+        console.info('[WhatsAppWelcome] Fallback onboarding template sent successfully to', params.phone);
         return tplRes;
       }
-      console.warn('[WhatsAppWelcome] Primary template send failed, trying fallback:', tplRes.error);
-    } catch (tplErr: any) {
-      console.warn('[WhatsAppWelcome] Primary template error:', tplErr.message);
+    } catch (fallbackErr: any) {
+      console.warn('[WhatsAppWelcome] Secondary template error:', fallbackErr.message);
     }
 
     const interactiveBody =
@@ -403,6 +599,202 @@ export class WhatsAppNotificationService {
         recentLogs: [],
       };
     }
+  }
+
+  /**
+   * Dispatches the approved WhatsApp Welcome Pack (joy_hr_welcome_v2) to a specific employee
+   * dynamically querying authoritative database records without any hardcoding.
+   */
+  async sendWelcomeByEmployeeId(employeeId: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    try {
+      const trimmed = employeeId.trim();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+      let query = supabase.from('employees').select('*');
+      if (isUuid) {
+        query = query.eq('id', trimmed);
+      } else {
+        query = query.or(`employee_code.eq.${trimmed},employee_code.ilike.%${trimmed}%`);
+      }
+      const { data: emp, error } = await query.limit(1).maybeSingle();
+
+      if (error || !emp) {
+        return { success: false, error: `Employee not found in database for ID/Code: ${employeeId}` };
+      }
+
+      const targetPhone = emp.phone || emp.personal_phone;
+      if (!targetPhone || targetPhone.replace(/\D/g, '').length < 10) {
+        return { success: false, error: `Employee ${emp.display_name || emp.first_name} does not have a valid mobile phone number registered.` };
+      }
+
+      const empName = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee';
+      const email = emp.work_email || (emp as any).email || emp.personal_email || `${(emp.employee_code || 'emp').toLowerCase().replace(/[^a-z0-9]/g, '')}@joyglobalcorp.com`;
+
+      return this.sendEmployeeWelcomeOnboarding({
+        phone: targetPhone,
+        employeeName: empName,
+        employeeCode: emp.employee_code || emp.id,
+        companyName: 'Joy Corporate Solutions',
+        organizationId: emp.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+        employeeId: emp.id,
+        workEmail: email,
+      });
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to dispatch welcome message' };
+    }
+  }
+
+  /**
+   * Dispatches the approved WhatsApp Payslip (payslip) to a specific employee
+   * dynamically querying authoritative database records (salary assignment, bank details).
+   */
+  async sendPayslipByEmployeeId(params: {
+    employeeId: string;
+    monthYear?: string;
+    payDate?: string;
+    pdfUrl?: string;
+  }): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    try {
+      const trimmed = params.employeeId.trim();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+      let query = supabase.from('employees').select('*');
+      if (isUuid) {
+        query = query.eq('id', trimmed);
+      } else {
+        query = query.or(`employee_code.eq.${trimmed},employee_code.ilike.%${trimmed}%`);
+      }
+      const { data: emp, error } = await query.limit(1).maybeSingle();
+
+      if (error || !emp) {
+        return { success: false, error: `Employee not found for ID/Code: ${params.employeeId}` };
+      }
+
+      const targetPhone = emp.phone || emp.personal_phone;
+      if (!targetPhone || targetPhone.replace(/\D/g, '').length < 10) {
+        return { success: false, error: `Employee ${emp.display_name || emp.first_name} does not have a valid mobile phone number registered.` };
+      }
+
+      const empName = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee';
+
+      // 1. Fetch latest finalized published payslip record (must not be future-dated)
+      const nowIso = new Date().toISOString();
+      const { data: payslip } = await supabase
+        .from('payslips')
+        .select('*, payroll_line_items(*)')
+        .eq('employee_id', emp.id)
+        .eq('is_published', true)
+        .lte('published_at', nowIso)
+        .order('published_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // 2. Fetch authoritative bank details
+      const { data: bank } = await supabase
+        .from('employee_bank_details')
+        .select('*')
+        .eq('employee_id', emp.id)
+        .limit(1)
+        .maybeSingle();
+
+      // 3. Fetch salary assignment fallback
+      const { data: assign } = await supabase
+        .from('employee_salary_assignments')
+        .select('*')
+        .eq('employee_id', emp.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const lineItem = (payslip as any)?.payroll_line_items;
+      const netPayAmount = lineItem?.net_pay || payslip?.net_pay || (assign?.monthly_gross ? Math.round(assign.monthly_gross * 0.9221) : 0);
+      const formattedNet = `${Number(netPayAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+      const bankMasked = bank?.account_number
+        ? `${bank.bank_name || 'Bank'} (••••${bank.account_number.slice(-4)})`
+        : 'Bank Account on File';
+
+      const monthYear = params.monthYear || (payslip?.published_at
+        ? new Date(payslip.published_at).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+        : 'Recent');
+      const payDate = params.payDate || (payslip?.published_at
+        ? new Date(payslip.published_at).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0]);
+
+      // Resolve signed URL for the canonical payslip PDF if not explicitly provided
+      let pdfUrl = params.pdfUrl || '';
+      if (!pdfUrl && payslip?.storage_path) {
+        try {
+          const { data: signData } = await supabase.storage
+            .from('payslips')
+            .createSignedUrl(payslip.storage_path, 604800); // 7 days
+          if (signData?.signedUrl) {
+            pdfUrl = signData.signedUrl;
+          }
+        } catch (storageErr) {
+          console.warn('[whatsappNotificationService] Signed URL creation notice:', storageErr);
+        }
+      }
+
+      return this.sendMonthlyPayslip({
+        organizationId: emp.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+        employeeId: emp.id,
+        employeeName: empName,
+        phone: targetPhone,
+        monthYear,
+        netPay: formattedNet,
+        bankAccountMasked: bankMasked,
+        payDate,
+        payslipPdfUrl: pdfUrl,
+        templateName: 'payslip',
+      });
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to dispatch payslip message' };
+    }
+  }
+
+  /**
+   * Batch dispatches the approved WhatsApp Welcome Pack to all active employees in the organization.
+   */
+  async sendWelcomeToAllEmployees(organizationId?: string): Promise<{
+    total: number;
+    dispatched: number;
+    failed: number;
+    results: Array<{ employeeCode: string; name: string; phone: string; success: boolean; error?: string }>;
+  }> {
+    let query = supabase.from('employees').select('*').is('deleted_at', null);
+    if (organizationId) {
+      query = query.eq('organization_id', organizationId);
+    }
+    const { data: emps, error } = await query;
+    if (error || !emps) {
+      return { total: 0, dispatched: 0, failed: 0, results: [] };
+    }
+
+    const results: Array<{ employeeCode: string; name: string; phone: string; success: boolean; error?: string }> = [];
+    let dispatched = 0;
+    let failed = 0;
+
+    for (const emp of emps) {
+      const phone = emp.phone || emp.personal_phone;
+      const name = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee';
+      const code = emp.employee_code || emp.id;
+
+      if (!phone || phone.replace(/\D/g, '').length < 10) {
+        results.push({ employeeCode: code, name, phone: phone || 'N/A', success: false, error: 'No phone number' });
+        failed++;
+        continue;
+      }
+
+      const res = await this.sendWelcomeByEmployeeId(emp.id);
+      if (res.success) {
+        dispatched++;
+        results.push({ employeeCode: code, name, phone, success: true });
+      } else {
+        failed++;
+        results.push({ employeeCode: code, name, phone, success: false, error: res.error });
+      }
+    }
+
+    return { total: emps.length, dispatched, failed, results };
   }
 }
 

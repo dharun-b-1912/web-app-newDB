@@ -32,9 +32,11 @@ import {
   HelpCircle,
   Cpu,
   ScanFace,
+  Bell,
 } from 'lucide-react';
 import { AttendanceDaily, PunchSource } from '../../../types/attendance';
 import { attendanceApi } from '../../../services/attendanceApi';
+import { AttendanceNotificationDiagnosticModal } from '../components/AttendanceNotificationDiagnosticModal';
 import { workLocationService } from '../../../services/location/workLocationService';
 import { api } from '../../../services/api';
 import { useToast } from '../../../components/ui/Toast';
@@ -81,6 +83,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
   const [departments, setDepartments] = useState<string[]>(['People & HR', 'Engineering', 'Operations', 'Quality Assurance']);
   const [locations, setLocations] = useState<string[]>(['Coimbatore HQ', 'Chennai Factory', 'Hosur Plant', 'Bangalore Office']);
   const [vendors, setVendors] = useState<string[]>(['Direct Payroll']);
+  const [isDiagnosticModalOpen, setIsDiagnosticModalOpen] = useState(false);
   const [shifts, setShifts] = useState<any[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString());
 
@@ -564,6 +567,16 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
               className="text-xs font-semibold"
             >
               Export
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsDiagnosticModalOpen(true)}
+              leftIcon={<Bell className="w-3.5 h-3.5 text-indigo-600" />}
+              className="text-xs font-semibold hover:border-indigo-400 hover:text-indigo-600 border-indigo-200 bg-indigo-50/50 text-indigo-900"
+            >
+              Push Diagnostics
             </Button>
           </div>
         </div>
@@ -1054,6 +1067,11 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
           </TableBody>
         </Table>
       </Card>
+
+      <AttendanceNotificationDiagnosticModal
+        isOpen={isDiagnosticModalOpen}
+        onClose={() => setIsDiagnosticModalOpen(false)}
+      />
     </div>
   );
 };

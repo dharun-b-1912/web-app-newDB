@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Department, Designation, Branch, Location, EmploymentType, WorkMode, EmployeeStatus, EmploymentSource, Vendor } from '../../../types';
+import { SalaryStructure } from '../../../types/payroll';
 import { payrollCalculationEngine } from '../../../services/payroll/payrollCalculationEngine';
 import { payrollApi } from '../../../services/payrollApi';
 import { api } from '../../../services/api';
@@ -9,6 +10,7 @@ import { ClientMaster, ClientContract } from '../../../types/clientBilling';
 import { organizationStructureService } from '../../../services/organization/organizationStructureService';
 import { attendanceRosterService } from '../../../services/attendance/attendanceRosterService';
 import { ShiftMaster } from '../../../types/shiftRoster';
+import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
 import {
   Briefcase,
   Building2,
@@ -73,6 +75,7 @@ export interface Step3FormData {
   compensation_basis?: 'CTC_INCLUSIVE' | 'GROSS_BASED';
   salary_structure_code?: string;
   salary_structure_name?: string;
+  salary_structure_id?: string;
   annual_ctc?: number;
   monthly_ctc?: number;
   currency?: string;
@@ -83,6 +86,7 @@ export interface Step3FormData {
   esi_applicable?: boolean;
   pt_applicable?: boolean;
   tds_applicable?: boolean;
+  lwf_applicable?: boolean;
 }
 
 const EMPLOYMENT_SOURCES: { id: EmploymentSource; label: string; desc: string }[] = [
@@ -92,24 +96,6 @@ const EMPLOYMENT_SOURCES: { id: EmploymentSource; label: string; desc: string }[
   { id: 'TEMPORARY', label: 'Temporary Staff', desc: 'Project specific' },
   { id: 'CONSULTANT', label: 'Consultant', desc: 'Retainer services' },
   { id: 'VENDOR', label: 'Vendor Workforce', desc: 'Outsourced partner staff' },
-];
-
-const SALARY_STRUCTURES = [
-  {
-    code: 'CORP_STD_01',
-    name: 'Corporate Standard CTC Structure',
-    description: '50% Basic, 40% HRA, Special Allowance, EPF & ESIC statutory basket',
-  },
-  {
-    code: 'EXEC_TECH_01',
-    name: 'Executive & Tech Lead Package',
-    description: 'Higher flexi-allowance, executive conveyance/medical allowance and tax optimization',
-  },
-  {
-    code: 'INTERN_STIPEND_01',
-    name: 'Fixed Stipend Package',
-    description: 'Fixed consolidated monthly stipend without statutory deductions',
-  },
 ];
 
 function formatShiftOptionLabel(s: ShiftMaster): string {
@@ -181,30 +167,70 @@ export const Step3Employment: React.FC<Props> = ({
   });
 
   useEffect(() => {
-    try {
-      const list = attendanceRosterService.getShifts();
-      if (list && list.length > 0) {
-        setAvailableShifts(list.filter((s) => s.status !== 'INACTIVE'));
-      }
-    } catch (_) {}
+    let isMounted = true;
+    const loadShiftsAsync = async () => {
+      try {
+        const shifts = await attendanceRosterService.fetchShiftsFromDb();
+        if (isMounted && shifts && shifts.length > 0) {
+          const active = shifts.filter((s) => s.status !== 'INACTIVE');
+          setAvailableShifts(active);
+
+          // If no shift selected yet, set the default active shift
+          if (!formData.shift_id && active.length > 0) {
+            const defShift = active.find((s) => s.shift_code === 'GEN-10') || active[0];
+            onChange({
+              shift_id: defShift.id,
+              shift_name: defShift.shift_name,
+            });
+          }
+        }
+      } catch (_) {}
+    };
+
+    loadShiftsAsync();
+
+    // Listen for live shift updates across tenants
+    const unsubShifts = hrEventBus.subscribe('shift.*', () => {
+      loadShiftsAsync();
+    });
+
+    return () => {
+      isMounted = false;
+      unsubShifts();
+    };
   }, []);
+
+  const uniqueShifts = useMemo(() => {
+    const seen = new Set<string>();
+    const out: ShiftMaster[] = [];
+    for (const s of availableShifts) {
+      if (!s?.id) continue;
+      const codeKey = (s.shift_code || s.id).toUpperCase();
+      if (!seen.has(s.id) && !seen.has(codeKey)) {
+        seen.add(s.id);
+        seen.add(codeKey);
+        out.push(s);
+      }
+    }
+    return out;
+  }, [availableShifts]);
 
   const currentShiftId = useMemo(() => {
     if (!formData.shift_id) {
-      return availableShifts[0]?.id || 'shift-general-01';
+      return uniqueShifts[0]?.id || 'f5ff5d00-8489-459b-8d8e-d930ecffef22';
     }
     // Direct match by ID
-    const direct = availableShifts.find((s) => s.id === formData.shift_id);
+    const direct = uniqueShifts.find((s) => s.id === formData.shift_id);
     if (direct) return direct.id;
 
     // Match via service getShiftById
     const resolved = attendanceRosterService.getShiftById(formData.shift_id);
-    if (resolved && availableShifts.some((s) => s.id === resolved.id)) {
+    if (resolved && uniqueShifts.some((s) => s.id === resolved.id)) {
       return resolved.id;
     }
 
     // Match by code or name
-    const byCodeOrName = availableShifts.find(
+    const byCodeOrName = uniqueShifts.find(
       (s) =>
         s.shift_code.toLowerCase() === formData.shift_id?.toLowerCase() ||
         (formData.shift_name && s.shift_name.toLowerCase().includes(formData.shift_name.toLowerCase()))
@@ -212,7 +238,7 @@ export const Step3Employment: React.FC<Props> = ({
     if (byCodeOrName) return byCodeOrName.id;
 
     return formData.shift_id;
-  }, [formData.shift_id, formData.shift_name, availableShifts]);
+  }, [formData.shift_id, formData.shift_name, uniqueShifts]);
 
   const handleSaveCustomDesig = async (overrideTitle?: string) => {
     const raw = (overrideTitle !== undefined ? overrideTitle : customTitle).trim();
@@ -430,9 +456,48 @@ export const Step3Employment: React.FC<Props> = ({
     });
   };
 
-  const annualCtc = formData.annual_ctc || 1200000;
-  const monthlyCtc = formData.monthly_ctc || Math.round(annualCtc / 12);
+  const annualCtc = formData.annual_ctc !== undefined ? formData.annual_ctc : 0;
+  const monthlyCtc = formData.monthly_ctc !== undefined ? formData.monthly_ctc : (annualCtc > 0 ? Math.round(annualCtc / 12) : 0);
   const salaryStructureCode = formData.salary_structure_code || 'CORP_STD_01';
+
+  const [availableStructures, setAvailableStructures] = useState<SalaryStructure[]>(() => {
+    try {
+      return payrollApi.getSalaryStructures();
+    } catch (_) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    payrollApi.getSalaryStructuresAsync().then((list) => {
+      if (isMounted && list && list.length > 0) {
+        setAvailableStructures(list);
+      }
+    }).catch((err) => {
+      console.warn('[Step3Employment] Error fetching structures:', err);
+    });
+    return () => { isMounted = false; };
+  }, []);
+
+  const handleSalaryStructureChange = (newCode: string) => {
+    const matched = availableStructures.find((st) => st.code === newCode);
+    const updates: Partial<Step3FormData> = {
+      salary_structure_code: newCode,
+      salary_structure_name: matched?.name || newCode,
+      salary_structure_id: matched?.id,
+    };
+
+    if (newCode === 'ASSOCIATE_STD_20K') {
+      updates.annual_ctc = 240000;
+      updates.monthly_ctc = 20000;
+      updates.pf_applicable = true;
+      updates.esi_applicable = true; // ESIC is statutory for monthly gross <= 21,000 INR
+      updates.pt_applicable = true;
+    }
+
+    onChange(updates);
+  };
 
   const [statutoryConfig, setStatutoryConfig] = useState(() => payrollApi.getStatutoryConfig());
 
@@ -468,9 +533,10 @@ export const Step3Employment: React.FC<Props> = ({
       esiApplicable: formData.esi_applicable === true,
       ptApplicable: formData.pt_applicable !== false,
       tdsApplicable: formData.tds_applicable !== false,
+      lwfApplicable: formData.lwf_applicable === true,
       statutoryConfig,
     });
-  }, [annualCtc, monthlyCtc, salaryStructureCode, formData.compensation_basis, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, formData.tds_applicable, statutoryConfig]);
+  }, [annualCtc, monthlyCtc, salaryStructureCode, formData.compensation_basis, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, formData.tds_applicable, formData.lwf_applicable, statutoryConfig]);
 
   const handleAnnualCtcChange = (value: number) => {
     const validAnnual = Math.max(0, value);
@@ -991,14 +1057,23 @@ export const Step3Employment: React.FC<Props> = ({
               Work Location <span className="text-rose-500">*</span>
             </label>
             <select
-              value={formData.location_id || ''}
-              onChange={(e) => onChange({ location_id: e.target.value })}
+              value={formData.location_id || formData.branch_id || ''}
+              onChange={(e) => {
+                const val = e.target.value;
+                const matchLoc = locations.find((l) => l.id === val);
+                const matchBranch = branches.find((b) => b.id === val);
+                const locName = matchLoc?.name || matchBranch?.name || val;
+                onChange({
+                  location_id: val,
+                  work_location_name: locName,
+                });
+              }}
               className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium"
             >
               <option value="">-- Select Work Location --</option>
               {locations.map((loc) => (
                 <option key={loc.id} value={loc.id}>
-                  {loc.name} ({loc.city || 'TN'})
+                  {loc.name} {loc.city ? `(${loc.city})` : ''}
                 </option>
               ))}
             </select>
@@ -1010,7 +1085,17 @@ export const Step3Employment: React.FC<Props> = ({
             </label>
             <select
               value={formData.branch_id || ''}
-              onChange={(e) => onChange({ branch_id: e.target.value })}
+              onChange={(e) => {
+                const val = e.target.value;
+                const matchBranch = branches.find((b) => b.id === val);
+                onChange({
+                  branch_id: val,
+                  ...(!formData.location_id || formData.location_id === formData.branch_id ? {
+                    location_id: val,
+                    work_location_name: matchBranch?.name || val,
+                  } : {}),
+                });
+              }}
               className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium"
             >
               <option value="">-- Select Branch --</option>
@@ -1048,7 +1133,7 @@ export const Step3Employment: React.FC<Props> = ({
             <select
               value={currentShiftId}
               onChange={(e) => {
-                const s = availableShifts.find((opt) => opt.id === e.target.value) ||
+                const s = uniqueShifts.find((opt) => opt.id === e.target.value) ||
                   attendanceRosterService.getShiftById(e.target.value);
                 onChange({
                   shift_id: e.target.value,
@@ -1057,7 +1142,7 @@ export const Step3Employment: React.FC<Props> = ({
               }}
               className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium text-gray-900"
             >
-              {availableShifts.map((s) => (
+              {uniqueShifts.map((s) => (
                 <option key={s.id} value={s.id}>
                   {formatShiftOptionLabel(s)}
                 </option>
@@ -1173,18 +1258,26 @@ export const Step3Employment: React.FC<Props> = ({
             </label>
             <select
               value={formData.salary_structure_code || 'CORP_STD_01'}
-              onChange={(e) => {
-                const s = SALARY_STRUCTURES.find((st) => st.code === e.target.value);
-                onChange({ salary_structure_code: e.target.value, salary_structure_name: s?.name });
-              }}
+              onChange={(e) => handleSalaryStructureChange(e.target.value)}
               className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold text-gray-900"
             >
-              {SALARY_STRUCTURES.map((st) => (
-                <option key={st.code} value={st.code}>
+              {availableStructures.map((st) => (
+                <option key={st.id || st.code} value={st.code}>
                   {st.name} ({st.code})
                 </option>
               ))}
             </select>
+            {(() => {
+              const currentSt = availableStructures.find(
+                (st) => st.code === (formData.salary_structure_code || 'CORP_STD_01')
+              );
+              if (!currentSt) return null;
+              return (
+                <p className="text-[10px] text-emerald-800 bg-emerald-50/80 border border-emerald-200/80 rounded-lg px-2 py-1 mt-1 font-medium leading-tight">
+                  {currentSt.description || `${currentSt.name} (${currentSt.code})`}
+                </p>
+              );
+            })()}
           </div>
 
           <div>
@@ -1229,9 +1322,9 @@ export const Step3Employment: React.FC<Props> = ({
                 type="number"
                 min={0}
                 step={5000}
-                value={annualCtc}
+                value={annualCtc === 0 ? '' : annualCtc}
                 onChange={(e) => handleAnnualCtcChange(parseFloat(e.target.value) || 0)}
-                placeholder="1200000"
+                placeholder="e.g. 720000"
                 className="w-full pl-8 pr-3 py-2.5 text-sm font-black text-gray-900 bg-white border border-gray-300 rounded-xl focus:border-[#07563D] focus:ring-2 focus:ring-[#07563D]/20 focus:outline-none"
               />
             </div>
@@ -1247,9 +1340,9 @@ export const Step3Employment: React.FC<Props> = ({
               <input
                 type="number"
                 min={0}
-                value={monthlyCtc}
+                value={monthlyCtc === 0 ? '' : monthlyCtc}
                 onChange={(e) => handleMonthlyCtcChange(parseFloat(e.target.value) || 0)}
-                placeholder="100000"
+                placeholder="e.g. 60000"
                 className="w-full pl-8 pr-3 py-2.5 text-sm font-black text-gray-900 bg-white border border-gray-300 rounded-xl focus:border-[#07563D] focus:ring-2 focus:ring-[#07563D]/20 focus:outline-none"
               />
             </div>
@@ -1267,7 +1360,7 @@ export const Step3Employment: React.FC<Props> = ({
             <span className="text-[10px] text-gray-500 font-medium">Toggle statutory components for monthly payroll computation</span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
             <label className="flex items-center gap-2 p-2.5 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer hover:bg-emerald-50/40 transition-colors">
               <input
                 type="checkbox"
@@ -1316,7 +1409,20 @@ export const Step3Employment: React.FC<Props> = ({
               />
               <div>
                 <p className="text-xs font-bold text-gray-900">TDS / Tax</p>
-                <p className="text-[10px] text-gray-500">Income Tax Deduction</p>
+                <p className="text-[10px] text-gray-500">Income Tax</p>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-2 p-2.5 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer hover:bg-emerald-50/40 transition-colors">
+              <input
+                type="checkbox"
+                checked={formData.lwf_applicable === true}
+                onChange={(e) => onChange({ lwf_applicable: e.target.checked })}
+                className="w-4 h-4 rounded text-[#07563D] focus:ring-0"
+              />
+              <div>
+                <p className="text-xs font-bold text-gray-900">LWF</p>
+                <p className="text-[10px] text-gray-500">Labour Welfare</p>
               </div>
             </label>
           </div>
@@ -1398,7 +1504,9 @@ export const Step3Employment: React.FC<Props> = ({
               <p className="text-[11px] font-black text-rose-200 uppercase tracking-wider mb-2">Statutory & Tax Withholdings</p>
               <div className="flex justify-between text-emerald-100">
                 <span>Employee EPF ({statutoryConfig.pf_employee_percent ?? 12}%):</span>
-                <span className="font-bold text-rose-200">-₹{liveCalculation.epfEmployee.toLocaleString('en-IN')}</span>
+                <span className={`font-bold ${liveCalculation.epfEmployee > 0 ? 'text-rose-200' : 'text-emerald-300'}`}>
+                  {liveCalculation.epfEmployee > 0 ? `-₹${liveCalculation.epfEmployee.toLocaleString('en-IN')}` : '₹0'}
+                </span>
               </div>
               {liveCalculation.esicEmployee > 0 && (
                 <div className="flex justify-between text-emerald-100">
@@ -1408,7 +1516,9 @@ export const Step3Employment: React.FC<Props> = ({
               )}
               <div className="flex justify-between text-emerald-100">
                 <span>Professional Tax (PT):</span>
-                <span className="font-bold text-rose-200">-₹{liveCalculation.professionalTax.toLocaleString('en-IN')}</span>
+                <span className={`font-bold ${liveCalculation.professionalTax > 0 ? 'text-rose-200' : 'text-emerald-300'}`}>
+                  {liveCalculation.professionalTax > 0 ? `-₹${liveCalculation.professionalTax.toLocaleString('en-IN')}` : '₹0'}
+                </span>
               </div>
               {liveCalculation.lwfEmployee > 0 && (
                 <div className="flex justify-between text-emerald-100">
@@ -1424,7 +1534,9 @@ export const Step3Employment: React.FC<Props> = ({
               )}
               <div className="flex justify-between text-amber-200 pt-1 border-t border-emerald-700/50">
                 <span>Employer EPF/ESIC/LWF Contribution:</span>
-                <span className="font-bold">₹{liveCalculation.totalEmployerContributions.toLocaleString('en-IN')}</span>
+                <span className={`font-bold ${liveCalculation.totalEmployerContributions > 0 ? 'text-amber-200' : 'text-emerald-300'}`}>
+                  ₹{liveCalculation.totalEmployerContributions.toLocaleString('en-IN')}
+                </span>
               </div>
             </div>
           </div>

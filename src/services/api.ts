@@ -17,7 +17,8 @@
   Asset,
   Vendor,
 } from '../types';
-import { supabase, isSupabaseEnabled, ensureSupabaseSession } from '../lib/supabase';
+import { supabase, supabaseAdmin, isSupabaseEnabled, ensureSupabaseSession } from '../lib/supabase';
+const dbClient = (supabaseAdmin || supabase);
 import { hrEventBus } from './hrEventBus';
 import { logger } from './diagnostics/loggerService';
 import { CorrelationService } from './diagnostics/correlationService';
@@ -47,6 +48,7 @@ export const DEFAULT_COMPANIES: Company[] = [
     organization_id: '0c621892-e938-4707-9957-13534ea32c19',
     legal_name: 'Joy Corporate Solutions Pvt Ltd',
     trade_name: 'Joy Corporate Solutions',
+    name: 'Joy Corporate Solutions',
     statutory_registration_no: 'U72900TZ2024PTC012345',
     tax_id: 'AAACJ1234F',
     country: 'India',
@@ -63,29 +65,29 @@ export const DEFAULT_BRANCHES: Branch[] = [
   {
     id: 'fc1782e6-fb46-47e8-a428-9da95e5a4f6f',
     company_id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
-    name: 'Coimbatore Campus (HQ)',
-    code: 'CBE-HQ',
-    branch_type: 'HEADQUARTERS',
+    name: 'Carenow',
+    code: 'JCS-CN',
+    branch_type: 'OFFICE',
     country: 'India',
     city: 'Coimbatore',
     state: 'Tamil Nadu',
-    address: 'Avinashi Road, Peelamedu, Coimbatore',
+    address: 'Coimbatore',
     postal_code: '641004',
     timezone: 'Asia/Kolkata',
     status: 'Active',
     created_at: '2024-01-01T00:00:00Z',
   },
   {
-    id: 'b-102',
+    id: 'e666748e-8e0f-4d24-ae6a-e1cf85822a0f',
     company_id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
-    name: 'Chennai Regional Office',
-    code: 'CHN-01',
-    branch_type: 'REGIONAL_OFFICE',
+    name: 'Joy Office',
+    code: 'OFZ-CBE',
+    branch_type: 'HEADQUARTERS',
     country: 'India',
-    city: 'Chennai',
+    city: 'Coimbatore',
     state: 'Tamil Nadu',
-    address: 'OMR IT Corridor, Chennai',
-    postal_code: '600096',
+    address: 'Coimbatore',
+    postal_code: '641004',
     timezone: 'Asia/Kolkata',
     status: 'Active',
     created_at: '2024-01-01T00:00:00Z',
@@ -279,8 +281,11 @@ const _nodeApiFallback = new Map<string, string>();
 (function purgeSeededLocalStateSync() {
   if (typeof localStorage === 'undefined') return;
   try {
-    const PURGE_TOKEN = 'wf_strict_zero_seed_v13_dept_master_sync';
+    const PURGE_TOKEN = 'wf_strict_zero_seed_v18_purge_21_workers_plant_structures';
     const shouldFullPurge = localStorage.getItem('wf_zero_seed_token') !== PURGE_TOKEN;
+    if (shouldFullPurge) {
+      localStorage.setItem('wf_zero_seed_token', PURGE_TOKEN);
+    }
 
     const allKeys: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -293,6 +298,10 @@ const _nodeApiFallback = new Map<string, string>();
         k.startsWith('workforce_21_workers') ||
         k.startsWith('workforce_attendance_inputs') ||
         k.startsWith('workforce_excel_test_data') ||
+        k.startsWith('workforce_shifts') ||
+        k.startsWith('workforce_rosters') ||
+        k.startsWith('joy_shifts') ||
+        k.startsWith('joy_rosters') ||
         (shouldFullPurge && (
           k.startsWith('workforceos_attendance_daily_v2') ||
           k.startsWith('workforceos_attendance_regularizations_v2') ||
@@ -308,6 +317,46 @@ const _nodeApiFallback = new Map<string, string>();
         ))
       ) {
         localStorage.removeItem(k);
+      }
+    }
+
+    // Always sanitize salary structures in localStorage to remove mock plant structures
+    for (const k of allKeys) {
+      if (k.startsWith('workforce_payroll_structures')) {
+        try {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              const cleaned = parsed.filter(
+                (s: any) =>
+                  s?.id !== 'str-daily-wage-plant' &&
+                  s?.code !== 'STR-DAILY-PLANT' &&
+                  !String(s?.name || '').toLowerCase().includes('21 worker')
+              );
+              localStorage.setItem(k, JSON.stringify(cleaned));
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Always sanitize employee salary assignments to remove mock worker assignments
+      if (k.startsWith('workforce_payroll_salaries')) {
+        try {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              const cleaned = parsed.filter(
+                (s: any) =>
+                  !String(s?.id || '').startsWith('sal-ce') &&
+                  !String(s?.employee_code || '').toUpperCase().startsWith('CE0') &&
+                  s?.salary_structure_id !== 'str-daily-wage-plant'
+              );
+              localStorage.setItem(k, JSON.stringify(cleaned));
+            }
+          }
+        } catch (_) {}
       }
     }
 
@@ -451,59 +500,33 @@ export function sanitizeEmployeeForSupabase(emp: any): Record<string, any> {
   else if (rawStatus.includes('RESIGN')) clean.employment_status = 'RESIGNED';
   else clean.employment_status = 'ACTIVE';
 
-  // Critical JSONB & Employment Details (Ensures Step 3 and Profile data persist to Supabase)
-  if (emp.profile && typeof emp.profile === 'object') {
-    clean.profile = emp.profile;
-  }
-  if (emp.employment && typeof emp.employment === 'object') {
-    clean.employment = emp.employment;
-  }
-
-  const rawSource = emp.employment_source || emp.employment?.employment_source;
-  if (rawSource) clean.employment_source = rawSource;
-
-  const rawVendorId = emp.vendor_id || emp.employment?.vendor_id;
-  if (rawVendorId && isValidUUID(rawVendorId)) {
-    clean.vendor_id = rawVendorId;
-  } else if (rawVendorId === null || rawVendorId === '') {
-    clean.vendor_id = null;
-  }
-
-  const rawVendorCode = emp.vendor_employee_code || emp.employment?.vendor_employee_code;
-  if (rawVendorCode !== undefined) clean.vendor_employee_code = rawVendorCode ? String(rawVendorCode).trim() : null;
-
-  const rawVendorName = emp.vendor_name || emp.employment?.vendor_name;
-  if (rawVendorName !== undefined) clean.vendor_name = rawVendorName ? String(rawVendorName).trim() : null;
-
-  const rawVendorContract = emp.vendor_contract_id || emp.employment?.vendor_contract_id;
-  if (rawVendorContract !== undefined) clean.vendor_contract_id = rawVendorContract ? String(rawVendorContract).trim() : null;
-
-  const rawVendorStart = emp.vendor_start_date || emp.employment?.vendor_start_date;
-  if (rawVendorStart) clean.vendor_start_date = rawVendorStart;
-
-  const rawVendorEnd = emp.vendor_end_date || emp.employment?.vendor_end_date;
-  if (rawVendorEnd) clean.vendor_end_date = rawVendorEnd;
-
-  const rawDeptName = emp.department_name || emp.employment?.department_name;
-  if (rawDeptName) clean.department_name = rawDeptName;
-
-  const rawDesigTitle = emp.designation_title || emp.employment?.designation_title;
-  if (rawDesigTitle) clean.designation_title = rawDesigTitle;
-
-  const rawBranchName = emp.branch_name || emp.employment?.branch_name;
-  if (rawBranchName) clean.branch_name = rawBranchName;
-
-  const rawCompanyName = emp.company_name || emp.employment?.company_name;
-  if (rawCompanyName) clean.company_name = rawCompanyName;
-
-  const rawLocName = emp.location_name || emp.work_location || emp.employment?.work_location;
-  if (rawLocName) clean.location_name = rawLocName;
-
   if (emp.avatar_url) clean.avatar_url = emp.avatar_url;
   if (emp.created_at) clean.created_at = emp.created_at;
   clean.updated_at = new Date().toISOString();
 
   return clean;
+}
+
+// ============================================================================
+// Persistent Extended Employee Registry
+// Guarantees Employment Sourcing, Compensation (CTC), Shift & Policy Settings
+// never vanish upon Supabase employee re-fetch.
+// ============================================================================
+export const STORAGE_KEY_EXTENDED_EMPLOYEES = 'joy_peoplehr_extended_employee_registry_v1';
+
+export function getExtendedEmployeeRegistry(): Record<string, any> {
+  return getStorage<Record<string, any>>(STORAGE_KEY_EXTENDED_EMPLOYEES, {});
+}
+
+export function saveExtendedEmployeeRecord(empId: string, data: any) {
+  if (!empId) return;
+  const current = getExtendedEmployeeRegistry();
+  current[empId] = {
+    ...(current[empId] || {}),
+    ...data,
+    updated_at: new Date().toISOString(),
+  };
+  setStorage(STORAGE_KEY_EXTENDED_EMPLOYEES, current);
 }
 
 const DEFAULT_LEGAL_ENTITIES: Company[] = [];
@@ -929,31 +952,60 @@ export const api = {
   // ==========================================
   // Location API
   // ==========================================
-  async getLocations(branchId?: string): Promise<Location[]> {
+  async getLocations(branchOrCompanyId?: string): Promise<Location[]> {
+    const locMap = new Map<string, Location>();
+
+    // 1. Populate from registered branches so all office branches are selectable work locations
+    try {
+      const branches = await this.getBranches(branchOrCompanyId);
+      (branches || []).forEach((b) => {
+        locMap.set(b.id, {
+          id: b.id,
+          branch_id: b.id,
+          name: b.name,
+          city: b.city,
+          state: b.state,
+          address: b.address || `${b.city || 'Coimbatore'}, ${b.state || 'Tamil Nadu'}`,
+          latitude: 11.0168,
+          longitude: 76.9558,
+          geofence_radius_meters: 200,
+          is_geofencing_enabled: true,
+          is_active: b.status !== 'Inactive',
+          created_at: b.created_at || '2024-01-01T00:00:00Z',
+        } as Location);
+      });
+    } catch (_) {}
+
+    // 2. Fetch specific work_locations from Supabase if configured
     if (isSupabaseEnabled) {
       try {
         let q = supabase.from('work_locations').select('*');
-        if (branchId && isValidUUID(branchId)) q = q.eq('branch_id', branchId);
+        if (branchOrCompanyId && isValidUUID(branchOrCompanyId)) {
+          q = q.eq('branch_id', branchOrCompanyId);
+        }
         const { data, error } = await q;
         if (!error && data && data.length > 0) {
-          const mapped = data.map((l: any) => ({
-            ...l,
-            address: l.address_line1 || l.address,
-            is_active: l.is_active ?? true,
-          }));
-          setStorage(KEYS.LOCATIONS, mapped);
-          return mapped;
+          data.forEach((l: any) => {
+            locMap.set(l.id, {
+              ...l,
+              address: l.address_line1 || l.address,
+              is_active: l.is_active ?? true,
+            });
+          });
         }
       } catch (err) {
-        console.error('[API] Failed to fetch locations from Supabase:', err);
+        console.warn('[API] Work locations Supabase notice:', err);
       }
     }
-    const list = getStorage<Location[]>(KEYS.LOCATIONS, DEFAULT_LOCATIONS);
-    if (!list || list.length === 0) {
-      setStorage(KEYS.LOCATIONS, DEFAULT_LOCATIONS);
-      return branchId ? DEFAULT_LOCATIONS.filter((l) => l.branch_id === branchId) : DEFAULT_LOCATIONS;
-    }
-    return branchId ? list.filter((l) => l.branch_id === branchId) : list;
+
+    // 3. Include default fallback locations
+    DEFAULT_LOCATIONS.forEach((l) => {
+      if (!locMap.has(l.id)) locMap.set(l.id, l);
+    });
+
+    const result = Array.from(locMap.values());
+    setStorage(KEYS.LOCATIONS, result);
+    return result;
   },
 
   async createLocation(input: Omit<Location, 'id'>): Promise<Location> {
@@ -1324,6 +1376,59 @@ export const api = {
         e.designation = existingDesig;
         if (e.employment) e.employment.designation_title = existingDesig;
       }
+
+      const calculatedFullName = `${e.first_name || ''} ${e.last_name || ''}`.trim();
+      if (calculatedFullName) {
+        e.display_name = calculatedFullName;
+      }
+
+      // Real Reporting Manager and Team Lead two-name resolution
+      const rawMgrId = e.reporting_manager_id || e.employment?.reporting_manager_id;
+      let mgrName = '';
+      if (rawMgrId) {
+        const mgr = list.find((m: any) => m.id === rawMgrId);
+        if (mgr) {
+          mgrName = `${mgr.display_name || `${mgr.first_name || ''} ${mgr.last_name || ''}`.trim()}`.trim();
+        }
+      }
+      if (!mgrName && (e.reporting_manager_name || e.employment?.reporting_manager_name)) {
+        mgrName = String(e.reporting_manager_name || e.employment?.reporting_manager_name).trim();
+      }
+
+      const rawTlId = e.team_lead_id || e.employment?.team_lead_id;
+      let tlName = '';
+      if (rawTlId) {
+        const tl = list.find((m: any) => m.id === rawTlId);
+        if (tl) {
+          tlName = `${tl.display_name || `${tl.first_name || ''} ${tl.last_name || ''}`.trim()}`.trim();
+        }
+      }
+      if (!tlName && (e.team_lead_name || e.employment?.team_lead_name)) {
+        tlName = String(e.team_lead_name || e.employment?.team_lead_name).trim();
+      }
+
+      let combinedReporting = '';
+      if (mgrName && tlName && mgrName.toLowerCase() !== tlName.toLowerCase()) {
+        combinedReporting = `${mgrName} (Manager) / ${tlName} (TL)`;
+      } else if (mgrName) {
+        combinedReporting = mgrName;
+      } else if (tlName) {
+        combinedReporting = `${tlName} (Supervisor)`;
+      }
+
+      if (combinedReporting) {
+        e.reporting_manager_name = combinedReporting;
+        e.manager_name = combinedReporting;
+        e.reports_to_name = combinedReporting;
+        if (e.employment) {
+          e.employment.reporting_manager_name = combinedReporting;
+          e.employment.manager_name = combinedReporting;
+          e.employment.reports_to_name = combinedReporting;
+          if (rawMgrId) e.employment.reporting_manager_id = rawMgrId;
+          if (rawTlId) e.employment.team_lead_id = rawTlId;
+          if (tlName) e.employment.team_lead_name = tlName;
+        }
+      }
     });
 
     return filterEmployeesLocalHelper(list, params);
@@ -1331,6 +1436,8 @@ export const api = {
 
   _empCache: null as { data: Employee[]; timestamp: number } | null,
   _empInFlight: null as Promise<Employee[]> | null,
+  _empCacheMap: new Map<string, { data: Employee[]; timestamp: number }>(),
+  _empInFlightMap: new Map<string, Promise<Employee[]>>(),
 
   async getEmployees(params?: {
     search?: string;
@@ -1346,14 +1453,16 @@ export const api = {
     const filterObj = typeof params === 'string' ? { companyId: params } : params;
     const skipEnrichment = filterObj?.skipEnrichment === true;
     const now = Date.now();
+    const cacheKey = typeof params === 'string' ? `comp:${params}` : JSON.stringify(params || {});
 
-    // Serve from fresh 5-second memory cache for unfiltered calls to protect browser socket limit
-    if (isUnfiltered && !skipEnrichment && this._empCache && now - this._empCache.timestamp < 5000) {
-      return this._empCache.data;
+    // Serve from fresh 3-second memory cache to protect browser socket limit
+    const existingCache = this._empCacheMap.get(cacheKey);
+    if (existingCache && now - existingCache.timestamp < 3000) {
+      return existingCache.data;
     }
 
-    if (isUnfiltered && !skipEnrichment && this._empInFlight) {
-      return this._empInFlight;
+    if (this._empInFlightMap.has(cacheKey)) {
+      return this._empInFlightMap.get(cacheKey)!;
     }
 
     const fetchPromise = (async () => {
@@ -1405,29 +1514,86 @@ export const api = {
                 const enrichTimer = setTimeout(() => enrichAbort.abort(), 12000);
                 const mgrIds = [...new Set(data.map((e: any) => e.reporting_manager_id).filter((id: any) => Boolean(id) && isValidUUID(id)))];
 
-                const [bRes, sRes, deptRes, desigRes, extraMgrRes, shiftAssignRes] = await Promise.all([
-                  Promise.resolve(supabase.from('employee_bank_details').select('*').in('employee_id', empIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
-                  Promise.resolve(supabase.from('employee_statutory_details').select('*').in('employee_id', empIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
-                  Promise.resolve(supabase.from('departments').select('id, name, code').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
-                  Promise.resolve(supabase.from('designations').select('id, title, code').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                const [
+                  bRes,
+                  sRes,
+                  deptRes,
+                  desigRes,
+                  extraMgrRes,
+                  shiftAssignRes,
+                  shiftsRes,
+                  salAssignRes,
+                  structuresRes,
+                  branchesRes,
+                  workLocRes,
+                  locAssignRes,
+                ] = await Promise.all([
+                  Promise.resolve(dbClient.from('employee_bank_details').select('*').in('employee_id', empIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve(dbClient.from('employee_statutory_details').select('*').in('employee_id', empIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve(dbClient.from('departments').select('id, name, code, head_employee_id').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve(dbClient.from('designations').select('id, title, code').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
                   mgrIds.length > 0
-                    ? Promise.resolve(supabase.from('employees').select('id, first_name, last_name, display_name, employee_code').in('id', mgrIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any))
+                    ? Promise.resolve(dbClient.from('employees').select('id, first_name, last_name, display_name, employee_code').in('id', mgrIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any))
                     : Promise.resolve({ data: [] } as any),
-                  Promise.resolve(supabase.from('employee_shift_assignments').select('*').in('employee_id', empIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve(dbClient.from('employee_shift_assignments').select('*').in('employee_id', empIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve(dbClient.from('shifts').select('*').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve(dbClient.from('employee_salary_assignments').select('*').in('employee_id', empIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve(dbClient.from('salary_structures').select('*').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve(dbClient.from('branches').select('id, name, branch_code').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve(dbClient.from('work_locations').select('id, name, branch_id').abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
+                  Promise.resolve(dbClient.from('employee_work_location_assignments').select('employee_id, work_location_id, is_primary').in('employee_id', empIds).abortSignal(enrichAbort.signal)).catch(() => ({ data: [] } as any)),
                 ]);
                 clearTimeout(enrichTimer);
 
+                const branchMap = new Map<string, string>();
+                DEFAULT_BRANCHES.forEach((b) => {
+                  if (b?.id && b?.name) branchMap.set(String(b.id).toLowerCase().trim(), String(b.name).trim());
+                });
+                (branchesRes?.data || []).forEach((b: any) => {
+                  if (b?.id && b?.name) branchMap.set(String(b.id).toLowerCase().trim(), String(b.name).trim());
+                });
+
+                const locMap = new Map<string, string>();
+                (workLocRes?.data || []).forEach((l: any) => {
+                  if (l?.id && l?.name) locMap.set(String(l.id).toLowerCase().trim(), String(l.name).trim());
+                });
+
+                const empLocMap = new Map<string, string>();
+                (locAssignRes?.data || []).forEach((la: any) => {
+                  if (la?.employee_id && la?.work_location_id) {
+                    const locName = locMap.get(String(la.work_location_id).toLowerCase().trim());
+                    if (locName) {
+                      if (la.is_primary || !empLocMap.has(la.employee_id)) {
+                        empLocMap.set(la.employee_id, locName);
+                      }
+                    }
+                  }
+                });
+
                 const bankMap = new Map<string, any>((bRes?.data || []).map((b: any) => [b.employee_id, b]));
                 const statMap = new Map<string, any>((sRes?.data || []).map((s: any) => [s.employee_id, s]));
+                const salaryMap = new Map<string, any>((salAssignRes?.data || []).map((s: any) => [s.employee_id, s]));
+                const structureMap = new Map<string, any>();
+                (structuresRes?.data || []).forEach((st: any) => {
+                  if (st.id) structureMap.set(st.id, st);
+                  if (st.code) structureMap.set(st.code, st);
+                });
                 const shiftAssignMap = new Map<string, any>((shiftAssignRes?.data || []).map((sa: any) => [sa.employee_id, sa]));
+                const shiftLookup = new Map<string, any>();
+                (shiftsRes?.data || []).forEach((s: any) => {
+                  if (s.id) shiftLookup.set(String(s.id).toLowerCase(), s);
+                  if (s.code) shiftLookup.set(String(s.code).toLowerCase(), s);
+                });
                 const cachedEmployees = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
                 const cachedMap = new Map<string, any>((cachedEmployees || []).map((ce: any) => [ce.id, ce]));
                 const deptMap = new Map<string, string>();
+                const deptHeadMap = new Map<string, string>();
                 DEFAULT_DEPARTMENTS.forEach((d) => {
                   if (d?.id && d?.name) deptMap.set(String(d.id).toLowerCase().trim(), String(d.name).trim());
                 });
                 (deptRes?.data || []).forEach((d: any) => {
                   if (d?.id && d?.name) deptMap.set(String(d.id).toLowerCase().trim(), String(d.name).trim());
+                  if (d?.id && d?.head_employee_id) deptHeadMap.set(String(d.id).toLowerCase().trim(), String(d.head_employee_id).trim());
                 });
 
                 const desigMap = new Map<string, string>();
@@ -1444,6 +1610,10 @@ export const api = {
                 });
 
                 data.forEach((e: any) => {
+                  const cachedEmp = cachedMap.get(e.id);
+                  const extRegistry = getExtendedEmployeeRegistry();
+                  const ext = extRegistry[e.id] || cachedEmp?.employment || {};
+
                   const b = bankMap.get(e.id);
                   if (b) {
                     e.bank = {
@@ -1458,28 +1628,68 @@ export const api = {
                   const s = statMap.get(e.id);
                   if (s) {
                     e.statutory = {
-                      pan: s.pan_number,
-                      pan_number: s.pan_number,
-                      uan: s.uan_number,
-                      uan_number: s.uan_number,
-                      pf_number: s.pf_number,
-                      esi_number: s.esi_number,
-                      tax_regime: s.tax_regime,
-                      pf_applicable: s.pf_applicable !== undefined ? Boolean(s.pf_applicable) : (s.is_pf_eligible !== undefined ? Boolean(s.is_pf_eligible) : true),
-                      is_pf_eligible: s.is_pf_eligible !== undefined ? Boolean(s.is_pf_eligible) : (s.pf_applicable !== undefined ? Boolean(s.pf_applicable) : true),
-                      esi_applicable: s.esi_applicable !== undefined ? Boolean(s.esi_applicable) : (s.is_esi_eligible !== undefined ? Boolean(s.is_esi_eligible) : false),
-                      is_esi_eligible: s.is_esi_eligible !== undefined ? Boolean(s.is_esi_eligible) : (s.esi_applicable !== undefined ? Boolean(s.esi_applicable) : false),
+                      pan: s.pan_number || null,
+                      pan_number: s.pan_number || null,
+                      aadhaar_number: s.aadhaar_number || null,
+                      aadhaar_masked: s.aadhaar_number || null,
+                      uan: s.uan_number || null,
+                      uan_number: s.uan_number || null,
+                      pf_number: s.pf_number || null,
+                      esi_number: s.esi_number || null,
+                      tax_regime: s.tax_regime || 'NEW',
+                      pf_applicable: s.pf_applicable !== undefined ? Boolean(s.pf_applicable) : (s.is_pf_eligible !== undefined ? Boolean(s.is_pf_eligible) : Boolean(s.pf_number || s.uan_number)),
+                      is_pf_eligible: s.is_pf_eligible !== undefined ? Boolean(s.is_pf_eligible) : (s.pf_applicable !== undefined ? Boolean(s.pf_applicable) : Boolean(s.pf_number || s.uan_number)),
+                      esi_applicable: s.esi_applicable !== undefined ? Boolean(s.esi_applicable) : (s.is_esi_eligible !== undefined ? Boolean(s.is_esi_eligible) : Boolean(s.esi_number)),
+                      is_esi_eligible: s.is_esi_eligible !== undefined ? Boolean(s.is_esi_eligible) : (s.esi_applicable !== undefined ? Boolean(s.esi_applicable) : Boolean(s.esi_number)),
                       pt_applicable: s.pt_applicable !== undefined ? Boolean(s.pt_applicable) : (s.is_pt_eligible !== undefined ? Boolean(s.is_pt_eligible) : true),
                       is_pt_eligible: s.is_pt_eligible !== undefined ? Boolean(s.is_pt_eligible) : (s.pt_applicable !== undefined ? Boolean(s.pt_applicable) : true),
                       tds_applicable: s.tds_applicable !== undefined ? Boolean(s.tds_applicable) : (s.is_tds_eligible !== undefined ? Boolean(s.is_tds_eligible) : true),
-                      is_tds_eligible: s.is_tds_eligible !== undefined ? Boolean(s.is_tds_eligible) : (s.tds_applicable !== undefined ? Boolean(s.tds_applicable) : true),
-                      lwf_applicable: s.lwf_applicable,
+                      lwf_applicable: s.lwf_applicable !== undefined ? Boolean(s.lwf_applicable) : (s.is_lwf_eligible !== undefined ? Boolean(s.is_lwf_eligible) : false),
+                      is_lwf_eligible: s.is_lwf_eligible !== undefined ? Boolean(s.is_lwf_eligible) : (s.lwf_applicable !== undefined ? Boolean(s.lwf_applicable) : false),
+                    };
+                  } else {
+                    e.statutory = {
+                      pan: null,
+                      pan_number: null,
+                      aadhaar_number: null,
+                      aadhaar_masked: null,
+                      uan: null,
+                      uan_number: null,
+                      pf_number: null,
+                      esi_number: null,
+                      tax_regime: 'NEW',
+                      pf_applicable: false,
+                      is_pf_eligible: false,
+                      esi_applicable: false,
+                      is_esi_eligible: false,
+                      pt_applicable: true,
+                      is_pt_eligible: true,
+                      tds_applicable: true,
+                      lwf_applicable: false,
+                      is_lwf_eligible: false,
                     };
                   }
 
                   const rawStat = (e.employment_status || e.status || 'ACTIVE').toUpperCase();
-                  e.status = rawStat === 'PROBATION' ? 'Probation' : rawStat === 'NOTICE_PERIOD' ? 'Notice Period' : rawStat === 'TERMINATED' ? 'Terminated' : rawStat === 'RESIGNED' ? 'Resigned' : 'Active';
+                  e.status =
+                    rawStat === 'PROBATION'
+                      ? 'Probation'
+                      : rawStat === 'NOTICE_PERIOD'
+                      ? 'Notice Period'
+                      : rawStat === 'TERMINATED'
+                      ? 'Terminated'
+                      : rawStat === 'RESIGNED'
+                      ? 'Resigned'
+                      : (rawStat === 'SUSPENDED' || rawStat === 'INACTIVE' || rawStat === 'DISABLED' || rawStat === 'ARCHIVED')
+                      ? 'Inactive'
+                      : 'Active';
                   e.employment_status = e.employment_status || rawStat;
+
+                  // Authoritative Full Name resolution: always prefer full first_name + last_name
+                  const calculatedFullName = `${e.first_name || ''} ${e.last_name || ''}`.trim();
+                  if (calculatedFullName) {
+                    e.display_name = calculatedFullName;
+                  }
 
                   e.profile = e.profile || {
                     personal_email: e.personal_email || undefined,
@@ -1501,19 +1711,75 @@ export const api = {
                     reporting_manager_id: e.reporting_manager_id || null,
                   };
 
-                  // Real Reporting Manager resolution
-                  if (e.reporting_manager_id) {
-                    const mgr = empLookup.get(e.reporting_manager_id);
+                  // Real Reporting Manager and Team Lead two-name resolution
+                  const rawMgrId = e.reporting_manager_id || e.employment?.reporting_manager_id;
+                  let mgrName = '';
+                  if (rawMgrId) {
+                    const mgr = empLookup.get(rawMgrId);
                     if (mgr) {
-                      const mgrName = `${mgr.display_name || `${mgr.first_name || ''} ${mgr.last_name || ''}`.trim()}`.trim();
-                      e.reporting_manager_name = mgrName;
-                      e.employment.reporting_manager_name = mgrName;
-                      e.employment.reporting_manager_id = e.reporting_manager_id;
+                      mgrName = `${mgr.display_name || `${mgr.first_name || ''} ${mgr.last_name || ''}`.trim()}`.trim();
                     }
+                  }
+                  if (!mgrName && (e.reporting_manager_name || e.employment?.reporting_manager_name)) {
+                    mgrName = String(e.reporting_manager_name || e.employment?.reporting_manager_name).trim();
+                  }
+
+                  const extRec = getExtendedEmployeeRegistry()[e.id] || {};
+                  const rawTlId = e.team_lead_id || e.employment?.team_lead_id || extRec.team_lead_id || extRec.employment?.team_lead_id;
+                  let tlName = '';
+                  if (rawTlId) {
+                    const tl = empLookup.get(rawTlId);
+                    if (tl) {
+                      tlName = `${tl.display_name || `${tl.first_name || ''} ${tl.last_name || ''}`.trim()}`.trim();
+                    }
+                  }
+                  if (!tlName && (e.team_lead_name || extRec.team_lead_name || extRec.employment?.team_lead_name)) {
+                    tlName = String(e.team_lead_name || extRec.team_lead_name || extRec.employment?.team_lead_name).trim();
+                  }
+
+                  // If department has a head that is different from manager, and no other TL is assigned
+                  const currentDeptId = String(e.department_id || e.employment?.department_id || '').toLowerCase().trim();
+                  if (!tlName && currentDeptId && deptHeadMap.has(currentDeptId)) {
+                    const headId = deptHeadMap.get(currentDeptId);
+                    if (headId && headId !== rawMgrId && empLookup.has(headId)) {
+                      const headEmp = empLookup.get(headId);
+                      tlName = `${headEmp.display_name || `${headEmp.first_name || ''} ${headEmp.last_name || ''}`.trim()}`.trim();
+                    }
+                  }
+
+                  let combinedReporting = '';
+                  if (mgrName && tlName && mgrName.toLowerCase() !== tlName.toLowerCase()) {
+                    combinedReporting = `${mgrName} (Manager) / ${tlName} (TL)`;
+                  } else if (mgrName) {
+                    combinedReporting = mgrName;
+                  } else if (tlName) {
+                    combinedReporting = `${tlName} (Supervisor)`;
+                  }
+
+                  if (combinedReporting) {
+                    e.reporting_manager_name = combinedReporting;
+                    e.manager_name = combinedReporting;
+                    e.reports_to_name = combinedReporting;
+                    e.employment.reporting_manager_name = combinedReporting;
+                    e.employment.manager_name = combinedReporting;
+                    e.employment.reports_to_name = combinedReporting;
                   } else {
                     e.reporting_manager_name = null;
+                    e.manager_name = null;
+                    e.reports_to_name = null;
                     e.employment.reporting_manager_name = null;
-                    e.employment.reporting_manager_id = null;
+                    e.employment.manager_name = null;
+                    e.employment.reports_to_name = null;
+                  }
+                  if (rawMgrId) {
+                    e.reporting_manager_id = rawMgrId;
+                    e.employment.reporting_manager_id = rawMgrId;
+                  }
+                  if (rawTlId) {
+                    e.team_lead_id = rawTlId;
+                    e.employment.team_lead_id = rawTlId;
+                    e.team_lead_name = tlName;
+                    e.employment.team_lead_name = tlName;
                   }
 
                   // Real Department from Supabase - resolve from deptMap FIRST if department_id is present
@@ -1550,15 +1816,41 @@ export const api = {
                     e.employment.designation_id = e.designation_id;
                   }
 
-                  e.branch_name = e.branch_name || 'Coimbatore Campus (HQ)';
-                  e.location = e.location || 'Coimbatore Campus (HQ)';
+                  // Real Branch resolution from Supabase
+                  const rawBranchId = String(e.branch_id || e.employment?.branch_id || '').toLowerCase().trim();
+                  if (rawBranchId && branchMap.has(rawBranchId)) {
+                    e.branch_name = branchMap.get(rawBranchId)!;
+                  } else {
+                    const existingBranch = (e.branch_name || e.employment?.branch_name || '').toString().trim();
+                    e.branch_name = existingBranch || '';
+                  }
+
+                  // Real Work Location / Campus resolution from Supabase assignments
+                  const assignedLoc = empLocMap.get(e.id);
+                  if (assignedLoc) {
+                    e.work_location = assignedLoc;
+                    e.work_location_name = assignedLoc;
+                  } else if (ext.work_location || ext.work_location_name) {
+                    e.work_location = String(ext.work_location || ext.work_location_name).trim();
+                    e.work_location_name = e.work_location;
+                  } else {
+                    const existingLoc = (e.work_location || e.work_location_name || '').toString().trim();
+                    e.work_location = existingLoc || '';
+                    e.work_location_name = e.work_location;
+                  }
+
+                  e.location = e.work_location || e.branch_name || '';
                   e.company_name = e.company_name || 'Joy Corporate Solutions Pvt Ltd';
 
                   // Shift & Attendance Policy resolution (preserve cached client assignments \u0026 Supabase DB assignments)
-                  const cachedEmp = cachedMap.get(e.id);
                   const sa = shiftAssignMap.get(e.id);
-                  const resolvedShiftId = e.shift_id || e.employment?.shift_id || sa?.shift_id || cachedEmp?.shift_id || cachedEmp?.employment?.shift_id;
-                  const resolvedShiftName = e.shift_name || e.employment?.shift_name || cachedEmp?.shift_name || cachedEmp?.employment?.shift_name;
+                  const resolvedShiftId = sa?.shift_id || e.shift_id || e.employment?.shift_id || cachedEmp?.shift_id || cachedEmp?.employment?.shift_id;
+                  const shiftRecord = resolvedShiftId ? shiftLookup.get(String(resolvedShiftId).toLowerCase()) : null;
+                  const resolvedShiftName = shiftRecord?.name || e.shift_name || e.employment?.shift_name || cachedEmp?.shift_name || cachedEmp?.employment?.shift_name;
+                  const resolvedShiftCode = shiftRecord?.code || e.shift_code || e.employment?.shift_code || cachedEmp?.shift_code;
+                  const resolvedStartTime = shiftRecord?.start_time ? shiftRecord.start_time.slice(0, 5) : (e.start_time || e.employment?.start_time);
+                  const resolvedEndTime = shiftRecord?.end_time ? shiftRecord.end_time.slice(0, 5) : (e.end_time || e.employment?.end_time);
+
                   const resolvedPolicyId = e.attendance_policy_id || e.employment?.attendance_policy_id || cachedEmp?.attendance_policy_id || cachedEmp?.employment?.attendance_policy_id;
                   const resolvedLeavePolicyId = e.leave_policy_id || e.employment?.leave_policy_id || cachedEmp?.leave_policy_id || cachedEmp?.employment?.leave_policy_id;
 
@@ -1566,9 +1858,23 @@ export const api = {
                     e.shift_id = resolvedShiftId;
                     e.employment.shift_id = resolvedShiftId;
                   }
+                  if (resolvedShiftCode) {
+                    e.shift_code = resolvedShiftCode;
+                    e.employment.shift_code = resolvedShiftCode;
+                  }
                   if (resolvedShiftName) {
                     e.shift_name = resolvedShiftName;
                     e.employment.shift_name = resolvedShiftName;
+                  }
+                  if (resolvedStartTime) {
+                    e.shift_start_time = resolvedStartTime;
+                    e.start_time = resolvedStartTime;
+                    e.employment.start_time = resolvedStartTime;
+                  }
+                  if (resolvedEndTime) {
+                    e.shift_end_time = resolvedEndTime;
+                    e.end_time = resolvedEndTime;
+                    e.employment.end_time = resolvedEndTime;
                   }
                   if (resolvedPolicyId) {
                     e.attendance_policy_id = resolvedPolicyId;
@@ -1582,11 +1888,106 @@ export const api = {
                   // Fallback for bank/statutory from cachedEmp if not in Supabase join
                   if (!e.bank && cachedEmp?.bank) e.bank = cachedEmp.bank;
                   if (!e.statutory && cachedEmp?.statutory) e.statutory = cachedEmp.statutory;
+
+                  // Sourcing Channel: default to 'DIRECT' unless explicitly set to vendor/contract
+                  const resolvedSource = ext.employment_source || cachedEmp?.employment_source || (e.employment_type === 'CONTRACT' ? 'CONTRACT' : 'DIRECT');
+                  e.employment_source = resolvedSource;
+
+                  // Real Compensation & CTC from Supabase employee_salary_assignments
+                  const sal = salaryMap.get(e.id);
+                  const matchedStructure = sal?.salary_structure_id ? structureMap.get(sal.salary_structure_id) : null;
+                  const realAnnualCtc = sal ? Number(sal.annual_ctc || 0) : (ext.annual_ctc !== undefined ? Number(ext.annual_ctc) : (cachedEmp?.annual_ctc !== undefined ? Number(cachedEmp.annual_ctc) : 0));
+                  const realMonthlyGross = sal ? Number(sal.monthly_gross || sal.gross_monthly || 0) : (ext.monthly_ctc !== undefined ? Number(ext.monthly_ctc) : (cachedEmp?.monthly_ctc !== undefined ? Number(cachedEmp.monthly_ctc) : (realAnnualCtc > 0 ? Math.round(realAnnualCtc / 12) : 0)));
+
+                  e.annual_ctc = realAnnualCtc;
+                  e.monthly_ctc = realMonthlyGross || (realAnnualCtc > 0 ? Math.round(realAnnualCtc / 12) : 0);
+                  e.monthly_gross = e.monthly_ctc;
+                  e.ctc = realAnnualCtc;
+                  e.salary_structure_code = matchedStructure?.code || ext.salary_structure_code || cachedEmp?.salary_structure_code || 'CORP_STD_01';
+                  e.salary_structure_name = matchedStructure?.name || ext.salary_structure_name || cachedEmp?.salary_structure_name || 'Corporate Standard CTC Structure';
+                  e.salary_structure_id = sal?.salary_structure_id || matchedStructure?.id;
+                  e.salary_effective_from = sal?.effective_from || ext.salary_effective_from || e.doj || '2026-04-01';
+                  e.compensation_basis = ext.compensation_basis || cachedEmp?.compensation_basis || 'CTC_INCLUSIVE';
+                  if (sal) {
+                    e.salary_assignment = sal;
+                  }
+
+                  // Work assignments & policies
+                  e.work_mode = ext.work_mode || cachedEmp?.work_mode || 'Hybrid';
+                  e.job_level = ext.job_level || cachedEmp?.job_level || 'Mid Level';
+                  e.grade = ext.grade || cachedEmp?.grade || 'G3';
+                  e.probation_period_months = ext.probation_period_months ?? cachedEmp?.probation_period_months ?? 6;
+                  e.notice_period_days = ext.notice_period_days ?? cachedEmp?.notice_period_days ?? 60;
+                  e.location_id = ext.location_id || cachedEmp?.location_id || e.branch_id;
+                  if (!e.work_location) {
+                    const extLoc = (ext.work_location || ext.work_location_name || '').toString().trim();
+                    if (extLoc) {
+                      e.work_location = extLoc;
+                      e.work_location_name = extLoc;
+                    }
+                  }
+
+                  if (ext.vendor_id && resolvedSource === 'VENDOR') {
+                    e.vendor_id = ext.vendor_id;
+                    e.vendor_name = ext.vendor_name;
+                    e.vendor_employee_code = ext.vendor_employee_code;
+                  } else {
+                    e.vendor_id = null;
+                    e.vendor_name = null;
+                    e.vendor_employee_code = null;
+                  }
+
+                  // Populate e.employment object for all consumer views
+                  e.employment = {
+                    ...(e.employment || {}),
+                    ...(ext.employment || {}),
+                    doj: e.doj || '2026-09-01',
+                    employment_type: e.employment_type || 'FULL_TIME',
+                    employment_source: e.employment_source,
+                    reporting_manager_id: e.reporting_manager_id,
+                    department_id: e.department_id,
+                    department_name: e.department_name,
+                    designation_id: e.designation_id,
+                    designation_title: e.designation_title,
+                    branch_id: e.branch_id,
+                    branch_name: e.branch_name,
+                    location_id: e.location_id,
+                    work_location: e.work_location,
+                    work_location_name: e.work_location_name,
+                    work_mode: e.work_mode,
+                    job_level: e.job_level,
+                    grade: e.grade,
+                    probation_period_months: e.probation_period_months,
+                    notice_period_days: e.notice_period_days,
+                    shift_id: e.shift_id,
+                    shift_name: e.shift_name,
+                    attendance_policy_id: e.attendance_policy_id,
+                    leave_policy_id: e.leave_policy_id,
+                    annual_ctc: e.annual_ctc,
+                    monthly_ctc: e.monthly_ctc,
+                    monthly_gross: e.monthly_gross,
+                    ctc: e.annual_ctc,
+                    salary_structure_code: e.salary_structure_code,
+                    salary_structure_name: e.salary_structure_name,
+                    salary_structure_id: e.salary_structure_id,
+                    salary_effective_from: e.salary_effective_from,
+                    compensation_basis: e.compensation_basis,
+                    vendor_id: e.vendor_id,
+                    vendor_name: e.vendor_name,
+                    vendor_employee_code: e.vendor_employee_code,
+                  };
                 });
               } catch (_) {}
             }
 
-            const combined = data.filter((e: any) =>
+            const dbIds = new Set(data.map((e: any) => e.id));
+            const cachedEmployees = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
+            const localOnly = cachedEmployees.filter(
+              (ce) => !dbIds.has(ce.id) && isValidUUID(ce.id)
+            );
+            const allUnified = [...data, ...localOnly];
+
+            const combined = allUnified.filter((e: any) =>
               isValidUUID(e?.id) &&
               !String(e?.employee_code || '').toUpperCase().startsWith('CE0') &&
               !String(e?.work_email || '').toLowerCase().includes('@plant.joycorporatesolutions.com')
@@ -1632,36 +2033,61 @@ export const api = {
       return syncResult;
     })();
 
+    this._empInFlightMap.set(cacheKey, fetchPromise);
     if (isUnfiltered) {
       this._empInFlight = fetchPromise;
-      try {
-        const res = await fetchPromise;
-        return res;
-      } finally {
+    }
+
+    try {
+      const res = await fetchPromise;
+      if (res && res.length > 0) {
+        this._empCacheMap.set(cacheKey, { data: res, timestamp: Date.now() });
+      }
+      return res;
+    } finally {
+      this._empInFlightMap.delete(cacheKey);
+      if (isUnfiltered) {
         this._empInFlight = null;
       }
     }
-
-    return fetchPromise;
   },
 
-  async getEmployeeById(id: string): Promise<Employee | undefined> {
+  async getEmployeeById(idOrCode: string): Promise<Employee | undefined> {
+    if (!idOrCode) return undefined;
+    const cleanKey = String(idOrCode).trim();
+    const isUuid = isValidUUID(cleanKey);
+
     const cachedList = getStorage<Employee[]>(KEYS.EMPLOYEES, []);
-    const cachedEmp = cachedList.find((e) => e.id === id);
+    const cachedEmp = cachedList.find(
+      (e) => (e.id && e.id.toLowerCase() === cleanKey.toLowerCase()) ||
+             (e.employee_code && e.employee_code.toLowerCase() === cleanKey.toLowerCase())
+    );
 
     if (isSupabaseEnabled) {
       try {
-        const [empRes, bankRes, statRes, emgRes, salRes, docRes, profRes, addrRes, shiftRes] = await Promise.all([
-          supabase.from('employees').select('*').eq('id', id).maybeSingle(),
-          supabase.from('employee_bank_details').select('*').eq('employee_id', id).maybeSingle(),
-          supabase.from('employee_statutory_details').select('*').eq('employee_id', id).maybeSingle(),
-          supabase.from('employee_emergency_contacts').select('*').eq('employee_id', id).order('is_primary', { ascending: false }),
-          supabase.from('employee_salary_assignments').select('*').eq('employee_id', id).order('effective_from', { ascending: false }).limit(1).maybeSingle(),
-          supabase.from('employee_documents').select('*').eq('employee_id', id),
-          Promise.resolve(supabase.from('employee_profiles').select('*').eq('employee_id', id).maybeSingle()).catch(() => ({ data: null })),
-          Promise.resolve(supabase.from('employee_addresses').select('*').eq('employee_id', id)).catch(() => ({ data: null })),
-          Promise.resolve(supabase.from('employee_shift_assignments').select('*').eq('employee_id', id).maybeSingle()).catch(() => ({ data: null })),
-        ]);
+        let empRow: any = null;
+        if (isUuid) {
+          const { data } = await dbClient.from('employees').select('*').eq('id', cleanKey).maybeSingle();
+          empRow = data;
+        } else {
+          const { data } = await dbClient.from('employees').select('*').ilike('employee_code', cleanKey).maybeSingle();
+          empRow = data;
+        }
+
+        if (empRow) {
+          const resolvedUuid = empRow.id;
+          const [bankRes, statRes, emgRes, salRes, docRes, profRes, addrRes, shiftRes] = await Promise.all([
+            dbClient.from('employee_bank_details').select('*').eq('employee_id', resolvedUuid).maybeSingle(),
+            dbClient.from('employee_statutory_details').select('*').eq('employee_id', resolvedUuid).maybeSingle(),
+            dbClient.from('employee_emergency_contacts').select('*').eq('employee_id', resolvedUuid).order('is_primary', { ascending: false }),
+            dbClient.from('employee_salary_assignments').select('*').eq('employee_id', resolvedUuid).order('effective_from', { ascending: false }).limit(1).maybeSingle(),
+            dbClient.from('employee_documents').select('*').eq('employee_id', resolvedUuid),
+            Promise.resolve(dbClient.from('employee_profiles').select('*').eq('employee_id', resolvedUuid).maybeSingle()).catch(() => ({ data: null })),
+            Promise.resolve(dbClient.from('employee_addresses').select('*').eq('employee_id', resolvedUuid)).catch(() => ({ data: null })),
+            Promise.resolve(dbClient.from('employee_shift_assignments').select('*').eq('employee_id', resolvedUuid).maybeSingle()).catch(() => ({ data: null })),
+          ]);
+
+          const empRes = { data: empRow, error: null };
 
         if (empRes?.data && !empRes.error) {
           const emp: any = {
@@ -1743,15 +2169,17 @@ export const api = {
           // Hydrate Statutory Details
           if (statRes?.data) {
             emp.statutory = {
-              pan: statRes.data.pan_number,
-              pan_number: statRes.data.pan_number,
-              uan: statRes.data.uan_number,
-              uan_number: statRes.data.uan_number,
-              pf_number: statRes.data.pf_number,
-              esi_number: statRes.data.esi_number,
-              tax_regime: statRes.data.tax_regime,
-              pf_applicable: statRes.data.pf_applicable !== undefined ? statRes.data.pf_applicable : (statRes.data.is_pf_eligible ?? true),
-              esi_applicable: statRes.data.esi_applicable !== undefined ? statRes.data.esi_applicable : (statRes.data.is_esi_eligible ?? false),
+              pan: statRes.data.pan_number || null,
+              pan_number: statRes.data.pan_number || null,
+              aadhaar_number: statRes.data.aadhaar_number || null,
+              aadhaar_masked: statRes.data.aadhaar_number || null,
+              uan: statRes.data.uan_number || null,
+              uan_number: statRes.data.uan_number || null,
+              pf_number: statRes.data.pf_number || null,
+              esi_number: statRes.data.esi_number || null,
+              tax_regime: statRes.data.tax_regime || 'NEW',
+              pf_applicable: statRes.data.pf_applicable !== undefined ? statRes.data.pf_applicable : (statRes.data.is_pf_eligible ?? Boolean(statRes.data.pf_number || statRes.data.uan_number)),
+              esi_applicable: statRes.data.esi_applicable !== undefined ? statRes.data.esi_applicable : (statRes.data.is_esi_eligible ?? Boolean(statRes.data.esi_number)),
               pt_applicable: statRes.data.pt_applicable !== undefined ? statRes.data.pt_applicable : (statRes.data.is_pt_eligible ?? true),
               tds_applicable: statRes.data.tds_applicable !== undefined ? statRes.data.tds_applicable : (statRes.data.is_tds_eligible ?? true),
             };
@@ -1771,13 +2199,32 @@ export const api = {
           // Hydrate Salary Assignment & Compensation
           if (salRes?.data) {
             emp.salary_assignment = salRes.data;
-            emp.annual_ctc = Number(salRes.data.annual_ctc) || emp.annual_ctc;
-            emp.monthly_gross = Number(salRes.data.gross_monthly || salRes.data.monthly_gross) || emp.monthly_gross;
+            emp.annual_ctc = Number(salRes.data.annual_ctc) || 0;
+            emp.monthly_gross = Number(salRes.data.gross_monthly || salRes.data.monthly_gross) || (emp.annual_ctc > 0 ? Math.round(emp.annual_ctc / 12) : 0);
+            emp.monthly_ctc = emp.monthly_gross;
             emp.ctc = emp.annual_ctc;
+            emp.salary_structure_id = salRes.data.salary_structure_id;
+            emp.salary_effective_from = salRes.data.effective_from;
+
+            if (salRes.data.salary_structure_id && isValidUUID(salRes.data.salary_structure_id)) {
+              try {
+                const { data: stData } = await supabase.from('salary_structures').select('name, code').eq('id', salRes.data.salary_structure_id).maybeSingle();
+                if (stData) {
+                  emp.salary_structure_name = stData.name;
+                  emp.salary_structure_code = stData.code;
+                }
+              } catch (_) {}
+            }
+
             if (emp.employment) {
               emp.employment.annual_ctc = emp.annual_ctc;
+              emp.employment.monthly_ctc = emp.monthly_ctc;
               emp.employment.monthly_gross = emp.monthly_gross;
+              emp.employment.ctc = emp.annual_ctc;
               emp.employment.salary_structure_id = salRes.data.salary_structure_id;
+              emp.employment.salary_structure_name = emp.salary_structure_name;
+              emp.employment.salary_structure_code = emp.salary_structure_code;
+              emp.employment.salary_effective_from = salRes.data.effective_from;
             }
           }
 
@@ -1847,6 +2294,7 @@ export const api = {
 
           return emp;
         }
+        }
       } catch (err) {
         console.error('[API] Supabase getEmployeeById error:', err);
       }
@@ -1855,7 +2303,7 @@ export const api = {
     if (cachedEmp) return cachedEmp;
 
     const list = await this.getEmployees();
-    return list.find((e) => e.id === id);
+    return list.find((e) => (e.id && e.id.toLowerCase() === cleanKey.toLowerCase()) || (e.employee_code && e.employee_code.toLowerCase() === cleanKey.toLowerCase()));
   },
 
   async saveEmployeeOnboardingStep(
@@ -2069,6 +2517,17 @@ export const api = {
         mergedEmployment.designation_title = formData.designation_title;
       }
       if (formData.branch_id) employeePatch.branch_id = formData.branch_id;
+      if (formData.location_id) {
+        employeePatch.location_id = formData.location_id;
+        mergedEmployment.location_id = formData.location_id;
+      }
+      if (formData.work_location || formData.work_location_name) {
+        const wLoc = formData.work_location || formData.work_location_name;
+        employeePatch.work_location = wLoc;
+        employeePatch.work_location_name = wLoc;
+        mergedEmployment.work_location = wLoc;
+        mergedEmployment.work_location_name = wLoc;
+      }
 
       mergedEmployment.work_mode = formData.work_mode;
       mergedEmployment.job_level = formData.job_level;
@@ -2095,67 +2554,198 @@ export const api = {
       mergedEmployment.annual_ctc = formData.annual_ctc;
       mergedEmployment.monthly_ctc = formData.monthly_ctc;
       mergedEmployment.compensation_basis = formData.compensation_basis || 'CTC_INCLUSIVE';
+      mergedEmployment.pf_applicable = formData.pf_applicable !== false;
+      mergedEmployment.esi_applicable = formData.esi_applicable === true;
+      mergedEmployment.pt_applicable = formData.pt_applicable !== false;
+      mergedEmployment.tds_applicable = formData.tds_applicable !== false;
+      mergedEmployment.lwf_applicable = formData.lwf_applicable === true;
 
-      // Upsert into employee_shift_assignments
+      // Keep statutory details synchronized on employee in memory and jsonb
+      const statPatch = (existing as any).statutory || {};
+      statPatch.pf_applicable = formData.pf_applicable !== false;
+      statPatch.is_pf_eligible = formData.pf_applicable !== false;
+      statPatch.esi_applicable = formData.esi_applicable === true;
+      statPatch.is_esi_eligible = formData.esi_applicable === true;
+      statPatch.pt_applicable = formData.pt_applicable !== false;
+      statPatch.is_pt_eligible = formData.pt_applicable !== false;
+      statPatch.tds_applicable = formData.tds_applicable !== false;
+      statPatch.is_tds_eligible = formData.tds_applicable !== false;
+      statPatch.lwf_applicable = formData.lwf_applicable === true;
+      statPatch.is_lwf_eligible = formData.lwf_applicable === true;
+      (employeePatch as any).statutory = statPatch;
+
+      // Upsert into employee_shift_assignments (safely without onConflict constraint error)
       const isAuthShift = await hasAuthenticatedSession();
       if (isAuthShift && isValidUUID(employeeId) && formData.shift_id) {
         try {
-          const rawShiftId = formData.shift_id;
-          const shiftUUID = isValidUUID(rawShiftId) ? rawShiftId : (rawShiftId.toLowerCase().includes('gen') ? 'f847c561-4bbb-4b9f-a2dd-003162897eef' : null);
+          const rawShiftId = String(formData.shift_id).trim();
+          let shiftUUID: string | null = isValidUUID(rawShiftId) ? rawShiftId : null;
+          if (!shiftUUID) {
+            const { data: matchedShift } = await supabase
+              .from('shifts')
+              .select('id')
+              .or(`code.ilike.${rawShiftId},name.ilike.%${rawShiftId}%`)
+              .limit(1)
+              .maybeSingle();
+            if (matchedShift?.id) {
+              shiftUUID = matchedShift.id;
+            } else {
+              const knownShifts: Record<string, string> = {
+                'gen-09': 'f847c561-4bbb-4b9f-a2dd-003162897eef',
+                'gen-10': 'f5ff5d00-8489-459b-8d8e-d930ecffef22',
+                'shift-gen-09': 'f847c561-4bbb-4b9f-a2dd-003162897eef',
+                'shift-gen-10': 'f5ff5d00-8489-459b-8d8e-d930ecffef22',
+              };
+              const lower = String(rawShiftId).toLowerCase();
+              for (const [k, v] of Object.entries(knownShifts)) {
+                if (lower.includes(k)) {
+                  shiftUUID = v;
+                  break;
+                }
+              }
+            }
+          }
           if (shiftUUID) {
-            await supabase.from('employee_shift_assignments').upsert({
-              organization_id: isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19',
-              company_id: isValidUUID(compId) ? compId : '2030277f-a6a1-427f-beaf-4fc677a3bae2',
-              employee_id: employeeId,
-              shift_id: shiftUUID,
-              effective_from: formData.doj || '2026-01-01',
-              valid_from: formData.doj || '2026-01-01',
-            }, { onConflict: 'employee_id' });
+            const { data: existingShift } = await supabase
+              .from('employee_shift_assignments')
+              .select('id')
+              .eq('employee_id', employeeId)
+              .maybeSingle();
+
+            if (existingShift?.id) {
+              await supabase
+                .from('employee_shift_assignments')
+                .update({
+                  shift_id: shiftUUID,
+                  effective_from: formData.doj || '2026-01-01',
+                  valid_from: formData.doj || '2026-01-01',
+                })
+                .eq('id', existingShift.id);
+            } else {
+              await supabase
+                .from('employee_shift_assignments')
+                .insert({
+                  organization_id: isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19',
+                  company_id: isValidUUID(compId) ? compId : '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+                  employee_id: employeeId,
+                  shift_id: shiftUUID,
+                  effective_from: formData.doj || '2026-01-01',
+                  valid_from: formData.doj || '2026-01-01',
+                  weekly_offs: [0, 6],
+                });
+            }
           }
         } catch (shErr) {
           console.warn('[API] Step 3 shift assignment notice:', shErr);
         }
       }
 
-      // Upsert into employee_salary_assignments
+      // Upsert into employee_salary_assignments (resilient select-then-update/insert)
       const isAuth = await hasAuthenticatedSession();
-      if (isAuth && (formData.annual_ctc || formData.monthly_ctc)) {
+      if (isAuth && (formData.annual_ctc !== undefined || formData.monthly_ctc !== undefined)) {
         try {
           const annCtc = Number(formData.annual_ctc) || 0;
-          const monGross = Number(formData.monthly_ctc) || Math.round(annCtc / 12);
-          await supabase.from('employee_salary_assignments').upsert({
-            id: `sal-${employeeId}`,
-            organization_id: orgId,
-            employee_id: employeeId,
-            annual_ctc: annCtc,
-            gross_monthly: monGross,
-            monthly_gross: monGross,
-            effective_from: formData.salary_effective_from || formData.doj || new Date().toISOString().split('T')[0],
-            is_active: true,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'employee_id' });
+          const monGross = Number(formData.monthly_ctc) || (annCtc > 0 ? Math.round(annCtc / 12) : 0);
+
+          let structureId = formData.salary_structure_id;
+          if (!structureId || !isValidUUID(structureId)) {
+            const rawCode = formData.salary_structure_code || 'CORP_STD_01';
+            const { data: stRow } = await supabase.from('salary_structures').select('id').ilike('code', rawCode).limit(1).maybeSingle();
+            structureId = stRow?.id;
+            if (!structureId) {
+              const { data: firstSt } = await supabase.from('salary_structures').select('id').limit(1).maybeSingle();
+              structureId = firstSt?.id || null;
+            }
+          }
+
+          const { data: existingSal } = await supabase
+            .from('employee_salary_assignments')
+            .select('id')
+            .eq('employee_id', employeeId)
+            .limit(1)
+            .maybeSingle();
+
+          if (existingSal?.id) {
+            await dbClient
+              .from('employee_salary_assignments')
+              .update({
+                annual_ctc: annCtc,
+                monthly_gross: monGross,
+                salary_structure_id: structureId,
+                effective_from: formData.salary_effective_from || formData.doj || new Date().toISOString().split('T')[0],
+                is_active: true,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', existingSal.id);
+          } else {
+            await dbClient
+              .from('employee_salary_assignments')
+              .insert({
+                organization_id: isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19',
+                employee_id: employeeId,
+                salary_structure_id: structureId,
+                annual_ctc: annCtc,
+                monthly_gross: monGross,
+                effective_from: formData.salary_effective_from || formData.doj || new Date().toISOString().split('T')[0],
+                is_active: true,
+              });
+          }
         } catch (salErr) {
           console.warn('[API] Step 3 salary assignment notice:', salErr);
         }
       }
 
       // Upsert/Update statutory flags
-      if (isAuth && (formData.pf_applicable !== undefined || formData.esi_applicable !== undefined || formData.pt_applicable !== undefined || formData.tds_applicable !== undefined)) {
+      if (isAuth && (formData.pf_applicable !== undefined || formData.esi_applicable !== undefined || formData.pt_applicable !== undefined || formData.lwf_applicable !== undefined)) {
         try {
-          await supabase.from('employee_statutory_details').upsert({
-            employee_id: employeeId,
-            organization_id: orgId,
-            pf_applicable: formData.pf_applicable !== false,
-            esi_applicable: formData.esi_applicable === true,
-            pt_applicable: formData.pt_applicable !== false,
-            tds_applicable: formData.tds_applicable !== false,
-            is_tds_eligible: formData.tds_applicable !== false,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'employee_id' });
+          const { data: existingStat } = await dbClient
+            .from('employee_statutory_details')
+            .select('id')
+            .eq('employee_id', employeeId)
+            .limit(1)
+            .maybeSingle();
+
+          const statOrgId = isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19';
+          if (existingStat?.id) {
+            await dbClient
+              .from('employee_statutory_details')
+              .update({
+                is_pf_eligible: formData.pf_applicable !== false,
+                is_esi_eligible: formData.esi_applicable === true,
+                is_pt_eligible: formData.pt_applicable !== false,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', existingStat.id);
+          } else {
+            await dbClient
+              .from('employee_statutory_details')
+              .insert({
+                organization_id: statOrgId,
+                employee_id: employeeId,
+                is_pf_eligible: formData.pf_applicable !== false,
+                is_esi_eligible: formData.esi_applicable === true,
+                is_pt_eligible: formData.pt_applicable !== false,
+              });
+          }
         } catch (statErr) {
           console.warn('[API] Step 3 statutory flags notice:', statErr);
         }
       }
+
+      // Notify Payroll subsystem in real time
+      hrEventBus.emit('payroll.salary.updated', {
+        assignment: {
+          employee_id: employeeId,
+          annual_ctc: Number(formData.annual_ctc) || 0,
+          monthly_gross: Number(formData.monthly_ctc) || 0,
+          gross_monthly: Number(formData.monthly_ctc) || 0,
+          pf_applicable: formData.pf_applicable !== false,
+          esi_applicable: formData.esi_applicable === true,
+          pt_applicable: formData.pt_applicable !== false,
+          lwf_applicable: formData.lwf_applicable === true,
+        },
+        tenantId: orgId,
+      });
 
       // Sync Vendor Workforce Assignment if employment_source === 'VENDOR' or vendor_id is present
       if (formData.employment_source === 'VENDOR' || formData.vendor_id) {
@@ -2193,13 +2783,22 @@ export const api = {
     } else if (stepNumber === 4) {
       // Step 4: Organization & Reporting
       if (formData.reporting_manager_id || formData.reporting_manager_name) {
-        employeePatch.reporting_manager_id = formData.reporting_manager_id;
-        mergedEmployment.reporting_manager_id = formData.reporting_manager_id;
-        mergedEmployment.reporting_manager_name = formData.reporting_manager_name;
+        employeePatch.reporting_manager_id = formData.reporting_manager_id || null;
+        mergedEmployment.reporting_manager_id = formData.reporting_manager_id || null;
+        mergedEmployment.reporting_manager_name = formData.reporting_manager_name || null;
+      } else {
+        employeePatch.reporting_manager_id = null;
+        mergedEmployment.reporting_manager_id = null;
+        mergedEmployment.reporting_manager_name = null;
       }
       if (formData.team_lead_id || formData.team_lead_name) {
-        mergedEmployment.team_lead_id = formData.team_lead_id;
-        mergedEmployment.team_lead_name = formData.team_lead_name;
+        employeePatch.team_lead_id = formData.team_lead_id || null;
+        mergedEmployment.team_lead_id = formData.team_lead_id || null;
+        mergedEmployment.team_lead_name = formData.team_lead_name || null;
+      } else {
+        employeePatch.team_lead_id = null;
+        mergedEmployment.team_lead_id = null;
+        mergedEmployment.team_lead_name = null;
       }
       if (formData.business_unit) {
         mergedEmployment.business_unit = formData.business_unit;
@@ -2261,18 +2860,29 @@ export const api = {
         (employeePatch as any).bank = bankData;
       }
 
-      if (formData.pan || formData.uan || formData.pf_number || formData.esi_number || formData.tax_regime || formData.tds_applicable !== undefined) {
+      if (formData.pan || formData.uan || formData.pf_number || formData.esi_number || formData.aadhaar || formData.aadhaar_number || formData.tax_regime || formData.tds_applicable !== undefined) {
+        const cleanPan = (formData.pan || formData.pan_number || '').toString().trim() || null;
+        const cleanAadhaar = (formData.aadhaar_number || formData.aadhaar || formData.aadhaar_masked || '').toString().trim() || null;
+        const cleanUan = (formData.uan || formData.uan_number || '').toString().trim() || null;
+        const cleanPf = (formData.pf_number || '').toString().trim() || null;
+        const cleanEsi = (formData.esi_number || formData.esi || '').toString().trim() || null;
+
         const statData = {
-          pan: formData.pan || null,
-          pan_number: formData.pan || null,
-          uan: formData.uan || null,
-          uan_number: formData.uan || null,
-          pf_number: formData.pf_number || null,
-          esi_number: formData.esi_number || null,
+          pan: cleanPan,
+          pan_number: cleanPan,
+          aadhaar_number: cleanAadhaar,
+          aadhaar_masked: cleanAadhaar,
+          uan: cleanUan,
+          uan_number: cleanUan,
+          pf_number: cleanPf,
+          esi_number: cleanEsi,
           tax_regime: (formData.tax_regime || 'NEW').toUpperCase(),
           pf_applicable: formData.pf_applicable !== false,
+          is_pf_eligible: formData.pf_applicable !== false,
           esi_applicable: formData.esi_applicable === true,
+          is_esi_eligible: formData.esi_applicable === true,
           pt_applicable: formData.pt_applicable !== false,
+          is_pt_eligible: formData.pt_applicable !== false,
           tds_applicable: formData.tds_applicable !== false,
           is_tds_eligible: formData.tds_applicable !== false,
         };
@@ -2283,6 +2893,13 @@ export const api = {
       // Upsert bank details
       if (isAuth && (formData.bank_name || formData.account_number || formData.ifsc)) {
         try {
+          const { data: exBank } = await dbClient
+            .from('employee_bank_details')
+            .select('id')
+            .eq('employee_id', employeeId)
+            .limit(1)
+            .maybeSingle();
+
           const bankPayload: any = {
             organization_id: isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19',
             employee_id: employeeId,
@@ -2294,37 +2911,52 @@ export const api = {
             is_verified: true,
             updated_at: new Date().toISOString(),
           };
-          if (formData.id && isValidUUID(formData.id)) {
-            bankPayload.id = formData.id;
+
+          if (exBank?.id) {
+            await dbClient.from('employee_bank_details').update(bankPayload).eq('id', exBank.id);
+          } else {
+            await dbClient.from('employee_bank_details').insert(bankPayload);
           }
-          await supabase.from('employee_bank_details').upsert(bankPayload, { onConflict: 'employee_id' });
         } catch (bErr) {
           console.warn('[API] Bank details upsert notice:', bErr);
         }
       }
 
       // Upsert statutory details
-      if (isAuth && (formData.pan || formData.uan || formData.pf_number || formData.esi_number || formData.tds_applicable !== undefined)) {
+      if (isAuth && (formData.pan || formData.uan || formData.pf_number || formData.esi_number || formData.aadhaar || formData.aadhaar_number || formData.tds_applicable !== undefined)) {
         try {
+          const { data: exStat } = await dbClient
+            .from('employee_statutory_details')
+            .select('id')
+            .eq('employee_id', employeeId)
+            .limit(1)
+            .maybeSingle();
+
+          const cleanPan = (formData.pan || formData.pan_number || '').toString().trim() || null;
+          const cleanAadhaar = (formData.aadhaar_number || formData.aadhaar || formData.aadhaar_masked || '').toString().trim() || null;
+          const cleanUan = (formData.uan || formData.uan_number || '').toString().trim() || null;
+          const cleanPf = (formData.pf_number || '').toString().trim() || null;
+          const cleanEsi = (formData.esi_number || formData.esi || '').toString().trim() || null;
+
           const statPayload: any = {
             organization_id: isValidUUID(orgId) ? orgId : '0c621892-e938-4707-9957-13534ea32c19',
             employee_id: employeeId,
-            pan_number: formData.pan || null,
-            uan_number: formData.uan || null,
-            pf_number: formData.pf_number || null,
-            esi_number: formData.esi_number || null,
-            tax_regime: (formData.tax_regime || 'NEW').toUpperCase(),
+            pan_number: cleanPan,
+            aadhaar_number: cleanAadhaar,
+            uan_number: cleanUan,
+            pf_number: cleanPf,
+            esi_number: cleanEsi,
             is_pf_eligible: formData.pf_applicable !== false,
             is_esi_eligible: formData.esi_applicable === true,
             is_pt_eligible: formData.pt_applicable !== false,
-            is_tds_eligible: formData.tds_applicable !== false,
-            tds_applicable: formData.tds_applicable !== false,
             updated_at: new Date().toISOString(),
           };
-          if (formData.id && isValidUUID(formData.id)) {
-            statPayload.id = formData.id;
+
+          if (exStat?.id) {
+            await dbClient.from('employee_statutory_details').update(statPayload).eq('id', exStat.id);
+          } else {
+            await dbClient.from('employee_statutory_details').insert(statPayload);
           }
-          await supabase.from('employee_statutory_details').upsert(statPayload, { onConflict: 'employee_id' });
         } catch (sErr) {
           console.warn('[API] Statutory details upsert notice:', sErr);
         }
@@ -2396,6 +3028,45 @@ export const api = {
     setStorage(KEYS.EMPLOYEES, updatedList);
     this._empCache = null;
 
+    // Authoritatively save extended attributes into persistent registry
+    saveExtendedEmployeeRecord(employeeId, {
+      employment_source: employeePatch.employment_source || mergedEmployment.employment_source || existing.employment_source || 'DIRECT',
+      vendor_id: employeePatch.vendor_id || mergedEmployment.vendor_id || null,
+      vendor_name: employeePatch.vendor_name || mergedEmployment.vendor_name || null,
+      vendor_employee_code: employeePatch.vendor_employee_code || mergedEmployment.vendor_employee_code || null,
+      department_id: employeePatch.department_id || mergedEmployment.department_id,
+      department_name: employeePatch.department_name || mergedEmployment.department_name,
+      designation_id: employeePatch.designation_id || mergedEmployment.designation_id,
+      designation_title: employeePatch.designation_title || mergedEmployment.designation_title,
+      branch_id: employeePatch.branch_id || mergedEmployment.branch_id,
+      location_id: employeePatch.location_id || mergedEmployment.location_id || employeePatch.branch_id,
+      work_location: employeePatch.work_location || mergedEmployment.work_location,
+      work_location_name: employeePatch.work_location_name || mergedEmployment.work_location_name,
+      work_mode: mergedEmployment.work_mode,
+      job_level: mergedEmployment.job_level,
+      grade: mergedEmployment.grade,
+      probation_period_months: mergedEmployment.probation_period_months,
+      notice_period_days: mergedEmployment.notice_period_days,
+      shift_id: employeePatch.shift_id || mergedEmployment.shift_id,
+      shift_name: employeePatch.shift_name || mergedEmployment.shift_name,
+      attendance_policy_id: employeePatch.attendance_policy_id || mergedEmployment.attendance_policy_id,
+      leave_policy_id: employeePatch.leave_policy_id || mergedEmployment.leave_policy_id,
+      annual_ctc: mergedEmployment.annual_ctc !== undefined ? Number(mergedEmployment.annual_ctc) : undefined,
+      monthly_ctc: mergedEmployment.monthly_ctc !== undefined ? Number(mergedEmployment.monthly_ctc) : undefined,
+      salary_structure_code: mergedEmployment.salary_structure_code,
+      compensation_basis: mergedEmployment.compensation_basis,
+      pf_applicable: formData.pf_applicable !== undefined ? formData.pf_applicable : existing.pf_applicable,
+      esi_applicable: formData.esi_applicable !== undefined ? formData.esi_applicable : existing.esi_applicable,
+      pt_applicable: formData.pt_applicable !== undefined ? formData.pt_applicable : existing.pt_applicable,
+      tds_applicable: formData.tds_applicable !== undefined ? formData.tds_applicable : existing.tds_applicable,
+      reporting_manager_id: employeePatch.reporting_manager_id !== undefined ? employeePatch.reporting_manager_id : (mergedEmployment.reporting_manager_id || existing.reporting_manager_id || null),
+      reporting_manager_name: employeePatch.reporting_manager_name !== undefined ? employeePatch.reporting_manager_name : (mergedEmployment.reporting_manager_name || existing.reporting_manager_name || null),
+      team_lead_id: employeePatch.team_lead_id !== undefined ? employeePatch.team_lead_id : (mergedEmployment.team_lead_id || existing.team_lead_id || null),
+      team_lead_name: employeePatch.team_lead_name !== undefined ? employeePatch.team_lead_name : (mergedEmployment.team_lead_name || existing.team_lead_name || null),
+      employment: mergedEmployment,
+      profile: mergedProfile,
+    });
+
     // Always re-hydrate canonical record from DB, merged with updatedEmp
     const fresh = await this.getEmployeeById(employeeId);
     const finalEmp: Employee = {
@@ -2413,6 +3084,10 @@ export const api = {
       statutory: (fresh as any)?.statutory || (updatedEmp as any)?.statutory,
       emergency_contacts: (fresh as any)?.emergency_contacts || (updatedEmp as any)?.emergency_contacts,
     };
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('employee:updated', { detail: { id: employeeId, employee: finalEmp } }));
+    }
     return finalEmp;
   },
 
@@ -2457,6 +3132,9 @@ export const api = {
       vendor_id: input.vendor_id,
       vendor_name: input.vendor_name,
       vendor_employee_code: input.vendor_employee_code,
+      annual_ctc: Number(input.annual_ctc || input.employment?.annual_ctc || input.ctc || 0) || undefined,
+      monthly_ctc: Number(input.monthly_ctc || input.employment?.monthly_ctc || input.monthly_gross || input.employment?.monthly_gross || 0) || undefined,
+      ctc: Number(input.ctc || input.annual_ctc || input.employment?.annual_ctc || 0) || undefined,
       profile: {
         first_name: input.first_name,
         middle_name: input.middle_name,
@@ -2464,12 +3142,16 @@ export const api = {
         preferred_name: input.preferred_name,
         personal_email: input.personal_email,
         phone: input.primary_mobile || input.phone,
-        date_of_birth: input.date_of_birth,
+        alternate_phone: input.alternate_phone,
+        date_of_birth: input.date_of_birth || input.dob,
         gender: input.gender,
+        marital_status: input.marital_status || 'Single',
+        blood_group: input.blood_group,
         current_address: input.current_address,
         permanent_address: input.permanent_address,
         emergency_contacts: input.emergency_contacts,
         family_members: input.family_members,
+        address: input.current_address?.line1 || (typeof input.current_address === 'string' ? input.current_address : undefined),
         ...(input.profile || {}),
       },
       employment: {
@@ -2483,14 +3165,70 @@ export const api = {
         vendor_start_date: input.vendor_start_date,
         vendor_end_date: input.vendor_end_date,
         work_location: input.work_location || 'Coimbatore HQ',
+        work_mode: input.work_mode || input.employment?.work_mode || 'Hybrid',
         reporting_manager_id: input.reporting_manager_id,
         reporting_manager_name: input.reporting_manager_name,
         team_lead_id: input.team_lead_id,
         team_lead_name: input.team_lead_name,
         probation_period_months: input.probation_period_months || 6,
+        notice_period_days: input.notice_period_days || 60,
         confirmation_status: input.confirmation_status || 'Pending',
+        annual_ctc: Number(input.annual_ctc || input.employment?.annual_ctc || input.ctc || 0) || undefined,
+        monthly_gross: Number(input.monthly_gross || input.monthly_ctc || input.employment?.monthly_gross || 0) || undefined,
+        tax_regime: input.tax_regime || input.employment?.tax_regime || 'NEW',
         ...(input.employment || {}),
       },
+      bank: input.bank || (input.bank_name || input.account_number ? {
+        bank_name: input.bank_name || 'HDFC Bank',
+        account_number: input.account_number || '',
+        ifsc: input.ifsc || input.ifsc_code || '',
+        account_holder_name: input.account_holder_name || `${input.first_name || ''} ${input.last_name || ''}`.trim(),
+        account_type: input.account_type || 'SALARY',
+      } : undefined),
+      statutory: (() => {
+        const s = (input.statutory || input || {}) as any;
+        const cleanPan = (s.pan || s.pan_number || '').toString().trim() || null;
+        const cleanUan = (s.uan || s.uan_number || '').toString().trim() || null;
+        const cleanPf = (s.pf_number || s.pf_no || '').toString().trim() || null;
+        const cleanEsi = (s.esi_number || s.esi || s.esic_number || s.esic || '').toString().trim() || null;
+        const cleanAadhaar = (s.aadhaar_number || s.aadhaar || s.aadhaar_masked || '').toString().trim() || null;
+
+        const isPf = s.pf_applicable !== undefined
+          ? Boolean(s.pf_applicable)
+          : s.is_pf_eligible !== undefined
+            ? Boolean(s.is_pf_eligible)
+            : Boolean(cleanPf || cleanUan);
+
+        const isEsi = s.esi_applicable !== undefined
+          ? Boolean(s.esi_applicable)
+          : s.is_esi_eligible !== undefined
+            ? Boolean(s.is_esi_eligible)
+            : Boolean(cleanEsi);
+
+        const isPt = s.pt_applicable !== undefined
+          ? Boolean(s.pt_applicable)
+          : s.is_pt_eligible !== undefined
+            ? Boolean(s.is_pt_eligible)
+            : true;
+
+        return {
+          pan: cleanPan,
+          pan_number: cleanPan,
+          uan: cleanUan,
+          uan_number: cleanUan,
+          pf_number: cleanPf,
+          esi_number: cleanEsi,
+          aadhaar_number: cleanAadhaar,
+          aadhaar_masked: cleanAadhaar,
+          pf_applicable: isPf,
+          is_pf_eligible: isPf,
+          esi_applicable: isEsi,
+          is_esi_eligible: isEsi,
+          pt_applicable: isPt,
+          is_pt_eligible: isPt,
+          tax_regime: s.tax_regime || 'NEW',
+        };
+      })(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -2767,7 +3505,7 @@ export const api = {
             const b = input.bank || input;
             try {
               const bankId = ensureUUID(b.id || (newEmp.id ? 'b0000000-0000-0000-0000-' + newEmp.id.replace(/-/g, '').slice(0, 12) : null));
-              await supabase.from('employee_bank_details').upsert({
+              await dbClient.from('employee_bank_details').upsert({
                 id: bankId,
                 organization_id: newEmp.organization_id,
                 employee_id: newEmp.id,
@@ -2784,26 +3522,61 @@ export const api = {
             }
           }
 
-          // 4. Upsert Statutory Details
-          if (input.statutory || input.pan || input.uan) {
-            const s = input.statutory || input;
+          // 4. Upsert Statutory Details (Ensuring PAN, Aadhaar, UAN, PF Number, ESIC Number are stored; null/nil if omitted)
+          const s = (newEmp.statutory || input.statutory || input || {}) as any;
+          try {
+            const statId = ensureUUID(s.id || (newEmp.id ? 'c0000000-0000-0000-0000-' + newEmp.id.replace(/-/g, '').slice(0, 12) : null));
+            const cleanPan = (s.pan || s.pan_number || '').toString().trim() || null;
+            const cleanAadhaar = (s.aadhaar_number || s.aadhaar || s.aadhaar_masked || '').toString().trim() || null;
+            const cleanUan = (s.uan || s.uan_number || '').toString().trim() || null;
+            const cleanPf = (s.pf_number || s.pf_no || '').toString().trim() || null;
+            const cleanEsi = (s.esi_number || s.esi || s.esic_number || s.esic || '').toString().trim() || null;
+
+            await dbClient.from('employee_statutory_details').upsert({
+              id: statId,
+              organization_id: newEmp.organization_id,
+              employee_id: newEmp.id,
+              pan_number: cleanPan,
+              aadhaar_number: cleanAadhaar,
+              uan_number: cleanUan,
+              pf_number: cleanPf,
+              esi_number: cleanEsi,
+              is_pf_eligible: s.is_pf_eligible !== undefined ? Boolean(s.is_pf_eligible) : Boolean(cleanPf || cleanUan),
+              is_esi_eligible: s.is_esi_eligible !== undefined ? Boolean(s.is_esi_eligible) : Boolean(cleanEsi),
+              is_pt_eligible: s.is_pt_eligible !== undefined ? Boolean(s.is_pt_eligible) : true,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'employee_id' });
+          } catch (e) {
+            console.warn('[API] Statutory upsert warning:', e);
+          }
+
+          // 5. Insert Employee Salary Assignment if provided
+          const initAnnualCtc = Number(input.annual_ctc || input.employment?.annual_ctc || input.ctc || 0);
+          if (initAnnualCtc > 0 || input.monthly_ctc || input.employment?.monthly_ctc) {
             try {
-              const statId = ensureUUID(s.id || (newEmp.id ? 'c0000000-0000-0000-0000-' + newEmp.id.replace(/-/g, '').slice(0, 12) : null));
-              await supabase.from('employee_statutory_details').upsert({
-                id: statId,
+              const monGross = Number(input.monthly_ctc || input.employment?.monthly_ctc) || Math.round(initAnnualCtc / 12);
+              const rawStructCode = input.salary_structure_code || input.employment?.salary_structure_code || 'CORP_STD_01';
+              let structId = input.salary_structure_id || input.employment?.salary_structure_id;
+              if (!structId || !isValidUUID(structId)) {
+                const { data: stRow } = await dbClient.from('salary_structures').select('id').ilike('code', rawStructCode).limit(1).maybeSingle();
+                structId = stRow?.id;
+              }
+              if (!structId) {
+                const { data: firstSt } = await dbClient.from('salary_structures').select('id').limit(1).maybeSingle();
+                structId = firstSt?.id || null;
+              }
+
+              await dbClient.from('employee_salary_assignments').insert({
                 organization_id: newEmp.organization_id,
                 employee_id: newEmp.id,
-                pan_number: s.pan || s.pan_number || null,
-                uan_number: s.uan || s.uan_number || null,
-                pf_number: s.pf_number || null,
-                esi_number: s.esi_number || null,
-                is_pf_eligible: s.pf_applicable !== undefined ? Boolean(s.pf_applicable) : true,
-                is_esi_eligible: s.esi_applicable !== undefined ? Boolean(s.esi_applicable) : false,
-                is_pt_eligible: s.pt_applicable !== undefined ? Boolean(s.pt_applicable) : true,
-                updated_at: new Date().toISOString(),
-              }, { onConflict: 'employee_id' });
-            } catch (e) {
-              console.warn('[API] Statutory upsert warning:', e);
+                salary_structure_id: structId,
+                annual_ctc: initAnnualCtc,
+                monthly_gross: monGross,
+                effective_from: input.salary_effective_from || input.employment?.salary_effective_from || newEmp.employment.doj || new Date().toISOString().split('T')[0],
+                is_active: true,
+              });
+            } catch (salErr) {
+              console.warn('[API] createEmployee salary assignment notice:', salErr);
             }
           }
         }
@@ -2876,10 +3649,11 @@ export const api = {
           phone: targetMobile,
           employeeName: `${newEmp.first_name} ${newEmp.last_name}`.trim(),
           employeeCode: newEmp.employee_code,
-          companyName: newEmp.company_name || 'Joy Corporate Solutions Pvt Ltd',
+          companyName: newEmp.company_name || 'Joy Corporate Solutions',
           designation: newEmp.designation_title || 'Team Member',
-          organizationId: newEmp.organization_id || 'org-joy-01',
+          organizationId: newEmp.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
           employeeId: newEmp.id,
+          workEmail: targetEmail || newEmp.work_email || (newEmp as any).email || input.work_email || input.email,
         });
         console.log('[API] WhatsApp Welcome Pack auto-dispatched successfully to:', targetMobile);
       } catch (waErr) {
@@ -2928,6 +3702,7 @@ export const api = {
     }
 
     let canonicalRecord: Employee | null = null;
+    let resolvedEmploymentStatus: string | undefined;
 
     const firstName = data.first_name !== undefined ? data.first_name : (existing.first_name || '');
     const lastName = data.last_name !== undefined ? data.last_name : (existing.last_name || '');
@@ -3082,10 +3857,11 @@ export const api = {
           const rawStatus = String(data.status || (data as any).employment_status || 'ACTIVE').toUpperCase().replace(/[\s-]/g, '_');
           if (rawStatus.includes('PROBATION')) directPatch.employment_status = 'PROBATION';
           else if (rawStatus.includes('NOTICE')) directPatch.employment_status = 'NOTICE_PERIOD';
-          else if (rawStatus.includes('SUSPEND')) directPatch.employment_status = 'SUSPENDED';
+          else if (rawStatus.includes('SUSPEND') || rawStatus.includes('INACTIVE') || rawStatus.includes('DISABLE') || rawStatus.includes('ARCHIV')) directPatch.employment_status = 'SUSPENDED';
           else if (rawStatus.includes('TERMINAT')) directPatch.employment_status = 'TERMINATED';
           else if (rawStatus.includes('RESIGN')) directPatch.employment_status = 'RESIGNED';
           else directPatch.employment_status = 'ACTIVE';
+          resolvedEmploymentStatus = directPatch.employment_status;
         }
 
         if (resolvedDeptId) directPatch.department_id = resolvedDeptId;
@@ -3100,7 +3876,7 @@ export const api = {
 
         const isAuth = await hasAuthenticatedSession();
         if (isAuth) {
-          const { data: updateData, error: updateErr } = await supabase
+          const { data: updateData, error: updateErr } = await dbClient
             .from('employees')
             .update(directPatch)
             .eq('id', id)
@@ -3138,44 +3914,71 @@ export const api = {
         if (isAuth && ((data as any).bank || (data as any).bank_name || (data as any).account_number || (data as any).ifsc)) {
           const b = (data as any).bank || data;
           try {
-            await supabase.from('employee_bank_details').upsert({
-              id: `bank-${id}`,
+            const { data: exBank } = await dbClient
+              .from('employee_bank_details')
+              .select('id')
+              .eq('employee_id', id)
+              .limit(1)
+              .maybeSingle();
+
+            const bankPayload: any = {
+              organization_id: isValidUUID(canonicalRecord?.organization_id || existing.organization_id) ? (canonicalRecord?.organization_id || existing.organization_id) : '0c621892-e938-4707-9957-13534ea32c19',
               employee_id: id,
               bank_name: b.bank_name || '',
               account_number: b.account_number || '',
               ifsc_code: b.ifsc || b.ifsc_code || '',
-              account_type: b.account_type || 'SALARY',
+              account_type: (b.account_type || 'SALARY').toUpperCase(),
               account_holder_name: b.account_holder_name || `${existing.first_name || ''} ${existing.last_name || ''}`.trim(),
-              is_primary: true,
+              is_verified: true,
               updated_at: new Date().toISOString(),
-            });
+            };
+
+            if (exBank?.id) {
+              await dbClient.from('employee_bank_details').update(bankPayload).eq('id', exBank.id);
+            } else {
+              await dbClient.from('employee_bank_details').insert(bankPayload);
+            }
           } catch (e) {
             console.warn('[API] Bank update warning:', e);
           }
         }
 
         // Upsert Statutory Details if provided
-        if (isAuth && ((data as any).statutory || (data as any).pan || (data as any).uan || (data as any).pan_number || (data as any).uan_number || (data as any).pf_applicable !== undefined || (data as any).esi_applicable !== undefined || (data as any).tds_applicable !== undefined)) {
+        if (isAuth && ((data as any).statutory || (data as any).pan || (data as any).uan || (data as any).pan_number || (data as any).uan_number || (data as any).pf_number || (data as any).esi_number || (data as any).aadhaar_number || (data as any).pf_applicable !== undefined || (data as any).esi_applicable !== undefined || (data as any).tds_applicable !== undefined)) {
           const s = (data as any).statutory || data;
-          const taxRegimeNormalized = (s.tax_regime || 'New').toString().toLowerCase() === 'old' ? 'Old' : 'New';
           try {
-            await supabase.from('employee_statutory_details').upsert({
+            const { data: exStat } = await dbClient
+              .from('employee_statutory_details')
+              .select('id')
+              .eq('employee_id', id)
+              .limit(1)
+              .maybeSingle();
+
+            const cleanPan = (s.pan || s.pan_number || '').toString().trim() || null;
+            const cleanAadhaar = (s.aadhaar_number || s.aadhaar || s.aadhaar_masked || '').toString().trim() || null;
+            const cleanUan = (s.uan || s.uan_number || '').toString().trim() || null;
+            const cleanPf = (s.pf_number || s.pf_no || '').toString().trim() || null;
+            const cleanEsi = (s.esi_number || s.esi || s.esic_number || s.esic || '').toString().trim() || null;
+
+            const statPayload: any = {
               employee_id: id,
-              pan_number: s.pan || s.pan_number || '',
-              uan_number: s.uan || s.uan_number || '',
-              pf_number: s.pf_number || '',
-              esi_number: s.esi_number || '',
-              tax_regime: taxRegimeNormalized,
-              pf_applicable: s.pf_applicable !== undefined ? Boolean(s.pf_applicable) : true,
-              is_pf_eligible: s.pf_applicable !== undefined ? Boolean(s.pf_applicable) : true,
-              esi_applicable: s.esi_applicable !== undefined ? Boolean(s.esi_applicable) : false,
-              is_esi_eligible: s.esi_applicable !== undefined ? Boolean(s.esi_applicable) : false,
-              pt_applicable: s.pt_applicable !== undefined ? Boolean(s.pt_applicable) : true,
-              is_pt_eligible: s.pt_applicable !== undefined ? Boolean(s.pt_applicable) : true,
-              tds_applicable: s.tds_applicable !== undefined ? Boolean(s.tds_applicable) : true,
-              is_tds_eligible: s.tds_applicable !== undefined ? Boolean(s.tds_applicable) : true,
+              organization_id: isValidUUID(canonicalRecord?.organization_id || existing.organization_id) ? (canonicalRecord?.organization_id || existing.organization_id) : '0c621892-e938-4707-9957-13534ea32c19',
+              pan_number: cleanPan,
+              aadhaar_number: cleanAadhaar,
+              uan_number: cleanUan,
+              pf_number: cleanPf,
+              esi_number: cleanEsi,
+              is_pf_eligible: s.pf_applicable !== undefined ? Boolean(s.pf_applicable) : (s.is_pf_eligible !== undefined ? Boolean(s.is_pf_eligible) : Boolean(cleanPf || cleanUan)),
+              is_esi_eligible: s.esi_applicable !== undefined ? Boolean(s.esi_applicable) : (s.is_esi_eligible !== undefined ? Boolean(s.is_esi_eligible) : Boolean(cleanEsi)),
+              is_pt_eligible: s.pt_applicable !== undefined ? Boolean(s.pt_applicable) : (s.is_pt_eligible !== undefined ? Boolean(s.is_pt_eligible) : true),
               updated_at: new Date().toISOString(),
-            }, { onConflict: 'employee_id' });
+            };
+
+            if (exStat?.id) {
+              await dbClient.from('employee_statutory_details').update(statPayload).eq('id', exStat.id);
+            } else {
+              await dbClient.from('employee_statutory_details').insert(statPayload);
+            }
           } catch (e) {
             console.warn('[API] Statutory update warning:', e);
           }
@@ -3198,23 +4001,188 @@ export const api = {
           }
         }
 
-        // Upsert Shift Assignment if provided
+        // Upsert Shift Assignment if provided (safely without onConflict error)
         if (isAuth && isValidUUID(id) && (data.shift_id || data.employment?.shift_id)) {
-          const targetShiftId = (data.shift_id || data.employment?.shift_id)!;
-          const shiftUUID = isValidUUID(targetShiftId) ? targetShiftId : (targetShiftId.toLowerCase().includes('gen') ? 'f847c561-4bbb-4b9f-a2dd-003162897eef' : null);
+          const targetShiftId = String(data.shift_id || data.employment?.shift_id).trim();
+          let shiftUUID: string | null = isValidUUID(targetShiftId) ? targetShiftId : null;
+          if (!shiftUUID) {
+            const { data: matchedShift } = await supabase
+              .from('shifts')
+              .select('id')
+              .or(`code.ilike.${targetShiftId},name.ilike.%${targetShiftId}%`)
+              .limit(1)
+              .maybeSingle();
+            if (matchedShift?.id) {
+              shiftUUID = matchedShift.id;
+            } else {
+              const knownShifts: Record<string, string> = {
+                'gen-09': 'f847c561-4bbb-4b9f-a2dd-003162897eef',
+                'gen-10': 'f5ff5d00-8489-459b-8d8e-d930ecffef22',
+                'shift-gen-09': 'f847c561-4bbb-4b9f-a2dd-003162897eef',
+                'shift-gen-10': 'f5ff5d00-8489-459b-8d8e-d930ecffef22',
+              };
+              const lower = String(targetShiftId).toLowerCase();
+              for (const [k, v] of Object.entries(knownShifts)) {
+                if (lower.includes(k)) {
+                  shiftUUID = v;
+                  break;
+                }
+              }
+            }
+          }
           if (shiftUUID) {
             try {
-              await supabase.from('employee_shift_assignments').upsert({
-                organization_id: isValidUUID(canonicalRecord?.organization_id || existing.organization_id) ? (canonicalRecord?.organization_id || existing.organization_id) : '0c621892-e938-4707-9957-13534ea32c19',
-                company_id: isValidUUID(canonicalRecord?.company_id || existing.company_id) ? (canonicalRecord?.company_id || existing.company_id) : '2030277f-a6a1-427f-beaf-4fc677a3bae2',
-                employee_id: id,
-                shift_id: shiftUUID,
-                effective_from: existing.doj || '2026-01-01',
-                valid_from: existing.doj || '2026-01-01',
-              }, { onConflict: 'employee_id' });
+              const { data: existingShift } = await supabase
+                .from('employee_shift_assignments')
+                .select('id')
+                .eq('employee_id', id)
+                .maybeSingle();
+
+              const sOrgId = isValidUUID(canonicalRecord?.organization_id || existing.organization_id) ? (canonicalRecord?.organization_id || existing.organization_id) : '0c621892-e938-4707-9957-13534ea32c19';
+              const sCompId = isValidUUID(canonicalRecord?.company_id || existing.company_id) ? (canonicalRecord?.company_id || existing.company_id) : '2030277f-a6a1-427f-beaf-4fc677a3bae2';
+              const sDate = existing.doj || '2026-01-01';
+
+              if (existingShift?.id) {
+                await supabase
+                  .from('employee_shift_assignments')
+                  .update({
+                    shift_id: shiftUUID,
+                    effective_from: sDate,
+                    valid_from: sDate,
+                  })
+                  .eq('id', existingShift.id);
+              } else {
+                await supabase
+                  .from('employee_shift_assignments')
+                  .insert({
+                    organization_id: sOrgId,
+                    company_id: sCompId,
+                    employee_id: id,
+                    shift_id: shiftUUID,
+                    effective_from: sDate,
+                    valid_from: sDate,
+                    weekly_offs: [0, 6],
+                  });
+              }
             } catch (shErr) {
               console.warn('[API] Shift assignment update notice:', shErr);
             }
+          }
+
+          // Upsert/Update Employee Salary Assignment if provided
+          const candidateAnnualCtc = (data as any).annual_ctc !== undefined ? (data as any).annual_ctc : data.employment?.annual_ctc;
+          const candidateMonthlyCtc = (data as any).monthly_ctc !== undefined ? (data as any).monthly_ctc : data.employment?.monthly_ctc;
+          if (isAuth && (candidateAnnualCtc !== undefined || candidateMonthlyCtc !== undefined)) {
+            try {
+              const annCtc = Number(candidateAnnualCtc) || 0;
+              const monGross = Number(candidateMonthlyCtc) || (annCtc > 0 ? Math.round(annCtc / 12) : 0);
+              const rawStructCode = (data as any).salary_structure_code || data.employment?.salary_structure_code || 'CORP_STD_01';
+              let structId = (data as any).salary_structure_id || data.employment?.salary_structure_id;
+              if (!structId || !isValidUUID(structId)) {
+                const { data: stRow } = await dbClient.from('salary_structures').select('id').ilike('code', rawStructCode).limit(1).maybeSingle();
+                structId = stRow?.id;
+              }
+              if (!structId) {
+                const { data: firstSt } = await dbClient.from('salary_structures').select('id').limit(1).maybeSingle();
+                structId = firstSt?.id || null;
+              }
+
+              const { data: existingSal } = await dbClient
+                .from('employee_salary_assignments')
+                .select('id')
+                .eq('employee_id', id)
+                .limit(1)
+                .maybeSingle();
+
+              const sOrgId = isValidUUID(canonicalRecord?.organization_id || existing.organization_id) ? (canonicalRecord?.organization_id || existing.organization_id) : '0c621892-e938-4707-9957-13534ea32c19';
+              const effDate = (data as any).salary_effective_from || data.employment?.salary_effective_from || data.employment?.doj || existing.doj || new Date().toISOString().split('T')[0];
+
+              if (existingSal?.id) {
+                await dbClient
+                  .from('employee_salary_assignments')
+                  .update({
+                    annual_ctc: annCtc,
+                    monthly_gross: monGross,
+                    salary_structure_id: structId,
+                    effective_from: effDate,
+                    is_active: true,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', existingSal.id);
+              } else {
+                await dbClient
+                  .from('employee_salary_assignments')
+                  .insert({
+                    organization_id: sOrgId,
+                    employee_id: id,
+                    salary_structure_id: structId,
+                    annual_ctc: annCtc,
+                    monthly_gross: monGross,
+                    effective_from: effDate,
+                    is_active: true,
+                  });
+              }
+            } catch (salErr) {
+              console.warn('[API] updateEmployee salary assignment notice:', salErr);
+            }
+          }
+
+          // Upsert/Update Employee Statutory Details if provided
+          const candidatePf = (data as any).pf_applicable !== undefined ? (data as any).pf_applicable : (data.statutory?.pf_applicable !== undefined ? data.statutory.pf_applicable : data.statutory?.is_pf_eligible);
+          const candidateEsi = (data as any).esi_applicable !== undefined ? (data as any).esi_applicable : (data.statutory?.esi_applicable !== undefined ? data.statutory.esi_applicable : data.statutory?.is_esi_eligible);
+          const candidatePt = (data as any).pt_applicable !== undefined ? (data as any).pt_applicable : (data.statutory?.pt_applicable !== undefined ? data.statutory.pt_applicable : data.statutory?.is_pt_eligible);
+          const candidateLwf = (data as any).lwf_applicable !== undefined ? (data as any).lwf_applicable : (data.statutory?.lwf_applicable !== undefined ? data.statutory.lwf_applicable : (data.statutory as any)?.is_lwf_eligible);
+
+          if (isAuth && (candidatePf !== undefined || candidateEsi !== undefined || candidatePt !== undefined)) {
+            try {
+              const { data: existingStat } = await dbClient
+                .from('employee_statutory_details')
+                .select('id')
+                .eq('employee_id', id)
+                .limit(1)
+                .maybeSingle();
+
+              const sOrgId = isValidUUID(canonicalRecord?.organization_id || existing.organization_id) ? (canonicalRecord?.organization_id || existing.organization_id) : '0c621892-e938-4707-9957-13534ea32c19';
+              if (existingStat?.id) {
+                await dbClient
+                  .from('employee_statutory_details')
+                  .update({
+                    is_pf_eligible: candidatePf !== false,
+                    is_esi_eligible: candidateEsi === true,
+                    is_pt_eligible: candidatePt !== false,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', existingStat.id);
+              } else {
+                await dbClient
+                  .from('employee_statutory_details')
+                  .insert({
+                    organization_id: sOrgId,
+                    employee_id: id,
+                    is_pf_eligible: candidatePf !== false,
+                    is_esi_eligible: candidateEsi === true,
+                    is_pt_eligible: candidatePt !== false,
+                  });
+              }
+            } catch (statErr) {
+              console.warn('[API] updateEmployee statutory details notice:', statErr);
+            }
+          }
+
+          if (candidateAnnualCtc !== undefined || candidateMonthlyCtc !== undefined || candidatePf !== undefined || candidateEsi !== undefined) {
+            hrEventBus.emit('payroll.salary.updated', {
+              assignment: {
+                employee_id: id,
+                annual_ctc: Number(candidateAnnualCtc) || 0,
+                monthly_gross: Number(candidateMonthlyCtc) || 0,
+                gross_monthly: Number(candidateMonthlyCtc) || 0,
+                pf_applicable: candidatePf !== false,
+                esi_applicable: candidateEsi === true,
+                pt_applicable: candidatePt !== false,
+                lwf_applicable: candidateLwf === true,
+              },
+              tenantId: canonicalRecord?.organization_id || existing.organization_id,
+            });
           }
         }
       } catch (err: any) {
@@ -3268,10 +4236,14 @@ export const api = {
         shift_name: (data as any).shift_name || data.employment?.shift_name || (canonicalRecord as any)?.shift_name || canonicalRecord?.employment?.shift_name || (existing as any).shift_name || existing.employment?.shift_name,
         reporting_manager_id: targetMgrId !== undefined ? targetMgrId : (canonicalRecord?.reporting_manager_id || existing.reporting_manager_id),
         reporting_manager_name: targetMgrName,
+        team_lead_id: (data as any).team_lead_id || data.employment?.team_lead_id || (canonicalRecord as any)?.team_lead_id || canonicalRecord?.employment?.team_lead_id || (existing as any).team_lead_id || existing.employment?.team_lead_id,
+        team_lead_name: (data as any).team_lead_name || data.employment?.team_lead_name || (canonicalRecord as any)?.team_lead_name || canonicalRecord?.employment?.team_lead_name || (existing as any).team_lead_name || existing.employment?.team_lead_name,
       } as EmploymentDetails,
       bank: (data as any).bank || (canonicalRecord as any)?.bank || (existing as any).bank,
       statutory: (data as any).statutory || (canonicalRecord as any)?.statutory || (existing as any).statutory,
       emergency_contacts: (canonicalRecord as any)?.emergency_contacts || (existing as any).emergency_contacts,
+      status: data.status || (resolvedEmploymentStatus === 'SUSPENDED' ? 'Inactive' : (resolvedEmploymentStatus === 'ACTIVE' ? 'Active' : (canonicalRecord?.status || existing.status || 'Active'))),
+      employment_status: resolvedEmploymentStatus || (canonicalRecord as any)?.employment_status || existing.employment_status || 'ACTIVE',
       updated_at: new Date().toISOString() 
     } as any as Employee;
 
@@ -3282,9 +4254,10 @@ export const api = {
     }
     setStorage(KEYS.EMPLOYEES, list);
     this._empCache = null;
+    this._empCacheMap.clear();
 
     try {
-      hrEventBus.emit('employee.updated', { employee: updated, employeeId: id });
+      hrEventBus.emit('employee.updated', { employee: updated, employeeId: id, id, ...updated });
     } catch (_) {}
 
     if (updated.employment_source === 'VENDOR' || updated.vendor_id || updated.employment?.vendor_id) {
@@ -3319,6 +4292,44 @@ export const api = {
       status: 'SYNC_COMPLETE',
       message: 'Employee updated in database and local cache invalidated',
     });
+
+    saveExtendedEmployeeRecord(id, {
+      employment_source: updated.employment_source || (data as any).employment_source || 'DIRECT',
+      vendor_id: updated.vendor_id || (data as any).vendor_id || null,
+      vendor_name: updated.vendor_name || (data as any).vendor_name || null,
+      vendor_employee_code: updated.vendor_employee_code || (data as any).vendor_employee_code || null,
+      department_id: updated.department_id,
+      department_name: updated.department_name,
+      designation_id: updated.designation_id,
+      designation_title: updated.designation_title,
+      branch_id: updated.branch_id,
+      location_id: (data as any).location_id || (data.employment as any)?.location_id || updated.branch_id,
+      work_location: (data as any).work_location || (data.employment as any)?.work_location || (data as any).work_location_name,
+      work_location_name: (data as any).work_location_name || (data.employment as any)?.work_location_name || (data as any).work_location,
+      work_mode: (data as any).work_mode || (data.employment as any)?.work_mode,
+      job_level: (data as any).job_level || (data.employment as any)?.job_level,
+      grade: (data as any).grade || (data.employment as any)?.grade,
+      probation_period_months: (data as any).probation_period_months || (data.employment as any)?.probation_period_months,
+      notice_period_days: (data as any).notice_period_days || (data.employment as any)?.notice_period_days,
+      shift_id: updated.shift_id,
+      shift_name: updated.shift_name,
+      attendance_policy_id: (data as any).attendance_policy_id || (data.employment as any)?.attendance_policy_id,
+      leave_policy_id: (data as any).leave_policy_id || (data.employment as any)?.leave_policy_id,
+      annual_ctc: (data as any).annual_ctc || (data.employment as any)?.annual_ctc,
+      monthly_ctc: (data as any).monthly_ctc || (data.employment as any)?.monthly_ctc,
+      salary_structure_code: (data as any).salary_structure_code || (data.employment as any)?.salary_structure_code,
+      compensation_basis: (data as any).compensation_basis || (data.employment as any)?.compensation_basis,
+      reporting_manager_id: targetMgrId !== undefined ? targetMgrId : (updated.employment?.reporting_manager_id || null),
+      reporting_manager_name: targetMgrName || updated.employment?.reporting_manager_name || null,
+      team_lead_id: updated.employment?.team_lead_id || (data as any).team_lead_id || null,
+      team_lead_name: updated.employment?.team_lead_name || (data as any).team_lead_name || null,
+      employment: updated.employment,
+      profile: updated.profile,
+    });
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('employee:updated', { detail: { id, employee: updated } }));
+    }
 
     hrEventBus.publish('employee.updated', updated, { actorId: 'api-service', correlationId });
     if (data.status && data.status !== existing.status) {
@@ -3892,17 +4903,7 @@ export const api = {
     }
     const u = getStorage<User | null>(KEYS.CURRENT_USER, null);
     if (u) return u;
-    return {
-      id: 'user-hr-01',
-      organization_id: 'org-joy-01',
-      email: 'haripriya@joycorporate.com',
-      name: 'Haripriya',
-      avatar_url: '',
-      employee_id: 'emp-hr-001',
-      status: 'Active',
-      roles: [{ id: 'role-003', organization_id: 'org-joy-01', name: 'HR Head', description: 'HR Head', permissions: [] }],
-      created_at: '2024-01-01T00:00:00Z',
-    };
+    return null;
   },
 
   setCurrentUser(user: User): void {

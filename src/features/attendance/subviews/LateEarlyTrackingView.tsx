@@ -42,7 +42,15 @@ import { attendanceRegularizationService } from '../../../services/attendance/at
 import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
+import { formatDeviationDuration } from '../../../lib/attendance/attendanceEngine';
 import { useAuth } from '../../../hooks/useAuth';
+
+import {
+  AttendanceDateFilter,
+  DateFilterValue,
+  INITIAL_DATE_FILTER,
+  matchDateFilter,
+} from '../components/AttendanceDateFilter';
 
 export interface LateEarlyTrackingViewProps {
   onNavigateSubPath?: (subPath: string) => void;
@@ -56,8 +64,12 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
   const { showToast } = useToast();
   const { user } = useAuth();
 
-  const [deviations, setDeviations] = useState<AttendanceDeviation[]>([]);
+  // Instant load from memory/cache (0ms delay) with background DB synchronization
+  const [deviations, setDeviations] = useState<AttendanceDeviation[]>(() =>
+    attendanceDeviationService.getDeviations()
+  );
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'LATE' | 'EARLY' | 'PENDING' | 'UNDER_REVIEW' | 'REGULARIZED' | 'PAYROLL'>('ALL');
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(INITIAL_DATE_FILTER);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('ALL');
 
@@ -71,14 +83,20 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
   const [requestedOut, setRequestedOut] = useState('06:30 PM');
   const [regularizeReason, setRegularizeReason] = useState('');
   const [isSubmittingRegularize, setIsSubmittingRegularize] = useState(false);
+  const [isLoadingFromDb, setIsLoadingFromDb] = useState(false);
 
-  // Load Real Database Deviations
+  // Load Real Database Deviations with smooth non-blocking update
   const loadData = useCallback(async () => {
     try {
+      setIsLoadingFromDb(true);
       const data = await attendanceDeviationService.fetchDeviationsFromDb();
-      setDeviations(data);
+      if (data && data.length > 0) {
+        setDeviations(data);
+      }
     } catch {
       setDeviations(attendanceDeviationService.getDeviations());
+    } finally {
+      setIsLoadingFromDb(false);
     }
   }, []);
 
@@ -134,6 +152,8 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
 
       if (selectedDept !== 'ALL' && e.department !== selectedDept) return false;
 
+      if (!matchDateFilter(e.attendance_date, dateFilter)) return false;
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         return (
@@ -145,7 +165,7 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
       }
       return true;
     });
-  }, [deviations, activeFilter, selectedDept, searchQuery]);
+  }, [deviations, activeFilter, selectedDept, searchQuery, dateFilter]);
 
   // Open Regularize Modal
   const handleOpenRegularizeModal = (item: AttendanceDeviation) => {
@@ -154,13 +174,13 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
     setRequestedOut(item.scheduled_check_out || '06:30 PM');
     setRegularizeReason(
       item.late_minutes > 0
-        ? `Forgot to check in on morning entry (${item.attendance_date})`
-        : `Client meeting attendance correction`
+        ? `Late punch regularisation request (${item.attendance_date})`
+        : `Early exit attendance correction (${item.attendance_date})`
     );
     setIsRegularizeModalOpen(true);
   };
 
-  // Submit Regularization
+  // Submit Regularization with Instant Optimistic Sync and Backend DB Sync
   const handleConfirmRegularize = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedForRegularize) return;
@@ -171,7 +191,7 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
 
     setIsSubmittingRegularize(true);
     try {
-      await attendanceRegularizationService.submitRequest({
+      const reg = await attendanceRegularizationService.submitRequest({
         employeeId: selectedForRegularize.employee_id,
         employeeCode: selectedForRegularize.employee_code,
         employeeName: selectedForRegularize.employee_name,
@@ -182,6 +202,30 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
         reasonCode: 'FORGOT_CHECK_IN',
         reason: regularizeReason.trim(),
       });
+
+      // 1. Immediately update deviation service store
+      attendanceDeviationService.updateDeviationStatusForRegularization(
+        selectedForRegularize.employee_id,
+        selectedForRegularize.employee_code,
+        selectedForRegularize.attendance_date,
+        reg.id,
+        'MANAGER_REVIEW'
+      );
+
+      // 2. Optimistic UI update for instant feedback
+      setDeviations((prev) =>
+        prev.map((d) =>
+          d.id === selectedForRegularize.id ||
+          ((d.employee_id === selectedForRegularize.employee_id || d.employee_code === selectedForRegularize.employee_code) &&
+            d.attendance_date === selectedForRegularize.attendance_date)
+            ? {
+                ...d,
+                status: 'MANAGER_REVIEW',
+                regularization_request_id: reg.id,
+              }
+            : d
+        )
+      );
 
       showToast(`✓ Regularization submitted for ${selectedForRegularize.employee_name}. Status changed to Under Review.`, 'success');
       setIsRegularizeModalOpen(false);
@@ -196,20 +240,27 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
   return (
     <div className="space-y-5">
       {/* 1. Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-200/80 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-gray-200/80 shadow-2xs">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="p-2 rounded-xl bg-amber-50 text-amber-700">
+          <div className="flex items-center gap-2.5">
+            <span className="p-2 rounded-xl bg-emerald-50 text-[#07563D] border border-emerald-200/50">
               <Clock className="w-5 h-5" />
             </span>
-            <h1 className="text-xl font-bold text-gray-900">Late / Early Tracking</h1>
-            <span className="px-2.5 py-0.5 text-xs font-bold bg-amber-100 text-amber-800 rounded-full">
-              Detection Workspace
-            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold text-gray-900 tracking-tight">Late / Early Tracking</h1>
+                <span className="px-2.5 py-0.5 text-[11px] font-semibold bg-emerald-50 text-[#07563D] border border-emerald-200/60 rounded-full">
+                  Live Audit Desk
+                </span>
+                {isLoadingFromDb && (
+                  <span className="text-[10px] text-gray-400 animate-pulse font-medium">Syncing with backend...</span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Audit scheduled shift adherence, track real-time punch deviations, and sync regularization requests with backend.
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-gray-500 mt-1">
-            Monitor attendance deviations against effective shifts and trigger employee justifications or system investigations.
-          </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -219,9 +270,9 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
             onClick={() => {
               if (onNavigateSubPath) onNavigateSubPath('regularization');
             }}
-            className="text-xs font-bold text-gray-700 cursor-pointer"
+            className="text-xs font-semibold text-gray-700 hover:text-[#07563D] hover:border-[#07563D]/40 cursor-pointer transition-colors"
           >
-            <FileEdit className="w-3.5 h-3.5 mr-1 text-[#07563D]" />
+            <FileEdit className="w-3.5 h-3.5 mr-1.5 text-[#07563D]" />
             Go to Regularization Desk
           </Button>
 
@@ -231,31 +282,31 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
             onClick={() => {
               if (onNavigateSubPath) onNavigateSubPath('exceptions');
             }}
-            className="text-xs font-bold text-gray-700 cursor-pointer"
+            className="text-xs font-semibold text-gray-700 hover:text-purple-700 hover:border-purple-300 cursor-pointer transition-colors"
           >
-            <ShieldAlert className="w-3.5 h-3.5 mr-1 text-purple-600" />
+            <ShieldAlert className="w-3.5 h-3.5 mr-1.5 text-purple-600" />
             Exceptions Queue
           </Button>
         </div>
       </div>
 
-      {/* 2. Realtime Metric Counters */}
+      {/* 2. Mild & Modern KPI Metric Filters */}
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
         <button
           onClick={() => setActiveFilter('LATE')}
           className={cn(
             'p-3.5 rounded-xl border text-left transition-all cursor-pointer',
             activeFilter === 'LATE'
-              ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-500/20'
-              : 'bg-white border-gray-200 hover:border-amber-300'
+              ? 'bg-amber-50/50 border-amber-300 ring-2 ring-amber-500/10 shadow-xs'
+              : 'bg-white border-gray-200/80 hover:border-gray-300 shadow-2xs'
           )}
         >
-          <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
+          <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
             <span>Late Today</span>
             <Clock className="w-3.5 h-3.5 text-amber-600" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{metrics.lateToday}</div>
-          <span className="text-[10px] text-amber-700 font-semibold">Grace exceeded</span>
+          <div className="text-lg font-bold text-gray-900 mt-1">{metrics.lateToday}</div>
+          <span className="text-[11px] text-amber-700 font-medium">Grace exceeded</span>
         </button>
 
         <button
@@ -263,16 +314,16 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
           className={cn(
             'p-3.5 rounded-xl border text-left transition-all cursor-pointer',
             activeFilter === 'EARLY'
-              ? 'bg-orange-50 border-orange-300 ring-2 ring-orange-500/20'
-              : 'bg-white border-gray-200 hover:border-orange-300'
+              ? 'bg-orange-50/50 border-orange-300 ring-2 ring-orange-500/10 shadow-xs'
+              : 'bg-white border-gray-200/80 hover:border-gray-300 shadow-2xs'
           )}
         >
-          <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
+          <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
             <span>Early Today</span>
             <LogOut className="w-3.5 h-3.5 text-orange-600" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{metrics.earlyToday}</div>
-          <span className="text-[10px] text-orange-700 font-semibold">Shortfall exits</span>
+          <div className="text-lg font-bold text-gray-900 mt-1">{metrics.earlyToday}</div>
+          <span className="text-[11px] text-orange-700 font-medium">Shortfall exits</span>
         </button>
 
         <button
@@ -280,16 +331,16 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
           className={cn(
             'p-3.5 rounded-xl border text-left transition-all cursor-pointer',
             activeFilter === 'PENDING'
-              ? 'bg-rose-50 border-rose-300 ring-2 ring-rose-500/20'
-              : 'bg-white border-gray-200 hover:border-rose-300'
+              ? 'bg-rose-50/50 border-rose-300 ring-2 ring-rose-500/10 shadow-xs'
+              : 'bg-white border-gray-200/80 hover:border-gray-300 shadow-2xs'
           )}
         >
-          <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
+          <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
             <span>Pending Action</span>
-            <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+            <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{metrics.pendingAction}</div>
-          <span className="text-[10px] text-rose-700 font-semibold">Needs explanation</span>
+          <div className="text-lg font-bold text-gray-900 mt-1">{metrics.pendingAction}</div>
+          <span className="text-[11px] text-rose-700 font-medium">Needs regularisation</span>
         </button>
 
         <button
@@ -297,16 +348,16 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
           className={cn(
             'p-3.5 rounded-xl border text-left transition-all cursor-pointer',
             activeFilter === 'UNDER_REVIEW'
-              ? 'bg-purple-50 border-purple-300 ring-2 ring-purple-500/20'
-              : 'bg-white border-gray-200 hover:border-purple-300'
+              ? 'bg-purple-50/50 border-purple-300 ring-2 ring-purple-500/10 shadow-xs'
+              : 'bg-white border-gray-200/80 hover:border-gray-300 shadow-2xs'
           )}
         >
-          <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
+          <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
             <span>Under Review</span>
             <Layers className="w-3.5 h-3.5 text-purple-600" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{metrics.underReview}</div>
-          <span className="text-[10px] text-purple-700 font-semibold">With Manager/HR</span>
+          <div className="text-lg font-bold text-gray-900 mt-1">{metrics.underReview}</div>
+          <span className="text-[11px] text-purple-700 font-medium">With Manager / HR</span>
         </button>
 
         <button
@@ -314,16 +365,16 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
           className={cn(
             'p-3.5 rounded-xl border text-left transition-all cursor-pointer',
             activeFilter === 'REGULARIZED'
-              ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-500/20'
-              : 'bg-white border-gray-200 hover:border-emerald-300'
+              ? 'bg-emerald-50/50 border-emerald-300 ring-2 ring-[#07563D]/10 shadow-xs'
+              : 'bg-white border-gray-200/80 hover:border-gray-300 shadow-2xs'
           )}
         >
-          <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
+          <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
             <span>Regularized</span>
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+            <CheckCircle2 className="w-3.5 h-3.5 text-[#07563D]" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{metrics.regularized}</div>
-          <span className="text-[10px] text-emerald-700 font-semibold">Approved & Cleared</span>
+          <div className="text-lg font-bold text-gray-900 mt-1">{metrics.regularized}</div>
+          <span className="text-[11px] text-[#07563D] font-medium">Approved & cleared</span>
         </button>
 
         <button
@@ -331,33 +382,50 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
           className={cn(
             'p-3.5 rounded-xl border text-left transition-all cursor-pointer',
             activeFilter === 'PAYROLL'
-              ? 'bg-rose-50 border-rose-300 ring-2 ring-rose-500/20'
-              : 'bg-white border-gray-200 hover:border-rose-300'
+              ? 'bg-slate-100 border-slate-300 ring-2 ring-slate-400/20 shadow-xs'
+              : 'bg-white border-gray-200/80 hover:border-gray-300 shadow-2xs'
           )}
         >
-          <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
+          <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
             <span>Payroll Impact</span>
-            <DollarSign className="w-3.5 h-3.5 text-rose-600" />
+            <DollarSign className="w-3.5 h-3.5 text-slate-600" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{metrics.payrollImpact}</div>
-          <span className="text-[10px] text-rose-700 font-semibold">Deduction flagged</span>
+          <div className="text-lg font-bold text-gray-900 mt-1">{metrics.payrollImpact}</div>
+          <span className="text-[11px] text-slate-700 font-medium">Deduction flagged</span>
         </button>
       </div>
 
-      {/* 3. Attendance Deviation Audit Table */}
-      <Card className="p-5 bg-white rounded-2xl border border-gray-200/80 shadow-xs space-y-4">
+      {/* 3. Dual-Axis Scrollable Table with Sticky Header and Sticky Action Column */}
+      <Card className="p-4 sm:p-5 bg-white rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
+        {/* Table Top Toolbar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-extrabold text-gray-900">Attendance Deviation Audit</h3>
-            <span className="text-xs text-gray-500">({filteredList.length} records in view)</span>
+          <div className="flex items-center gap-2.5">
+            <h3 className="text-sm font-bold text-gray-900">Attendance Deviation Audit</h3>
+            <span className="px-2 py-0.5 text-xs font-semibold bg-gray-100 text-gray-700 rounded-md">
+              {filteredList.length} records
+            </span>
+            {(activeFilter !== 'ALL' || dateFilter.preset !== 'ALL' || selectedDept !== 'ALL') && (
+              <button
+                onClick={() => {
+                  setActiveFilter('ALL');
+                  setDateFilter(INITIAL_DATE_FILTER);
+                  setSelectedDept('ALL');
+                }}
+                className="text-[11px] text-[#07563D] font-semibold hover:underline cursor-pointer"
+              >
+                Clear All Filters
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <AttendanceDateFilter value={dateFilter} onChange={setDateFilter} />
+
             {departments.length > 0 && (
               <select
                 value={selectedDept}
                 onChange={(e) => setSelectedDept(e.target.value)}
-                className="px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium focus:outline-none"
+                className="px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#07563D]"
               >
                 <option value="ALL">All Departments</option>
                 {departments.map((d) => (
@@ -375,153 +443,177 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
                 placeholder="Search employee..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#07563D]"
+                className="pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#07563D]"
               />
             </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => loadData()}
+              className="text-xs font-medium text-gray-600 hover:text-gray-900 px-2.5 py-1.5 h-auto cursor-pointer"
+              title="Refresh from Database"
+            >
+              Refresh
+            </Button>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-200 uppercase text-[10px] tracking-wider">
-              <tr>
-                <th className="p-3">Date</th>
-                <th className="p-3">Employee</th>
-                <th className="p-3">Department</th>
-                <th className="p-3">Shift</th>
-                <th className="p-3">Scheduled IN</th>
-                <th className="p-3">Actual IN</th>
-                <th className="p-3">Late Mins</th>
-                <th className="p-3">Scheduled OUT</th>
-                <th className="p-3">Actual OUT</th>
-                <th className="p-3">Early Mins</th>
-                <th className="p-3">Status</th>
-                <th className="p-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredList.length === 0 ? (
+        {/* Dual-Axis Scrollable Wrapper */}
+        <div className="relative border border-gray-200/80 rounded-xl overflow-hidden bg-white shadow-2xs">
+          <div className="max-h-[580px] overflow-x-auto overflow-y-auto no-scrollbar scrollbar-none">
+            <table className="w-full min-w-[1200px] text-left text-xs border-collapse">
+              <thead className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-xs border-b border-gray-200 shadow-2xs text-gray-600 uppercase text-[10px] tracking-wider font-semibold">
                 <tr>
-                  <td colSpan={12} className="p-12 text-center text-gray-500">
-                    <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-2">
-                      <CheckCircle2 className="w-6 h-6" />
-                    </div>
-                    <p className="font-bold text-gray-800 text-sm">No attendance deviations found</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      All scheduled workforce arrived within grace tolerances.
-                    </p>
-                  </td>
+                  <th className="p-3 whitespace-nowrap min-w-[105px]">Date</th>
+                  <th className="p-3 whitespace-nowrap min-w-[180px]">Employee</th>
+                  <th className="p-3 whitespace-nowrap min-w-[130px]">Department</th>
+                  <th className="p-3 whitespace-nowrap min-w-[85px]">Shift</th>
+                  <th className="p-3 whitespace-nowrap min-w-[110px]">Scheduled IN</th>
+                  <th className="p-3 whitespace-nowrap min-w-[110px]">Actual IN</th>
+                  <th className="p-3 whitespace-nowrap min-w-[135px]">Late Mins</th>
+                  <th className="p-3 whitespace-nowrap min-w-[110px]">Scheduled OUT</th>
+                  <th className="p-3 whitespace-nowrap min-w-[110px]">Actual OUT</th>
+                  <th className="p-3 whitespace-nowrap min-w-[125px]">Early Mins</th>
+                  <th className="p-3 whitespace-nowrap min-w-[130px]">Status</th>
+                  <th className="p-3 pr-4 text-right whitespace-nowrap sticky right-0 z-30 bg-slate-50/95 backdrop-blur-xs border-l border-gray-200/80 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.03)] min-w-[160px]">
+                    Actions
+                  </th>
                 </tr>
-              ) : (
-                filteredList.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50/80 transition-colors">
-                    <td className="p-3 text-gray-700 font-semibold whitespace-nowrap">
-                      {item.attendance_date}
-                    </td>
-                    <td className="p-3 font-bold text-gray-900 whitespace-nowrap">
-                      <button
-                        onClick={() => onOpenEmployeeProfile && onOpenEmployeeProfile(item.employee_id)}
-                        className="text-left hover:text-[#07563D] hover:underline cursor-pointer"
-                      >
-                        {item.employee_name}
-                      </button>
-                      <div className="text-[11px] text-gray-400 font-medium">{item.employee_code}</div>
-                    </td>
-                    <td className="p-3 text-gray-700 font-medium whitespace-nowrap">{item.department}</td>
-                    <td className="p-3 text-gray-800 font-bold whitespace-nowrap">{item.shift_code}</td>
-                    <td className="p-3 text-gray-600 font-medium whitespace-nowrap">{item.scheduled_check_in}</td>
-                    <td className="p-3 font-bold text-gray-900 whitespace-nowrap">
-                      {item.actual_check_in ? (
-                        <span className={item.late_minutes > 0 ? 'text-amber-700' : 'text-gray-900'}>
-                          {item.actual_check_in}
-                        </span>
-                      ) : (
-                        <span className="text-rose-600 font-semibold">Missing</span>
-                      )}
-                    </td>
-                    <td className="p-3 font-bold whitespace-nowrap">
-                      {item.late_minutes > 0 ? (
-                        <span className="px-2.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-md">
-                          {item.late_minutes}m
-                        </span>
-                      ) : (
-                        <span className="text-gray-400 font-normal">0</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-gray-600 font-medium whitespace-nowrap">{item.scheduled_check_out}</td>
-                    <td className="p-3 font-bold text-gray-900 whitespace-nowrap">
-                      {item.actual_check_out ? (
-                        <span className={item.early_minutes > 0 ? 'text-orange-700' : 'text-gray-900'}>
-                          {item.actual_check_out}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400 font-normal">—</span>
-                      )}
-                    </td>
-                    <td className="p-3 font-bold whitespace-nowrap">
-                      {item.early_minutes > 0 ? (
-                        <span className="px-2.5 py-0.5 bg-orange-50 text-orange-800 border border-orange-200 rounded-md">
-                          {item.early_minutes}m
-                        </span>
-                      ) : (
-                        <span className="text-gray-400 font-normal">0</span>
-                      )}
-                    </td>
-                    <td className="p-3 whitespace-nowrap">
-                      {item.status === 'REGULARIZED' ? (
-                        <span className="px-3 py-1 text-[11px] font-bold bg-emerald-100 text-emerald-800 rounded-full inline-block">
-                          Regularized
-                        </span>
-                      ) : item.status === 'MANAGER_REVIEW' || item.status === 'HR_REVIEW' ? (
-                        <span className="px-3 py-1 text-[11px] font-bold bg-purple-100 text-purple-800 rounded-full inline-block">
-                          Under Review
-                        </span>
-                      ) : item.status === 'REJECTED' ? (
-                        <span className="px-3 py-1 text-[11px] font-bold bg-rose-100 text-rose-800 rounded-full inline-block">
-                          Rejected
-                        </span>
-                      ) : (
-                        <span className="px-3 py-1 text-[11px] font-bold bg-amber-100 text-amber-800 rounded-full inline-block">
-                          Late Detected
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedDeviation(item)}
-                          className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 hover:text-gray-900 cursor-pointer shadow-2xs transition-colors"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-gray-500" />
-                          <span>View</span>
-                        </button>
-
-                        {item.status !== 'REGULARIZED' && item.status !== 'MANAGER_REVIEW' && item.status !== 'HR_REVIEW' ? (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenRegularizeModal(item)}
-                            className="flex items-center gap-1 px-3 py-1 text-xs font-bold text-white bg-[#07563D] hover:bg-[#064e37] rounded-lg cursor-pointer shadow-2xs transition-colors"
-                          >
-                            <FileEdit className="w-3.5 h-3.5" />
-                            <span>Regularize</span>
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => onNavigateSubPath && onNavigateSubPath('regularization')}
-                            className="flex items-center gap-1 px-3 py-1 text-xs font-bold text-[#07563D] bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 rounded-lg cursor-pointer transition-colors"
-                          >
-                            <span>Desk</span>
-                          </button>
-                        )}
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredList.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="p-12 text-center text-gray-500">
+                      <div className="w-10 h-10 rounded-full bg-emerald-50 text-[#07563D] flex items-center justify-center mx-auto mb-2 border border-emerald-200/50">
+                        <CheckCircle2 className="w-5 h-5" />
                       </div>
+                      <p className="font-bold text-gray-800 text-sm">No attendance deviations found</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        All scheduled workforce arrived within grace tolerances.
+                      </p>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  filteredList.map((item) => (
+                    <tr key={item.id} className="group hover:bg-slate-50/70 transition-colors">
+                      <td className="p-3 text-gray-600 font-mono text-xs whitespace-nowrap">
+                        {item.attendance_date}
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        <button
+                          onClick={() => onOpenEmployeeProfile && onOpenEmployeeProfile(item.employee_id)}
+                          className="text-left font-semibold text-gray-900 hover:text-[#07563D] hover:underline cursor-pointer block"
+                        >
+                          {item.employee_name}
+                        </button>
+                        <div className="text-[11px] text-gray-400 font-mono mt-0.5">{item.employee_code}</div>
+                      </td>
+                      <td className="p-3 text-gray-700 font-medium whitespace-nowrap">{item.department}</td>
+                      <td className="p-3 whitespace-nowrap">
+                        <span className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-semibold">
+                          {item.shift_code}
+                        </span>
+                      </td>
+                      <td className="p-3 text-gray-500 font-mono text-xs whitespace-nowrap">{item.scheduled_check_in}</td>
+                      <td className="p-3 font-mono font-medium whitespace-nowrap">
+                        {item.actual_check_in ? (
+                          <span className={item.late_minutes > 0 ? 'text-amber-800 font-semibold' : 'text-gray-900'}>
+                            {item.actual_check_in}
+                          </span>
+                        ) : (
+                          <span className="text-rose-600 font-semibold text-[11px]">Missing</span>
+                        )}
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        {item.late_minutes > 0 ? (
+                          <span className="inline-flex items-center px-2 py-0.5 bg-amber-50/80 text-amber-800 border border-amber-200/60 rounded-md font-semibold text-[11px]">
+                            {formatDeviationDuration(item.late_minutes, { showBoth: item.late_minutes >= 60 })}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 font-normal">0</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-gray-500 font-mono text-xs whitespace-nowrap">{item.scheduled_check_out}</td>
+                      <td className="p-3 font-mono font-medium whitespace-nowrap">
+                        {item.actual_check_out ? (
+                          <span className={item.early_minutes > 0 ? 'text-orange-800 font-semibold' : 'text-gray-900'}>
+                            {item.actual_check_out}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 font-normal">—</span>
+                        )}
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        {item.early_minutes > 0 ? (
+                          <span className="inline-flex items-center px-2 py-0.5 bg-orange-50/80 text-orange-800 border border-orange-200/60 rounded-md font-semibold text-[11px]">
+                            {formatDeviationDuration(item.early_minutes, { showBoth: item.early_minutes >= 60 })}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 font-normal">0</span>
+                        )}
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        {item.status === 'REGULARIZED' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-semibold bg-emerald-50 text-[#07563D] border border-emerald-200/70 rounded-full">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#07563D]" />
+                            Regularized
+                          </span>
+                        ) : item.status === 'MANAGER_REVIEW' || item.status === 'HR_REVIEW' || item.status === 'REGULARIZATION_PENDING' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200/60 rounded-full">
+                            <span className="w-1.5 h-1.5 rounded-full bg-purple-600" />
+                            Under Review
+                          </span>
+                        ) : item.status === 'REJECTED' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200/60 rounded-full">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />
+                            Rejected
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-semibold bg-amber-50/80 text-amber-800 border border-amber-200/60 rounded-full">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                            Late Detected
+                          </span>
+                        )}
+                      </td>
+                      {/* Sticky Actions Cell: Always visible and never truncated */}
+                      <td className="p-3 pr-4 text-right whitespace-nowrap sticky right-0 z-10 bg-white/95 backdrop-blur-xs border-l border-gray-100 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.03)] group-hover:bg-slate-50/95">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDeviation(item)}
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg cursor-pointer shadow-2xs transition-colors"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-gray-500" />
+                            <span>View</span>
+                          </button>
+
+                          {item.status !== 'REGULARIZED' && item.status !== 'MANAGER_REVIEW' && item.status !== 'HR_REVIEW' && item.status !== 'REGULARIZATION_PENDING' ? (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenRegularizeModal(item)}
+                              className="flex items-center gap-1 px-3 py-1 text-xs font-semibold text-white bg-[#07563D] hover:bg-[#064e37] rounded-lg cursor-pointer shadow-2xs transition-all"
+                            >
+                              <FileEdit className="w-3.5 h-3.5" />
+                              <span>Regularize</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onNavigateSubPath && onNavigateSubPath('regularization')}
+                              className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-[#07563D] bg-emerald-50 hover:bg-emerald-100/70 border border-emerald-200/60 rounded-lg cursor-pointer transition-colors"
+                            >
+                              <span>Desk</span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </Card>
 
@@ -582,8 +674,8 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
                   <span className="font-mono font-bold text-orange-800">{selectedDeviation.actual_check_out || '—'}</span>
                 </div>
                 <div className="flex justify-between items-center text-xs pt-1 border-t border-gray-100">
-                  <span className="text-gray-500">Payable Late Minutes:</span>
-                  <span className="font-bold text-rose-700">{selectedDeviation.payable_late_minutes} min (Raw: {selectedDeviation.late_minutes}m)</span>
+                  <span className="text-gray-500">Payable Late:</span>
+                  <span className="font-bold text-rose-700">{formatDeviationDuration(selectedDeviation.payable_late_minutes, { showBoth: selectedDeviation.payable_late_minutes >= 60, verbose: true })} (Raw: {formatDeviationDuration(selectedDeviation.late_minutes, { showBoth: selectedDeviation.late_minutes >= 60 })})</span>
                 </div>
               </div>
             </div>
@@ -653,13 +745,13 @@ export const LateEarlyTrackingView: React.FC<LateEarlyTrackingViewProps> = ({
           size="md"
         >
           <form onSubmit={handleConfirmRegularize} className="space-y-4 text-xs">
-            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
+            <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/60">
               <div className="flex justify-between items-center">
-                <span className="font-bold text-amber-900">{selectedForRegularize.employee_name} ({selectedForRegularize.employee_code})</span>
-                <span className="font-mono font-bold text-amber-800">{selectedForRegularize.attendance_date}</span>
+                <span className="font-bold text-gray-900">{selectedForRegularize.employee_name} ({selectedForRegularize.employee_code})</span>
+                <span className="font-mono font-semibold text-gray-700">{selectedForRegularize.attendance_date}</span>
               </div>
-              <p className="text-[11px] text-amber-700 mt-1">
-                Detected Variance: <strong>{selectedForRegularize.late_minutes}m Late</strong> (Scheduled: {selectedForRegularize.scheduled_check_in} vs Actual: {selectedForRegularize.actual_check_in || 'Missing'})
+              <p className="text-[11px] text-gray-600 mt-1">
+                Detected Variance: <strong className="text-amber-800">+{formatDeviationDuration(selectedForRegularize.late_minutes, { showBoth: selectedForRegularize.late_minutes >= 60 })} Late</strong> (Scheduled: {selectedForRegularize.scheduled_check_in} vs Actual: {selectedForRegularize.actual_check_in || 'Missing'})
               </p>
             </div>
 

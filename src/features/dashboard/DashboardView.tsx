@@ -163,6 +163,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
       const newJoiners90D = countJoinersSince(ninetyDaysAgo);
 
       // Exits by window
+      const countExitsSince = (sinceDate: Date) =>
+        employees.filter((e) => {
+          const isExit = e.status === 'Exited' || e.status === 'Terminated' || e.status === 'Resigned';
+          if (!isExit) return false;
+          const dateStr = (e as any).exit_date || (e as any).resignation_date || e.updated_at;
+          return dateStr && new Date(dateStr) >= sinceDate;
+        }).length;
+
+      const exitsToday = countExitsSince(new Date(now.setHours(0, 0, 0, 0)));
+      const exits7D = countExitsSince(sevenDaysAgo);
+      const exits30D = countExitsSince(thirtyDaysAgo);
+      const exits90D = countExitsSince(ninetyDaysAgo);
       const exitsCount = exitedEmps.length;
 
       setWorkforceSnapshot({
@@ -176,10 +188,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
       });
 
       setWorkforceMovement({
-        today: { newJoiners: newJoinersToday, exits: 0, transfers: 0, promotions: 0, netChange: newJoinersToday },
-        sevenDays: { newJoiners: newJoiners7D, exits: Math.min(exitsCount, 1), transfers: 1, promotions: 1, netChange: newJoiners7D - Math.min(exitsCount, 1) },
-        thirtyDays: { newJoiners: newJoiners30D, exits: exitsCount, transfers: 2, promotions: 3, netChange: newJoiners30D - exitsCount },
-        ninetyDays: { newJoiners: newJoiners90D, exits: exitsCount, transfers: 4, promotions: 6, netChange: newJoiners90D - exitsCount },
+        today: { newJoiners: newJoinersToday, exits: exitsToday, transfers: 0, promotions: 0, netChange: newJoinersToday - exitsToday },
+        sevenDays: { newJoiners: newJoiners7D, exits: exits7D, transfers: 0, promotions: 0, netChange: newJoiners7D - exits7D },
+        thirtyDays: { newJoiners: newJoiners30D, exits: exits30D, transfers: 0, promotions: 0, netChange: newJoiners30D - exits30D },
+        ninetyDays: { newJoiners: newJoiners90D, exits: exits90D, transfers: 0, promotions: 0, netChange: newJoiners90D - exits90D },
       });
 
       // --- AUTHORITATIVE ATTENDANCE RECONCILIATION ---
@@ -283,22 +295,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
       const currentMonthIndex = now.getMonth();
       const currentYear = now.getFullYear();
 
-      let runningHeadcount = Math.max(1, activeEmps.length - newJoiners90D);
-
       for (let i = 5; i >= 0; i--) {
         const d = new Date(currentYear, currentMonthIndex - i, 1);
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         const mName = monthNames[d.getMonth()];
-        const hires = i === 0 ? newJoiners30D : Math.max(2, Math.round(newJoiners90D / 3));
-        const exits = i === 0 ? Math.min(exitsCount, 2) : 1;
-        const opening = runningHeadcount;
-        const closing = opening + hires - exits;
-        runningHeadcount = closing;
+
+        const hires = employees.filter((e) => {
+          const doj = e.employment?.doj || (e as any).joining_date || e.created_at;
+          return doj && doj.startsWith(ym);
+        }).length;
+
+        const monthExits = employees.filter((e) => {
+          const isExit = e.status === 'Exited' || e.status === 'Terminated' || e.status === 'Resigned';
+          const dateStr = (e as any).exit_date || (e as any).resignation_date || e.updated_at;
+          return isExit && dateStr && dateStr.startsWith(ym);
+        }).length;
+
+        const closing = employees.filter((e) => {
+          const doj = e.employment?.doj || (e as any).joining_date || e.created_at;
+          return doj ? doj.slice(0, 7) <= ym : true;
+        }).length;
+
+        const opening = Math.max(0, closing - hires + monthExits);
 
         calculatedTrends.push({
           month: mName,
           openingHeadcount: opening,
           newJoiners: hires,
-          exits,
+          exits: monthExits,
           closingHeadcount: closing,
         });
       }
@@ -318,7 +342,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
 
         return {
           id: log.id || `act-${Math.random()}`,
-          actorName: log.actor_name || 'Arun Kumar',
+          actorName: log.actor_name || 'System Admin',
           action: log.action || 'updated record',
           target: log.target || log.entity || 'Workforce',
           timestamp: log.timestamp || log.time_ago || 'Just now',

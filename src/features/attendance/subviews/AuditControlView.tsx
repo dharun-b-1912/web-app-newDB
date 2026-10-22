@@ -29,6 +29,7 @@ import { hrEventBus } from '../../../services/hrEventBus';
 import { realtimeChannelManager } from '../../../services/realtime/realtimeChannelManager';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
+import { formatDeviationDuration } from '../../../lib/attendance/attendanceEngine';
 
 export interface AuditControlViewProps {
   currentTab?: string;
@@ -405,7 +406,7 @@ export const AuditControlView: React.FC<AuditControlViewProps> = ({
           actor: 'Calculation Engine',
           event: (rec.status || 'PRESENT').toUpperCase(),
           target: `${rec.employee_name || 'Staff'} (${rec.employee_code || rec.employee_id || 'WF-EMP'})`,
-          details: `Net work ${rec.net_working_minutes || 0}m, ${rec.late_minutes || 0}m late, ${rec.overtime_minutes || 0}m OT via ${rec.source || 'Unified Portal'}.`,
+          details: `Net work ${formatDeviationDuration(rec.net_working_minutes || 0)}, ${rec.late_minutes ? `${formatDeviationDuration(rec.late_minutes, { showBoth: rec.late_minutes >= 60 })} late` : 'on time'}${rec.overtime_minutes ? `, ${formatDeviationDuration(rec.overtime_minutes, { showBoth: rec.overtime_minutes >= 60 })} OT` : ''} via ${rec.source || 'Unified Portal'}.`,
           timestamp: rec.date ? `${rec.date} ${checkInTime}` : 'Today',
           rawTime: rec.created_at ? new Date(rec.created_at).getTime() : 0,
           sourceType: isMobile ? 'MOBILE' : 'WEB',

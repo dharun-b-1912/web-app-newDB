@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Breadcrumb } from '../../components/shell/Breadcrumb';
+import { useToast } from '../../components/ui/Toast';
 import {
   Search,
   UserPlus,
@@ -10,11 +11,13 @@ import {
   Users,
   Filter,
   FileSpreadsheet,
+  Download,
 } from 'lucide-react';
 import { EmployeeList } from './EmployeeList';
 import { EmployeeCreateWizardModal } from './EmployeeCreateWizardModal';
 import { EmployeeProfileDrawer } from './EmployeeProfileDrawer';
 import { BulkEmployeeImportModal } from './bulk/BulkEmployeeImportModal';
+import { exportEmployeeMasterData, exportOnboardingHeaderTemplate } from './bulk/excelTemplateGenerator';
 import { Employee } from '../../types';
 import { api } from '../../services/api';
 import { useTenant } from '../../hooks/useTenant';
@@ -23,6 +26,7 @@ import { hrEventBus } from '../../services/hrEventBus';
 import { cn } from '../../lib/utils';
 
 export const PeopleView: React.FC = () => {
+  const { showToast } = useToast();
   const { activeCompany } = useTenant();
   const { filterAccessibleEmployees, hasPermission } = usePermission();
 
@@ -68,9 +72,13 @@ export const PeopleView: React.FC = () => {
           }
           return [data, ...prev];
         });
-      } else if (type === 'employee.updated' && data && data.id) {
-        setEmployees((prev) => prev.map((e) => (e.id === data.id ? { ...e, ...data } : e)));
-        setSelectedEmployee((prev) => (prev?.id === data.id ? { ...prev, ...data } : prev));
+      } else if (type === 'employee.updated' && data) {
+        const targetEmp = data.employee || data;
+        const targetId = targetEmp?.id || data?.id || data?.employeeId;
+        if (targetId) {
+          setEmployees((prev) => prev.map((e) => (e.id === targetId ? { ...e, ...targetEmp } : e)));
+          setSelectedEmployee((prev) => (prev?.id === targetId ? { ...prev, ...targetEmp } : prev));
+        }
       } else if (type === 'employee.deleted' && data && data.id) {
         setEmployees((prev) => prev.filter((e) => e.id !== data.id));
       } else if (type === 'employee.synced' && Array.isArray(data) && data.length > 0) {
@@ -260,20 +268,56 @@ export const PeopleView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            onClick={() => {
+              try {
+                exportOnboardingHeaderTemplate({
+                  existingEmployees: accessibleEmployees,
+                });
+                showToast('Downloaded Onboarding Template with clean headers, example row, manager mapping & guides.', 'success');
+              } catch (e: any) {
+                showToast('Download failed: ' + (e.message || e), 'error');
+              }
+            }}
+            variant="outline"
+            leftIcon={<Download className="w-4 h-4 text-[#07563D]" />}
+            className="text-xs font-bold border-gray-300 hover:bg-emerald-50 text-gray-700 hover:text-[#07563D] shadow-2xs cursor-pointer"
+            title="Download clean onboarding template with proper headers, complete example row, manager code mapping, and pre-defined options guide"
+          >
+            Download Onboarding Template
+          </Button>
+
+          <Button
+            onClick={() => {
+              try {
+                exportEmployeeMasterData(accessibleEmployees);
+                showToast(`Exported ${accessibleEmployees.length} workforce records with clean onboarding headers.`, 'success');
+              } catch (e: any) {
+                showToast('Export failed: ' + (e.message || e), 'error');
+              }
+            }}
+            variant="outline"
+            leftIcon={<Users className="w-4 h-4 text-blue-700" />}
+            className="text-xs font-bold border-gray-300 hover:bg-blue-50 text-gray-700 hover:text-blue-700 shadow-2xs cursor-pointer"
+            title="Export complete workforce records with clean onboarding headers for bulk editing"
+          >
+            Export Workforce
+          </Button>
+
           {hasPermission('people', 'create') && (
             <>
               <Button
                 onClick={() => setIsBulkImportOpen(true)}
                 variant="outline"
                 leftIcon={<FileSpreadsheet className="w-4 h-4 text-[#07563D]" />}
-                className="text-xs font-bold border-gray-300 hover:bg-emerald-50 text-gray-700 hover:text-[#07563D] shadow-2xs"
+                className="text-xs font-bold border-gray-300 hover:bg-emerald-50 text-gray-700 hover:text-[#07563D] shadow-2xs cursor-pointer"
               >
                 Bulk Import Employees
               </Button>
               <Button
                 onClick={() => setIsCreateOpen(true)}
                 leftIcon={<UserPlus className="w-4 h-4" />}
-                className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs shadow-xs"
+                className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs shadow-xs cursor-pointer"
               >
                 + Add Employee
               </Button>
@@ -469,8 +513,26 @@ export const PeopleView: React.FC = () => {
           setEmployees((prev) => prev.filter((e) => e.id !== emp.id));
         }}
         onToggleStatus={async (emp, newStatus) => {
-          await api.updateEmployeeStatus(emp.id, newStatus);
-          setEmployees((prev) => prev.map((e) => (e.id === emp.id ? { ...e, status: newStatus as any } : e)));
+          try {
+            // Immediate optimistic UI update
+            setEmployees((prev) =>
+              prev.map((e) =>
+                e.id === emp.id
+                  ? {
+                      ...e,
+                      status: newStatus as any,
+                      employment_status: (newStatus === 'Active' ? 'ACTIVE' : 'SUSPENDED') as any,
+                    }
+                  : e
+              )
+            );
+            await api.updateEmployeeStatus(emp.id, newStatus);
+            showToast(`✓ ${emp.first_name} ${emp.last_name} marked as ${newStatus}`, 'success');
+          } catch (err: any) {
+            console.error('Toggle status error:', err);
+            showToast(`Failed to update status: ${err?.message || 'Error'}`, 'error');
+            await loadData();
+          }
         }}
       />
 

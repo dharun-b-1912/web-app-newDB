@@ -7,6 +7,8 @@ declare namespace Deno {
     set(key: string, value: string): void;
     toObject(): Record<string, string>;
   };
+  export function serve(handler: (req: Request) => Response | Promise<Response>): void;
+  export function serve(options: any, handler: (req: Request) => Response | Promise<Response>): void;
 }
 
 declare module 'https://*' {
@@ -17,4 +19,5 @@ declare module 'https://*' {
   export const getCorsHeaders: any;
   export const handleCorsPreflight: any;
   export const checkRateLimit: any;
+  export const jsPDF: any;
 }

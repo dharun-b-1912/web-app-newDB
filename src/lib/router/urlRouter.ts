@@ -27,7 +27,7 @@ export const ROUTE_ALIASES: Record<string, string> = {
   '/platform/login': 'superadmin-login',
   '/admin/login': 'login',
   '/company-admin/login': 'login',
-  '/login': 'dashboard',
+  '/login': 'login',
   '/auth/accept-invite': 'accept-invite',
   '/auth/activate': 'accept-invite',
   '/accept-invite': 'accept-invite',
@@ -429,6 +429,7 @@ export const ROUTE_ALIASES: Record<string, string> = {
 
 // Canonical URL Path corresponding to each internal route ID
 export const ROUTE_TO_PATH: Record<string, string> = {
+  'login': '/login',
   'superadmin-login': '/superadmin',
   'dashboard': '/dashboard',
   'workforce-overview': '/workforce-overview',

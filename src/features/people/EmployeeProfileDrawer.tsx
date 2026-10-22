@@ -31,6 +31,7 @@ import {
   Clock,
   Camera,
   Loader2,
+  Send,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useToast } from '../../components/ui/Toast';
@@ -38,7 +39,8 @@ import { biometricGatewayService } from '../../services/attendance/biometricGate
 import { employeeAuthService } from '../../services/auth/employeeAuthService';
 import { EmployeeCreateWizardModal } from './EmployeeCreateWizardModal';
 import { ProfilePhotoPreviewModal } from './ProfilePhotoPreviewModal';
-import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { supabase, supabaseAdmin, isSupabaseEnabled } from '../../lib/supabase';
+const dbClient = (supabaseAdmin || supabase);
 import { avatarService } from '../../services/avatar/avatarService';
 import { resendEmailService } from '../../services/email/resendEmailService';
 import { enterpriseIdentityService } from '../../services/auth/enterpriseIdentityService';
@@ -142,8 +144,8 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
         if (isSupabaseEnabled) {
           try {
             const [bRes, sRes] = await Promise.all([
-              supabase.from('employee_bank_details').select('*').eq('employee_id', employee.id).maybeSingle(),
-              supabase.from('employee_statutory_details').select('*').eq('employee_id', employee.id).maybeSingle(),
+              dbClient.from('employee_bank_details').select('*').eq('employee_id', employee.id).maybeSingle(),
+              dbClient.from('employee_statutory_details').select('*').eq('employee_id', employee.id).maybeSingle(),
             ]);
 
             if (bRes?.data) setBankData(bRes.data);
@@ -774,7 +776,15 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                   </div>
                   <div>
                     <span className="text-gray-400 text-[11px] block">Operating Branch</span>
-                    <span className="font-bold text-gray-900">{employee.branch_name || 'Joy Corporate Solutions Private Limited (HQ)'}</span>
+                    <span className="font-bold text-gray-900">{employee.branch_name || 'Not assigned'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 text-[11px] block">Campus / Work Location</span>
+                    <span className="font-bold text-gray-900">{employee.employment?.work_location || employee.work_location || employee.location || 'Not assigned'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 text-[11px] block">Work Mode</span>
+                    <span className="font-bold text-gray-900">{employee.employment?.work_mode || employee.work_mode || 'Hybrid'}</span>
                   </div>
                 </div>
               </Card>
@@ -860,6 +870,16 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                         ? (showSensitiveData
                             ? (statutoryData?.pan_number || statutoryData?.pan)
                             : `${(statutoryData?.pan_number || statutoryData?.pan || '').slice(0, 5)}••••${(statutoryData?.pan_number || statutoryData?.pan || '').slice(-1)}`)
+                        : '— Not configured —'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 text-[11px] block">Aadhaar Number (UID)</span>
+                    <span className="font-mono font-bold text-gray-900">
+                      {(statutoryData?.aadhaar_number || statutoryData?.aadhaar_masked || employee.profile?.national_id_masked)
+                        ? (showSensitiveData
+                            ? (statutoryData?.aadhaar_number || statutoryData?.aadhaar_masked || employee.profile?.national_id_masked)
+                            : `••••••••${(statutoryData?.aadhaar_number || statutoryData?.aadhaar_masked || employee.profile?.national_id_masked || '').replace(/\D/g, '').slice(-4)}`)
                         : '— Not configured —'}
                     </span>
                   </div>
@@ -1236,6 +1256,32 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                   >
                     <Clock className="w-3.5 h-3.5 mr-1.5 text-rose-600" />
                     Revoke All Active Sessions
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isProcessingAuth}
+                    onClick={async () => {
+                      setIsProcessingAuth(true);
+                      try {
+                        const { whatsAppNotificationService } = await import('../../services/whatsapp/whatsappNotificationService');
+                        const res = await whatsAppNotificationService.sendWelcomeByEmployeeId(employee.id);
+                        if (res.success) {
+                          showToast(`✓ WhatsApp Welcome Pack (joy_hr_welcome_v2) sent to ${employee.first_name}`, 'success');
+                        } else {
+                          showToast(res.error || 'WhatsApp dispatch failed', 'error');
+                        }
+                      } catch (err: any) {
+                        showToast(err.message || 'WhatsApp error', 'error');
+                      } finally {
+                        setIsProcessingAuth(false);
+                      }
+                    }}
+                    className="text-xs font-bold text-emerald-700 hover:bg-emerald-50 justify-start"
+                  >
+                    <Send className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+                    Send WhatsApp Welcome Pack
                   </Button>
                 </div>
               </Card>

@@ -12,6 +12,7 @@ export interface PayrollImpactCalculationParams {
   pfApplicable?: boolean;
   esiApplicable?: boolean;
   ptApplicable?: boolean;
+  lwfApplicable?: boolean;
 }
 
 export interface PayrollImpactResult {
@@ -41,6 +42,7 @@ export interface PayrollImpactResult {
   epfEmployee: number;
   esicEmployee: number;
   professionalTax: number;
+  lwfEmployee: number;
   estimatedTds: number;
   totalEmployeeDeductions: number;
   
@@ -64,6 +66,7 @@ class PayrollImpactCalculationEngine {
       pfApplicable = true,
       esiApplicable = true,
       ptApplicable = true,
+      lwfApplicable = false,
     } = params;
 
     // Use canonical central calculation engine for base wage breakdown
@@ -108,16 +111,17 @@ class PayrollImpactCalculationEngine {
 
     // Evaluate exact statutory withholdings on earned wage
     const pfEval = StatutoryRuleEngine.evaluatePF(basicEarned, true, pfApplicable, statutoryConfig);
-    const esiEval = StatutoryRuleEngine.evaluateESI(effectiveGrossEarnings, 0, 'NEW_COVERAGE', statutoryConfig);
+    const esiEval = StatutoryRuleEngine.evaluateESI(effectiveGrossEarnings, 0, 'NEW_COVERAGE', statutoryConfig, esiApplicable);
     const ptEval = StatutoryRuleEngine.evaluateProfessionalTax(effectiveGrossEarnings, 'Tamil Nadu', statutoryConfig);
     const tdsEval = StatutoryRuleEngine.evaluateProjectedTDS(effectiveGrossEarnings, effectiveGrossEarnings * 12, 'NEW');
 
     const epfEmployee = pfApplicable !== false ? pfEval.employee_contribution : 0;
     const esicEmployee = esiApplicable !== false && esiEval.is_covered ? esiEval.employee_contribution : 0;
     const professionalTax = ptApplicable !== false ? ptEval.ptAmount : 0;
+    const lwfEmployee = lwfApplicable ? (statutoryConfig?.lwf_employee_amount ?? statutoryConfig?.lwf_amount ?? 20) : 0;
     const estimatedTds = tdsEval.monthlyTdsWithholding;
 
-    const totalEmployeeDeductions = epfEmployee + esicEmployee + professionalTax + estimatedTds;
+    const totalEmployeeDeductions = epfEmployee + esicEmployee + professionalTax + lwfEmployee + estimatedTds;
     const netTakeHomePay = Math.max(0, effectiveGrossEarnings - totalEmployeeDeductions);
 
     const epfEmployer = pfApplicable !== false ? pfEval.total_employer_pf_cost : 0;
@@ -149,6 +153,7 @@ class PayrollImpactCalculationEngine {
       epfEmployee,
       esicEmployee,
       professionalTax,
+      lwfEmployee,
       estimatedTds,
       totalEmployeeDeductions,
       epfEmployer,

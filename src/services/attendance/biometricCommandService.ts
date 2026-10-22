@@ -215,7 +215,7 @@ class BiometricCommandService {
             serial_number: dev?.serial_number || 'TDBD253600550',
             ip_address: dev?.ip_address || '192.168.1.201',
             port: dev?.port || 4370,
-            user_count: dev?.registered_users_count || 16,
+            user_count: dev?.registered_users_count || 0,
             log_capacity: 100000,
           };
           cmd.status = 'SUCCESS';

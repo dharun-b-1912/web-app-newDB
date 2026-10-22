@@ -205,6 +205,35 @@ const AppContent: React.FC = () => {
   const [renderSafetyTimedOut, setRenderSafetyTimedOut] = useState(false);
   const lastMountedRouteRef = useRef<string | null>(null);
 
+  // Domain Separation & Privacy Guard: Keep joypeoplehr.com as landing page and app.joypeoplehr.com as private app workspace
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const hostname = (window.location.hostname || '').toLowerCase();
+    const pathname = (window.location.pathname || '/').toLowerCase();
+
+    const isLandingHost = hostname === 'joypeoplehr.com' || hostname === 'www.joypeoplehr.com';
+    // If accessing on the public landing page domain joypeoplehr.com
+    if (isLandingHost) {
+      const appPaths = [
+        '/admin', '/people', '/employees', '/attendance', '/payroll',
+        '/vendor', '/vendors', '/dashboard', '/workforce', '/workspace',
+        '/profile', '/organization', '/departments', '/designations',
+        '/locations', '/documents', '/assets', '/onboarding', '/offboarding',
+        '/recruitment', '/talent', '/performance', '/lms', '/client-billing',
+        '/platform', '/superadmin', '/login', '/ess', '/tl', '/auth'
+      ];
+      const isAppRoute = appPaths.some((p) => pathname === p || pathname.startsWith(p + '/'));
+      if (isAppRoute) {
+        window.location.replace(`https://app.joypeoplehr.com${window.location.pathname}${window.location.search}${window.location.hash}`);
+      } else {
+        window.location.replace('/launch.html');
+      }
+    }
+  }, []);
+
+  const isLandingDomain = typeof window !== 'undefined' &&
+    (window.location.hostname.toLowerCase() === 'joypeoplehr.com' || window.location.hostname.toLowerCase() === 'www.joypeoplehr.com');
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setRenderSafetyTimedOut(true);
@@ -223,15 +252,16 @@ const AppContent: React.FC = () => {
     }
   }, [user, currentRoute]);
 
-  // Synchronize route changes to URL and localStorage
+  // Synchronize route changes to URL and localStorage (strictly skipped on public landing page domain)
   useEffect(() => {
+    if (isLandingDomain) return;
     if (currentRoute) {
       syncUrlWithRoute(currentRoute, undefined, true);
       try {
         localStorage.setItem('workforce_active_route', currentRoute);
       } catch { }
     }
-  }, [currentRoute]);
+  }, [currentRoute, isLandingDomain]);
 
   // Sync with browser back/forward buttons
   useEffect(() => {
@@ -311,6 +341,14 @@ const AppContent: React.FC = () => {
   }, [user, currentRoute]);
 
 
+
+  if (isLandingDomain) {
+    return (
+      <div className="min-h-screen bg-[#F8FCFA] flex items-center justify-center">
+        <JoySplashScreen onFinished={() => {}} />
+      </div>
+    );
+  }
 
   const isSuperAdminRoute =
     currentRoute === 'superadmin-login' ||

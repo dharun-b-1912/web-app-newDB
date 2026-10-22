@@ -142,8 +142,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     notice_period_days: 60,
 
     // Work Assignment
-    shift_id: 'shift-general-01',
-    shift_name: 'General Shift (09:30 AM – 06:30 PM)',
+    shift_id: 'f5ff5d00-8489-459b-8d8e-d930ecffef22',
+    shift_name: 'General Day Shift (Corporate) (09:30 AM – 06:30 PM)',
     attendance_policy_id: 'pol-standard-office',
     leave_policy_id: 'leave-pol-std-2026',
     leave_policy_name: 'Standard Full-Time Leave Policy',
@@ -152,8 +152,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     compensation_basis: 'CTC_INCLUSIVE' as 'CTC_INCLUSIVE' | 'GROSS_BASED',
     salary_structure_code: 'CORP_STD_01',
     salary_structure_name: 'Corporate Standard CTC Structure',
-    annual_ctc: 1200000,
-    monthly_ctc: 100000,
+    annual_ctc: 0,
+    monthly_ctc: 0,
     currency: 'INR',
     pay_frequency: 'MONTHLY',
     payroll_group_id: 'pg-monthly-main',
@@ -162,6 +162,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     esi_applicable: false,
     pt_applicable: true,
     tds_applicable: true,
+    lwf_applicable: false,
 
     // Step 4: Organization & Reporting
     reporting_manager_id: '',
@@ -186,6 +187,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
     account_holder_name: '',
     account_type: 'SALARY' as 'SALARY' | 'SAVINGS' | 'CURRENT',
     pan: '',
+    aadhaar_number: '',
     uan: '',
     pf_number: '',
     esi_number: '',
@@ -256,16 +258,17 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       designation_id: emp.designation_id || (e as any).designation_id || '',
       designation_title: emp.designation_title || (e as any).designation_title || (emp as any).designation || '',
       branch_id: emp.branch_id || '',
-      location_id: (emp as any).location_id || '',
-      work_mode: (e.work_mode || 'Hybrid') as WorkMode,
-      job_level: e.job_level || 'Mid Level',
-      grade: e.grade || 'G3',
-      probation_months: e.probation_period_months !== undefined ? e.probation_period_months : ((e as any).probation_months !== undefined ? (e as any).probation_months : 6),
-      notice_period_days: e.notice_period_days !== undefined ? e.notice_period_days : 60,
+      location_id: (emp as any).location_id || (e as any).location_id || emp.branch_id || '',
+      work_location: (emp as any).work_location || (emp as any).work_location_name || (e as any).work_location || '',
+      work_mode: (e.work_mode || (emp as any).work_mode || 'Hybrid') as WorkMode,
+      job_level: e.job_level || (emp as any).job_level || 'Mid Level',
+      grade: e.grade || (emp as any).grade || 'G3',
+      probation_months: e.probation_period_months !== undefined ? e.probation_period_months : ((e as any).probation_months !== undefined ? (e as any).probation_months : ((emp as any).probation_period_months ?? 6)),
+      notice_period_days: e.notice_period_days !== undefined ? e.notice_period_days : ((emp as any).notice_period_days ?? 60),
 
       // Work Assignment
-      shift_id: (emp as any)?.shift_id || (e as any)?.shift_id || (emp as any)?.work_assignment?.shift_id || 'shift-general-01',
-      shift_name: (emp as any)?.shift_name || (e as any)?.shift_name || (emp as any)?.work_assignment?.shift_name || 'General Shift (09:30 AM – 06:30 PM)',
+      shift_id: (emp as any)?.shift_id || (e as any)?.shift_id || (emp as any)?.work_assignment?.shift_id || 'f5ff5d00-8489-459b-8d8e-d930ecffef22',
+      shift_name: (emp as any)?.shift_name || (e as any)?.shift_name || (emp as any)?.work_assignment?.shift_name || 'General Day Shift (Corporate) (09:30 AM – 06:30 PM)',
       attendance_policy_id: (emp as any)?.attendance_policy_id || (e as any)?.attendance_policy_id || (emp as any)?.work_assignment?.attendance_policy_id || 'pol-standard-office',
       leave_policy_id: (emp as any)?.leave_policy_id || (e as any)?.leave_policy_id || 'leave-pol-std-2026',
       leave_policy_name: (emp as any)?.leave_policy_name || (e as any)?.leave_policy_name || 'Standard Full-Time Leave Policy',
@@ -275,23 +278,23 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       salary_structure_code: (e as any).salary_structure_code || (emp as any).salary_structure_code || (emp as any).salary_structure_id || 'CORP_STD_01',
       salary_structure_name: (e as any).salary_structure_name || (emp as any).salary_structure_name || 'Corporate Standard CTC Structure',
       annual_ctc: Number(
+        (emp as any).salary_assignment?.annual_ctc ||
         (e as any).annual_ctc ||
         e.ctc ||
         (emp as any).annual_ctc ||
         (emp as any).ctc ||
-        (emp as any).salary_assignment?.annual_ctc ||
         (p as any).annual_ctc ||
-        1200000
+        0
       ),
-      monthly_ctc: Math.round(Number(
-        (e as any).annual_ctc ||
-        e.ctc ||
-        (emp as any).annual_ctc ||
-        (emp as any).ctc ||
-        (emp as any).salary_assignment?.annual_ctc ||
-        (p as any).annual_ctc ||
-        1200000
-      ) / 12),
+      monthly_ctc: Number(
+        (emp as any).salary_assignment?.monthly_gross ||
+        (emp as any).salary_assignment?.gross_monthly ||
+        (e as any).monthly_ctc ||
+        (emp as any).monthly_ctc ||
+        ((emp as any).salary_assignment?.annual_ctc ? Math.round(Number((emp as any).salary_assignment.annual_ctc) / 12) : 0) ||
+        ((emp as any).annual_ctc ? Math.round(Number((emp as any).annual_ctc) / 12) : 0) ||
+        0
+      ),
       currency: (e as any).currency || 'INR',
       pay_frequency: (e as any).pay_frequency || 'MONTHLY',
       payroll_group_id: (e as any).payroll_group_id || 'pg-monthly-main',
@@ -316,12 +319,17 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         : ((emp as any).statutory?.is_tds_eligible !== undefined
           ? Boolean((emp as any).statutory.is_tds_eligible)
           : ((e as any).tds_applicable !== false)),
+      lwf_applicable: (emp as any).statutory?.lwf_applicable !== undefined
+        ? Boolean((emp as any).statutory.lwf_applicable)
+        : ((emp as any).statutory?.is_lwf_eligible !== undefined
+          ? Boolean((emp as any).statutory.is_lwf_eligible)
+          : Boolean((e as any).lwf_applicable)),
 
       // Step 4: Organization & Reporting
-      reporting_manager_id: e.reporting_manager_id || '',
-      reporting_manager_name: e.reporting_manager_name || '',
-      team_lead_id: e.team_lead_id || '',
-      team_lead_name: e.team_lead_name || '',
+      reporting_manager_id: emp.reporting_manager_id || e.reporting_manager_id || '',
+      reporting_manager_name: emp.reporting_manager_name || e.reporting_manager_name || '',
+      team_lead_id: (emp as any).team_lead_id || e.team_lead_id || '',
+      team_lead_name: (emp as any).team_lead_name || e.team_lead_name || '',
       hr_owner_id: (e as any).hr_owner_id || '',
       business_unit: (e as any).business_unit || '',
       cost_center: e.cost_center_code || '',
@@ -340,6 +348,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       account_holder_name: (emp as any).bank?.account_holder_name || (p as any)?.bank_account?.account_holder_name || `${emp.first_name} ${emp.last_name}`.trim(),
       account_type: ((emp as any).bank?.account_type || (p as any)?.bank_account?.account_type || 'SALARY') as 'SALARY' | 'SAVINGS' | 'CURRENT',
       pan: (emp as any).statutory?.pan || (emp as any).statutory?.pan_number || (p as any)?.statutory?.pan || '',
+      aadhaar_number: (emp as any).statutory?.aadhaar_number || (emp as any).statutory?.aadhaar_masked || (p as any)?.statutory?.aadhaar_number || (p as any)?.national_id_masked || (emp as any).aadhaar || '',
       uan: (emp as any).statutory?.uan || (emp as any).statutory?.uan_number || (p as any)?.statutory?.uan || '',
       pf_number: (emp as any).statutory?.pf_number || (p as any)?.statutory?.pf_number || '',
       esi_number: (emp as any).statutory?.esi_number || (p as any)?.statutory?.esi_number || '',
@@ -369,10 +378,21 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       const nextData = { ...prev };
       for (const [k, v] of Object.entries(freshData)) {
         const prevVal = (prev as any)[k];
-        const isPrevEmpty = prevVal === '' || prevVal === null || prevVal === undefined;
+        const isPrevEmpty = prevVal === '' || prevVal === null || prevVal === undefined || prevVal === 0;
         if (isPrevEmpty && v !== '' && v !== null && v !== undefined && (!Array.isArray(v) || v.length > 0)) {
           (nextData as any)[k] = v;
         }
+      }
+
+      // Explicitly hydrate real database salary details if available
+      if (freshEmp.annual_ctc !== undefined || (freshEmp as any).salary_assignment?.annual_ctc !== undefined) {
+        const ann = Number((freshEmp as any).salary_assignment?.annual_ctc || freshEmp.annual_ctc || 0);
+        const mon = Number((freshEmp as any).salary_assignment?.monthly_gross || (freshEmp as any).salary_assignment?.gross_monthly || freshEmp.monthly_ctc || (ann > 0 ? Math.round(ann / 12) : 0));
+        nextData.annual_ctc = ann;
+        nextData.monthly_ctc = mon;
+        if ((freshEmp as any).salary_structure_code) nextData.salary_structure_code = (freshEmp as any).salary_structure_code;
+        if ((freshEmp as any).salary_structure_name) nextData.salary_structure_name = (freshEmp as any).salary_structure_name;
+        if ((freshEmp as any).salary_effective_from) nextData.salary_effective_from = (freshEmp as any).salary_effective_from;
       }
       return nextData;
     });
@@ -446,29 +466,10 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       setLocations(locs || []);
       setExistingEmployees(emps || []);
 
-      // Restore saved draft only when creating new employee
-      if (!employeeToEdit) {
-        try {
-          const savedRaw = localStorage.getItem(STORAGE_KEY_DRAFT);
-          if (savedRaw) {
-            const parsed = JSON.parse(savedRaw);
-            if (parsed && (parsed.data || parsed.first_name)) {
-              const restoredData = parsed.data || parsed;
-              setFormData((prev) => ({ ...prev, ...restoredData }));
-              if (parsed.step) setCurrentStep(parsed.step);
-              setDraftLastSavedText('Restored unsaved draft');
-
-              if (parsed.employeeId) {
-                api.getEmployeeById(parsed.employeeId).then((existingDraftEmp) => {
-                  if (existingDraftEmp) {
-                    setDraftEmployee(existingDraftEmp);
-                  }
-                }).catch(() => {});
-              }
-            }
-          }
-        } catch (_) { }
-      }
+      // Clear any legacy local storage draft to prevent fallback overrides
+      try {
+        localStorage.removeItem(STORAGE_KEY_DRAFT);
+      } catch (_) {}
     });
 
     return () => {
@@ -512,13 +513,6 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         }
       }
 
-      localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({
-        step: currentStep,
-        data: formData,
-        employeeId: targetEmpId,
-        savedAt: new Date().toISOString(),
-      }));
-
       if (targetEmpId) {
         const updated = await api.saveEmployeeOnboardingStep(targetEmpId, activeOrgId, currentStep, formData);
         if (updated) {
@@ -527,8 +521,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         setDraftLastSavedText(`✓ Saved to database just now`);
         showToast('Employee step saved to database.', 'info');
       } else {
-        setDraftLastSavedText(`✓ Draft saved locally just now`);
-        showToast('Employee draft saved locally.', 'info');
+        setDraftLastSavedText(`✓ Step completed`);
       }
     } catch (err) {
       setDraftLastSavedText('Save Failed');
@@ -642,12 +635,6 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         if (updated) {
           setDraftEmployee(updated);
         }
-        localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({
-          step: Math.min(currentStep + 1, 7),
-          data: formData,
-          employeeId: targetEmpId,
-          savedAt: new Date().toISOString(),
-        }));
         setDraftLastSavedText('✓ Saved to database just now');
       } catch (err) {
         console.warn('[WizardModal] Step auto-save notice:', err);
@@ -685,28 +672,13 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           if (updated) {
             setDraftEmployee(updated);
           }
-          localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({
-            step: 2,
-            data: formData,
-            employeeId: draftEmp.id,
-            savedAt: new Date().toISOString(),
-          }));
           setDraftLastSavedText('✓ Saved to database just now');
         }
       } catch (err) {
         console.warn('[WizardModal] New employee step 1 save notice:', err);
-        try {
-          localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({ step: currentStep + 1, data: formData }));
-          setDraftLastSavedText('✓ Draft saved locally just now');
-        } catch (_) {}
       } finally {
         setIsSavingDraft(false);
       }
-    } else {
-      try {
-        localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({ step: currentStep + 1, data: formData, employeeId: targetEmpId }));
-        setDraftLastSavedText('✓ Draft saved just now');
-      } catch (_) {}
     }
 
     if (currentStep < 7) {
@@ -728,12 +700,6 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         if (updated) {
           setDraftEmployee(updated);
         }
-        localStorage.setItem(STORAGE_KEY_DRAFT, JSON.stringify({
-          step: targetStep,
-          data: formData,
-          employeeId: targetEmpId,
-          savedAt: new Date().toISOString(),
-        }));
         setDraftLastSavedText('✓ Saved to database just now');
       } catch (err) {
         console.warn('[WizardModal] Step save notice on jump:', err);
@@ -868,8 +834,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           notice_period_days: formData.notice_period_days,
         },
         work_assignment: {
-          shift_id: formData.shift_id || 'shift-general-01',
-          shift_name: formData.shift_name || 'General Shift (09:30 AM – 06:30 PM)',
+          shift_id: formData.shift_id || 'f5ff5d00-8489-459b-8d8e-d930ecffef22',
+          shift_name: formData.shift_name || 'General Day Shift (Corporate) (09:30 AM – 06:30 PM)',
           attendance_policy_id: formData.attendance_policy_id || 'pol-standard-office',
           leave_policy_id: formData.leave_policy_id || 'leave-pol-std-2026',
           leave_policy_name: formData.leave_policy_name || 'Standard Full-Time Leave Policy',
@@ -877,8 +843,9 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         compensation: {
           salary_structure_code: formData.salary_structure_code || 'CORP_STD_01',
           salary_structure_name: formData.salary_structure_name || 'Corporate Standard CTC Structure',
-          annual_ctc: formData.annual_ctc || 1200000,
-          monthly_ctc: formData.monthly_ctc || Math.round((formData.annual_ctc || 1200000) / 12),
+          annual_ctc: formData.annual_ctc || 0,
+          monthly_ctc: formData.monthly_ctc || (formData.annual_ctc ? Math.round(formData.annual_ctc / 12) : 0),
+          compensation_basis: formData.compensation_basis || 'CTC_INCLUSIVE',
           currency: formData.currency || 'INR',
           pay_frequency: formData.pay_frequency || 'MONTHLY',
           payroll_group_id: formData.payroll_group_id || 'pg-monthly-main',
@@ -918,6 +885,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           esi_applicable: formData.esi_applicable === true,
           pt_applicable: formData.pt_applicable !== false,
           tds_applicable: formData.tds_applicable !== false,
+          lwf_applicable: formData.lwf_applicable === true,
           tax_regime: formData.tax_regime || 'NEW',
         },
         performance: {
@@ -950,6 +918,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           primary_mobile: payload.identity.phone,
           reporting_manager_id: payload.reporting.reporting_manager_id || null,
           reporting_manager_name: payload.reporting.reporting_manager_name || '',
+          team_lead_id: payload.reporting.team_lead_id || null,
+          team_lead_name: payload.reporting.team_lead_name || '',
           avatar_url: payload.identity.photo_url,
           status: payload.employment.status,
           employment_type: payload.employment.employment_type,
@@ -1061,6 +1031,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
           },
           statutory: {
             pan: formData.pan || '',
+            aadhaar_number: formData.aadhaar_number || '',
+            aadhaar_masked: formData.aadhaar_number ? `XXXX-XXXX-${formData.aadhaar_number.replace(/\D/g, '').slice(-4)}` : '',
             uan: formData.uan || '',
             pf_number: formData.pf_number || '',
             esi_number: formData.esi_number || '',
@@ -1234,6 +1206,8 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         },
         statutory: {
           pan: formData.pan || '',
+          aadhaar_number: formData.aadhaar_number || '',
+          aadhaar_masked: formData.aadhaar_number ? `XXXX-XXXX-${formData.aadhaar_number.replace(/\D/g, '').slice(-4)}` : '',
           uan: formData.uan || '',
           pf_number: formData.pf_number || '',
           esi_number: formData.esi_number || '',
@@ -1246,6 +1220,51 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
+
+      // Real-time synchronization with Authoritative Payroll Engine for new employee
+      try {
+        const activeOrgId = payload.organization_id || (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-01') : 'org-joy-01');
+        const statConfig = await fetchStatutoryConfigFromDb(activeOrgId);
+        const breakdown = payrollCalculationEngine.calculateCtcBreakdown({
+          annualCtc: formData.annual_ctc || 0,
+          monthlyCtc: formData.monthly_ctc || Math.round((formData.annual_ctc || 0) / 12),
+          compensationBasis: formData.compensation_basis || 'CTC_INCLUSIVE',
+          structureCode: formData.salary_structure_code || 'CORP_STD_01',
+          pfApplicable: formData.pf_applicable !== false,
+          esiApplicable: formData.esi_applicable === true,
+          ptApplicable: formData.pt_applicable !== false,
+          tdsApplicable: formData.tds_applicable !== false,
+          statutoryConfig: statConfig,
+        });
+
+        payrollApi.saveEmployeeSalary({
+          id: `sal-${constructedEmployee.id}`,
+          tenant_id: activeOrgId,
+          employee_id: constructedEmployee.id,
+          employee_code: constructedEmployee.employee_code,
+          employee_name: payload.identity.preferred_name || `${payload.identity.first_name} ${payload.identity.last_name}`.trim(),
+          department_name: payload.employment.department_name || 'General',
+          designation: payload.employment.designation_title || 'Staff',
+          salary_structure_id: formData.salary_structure_code || 'CORP_STD_01',
+          salary_structure_name: formData.salary_structure_name || 'Corporate Standard CTC Structure',
+          annual_ctc: formData.annual_ctc || 0,
+          gross_monthly: breakdown.monthlyGrossEarnings,
+          basic_monthly: breakdown.basic,
+          net_monthly_estimate: breakdown.netMonthlyPay,
+          payment_mode: 'BankTransfer',
+          bank_name: formData.bank_name || '',
+          account_number: formData.account_number || '',
+          ifsc_code: formData.ifsc || '',
+          pan_number: formData.pan || '',
+          pf_uan: formData.uan || '',
+          esic_number: formData.esi_number || '',
+          effective_from: formData.salary_effective_from || formData.doj || '2026-04-01',
+          status: 'Active',
+          updated_at: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.warn('[EmployeeWizard] Payroll sync warning for new employee:', e);
+      }
 
       // Emit global realtime event for dashboard & people directory
       window.dispatchEvent(new CustomEvent('employee:created', { detail: constructedEmployee }));

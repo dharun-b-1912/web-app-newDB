@@ -79,9 +79,10 @@ export const Step7Review: React.FC<Props> = ({
       esiApplicable: formData.esi_applicable === true,
       ptApplicable: formData.pt_applicable !== false,
       tdsApplicable: formData.tds_applicable !== false,
+      lwfApplicable: formData.lwf_applicable === true,
       statutoryConfig,
     });
-  }, [annualCtc, monthlyCtc, formData.compensation_basis, formData.salary_structure_code, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, formData.tds_applicable, statutoryConfig]);
+  }, [annualCtc, monthlyCtc, formData.compensation_basis, formData.salary_structure_code, formData.pf_applicable, formData.esi_applicable, formData.pt_applicable, formData.tds_applicable, formData.lwf_applicable, statutoryConfig]);
 
   const enableAppAccess = formData.enable_app_access !== false;
   const authMethod = formData.auth_method || 'EMAIL_PASSWORD';
@@ -510,9 +511,15 @@ export const Step7Review: React.FC<Props> = ({
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">PAN / UAN:</span>
+              <span className="text-gray-500">Aadhaar / PAN:</span>
               <span className="font-mono font-bold text-gray-900">
-                {formData.pan || 'PAN PENDING'} · {formData.uan || 'UAN PENDING'}
+                {formData.aadhaar_number ? `XXXX-XXXX-${formData.aadhaar_number.replace(/\D/g, '').slice(-4)}` : 'Aadhaar Pending'} · {formData.pan || 'PAN Pending'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">UAN / PF / ESIC:</span>
+              <span className="font-mono font-bold text-gray-900">
+                {formData.uan || 'UAN Pending'} · {formData.pf_number || 'PF Pending'} · {formData.esi_number || 'ESIC Pending'}
               </span>
             </div>
             <div className="flex justify-between">

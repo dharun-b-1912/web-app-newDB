@@ -795,10 +795,10 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
                         {emp.lop_days > 0 && <span className="text-[10px] text-rose-600 font-bold ml-1">({emp.lop_days}d LOP)</span>}
                       </td>
                       <td className="p-2.5 font-mono text-gray-800">₹ {(emp.basic ?? (emp as any).basic_earned ?? 0).toLocaleString('en-IN')}</td>
-                      <td className="p-2.5 font-mono text-gray-800">₹ {((emp.hra ?? (emp as any).hra_earned ?? 0) + (emp.special_allowance ?? 0)).toLocaleString('en-IN')}</td>
+                      <td className="p-2.5 font-mono text-gray-800">₹ {Math.max(0, (emp.total_earnings ?? (emp as any).gross_earnings ?? 0) - (emp.basic ?? (emp as any).basic_earned ?? 0)).toLocaleString('en-IN')}</td>
                       <td className="p-2.5 font-mono font-bold text-gray-900">₹ {(emp.total_earnings ?? (emp as any).gross_earnings ?? 0).toLocaleString('en-IN')}</td>
                       <td className="p-2.5 font-mono text-gray-600">₹ {((emp.epf_employee ?? (emp as any).pf_employee_deduction ?? 0) + (emp.esic_employee ?? (emp as any).esi_employee_deduction ?? 0)).toLocaleString('en-IN')}</td>
-                      <td className="p-2.5 font-mono text-gray-600">₹ {((emp.tds_tax ?? (emp as any).tds_deduction ?? 0) + (emp.professional_tax ?? (emp as any).pt_deduction ?? 0)).toLocaleString('en-IN')}</td>
+                      <td className="p-2.5 font-mono text-gray-600">₹ {((emp.tds_tax ?? (emp as any).tds_deduction ?? 0) + (emp.professional_tax ?? (emp as any).pt_deduction ?? 0) + ((emp as any).lwf_deduction ?? 0)).toLocaleString('en-IN')}</td>
                       <td className="p-2.5 font-mono font-black text-[#07563D]">₹ {(emp.net_pay ?? (emp as any).net_salary ?? (emp as any).net_payable ?? 0).toLocaleString('en-IN')}</td>
                       <td className="p-2.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">

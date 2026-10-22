@@ -1,0 +1,26 @@
+{
+  "updatedAt": "2026-10-08T07:58:28.192Z",
+  "devices": [
+    {
+      "id": "bio-1791446308167",
+      "organization_id": "0c621892-e938-4707-9957-13534ea32c19",
+      "gateway_agent_id": "agent-default",
+      "device_name": "eSSL AiFace Magnum — Factory Gate",
+      "device_type": "Facial Recognition",
+      "vendor": "eSSL",
+      "model": "AiFace Magnum",
+      "serial_number": "TDBD253600550",
+      "ip_address": "192.168.1.201",
+      "port": 4370,
+      "branch": "Carenow",
+      "branch_id": "e666748e-8e0f-4d24-ae6a-e1cf85822a0f",
+      "location_description": "Carenow — Main Turnstile",
+      "direction_mode": "BOTH",
+      "status": "Online",
+      "registered_users_count": 16,
+      "sync_frequency_mins": 1,
+      "last_sync": "2026-10-08T07:58:28.191Z",
+      "last_heartbeat_at": "2026-10-08T07:58:28.191Z"
+    }
+  ]
+}

@@ -19,7 +19,7 @@ import {
 import { attendanceApi } from '../../../services/attendanceApi';
 import { api } from '../../../services/api';
 import { useToast } from '../../../components/ui/Toast';
-import { formatMinutesToHoursStr } from '../../../lib/attendance/attendanceEngine';
+import { formatMinutesToHoursStr, formatDeviationDuration } from '../../../lib/attendance/attendanceEngine';
 import { attendanceRosterService } from '../../../services/attendance/attendanceRosterService';
 import { AttendanceDaily } from '../../../types/attendance';
 import { cn } from '../../../lib/utils';
@@ -128,7 +128,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
   const getVendorName = (emp: any): string => {
     if (checkIsVendor(emp)) {
-      return emp.vendor_name || emp.employment?.vendor_name || 'Contract Agency';
+      return emp.vendor_name || emp.employment?.vendor_name || 'Vendor Workforce';
     }
     return 'Joy Corporate Solutions Pvt Ltd';
   };
@@ -285,7 +285,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
       const q = searchQuery.toLowerCase().trim();
       const matchQuery = !q ||
-        (emp.display_name || emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`).toLowerCase().includes(q) ||
+        (`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name || '').toLowerCase().includes(q) ||
         (emp.employee_code || '').toLowerCase().includes(q) ||
         empVendor.toLowerCase().includes(q) ||
         empDept.toLowerCase().includes(q);
@@ -297,7 +297,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
   // Compute day-by-day attendance for each employee across the entire month
   const matrixData = useMemo<MatrixEmployeeRow[]>(() => {
     return scopedEmployees.map(emp => {
-      const empName = emp.display_name || emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
+      const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name || 'Employee';
       const empCode = emp.employee_code || `WF-${emp.id}`;
       const dept = emp.department_name || emp.department || 'People & HR';
       const designation = emp.designation_title || emp.designation || 'Staff';
@@ -1000,7 +1000,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                                       onOpenEmployeeProfile?.(row.emp.id, d.dateStr);
                                       setStatementEmpId(row.emp.id);
                                     }}
-                                    title={`${row.empName} (${d.dateStr})\nStatus: ${daySummary.statusLabel}\nShift: ${daySummary.shift_code} (${daySummary.expected_in} - ${daySummary.expected_out})\nIn: ${daySummary.first_check_in || '—'} | Out: ${daySummary.last_check_out || '—'}\nNet: ${formatMinutesToHoursStr(daySummary.net_working_minutes)}${daySummary.late_minutes > 0 ? `\nLate: +${daySummary.late_minutes}m` : ''}${daySummary.overtime_minutes > 0 ? `\nOT: +${daySummary.overtime_minutes}m` : ''}`}
+                                    title={`${row.empName} (${d.dateStr})\nStatus: ${daySummary.statusLabel}\nShift: ${daySummary.shift_code} (${daySummary.expected_in} - ${daySummary.expected_out})\nIn: ${daySummary.first_check_in || '—'} | Out: ${daySummary.last_check_out || '—'}\nNet: ${formatMinutesToHoursStr(daySummary.net_working_minutes)}${daySummary.late_minutes > 0 ? `\nLate: +${formatDeviationDuration(daySummary.late_minutes, { showBoth: daySummary.late_minutes >= 60 })}` : ''}${daySummary.overtime_minutes > 0 ? `\nOT: +${formatDeviationDuration(daySummary.overtime_minutes, { showBoth: daySummary.overtime_minutes >= 60 })}` : ''}`}
                                     className={cn(
                                       "p-0.5 text-center border-r border-gray-100 cursor-pointer hover:bg-gray-100/60 select-none",
                                       d.isSunday && "bg-gray-50/40",
@@ -1066,8 +1066,8 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                   <th className="p-2.5 text-left font-bold">Check-In</th>
                   <th className="p-2.5 text-left font-bold">Check-Out</th>
                   <th className="p-2.5 text-left font-bold">Net Hours</th>
-                  <th className="p-2.5 text-left font-bold">Late / Early</th>
-                  <th className="p-2.5 text-left font-bold">Overtime</th>
+                  <th className="p-2.5 text-left font-bold whitespace-nowrap min-w-[120px]">Late / Early</th>
+                  <th className="p-2.5 text-left font-bold whitespace-nowrap">Overtime</th>
                   <th className="p-2.5 text-left font-bold">Status</th>
                   <th className="p-2.5 text-right pr-4 font-bold">Action</th>
                 </tr>
@@ -1102,13 +1102,23 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                         <td className="p-2.5 font-mono font-bold text-gray-900">
                           {formatMinutesToHoursStr(daySummary.net_working_minutes)}
                         </td>
-                        <td className="p-2.5">
-                          {daySummary.late_minutes > 0 && <span className="text-amber-700 font-semibold block">+{daySummary.late_minutes}m Late</span>}
-                          {daySummary.early_checkout_minutes > 0 && <span className="text-orange-700 font-semibold block">-{daySummary.early_checkout_minutes}m Early</span>}
+                        <td className="p-2.5 whitespace-nowrap">
+                          {daySummary.late_minutes > 0 && (
+                            <span className="text-amber-700 font-semibold block">
+                              +{formatDeviationDuration(daySummary.late_minutes, { showBoth: daySummary.late_minutes >= 60 })} Late
+                            </span>
+                          )}
+                          {daySummary.early_checkout_minutes > 0 && (
+                            <span className="text-orange-700 font-semibold block">
+                              -{formatDeviationDuration(daySummary.early_checkout_minutes, { showBoth: daySummary.early_checkout_minutes >= 60 })} Early
+                            </span>
+                          )}
                           {daySummary.late_minutes === 0 && daySummary.early_checkout_minutes === 0 && <span className="text-gray-400">—</span>}
                         </td>
-                        <td className="p-2.5 font-mono text-indigo-700 font-bold">
-                          {daySummary.overtime_minutes > 0 ? `+${daySummary.overtime_minutes}m` : '—'}
+                        <td className="p-2.5 font-mono text-indigo-700 font-bold whitespace-nowrap">
+                          {daySummary.overtime_minutes > 0
+                            ? `+${formatDeviationDuration(daySummary.overtime_minutes, { showBoth: daySummary.overtime_minutes >= 60 })}`
+                            : '—'}
                         </td>
                         <td className="p-2.5">
                           {getStatusBadge(daySummary.statusCode)}

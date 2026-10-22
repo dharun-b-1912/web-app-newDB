@@ -43,6 +43,13 @@ import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { useAuth } from '../../../hooks/useAuth';
 
+import {
+  AttendanceDateFilter,
+  DateFilterValue,
+  INITIAL_DATE_FILTER,
+  matchDateFilter,
+} from '../components/AttendanceDateFilter';
+
 export interface AttendanceExceptionsViewProps {
   onNavigateSubPath?: (subPath: string) => void;
   onOpenEmployeeProfile?: (empId: string) => void;
@@ -57,6 +64,7 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
 
   const [exceptions, setExceptions] = useState<AttendanceException[]>([]);
   const [activeTab, setActiveTab] = useState<'ALL' | 'CRITICAL' | 'MISSING_OUT' | 'MISSING_IN' | 'UNMAPPED' | 'RESOLVED'>('ALL');
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(INITIAL_DATE_FILTER);
   const [searchQuery, setSearchQuery] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [selectedException, setSelectedException] = useState<AttendanceException | null>(null);
@@ -110,6 +118,8 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
       if (activeTab === 'UNMAPPED' && e.exception_type !== 'UNMAPPED_BIOMETRIC_PIN' && e.exception_type !== 'UNMAPPED_DEVICE_USER') return false;
       if (activeTab === 'RESOLVED' && e.status !== 'RESOLVED' && e.status !== 'DISMISSED') return false;
 
+      if (!matchDateFilter(e.work_date, dateFilter)) return false;
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         return (
@@ -122,7 +132,7 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
       }
       return true;
     });
-  }, [exceptions, activeTab, searchQuery]);
+  }, [exceptions, activeTab, searchQuery, dateFilter]);
 
   const handleOpenResolveModal = (exc: AttendanceException) => {
     setSelectedException(exc);
@@ -157,9 +167,12 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
   // Live Metrics
   const metrics = attendanceExceptionEngineService.getMetrics();
 
+  // Workflow Guide Modal
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+
   return (
     <div className="space-y-5">
-      {/* 1. Header with "Run Now" Manual Reconciliation */}
+      {/* 1. Header with "Run Now", "Workflow Guide" and Navigation Buttons */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-200/80 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
@@ -177,6 +190,16 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setIsGuideOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-xl cursor-pointer transition-colors"
+            title="How the Exception Engine Works & 3 Operational Scenarios"
+          >
+            <HelpCircle className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Workflow Guide (3 Scenarios)</span>
+          </button>
+
           <button
             type="button"
             onClick={handleRunScanner}
@@ -307,38 +330,58 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
       {/* 3. Exception Queue Table */}
       <Card className="p-5 bg-white rounded-2xl border border-gray-200/80 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-sm font-black text-gray-900">Attendance Exception Queue</h3>
-            <span className="text-xs text-gray-500 font-semibold">({filteredExceptions.length} records in view)</span>
+            <span className="text-xs font-semibold px-2 py-0.5 bg-gray-100 text-gray-700 rounded-md">
+              {filteredExceptions.length} records in view
+            </span>
+            {(activeTab !== 'ALL' || dateFilter.preset !== 'ALL' || searchQuery.trim() !== '') && (
+              <button
+                onClick={() => {
+                  setActiveTab('ALL');
+                  setDateFilter(INITIAL_DATE_FILTER);
+                  setSearchQuery('');
+                }}
+                className="text-[11px] text-[#07563D] font-semibold hover:underline cursor-pointer"
+              >
+                Clear All Filters
+              </button>
+            )}
           </div>
 
-          <div className="relative text-xs">
-            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
-            <input
-              type="text"
-              placeholder="Search employee, exception, vendor..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#07563D]"
-            />
+          <div className="flex items-center gap-2 flex-wrap">
+            <AttendanceDateFilter value={dateFilter} onChange={setDateFilter} />
+
+            <div className="relative text-xs">
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
+              <input
+                type="text"
+                placeholder="Search employee, exception, vendor..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#07563D]"
+              />
+            </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border border-gray-100">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 text-gray-700 font-bold border-b border-gray-200">
+        <div className="max-h-[580px] overflow-x-auto overflow-y-auto rounded-xl border border-gray-100 no-scrollbar scrollbar-none">
+          <table className="w-full text-left text-xs min-w-[1250px] border-collapse">
+            <thead className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-xs text-gray-700 font-bold border-b border-gray-200 uppercase text-[10px] tracking-wider shadow-xs">
               <tr>
-                <th className="p-3">Exception Type</th>
-                <th className="p-3">Employee & Vendor</th>
-                <th className="p-3">Work Date & Device</th>
-                <th className="p-3">Escalation Routing</th>
-                <th className="p-3">System Description</th>
-                <th className="p-3">Suggested Action</th>
-                <th className="p-3">Status</th>
-                <th className="p-3 text-right">Actions</th>
+                <th className="p-3 whitespace-nowrap">Exception Type</th>
+                <th className="p-3 whitespace-nowrap">Employee & Vendor</th>
+                <th className="p-3 whitespace-nowrap">Work Date & Device</th>
+                <th className="p-3 whitespace-nowrap">Escalation Routing</th>
+                <th className="p-3 whitespace-nowrap">System Description</th>
+                <th className="p-3 whitespace-nowrap">Suggested Action</th>
+                <th className="p-3 whitespace-nowrap">Status</th>
+                <th className="p-3 text-right whitespace-nowrap sticky right-0 z-30 bg-slate-50/95 backdrop-blur-xs border-l border-gray-200 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.03)] min-w-[140px]">
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 bg-white">
               {filteredExceptions.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-8 text-center text-gray-500">
@@ -408,7 +451,7 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
                         </span>
                       )}
                     </td>
-                    <td className="p-3 text-right whitespace-nowrap">
+                    <td className="p-3 text-right whitespace-nowrap sticky right-0 z-10 bg-white group-hover:bg-gray-50 border-l border-gray-100 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.03)] min-w-[140px]">
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
@@ -598,6 +641,95 @@ export const AttendanceExceptionsView: React.FC<AttendanceExceptionsViewProps> =
                 className="px-4 py-2 text-xs font-bold text-white bg-[#07563D] hover:bg-[#064e37] rounded-xl cursor-pointer disabled:opacity-50"
               >
                 {isSubmittingResolve ? 'Reconciling...' : 'Confirm Resolution'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* 6. Comprehensive Workflow Guide & 3 Realistic Scenarios Modal */}
+      {isGuideOpen && (
+        <Modal
+          isOpen={isGuideOpen}
+          onClose={() => setIsGuideOpen(false)}
+          title="Attendance Exception & Escalation Engine — Workflow Guide"
+          size="lg"
+        >
+          <div className="space-y-4 text-xs text-gray-700">
+            {/* Overview Banner */}
+            <div className="p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-indigo-900 text-sm">
+                <Sparkles className="w-4 h-4 text-indigo-600" />
+                <span>How the Exception Engine Operates</span>
+              </div>
+              <p className="text-indigo-800 leading-relaxed text-[11px]">
+                The Exception Engine acts as an automated, continuous sentinel across biometric devices, mobile GPS check-ins, and shift schedules. When raw telemetry data deviates from shift rules, it automatically classifies the issue, notifies responsible roles, and opens an auditable path to resolution.
+              </p>
+            </div>
+
+            {/* 3 Real-World Scenarios */}
+            <div className="space-y-3">
+              <h4 className="font-bold text-gray-900 text-xs uppercase tracking-wider text-slate-500">
+                3 Standard Operational Scenarios & Resolution Paths
+              </h4>
+
+              {/* Scenario 1: Missing Check-Out */}
+              <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold text-amber-900">
+                    <span className="w-5 h-5 rounded-full bg-amber-200 text-amber-800 text-[11px] flex items-center justify-center font-bold">1</span>
+                    <span>Scenario 1: Missing Check-Out (Punch In Recorded, No Punch Out)</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-100 text-amber-800 rounded">Employee → HR Desk</span>
+                </div>
+                <div className="text-[11px] text-gray-600 space-y-1 pl-7">
+                  <p><strong>Occurrence:</strong> Employee punched IN at 09:30 AM via Biometric, but left at 06:30 PM without punching OUT due to power outage or forgetting.</p>
+                  <p><strong>System Action:</strong> When the shift cutoff passes (midnight), the detector flags an open exception with severity <span className="font-semibold text-amber-800">HIGH</span> and triggers an alert.</p>
+                  <p><strong>Resolution:</strong> The employee submits a Regularization request via mobile/web with justification ("Forgot punch out"). Once HR approves it on the Regularization Desk, the daily ledger recalculates to 8h Present, and this exception closes automatically.</p>
+                </div>
+              </div>
+
+              {/* Scenario 2: Unmapped Biometric Device PIN */}
+              <div className="p-3.5 bg-purple-50/70 border border-purple-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold text-purple-900">
+                    <span className="w-5 h-5 rounded-full bg-purple-200 text-purple-800 text-[11px] flex items-center justify-center font-bold">2</span>
+                    <span>Scenario 2: Unmapped Biometric Device User (Ghost PIN Punch)</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-purple-100 text-purple-800 rounded">Biometric Admin → HR</span>
+                </div>
+                <div className="text-[11px] text-gray-600 space-y-1 pl-7">
+                  <p><strong>Occurrence:</strong> A newly hired worker enrolls on the ZKTeco device with machine PIN #114 before HR completes their ERP onboarding.</p>
+                  <p><strong>System Action:</strong> Biometric punches stream into the cloud, but cannot match any active employee UUID. The engine creates an <span className="font-semibold text-purple-800">UNMAPPED_BIOMETRIC_PIN</span> exception.</p>
+                  <p><strong>Resolution:</strong> HR or Biometric Admin clicks <em>Resolve</em>, selects the corresponding newly created employee profile, and binds PIN #114. All historical punches for PIN #114 are immediately credited to that employee's ledger.</p>
+                </div>
+              </div>
+
+              {/* Scenario 3: Outside Geofence / GPS Spoofing Deviation */}
+              <div className="p-3.5 bg-rose-50/70 border border-rose-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold text-rose-900">
+                    <span className="w-5 h-5 rounded-full bg-rose-200 text-rose-800 text-[11px] flex items-center justify-center font-bold">3</span>
+                    <span>Scenario 3: Mobile Check-In Outside Authorized Geofence</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-rose-100 text-rose-800 rounded">Manager Review</span>
+                </div>
+                <div className="text-[11px] text-gray-600 space-y-1 pl-7">
+                  <p><strong>Occurrence:</strong> A field or site worker attempts mobile GPS check-in 1.4 km away from the Coimbatore facility boundary.</p>
+                  <p><strong>System Action:</strong> The engine accepts the telemetry but tags it as <span className="font-semibold text-rose-800">GPS_OUTSIDE_GEOFENCE</span>, with status <em>UNDER_REVIEW</em> and calculates 0 hours until approved.</p>
+                  <p><strong>Resolution:</strong> The reporting manager reviews client visit proof or travel tickets. If valid, HR or Manager marks <em>"Approved Incomplete"</em> with note "Client Site Visit Authorized", automatically unlocking day pay.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Close Button */}
+            <div className="flex justify-end pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setIsGuideOpen(false)}
+                className="px-4 py-2 bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold rounded-xl cursor-pointer"
+              >
+                Close Guide
               </button>
             </div>
           </div>

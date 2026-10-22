@@ -1,0 +1,32 @@
+<IfModule mod_headers.c>
+  # 1. Strictly block search indexing for app.joypeoplehr.com and any subdomains
+  SetEnvIfNoCase Host "^app\.joypeoplehr\.com$" IS_APP_DOMAIN
+  SetEnvIfNoCase Host "^.+\.joypeoplehr\.com$" IS_SUB_DOMAIN
+  Header set X-Robots-Tag "noindex, nofollow, noarchive" env=IS_APP_DOMAIN
+
+  # Security headers
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-XSS-Protection "1; mode=block"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 2. Redirect app paths from root joypeoplehr.com to app.joypeoplehr.com
+  RewriteCond %{HTTP_HOST} ^(www\.)?joypeoplehr\.com$ [NC]
+  RewriteCond %{REQUEST_URI} ^/(admin|people|employees|attendance|payroll|dashboard|workspace|workforce|ess|tl|login|vendor|vendors|platform|superadmin|company-onboarding|documents|assets|departments|designations|locations|recruitment|onboarding|offboarding|talent|performance|lms|compliance|automation|settings|notifications|analytics)(/.*)?$ [NC]
+  RewriteRule ^(.*)$ https://app.joypeoplehr.com/$1 [R=302,L,QSA]
+
+  # 3. Serve landing page for root domain joypeoplehr.com (all non-app routes)
+  RewriteCond %{HTTP_HOST} ^(www\.)?joypeoplehr\.com$ [NC]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^.*$ launch.html [L]
+
+  # 4. Standard SPA Fallback for app.joypeoplehr.com
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>

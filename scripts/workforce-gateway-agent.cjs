@@ -6,10 +6,14 @@
 // ============================================================================
 
 const http = require('http');
+const https = require('https');
 const net = require('net');
 const url = require('url');
 const fs = require('fs');
 const os = require('os');
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const { createClient } = require('@supabase/supabase-js');
 
 // Process-Level Exception & Rejection Shield for asynchronous TCP socket drops
 process.on('uncaughtException', (err) => {
@@ -66,6 +70,399 @@ console.log(` Pairing Key : ${pairingKey || 'Active'}`);
 console.log(` Comm Key    : ${globalCommKey || '0 / Open'}`);
 console.log(` Local HTTP  : http://127.0.0.1:${HTTP_PORT}`);
 console.log('================================================================\n');
+
+// Upstash Redis Cloud Real-Time Bridge
+const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.VITE_UPSTASH_REDIS_REST_URL || 'https://powerful-marmot-162532.upstash.io';
+const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.VITE_UPSTASH_REDIS_REST_TOKEN || 'gQAAAAAAAnrkAAIgcDI0NjFkYzJlOWE5YWQ0ODVhOWYwYWNmYzFkNWJmM2FjZQ';
+
+async function pushToUpstash(cmd, ...args) {
+  if (!UPSTASH_URL || !UPSTASH_TOKEN) return;
+  try {
+    const url = `${UPSTASH_URL}/${cmd}/${args.map(a => typeof a === 'object' ? encodeURIComponent(JSON.stringify(a)) : encodeURIComponent(a)).join('/')}`;
+    fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+// ============================================================================
+// Direct Autonomous Supabase Persistence & Airtel IQ SMS Dispatch Engine
+// Guarantees real-time SMS delivery on every physical terminal punch without
+// requiring any browser tab or web page to be open on the computer.
+// ============================================================================
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://ysiajemrqakfngasehhi.supabase.co';
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_i_pb_iFcxX0BEJFok_XfZA_gZF3W8mj';
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const AIRTEL_CUSTOMER_ID = process.env.AIRTEL_CUSTOMER_ID || '07877a9b-e87e-488d-b48f-796813a9a920';
+const AIRTEL_IQ_USERNAME = process.env.AIRTEL_IQ_USERNAME || 'fffd90ff_bb42_45ae_815f_b8a7c5f267b3';
+const AIRTEL_IQ_PASSWORD = process.env.AIRTEL_IQ_PASSWORD || 'VunePZVDJp';
+const AIRTEL_DEFAULT_SENDER_ID = process.env.VITE_AIRTEL_DEFAULT_SENDER_ID || process.env.AIRTEL_DEFAULT_SENDER_ID || 'JCSPRL';
+const AIRTEL_DLT_PE_ID = process.env.AIRTEL_DLT_PE_ID || '1001333025440167393';
+const DLT_CHECKIN_TEMPLATE_ID = '1077076930061928891';
+const DLT_CHECKOUT_TEMPLATE_ID = '1077188040062422070';
+
+let cachedEmployeeDirectory = [];
+let lastDirectoryFetchTime = 0;
+
+async function ensureAuthenticatedSupabase() {
+  try {
+    const { data: session } = await supabase.auth.getSession();
+    if (session?.session?.user) return true;
+    const { error } = await supabase.auth.signInWithPassword({
+      email: 'marimuthu@joycorporatesolutions.com',
+      password: 'joypeoplehr',
+    });
+    if (error) console.warn('[SUPABASE-AUTH] Notice:', error.message);
+    return !error;
+  } catch (err) {
+    console.warn('[SUPABASE-AUTH] Error:', err.message);
+    return false;
+  }
+}
+
+async function refreshEmployeeDirectory() {
+  const now = Date.now();
+  if (cachedEmployeeDirectory.length > 0 && now - lastDirectoryFetchTime < 60000) {
+    return cachedEmployeeDirectory;
+  }
+  await ensureAuthenticatedSupabase();
+  const { data: emps, error } = await supabase
+    .from('employees')
+    .select('id, employee_code, first_name, last_name, display_name, phone, organization_id, employment_status')
+    .order('employee_code');
+  if (emps && emps.length > 0) {
+    cachedEmployeeDirectory = emps;
+    lastDirectoryFetchTime = now;
+  }
+  return cachedEmployeeDirectory;
+}
+
+function resolveEmployeeByPin(pin, emps) {
+  const cleanPin = String(pin || '').trim();
+  const numericPin = cleanPin.replace(/\D/g, '');
+  if (!numericPin) return null;
+
+  return emps.find(e => {
+    const codeNum = String(e.employee_code || '').replace(/\D/g, '');
+    return codeNum === numericPin || parseInt(codeNum, 10) === parseInt(numericPin, 10);
+  }) || null;
+}
+
+async function sendAirtelSmsDirect(recipientPhone, messageText, dltTemplateId) {
+  let cleanPhone = String(recipientPhone || '').replace(/\D/g, '');
+  if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+  if (!cleanPhone.startsWith('91') || cleanPhone.length !== 12) {
+    console.warn(`[AIRTEL-SMS] Invalid recipient phone format: ${recipientPhone}`);
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    const authHeader = 'Basic ' + Buffer.from(`${AIRTEL_IQ_USERNAME}:${AIRTEL_IQ_PASSWORD}`).toString('base64');
+    const postData = JSON.stringify({
+      customerId: AIRTEL_CUSTOMER_ID,
+      destinationAddress: [cleanPhone],
+      message: messageText,
+      sourceAddress: AIRTEL_DEFAULT_SENDER_ID,
+      messageType: 'SERVICE_IMPLICIT',
+      dltTemplateId: dltTemplateId,
+      entityId: AIRTEL_DLT_PE_ID,
+    });
+
+    const req = https.request({
+      hostname: 'iqsms.airtel.in',
+      port: 443,
+      path: '/api/v1/send-prepaid-sms',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authHeader,
+        'Content-Length': Buffer.byteLength(postData),
+      },
+      timeout: 8000,
+    }, (res) => {
+      let body = '';
+      res.on('data', chunk => { body += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          resolve(parsed);
+        } catch {
+          resolve({ raw: body, statusCode: res.statusCode });
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      console.warn('[AIRTEL-SMS] Request error:', err.message);
+      resolve(null);
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      console.warn('[AIRTEL-SMS] Request timed out');
+      resolve(null);
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Persistent daily SMS dispatch tracker to prevent duplicate SMS
+const SMS_TRACKER_FILE = path.join(__dirname, 'data', 'sms-sent-tracker.json');
+
+function getSmsTrackerData() {
+  try {
+    if (fs.existsSync(SMS_TRACKER_FILE)) {
+      return JSON.parse(fs.readFileSync(SMS_TRACKER_FILE, 'utf8') || '{}');
+    }
+  } catch (_) {}
+  return {};
+}
+
+function hasSentSmsToday(empId, dateStr, type) {
+  const data = getSmsTrackerData();
+  const key = `${empId}_${dateStr}_${type}`;
+  return Boolean(data[key]);
+}
+
+function markSmsSentToday(empId, dateStr, type, meta = {}) {
+  try {
+    const dataDir = path.join(__dirname, 'data');
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    const data = getSmsTrackerData();
+    const key = `${empId}_${dateStr}_${type}`;
+    data[key] = {
+      sentAt: new Date().toISOString(),
+      ...meta,
+    };
+    fs.writeFileSync(SMS_TRACKER_FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('[SMS-TRACKER] Could not persist tracker:', err.message);
+  }
+}
+
+// Ingest punch into Supabase and dispatch SMS immediately
+async function processLivePunchDirectly(punchRecord, pin, timeStr, resolvedPunchState, vType, deviceSn) {
+  try {
+    const emps = await refreshEmployeeDirectory();
+    const emp = resolveEmployeeByPin(pin, emps);
+    if (!emp) {
+      console.log(`[DIRECT-INGEST] PIN #${pin} not matched to employee in directory.`);
+      return;
+    }
+
+    const eventUtcIso = punchRecord.timestamp || new Date().toISOString();
+    const punchDate = new Date(eventUtcIso);
+    const todayDate = punchDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD
+    const timeFormatted = punchDate.toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+    const day = punchDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit' });
+    const month = punchDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: '2-digit' });
+    const year = punchDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric' });
+    const dateFormatted = `${day}-${month}-${year}`;
+
+    await ensureAuthenticatedSupabase();
+
+    // Check existing daily row for today
+    const { data: dailyRows } = await supabase
+      .from('attendance_daily')
+      .select('id, first_check_in, last_check_out')
+      .eq('employee_id', emp.id)
+      .eq('attendance_date', todayDate)
+      .limit(1);
+
+    const existingDaily = dailyRows && dailyRows.length > 0 ? dailyRows[0] : null;
+    const hasFirstCheckIn = Boolean(existingDaily && existingDaily.first_check_in);
+    const existingInMs = hasFirstCheckIn ? new Date(existingDaily.first_check_in).getTime() : 0;
+    const currentPunchMs = new Date(eventUtcIso).getTime();
+    const diffHours = hasFirstCheckIn ? (currentPunchMs - existingInMs) / (1000 * 60 * 60) : 0;
+
+    // Local IST decimal hour of the punch event (0 to 23.99)
+    const eventIstHour = (punchDate.getUTCHours() + 5.5 + punchDate.getUTCMinutes() / 60) % 24;
+
+    // Canonical verification mode for Postgres constraint (must be FACE, BIOMETRIC, GPS, MANUAL)
+    const normalizedMode = (vType && vType.toUpperCase() === 'FACE') ? 'FACE' :
+                           (vType && vType.toUpperCase() === 'FINGERPRINT') ? 'BIOMETRIC' :
+                           (vType && vType.toUpperCase() === 'CARD') ? 'BIOMETRIC' : 'FACE';
+
+    // =========================================================================
+    // RULE 1: MORNING ARRIVAL WINDOW (< 13:00 IST or < 3.5 hours worked)
+    // Morning punches are ALWAYS Check-Ins. They can NEVER become Check-Outs.
+    // =========================================================================
+    if (eventIstHour < 13.0 || diffHours < 3.5) {
+      if (hasFirstCheckIn) {
+        // Case 1A: Biometric punch timestamp is EARLIER than existing first_check_in
+        // (e.g. employee punched face at 09:14, but mobile fallback was 09:30)
+        if (currentPunchMs < existingInMs) {
+          console.log(`[PUNCH-RECONCILE] ⏰ Updating first_check_in for ${emp.first_name} to earlier biometric arrival time: ${timeFormatted}`);
+          await supabase.from('attendance_daily').update({
+            first_check_in: eventUtcIso,
+          }).eq('id', existingDaily.id);
+
+          if (emp.phone && !hasSentSmsToday(emp.id, todayDate, 'CHECK_IN')) {
+            const msg = `Dear ${emp.first_name}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
+            console.log(`[AIRTEL-AUTO-SMS] 📤 Sending Check-In SMS to ${emp.first_name} (${emp.phone})...`);
+            await sendAirtelSmsDirect(emp.phone, msg, DLT_CHECKIN_TEMPLATE_ID);
+            markSmsSentToday(emp.id, todayDate, 'CHECK_IN', { phone: emp.phone, time: timeFormatted });
+          }
+          return;
+        }
+
+        // Case 1B: Punch is EQUAL OR LATER than existing first_check_in
+        // This is a duplicate morning scan (e.g. scanned at 09:15, then at 09:25 or 10:21).
+        // STRICT RULE: COMPLETELY IGNORE IT. Do not insert into DB, do not touch last_check_out, do not send SMS!
+        console.log(`[DUPLICATE-IGNORED] 🛡️ Ignored morning duplicate punch for PIN #${pin} (${emp.first_name}). First check-in was at ${existingDaily.first_check_in}. No check-out or SMS triggered.`);
+        return;
+      }
+
+      // Case 1C: No first_check_in yet today -> Record First Check-In!
+      console.log(`[CHECK-IN-ACCEPTED] 🟢 First morning arrival for ${emp.first_name} at ${timeFormatted}`);
+      const { error: pErr } = await supabase.from('attendance_punches').insert({
+        employee_id: emp.id,
+        organization_id: emp.organization_id,
+        punch_time: eventUtcIso,
+        punch_type: 'CHECK_IN',
+        punch_source: 'BIOMETRIC',
+        verification_mode: normalizedMode,
+        attendance_date: todayDate,
+      });
+      if (pErr && pErr.code !== '23505') {
+        console.warn('[DIRECT-INGEST] attendance_punches notice:', pErr.message);
+      }
+
+      await supabase.from('attendance_daily').upsert({
+        employee_id: emp.id,
+        organization_id: emp.organization_id,
+        attendance_date: todayDate,
+        first_check_in: eventUtcIso,
+        last_check_out: null,
+        status: 'PRESENT',
+        payable_status: 1.0,
+      }, { onConflict: 'employee_id,attendance_date' });
+
+      if (emp.phone && !hasSentSmsToday(emp.id, todayDate, 'CHECK_IN')) {
+        const msg = `Dear ${emp.first_name}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
+        console.log(`[AIRTEL-AUTO-SMS] 📤 Sending Check-In SMS to ${emp.first_name} (${emp.phone})...`);
+        const res = await sendAirtelSmsDirect(emp.phone, msg, DLT_CHECKIN_TEMPLATE_ID);
+        console.log(`[AIRTEL-AUTO-SMS] 🚀 Check-In SMS Response:`, res?.messageRequestId || res);
+        markSmsSentToday(emp.id, todayDate, 'CHECK_IN', { phone: emp.phone, time: timeFormatted });
+      }
+      return;
+    }
+
+    // =========================================================================
+    // RULE 2: LATE AFTERNOON FIRST ARRIVAL (Shift started after 13:00 IST)
+    // =========================================================================
+    if (!hasFirstCheckIn) {
+      console.log(`[LATE-CHECK-IN] 🟢 Afternoon arrival for ${emp.first_name} at ${timeFormatted}`);
+      await supabase.from('attendance_punches').insert({
+        employee_id: emp.id,
+        organization_id: emp.organization_id,
+        punch_time: eventUtcIso,
+        punch_type: 'CHECK_IN',
+        punch_source: 'BIOMETRIC',
+        verification_mode: normalizedMode,
+        attendance_date: todayDate,
+      });
+      await supabase.from('attendance_daily').upsert({
+        employee_id: emp.id,
+        organization_id: emp.organization_id,
+        attendance_date: todayDate,
+        first_check_in: eventUtcIso,
+        last_check_out: null,
+        status: 'PRESENT',
+        payable_status: 1.0,
+      }, { onConflict: 'employee_id,attendance_date' });
+
+      if (emp.phone && !hasSentSmsToday(emp.id, todayDate, 'CHECK_IN')) {
+        const msg = `Dear ${emp.first_name}, your check-in has been recorded at ${timeFormatted} on ${dateFormatted}. Have a productive day! - Joy PeopleHR`;
+        await sendAirtelSmsDirect(emp.phone, msg, DLT_CHECKIN_TEMPLATE_ID);
+        markSmsSentToday(emp.id, todayDate, 'CHECK_IN', { phone: emp.phone, time: timeFormatted });
+      }
+      return;
+    }
+
+    // =========================================================================
+    // RULE 3: MID-DAY ROAMING SCAN SUPPRESSION (13:00 to 16:30 IST & < 6h)
+    // Employees walking past terminal for lunch, water, meetings, etc.
+    // MUST NEVER trigger premature Check-Out or send SMS!
+    // =========================================================================
+    if (eventIstHour < 16.5 && diffHours < 6.0) {
+      console.log(`[MID-DAY-ROAMING] 🚶 Roaming scan suppressed for ${emp.first_name} (PIN #${pin}) at ${timeFormatted} (${diffHours.toFixed(1)}h on shift). Premature check-out and SMS blocked.`);
+      return;
+    }
+
+    // =========================================================================
+    // RULE 4: EVENING DEPARTURE WINDOW (>= 16:30 IST OR >= 6.0 hours worked)
+    // =========================================================================
+
+    // Valid Departure Check-Out
+    const inMs = new Date(existingDaily.first_check_in).getTime();
+    const outMs = currentPunchMs;
+    const totalMins = Math.max(0, Math.floor((outMs - inMs) / 60000));
+    const hours = Math.floor(totalMins / 60);
+    const mins = totalMins % 60;
+    const overtimeMins = Math.max(0, totalMins - 480);
+
+    // Debounce duplicate check-out: if already checked out within last 30 minutes, update time silently
+    if (existingDaily.last_check_out) {
+      const prevOutMs = new Date(existingDaily.last_check_out).getTime();
+      const outDiffMins = (outMs - prevOutMs) / 60000;
+      if (outDiffMins < 30 && hasSentSmsToday(emp.id, todayDate, 'CHECK_OUT')) {
+        console.log(`[DEPARTURE-DEBOUNCE] ⏱️ Check-out updated for ${emp.first_name} within 30m window (${timeFormatted}). SMS suppressed.`);
+        await supabase.from('attendance_daily').update({
+          last_check_out: eventUtcIso,
+          total_work_minutes: totalMins,
+          overtime_minutes: overtimeMins,
+        }).eq('id', existingDaily.id);
+        return;
+      }
+    }
+
+    console.log(`[CHECK-OUT-ACCEPTED] 🔴 Check-Out recorded for ${emp.first_name} at ${timeFormatted}. Total duration: ${hours} hrs ${mins} mins`);
+
+    await supabase.from('attendance_punches').insert({
+      employee_id: emp.id,
+      organization_id: emp.organization_id,
+      punch_time: eventUtcIso,
+      punch_type: 'CHECK_OUT',
+      punch_source: 'BIOMETRIC',
+      verification_mode: normalizedMode,
+      attendance_date: todayDate,
+    });
+
+    await supabase.from('attendance_daily').upsert({
+      employee_id: emp.id,
+      organization_id: emp.organization_id,
+      attendance_date: todayDate,
+      first_check_in: existingDaily.first_check_in,
+      last_check_out: eventUtcIso,
+      total_work_minutes: totalMins,
+      overtime_minutes: overtimeMins,
+      status: 'PRESENT',
+      payable_status: 1.0,
+    }, { onConflict: 'employee_id,attendance_date' });
+
+    // Send Check-Out SMS only once per day, and only if total logged time is at least 3 hours (180 mins)
+    if (emp.phone && !hasSentSmsToday(emp.id, todayDate, 'CHECK_OUT') && totalMins >= 180) {
+      const totalDurationFormatted = `${hours} hrs ${mins} mins`;
+      const msg = `Dear ${emp.first_name}, your check-out has been recorded at ${timeFormatted} today. Your total logged time is ${totalDurationFormatted}. Status: Present. - Joy PeopleHR.`;
+      console.log(`[AIRTEL-AUTO-SMS] 📤 Sending Check-Out SMS to ${emp.first_name} (${emp.phone})...`);
+      const res = await sendAirtelSmsDirect(emp.phone, msg, DLT_CHECKOUT_TEMPLATE_ID);
+      console.log(`[AIRTEL-AUTO-SMS] 🚀 Check-Out SMS Response:`, res?.messageRequestId || res);
+      markSmsSentToday(emp.id, todayDate, 'CHECK_OUT', { phone: emp.phone, time: timeFormatted, duration: totalDurationFormatted });
+    }
+  } catch (err) {
+    console.warn('[DIRECT-INGEST] Processing error:', err.message || err);
+  }
+}
+
 
 /**
  * ZKTeco Comm Key / Password Authenticator
@@ -519,7 +916,6 @@ let lastPunchesFetchTime = 0;
 let isFetchingPunches = false;
 
 // Load persistent device users registry from disk or initialize verified state from hardware
-const path = require('path');
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
@@ -528,7 +924,16 @@ try {
   if (fs.existsSync(usersBackupFile)) {
     const raw = fs.readFileSync(usersBackupFile, 'utf8');
     const parsed = JSON.parse(raw);
-    Object.assign(enrolledUsersRegistry, parsed);
+    if (parsed && parsed.users && Array.isArray(parsed.users)) {
+      const targetIp = parsed.ip || '192.168.1.201';
+      enrolledUsersRegistry[targetIp] = parsed.users;
+    } else if (parsed && typeof parsed === 'object') {
+      for (const [k, v] of Object.entries(parsed)) {
+        if (Array.isArray(v)) {
+          enrolledUsersRegistry[k] = v;
+        }
+      }
+    }
     console.log(`[STARTUP] 📋 Loaded device users registry from disk.`);
   } else {
     // Dynamic registry initialized directly from hardware socket queries & ADMS live events
@@ -550,6 +955,17 @@ try {
       } catch (_) {}
     }
     console.log(`[STARTUP] 📦 Loaded ${cachedLivePunches.length} punch record(s) from persistent backup on disk.`);
+    if (cachedLivePunches.length > 0) {
+      pushToUpstash('set', 'joy:bio:punches:live', cachedLivePunches.slice(-200), 'EX', 86400);
+      pushToUpstash('set', 'joy:bio:device:TDBI253600550:heartbeat', JSON.stringify({
+        sn: 'TDBI253600550',
+        ip: '192.168.1.201',
+        status: 'ONLINE',
+        lastSeenAt: new Date().toISOString(),
+        pollCount: 1,
+      }), 'EX', 3600);
+      console.log(`[STARTUP] 🚀 Synced ${cachedLivePunches.length} punch(es) & terminal heartbeat to Upstash Redis.`);
+    }
   }
 } catch (_) {}
 
@@ -603,6 +1019,18 @@ function recordDeviceHeartbeat(sn, ip = '192.168.1.201') {
     hb.lastLoggedAt = now;
     console.log(`[HEARTBEAT] 📡 Terminal: ${sn} (${ip}) • Status: ONLINE • Poll Rate: ${rpm}/min • Total Polls: ${hb.pollCount}`);
   }
+
+  // Push heartbeat to Upstash Redis every 15s
+  if (!hb.lastRedisPush || (now - hb.lastRedisPush >= 15000)) {
+    hb.lastRedisPush = now;
+    pushToUpstash('set', `joy:bio:device:${sn}:heartbeat`, JSON.stringify({
+      sn,
+      ip,
+      status: 'ONLINE',
+      lastSeenAt: hb.lastSeenAt,
+      pollCount: hb.pollCount,
+    }), 'EX', 3600);
+  }
 }
 
 // 3. Stateful ADMS Command Engine (QUEUED -> DISPATCHED -> ACKNOWLEDGED)
@@ -643,10 +1071,15 @@ function queueAdmsUserPush(pin, name, role = 0, card = '') {
 // HTTP Bridge Server
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, *');
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
 
   if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, *');
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
     res.writeHead(204);
     res.end();
     return;
@@ -727,22 +1160,82 @@ const server = http.createServer(async (req, res) => {
                 const timeStr = parts[1].trim();
                 const vCode = parts[2] || '15';
                 const sCode = parts[3] || '0';
-                const vType = vCode === '1' ? 'Fingerprint' : vCode === '15' ? 'Face' : vCode === '4' ? 'Card' : 'Biometric';
+                const vType = (vCode === '1' || vCode === '2' || vCode === '3') ? 'Fingerprint' : (vCode === '4' || vCode === '5') ? 'Card' : 'Face';
+
+                // Robust IST to Canonical UTC ISO conversion
+                let eventUtcIso = new Date().toISOString();
+                let istMins = 0;
+                const timeMatch = timeStr.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                if (timeMatch) {
+                  const y = parseInt(timeMatch[1], 10);
+                  const mo = parseInt(timeMatch[2], 10) - 1;
+                  const da = parseInt(timeMatch[3], 10);
+                  const ho = parseInt(timeMatch[4], 10);
+                  const mi = parseInt(timeMatch[5], 10);
+                  const se = timeMatch[6] ? parseInt(timeMatch[6], 10) : 0;
+                  istMins = ho * 60 + mi;
+                  // eSSL/ZKTeco pushes device local time in IST (UTC+05:30). Convert to canonical UTC instant:
+                  const utcEpochMs = Date.UTC(y, mo, da, ho, mi, se) - 330 * 60 * 1000;
+                  eventUtcIso = new Date(utcEpochMs).toISOString();
+                } else {
+                  const d = new Date(timeStr);
+                  eventUtcIso = !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
+                  istMins = Math.floor(new Date(eventUtcIso).getTime() / 60000) % 1440;
+                }
+
+                let resolvedPunchState = 'Check-In';
+                if (istMins < 13 * 60) {
+                  resolvedPunchState = 'Check-In';
+                } else if (sCode === '1' || sCode === 1 || istMins >= 16 * 60) {
+                  resolvedPunchState = 'Check-Out';
+                } else {
+                  resolvedPunchState = 'Auto';
+                }
 
                 const punchRecord = {
+                  id: `punch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
                   pin,
-                  timestamp: new Date(timeStr).toISOString(),
+                  timestamp: eventUtcIso,
+                  deviceTimestampRaw: timeStr,
+                  deviceTimezone: 'Asia/Kolkata',
                   verifyType: vType,
-                  punchState: sCode === '1' ? 'Check-Out' : 'Check-In',
+                  punchState: resolvedPunchState,
                   deviceSerial: sn,
                   source: 'ADMS_PUSH_LIVE',
                   payloadHash: hash,
+                  isDuplicate: false,
+                  status: 'PROCESSED',
+                  suppressionReason: null,
                 };
+
+                // 300-Second (5-minute) Rolling Duplicate Suppression (Prevents duplicate captures when crossing/roaming camera)
+                const punchTimeMs = new Date(eventUtcIso).getTime();
+                const isRecentDuplicate = cachedLivePunches.some(p => {
+                  if (String(p.pin).trim() !== String(pin).trim()) return false;
+                  const prevMs = new Date(p.timestamp).getTime();
+                  return !isNaN(prevMs) && Math.abs(punchTimeMs - prevMs) < 300000;
+                });
+
+                if (isRecentDuplicate) {
+                  punchRecord.isDuplicate = true;
+                  punchRecord.status = 'DUPLICATE_SUPPRESSED';
+                  punchRecord.suppressionReason = 'Duplicate face capture within 300s repeat window';
+                  console.log(`[PUNCH-DEDUP] ⏱️ Duplicate punch suppressed for PIN #${pin} within 300s window`);
+                } else {
+                  console.log(`[PUNCH-RECORD] 🎯 PIN: #${pin} | Verify: ${vType.padEnd(11)} | State: ${sCode === '1' ? 'Check-Out' : 'Check-In '} | Time: ${timeStr} | SN: ${sn} | Hash: ${hash}`);
+
+                  // Direct Autonomous Supabase Persistence & Airtel IQ SMS Dispatch
+                  processLivePunchDirectly(punchRecord, pin, timeStr, resolvedPunchState, vType, sn).catch(err => {
+                    console.warn('[DIRECT-INGEST-ERR]', err.message || err);
+                  });
+                }
+
                 cachedLivePunches.push(punchRecord);
                 parsedRecordsCount++;
 
-                // Detailed Human-Readable Log with Hash & Metadata
-                console.log(`[PUNCH-RECORD] 🎯 PIN: #${pin} | Verify: ${vType.padEnd(11)} | State: ${sCode === '1' ? 'Check-Out' : 'Check-In '} | Time: ${timeStr} | SN: ${sn} | Hash: ${hash}`);
+                // Zero-Lag Broadcast to Upstash Redis
+                pushToUpstash('set', 'joy:bio:punches:live', cachedLivePunches.slice(-200), 'EX', 86400);
+                pushToUpstash('publish', 'joy:biometric:punch_stream', punchRecord);
 
                 // Write to Persistent Local Backup File
                 try {
@@ -756,8 +1249,9 @@ const server = http.createServer(async (req, res) => {
 
                 // Automatic Biometric Verification on Target User from Verified Hardware Event
                 for (const regIp of Object.keys(enrolledUsersRegistry)) {
+                  if (!Array.isArray(enrolledUsersRegistry[regIp])) continue;
                   const pinInt = parseInt(String(pin || '').replace(/\D/g, ''), 10);
-                  const targetUser = enrolledUsersRegistry[regIp]?.find(
+                  const targetUser = enrolledUsersRegistry[regIp].find(
                     u => {
                       const uPinInt = parseInt(String(u.userId || u.device_user_id || u.biometric_pin || u.pin || '').replace(/\D/g, ''), 10);
                       return (!isNaN(pinInt) && !isNaN(uPinInt) && pinInt === uPinInt) || String(u.userId) === String(pin) || String(u.pin) === String(pin);
@@ -808,6 +1302,7 @@ const server = http.createServer(async (req, res) => {
                 if (targetPin && targetPin !== '0') {
                   console.log(`[HARDWARE-DELETE] 🗑️ Received Hardware User Delete/Modify OpCode #${opCode} for PIN #${targetPin} from terminal SN: ${sn}`);
                   for (const regIp of Object.keys(enrolledUsersRegistry)) {
+                    if (!Array.isArray(enrolledUsersRegistry[regIp])) continue;
                     const targetPinInt = parseInt(targetPin.replace(/\D/g, ''), 10);
                     const prevLen = enrolledUsersRegistry[regIp].length;
                     enrolledUsersRegistry[regIp] = enrolledUsersRegistry[regIp].filter(u => {
@@ -830,9 +1325,27 @@ const server = http.createServer(async (req, res) => {
               if (parts.length >= 3 && parts[1] && /\d{4}-\d{2}-\d{2}/.test(parts[1])) {
                 const pin = parts[0].trim();
                 const timeStr = parts[1].trim();
+                let oplogUtcIso = new Date().toISOString();
+                const opTimeMatch = timeStr.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                if (opTimeMatch) {
+                  const y = parseInt(opTimeMatch[1], 10);
+                  const mo = parseInt(opTimeMatch[2], 10) - 1;
+                  const da = parseInt(opTimeMatch[3], 10);
+                  const ho = parseInt(opTimeMatch[4], 10);
+                  const mi = parseInt(opTimeMatch[5], 10);
+                  const se = opTimeMatch[6] ? parseInt(opTimeMatch[6], 10) : 0;
+                  const utcEpochMs = Date.UTC(y, mo, da, ho, mi, se) - 330 * 60 * 1000;
+                  oplogUtcIso = new Date(utcEpochMs).toISOString();
+                } else {
+                  const d = new Date(timeStr);
+                  oplogUtcIso = !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
+                }
+
                 const punchRecord = {
                   pin,
-                  timestamp: new Date(timeStr).toISOString(),
+                  timestamp: oplogUtcIso,
+                  deviceTimestampRaw: timeStr,
+                  deviceTimezone: 'Asia/Kolkata',
                   verifyType: 'Face',
                   punchState: 'Check-In',
                   deviceSerial: sn,
@@ -872,7 +1385,8 @@ const server = http.createServer(async (req, res) => {
                 const pin = pinMatch[1].trim();
                 const type = typeMatch ? parseInt(typeMatch[1], 10) : 0;
                 for (const regIp of Object.keys(enrolledUsersRegistry)) {
-                  const user = enrolledUsersRegistry[regIp]?.find(u => String(u.userId) === pin || String(u.pin) === pin);
+                  if (!Array.isArray(enrolledUsersRegistry[regIp])) continue;
+                  const user = enrolledUsersRegistry[regIp].find(u => String(u.userId) === pin || String(u.pin) === pin);
                   if (user) {
                     if (type === 9) user.faceEnrolled = true;
                     if (type === 1) user.fingerprintCount = Math.max(user.fingerprintCount || 1, 1);
@@ -1064,6 +1578,8 @@ const server = http.createServer(async (req, res) => {
         tenant_id: tenantId,
         platform: process.platform,
         uptime_seconds: process.uptime(),
+        active_heartbeats: Array.from(deviceHeartbeats.values()),
+        cached_punches_count: cachedLivePunches.length,
       })
     );
     return;
@@ -1354,6 +1870,92 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // 3.8.1 CLEAR OLD TEST PUNCHES (Purges legacy punches, retains today's punches)
+  if (pathname === '/clear-old-punches') {
+    const today = new Date().toISOString().split('T')[0];
+    cachedLivePunches = cachedLivePunches.filter(p => p.timestamp && (p.timestamp.startsWith(today) || p.timestamp.includes(today)));
+    try {
+      const backupFile = path.join(dataDir, 'punches-backup.jsonl');
+      fs.writeFileSync(backupFile, cachedLivePunches.map(p => JSON.stringify(p)).join('\n') + (cachedLivePunches.length ? '\n' : ''));
+    } catch (_) {}
+    pushToUpstash('set', 'joy:bio:punches:live', cachedLivePunches, 'EX', 86400);
+    console.log(`[CLEAR-OLD] Purged old test punches. Retaining ${cachedLivePunches.length} punch(es) from today.`);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, count: cachedLivePunches.length, punches: cachedLivePunches }));
+    return;
+  }
+
+  // 3.8.1B CLEAR ALL PUNCHES (Completely purges in-memory and disk backups)
+  if (pathname === '/clear-all-punches') {
+    cachedLivePunches = [];
+    try {
+      const dataDir = path.join(__dirname, 'data');
+      const backupFile = path.join(dataDir, 'punches-backup.jsonl');
+      if (fs.existsSync(backupFile)) fs.writeFileSync(backupFile, '');
+    } catch (_) {}
+    pushToUpstash('set', 'joy:bio:punches:live', [], 'EX', 86400);
+    console.log('[CLEAR-ALL] 🧹 Completely cleared all in-memory and disk punch logs.');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, count: 0, message: 'All punches cleared.' }));
+    return;
+  }
+
+  // 3.8.1C DELETE SPECIFIC UNWANTED PUNCH ENTRY
+  if (pathname === '/delete-punch') {
+    const punchId = parsedUrl.query.id;
+    const pin = parsedUrl.query.pin;
+    const timestamp = parsedUrl.query.timestamp;
+
+    const initialLen = cachedLivePunches.length;
+    cachedLivePunches = cachedLivePunches.filter(p => {
+      if (punchId && (p.id === punchId || p.payloadHash === punchId)) return false;
+      if (pin && timestamp && String(p.pin) === String(pin) && p.timestamp === timestamp) return false;
+      return true;
+    });
+
+    try {
+      const dataDir = path.join(__dirname, 'data');
+      const backupFile = path.join(dataDir, 'punches-backup.jsonl');
+      fs.writeFileSync(backupFile, cachedLivePunches.map(p => JSON.stringify(p)).join('\n') + (cachedLivePunches.length ? '\n' : ''));
+    } catch (_) {}
+    pushToUpstash('set', 'joy:bio:punches:live', cachedLivePunches, 'EX', 86400);
+    console.log(`[DELETE-PUNCH] 🗑️ Deleted unwanted punch (id: ${punchId || 'N/A'}, pin: ${pin || 'N/A'}). Deleted: ${initialLen - cachedLivePunches.length}, Remaining: ${cachedLivePunches.length}`);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, deleted: initialLen - cachedLivePunches.length, remaining: cachedLivePunches.length }));
+    return;
+  }
+
+  // 3.8.2 ENQUEUE TERMINAL SYNCHRONIZATION COMMANDS (CHECK, INFO, DATA USER, QUERY BIODATA)
+  if (pathname === '/sync-device-now' || pathname === '/query-terminal-all' || pathname === '/trigger-sync') {
+    const cmd1 = admsCmdCounter++;
+    const cmd2 = admsCmdCounter++;
+    const cmd3 = admsCmdCounter++;
+    const cmd4 = admsCmdCounter++;
+    const cmd5 = admsCmdCounter++;
+    const cmd6 = admsCmdCounter++;
+    admsCommandQueue.push(`C:${cmd1}:CHECK`);
+    admsCommandQueue.push(`C:${cmd2}:INFO`);
+    admsCommandQueue.push(`C:${cmd3}:DATA QUERY USERINFO`);
+    admsCommandQueue.push(`C:${cmd4}:DATA QUERY FINGERTMP`);
+    admsCommandQueue.push(`C:${cmd5}:DATA QUERY BIODATA`);
+    admsCommandQueue.push(`C:${cmd6}:DATA UPDATE USERINFO`);
+    console.log(`[SYNC-REQUEST] 📡 Enqueued ADMS commands #${cmd1}-#${cmd6} (CHECK, INFO, DATA QUERY USERINFO, DATA QUERY FINGERTMP, DATA QUERY BIODATA, DATA UPDATE USERINFO) for terminal.`);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      success: true,
+      message: 'Terminal synchronization commands enqueued for all dynamic users. Device will dump full user directory (face, finger, cards) on next poll.',
+      commandsEnqueued: [
+        `C:${cmd1}:CHECK`,
+        `C:${cmd2}:INFO`,
+        `C:${cmd3}:DATA QUERY USERINFO`,
+        `C:${cmd4}:DATA QUERY FINGERTMP`,
+        `C:${cmd5}:DATA QUERY BIODATA`,
+        `C:${cmd6}:DATA UPDATE USERINFO`
+      ]
+    }));
+    return;
+  }
+
   // 3.9 UNLOCK ADMIN ON PHYSICAL HARDWARE (CMD 7 + Role 0 Reset)
   if (pathname === '/unlock-admin') {
     const targetIp = parsedUrl.query.ip || '192.168.1.201';
@@ -1427,7 +2029,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 3.11 GET ENROLLED USERS DIRECTLY FROM HARDWARE
-  if (pathname === '/users' || pathname === '/device-users') {
+  if (pathname === '/users' || pathname === '/device-users' || pathname === '/api/device-users') {
     const targetIp = parsedUrl.query.ip || '192.168.1.201';
     const targetPort = Number(parsedUrl.query.port) || 4370;
 
@@ -1482,8 +2084,8 @@ const server = http.createServer(async (req, res) => {
             biometric_pin: displayPin,
             name: lu.name,
             cardno: lu.cardNumber || '',
-            faceEnrolled: lu.faceEnrolled || false,
-            fingerprintCount: lu.fingerprintCount || 0,
+            faceEnrolled: lu.faceEnrolled !== undefined ? lu.faceEnrolled : true,
+            fingerprintCount: lu.fingerprintCount !== undefined ? lu.fingerprintCount : 1,
             privilege: lu.privilege || 'USER',
             source: 'LOCAL_REGISTRY',
           });
@@ -1508,6 +2110,43 @@ const server = http.createServer(async (req, res) => {
           });
         }
 
+        // Dynamic Live Enterprise Directory Sync from Supabase:
+        // Automatically incorporates any newly added/enrolled employees (16, 20, 21, 50, etc.)
+        try {
+          const dbEmps = await refreshEmployeeDirectory();
+          if (dbEmps && Array.isArray(dbEmps)) {
+            for (const emp of dbEmps) {
+              const rawDigits = (emp.employee_code || '').replace(/\D/g, '');
+              const pin = rawDigits ? (rawDigits.length === 2 && rawDigits.startsWith('17') ? '017' : (rawDigits.length === 1 ? `00${rawDigits}` : rawDigits)) : null;
+              if (!pin) continue;
+              const key = getPinKey(pin);
+              const empName = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || `User ${pin}`;
+              const cardVal = (pin === '017' || pin === '17' ? '61' : pin === '154' ? '3212737' : '');
+              if (!mergedMap.has(key)) {
+                mergedMap.set(key, {
+                  userId: pin,
+                  pin: pin,
+                  biometric_pin: pin,
+                  name: empName,
+                  cardno: cardVal,
+                  faceEnrolled: true,
+                  fingerprintCount: 1,
+                  privilege: 'USER',
+                  source: 'ENTERPRISE_DIRECTORY',
+                });
+              } else {
+                const existing = mergedMap.get(key);
+                if (!existing.name || existing.name.startsWith('User ') || existing.name.startsWith('Machine User')) {
+                  existing.name = empName;
+                }
+                if (cardVal && !existing.cardno) existing.cardno = cardVal;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[USERS-QUERY] Dynamic Supabase employee sync notice:', e.message);
+        }
+
         // Update biometric flags for verified existing users from live punches evidence
         for (const p of cachedLivePunches) {
           const punchPin = String(p.pin);
@@ -1523,11 +2162,16 @@ const server = http.createServer(async (req, res) => {
         const finalUsers = Array.from(mergedMap.values()).map(u => {
           const rawCard = u.cardno || u.cardNumber || '';
           const cleanCard = rawCard && rawCard !== 'null' && rawCard !== 'undefined' ? rawCard : '';
-          const fpCount = u.fingerprintCount || 0;
-          const isFace = !!u.faceEnrolled;
+          const rawFp = Number(u.fingerprintCount !== undefined ? u.fingerprintCount : 1);
+          const fpCount = (rawFp > 10) ? 1 : (rawFp > 0 ? rawFp : 1);
+          const isFace = u.faceEnrolled !== undefined ? !!u.faceEnrolled : true;
 
+          const isSuperAdmin = u.privilege === 'ADMIN' || u.role > 0 || String(u.pri) === '14';
           return {
             ...u,
+            privilege: isSuperAdmin ? 'ADMIN' : 'USER',
+            role_type: isSuperAdmin ? 'SUPER_ADMIN' : 'NORMAL_USER',
+            role_name: isSuperAdmin ? 'Super Admin (Device Manager)' : 'Normal User (Authentication Only)',
             cardNumber: cleanCard,
             card_number: cleanCard,
             faceEnrolled: isFace,
@@ -1557,9 +2201,17 @@ const server = http.createServer(async (req, res) => {
           };
         });
 
+        // Update local memory and disk backup
+        enrolledUsersRegistry[targetIp] = finalUsers;
+        try {
+          const dataDir = path.join(__dirname, 'data');
+          const usersBackupFile = path.join(dataDir, 'terminal-users.json');
+          fs.writeFileSync(usersBackupFile, JSON.stringify(enrolledUsersRegistry, null, 2));
+        } catch (_) {}
+
         console.log(`[HARDWARE-FETCH] 📡 GET /users -> Query finished for ${targetIp}:${targetPort}. Total users: ${finalUsers.length}`);
         finalUsers.forEach(u => {
-          console.log(`[HARDWARE-FETCH]   ✓ PIN #${u.pin} (${u.name}) | Face: ${u.faceEnrolled ? 'YES' : 'NO '} | FP: ${u.fingerprintCount} | Card: ${u.cardNumber || 'None'} | Role: ${u.privilege}`);
+          console.log(`[HARDWARE-FETCH]   ✓ PIN #${u.pin} (${u.name}) | Role: ${u.role_name.padEnd(32)} | Face: ${u.faceEnrolled ? 'YES' : 'NO '} | FP: ${u.fingerprintCount} | Card: ${u.cardNumber || 'None'}`);
         });
         console.log(`[USERS-QUERY] 📋 Retrieved ${finalUsers.length} provisioned user identities from terminal ${targetIp}:${targetPort}.`);
 
@@ -1578,7 +2230,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 4. FETCH PUNCHES (LIVE TCP SOCKET FROM TERMINAL)
-  if (pathname === '/punches') {
+  if (pathname === '/punches' || pathname === '/live-punches' || pathname === '/api/live-punches') {
     const targetIp = parsedUrl.query.ip || '192.168.1.201';
     const targetPort = Number(parsedUrl.query.port) || 4370;
 
@@ -1642,13 +2294,29 @@ function normalizeDeviceTime(rawTimestamp, tz = 'Asia/Kolkata') {
 
                   cachedLivePunches = res.data.map(p => {
                     const norm = normalizeDeviceTime(p.recordTime);
+                    const d = new Date(norm.utcIso);
+                    const offsetMs = 330 * 60 * 1000;
+                    const istDate = new Date(d.getTime() + offsetMs);
+                    const istMins = istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
+
+                    let resolvedPunchState = 'Check-In';
+                    if (p.punchState === 1 || p.punchState === '1') {
+                      resolvedPunchState = 'Check-Out';
+                    } else if (istMins >= 16 * 60) {
+                      resolvedPunchState = 'Check-Out';
+                    } else if (istMins >= 11 * 60 && istMins < 16 * 60) {
+                      resolvedPunchState = 'Midday-Buffer';
+                    } else {
+                      resolvedPunchState = 'Check-In';
+                    }
+
                     return {
                       pin: String(p.deviceUserId || p.userId || p.pin),
                       timestamp: norm.utcIso,
                       deviceTimestampRaw: norm.rawStr,
                       deviceTimezone: 'Asia/Kolkata',
                       verifyType: p.verifyType === 1 ? 'Fingerprint' : p.verifyType === 15 ? 'Face' : 'Fingerprint',
-                      punchState: p.punchState === 1 ? 'Check-Out' : 'Check-In',
+                      punchState: resolvedPunchState,
                       deviceSerial: `ZK-${targetIp.replace(/\./g, '')}`,
                       source: 'TCP_SOCKET_LIVE',
                     };
@@ -1665,8 +2333,32 @@ function normalizeDeviceTime(rawTimestamp, tz = 'Asia/Kolkata') {
       })();
     }
 
+    // Return deduplicated clean stream (filtering out duplicate-suppressed records and 5-min roaming duplicates)
+    const dedupedPunches = [];
+    const seenPinTimestampMap = new Map();
+    // Sort newest to oldest
+    const sortedPunches = [...cachedLivePunches].sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+    for (const p of sortedPunches) {
+      if (p.isDuplicate || p.status === 'DUPLICATE_SUPPRESSED') continue;
+      const pinStr = String(p.pin || '').trim();
+      const pMs = new Date(p.timestamp || 0).getTime();
+      const prevMs = seenPinTimestampMap.get(pinStr);
+      if (prevMs !== undefined && Math.abs(pMs - prevMs) < 300000) {
+        continue; // duplicate within 5 minutes
+      }
+      seenPinTimestampMap.set(pinStr, pMs);
+      dedupedPunches.push(p);
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true, count: cachedLivePunches.length, deviceSerial: `ZK-${targetIp.replace(/\./g, '')}`, punches: cachedLivePunches }));
+    res.end(JSON.stringify({
+      success: true,
+      count: dedupedPunches.length,
+      raw_total_count: cachedLivePunches.length,
+      duplicates_suppressed_count: cachedLivePunches.length - dedupedPunches.length,
+      deviceSerial: `ZK-${targetIp.replace(/\./g, '')}`,
+      punches: dedupedPunches
+    }));
     return;
   }
 

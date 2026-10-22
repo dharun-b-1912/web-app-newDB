@@ -8,6 +8,7 @@ import { hrEventBus } from './hrEventBus';
 import { profileService, FullProfileContext } from './profileService';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
 import { getActiveOrgId } from './attendance/biometricCommandService';
+import { approvalService } from './notification/approvalService';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
 
 export interface PendingTaskItem {
@@ -146,8 +147,88 @@ export const workspaceService = {
       }
     }
 
-    // Leave Entitlements: return actual employee entitlements
-    const userEntitlements = entitlements;
+    // Real-Time Leave Entitlements: fetch from Supabase leave_balances for this employee
+    let userEntitlements: LeaveEntitlement[] = [];
+    if (isSupabaseEnabled && empId) {
+      try {
+        const { data: dbBalances } = await supabase
+          .from('leave_balances')
+          .select('*, leave_types(id, name, code, default_annual_quota)')
+          .eq('employee_id', empId);
+
+        if (dbBalances && dbBalances.length > 0) {
+          userEntitlements = dbBalances.map((b: any) => ({
+            id: b.id,
+            employee_id: b.employee_id,
+            employee_name: employee?.display_name || user.name,
+            department_name: employee?.department_name || '',
+            leave_type_id: b.leave_type_id,
+            leave_type_name: b.leave_types?.name || b.leave_type_name || 'Leave',
+            policy_id: b.policy_id || 'pol-01',
+            policy_name: b.policy_name || 'Standard Leave Policy',
+            period: String(b.calendar_year || '2026'),
+            opening_balance: Number(b.opening_balance || 0),
+            granted: Number(b.accrued || b.opening_balance || 0),
+            accrued: Number(b.accrued || 0),
+            carried_forward: Number(b.carried_forward || 0),
+            adjustments: Number(b.adjustments || 0),
+            used: Number(b.consumed || b.used || 0),
+            pending: Number(b.pending || 0),
+            encashed: Number(b.encashed || 0),
+            expired: Number(b.expired || 0),
+            closing_balance: Number(b.closing_balance ?? b.available_balance ?? 0),
+            available_balance: Number(b.available_balance ?? b.closing_balance ?? 0),
+            updated_at: b.updated_at || new Date().toISOString(),
+          }));
+        }
+      } catch (err) {
+        console.warn('[workspaceService] leave_balances fetch notice:', err);
+      }
+    }
+
+    // Fallback: If no balances assigned yet, query active leave types from DB and calculate against actual employee leave requests
+    if (userEntitlements.length === 0 && isSupabaseEnabled) {
+      try {
+        const { data: dbTypes } = await supabase.from('leave_types').select('*').eq('is_active', true);
+        if (dbTypes && dbTypes.length > 0) {
+          userEntitlements = dbTypes.map((lt: any) => {
+            const usedCount = leaveRequests
+              .filter((lr) => lr.employee_id === empId && lr.leave_type_id === lt.id && lr.status === 'Approved')
+              .reduce((acc, r) => acc + (r.duration_days || 1), 0);
+            const quota = Number(lt.default_annual_quota ?? 0);
+            return {
+              id: `lt-${lt.id}`,
+              employee_id: empId,
+              employee_name: employee?.display_name || user.name,
+              department_name: employee?.department_name || '',
+              leave_type_id: lt.id,
+              leave_type_name: lt.name,
+              policy_id: 'pol-standard',
+              policy_name: 'Company Leave Policy',
+              period: '2026',
+              opening_balance: quota,
+              granted: quota,
+              accrued: 0,
+              carried_forward: 0,
+              adjustments: 0,
+              used: usedCount,
+              pending: 0,
+              encashed: 0,
+              expired: 0,
+              closing_balance: Math.max(0, quota - usedCount),
+              available_balance: Math.max(0, quota - usedCount),
+              updated_at: new Date().toISOString(),
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('[workspaceService] leave_types fetch notice:', err);
+      }
+    }
+
+    if (userEntitlements.length === 0) {
+      userEntitlements = entitlements.filter((e) => e.employee_id === empId);
+    }
 
     // Upcoming Holiday from Organization Calendar
     let upcomingHoliday: { name: string; date: string; description?: string } | null = null;
@@ -168,11 +249,74 @@ export const workspaceService = {
       }
     }
 
-    // Pending Action Items for Current Employee (Derived from real pending approvals)
-    const pendingTasks: PendingTaskItem[] = [];
+    // Pending Action Items for Current Approver / Employee from real approval requests
+    let pendingTasks: PendingTaskItem[] = [];
+    let serviceRequests: ServiceRequestItem[] = [];
 
-    // Real Service Requests
-    const serviceRequests: ServiceRequestItem[] = [];
+    try {
+      const allApprovalRequests = await approvalService.getApprovalRequests().catch(() => []);
+      
+      // Requests submitted by current employee
+      serviceRequests = allApprovalRequests
+        .filter((r) => r.requested_by_id === empId || r.requested_by_id === user.id || (r.requested_by_email && r.requested_by_email.toLowerCase() === user.email?.toLowerCase()))
+        .map((req) => ({
+          id: req.id,
+          requestCode: (req as any).request_code || `REQ-${req.id.slice(-6).toUpperCase()}`,
+          requestType: req.title || req.type || 'Request',
+          summary: req.details || `${req.type} submission pending review`,
+          submittedDate: req.created_at ? new Date(req.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today',
+          status: req.status || 'Pending',
+        }));
+
+      // Tasks requiring action from current user (if manager/admin)
+      const isManagerOrAdmin = ['Super Admin', 'Platform Admin', 'Company Admin', 'HR Head', 'HR Admin', 'Manager'].includes(
+        (user.roles || [])[0]?.name || user.role || ''
+      );
+
+      pendingTasks = allApprovalRequests
+        .filter((r) => r.status === 'Pending' && (r.approver_id === empId || r.approver_id === user.id || isManagerOrAdmin))
+        .slice(0, 5)
+        .map((req) => ({
+          id: req.id,
+          title: req.title || `${req.type} Review`,
+          description: req.details || `Submitted by ${req.requested_by_name || 'Team Member'}`,
+          dueDate: req.created_at ? new Date(req.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : 'Today',
+          priority: (req.amount_or_duration && req.amount_or_duration.includes('Critical')) ? 'Urgent' : 'Normal',
+          actionLabel: 'Review Request',
+          targetRoute: 'approvals',
+          category: req.type || 'Approval',
+          status: 'Pending',
+        }));
+    } catch (err) {
+      console.warn('[workspaceService] approvals fetch notice:', err);
+    }
+
+    // Real-Time Latest Payslip Query (Zero Mock — returns actual DB payslip or null)
+    let latestPayslip: UserWorkspaceData['latestPayslip'] = null;
+    if (isSupabaseEnabled && empId) {
+      try {
+        const { data: dbPayslip } = await supabase
+          .from('payslips')
+          .select('*')
+          .eq('employee_id', empId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (dbPayslip) {
+          latestPayslip = {
+            period: dbPayslip.pay_period || dbPayslip.month_year || 'Current Period',
+            grossPay: Number(dbPayslip.gross_salary || dbPayslip.gross_pay || 0),
+            netPay: Number(dbPayslip.net_salary || dbPayslip.net_pay || 0),
+            deductions: Number(dbPayslip.total_deductions || 0),
+            publishedDate: dbPayslip.disbursement_date || (dbPayslip.created_at ? new Date(dbPayslip.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Recent'),
+            paymentStatus: dbPayslip.status || 'Disbursed via Bank Transfer',
+          };
+        }
+      } catch (err) {
+        console.warn('[workspaceService] payslip fetch notice:', err);
+      }
+    }
 
     // Real Notification Feed
     const notifications: NotificationItem[] = [];
@@ -208,17 +352,10 @@ export const workspaceService = {
         return {
           name: `${roster.shift_name} (${roster.shift_code})`,
           timings: shiftTimings,
-          location: employee?.location || 'Joy Tech Park, Coimbatore HQ',
+          location: employee?.branch_name || (employee?.employment as any)?.work_location_name || employee?.location || 'Office Location',
         };
       })(),
-      latestPayslip: {
-        period: 'July 2026',
-        grossPay: 185000,
-        netPay: 154200,
-        deductions: 30800,
-        publishedDate: '31 Jul 2026',
-        paymentStatus: 'Disbursed via Bank Transfer',
-      },
+      latestPayslip,
       documents: profileContext.documents.map((d) => ({
         id: d.id,
         name: d.type,

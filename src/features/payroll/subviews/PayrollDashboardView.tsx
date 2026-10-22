@@ -35,6 +35,7 @@ import {
   Activity,
   Calculator,
   Sliders,
+  RotateCcw,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
@@ -44,18 +45,19 @@ import { PayrollNextActionCard } from '../components/PayrollNextActionCard';
 
 import { api } from '../../../services/api';
 import { PayrollEligibilityService, PayrollReadinessReport } from '../../../services/payroll/payrollEligibilityService';
-import { LiveDataPayrollVerificationService } from '../../../services/payroll/liveDataPayrollVerificationService';
 import { payrollPeriodService } from '../../../services/payroll/payrollPeriodService';
 import { useToast } from '../../../components/ui/Toast';
 
 interface PayrollDashboardViewProps {
   onNavigateTab?: (tabKey: string) => void;
   onOpenPayslip?: (employeeId: string) => void;
+  activePeriod?: string;
 }
 
 export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
   onNavigateTab,
   onOpenPayslip,
+  activePeriod: propActivePeriod,
 }) => {
   const { showToast } = useToast();
   const [runs, setRuns] = useState<PayrollRun[]>([]);
@@ -63,9 +65,14 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
   const [readiness, setReadiness] = useState<PayrollReadinessReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [payrollPeriods, setPayrollPeriods] = useState<any[]>([]);
-  const [activePeriod, setActivePeriod] = useState('September 2026');
-  const [showDevTools, setShowDevTools] = useState(false);
+  const [activePeriod, setActivePeriod] = useState(propActivePeriod || 'October 2026');
   const [isAutoModalOpen, setIsAutoModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (propActivePeriod && propActivePeriod !== activePeriod) {
+      setActivePeriod(propActivePeriod);
+    }
+  }, [propActivePeriod]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -78,15 +85,16 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
       const periods = await payrollPeriodService.getPayrollPeriods();
       setPayrollPeriods(periods);
 
-      const curPeriod = periods.find((p: any) => p.period_name === activePeriod) || periods[0];
+      const effectivePeriod = propActivePeriod || activePeriod || 'October 2026';
+      const curPeriod = periods.find((p: any) => p.period_name === effectivePeriod) || periods[0];
 
       const report = PayrollEligibilityService.evaluateReadiness(
         realEmployees,
         salList,
         structures,
-        curPeriod?.period_name || activePeriod,
-        curPeriod?.start_date || '2026-09-01',
-        curPeriod?.end_date || '2026-09-30'
+        curPeriod?.period_name || effectivePeriod,
+        curPeriod?.start_date || '2026-10-01',
+        curPeriod?.end_date || '2026-10-31'
       );
 
       setRuns(runList);
@@ -99,15 +107,9 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
     }
   };
 
-  const handleLoad21Workers = async () => {
-    const res = LiveDataPayrollVerificationService.seed21WorkersIntoPlatform();
-    if (res.success) {
-      showToast(
-        `✓ Ingested 21 Workers (New format.xlsx) dataset into Payroll! Reconciled Gross: ₹${res.totalGross.toLocaleString('en-IN')}, Net: ₹${res.totalNet.toLocaleString('en-IN')}`,
-        'success'
-      );
-      await loadData();
-    }
+  const handleSyncSupabase = async () => {
+    await loadData();
+    showToast(`✓ Re-synchronized with Supabase database: ${salaries.length} verified employees active in payroll.`, 'success');
   };
 
   useEffect(() => {
@@ -631,39 +633,29 @@ export const PayrollDashboardView: React.FC<PayrollDashboardViewProps> = ({
             </div>
           </div>
 
-          {/* Developer & Test Tools (Collapsible / Non-distracting) */}
-          <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/60 p-4 space-y-3">
-            <button
-              onClick={() => setShowDevTools(!showDevTools)}
-              className="w-full flex items-center justify-between text-xs font-bold text-gray-600 hover:text-gray-900 cursor-pointer"
-            >
-              <span className="flex items-center gap-1.5">
-                <FileSpreadsheet className="w-3.5 h-3.5 text-purple-600" />
-                <span>Developer & Test Utilities</span>
+          {/* Live Supabase Sync Card */}
+          <div className="rounded-2xl border border-gray-200 bg-emerald-50/40 p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-[#07563D]" />
+                <span>Live Supabase Payroll Ledger</span>
               </span>
-              {showDevTools ? (
-                <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
-              ) : (
-                <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-              )}
-            </button>
-
-            {showDevTools && (
-              <div className="pt-2 border-t border-gray-200/60 space-y-2 text-xs">
-                <p className="text-[11px] text-gray-500">
-                  Quickly populate or test with the standardized 21-workers factory dataset (New format.xlsx with Basic ₹420, HRA ₹180, OT ₹75/hr).
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleLoad21Workers}
-                  className="w-full bg-purple-50 hover:bg-purple-100 border-purple-200 text-purple-900 font-bold text-xs py-2 shadow-2xs cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-purple-700" />
-                  <span>⚡ Ingest 21 Workers Dataset</span>
-                </Button>
-              </div>
-            )}
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-[#07563D] font-mono">
+                {salaries.length} Verified Staff
+              </span>
+            </div>
+            <p className="text-[11px] text-gray-500">
+              Synchronized with active employees, bank details, and statutory numbers in Supabase PostgreSQL.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleSyncSupabase}
+              className="w-full bg-white hover:bg-emerald-50 border-emerald-200 text-[#07563D] font-bold text-xs py-2 shadow-2xs cursor-pointer flex items-center justify-center gap-2"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-[#07563D]" />
+              <span>Sync Live Supabase Records</span>
+            </Button>
           </div>
         </div>
       </div>

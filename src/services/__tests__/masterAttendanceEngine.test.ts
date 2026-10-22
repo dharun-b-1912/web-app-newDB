@@ -6,6 +6,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { attendanceDecisionEngine } from '../attendance/attendanceDecisionEngine';
+import { attendanceRosterService } from '../attendance/attendanceRosterService';
 
 describe('🚀 MASTER PROMPT: UNIFIED MULTI-MODE ATTENDANCE ENGINE (20 GATES)', () => {
   const orgId = 'org-joy-test';
@@ -454,12 +455,20 @@ describe('🚀 MASTER PROMPT: UNIFIED MULTI-MODE ATTENDANCE ENGINE (20 GATES)', 
   // GATE 19: LATE PUNCH & GRACE CALCULATION
   // --------------------------------------------------------------------------
   it('TEST 19: Late punch correctly calculates late minutes beyond grace window', async () => {
-    // Shift starts at 09:00 with 10m grace. Punch at 09:25 is 25m late.
+    attendanceDecisionEngine.clearAllState();
+    const roster = attendanceRosterService.getRosterForEmployeeOnDate(empDharun.id, testDate, orgId);
+    const shift = attendanceRosterService.getShiftById(roster.shift_id, orgId);
+    const [h, m] = (shift?.start_time || '09:00').split(':').map(Number);
+    const lateMins = 25;
+    const punchTotalMins = h * 60 + m + lateMins;
+    const punchH = String(Math.floor(punchTotalMins / 60)).padStart(2, '0');
+    const punchM = String(punchTotalMins % 60).padStart(2, '0');
+
     const res = await attendanceDecisionEngine.processEvent({
       organizationId: orgId,
       employeeId: empDharun.id,
       biometricPin: empDharun.pin,
-      eventTimestamp: `${testDate}T09:25:00.000Z`,
+      eventTimestamp: `${testDate}T${punchH}:${punchM}:00.000Z`,
       source: 'BIOMETRIC',
       method: 'FINGERPRINT',
     });

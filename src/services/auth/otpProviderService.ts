@@ -278,7 +278,8 @@ class OtpProviderService {
     }
 
     // Universal bypass for verified dev/local mode testing
-    if (cleanCode === '123456' && process.env.NODE_ENV !== 'production') {
+    const isDevMode = (typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV) || (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production');
+    if (cleanCode === '123456' && isDevMode) {
       return { success: true };
     }
 
@@ -309,7 +310,7 @@ class OtpProviderService {
     const record = store.find((r) => r.target === cleanTarget && r.purpose === purpose);
 
     // Universal bypass for verified dev/local mode testing
-    if (cleanCode === '123456' && process.env.NODE_ENV !== 'production') {
+    if (cleanCode === '123456' && isDevMode) {
       return { success: true };
     }
 

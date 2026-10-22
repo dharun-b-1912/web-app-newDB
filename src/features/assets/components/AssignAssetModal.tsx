@@ -1,3 +1,9 @@
+// src/features/assets/components/AssignAssetModal.tsx
+// ============================================================================
+// Joy PeopleHR — Employee-Wise Asset Allocation Modal
+// Real-time Employee Picker, Returnable Flag, Deduction Amount & Expected Return
+// ============================================================================
+
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
@@ -7,11 +13,10 @@ import { assetAssignmentService } from '../../../services/asset/assetAssignmentS
 import { api } from '../../../services/api';
 import {
   UniversalAsset,
-  AssignmentTargetType,
   AssetCondition,
   Employee,
 } from '../../../types';
-import { UserCheck, Building, Truck, ShieldAlert, CheckCircle2, User } from 'lucide-react';
+import { UserCheck, ShieldAlert, Calendar, DollarSign } from 'lucide-react';
 
 interface AssignAssetModalProps {
   isOpen: boolean;
@@ -28,63 +33,77 @@ export const AssignAssetModal: React.FC<AssignAssetModalProps> = ({
 }) => {
   const { showToast } = useToast();
 
-  const [targetType, setTargetType] = useState<AssignmentTargetType>('EMPLOYEE');
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [selectedTargetId, setSelectedTargetId] = useState<string>('');
-  const [targetName, setTargetName] = useState<string>('');
-  const [conditionAtAssign, setConditionAtAssign] = useState<AssetCondition>('GOOD');
+  const [selectedEmpId, setSelectedEmpId] = useState<string>('');
+  const [assignedDate, setAssignedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [expectedReturnDate, setExpectedReturnDate] = useState<string>('');
-  const [purpose, setPurpose] = useState<string>('');
+  const [isReturnable, setIsReturnable] = useState<boolean>(true);
+  const [deductionAmount, setDeductionAmount] = useState<string>('0');
+  const [conditionAtAssign, setConditionAtAssign] = useState<AssetCondition>('GOOD');
+  const [purpose, setPurpose] = useState<string>('General Operations Handover');
   const [notes, setNotes] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [loadingEmps, setLoadingEmps] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
       const fetchEmps = async () => {
+        setLoadingEmps(true);
         try {
           const emps = await api.getEmployees();
-          setEmployees(Array.isArray(emps) ? emps : []);
-          if (emps.length > 0) {
-            setSelectedTargetId(emps[0].id);
-            setTargetName(`${emps[0].first_name} ${emps[0].last_name}`);
+          const list = Array.isArray(emps) ? emps : [];
+          setEmployees(list);
+          if (list.length > 0 && !selectedEmpId) {
+            setSelectedEmpId(list[0].id);
           }
         } catch {
           setEmployees([]);
+        } finally {
+          setLoadingEmps(false);
         }
       };
       fetchEmps();
-      if (asset) setConditionAtAssign(asset.condition || 'GOOD');
+
+      if (asset) {
+        setIsReturnable(asset.is_returnable !== false);
+        setDeductionAmount(String(asset.deduction_amount || 0));
+        setConditionAtAssign(asset.condition || 'GOOD');
+      }
     }
   }, [isOpen, asset]);
 
   if (!asset) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const finalTargetName = targetType === 'EMPLOYEE' ? targetName : targetName.trim();
-    if (!finalTargetName) {
-      showToast('Please specify the recipient / assignment target name.', 'error');
+    const emp = employees.find(e => e.id === selectedEmpId);
+    if (!emp) {
+      showToast('Please select a valid employee for assignment.', 'error');
       return;
     }
 
+    const empName = `${emp.first_name} ${emp.last_name || ''}`.trim();
+
     setIsSubmitting(true);
     try {
-      assetAssignmentService.assignAsset({
+      await assetAssignmentService.assignAsset({
         assetId: asset.id,
-        targetType,
-        targetId: selectedTargetId || `tgt-${Date.now()}`,
-        targetName: finalTargetName,
-        conditionAtAssign,
+        employeeId: emp.id,
+        employeeName: empName,
+        assignedDate,
         expectedReturnDate: expectedReturnDate || undefined,
+        isReturnable,
+        deductionAmount: Number(deductionAmount) || 0,
+        conditionAtAssign,
         purpose,
         notes,
       });
 
-      showToast(`Asset assigned to ${finalTargetName} (${targetType}).`, 'success');
+      showToast(`Asset "${asset.asset_name}" assigned to ${empName} successfully!`, 'success');
       onSuccess();
       onClose();
     } catch (err: any) {
-      showToast(err.message || 'Failed to assign asset.', 'error');
+      showToast(err.message || 'Failed to record assignment in Supabase.', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -93,89 +112,102 @@ export const AssignAssetModal: React.FC<AssignAssetModalProps> = ({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Assign Asset: ${asset.asset_name}`} size="md">
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Asset Summary Pill */}
         <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs flex items-center justify-between">
           <div>
-            <span className="text-gray-400 block font-medium">Asset Code & Serial</span>
-            <span className="font-extrabold text-gray-900 font-mono">{asset.asset_code} • {asset.serial_number || 'N/A'}</span>
+            <span className="text-gray-400 block font-medium">Asset Code & Category</span>
+            <span className="font-extrabold text-gray-900 font-mono">
+              {asset.asset_code} • {asset.category || 'HARDWARE'}
+            </span>
           </div>
-          <Badge variant="blue">{asset.asset_type_code}</Badge>
+          <Badge variant={asset.is_returnable !== false ? 'emerald' : 'amber'}>
+            {asset.is_returnable !== false ? 'Returnable' : 'Consumable'}
+          </Badge>
         </div>
 
-        {/* Target Type */}
+        {/* Employee Selection */}
         <div>
           <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-            Assignment Target Type *
+            Assign To Employee *
           </label>
           <select
-            value={targetType}
-            onChange={e => {
-              const val = e.target.value as AssignmentTargetType;
-              setTargetType(val);
-              if (val === 'DEPARTMENT') setTargetName('Engineering & DevOps');
-              else if (val === 'SITE') setTargetName('Coimbatore Plant - Zone B');
-              else if (val === 'PROJECT') setTargetName('Project Falcon (Client Deployment)');
-              else if (val === 'VEHICLE') setTargetName('Transport Fleet Van 04');
-            }}
-            className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
+            required
+            value={selectedEmpId}
+            onChange={e => setSelectedEmpId(e.target.value)}
+            disabled={loadingEmps}
+            className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
           >
-            <option value="EMPLOYEE">Direct Employee</option>
-            <option value="DEPARTMENT">Department / Team</option>
-            <option value="PROJECT">Project / Client Engagement</option>
-            <option value="SITE">Factory / Construction Site</option>
-            <option value="VEHICLE">Fleet Vehicle / Mobile Unit</option>
-            <option value="VENDOR_WORKER">Vendor / Contract Workforce</option>
+            {employees.length === 0 && <option value="">Loading workforce roster...</option>}
+            {employees.map(emp => {
+              const code = emp.employee_code || (emp as any).employee_id || emp.id.slice(0, 6);
+              const name = `${emp.first_name} ${emp.last_name || ''}`.trim();
+              const dept = (emp as any).department_name || (emp as any).department || '';
+              return (
+                <option key={emp.id} value={emp.id}>
+                  {code} — {name} {dept ? `(${dept})` : ''}
+                </option>
+              );
+            })}
           </select>
         </div>
 
-        {/* Target Selector / Input */}
-        <div>
-          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-            Recipient / Target Entity *
-          </label>
-          {targetType === 'EMPLOYEE' ? (
-            <select
-              value={selectedTargetId}
-              onChange={e => {
-                setSelectedTargetId(e.target.value);
-                const found = employees.find(emp => emp.id === e.target.value);
-                if (found) setTargetName(`${found.first_name} ${found.last_name}`);
-              }}
-              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
-            >
-              {employees.map(emp => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.first_name} {emp.last_name} ({emp.employee_code || emp.id})
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type="text"
-              required
-              value={targetName}
-              onChange={e => setTargetName(e.target.value)}
-              placeholder="e.g. Coimbatore Factory Line 3 or Project Titan"
-              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
-            />
-          )}
+        {/* Returnable Status & Deduction Amount */}
+        <div className="p-3.5 bg-emerald-50/50 border border-emerald-200/80 rounded-xl space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-emerald-950">Returnable Item?</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsReturnable(true)}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${
+                  isReturnable ? 'bg-[#07563D] text-white shadow-xs' : 'bg-white border text-gray-600'
+                }`}
+              >
+                Yes (Returnable)
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsReturnable(false)}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${
+                  !isReturnable ? 'bg-amber-600 text-white shadow-xs' : 'bg-white border text-gray-600'
+                }`}
+              >
+                No (Consumable)
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-emerald-200/50 flex items-center justify-between gap-4">
+            <div>
+              <span className="text-xs font-bold text-emerald-950 block">Deduction / Deposit (₹)</span>
+              <span className="text-[10px] text-emerald-700">Deducted if lost, damaged, or paid kit.</span>
+            </div>
+            <div className="w-32 relative">
+              <span className="absolute left-2.5 top-2 text-xs text-gray-400 font-bold">₹</span>
+              <input
+                type="number"
+                min="0"
+                value={deductionAmount}
+                onChange={e => setDeductionAmount(e.target.value)}
+                className="w-full bg-white border border-gray-300 rounded-lg pl-6 pr-2.5 py-1.5 text-xs font-bold text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
+              />
+            </div>
+          </div>
         </div>
 
-        {/* Condition & Return Date */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* Issue Date & Expected Return Date */}
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-              Condition at Handover
+              Issue Date *
             </label>
-            <select
-              value={conditionAtAssign}
-              onChange={e => setConditionAtAssign(e.target.value as AssetCondition)}
-              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
-            >
-              <option value="NEW">Brand New</option>
-              <option value="EXCELLENT">Excellent</option>
-              <option value="GOOD">Good / Tested</option>
-              <option value="FAIR">Fair</option>
-            </select>
+            <input
+              type="date"
+              required
+              value={assignedDate}
+              onChange={e => setAssignedDate(e.target.value)}
+              className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
+            />
           </div>
 
           <div>
@@ -186,34 +218,71 @@ export const AssignAssetModal: React.FC<AssignAssetModalProps> = ({
               type="date"
               value={expectedReturnDate}
               onChange={e => setExpectedReturnDate(e.target.value)}
-              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
+              disabled={!isReturnable}
+              placeholder="dd-mm-yyyy"
+              className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden disabled:bg-gray-100 disabled:text-gray-400"
             />
           </div>
         </div>
 
+        {/* Handover Condition & Purpose */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+              Condition at Issue
+            </label>
+            <select
+              value={conditionAtAssign}
+              onChange={e => setConditionAtAssign(e.target.value as AssetCondition)}
+              className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
+            >
+              <option value="NEW">Brand New</option>
+              <option value="EXCELLENT">Excellent</option>
+              <option value="GOOD">Good Condition</option>
+              <option value="FAIR">Fair / Functional</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+              Purpose / Usage
+            </label>
+            <input
+              type="text"
+              value={purpose}
+              onChange={e => setPurpose(e.target.value)}
+              placeholder="e.g. Plant Shift, Daily Work"
+              className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
+            />
+          </div>
+        </div>
+
+        {/* Notes */}
         <div>
           <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-            Assignment Purpose / Notes
+            Assignment Remarks
           </label>
-          <input
-            type="text"
-            value={purpose}
-            onChange={e => setPurpose(e.target.value)}
-            placeholder="e.g. Primary developer workstation or Site operational gear"
-            className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
+          <textarea
+            rows={2}
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="e.g. Handover inspection completed with signed gate pass."
+            className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
           />
         </div>
 
+        {/* Modal Buttons */}
         <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-200">
-          <Button variant="outline" type="button" onClick={onClose} disabled={isSubmitting}>
+          <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={isSubmitting}>
             Cancel
           </Button>
           <Button
             type="submit"
+            size="sm"
             disabled={isSubmitting}
-            className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold"
+            className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold"
           >
-            {isSubmitting ? 'Assigning...' : 'Confirm Asset Handover'}
+            {isSubmitting ? 'Assigning...' : 'Confirm Assignment'}
           </Button>
         </div>
       </form>

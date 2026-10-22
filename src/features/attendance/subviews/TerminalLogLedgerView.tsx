@@ -45,6 +45,7 @@ import { attendanceTimeService } from '../../../services/attendance/attendanceTi
 import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
+import { isHardwareBiometricPunch } from './BiometricIntegrationView';
 
 export interface TerminalLogLedgerViewProps {
   initialEmployeeId?: string;
@@ -120,8 +121,8 @@ export const TerminalLogLedgerView: React.FC<TerminalLogLedgerViewProps> = ({
   const loadLedgerEvents = () => {
     setIsLoading(true);
     try {
-      // 1. Pull raw punches from biometricGatewayService
-      const gatewayPunches = biometricGatewayService.getRawPunches(1000) || [];
+      // 1. Pull raw punches from biometricGatewayService (strictly hardware biometric)
+      const gatewayPunches = (biometricGatewayService.getRawPunches(1000) || []).filter(isHardwareBiometricPunch);
       // 2. Pull audit events from attendanceDecisionEngine
       const decisionEvents = attendanceDecisionEngine.getRawEvents(1000) || [];
 

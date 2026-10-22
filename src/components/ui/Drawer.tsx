@@ -12,8 +12,12 @@ export interface DrawerProps {
   size?: 'md' | 'lg' | 'xl' | '2xl' | '3xl';
 }
 
-export const Drawer: React.FC<DrawerProps> = ({
-  isOpen,
+export const Drawer: React.FC<DrawerProps> = (props) => {
+  if (!props.isOpen) return null;
+  return <DrawerContent {...props} />;
+};
+
+const DrawerContent: React.FC<DrawerProps> = ({
   onClose,
   title,
   subtitle,
@@ -26,17 +30,13 @@ export const Drawer: React.FC<DrawerProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      window.addEventListener('keydown', handleKeyDown);
-    }
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
     return () => {
       document.body.style.overflow = 'unset';
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
+  }, [onClose]);
 
   const widths = {
     md: 'max-w-md',

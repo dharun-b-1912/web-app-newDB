@@ -745,6 +745,7 @@ export const authService = {
       localStorage.removeItem(STORAGE_KEYS.ACTIVE_ORG);
       localStorage.removeItem(STORAGE_KEYS.AUTH_CONTEXT);
       localStorage.removeItem(STORAGE_KEYS.SAVED_ROUTE);
+      localStorage.setItem('workforce_logged_out', 'true');
     } catch (_) {}
   },
 
@@ -844,6 +845,7 @@ export const authService = {
       sessionStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
       localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
       localStorage.setItem(STORAGE_KEYS.AUTH_CONTEXT, context);
+      localStorage.removeItem('workforce_logged_out');
       if (user.organization_id && user.organization_id !== 'platform-root') {
         localStorage.setItem(STORAGE_KEYS.ACTIVE_ORG, user.organization_id);
       }

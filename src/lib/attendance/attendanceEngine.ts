@@ -92,7 +92,9 @@ export function processAttendanceStatus(
   policy: AttendancePolicy = DEFAULT_ATTENDANCE_POLICY,
   isLeave: boolean = false,
   isWfh: boolean = false,
-  isHoliday: boolean = false
+  isHoliday: boolean = false,
+  attendanceDate?: string,
+  currentMinutesOverride?: number
 ): {
   status: AttendanceStatus;
   grossMinutes: number;
@@ -123,6 +125,21 @@ export function processAttendanceStatus(
     };
   }
 
+  // Real-time time computation in IST (Asia/Kolkata)
+  const now = new Date();
+  const currentMinutes = currentMinutesOverride ?? (now.getHours() * 60 + now.getMinutes());
+  let todayStr = '';
+  try {
+    todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+  } catch {
+    todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+
+  const isPastDate = attendanceDate ? attendanceDate < todayStr : false;
+  const isToday = attendanceDate ? attendanceDate === todayStr : true;
+  const isFutureDate = attendanceDate ? attendanceDate > todayStr : false;
+
+  // Case 1: NO PUNCHES RECORDED
   if (checkInMinutes === null && checkOutMinutes === null) {
     if (isWfh) {
       return {
@@ -134,8 +151,16 @@ export function processAttendanceStatus(
         overtimeMinutes: 0,
       };
     }
+
+    // ABSENT CONSTRAINT:
+    // If the date is in the past, or if today has passed the end of the shift (+ grace),
+    // the employee is classified as Absent. Prior to shift end today, status is 'Not Checked In'.
+    const shiftEndBufferMins = expectedOutMinutes + (policy.early_checkout_grace_minutes || 15);
+    const isPastCutoff = isPastDate || (isToday && currentMinutes >= shiftEndBufferMins);
+    const status: AttendanceStatus = isFutureDate ? 'Not Checked In' : isPastCutoff ? 'Absent' : 'Not Checked In';
+
     return {
-      status: 'Not Checked In',
+      status,
       grossMinutes: 0,
       netMinutes: 0,
       lateMinutes: 0,
@@ -155,39 +180,36 @@ export function processAttendanceStatus(
     }
   } else if (checkInMinutes !== null && checkOutMinutes === null) {
     // In-progress active shift: calculate elapsed time from check-in to current time
-    const now = new Date();
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
     if (currentMinutes > checkInMinutes) {
       gross = currentMinutes - checkInMinutes;
     } else if (currentMinutes < checkInMinutes && checkInMinutes > 1200) {
       // Night shift active cross-midnight
       gross = 1440 - checkInMinutes + currentMinutes;
     } else {
-      // Initial punch within same minute
       gross = 0;
     }
   }
 
-  // Deduct break time (only apply standard 45m break if worked duration exceeds 4 hours)
-  const breakDeduction = gross >= 240 ? 45 : 0;
-  const net = Math.max(0, gross - breakDeduction);
-  const requiredMinutes = policy.required_hours_per_day * 60;
+  // Net duration: matches actual logged punch duration (no arbitrary break deduction so SMS matches UI)
+  const net = gross;
+  const requiredMinutes = (policy.required_hours_per_day || 8) * 60; // 480 minutes (8 hours)
+  const halfDayThresholdMinutes = (policy.half_day_hours_threshold || 4) * 60; // 240 minutes (4 hours)
 
   // Late minutes calculation against shift scheduled start + grace
   let lateMinutes = 0;
   if (checkInMinutes !== null) {
-    lateMinutes = Math.max(0, checkInMinutes - (expectedInMinutes + policy.late_grace_minutes));
+    lateMinutes = Math.max(0, checkInMinutes - (expectedInMinutes + (policy.late_grace_minutes || 15)));
   }
 
   // Early departure minutes
   let earlyMinutes = 0;
   if (checkOutMinutes !== null) {
-    earlyMinutes = Math.max(0, expectedOutMinutes - policy.early_checkout_grace_minutes - checkOutMinutes);
+    earlyMinutes = Math.max(0, expectedOutMinutes - (policy.early_checkout_grace_minutes || 15) - checkOutMinutes);
   }
 
   // Overtime minutes beyond required hours + OT threshold
   let overtimeMinutes = 0;
-  if (net > requiredMinutes + policy.overtime_min_minutes) {
+  if (net > requiredMinutes + (policy.overtime_min_minutes || 30)) {
     overtimeMinutes = net - requiredMinutes;
   }
 
@@ -195,19 +217,28 @@ export function processAttendanceStatus(
 
   if (isWfh) {
     status = 'WFH';
-  } else if (checkOutMinutes === null && checkInMinutes !== null) {
-    // Actively working
-    status = lateMinutes > 0 ? 'Late' : 'Present';
-  } else if (net < policy.half_day_hours_threshold * 60 && net > 0) {
-    status = 'Half Day';
-  } else if (lateMinutes > 0) {
-    status = 'Late';
-  } else if (earlyMinutes > 0) {
-    status = 'Early Checkout';
-  } else if (overtimeMinutes > 0) {
-    status = 'Overtime';
+  } else if (checkInMinutes !== null && checkOutMinutes === null) {
+    // Case 2: CHECKED IN, BUT NO OUT-PUNCH
+    const shiftEndBufferMins = expectedOutMinutes + (policy.early_checkout_grace_minutes || 15);
+    const isPastShiftEnd = isPastDate || (isToday && currentMinutes >= shiftEndBufferMins);
+
+    if (isPastShiftEnd) {
+      status = 'Missing Punch';
+    } else {
+      status = lateMinutes > 0 ? 'Late' : 'Present';
+    }
   } else if (checkOutMinutes !== null) {
-    status = 'Checked Out';
+    // Case 3: COMPLETED SHIFT (BOTH PUNCHES PRESENT)
+    // Rule: Under 2 hours -> Absent. 2 to < 4 hours -> Half Day. 4 hours and above -> Present / Late.
+    if (net < 120) {
+      status = 'Absent';
+    } else if (net < halfDayThresholdMinutes) {
+      status = 'Half Day';
+    } else if (lateMinutes > 0) {
+      status = 'Late';
+    } else {
+      status = 'Present';
+    }
   }
 
   return {
@@ -225,6 +256,39 @@ export function formatMinutesToHoursStr(minutes?: number | null): string {
   const hrs = Math.floor(minutes / 60);
   const mins = Math.round(minutes % 60);
   return `${hrs}h ${mins}m`;
+}
+
+/**
+ * Formats punctuality deviation minutes (late arrival, early departure, overtime)
+ * into clean, readable hours and minutes:
+ * - When < 60 mins: "45m" or "45 mins"
+ * - When >= 60 mins: calculates hours & minutes, e.g. "8h 40m" (instead of bare "520m")
+ * - When showBoth is true: "8h 40m (520m)" or "8 hrs 40 mins (520 mins)"
+ */
+export function formatDeviationDuration(
+  minutes?: number | null,
+  options?: { showBoth?: boolean; verbose?: boolean; fallback?: string }
+): string {
+  if (!minutes || minutes <= 0) return options?.fallback ?? '—';
+  const totalMins = Math.round(minutes);
+  const hrs = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+
+  if (hrs === 0) {
+    if (options?.verbose) return `${mins} min${mins !== 1 ? 's' : ''}`;
+    return `${mins}m`;
+  }
+
+  const compact = mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+  const verbose = `${hrs} hr${hrs !== 1 ? 's' : ''}${mins > 0 ? ` ${mins} min${mins !== 1 ? 's' : ''}` : ''}`;
+
+  if (options?.showBoth) {
+    return options.verbose ? `${verbose} (${totalMins} mins)` : `${compact} (${totalMins}m)`;
+  }
+  if (options?.verbose) {
+    return verbose;
+  }
+  return compact;
 }
 
 export function formatCleanTime(timeStr?: string): string {

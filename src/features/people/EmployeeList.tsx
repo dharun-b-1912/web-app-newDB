@@ -54,21 +54,25 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [confirmDeleteEmp, setConfirmDeleteEmp] = useState<Employee | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const handleToggleStatus = async (emp: Employee) => {
+    if (togglingId) return;
     const currentStatus = (emp.status || (emp as any).employment_status || 'Active').toLowerCase();
-    const newStatus = currentStatus === 'active' ? 'Inactive' : 'Active';
+    const newStatus = (currentStatus === 'active' || currentStatus === 'probation') ? 'Inactive' : 'Active';
 
-    if (onToggleStatus) {
-      onToggleStatus(emp, newStatus);
-      return;
-    }
-
+    setTogglingId(emp.id);
     try {
-      await api.updateEmployeeStatus(emp.id, newStatus);
-      showToast(`${emp.first_name} ${emp.last_name} marked as ${newStatus}`, 'success');
+      if (onToggleStatus) {
+        await onToggleStatus(emp, newStatus);
+      } else {
+        await api.updateEmployeeStatus(emp.id, newStatus);
+        showToast(`✓ ${emp.first_name} ${emp.last_name} marked as ${newStatus}`, 'success');
+      }
     } catch {
       showToast('Failed to update employee status', 'error');
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -152,8 +156,10 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
               {employees.map((emp) => {
                 const isVendor = checkIsVendor(emp);
                 const managerName = emp.employment?.reporting_manager_name || emp.reporting_manager_name || (emp as any).manager_name || 'Not assigned';
-                const location = emp.employment?.work_location || 'Coimbatore HQ';
-                const branchName = emp.branch_name || (emp.employment as any)?.branch_name || 'Main Campus';
+                const rawLocation = (emp.employment?.work_location || emp.work_location || emp.location || '').trim();
+                const rawBranch = (emp.branch_name || (emp.employment as any)?.branch_name || '').trim();
+                const hasBranch = Boolean(rawBranch);
+                const showLocation = Boolean(rawLocation && rawLocation.toLowerCase() !== rawBranch.toLowerCase());
                 const status = emp.status || (emp as any).employment_status || 'Active';
                 const isActive = status.toLowerCase() === 'active';
 
@@ -200,16 +206,30 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                     </TableCell>
 
                     <TableCell>
-                      <div className="space-y-0.5">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80">
-                          <Building2 className="w-3 h-3 text-[#07563D]" />
-                          {branchName}
-                        </span>
-                        <div className="text-[10px] text-gray-400 flex items-center gap-1">
-                          <MapPin className="w-2.5 h-2.5" />
-                          {location}
+                      {hasBranch || showLocation ? (
+                        <div className="space-y-0.5">
+                          {hasBranch && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80">
+                              <Building2 className="w-3 h-3 text-[#07563D] shrink-0" />
+                              <span className="truncate max-w-[170px]">{rawBranch}</span>
+                            </span>
+                          )}
+                          {showLocation && (
+                            <div
+                              className={cn(
+                                "text-[10px] text-gray-400 flex items-center gap-1 font-medium truncate max-w-[190px]",
+                                !hasBranch && "text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 text-[11px] font-bold inline-flex"
+                              )}
+                              title={rawLocation}
+                            >
+                              <MapPin className={cn("shrink-0", hasBranch ? "w-2.5 h-2.5 text-gray-400" : "w-3 h-3 text-[#07563D]")} />
+                              <span className="truncate">{rawLocation}</span>
+                            </div>
+                          )}
                         </div>
-                      </div>
+                      ) : (
+                        <span className="text-xs text-gray-400 font-normal">—</span>
+                      )}
                     </TableCell>
 
                     <TableCell className="text-xs text-gray-700 font-medium">
@@ -221,13 +241,14 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                         <StatusBadge status={status} />
                         <button
                           type="button"
+                          disabled={togglingId === emp.id}
                           title={isActive ? 'Click to Deactivate' : 'Click to Activate'}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleToggleStatus(emp);
                           }}
                           className={cn(
-                            "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                            "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-40",
                             isActive ? "bg-emerald-600" : "bg-gray-300"
                           )}
                         >
@@ -285,7 +306,10 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
             const isVendor = checkIsVendor(emp);
             const status = emp.status || (emp as any).employment_status || 'Active';
             const isActive = status.toLowerCase() === 'active';
-            const branchName = emp.branch_name || (emp.employment as any)?.branch_name || 'Main Campus';
+            const rawLocation = (emp.employment?.work_location || emp.work_location || emp.location || '').trim();
+            const rawBranch = (emp.branch_name || (emp.employment as any)?.branch_name || '').trim();
+            const hasBranch = Boolean(rawBranch);
+            const showLocation = Boolean(rawLocation && rawLocation.toLowerCase() !== rawBranch.toLowerCase());
 
             return (
               <Card
@@ -297,10 +321,17 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                     <span className="font-mono text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
                       {emp.employee_code}
                     </span>
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/80">
-                      <Building2 className="w-2.5 h-2.5 text-[#07563D]" />
-                      {branchName}
-                    </span>
+                    {hasBranch ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/80">
+                        <Building2 className="w-2.5 h-2.5 text-[#07563D] shrink-0" />
+                        <span className="truncate max-w-[120px]">{rawBranch}</span>
+                      </span>
+                    ) : showLocation ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/80">
+                        <MapPin className="w-2.5 h-2.5 text-[#07563D] shrink-0" />
+                        <span className="truncate max-w-[120px]">{rawLocation}</span>
+                      </span>
+                    ) : null}
                   </div>
 
                   {isVendor ? (
@@ -325,6 +356,12 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                     </h4>
                     <p className="text-xs text-gray-500 font-medium truncate">{emp.designation_title}</p>
                     <p className="text-[11px] text-gray-400 truncate">{emp.department_name}</p>
+                    {showLocation && hasBranch && (
+                      <div className="text-[10px] text-gray-400 flex items-center gap-1 truncate pt-0.5" title={rawLocation}>
+                        <MapPin className="w-2.5 h-2.5 text-gray-400 shrink-0" />
+                        <span className="truncate">{rawLocation}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -333,13 +370,14 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                     <StatusBadge status={status} />
                     <button
                       type="button"
+                      disabled={togglingId === emp.id}
                       title={isActive ? 'Click to Deactivate' : 'Click to Activate'}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleToggleStatus(emp);
                       }}
                       className={cn(
-                        "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                        "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-40",
                         isActive ? "bg-emerald-600" : "bg-gray-300"
                       )}
                     >

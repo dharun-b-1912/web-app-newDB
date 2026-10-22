@@ -12,6 +12,7 @@ import { whatsAppIdentityService } from './whatsappIdentityService';
 import { whatsAppOtpService } from './whatsappOtpService';
 import { whatsAppPermissionService } from './whatsappPermissionService';
 import { whatsAppLogger } from './whatsappLogger';
+import { whatsAppNotificationService } from './whatsappNotificationService';
 import { otherModulesApi } from '../otherModulesApi';
 import { BotSessionContext, BotConversationState, ResolvedEmployeeIdentity } from './types';
 
@@ -32,6 +33,7 @@ function normalizeCommand(raw: string): string {
   if (['HELP', '?', 'COMMANDS', 'WHAT'].includes(t)) return 'HELP';
   if (['APPLY', 'APPLYLEAVE', 'REQUEST'].includes(t)) return 'APPLY_LEAVE';
   if (['BALANCE', 'LEAVEBALANCE'].includes(t)) return 'LEAVE_BAL';
+  if (['MIS', 'MISREPORT', 'DAILYREPORT', 'DAILYMIS', 'REPORT'].includes(t)) return 'MIS_REPORT';
   return t; // pass through for dates and custom input
 }
 
@@ -472,8 +474,9 @@ export class WhatsAppBotEngine {
         session.organizationId = autoAccounts[0].organizationId;
 
         const isDirectVerifyEnabled =
-          process.env.WA_DIRECT_PHONE_VERIFY === 'true' ||
-          process.env.VITE_WA_DIRECT_PHONE_VERIFY === 'true';
+          (typeof process !== 'undefined' && process.env?.WA_DIRECT_PHONE_VERIFY === 'true') ||
+          (typeof process !== 'undefined' && process.env?.VITE_WA_DIRECT_PHONE_VERIFY === 'true') ||
+          (typeof import.meta !== 'undefined' && ((import.meta as any).env?.VITE_WA_DIRECT_PHONE_VERIFY === 'true' || (import.meta as any).env?.WA_DIRECT_PHONE_VERIFY === 'true'));
 
         if (isDirectVerifyEnabled) {
           // Instant Direct Phone-Match Mode (Transitional fallback while external OTP template approval is pending)
@@ -714,6 +717,18 @@ export class WhatsAppBotEngine {
       case 'SCHEDULE':       return this.sendScheduleMenu(session);
       case 'NEWS':           return this.handleNewsInquiry(session);
       case 'PORTAL':         return this.sendPortalLink(session);
+      case 'MIS_REPORT': {
+        const misRole = session.roleContext || 'EMPLOYEE';
+        if (!['HR', 'ADMIN', 'MANAGER', 'SUPERVISOR'].includes(misRole)) {
+          return this.sendAccessDenied(
+            session,
+            'Daily MIS Report access is restricted to authorized HR personnel and management numbers only.'
+          );
+        }
+        const auth = whatsAppPermissionService.authorize({ session, requiredPermission: 'reports.view', correlationId: session.correlationId });
+        if (!auth.allowed) return this.sendAccessDenied(session, auth.reason || 'Unauthorized');
+        return this.sendDailyMisReport(session);
+      }
       default:
         await this.sendMainMenu(session);
     }
@@ -1060,6 +1075,80 @@ export class WhatsAppBotEngine {
     }
   }
 
+  /**
+   * Dispatches a real-time Daily Attendance MIS Report via WhatsApp (daily_mis_report_v1)
+   * RBAC: Restricted to HR, ADMIN, MANAGER, SUPERVISOR roles only.
+   */
+  private async sendDailyMisReport(session: BotSessionContext): Promise<void> {
+    try {
+      // Send a "generating" status immediately
+      await whatsAppClient.sendText({
+        to: session.waId,
+        organizationId: session.organizationId,
+        employeeId: session.employeeId,
+        text: `⏳ *Generating Daily MIS Report...*\n\nAssembling real-time biometric data, computing turnout statistics, and preparing your PDF report. This may take a few seconds.`,
+      });
+
+      const result = await whatsAppNotificationService.sendAttendanceMisReportDirect({
+        phone: session.waId,
+        recipientName: session.employeeName || 'HR Operations',
+        organizationId: session.organizationId,
+      });
+
+      if (result.success && result.stats) {
+        const s = result.stats;
+        await whatsAppClient.sendInteractive({
+          to: session.waId,
+          organizationId: session.organizationId,
+          employeeId: session.employeeId,
+          type: 'button',
+          header: { type: 'text', text: 'Joy PeopleHR • MIS Report' },
+          body: {
+            text:
+              `✅ *Daily MIS Report Dispatched*\n\n` +
+              `📅 *Date:* ${new Date().toLocaleDateString('en-IN')}\n` +
+              `🏢 *Company:* ${session.companyName || 'Joy Corporate Solutions'}\n\n` +
+              `📊 *Live Statistics:*\n` +
+              `👥 Total Workforce: *${s.totalWorkforce}*\n` +
+              `🟢 Present: *${s.presentTurnout}*\n` +
+              `⏰ Late Clock-Ins: *${s.lateCount}*\n` +
+              `🌴 Weekly Off / Leave: *${s.weeklyOffLeave}*\n` +
+              `⏱️ Billed Hours: *${s.cumulativeHours}*\n\n` +
+              (result.artifact ? `📎 *Attachment:* \`${result.artifact.filename}\`\n🔒 *SHA-256:* \`${result.artifact.sha256Checksum.slice(0, 16)}...\`\n\n` : '') +
+              `The identical executive 3-page audit PDF has been attached to your chat.`,
+          },
+          footer: { text: 'People First. Work Simplified.' },
+          action: {
+            buttons: [
+              { type: 'reply', reply: { id: 'MENU_ATTENDANCE', title: '⏰ Attendance' } },
+              { type: 'reply', reply: { id: 'MENU_BACK', title: '🔙 Main Menu' } },
+            ],
+          },
+        });
+      } else {
+        await whatsAppClient.sendInteractive({
+          to: session.waId,
+          organizationId: session.organizationId,
+          employeeId: session.employeeId,
+          type: 'button',
+          header: { type: 'text', text: 'Joy PeopleHR • MIS Report' },
+          body: {
+            text: `⚠️ *MIS Report Issue*\n\n${result.error || 'Could not generate the report. Please try again or contact support.'}`,
+          },
+          footer: { text: 'People First. Work Simplified.' },
+          action: {
+            buttons: [
+              { type: 'reply', reply: { id: 'MENU_MIS_REPORT', title: '🔄 Retry MIS' } },
+              { type: 'reply', reply: { id: 'MENU_BACK', title: '🔙 Main Menu' } },
+            ],
+          },
+        });
+      }
+    } catch (err: any) {
+      await this.sendSystemError(session, 'MIS_REPORT', err);
+    }
+  }
+
   private async sendEmployeeSearchPrompt(session: BotSessionContext): Promise<void> {
     session.state = 'HR_SEARCHING_EMPLOYEE';
     const text =
@@ -1287,17 +1376,16 @@ export class WhatsAppBotEngine {
 
   private async fetchPayslipRecord(session: BotSessionContext, month: string): Promise<void> {
     try {
-      // Query actual payslips table
-      const { data: payslip, error } = await supabase
+      // 1. Query payslips table with tenant isolation and order by publication date
+      const { data: payslips, error } = await supabase
         .from('payslips')
-        .select('*')
+        .select('*, payroll_line_items(*)')
         .eq('employee_id', session.employeeId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .eq('organization_id', session.organizationId)
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false });
 
-      if (error || !payslip) {
-        // Handle Missing Record gracefully as per prompt specification
+      if (error || !payslips || payslips.length === 0) {
         await whatsAppClient.sendInteractive({
           to: session.waId,
           organizationId: session.organizationId,
@@ -1307,8 +1395,8 @@ export class WhatsAppBotEngine {
           body: {
             text:
               `📄 *No Payslip Found*\n\n` +
-              `No finalized payslip record was found for *${month}*.\n\n` +
-              `Please verify the month or check your employee account if you believe this is incorrect.`,
+              `No finalized payslip record was found for your profile.\n\n` +
+              `Please check your employee portal if you believe this is incorrect:\nhttps://app.joypeoplehr.com`,
           },
           footer: { text: 'People First. Work Simplified.' },
           action: {
@@ -1321,34 +1409,198 @@ export class WhatsAppBotEngine {
         return;
       }
 
-      const gross = (payslip.gross_earnings || 0).toLocaleString('en-IN');
-      const ded = (payslip.total_deductions || 0).toLocaleString('en-IN');
-      const net = (payslip.net_pay || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+      const nowMs = Date.now();
+      const publishedPayslips = payslips.filter(
+        p => p.is_published === true && p.published_at && new Date(p.published_at).getTime() <= nowMs
+      );
+      const scheduledPayslips = payslips.filter(
+        p => p.published_at && new Date(p.published_at).getTime() > nowMs
+      );
+
+      let selectedPayslip = publishedPayslips[0];
+      if (month && month !== 'LATEST' && month !== 'Latest') {
+        const found = publishedPayslips.find(p => {
+          const pMonth = p.published_at ? new Date(p.published_at).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }) : '';
+          return pMonth.toLowerCase().includes(month.toLowerCase()) || (p.payslip_number && p.payslip_number.toLowerCase().includes(month.toLowerCase()));
+        });
+        if (found) selectedPayslip = found;
+      }
+
+      // Case: No published payslip yet, but a future scheduled payslip exists
+      if (!selectedPayslip && scheduledPayslips.length > 0) {
+        const schedP = scheduledPayslips[0];
+        const schedMonth = schedP.published_at ? new Date(schedP.published_at).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }) : 'Upcoming';
+        const schedDate = new Date(schedP.published_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+        await whatsAppClient.sendInteractive({
+          to: session.waId,
+          organizationId: session.organizationId,
+          employeeId: session.employeeId,
+          type: 'button',
+          header: { type: 'text', text: 'JOY PeopleHR | Payslip Notification' },
+          body: {
+            text:
+              `JOY PeopleHR | Payslip Notification\n\n` +
+              `Dear ${session.employeeName || 'Employee'},\n\n` +
+              `Your salary statement for ${schedMonth} is scheduled for publication on ${schedDate}.\n\n` +
+              `Employee ID: ${session.employeeCode || '--'}\n` +
+              `Company: ${session.companyName || 'JOY Corporate Solutions Pvt. Ltd.'}\n` +
+              `Status: Scheduled (Not Yet Published)\n` +
+              `Scheduled Release: ${schedDate}\n\n` +
+              `Your salary statement for ${schedMonth} is not yet available for download.\n` +
+              `Once your HR or Finance operations team finalizes the cycle, your statement will appear here.\n\n` +
+              `You can review past cycles anytime via the official JOY PeopleHR portal:\n\n` +
+              `https://app.joypeoplehr.com/portal/payslips\n\n` +
+              `Regards,\n` +
+              `JOY Corporate Solutions Pvt. Ltd.`,
+          },
+          footer: { text: 'JOY Corporate Solutions Pvt. Ltd.' },
+          action: {
+            buttons: [
+              { type: 'reply', reply: { id: 'PAYSLIP_SELECT_MONTH', title: 'Other Months' } },
+              { type: 'reply', reply: { id: 'MENU_LEAVE',           title: 'Leave Balances' } },
+              { type: 'reply', reply: { id: 'MENU_BACK',            title: 'Main Menu' } },
+            ],
+          },
+        });
+        return;
+      }
+
+      if (!selectedPayslip) {
+        await whatsAppClient.sendInteractive({
+          to: session.waId,
+          organizationId: session.organizationId,
+          employeeId: session.employeeId,
+          type: 'button',
+          header: { type: 'text', text: 'JOY PeopleHR | Payslip Notification' },
+          body: {
+            text:
+              `JOY PeopleHR | Payslip Notification\n\n` +
+              `Dear ${session.employeeName || 'Employee'},\n\n` +
+              `No finalized payslip record was found for your profile for recent pay cycles.\n\n` +
+              `Employee ID: ${session.employeeCode || '--'}\n` +
+              `Company: ${session.companyName || 'JOY Corporate Solutions Pvt. Ltd.'}\n\n` +
+              `Once your HR or Finance operations team finalizes and publishes your payroll statement, it will appear here.\n\n` +
+              `You can access the official JOY PeopleHR portal anytime:\n\n` +
+              `https://app.joypeoplehr.com/portal/payslips\n\n` +
+              `Regards,\n` +
+              `JOY Corporate Solutions Pvt. Ltd.`,
+          },
+          footer: { text: 'JOY Corporate Solutions Pvt. Ltd.' },
+          action: {
+            buttons: [
+              { type: 'reply', reply: { id: 'PAYSLIP_SELECT_MONTH', title: 'Choose Month' } },
+              { type: 'reply', reply: { id: 'MENU_BACK',            title: 'Main Menu' } },
+            ],
+          },
+        });
+        return;
+      }
+
+      const payslip = selectedPayslip;
+      const actualMonth = payslip.published_at
+        ? new Date(payslip.published_at).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+        : (month || 'Recent');
+      const pubDate = payslip.published_at ? new Date(payslip.published_at) : null;
+      const isFuturePayDate = pubDate ? (pubDate.getTime() > Date.now()) : false;
+      const isPaid = (payslip as any)?.payroll_runs?.disbursed_at || (payslip as any)?.is_disbursed || false;
+      const paymentStatus = isPaid ? 'Disbursed' : (isFuturePayDate ? 'Scheduled' : 'Processing');
+      const payDateFormatted = pubDate
+        ? pubDate.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
+        : '--';
+
+      // 2. Query authoritative bank details
+      const { data: bank } = await supabase
+        .from('employee_bank_details')
+        .select('*')
+        .eq('employee_id', session.employeeId)
+        .limit(1)
+        .maybeSingle();
+
+      const lineItem = (payslip as any)?.payroll_line_items;
+      const grossVal = lineItem?.gross_earnings ?? payslip.gross_earnings ?? null;
+      const dedVal = lineItem?.total_deductions ?? payslip.total_deductions ?? null;
+      const netVal = lineItem?.net_pay ?? payslip.net_pay ?? null;
+
+      const gross = grossVal !== null && grossVal !== undefined ? Number(grossVal).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '--';
+      const ded = dedVal !== null && dedVal !== undefined ? Number(dedVal).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '--';
+      const net = netVal !== null && netVal !== undefined ? Number(netVal).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '--';
+
+      let docSent = false;
+      const cleanPath = (payslip.storage_path || '').replace(/^payslips\//, '');
+      const filename = `JoyPeopleHR_Payslip_${session.employeeCode || 'EMP'}_${actualMonth.replace(/\s+/g, '_')}.pdf`;
+      const payslipRef = payslip.payslip_number || `PAY-${actualMonth.toUpperCase().replace(/\s+/g, '-')}-${session.employeeCode || 'EMP'}`;
+
+      // 3. Dispatch official PDF document via direct buffer upload to Meta Media API
+      if (cleanPath) {
+        try {
+          const { data: fileData, error: dlErr } = await supabase.storage
+            .from('payslips')
+            .download(cleanPath);
+
+          if (!dlErr && fileData) {
+            const arrayBuffer = await fileData.arrayBuffer();
+            const fileBuffer = Buffer.from(arrayBuffer);
+
+            if (fileBuffer.length > 100 && fileBuffer.subarray(0, 4).toString() === '%PDF') {
+              const caption =
+                `*JOY PeopleHR — Payslip*\n\n` +
+                `Dear ${session.employeeName || 'Employee'},\n\n` +
+                `Your published payslip for ${actualMonth} is attached.\n\n` +
+                `Payslip reference: ${payslipRef}\n\n` +
+                `For secure access to your payroll history, visit:\n` +
+                `https://app.joypeoplehr.com/portal/payslips\n\n` +
+                `Regards,\n` +
+                `JOY Corporate Solutions Pvt. Ltd.`;
+
+              const docRes = await whatsAppClient.sendDocument({
+                to: session.waId,
+                organizationId: session.organizationId,
+                employeeId: session.employeeId,
+                fileBuffer,
+                filename,
+                caption,
+              });
+              docSent = docRes.success;
+            }
+          }
+        } catch (storageErr) {
+          console.warn('[botEngine] Failed to dispatch document PDF:', storageErr);
+        }
+      }
+
+      const bodyText =
+        `JOY PeopleHR | Payslip Notification\n\n` +
+        `Dear ${session.employeeName || 'Employee'},\n\n` +
+        `Your payslip for ${actualMonth} is available.\n\n` +
+        `Employee ID: ${session.employeeCode || '--'}\n` +
+        `Company: ${session.companyName || 'JOY Corporate Solutions Pvt. Ltd.'}\n` +
+        `Net Salary: ₹${net}\n` +
+        `Payment Status: ${paymentStatus}\n` +
+        `Pay Date: ${payDateFormatted}\n` +
+        `Status: Published\n\n` +
+        (docSent
+          ? `Your official ${actualMonth} payslip PDF document has been attached above.\n\n`
+          : `Please find your payslip details above. You can also access your payroll history through the official JOY PeopleHR portal:\n\n`) +
+        `https://app.joypeoplehr.com/portal/payslips\n\n` +
+        `Regards,\n` +
+        `JOY Corporate Solutions Pvt. Ltd.`;
 
       await whatsAppClient.sendInteractive({
         to: session.waId,
         organizationId: session.organizationId,
         employeeId: session.employeeId,
         type: 'button',
-        header: { type: 'text', text: 'Joy PeopleHR • Payslip Ready' },
+        header: { type: 'text', text: 'JOY PeopleHR | Payslip Notification' },
         body: {
-          text:
-            `✅ *Payslip Ready*\n\n` +
-            `👤 *Employee:* ${session.employeeName} (${session.employeeCode})\n` +
-            `📅 *Salary Month:* ${month}\n` +
-            `💰 *Gross Earnings:* ₹${gross}\n` +
-            `📉 *Deductions (PF/ESI/TDS):* ₹${ded}\n` +
-            `✅ *Net Pay:* ₹${net}\n\n` +
-            `📄 *Secure Document Link:*\n` +
-            `https://app.joypeoplehr.com/portal/payslips\n\n` +
-            `🔒 _This document is available only to your authenticated employee account._`,
+          text: bodyText,
         },
-        footer: { text: 'People First. Work Simplified.' },
+        footer: { text: 'JOY Corporate Solutions Pvt. Ltd.' },
         action: {
           buttons: [
-            { type: 'reply', reply: { id: 'PAYSLIP_SELECT_MONTH', title: '📅 Other Months' } },
-            { type: 'reply', reply: { id: 'MENU_LEAVE',            title: '🌴 Leave' } },
-            { type: 'reply', reply: { id: 'MENU_BACK',             title: '🔙 Main Menu' } },
+            { type: 'reply', reply: { id: 'PAYSLIP_SELECT_MONTH', title: 'Other Months' } },
+            { type: 'reply', reply: { id: 'MENU_LEAVE',            title: 'Leave Balances' } },
+            { type: 'reply', reply: { id: 'MENU_BACK',             title: 'Main Menu' } },
           ],
         },
       });
@@ -1404,16 +1656,63 @@ export class WhatsAppBotEngine {
   private async handleLeaveBalanceInquiry(session: BotSessionContext): Promise<void> {
     try {
       const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const currentYear = new Date().getFullYear();
 
-      // Query leave_entitlements
-      const { data: entitlements } = await supabase
-        .from('leave_entitlements')
-        .select('*')
-        .eq('employee_id', session.employeeId);
+      // Query authoritative leave_balances with tenant isolation
+      const [balancesRes, typesRes] = await Promise.all([
+        supabase
+          .from('leave_balances')
+          .select('*')
+          .eq('employee_id', session.employeeId)
+          .eq('organization_id', session.organizationId)
+          .eq('calendar_year', currentYear),
+        supabase
+          .from('leave_types')
+          .select('id, name, code')
+          .eq('organization_id', session.organizationId)
+          .eq('is_active', true),
+      ]);
 
-      const cl = entitlements?.find((b) => b.leave_type_name?.includes('Casual'))?.available_balance ?? 12;
-      const sl = entitlements?.find((b) => b.leave_type_name?.includes('Sick'))?.available_balance ?? 10;
-      const el = entitlements?.find((b) => b.leave_type_name?.includes('Earned'))?.available_balance ?? 15;
+      const balances = balancesRes.data || [];
+      const types = typesRes.data || [];
+      const typeMap = new Map<string, { name: string; code: string }>();
+      types.forEach(t => typeMap.set(t.id, { name: t.name, code: t.code }));
+
+      if (!balances || balances.length === 0) {
+        await whatsAppClient.sendInteractive({
+          to: session.waId,
+          organizationId: session.organizationId,
+          employeeId: session.employeeId,
+          type: 'button',
+          header: { type: 'text', text: 'Joy PeopleHR • Leave Balance' },
+          body: {
+            text:
+              `🌴 *Leave Entitlement & Balances*\n\n` +
+              `👤 *Employee:* ${session.employeeName} (${session.employeeCode})\n` +
+              `📅 *Calendar Year:* ${currentYear}\n\n` +
+              `No leave entitlement quota has been allocated for the current calendar year.\n\n` +
+              `Please contact your HR department to configure your annual entitlement.`,
+          },
+          footer: { text: 'People First. Work Simplified.' },
+          action: {
+            buttons: [
+              { type: 'reply', reply: { id: 'LEAVE_APPLY', title: '📝 Apply Leave' } },
+              { type: 'reply', reply: { id: 'MENU_BACK',   title: '🔙 Main Menu' } },
+            ],
+          },
+        });
+        return;
+      }
+
+      let totalBal = 0;
+      const lines = balances.map(b => {
+        const tInfo = typeMap.get(b.leave_type_id);
+        const name = tInfo?.name || 'Leave';
+        const code = tInfo?.code || 'LV';
+        const bal = Number(b.closing_balance ?? 0);
+        totalBal += bal;
+        return `• ${name} (${code}): *${bal} days* (Accrued: ${b.accrued ?? 0}, Consumed: ${b.consumed ?? 0})`;
+      });
 
       await whatsAppClient.sendInteractive({
         to: session.waId,
@@ -1423,13 +1722,11 @@ export class WhatsAppBotEngine {
         header: { type: 'text', text: 'Joy PeopleHR • Leave Balance' },
         body: {
           text:
-            `🌿 *Your Leave Balance*\n\n` +
-            `Hello *${session.employeeName}*, here is your latest leave balance from the HR system:\n\n` +
-            `| Leave Type | Available |\n` +
-            `|---|---|\n` +
-            `| Casual Leave (CL) | *${cl} days* |\n` +
-            `| Sick Leave (SL) | *${sl} days* |\n` +
-            `| Earned Leave (EL) | *${el} days* |\n\n` +
+            `🌴 *Leave Entitlement & Balances*\n\n` +
+            `👤 *Employee:* ${session.employeeName} (${session.employeeCode})\n` +
+            `📅 *Calendar Year:* ${currentYear}\n\n` +
+            lines.join('\n') + `\n\n` +
+            `* Total Available Balance: *${totalBal} days*\n\n` +
             `📅 *As of:* ${today}\n\n` +
             `Select an action below to continue:`,
         },
@@ -1582,21 +1879,25 @@ export class WhatsAppBotEngine {
     const requestCode = `LR-${Date.now().toString().slice(-6)}`;
 
     try {
-      // Insert into real leave_requests table
+      // Resolve valid leave_type_id
+      const leaveTypeUuid =
+        draft.leaveType?.toLowerCase().includes('sick')
+          ? '0f2240de-0ac5-4178-8f1d-20a68114f48e'
+          : draft.leaveType?.toLowerCase().includes('earned')
+          ? '0f2240de-0ac5-4178-8f1d-20a68114f48f'
+          : '0f2240de-0ac5-4178-8f1d-20a68114f48d'; // Casual Leave default
+
+      // Insert into real leave_requests table with exact schema columns
       await supabase.from('leave_requests').insert({
-        organization_id: session.organizationId,
-        company_id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+        organization_id: session.organizationId || '0c621892-e938-4707-9957-13534ea32c19',
         employee_id: session.employeeId,
-        request_code: requestCode,
-        employee_name: session.employeeName,
-        department_name: session.department,
-        leave_type_id: 'lt-cl-01',
-        leave_type_name: draft.leaveType || 'Casual Leave',
+        leave_type_id: leaveTypeUuid,
         start_date: draft.startDate || new Date().toISOString().split('T')[0],
         end_date: draft.endDate || draft.startDate || new Date().toISOString().split('T')[0],
         total_days: 1,
+        is_half_day: false,
         reason: draft.reason || 'Personal request via WhatsApp',
-        status: 'Pending',
+        status: 'PENDING',
       });
     } catch (err) {
       console.warn('[WhatsAppBot] leave_requests insert error:', err);
@@ -1740,14 +2041,15 @@ export class WhatsAppBotEngine {
       const { data: att } = await supabase
         .from('attendance_daily')
         .select('*')
+        .eq('organization_id', session.organizationId)
         .eq('employee_id', session.employeeId)
         .eq('attendance_date', new Date().toISOString().split('T')[0])
         .maybeSingle();
 
-      const checkIn  = att?.first_check_in || '09:32 AM';
-      const checkOut = att?.last_check_out || 'Active on shift';
-      const worked   = att?.total_work_minutes ? `${Math.floor(att.total_work_minutes / 60)}h ${att.total_work_minutes % 60}m` : 'In Progress';
-      const status   = att?.status || 'Present';
+      const checkIn  = att?.first_check_in || 'Not Checked In';
+      const checkOut = att?.last_check_out || (att?.first_check_in ? 'Active on shift' : '—');
+      const worked   = att?.total_work_minutes ? `${Math.floor(att.total_work_minutes / 60)}h ${att.total_work_minutes % 60}m` : (att?.first_check_in ? 'In Progress' : '0h 0m');
+      const status   = att?.status || (att?.first_check_in ? 'Present' : 'Not Marked');
 
       await whatsAppClient.sendInteractive({
         to: session.waId,
@@ -1794,6 +2096,7 @@ export class WhatsAppBotEngine {
       const { data: latestPunch } = await supabase
         .from('attendance_punches')
         .select('punch_type, punch_time')
+        .eq('organization_id', session.organizationId)
         .eq('employee_id', session.employeeId)
         .gte('punch_time', startOfDay)
         .order('punch_time', { ascending: false })
@@ -2229,7 +2532,7 @@ export class WhatsAppBotEngine {
 
       // Payslip Actions
       'PAYSLIP_SELECT_MONTH':   () => this.sendPayslipMonthSelection(session),
-      'PAYSLIP_LATEST':         () => this.fetchPayslipRecord(session, 'September 2026'),
+      'PAYSLIP_LATEST':         () => this.fetchPayslipRecord(session, 'LATEST'),
       'PAYSLIP_MONTH_2026_09':  () => this.fetchPayslipRecord(session, 'September 2026'),
       'PAYSLIP_MONTH_2026_08':  () => this.fetchPayslipRecord(session, 'August 2026'),
       'PAYSLIP_MONTH_2026_07':  () => this.fetchPayslipRecord(session, 'July 2026'),
@@ -2259,6 +2562,15 @@ export class WhatsAppBotEngine {
       'SCHED_WEEK':             () => this.handleWeekSchedule(session),
       'SCHED_OFF':              () => this.handleWeeklyOff(session),
       'SCHED_SHIFT':            () => this.handleShiftDetails(session),
+
+      // MIS Report
+      'MENU_MIS_REPORT':        () => {
+        const misRole = session.roleContext || 'EMPLOYEE';
+        if (!['HR', 'ADMIN', 'MANAGER', 'SUPERVISOR'].includes(misRole)) {
+          return this.sendAccessDenied(session, 'Daily MIS Report access is restricted to authorized HR personnel and management numbers only.');
+        }
+        return this.sendDailyMisReport(session);
+      },
 
       // Support & Verification
       'PORTAL_LINK':            () => this.sendPortalLink(session),

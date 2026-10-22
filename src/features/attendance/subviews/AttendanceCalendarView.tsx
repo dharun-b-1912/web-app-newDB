@@ -35,6 +35,7 @@ import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { usePermission } from '../../../hooks/usePermission';
+import { formatDeviationDuration } from '../../../lib/attendance/attendanceEngine';
 
 export interface AttendanceCalendarViewProps {
   onNavigateSubPath?: (subPath: string) => void;
@@ -690,7 +691,7 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({
 
                     {emp.late_minutes && emp.late_minutes > 0 ? (
                       <div className="text-[10px] text-rose-700 font-semibold">
-                        Late Arrival: +{emp.late_minutes}m past scheduled start
+                        Late Arrival: +{formatDeviationDuration(emp.late_minutes, { showBoth: emp.late_minutes >= 60 })} past scheduled start
                       </div>
                     ) : null}
                   </div>

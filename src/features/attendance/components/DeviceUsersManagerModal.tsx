@@ -203,8 +203,17 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
   useEffect(() => {
     if (!isOpen || !device) return;
 
+    const matchesThisDevice = (evtDevId?: string, requestedId?: string) => {
+      if (!evtDevId && !requestedId) return true;
+      if (evtDevId === device.id || requestedId === device.id) return true;
+      if (device.serial_number && (evtDevId === device.serial_number || requestedId === device.serial_number)) return true;
+      const canonicalIds = ['c7286b0d-d9d5-4cc2-9045-578d1d4cc464', '40576a24-8c22-43ee-95b8-b74ab380c968'];
+      if (canonicalIds.includes(device.id) && (canonicalIds.includes(evtDevId || '') || canonicalIds.includes(requestedId || ''))) return true;
+      return false;
+    };
+
     const unsubStarted = hrEventBus.subscribe('device.user_sync.started', (evt: any) => {
-      if (evt.deviceId === device.id) {
+      if (matchesThisDevice(evt.deviceId, evt.requestedDeviceId)) {
         setIsSyncing(true);
         setSyncProgress({
           commandId: evt.commandId,
@@ -216,14 +225,14 @@ export const DeviceUsersManagerModal: React.FC<DeviceUsersManagerModalProps> = (
     });
 
     const unsubProgress = hrEventBus.subscribe('device.user_sync.progress', (evt: any) => {
-      if (evt.deviceId === device.id) {
+      if (matchesThisDevice(evt.deviceId, evt.requestedDeviceId)) {
         setIsSyncing(true);
         setSyncProgress(evt);
       }
     });
 
     const unsubCompleted = hrEventBus.subscribe('device.user_sync.completed', (evt: any) => {
-      if (evt.deviceId === device.id) {
+      if (matchesThisDevice(evt.deviceId, evt.requestedDeviceId)) {
         setIsSyncing(false);
         setSyncProgress(evt);
         if (evt.summary) {

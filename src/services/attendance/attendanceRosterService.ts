@@ -1,4 +1,4 @@
-// src/services/attendance/attendanceRosterService.ts
+     // src/services/attendance/attendanceRosterService.ts
 // ============================================================================
 // Joy PeopleHR — Enterprise Multi-Tenant Shift, Roster & Attendance Calculation Engine
 // Versioned Policies, Effective-Dated Rosters, Multi-Layer Punch Normalization, 9-State Lifecycle
@@ -24,6 +24,7 @@ import { api, isValidUUID, ensureUUID } from '../api';
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 import { getActiveOrgId } from './biometricCommandService';
 import { notificationService } from '../notification/notificationService';
+import { realtimeChannelManager } from '../realtime/realtimeChannelManager';
 
 const STORAGE_KEYS = {
   SHIFTS: 'workforce_shifts_v2',
@@ -89,16 +90,35 @@ function setStore<T>(baseKey: string, val: T, tenantId = getActiveOrgId()): void
 // DEFAULT SEED TEMPLATES (Enterprise Catalog)
 // ============================================================================
 
+// One-time synchronous startup purge: completely clear legacy contaminated shift & roster items from browser localStorage
+if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (
+        k.startsWith('workforce_shifts') ||
+        k.startsWith('workforce_rosters') ||
+        k.startsWith('joy_shifts') ||
+        k.startsWith('joy_rosters')
+      )) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+  } catch (_) {}
+}
+
 const DEFAULT_SHIFTS: ShiftMaster[] = [
   {
-    id: 'shift-general-01',
-    tenant_id: 'org-joy-01',
+    id: 'f847c561-4bbb-4b9f-a2dd-003162897eef',
+    tenant_id: '0c621892-e938-4707-9957-13534ea32c19',
     shift_code: 'GEN-09',
-    shift_name: 'General Shift (09:30 AM – 06:30 PM)',
-    description: 'Standard corporate day schedule (09:30 - 18:30) with 15 mins late grace and 1 hour lunch break.',
+    shift_name: 'General Corporate Shift',
+    description: 'Corporate General Schedule (09:00 - 18:00) with 15 mins late grace and 1 hour lunch break.',
     shift_type: 'FIXED',
-    start_time: '09:30',
-    end_time: '18:30',
+    start_time: '09:00',
+    end_time: '18:00',
     scheduled_duration_minutes: 540,
     net_working_minutes: 480,
     cross_midnight: false,
@@ -125,15 +145,15 @@ const DEFAULT_SHIFTS: ShiftMaster[] = [
     effective_from: '2026-01-01',
     status: 'ACTIVE',
     version: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: '2026-09-06T08:34:17.931623+00:00',
+    updated_at: '2026-09-06T08:34:17.931623+00:00',
   },
   {
-    id: 'shift-gen-09',
-    tenant_id: 'org-joy-01',
-    shift_code: 'GEN-09',
+    id: 'f5ff5d00-8489-459b-8d8e-d930ecffef22',
+    tenant_id: '0c621892-e938-4707-9957-13534ea32c19',
+    shift_code: 'GEN-10',
     shift_name: 'General Day Shift (Corporate)',
-    description: 'Standard 9-hour corporate schedule with 1 hour lunch and 15 mins late grace.',
+    description: 'Corporate general schedule (09:30 - 18:30) with 15 mins late grace and 1 hour lunch break.',
     shift_type: 'FIXED',
     start_time: '09:30',
     end_time: '18:30',
@@ -149,7 +169,7 @@ const DEFAULT_SHIFTS: ShiftMaster[] = [
     min_hours_half_day: 4,
     break_mode: 'FIXED',
     breaks: [
-      { id: 'brk-1', name: 'Lunch Break', start_time: '13:00', end_time: '14:00', duration_minutes: 60, is_paid: false },
+      { id: 'brk-gen10-1', name: 'Lunch Break', start_time: '14:00', end_time: '15:00', duration_minutes: 60, is_paid: false },
     ],
     ot_enabled: true,
     min_ot_threshold_minutes: 30,
@@ -163,243 +183,15 @@ const DEFAULT_SHIFTS: ShiftMaster[] = [
     effective_from: '2026-01-01',
     status: 'ACTIVE',
     version: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'shift-morning-02',
-    tenant_id: 'org-joy-01',
-    shift_code: 'MOR-06',
-    shift_name: 'Morning Operations (06:00 AM – 02:30 PM)',
-    description: 'Early morning shift for production, logistics and operations with 10 mins grace and 30m break.',
-    shift_type: 'ROTATIONAL',
-    start_time: '06:00',
-    end_time: '14:30',
-    scheduled_duration_minutes: 510,
-    net_working_minutes: 480,
-    cross_midnight: false,
-    attendance_date_cutoff: '04:00',
-    grace_in_minutes: 10,
-    grace_out_minutes: 10,
-    early_out_tolerance_minutes: 10,
-    late_threshold_minutes: 20,
-    min_hours_full_day: 8,
-    min_hours_half_day: 4,
-    break_mode: 'PUNCH_BASED',
-    breaks: [
-      { id: 'brk-mor-1', name: 'Meal Break', start_time: '10:00', end_time: '10:30', duration_minutes: 30, is_paid: false },
-    ],
-    ot_enabled: true,
-    min_ot_threshold_minutes: 15,
-    weekday_ot_rate: 1.5,
-    weekly_off_ot_rate: 2.0,
-    holiday_ot_rate: 2.0,
-    max_ot_daily_minutes: 180,
-    requires_manager_approval: true,
-    requires_hr_approval: true,
-    applies_to: { type: 'ORGANIZATION', ids: [] },
-    effective_from: '2026-01-01',
-    status: 'ACTIVE',
-    version: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'shift-mor-06',
-    tenant_id: 'org-joy-01',
-    shift_code: 'MOR-06',
-    shift_name: 'Morning Shift A (Factory)',
-    description: 'Early plant shift for manufacturing line with 10 mins grace and 30m break.',
-    shift_type: 'ROTATIONAL',
-    start_time: '06:00',
-    end_time: '14:30',
-    scheduled_duration_minutes: 510,
-    net_working_minutes: 480,
-    cross_midnight: false,
-    attendance_date_cutoff: '04:00',
-    grace_in_minutes: 10,
-    grace_out_minutes: 10,
-    early_out_tolerance_minutes: 10,
-    late_threshold_minutes: 20,
-    min_hours_full_day: 8,
-    min_hours_half_day: 4,
-    break_mode: 'PUNCH_BASED',
-    breaks: [
-      { id: 'brk-2', name: 'Meal Break', start_time: '10:00', end_time: '10:30', duration_minutes: 30, is_paid: false },
-    ],
-    ot_enabled: true,
-    min_ot_threshold_minutes: 15,
-    weekday_ot_rate: 1.5,
-    weekly_off_ot_rate: 2.0,
-    holiday_ot_rate: 2.0,
-    max_ot_daily_minutes: 180,
-    requires_manager_approval: true,
-    requires_hr_approval: true,
-    applies_to: { type: 'DEPARTMENTS', ids: ['Production', 'Manufacturing'] },
-    effective_from: '2026-01-01',
-    status: 'ACTIVE',
-    version: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'shift-evening-03',
-    tenant_id: 'org-joy-01',
-    shift_code: 'EVE-14',
-    shift_name: 'Evening Shift (02:00 PM – 10:30 PM)',
-    description: 'Afternoon to evening operations schedule (14:00 to 22:30).',
-    shift_type: 'ROTATIONAL',
-    start_time: '14:00',
-    end_time: '22:30',
-    scheduled_duration_minutes: 510,
-    net_working_minutes: 480,
-    cross_midnight: false,
-    attendance_date_cutoff: '12:00',
-    grace_in_minutes: 10,
-    grace_out_minutes: 10,
-    early_out_tolerance_minutes: 10,
-    late_threshold_minutes: 20,
-    min_hours_full_day: 8,
-    min_hours_half_day: 4,
-    break_mode: 'PUNCH_BASED',
-    breaks: [
-      { id: 'brk-eve-1', name: 'Dinner Break', start_time: '18:00', end_time: '18:30', duration_minutes: 30, is_paid: false },
-    ],
-    ot_enabled: true,
-    min_ot_threshold_minutes: 15,
-    weekday_ot_rate: 1.5,
-    weekly_off_ot_rate: 2.0,
-    holiday_ot_rate: 2.0,
-    max_ot_daily_minutes: 180,
-    requires_manager_approval: true,
-    requires_hr_approval: true,
-    applies_to: { type: 'ORGANIZATION', ids: [] },
-    effective_from: '2026-01-01',
-    status: 'ACTIVE',
-    version: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'shift-eve-14',
-    tenant_id: 'org-joy-01',
-    shift_code: 'EVE-14',
-    shift_name: 'Evening Shift B (Factory)',
-    description: 'Afternoon to night production shift.',
-    shift_type: 'ROTATIONAL',
-    start_time: '14:00',
-    end_time: '22:30',
-    scheduled_duration_minutes: 510,
-    net_working_minutes: 480,
-    cross_midnight: false,
-    attendance_date_cutoff: '12:00',
-    grace_in_minutes: 10,
-    grace_out_minutes: 10,
-    early_out_tolerance_minutes: 10,
-    late_threshold_minutes: 20,
-    min_hours_full_day: 8,
-    min_hours_half_day: 4,
-    break_mode: 'PUNCH_BASED',
-    breaks: [
-      { id: 'brk-3', name: 'Dinner Break', start_time: '18:00', end_time: '18:30', duration_minutes: 30, is_paid: false },
-    ],
-    ot_enabled: true,
-    min_ot_threshold_minutes: 15,
-    weekday_ot_rate: 1.5,
-    weekly_off_ot_rate: 2.0,
-    holiday_ot_rate: 2.0,
-    max_ot_daily_minutes: 180,
-    requires_manager_approval: true,
-    requires_hr_approval: true,
-    applies_to: { type: 'DEPARTMENTS', ids: ['Production', 'Assembly'] },
-    effective_from: '2026-01-01',
-    status: 'ACTIVE',
-    version: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'shift-night-04',
-    tenant_id: 'org-joy-01',
-    shift_code: 'NGT-22',
-    shift_name: 'Night / Offshore Shift (10:00 PM – 06:30 AM)',
-    description: 'Graveyard / 24x7 shift spanning across midnight (22:00 to 06:30 next day).',
-    shift_type: 'NIGHT_SHIFT',
-    start_time: '22:00',
-    end_time: '06:30',
-    scheduled_duration_minutes: 510,
-    net_working_minutes: 480,
-    cross_midnight: true,
-    attendance_date_cutoff: '06:00',
-    grace_in_minutes: 15,
-    grace_out_minutes: 15,
-    early_out_tolerance_minutes: 15,
-    late_threshold_minutes: 30,
-    min_hours_full_day: 8,
-    min_hours_half_day: 4,
-    break_mode: 'PUNCH_BASED',
-    breaks: [
-      { id: 'brk-ngt-1', name: 'Midnight Meal', start_time: '02:00', end_time: '02:30', duration_minutes: 30, is_paid: false },
-    ],
-    ot_enabled: true,
-    min_ot_threshold_minutes: 30,
-    weekday_ot_rate: 1.5,
-    weekly_off_ot_rate: 2.0,
-    holiday_ot_rate: 2.0,
-    max_ot_daily_minutes: 180,
-    requires_manager_approval: true,
-    requires_hr_approval: true,
-    applies_to: { type: 'ORGANIZATION', ids: [] },
-    effective_from: '2026-01-01',
-    status: 'ACTIVE',
-    version: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'shift-ngt-22',
-    tenant_id: 'org-joy-01',
-    shift_code: 'NGT-22',
-    shift_name: 'Night Shift C (Cross-Midnight)',
-    description: 'Graveyard / 24x7 shift spanning across midnight (22:00 to 06:30 next day).',
-    shift_type: 'NIGHT_SHIFT',
-    start_time: '22:00',
-    end_time: '06:30',
-    scheduled_duration_minutes: 510,
-    net_working_minutes: 480,
-    cross_midnight: true,
-    attendance_date_cutoff: '06:00',
-    grace_in_minutes: 15,
-    grace_out_minutes: 15,
-    early_out_tolerance_minutes: 15,
-    late_threshold_minutes: 30,
-    min_hours_full_day: 8,
-    min_hours_half_day: 4,
-    break_mode: 'PUNCH_BASED',
-    breaks: [
-      { id: 'brk-4', name: 'Midnight Meal', start_time: '02:00', end_time: '02:30', duration_minutes: 30, is_paid: false },
-    ],
-    ot_enabled: true,
-    min_ot_threshold_minutes: 30,
-    weekday_ot_rate: 1.5,
-    weekly_off_ot_rate: 2.0,
-    holiday_ot_rate: 2.0,
-    max_ot_daily_minutes: 180,
-    requires_manager_approval: true,
-    requires_hr_approval: true,
-    applies_to: { type: 'ORGANIZATION', ids: [] },
-    effective_from: '2026-01-01',
-    status: 'ACTIVE',
-    version: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: '2026-10-16T05:07:19.21577+00:00',
+    updated_at: '2026-10-16T05:12:25.393446+00:00',
   },
 ];
 
 const DEFAULT_POLICIES: AttendancePolicy[] = [
   {
     id: 'pol-corp-001',
-    tenant_id: 'org-joy-01',
+    tenant_id: '',
     policy_code: 'ATT-CORP-001',
     policy_name: 'Corporate Standard Attendance Policy',
     description: 'Enterprise corporate policy: 15m grace, 8h full day, 3 lates = 0.5 day deduction, 30m OT threshold.',
@@ -469,7 +261,7 @@ const DEFAULT_POLICIES: AttendancePolicy[] = [
   },
   {
     id: 'pol-factory-001',
-    tenant_id: 'org-joy-01',
+    tenant_id: '',
     policy_code: 'ATT-FACTORY-001',
     policy_name: 'Plant & Manufacturing Shift Attendance Policy',
     description: 'Strict manufacturing rules: 10m grace, punch-based breaks, 1.5x OT multiplier.',
@@ -539,29 +331,221 @@ const DEFAULT_POLICIES: AttendancePolicy[] = [
   },
 ];
 
+export interface EmployeeShiftAssignmentEntry {
+  id: string;
+  employee_id: string;
+  employee_code?: string;
+  employee_name?: string;
+  shift_id: string;
+  shift_code: string;
+  shift_name: string;
+  start_time: string;
+  end_time: string;
+  weekly_offs: number[];
+  effective_from?: string;
+  effective_to?: string;
+  organization_id?: string;
+}
+
 class AttendanceRosterService {
   // ==========================================================================
   // 1. SHIFT MASTER CRUD
   // ==========================================================================
 
+  private _dbShiftsCache: ShiftMaster[] = [];
+  private _dbRostersCache: Map<string, EmployeeRosterEntry> = new Map();
+  private _dbShiftAssignmentsCache: Map<string, EmployeeShiftAssignmentEntry> = new Map();
+  private _realtimeSubscribed: boolean = false;
+  private _shiftsInFlight: Promise<ShiftMaster[]> | null = null;
+  private _shiftAssignmentsInFlight: Promise<Map<string, EmployeeShiftAssignmentEntry>> | null = null;
+
+  constructor() {
+    this.initRealtimeSubscription();
+    this.fetchShiftsFromDb().catch(() => {});
+    this.fetchShiftAssignmentsFromDb().catch(() => {});
+  }
+
+  public initRealtimeSubscription(): void {
+    if (this._realtimeSubscribed) return;
+    this._realtimeSubscribed = true;
+    try {
+      realtimeChannelManager.subscribeToTable('shifts', () => {
+        this._shiftsInFlight = null;
+        this.fetchShiftsFromDb().catch(() => {});
+      });
+      realtimeChannelManager.subscribeToTable('shift_rosters', () => {
+        this._dbRostersCache.clear();
+        hrEventBus.emit('roster.updated', {});
+      });
+      realtimeChannelManager.subscribeToTable('employee_shift_assignments', () => {
+        this._dbRostersCache.clear();
+        this._shiftAssignmentsInFlight = null;
+        this.fetchShiftAssignmentsFromDb().catch(() => {});
+        hrEventBus.emit('shift.assigned', {});
+      });
+    } catch (_) {}
+  }
+
+  async fetchShiftAssignmentsFromDb(tenantId = getActiveOrgId()): Promise<Map<string, EmployeeShiftAssignmentEntry>> {
+    if (!isSupabaseEnabled || !supabase) return this._dbShiftAssignmentsCache;
+    if (this._shiftAssignmentsInFlight) return this._shiftAssignmentsInFlight;
+
+    this._shiftAssignmentsInFlight = (async () => {
+      try {
+        const orgId = isValidUUID(tenantId) ? tenantId : getActiveOrgId();
+        const { data, error } = await supabase
+          .from('employee_shift_assignments')
+          .select('*, shifts(*), employees(id, employee_code, first_name, last_name)');
+
+        if (!error && data && data.length > 0) {
+          for (const item of data) {
+            const shiftObj = item.shifts;
+            const empObj = item.employees;
+            const sTime = shiftObj?.start_time ? shiftObj.start_time.slice(0, 5) : '09:00';
+            const eTime = shiftObj?.end_time ? shiftObj.end_time.slice(0, 5) : '18:00';
+            const empName = empObj ? `${empObj.first_name || ''} ${empObj.last_name || ''}`.trim() : 'Employee';
+            const empCode = empObj?.employee_code || '';
+
+            const entry: EmployeeShiftAssignmentEntry = {
+              id: item.id,
+              employee_id: item.employee_id,
+              employee_code: empCode,
+              employee_name: empName,
+              shift_id: item.shift_id,
+              shift_code: shiftObj?.code || 'GEN-09',
+              shift_name: shiftObj?.name || 'General Day Shift',
+              start_time: sTime,
+              end_time: eTime,
+              weekly_offs: Array.isArray(item.weekly_offs) ? item.weekly_offs : [0, 6],
+              effective_from: item.effective_from || item.valid_from || '2026-01-01',
+              effective_to: item.effective_to || item.valid_to,
+              organization_id: item.organization_id || orgId,
+            };
+
+            if (item.employee_id) {
+              this._dbShiftAssignmentsCache.set(String(item.employee_id).toLowerCase(), entry);
+            }
+            if (empCode) {
+              this._dbShiftAssignmentsCache.set(empCode.toLowerCase(), entry);
+              const digits = empCode.replace(/\D/g, '');
+              if (digits) {
+                this._dbShiftAssignmentsCache.set(digits, entry);
+                const unpadded = String(parseInt(digits, 10));
+                if (unpadded !== digits) {
+                  this._dbShiftAssignmentsCache.set(unpadded, entry);
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[attendanceRosterService] Error fetching shift assignments from DB:', e);
+      } finally {
+        setTimeout(() => { this._shiftAssignmentsInFlight = null; }, 5000);
+      }
+      return this._dbShiftAssignmentsCache;
+    })();
+
+    return this._shiftAssignmentsInFlight;
+  }
+
+  getShiftAssignments(): Map<string, EmployeeShiftAssignmentEntry> {
+    return this._dbShiftAssignmentsCache;
+  }
+
+  async fetchShiftsFromDb(tenantId = getActiveOrgId()): Promise<ShiftMaster[]> {
+    if (!isSupabaseEnabled) return this.getShifts(tenantId);
+    if (this._shiftsInFlight) return this._shiftsInFlight;
+
+    this._shiftsInFlight = (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('shifts')
+          .select('*')
+          .order('created_at', { ascending: true });
+      if (!error && data && data.length > 0) {
+        const seenIds = new Set<string>();
+        const seenCodes = new Set<string>();
+        const mapped: ShiftMaster[] = [];
+
+        for (const d of data) {
+          if (!d.id || seenIds.has(d.id)) continue;
+          const codeKey = (d.code || '').toUpperCase();
+          if (codeKey && seenCodes.has(codeKey)) continue;
+          seenIds.add(d.id);
+          if (codeKey) seenCodes.add(codeKey);
+
+          const sTime = (d.start_time || '09:00:00').slice(0, 5);
+          const eTime = (d.end_time || '18:00:00').slice(0, 5);
+          mapped.push({
+            id: d.id,
+            tenant_id: d.organization_id || tenantId,
+            shift_code: d.code,
+            shift_name: d.name,
+            description: `${d.name} (${sTime} - ${eTime})`,
+            shift_type: (d.is_overnight ? 'NIGHT_SHIFT' : 'FIXED') as any,
+            start_time: sTime,
+            end_time: eTime,
+            scheduled_duration_minutes: this.calculateDurationMinutes(sTime, eTime, d.is_overnight),
+            net_working_minutes: (Number(d.min_full_day_hours) || 8) * 60,
+            cross_midnight: Boolean(d.is_overnight),
+            attendance_date_cutoff: '06:00',
+            grace_in_minutes: d.grace_entry_minutes ?? 15,
+            grace_out_minutes: d.grace_exit_minutes ?? 15,
+            early_out_tolerance_minutes: 15,
+            late_threshold_minutes: 30,
+            min_hours_full_day: Number(d.min_full_day_hours) || 8,
+            min_hours_half_day: Number(d.min_half_day_hours) || 4,
+            break_mode: 'FIXED',
+            breaks: [
+              { id: `brk-${d.id}`, name: 'Lunch Break', start_time: '13:00', end_time: '14:00', duration_minutes: 60, is_paid: false }
+            ],
+            ot_enabled: true,
+            min_ot_threshold_minutes: 30,
+            weekday_ot_rate: 1.0,
+            weekly_off_ot_rate: 1.5,
+            holiday_ot_rate: 2.0,
+            max_ot_daily_minutes: 240,
+            requires_manager_approval: true,
+            requires_hr_approval: false,
+            applies_to: { type: 'ORGANIZATION', ids: [] },
+            effective_from: '2026-01-01',
+            status: d.is_active ? 'ACTIVE' : 'INACTIVE',
+            version: 1,
+            created_at: d.created_at || new Date().toISOString(),
+            updated_at: d.updated_at || new Date().toISOString(),
+          });
+        }
+
+        if (mapped.length > 0) {
+          this._dbShiftsCache = mapped;
+          return mapped;
+        }
+      }
+    } catch (e) {
+      console.warn('[attendanceRosterService] Error fetching shifts from DB:', e);
+    } finally {
+      setTimeout(() => { this._shiftsInFlight = null; }, 5000);
+    }
+    return this.getShifts(tenantId);
+    })();
+
+    return this._shiftsInFlight;
+  }
+
   getShifts(tenantId = getActiveOrgId()): ShiftMaster[] {
+    if (this._dbShiftsCache && this._dbShiftsCache.length > 0) {
+      return this._dbShiftsCache;
+    }
+    if (isSupabaseEnabled) {
+      this.fetchShiftsFromDb(tenantId).catch(() => {});
+      return DEFAULT_SHIFTS.map(s => ({ ...s, tenant_id: tenantId }));
+    }
     const list = getStore<ShiftMaster[]>(STORAGE_KEYS.SHIFTS, [], tenantId);
     if (!list || list.length === 0) {
       const tenantShifts = DEFAULT_SHIFTS.map(s => ({ ...s, tenant_id: tenantId }));
       setStore(STORAGE_KEYS.SHIFTS, tenantShifts, tenantId);
       return tenantShifts;
-    }
-    // Self-healing migration: Ensure all standard shifts are present in the list
-    const existingIds = new Set(list.map(s => s.id));
-    let hasAdditions = false;
-    for (const def of DEFAULT_SHIFTS) {
-      if (!existingIds.has(def.id)) {
-        list.push({ ...def, tenant_id: tenantId });
-        hasAdditions = true;
-      }
-    }
-    if (hasAdditions) {
-      setStore(STORAGE_KEYS.SHIFTS, list, tenantId);
     }
     return list;
   }
@@ -582,17 +566,19 @@ class AttendanceRosterService {
 
     // 3. Known ID Alias Mapping
     const aliasMap: Record<string, string> = {
-      'shift-general-01': 'shift-gen-09',
-      'shift-gen-09': 'shift-general-01',
-      'f847c561-4bbb-4b9f-a2dd-003162897eef': 'shift-gen-09',
+      'shift-general-01': 'f847c561-4bbb-4b9f-a2dd-003162897eef',
+      'shift-gen-09': 'f847c561-4bbb-4b9f-a2dd-003162897eef',
+      'f847c561-4bbb-4b9f-a2dd-003162897eef': 'f847c561-4bbb-4b9f-a2dd-003162897eef',
+      'shift-gen-10': 'f5ff5d00-8489-459b-8d8e-d930ecffef22',
+      'f5ff5d00-8489-459b-8d8e-d930ecffef22': 'f5ff5d00-8489-459b-8d8e-d930ecffef22',
       'shift-morning-02': 'shift-mor-06',
       'shift-mor-06': 'shift-morning-02',
       'shift-evening-03': 'shift-eve-14',
       'shift-eve-14': 'shift-evening-03',
       'shift-night-04': 'shift-ngt-22',
       'shift-ngt-22': 'shift-night-04',
-      'gen-09': 'shift-gen-09',
-      'gen-10': 'shift-gen-10',
+      'gen-09': 'f847c561-4bbb-4b9f-a2dd-003162897eef',
+      'gen-10': 'f5ff5d00-8489-459b-8d8e-d930ecffef22',
       'mor-06': 'shift-mor-06',
       'eve-14': 'shift-eve-14',
       'ngt-22': 'shift-ngt-22',
@@ -701,6 +687,59 @@ class AttendanceRosterService {
     return newShift;
   }
 
+  public async syncShiftToDb(shift: ShiftMaster): Promise<{ success: boolean; data?: any; error?: any }> {
+    if (!isSupabaseEnabled || !supabase) return { success: true };
+    try {
+      const tenantId = shift.tenant_id || getActiveOrgId();
+      const sTime = shift.start_time.length === 5 ? `${shift.start_time}:00` : shift.start_time;
+      const eTime = shift.end_time.length === 5 ? `${shift.end_time}:00` : shift.end_time;
+      const shiftUUID = isValidUUID(shift.id) ? shift.id : undefined;
+
+      const record: any = {
+        name: shift.shift_name,
+        code: shift.shift_code,
+        start_time: sTime,
+        end_time: eTime,
+        grace_entry_minutes: shift.grace_in_minutes || 15,
+        grace_exit_minutes: shift.grace_out_minutes || 15,
+        min_half_day_hours: shift.min_hours_half_day || 4,
+        min_full_day_hours: shift.min_hours_full_day || 8,
+        is_overnight: Boolean(shift.cross_midnight),
+        is_active: shift.status !== 'INACTIVE',
+        organization_id: isValidUUID(tenantId) ? tenantId : getActiveOrgId(),
+      };
+      if (shiftUUID) record.id = shiftUUID;
+
+      const { data, error } = await supabase
+        .from('shifts')
+        .upsert(record, { onConflict: 'organization_id,code' })
+        .select();
+
+      if (error) {
+        console.warn('[attendanceRosterService] syncShiftToDb warning:', error);
+        return { success: false, error };
+      }
+
+      // If Supabase returned a generated UUID for a new shift, update cache id
+      if (data && data[0]?.id && (!shiftUUID || shift.id !== data[0].id)) {
+        shift.id = data[0].id;
+        if (this._dbShiftsCache) {
+          const matchIdx = this._dbShiftsCache.findIndex(s => s.shift_code === shift.shift_code);
+          if (matchIdx !== -1) {
+            this._dbShiftsCache[matchIdx].id = data[0].id;
+          }
+        }
+      }
+
+      // Invalidate in-flight and refresh cache
+      this._shiftsInFlight = null;
+      return { success: true, data: data?.[0] };
+    } catch (e: any) {
+      console.warn('[attendanceRosterService] syncShiftToDb error:', e);
+      return { success: false, error: e };
+    }
+  }
+
   deleteShift(shiftId: string, actorName = 'HR Administrator'): { success: boolean; message: string } {
     const tenantId = getActiveOrgId();
     const shifts = this.getShifts(tenantId);
@@ -715,6 +754,7 @@ class AttendanceRosterService {
       target.status = 'INACTIVE';
       target.updated_at = new Date().toISOString();
       setStore(STORAGE_KEYS.SHIFTS, shifts, tenantId);
+      this.syncShiftToDb(target).catch(() => {});
       return {
         success: true,
         message: `Shift has ${inUseCount} historical roster assignments. It has been deactivated instead of deleted to protect attendance records.`,
@@ -723,6 +763,18 @@ class AttendanceRosterService {
 
     const filtered = shifts.filter(s => s.id !== shiftId);
     setStore(STORAGE_KEYS.SHIFTS, filtered, tenantId);
+    if (this._dbShiftsCache) {
+      this._dbShiftsCache = this._dbShiftsCache.filter(s => s.id !== shiftId);
+    }
+
+    // Sync deletion to Supabase
+    if (isSupabaseEnabled && supabase) {
+      if (isValidUUID(shiftId)) {
+        Promise.resolve(supabase.from('shifts').delete().eq('id', shiftId)).catch(() => {});
+      } else if (target.shift_code) {
+        Promise.resolve(supabase.from('shifts').delete().eq('code', target.shift_code)).catch(() => {});
+      }
+    }
 
     this.logAudit({
       tenant_id: tenantId,
@@ -743,7 +795,71 @@ class AttendanceRosterService {
   // 2. EMPLOYEE SHIFT ROSTER RESOLVER & BULK ALLOCATOR
   // ==========================================================================
 
+  async fetchRostersFromDb(startDate: string, endDate: string, tenantId = getActiveOrgId()): Promise<EmployeeRosterEntry[]> {
+    this.initRealtimeSubscription();
+    this.fetchShiftAssignmentsFromDb(tenantId).catch(() => {});
+    if (!isSupabaseEnabled || !supabase) return this.getRosters(startDate, endDate, tenantId);
+    try {
+      const orgId = isValidUUID(tenantId) ? tenantId : getActiveOrgId();
+      const { data, error } = await supabase
+        .from('shift_rosters')
+        .select('*')
+        .eq('organization_id', orgId)
+        .gte('roster_date', startDate)
+        .lte('roster_date', endDate)
+        .order('roster_date', { ascending: true });
+
+      if (!error && data) {
+        const mapped: EmployeeRosterEntry[] = data.map((d: any) => ({
+          id: d.id,
+          tenant_id: d.organization_id || orgId,
+          employee_id: d.employee_id,
+          employee_code: d.employee_code || '',
+          employee_name: d.employee_name || 'Employee',
+          date: d.roster_date,
+          shift_id: d.shift_id,
+          shift_code: d.shift_code,
+          shift_name: d.shift_name,
+          shift_type: (d.shift_code?.includes('NGT') ? 'NIGHT_SHIFT' : 'FIXED') as any,
+          is_weekly_off: Boolean(d.is_weekly_off),
+          is_holiday: Boolean(d.is_holiday),
+          is_override: Boolean(d.is_override),
+          override_reason: d.remarks || undefined,
+          assigned_by: d.assigned_by || 'System',
+          updated_at: d.updated_at || new Date().toISOString(),
+        }));
+
+        for (const entry of mapped) {
+          this._dbRostersCache.set(`${entry.employee_id}_${entry.date}`, entry);
+          this._dbRostersCache.set(`${String(entry.employee_id).toLowerCase()}_${entry.date}`, entry);
+          if (entry.employee_code) {
+            this._dbRostersCache.set(`${entry.employee_code}_${entry.date}`, entry);
+            this._dbRostersCache.set(`${entry.employee_code.toLowerCase()}_${entry.date}`, entry);
+            const digits = entry.employee_code.replace(/\D/g, '');
+            if (digits) {
+              this._dbRostersCache.set(`${digits}_${entry.date}`, entry);
+              const unpadded = String(parseInt(digits, 10));
+              if (unpadded !== digits) {
+                this._dbRostersCache.set(`${unpadded}_${entry.date}`, entry);
+              }
+            }
+          }
+        }
+        return mapped;
+      }
+    } catch (e) {
+      console.warn('[attendanceRosterService] fetchRostersFromDb notice:', e);
+    }
+    return this.getRosters(startDate, endDate, tenantId);
+  }
+
   getRosters(startDate: string, endDate: string, tenantId = getActiveOrgId()): EmployeeRosterEntry[] {
+    if (this._dbRostersCache.size > 0) {
+      const cached = Array.from(new Set(this._dbRostersCache.values())).filter(
+        r => r.date >= startDate && r.date <= endDate
+      );
+      if (cached.length > 0) return cached;
+    }
     const list = getStore<EmployeeRosterEntry[]>(STORAGE_KEYS.ROSTERS, [], tenantId);
     return list.filter(r => r.date >= startDate && r.date <= endDate);
   }
@@ -754,50 +870,77 @@ class AttendanceRosterService {
     tenantId = getActiveOrgId(),
     employeeObj?: any
   ): EmployeeRosterEntry {
-    // Dynamically retrieve employee assignment
-    let emp = employeeObj;
-    if (!emp && typeof localStorage !== 'undefined') {
-      try {
-        const raw = localStorage.getItem('workforce_employees');
-        if (raw) {
-          const emps = JSON.parse(raw);
-          emp = emps.find((e: any) =>
-            (e.id && String(e.id).toLowerCase() === String(employeeId).toLowerCase()) ||
-            (e.employee_code && String(e.employee_code).toLowerCase() === String(employeeId).toLowerCase())
-          );
-        }
-      } catch (_) {}
+    const orgId = isValidUUID(tenantId) ? tenantId : getActiveOrgId();
+    const rawId = String(employeeId || '').trim();
+    const cleanId = rawId.toLowerCase();
+    const digits = cleanId.replace(/\D/g, '');
+    const unpadded = digits ? String(parseInt(digits, 10)) : '';
+
+    // 1. Check in-memory DB roster cache (direct UUID, lowercase, code, or digits)
+    const cacheKeys = [
+      `${rawId}_${date}`,
+      `${cleanId}_${date}`,
+      digits ? `${digits}_${date}` : '',
+      unpadded ? `${unpadded}_${date}` : '',
+      employeeObj?.employee_code ? `${employeeObj.employee_code.toLowerCase()}_${date}` : '',
+    ].filter(Boolean);
+
+    for (const key of cacheKeys) {
+      if (this._dbRostersCache.has(key)) {
+        return this._dbRostersCache.get(key)!;
+      }
     }
 
-    const assignedShiftId =
-      emp?.employment?.shift_id ||
-      emp?.shift_id ||
-      emp?.profile?.shift_id ||
-      emp?.employment?.shift_name ||
-      emp?.shift_name;
+    // 2. Authoritative Database Shift Assignment check (from Supabase PostgreSQL employee_shift_assignments)
+    let dbAssignment = this._dbShiftAssignmentsCache.get(cleanId);
+    if (!dbAssignment && employeeObj?.id) {
+      dbAssignment = this._dbShiftAssignmentsCache.get(String(employeeObj.id).toLowerCase());
+    }
+    if (!dbAssignment && employeeObj?.employee_code) {
+      dbAssignment = this._dbShiftAssignmentsCache.get(String(employeeObj.employee_code).toLowerCase());
+    }
+    if (!dbAssignment && digits) {
+      dbAssignment = this._dbShiftAssignmentsCache.get(digits) || (unpadded ? this._dbShiftAssignmentsCache.get(unpadded) : undefined);
+    }
 
-    const list = getStore<EmployeeRosterEntry[]>(STORAGE_KEYS.ROSTERS, [], tenantId);
-    const match = list.find(r => (r.employee_id === employeeId || r.employee_code === employeeId) && r.date === date);
-
-    // If there is an explicit daily override, honor it
+    // 3. Check for specific daily override in storage (if any)
+    const list = getStore<EmployeeRosterEntry[]>(STORAGE_KEYS.ROSTERS, [], orgId);
+    const match = list.find(r => 
+      (r.employee_id === rawId || r.employee_code === rawId || (digits && r.employee_code?.replace(/\D/g, '') === digits)) &&
+      r.date === date
+    );
     if (match && match.is_override) return match;
 
-    const resolvedShift = (assignedShiftId ? this.getShiftById(assignedShiftId, tenantId) : null) ||
-      (match ? this.getShiftById(match.shift_id, tenantId) : null) ||
-      this.getShifts(tenantId)[0] ||
+    // 4. Resolve shift definition with priority:
+    //    dbAssignment -> employee profile -> roster match -> default
+    const assignedShiftId =
+      dbAssignment?.shift_id ||
+      employeeObj?.employment?.shift_id ||
+      employeeObj?.shift_id ||
+      employeeObj?.profile?.shift_id ||
+      employeeObj?.employment?.shift_code ||
+      employeeObj?.shift_code ||
+      employeeObj?.employment?.shift_name ||
+      employeeObj?.shift_name;
+
+    const resolvedShift = (assignedShiftId ? this.getShiftById(assignedShiftId, orgId) : null) ||
+      (match ? this.getShiftById(match.shift_id, orgId) : null) ||
+      (dbAssignment ? this.getShiftById(dbAssignment.shift_id, orgId) : null) ||
+      this.getShifts(orgId)[0] ||
       DEFAULT_SHIFTS[0];
 
-    // Default Fallback: General Day Shift Monday-Friday, Saturday/Sunday Off
     const dayOfWeek = new Date(date).getDay(); // 0 = Sun, 6 = Sat
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const isWeekend = dbAssignment
+      ? dbAssignment.weekly_offs.includes(dayOfWeek)
+      : (match ? match.is_weekly_off : (dayOfWeek === 0 || dayOfWeek === 6));
 
-    const empName = emp?.display_name || emp?.name || `${emp?.first_name || ''} ${emp?.last_name || ''}`.trim() || match?.employee_name || 'Employee';
-    const empCode = emp?.employee_code || match?.employee_code || `EMP-${employeeId.replace(/\D/g, '') || '001'}`;
+    const empName = employeeObj?.display_name || employeeObj?.name || `${employeeObj?.first_name || ''} ${employeeObj?.last_name || ''}`.trim() || dbAssignment?.employee_name || match?.employee_name || 'Employee';
+    const empCode = employeeObj?.employee_code || dbAssignment?.employee_code || match?.employee_code || (digits ? `JCS-${digits.padStart(3, '0')}` : `EMP-001`);
 
-    return {
+    const generated: EmployeeRosterEntry = {
       id: match?.id || `roster-dyn-${employeeId}-${date}`,
-      tenant_id: tenantId,
-      employee_id: employeeId,
+      tenant_id: orgId,
+      employee_id: dbAssignment?.employee_id || (isValidUUID(rawId) ? rawId : (employeeObj?.id || employeeId)),
       employee_code: empCode,
       employee_name: empName,
       date,
@@ -808,34 +951,40 @@ class AttendanceRosterService {
       is_weekly_off: match ? match.is_weekly_off : isWeekend,
       is_holiday: match ? match.is_holiday : false,
       is_override: false,
-      assigned_by: emp ? 'Employee Profile Assignment' : (match?.assigned_by || 'System Auto-Default'),
+      assigned_by: dbAssignment ? 'Database Canonical Shift Assignment' : (employeeObj ? 'Employee Profile Assignment' : (match?.assigned_by || 'System Auto-Default')),
       updated_at: new Date().toISOString(),
     };
+
+    this._dbRostersCache.set(cacheKeys[0], generated);
+    if (cacheKeys[1]) this._dbRostersCache.set(cacheKeys[1], generated);
+    if (empCode) {
+      this._dbRostersCache.set(`${empCode}_${date}`, generated);
+      this._dbRostersCache.set(`${empCode.toLowerCase()}_${date}`, generated);
+    }
+    if (digits) {
+      this._dbRostersCache.set(`${digits}_${date}`, generated);
+    }
+    return generated;
   }
 
-  bulkAssignRoster(payload: {
+  async bulkAssignRoster(payload: {
     employeeIds: string[];
     startDate: string;
     endDate: string;
     shiftId: string;
     weeklyOffDays?: number[]; // [0, 6] = Sun, Sat
     assignedBy?: string;
-  }): { assignedCount: number; conflicts: string[] } {
+  }): Promise<{ assignedCount: number; conflicts: string[]; success: boolean }> {
     const tenantId = getActiveOrgId();
+    const activeComp = api.getActiveCompany();
+    const companyId = activeComp?.id || null;
     const shift = this.getShiftById(payload.shiftId, tenantId) || this.getShifts(tenantId)[0];
     const weeklyOffs = new Set(payload.weeklyOffDays ?? [0, 6]);
     const assignedBy = payload.assignedBy || 'HR Admin';
 
-    const currentRosters = getStore<EmployeeRosterEntry[]>(STORAGE_KEYS.ROSTERS, [], tenantId);
-    const updatedMap = new Map<string, EmployeeRosterEntry>();
-
-    // Index existing
-    for (const r of currentRosters) {
-      updatedMap.set(`${r.employee_id}_${r.date}`, r);
-    }
-
     let assignedCount = 0;
     const conflicts: string[] = [];
+    const newEntries: EmployeeRosterEntry[] = [];
 
     const start = new Date(payload.startDate);
     const end = new Date(payload.endDate);
@@ -860,44 +1009,84 @@ class AttendanceRosterService {
           shift_type: shift.shift_type,
           is_weekly_off: isOff,
           is_holiday: false,
-          is_override: false,
+          is_override: true,
           assigned_by: assignedBy,
           updated_at: new Date().toISOString(),
         };
 
-        updatedMap.set(key, newEntry);
+        newEntries.push(newEntry);
+        this._dbRostersCache.set(key, newEntry);
+        this._dbRostersCache.set(`${String(empId).toLowerCase()}_${dateStr}`, newEntry);
         assignedCount++;
       }
     }
 
-    const finalList = Array.from(updatedMap.values());
-    setStore(STORAGE_KEYS.ROSTERS, finalList, tenantId);
-
-    // Persist to Supabase Database
-    const newAssignedEntries = Array.from(updatedMap.values()).filter(r => payload.employeeIds.includes(r.employee_id));
-    this.syncRosterEntriesToDb(newAssignedEntries);
-
-    // Broadcast domain event to Realtime Outbox for Flutter
+    // 1. PostgreSQL Stored Procedure & Table Upsert Execution (Multi-Tenant Production DB)
     if (isSupabaseEnabled && supabase) {
-        Promise.resolve(
-          supabase.from('realtime_outbox').insert({
-            tenant_id: tenantId,
-            organization_id: tenantId,
-            event_type: 'roster.bulk_assigned',
-            entity_type: 'ROSTER',
-            entity_id: shift.shift_code,
-            payload: {
-              shift_code: shift.shift_code,
-              shift_name: shift.shift_name,
-              employee_ids: payload.employeeIds,
-              start_date: payload.startDate,
-              end_date: payload.endDate,
-              count: assignedCount,
-              updated_at: new Date().toISOString(),
-            }
-          })
-        ).catch(() => {});
+      try {
+        await supabase.rpc('fn_bulk_assign_shift_roster', {
+          p_org_id: tenantId,
+          p_company_id: companyId,
+          p_employee_ids: payload.employeeIds,
+          p_start_date: payload.startDate,
+          p_end_date: payload.endDate,
+          p_shift_id: shift.id,
+          p_weekly_off_days: Array.from(weeklyOffs),
+          p_assigned_by: assignedBy,
+        });
+      } catch (e) {
+        console.warn('[attendanceRosterService] RPC error (falling back to direct table upsert):', e);
+      }
+
+      // Direct Table Upsert guarantee: persist all generated roster entries into public.shift_rosters
+      try {
+        await this.syncRosterEntriesToDb(newEntries);
+      } catch (e) {
+        console.warn('[attendanceRosterService] syncRosterEntriesToDb error:', e);
+      }
+
+      // Canonical employee_shift_assignments sync for each employee
+      for (const empId of payload.employeeIds) {
+        if (isValidUUID(empId) && isValidUUID(shift.id)) {
+          try {
+            await supabase.from('employee_shift_assignments').upsert({
+              organization_id: tenantId,
+              company_id: companyId,
+              employee_id: empId,
+              shift_id: shift.id,
+              weekly_offs: Array.from(weeklyOffs),
+              effective_from: payload.startDate,
+              valid_from: payload.startDate,
+            }, { onConflict: 'employee_id' });
+          } catch (e) {
+            console.warn('[attendanceRosterService] Shift assignment upsert notice:', e);
+          }
+        }
+      }
+
+      // Realtime Outbox event emission
+      try {
+        await supabase.from('realtime_outbox').insert({
+          tenant_id: tenantId,
+          organization_id: tenantId,
+          event_type: 'roster.bulk_assigned',
+          entity_type: 'ROSTER',
+          entity_id: shift.shift_code,
+          payload: {
+            shift_code: shift.shift_code,
+            shift_name: shift.shift_name,
+            employee_ids: payload.employeeIds,
+            start_date: payload.startDate,
+            end_date: payload.endDate,
+            count: assignedCount,
+            updated_at: new Date().toISOString(),
+          }
+        });
+      } catch (_) {}
     }
+
+    // Refresh shift assignments cache from DB
+    await this.fetchShiftAssignmentsFromDb(tenantId).catch(() => {});
 
     hrEventBus.emit('roster.bulk_assigned', {
       shiftCode: shift.shift_code,
@@ -906,21 +1095,20 @@ class AttendanceRosterService {
       endDate: payload.endDate,
     });
 
-    return { assignedCount, conflicts };
+    return { assignedCount, conflicts, success: true };
   }
 
-  setShiftOverride(
+  async setShiftOverride(
     employeeId: string,
     date: string,
     newShiftId: string,
     reason: string,
     actorName = 'HR Administrator'
-  ): EmployeeRosterEntry {
+  ): Promise<EmployeeRosterEntry> {
     const tenantId = getActiveOrgId();
+    const activeComp = api.getActiveCompany();
     const shift = this.getShiftById(newShiftId, tenantId) || this.getShifts(tenantId)[0];
-    const rosters = getStore<EmployeeRosterEntry[]>(STORAGE_KEYS.ROSTERS, [], tenantId);
 
-    const existingIdx = rosters.findIndex(r => r.employee_id === employeeId && r.date === date);
     const newEntry: EmployeeRosterEntry = {
       id: `roster-ovr-${Date.now()}`,
       tenant_id: tenantId,
@@ -940,14 +1128,33 @@ class AttendanceRosterService {
       updated_at: new Date().toISOString(),
     };
 
-    if (existingIdx !== -1) {
-      rosters[existingIdx] = newEntry;
-    } else {
-      rosters.push(newEntry);
+    this._dbRostersCache.set(`${employeeId}_${date}`, newEntry);
+    this._dbRostersCache.set(`${String(employeeId).toLowerCase()}_${date}`, newEntry);
+
+    // Upsert directly into Supabase shift_rosters table
+    if (isSupabaseEnabled && supabase && isValidUUID(tenantId) && isValidUUID(employeeId) && isValidUUID(shift.id)) {
+      try {
+        await supabase.from('shift_rosters').upsert({
+          organization_id: tenantId,
+          company_id: activeComp?.id || null,
+          employee_id: employeeId,
+          roster_date: date,
+          shift_id: shift.id,
+          shift_code: shift.shift_code,
+          shift_name: shift.shift_name,
+          is_weekly_off: false,
+          is_holiday: false,
+          is_override: true,
+          assigned_by: actorName,
+          remarks: reason,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'organization_id,employee_id,roster_date' });
+      } catch (e) {
+        console.warn('[attendanceRosterService] setShiftOverride DB upsert error:', e);
+      }
     }
 
-    setStore(STORAGE_KEYS.ROSTERS, rosters, tenantId);
-    this.syncRosterEntriesToDb([newEntry]);
+    hrEventBus.emit('roster.updated', { entry: newEntry });
     return newEntry;
   }
 
@@ -991,7 +1198,7 @@ class AttendanceRosterService {
     return conflicts;
   }
 
-  generateRotationalRoster(payload: {
+  async generateRotationalRoster(payload: {
     employeeIds: string[];
     patternShifts: string[]; // ['shift-mor-06', 'shift-eve-14', 'shift-ngt-22']
     cycleWeeks: number;
@@ -999,7 +1206,7 @@ class AttendanceRosterService {
     endDate: string;
     weeklyOffDays?: number[];
     teamOffsets?: Record<string, number>;
-  }): { assignedCount: number } {
+  }): Promise<{ assignedCount: number }> {
     const tenantId = getActiveOrgId();
     const allShifts = this.getShifts(tenantId);
     const weeklyOffs = new Set(payload.weeklyOffDays ?? [0, 6]);
@@ -1045,32 +1252,28 @@ class AttendanceRosterService {
         };
 
         entries.push(newEntry);
+        this._dbRostersCache.set(`${empId}_${dateStr}`, newEntry);
         assignedCount++;
         dayIndex++;
       }
     }
 
-    const current = getStore<EmployeeRosterEntry[]>(STORAGE_KEYS.ROSTERS, [], tenantId);
-    const updatedMap = new Map<string, EmployeeRosterEntry>();
-    for (const r of current) updatedMap.set(`${r.employee_id}_${r.date}`, r);
-    for (const r of entries) updatedMap.set(`${r.employee_id}_${r.date}`, r);
-
-    setStore(STORAGE_KEYS.ROSTERS, Array.from(updatedMap.values()), tenantId);
-    this.syncRosterEntriesToDb(entries);
+    await this.syncRosterEntriesToDb(entries);
 
     return { assignedCount };
   }
 
-  copySchedule(payload: {
+  async copySchedule(payload: {
     sourceStartDate: string;
     sourceEndDate: string;
     targetStartDate: string;
     employeeIds: string[];
-  }): { copiedCount: number } {
+  }): Promise<{ copiedCount: number }> {
     const tenantId = getActiveOrgId();
-    const current = getStore<EmployeeRosterEntry[]>(STORAGE_KEYS.ROSTERS, [], tenantId);
-    const sourceEntries = current.filter(
-      r => r.date >= payload.sourceStartDate && r.date <= payload.sourceEndDate && payload.employeeIds.includes(r.employee_id)
+    // Fetch source entries from DB
+    const sourceEntries = await this.fetchRostersFromDb(payload.sourceStartDate, payload.sourceEndDate, tenantId);
+    const filteredSource = sourceEntries.filter(
+      r => payload.employeeIds.includes(r.employee_id)
     );
 
     const sourceStart = new Date(payload.sourceStartDate).getTime();
@@ -1078,25 +1281,22 @@ class AttendanceRosterService {
     const timeDelta = targetStart - sourceStart;
 
     const newEntries: EmployeeRosterEntry[] = [];
-    for (const src of sourceEntries) {
+    for (const src of filteredSource) {
       const srcDate = new Date(src.date).getTime();
       const newTargetDate = new Date(srcDate + timeDelta).toISOString().split('T')[0];
 
-      newEntries.push({
+      const copyEntry: EmployeeRosterEntry = {
         ...src,
         id: `roster-cp-${src.employee_id}-${newTargetDate}`,
         date: newTargetDate,
         assigned_by: 'Schedule Copy Tool',
         updated_at: new Date().toISOString(),
-      });
+      };
+      newEntries.push(copyEntry);
+      this._dbRostersCache.set(`${src.employee_id}_${newTargetDate}`, copyEntry);
     }
 
-    const updatedMap = new Map<string, EmployeeRosterEntry>();
-    for (const r of current) updatedMap.set(`${r.employee_id}_${r.date}`, r);
-    for (const r of newEntries) updatedMap.set(`${r.employee_id}_${r.date}`, r);
-
-    setStore(STORAGE_KEYS.ROSTERS, Array.from(updatedMap.values()), tenantId);
-    this.syncRosterEntriesToDb(newEntries);
+    await this.syncRosterEntriesToDb(newEntries);
 
     return { copiedCount: newEntries.length };
   }
@@ -1791,31 +1991,69 @@ class AttendanceRosterService {
   // 7. SUPABASE ASYNC DATABASE SYNC HELPERS
   // ==========================================================================
 
-  private async syncShiftToDb(shift: ShiftMaster): Promise<void> {
-    if (!isSupabaseEnabled || !supabase) return;
-    try {
-      await supabase.from('shifts').upsert({
-        id: shift.id,
-        organization_id: shift.tenant_id,
-        shift_code: shift.shift_code,
-        name: shift.shift_name,
-        shift_type: shift.shift_type,
-        start_time: shift.start_time,
-        end_time: shift.end_time,
-        is_active: shift.status === 'ACTIVE',
-        created_at: shift.created_at,
-        updated_at: shift.updated_at,
-      });
-    } catch (e) {
-      console.warn('[attendanceRosterService] syncShiftToDb fallback:', e);
-    }
-  }
-
-  private async syncRosterEntriesToDb(entries: EmployeeRosterEntry[]): Promise<void> {
+  public async syncRosterEntriesToDb(entries: EmployeeRosterEntry[]): Promise<void> {
     if (!isSupabaseEnabled || !supabase || entries.length === 0) return;
     try {
+      const activeTenantId = getActiveOrgId();
+      const activeComp = api.getActiveCompany();
+      const activeCompId = isValidUUID(activeComp?.id) ? activeComp.id : null;
       const allShifts = this.getShifts();
       const shiftMap = new Map(allShifts.map(s => [s.id, s]));
+
+      // 1. Bulk upsert to public.shift_rosters
+      const rosterRows = entries.map(entry => {
+        const rowOrg = isValidUUID(entry.tenant_id) ? entry.tenant_id : activeTenantId;
+        const shift = shiftMap.get(entry.shift_id) || allShifts.find(s => s.shift_code === entry.shift_code) || allShifts[0];
+        return {
+          id: isValidUUID(entry.id) ? entry.id : undefined,
+          organization_id: rowOrg,
+          company_id: activeCompId,
+          employee_id: entry.employee_id,
+          employee_code: entry.employee_code || null,
+          employee_name: entry.employee_name || null,
+          roster_date: entry.date,
+          shift_id: shift?.id || entry.shift_id,
+          shift_code: shift?.shift_code || entry.shift_code,
+          shift_name: shift?.shift_name || entry.shift_name,
+          is_weekly_off: Boolean(entry.is_weekly_off),
+          is_holiday: Boolean(entry.is_holiday),
+          is_override: Boolean(entry.is_override),
+          assigned_by: entry.assigned_by || 'HR Admin',
+          remarks: entry.override_reason || null,
+          updated_at: new Date().toISOString(),
+        };
+      });
+
+      await supabase.from('shift_rosters').upsert(rosterRows, {
+        onConflict: 'organization_id,employee_id,roster_date',
+      });
+
+      // 2. Canonical employee_shift_assignments sync
+      for (const entry of entries) {
+        if (entry.shift_id && isValidUUID(entry.employee_id) && isValidUUID(entry.shift_id)) {
+          const rowOrg = isValidUUID(entry.tenant_id) ? entry.tenant_id : activeTenantId;
+          try {
+            await supabase.from('employee_shift_assignments').upsert({
+              organization_id: rowOrg,
+              company_id: activeCompId,
+              employee_id: entry.employee_id,
+              shift_id: entry.shift_id,
+              effective_from: entry.date,
+              valid_from: entry.date,
+            }, { onConflict: 'employee_id' });
+          } catch (e: any) {
+            console.warn('[Roster] Shift assignment sync notice:', e);
+          }
+        }
+      }
+
+      // 3. Dynamic notifications for assigned employees
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const tomorrow = new Date(now);
+      tomorrow.setDate(now.getDate() + 1);
+      const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+      const companyName = activeComp?.name || 'Company';
 
       for (const entry of entries) {
         const shift = shiftMap.get(entry.shift_id) || allShifts.find(s => s.shift_code === entry.shift_code) || allShifts[0];
@@ -1824,14 +2062,13 @@ class AttendanceRosterService {
 
         const startTime = shift?.start_time || '09:00';
         const endTime = shift?.end_time || '18:00';
-        const startDisplay = isNight ? '10:00 PM' : (startTime.startsWith('14') ? '02:00 PM' : (startTime.startsWith('06') ? '06:00 AM' : '09:00 AM'));
-        const endDisplay = isNight ? '06:00 AM' : (endTime.startsWith('22') ? '10:30 PM' : (endTime.startsWith('14') ? '02:30 PM' : '06:00 PM'));
+        const startDisplay = isNight ? '10:00 PM' : (startTime.startsWith('14') ? '02:00 PM' : (startTime.startsWith('06') ? '06:00 AM' : (startTime.startsWith('09:30') ? '09:30 AM' : '09:00 AM')));
+        const endDisplay = isNight ? '06:00 AM' : (endTime.startsWith('22') ? '10:30 PM' : (endTime.startsWith('14') ? '02:30 PM' : (endTime.startsWith('18:30') ? '06:30 PM' : '06:00 PM')));
 
-        const todayStr = '2026-08-26';
         const d = new Date(entry.date);
         const dateDisplay = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
         const isToday = entry.date === todayStr;
-        const isTomorrow = entry.date === '2026-08-27';
+        const isTomorrow = entry.date === tomorrowStr;
 
         const title = entry.is_override
           ? (isToday ? 'Today — Shift Updated' : `Shift Updated — ${dateDisplay}`)
@@ -1839,34 +2076,11 @@ class AttendanceRosterService {
 
         const body = isOff
           ? `Your roster for ${dateDisplay} is set to Weekly Off (Rest Day).`
-          : `Your shift for ${dateDisplay} has been assigned: ${shift?.shift_name || entry.shift_name} (${entry.shift_code}, ${startDisplay} – ${endDisplay}) at Joy Corporate Solutions Private Limited (HQ). Assigned by ${entry.assigned_by || 'HR Administrator'}.`;
+          : `Your shift for ${dateDisplay} has been assigned: ${shift?.shift_name || entry.shift_name} (${entry.shift_code}, ${startDisplay} – ${endDisplay}) at ${companyName}. Assigned by ${entry.assigned_by || 'HR Administrator'}.`;
 
-        // 1. Sync to employee_shift_assignments (Canonical DB Table)
-        if (entry.shift_id && isValidUUID(entry.employee_id) && isValidUUID(entry.shift_id)) {
-          const entryAny = entry as any;
-          const orgId = isValidUUID(entryAny.organization_id) ? entryAny.organization_id : 'e539780b-df07-4b45-beaa-ccf1d2224be8';
-          const compId = isValidUUID(entryAny.company_id) ? entryAny.company_id : '5537b879-7299-48a4-bdfe-16e327a2d3d0';
-          try {
-            await supabase.from('employee_shift_assignments').upsert({
-              id: ensureUUID(entry.id),
-              organization_id: orgId,
-              company_id: compId,
-              employee_id: entry.employee_id,
-              shift_id: entry.shift_id,
-              effective_from: entry.date,
-              effective_to: entry.date,
-              valid_from: entry.date,
-              valid_to: entry.date,
-            });
-          } catch (e: any) {
-            console.warn('[Roster] Shift assignment sync notice:', e);
-          }
-        }
-
-        // 2. Publish real-time notification_events for Mobile / Flutter
         notificationService.emitEmployeeNotification({
           employeeId: entry.employee_id,
-          organizationId: getActiveOrgId(),
+          organizationId: isValidUUID(entry.tenant_id) ? entry.tenant_id : activeTenantId,
           title,
           message: body,
           actionUrl: '/attendance',
@@ -1953,22 +2167,25 @@ class AttendanceRosterService {
   private async syncAuditLogToDb(log: PolicyAuditLog): Promise<void> {
     if (!isSupabaseEnabled || !supabase) return;
     try {
-      await supabase.from('attendance_policy_audit_logs').insert({
-        id: log.id,
-        organization_id: log.tenant_id,
-        actor_name: log.actor_name,
-        actor_role: log.actor_role,
-        entity_type: log.entity_type,
-        entity_id: log.entity_id,
-        entity_name: log.entity_name,
-        change_summary: log.change_summary,
-        previous_value: log.previous_value,
-        new_value: log.new_value,
-        reason: log.reason,
-        timestamp: log.timestamp,
-      });
+      const orgId = isValidUUID(log.tenant_id) ? log.tenant_id : getActiveOrgId();
+      await supabase.from('audit_logs').insert([{
+        organization_id: orgId,
+        entity_type: log.entity_type || 'SHIFT_ROSTER',
+        entity_id: log.entity_id || 'attendance_policy',
+        action: 'POLICY_AUDIT',
+        new_values: {
+          actor_name: log.actor_name,
+          actor_role: log.actor_role,
+          entity_name: log.entity_name,
+          change_summary: log.change_summary,
+          previous_value: log.previous_value,
+          new_value: log.new_value,
+          reason: log.reason,
+          timestamp: log.timestamp,
+        },
+      }]);
     } catch (e) {
-      console.warn('[attendanceRosterService] syncAuditLogToDb fallback:', e);
+      // Graceful fallback: local audit trail is already persisted
     }
   }
 

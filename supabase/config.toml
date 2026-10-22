@@ -148,3 +148,13 @@ verify_jwt = true
 
 [functions.automated-cron-dispatcher]
 verify_jwt = false
+
+[functions.adms-gateway]
+verify_jwt = false
+
+[functions.shift-roster-engine]
+verify_jwt = false
+
+[functions.attendance-report-dispatcher]
+verify_jwt = false
+

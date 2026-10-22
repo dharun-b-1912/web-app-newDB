@@ -349,6 +349,22 @@ export const notificationService = {
 
     if (isSupabaseEnabled) {
       try {
+        // Idempotency: Check if an identical notification already exists for this recipient
+        if (targetProfileId) {
+          const { data: existing } = await supabase
+            .from('notification_events')
+            .select('id')
+            .eq('recipient_user_id', targetProfileId)
+            .eq('title', params.title)
+            .limit(1)
+            .maybeSingle();
+
+          if (existing?.id) {
+            console.log(`[NotificationService] Deduplicating notification for user ${targetProfileId}: "${params.title}" (existing: ${existing.id})`);
+            return existing.id;
+          }
+        }
+
         const { data, error } = await supabase.from('notification_events').insert([notifRecord]).select('id').single();
         if (!error && data?.id) {
           return data.id;

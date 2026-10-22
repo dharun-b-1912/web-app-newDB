@@ -44,6 +44,7 @@ export const PayslipDocument: React.FC<PayslipDocumentProps> = ({
   const esiEmployee = deductions.find(d => d.code === 'ESI_EE')?.amount || 0;
   const ptEmployee = deductions.find(d => d.code === 'PT')?.amount || 0;
   const tdsEmployee = deductions.find(d => d.code === 'TDS' || d.label.includes('TDS'))?.amount || 0;
+  const lwfEmployee = deductions.find(d => d.code === 'LWF' || d.label.includes('LWF'))?.amount || 0;
 
   // Derive eligibility/display states:
   // If contribution > 0 -> Applicable with amount
@@ -60,10 +61,11 @@ export const PayslipDocument: React.FC<PayslipDocumentProps> = ({
     <div
       id={id}
       data-payslip-ref={metadata.payslipNumber}
-      className={`w-[820px] min-h-[1140px] bg-white text-slate-900 font-sans relative flex flex-col justify-between p-8 border-2 border-[#0f2d59] rounded-lg shadow-xl mx-auto box-border ${className}`}
+      className={`w-full max-w-[820px] min-h-[1050px] bg-white text-slate-900 font-sans relative flex flex-col justify-between p-4 sm:p-8 border-2 border-[#0f2d59] rounded-lg shadow-xl mx-auto box-border ${className}`}
       style={{
-        width: '820px',
-        minHeight: '1140px',
+        maxWidth: '820px',
+        width: '100%',
+        minHeight: '1050px',
         boxSizing: 'border-box',
         backgroundColor: '#ffffff',
         color: '#0f172a',
@@ -74,9 +76,9 @@ export const PayslipDocument: React.FC<PayslipDocumentProps> = ({
       {/* 1. TOP HEADER: LOGO, COMPANY DETAILS & PAYSLIP PERIOD BANNER */}
       {/* =================================================================== */}
       <div>
-        <div className="flex items-start justify-between pb-3.5 mb-3 border-b-2 border-[#0f2d59]">
-          <div className="flex items-center gap-3.5 max-w-[65%]">
-            <div className="w-16 h-16 rounded-lg border-2 border-blue-200 bg-emerald-50/40 p-1 flex items-center justify-center shadow-xs overflow-hidden shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between pb-3.5 mb-3 border-b-2 border-[#0f2d59] gap-3">
+          <div className="flex items-center gap-3.5 max-w-full sm:max-w-[65%]">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg border-2 border-blue-200 bg-emerald-50/40 p-1 flex items-center justify-center shadow-xs overflow-hidden shrink-0">
               <img
                 src={company.logoUrl || '/logo.png'}
                 alt="Company Logo"
@@ -90,14 +92,14 @@ export const PayslipDocument: React.FC<PayslipDocumentProps> = ({
               />
               <div
                 id={`doc-logo-fallback-${employee.employeeCode}`}
-                className="font-black text-[#0f2d59] text-lg tracking-wider"
+                className="font-black text-[#0f2d59] text-base sm:text-lg tracking-wider"
                 style={{ display: company.logoUrl ? 'none' : 'flex' }}
               >
                 JOY
               </div>
             </div>
             <div>
-              <h1 className="text-lg font-black text-[#0f2d59] uppercase tracking-wide leading-tight">
+              <h1 className="text-base sm:text-lg font-black text-[#0f2d59] uppercase tracking-wide leading-tight">
                 {company.legalName}
               </h1>
               {company.displayName && company.displayName !== company.legalName && (
@@ -115,11 +117,11 @@ export const PayslipDocument: React.FC<PayslipDocumentProps> = ({
             </div>
           </div>
 
-          <div className="text-right flex flex-col items-end">
+          <div className="text-left sm:text-right flex flex-col items-start sm:items-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200">
             <div className="px-3.5 py-1.5 bg-[#0f2d59] text-white font-black text-xs rounded-md uppercase tracking-wider shadow-xs">
               PAYSLIP FOR {payroll.periodMonth?.toUpperCase() || 'AUGUST'} {payroll.periodYear || 2026}
             </div>
-            <div className="text-[11px] font-mono text-slate-800 mt-1.5 space-y-0.5 font-semibold text-right">
+            <div className="text-[11px] font-mono text-slate-800 mt-1.5 space-y-0.5 font-semibold sm:text-right">
               <div>Pay Date: <strong>{payroll.payDate}</strong></div>
               <div>Period: <strong>{payroll.periodStart} to {payroll.periodEnd}</strong></div>
               <div>Ref: <strong>{metadata.payslipNumber}</strong></div>
@@ -128,214 +130,219 @@ export const PayslipDocument: React.FC<PayslipDocumentProps> = ({
         </div>
 
         {/* =================================================================== */}
-        {/* 2. EMPLOYEE MASTER & DEPLOYMENT INFORMATION GRID (4 COLUMNS) */}
+        {/* 2. EMPLOYEE INFORMATION GRID (RESPONSIVE 2-COLUMN) */}
         {/* =================================================================== */}
-        <div className="border-2 border-slate-400 rounded-lg overflow-hidden mb-3 bg-slate-50/50">
-          <table className="w-full border-collapse text-xs">
-            <tbody>
-              {/* Row 1: Identity */}
-              <tr className="border-b border-slate-300 divide-x divide-slate-300">
-                <td className="p-2 w-1/4">
-                  <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">EMPLOYEE ID / CODE</div>
-                  <div className="font-extrabold text-slate-900 font-mono text-xs">{employee.employeeCode}</div>
-                </td>
-                <td className="p-2 w-1/4">
-                  <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">EMPLOYEE NAME</div>
-                  <div className="font-extrabold text-slate-900 uppercase text-xs">{employee.employeeName}</div>
-                </td>
-                <td className="p-2 w-1/4">
-                  <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">DESIGNATION</div>
-                  <div className="font-bold text-slate-800 text-xs">{employee.designation}</div>
-                </td>
-                <td className="p-2 w-1/4">
-                  <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">DEPARTMENT</div>
-                  <div className="font-bold text-slate-800 text-xs">{employee.department}</div>
-                </td>
-              </tr>
-
-              {/* Row 2: Employment & Payout */}
-              <tr className="border-b border-slate-300 divide-x divide-slate-300">
-                <td className="p-2">
-                  <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">DATE OF JOINING</div>
-                  <div className="font-bold text-slate-900 font-mono text-xs">{employee.dateOfJoining}</div>
-                </td>
-                <td className="p-2">
-                  <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">WORK LOCATION</div>
-                  <div className="font-bold text-slate-800 text-xs">{employee.workLocation || 'Coimbatore Factory'}</div>
-                </td>
-                <td className="p-2">
-                  <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">EMPLOYMENT TYPE</div>
-                  <div className="font-bold text-slate-800 text-xs">{employee.employmentType || 'Full Time'}</div>
-                </td>
-                <td className="p-2">
-                  <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">PAYOUT MODE</div>
-                  <div className="font-extrabold text-emerald-800 text-xs">{employee.paymentMode || 'Direct Bank Transfer'}</div>
-                </td>
-              </tr>
-
-              {/* Row 3: Bank & Statutory Numbers */}
-              <tr className={`${isVendorWorker ? 'border-b border-slate-300' : ''} divide-x divide-slate-300`}>
-                <td className="p-2">
-                  <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">BANK ACCOUNT NO.</div>
-                  <div className="font-mono font-extrabold text-slate-900 text-xs">{employee.bankAccountMasked}</div>
-                </td>
-                <td className="p-2">
-                  <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">BANK & IFSC CODE</div>
-                  <div className="font-mono font-bold text-slate-800 text-xs">{employee.bankName} ({employee.ifscCode})</div>
-                </td>
-                <td className="p-2">
-                  <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">UAN / EPF NUMBER</div>
-                  <div className="font-mono font-bold text-slate-800 text-xs">{employee.uanMasked || '—'}</div>
-                </td>
-                <td className="p-2">
-                  <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">ESIC NUMBER</div>
-                  <div className="font-mono font-bold text-slate-800 text-xs">{employee.esiMasked || '—'}</div>
-                </td>
-              </tr>
-
-              {/* Row 4: Client & Vendor (rendered only for vendor / manpower workers) */}
-              {isVendorWorker && (
-                <tr className="divide-x divide-slate-300 bg-blue-50/40">
-                  <td className="p-2">
-                    <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">EMPLOYMENT SOURCE</div>
-                    <div className="font-bold text-[#0f2d59] text-xs">Manpower / Vendor</div>
-                  </td>
-                  <td className="p-2" colSpan={2}>
-                    <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">CLIENT NAME</div>
-                    <div className="font-bold text-slate-900 text-xs">{employee.clientName || company.legalName}</div>
-                  </td>
-                  <td className="p-2">
-                    <div className="text-[10px] font-extrabold text-[#0f2d59] uppercase tracking-wide">MANPOWER VENDOR / AGENCY</div>
-                    <div className="font-bold text-slate-900 text-xs">{employee.vendor || 'Joy Manpower Services Pvt Ltd'}</div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* =================================================================== */}
-        {/* 3. ATTENDANCE & LEAVE SUMMARY RIBBON */}
-        {/* =================================================================== */}
-        <div className="grid grid-cols-7 border-2 border-slate-400 rounded-lg overflow-hidden mb-3 bg-white text-center">
-          <div className="p-2 border-r border-slate-300">
-            <span className="text-[10px] font-extrabold text-slate-600 uppercase block">CALENDAR</span>
-            <strong className="text-sm font-black font-mono text-slate-900">{attendance.calendarDays || 30}</strong>
-          </div>
-          <div className="p-2 border-r border-slate-300">
-            <span className="text-[10px] font-extrabold text-slate-600 uppercase block">WORKED</span>
-            <strong className="text-sm font-black font-mono text-slate-900">{attendance.presentDays || attendance.payableDays}</strong>
-          </div>
-          <div className="p-2 border-r border-slate-300">
-            <span className="text-[10px] font-extrabold text-slate-600 uppercase block">WEEKLY OFF</span>
-            <strong className="text-sm font-black font-mono text-slate-900">{attendance.weeklyOffDays ?? 4}</strong>
-          </div>
-          <div className="p-2 border-r border-slate-300">
-            <span className="text-[10px] font-extrabold text-slate-600 uppercase block">HOLIDAYS</span>
-            <strong className="text-sm font-black font-mono text-slate-900">{attendance.paidHolidays ?? 0}</strong>
-          </div>
-          <div className="p-2 border-r border-slate-300">
-            <span className="text-[10px] font-extrabold text-slate-600 uppercase block">LOP</span>
-            <strong className={`text-sm font-black font-mono ${attendance.lopDays > 0 ? 'text-rose-700' : 'text-slate-900'}`}>
-              {attendance.lopDays || 0}
-            </strong>
-          </div>
-          <div className="p-2 border-r border-slate-300 bg-emerald-50">
-            <span className="text-[10px] font-extrabold text-emerald-800 uppercase block">PAID DAYS</span>
-            <strong className="text-sm font-black font-mono text-emerald-950">{attendance.payableDays} Days</strong>
-          </div>
-          <div className="p-2 bg-amber-50">
-            <span className="text-[10px] font-extrabold text-amber-800 uppercase block">OVERTIME</span>
-            <strong className="text-sm font-black font-mono text-amber-950">{attendance.overtimeHours || 0} Hrs</strong>
-          </div>
-        </div>
-
-        {/* =================================================================== */}
-        {/* 4. FINANCIAL STATEMENT: EARNINGS VS DEDUCTIONS SIDE-BY-SIDE */}
-        {/* =================================================================== */}
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          {/* Left Column: Earnings */}
-          <div className="border-2 border-slate-400 rounded-lg overflow-hidden flex flex-col justify-between bg-white">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-[#0f2d59] text-white">
-                <tr>
-                  <th className="p-2 font-black text-xs uppercase tracking-wide">EARNINGS COMPONENT</th>
-                  <th className="p-2 font-bold text-xs text-center">RATE / UNITS</th>
-                  <th className="p-2 font-black text-xs text-right uppercase tracking-wide">AMOUNT (₹)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {earnings.map((e) => (
-                  <tr key={e.code} className="hover:bg-slate-50/60">
-                    <td className="p-2 font-semibold text-slate-900 text-xs">{e.label}</td>
-                    <td className="p-2 text-center text-slate-600 text-xs font-mono">{e.units || '—'}</td>
-                    <td className="p-2 text-right font-mono font-bold text-slate-950 text-xs">
-                      ₹{e.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                ))}
-                {earnings.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="p-3 text-center text-slate-400 italic">No earnings recorded</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-
-            <div className="p-2.5 bg-blue-50/80 border-t-2 border-[#0f2d59] flex items-center justify-between text-xs font-black">
-              <span className="text-[#0f2d59] uppercase tracking-wide text-xs">GROSS EARNINGS</span>
-              <span className="font-mono text-sm text-[#0f2d59]">
-                ₹{totals.grossEarnings.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+        <div className="border-2 border-slate-300 rounded-lg overflow-hidden mb-3 bg-white">
+          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200">
+            <div className="p-3 space-y-2">
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-dashed border-slate-100">
+                <span className="text-[10px] font-extrabold text-[#0f2d59] uppercase">EMPLOYEE ID</span>
+                <span className="font-mono font-bold text-slate-900">{employee.employeeCode}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-dashed border-slate-100">
+                <span className="text-[10px] font-extrabold text-[#0f2d59] uppercase">EMPLOYEE NAME</span>
+                <span className="font-bold text-slate-900 uppercase">{employee.employeeName}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-dashed border-slate-100">
+                <span className="text-[10px] font-extrabold text-[#0f2d59] uppercase">DESIGNATION</span>
+                <span className="font-semibold text-slate-800">{employee.designation}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-dashed border-slate-100">
+                <span className="text-[10px] font-extrabold text-[#0f2d59] uppercase">DEPARTMENT</span>
+                <span className="font-semibold text-slate-800">{employee.department}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-dashed border-slate-100">
+                <span className="text-[10px] font-extrabold text-[#0f2d59] uppercase">DATE OF JOINING</span>
+                <span className="font-mono text-slate-800">{employee.dateOfJoining}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-[10px] font-extrabold text-[#0f2d59] uppercase">WORK LOCATION</span>
+                <span className="text-slate-800">{employee.workLocation || 'Main Campus'}</span>
+              </div>
             </div>
-          </div>
 
-          {/* Right Column: Employee Deductions */}
-          <div className="border-2 border-slate-400 rounded-lg overflow-hidden flex flex-col justify-between bg-white">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-[#0f2d59] text-white">
-                <tr>
-                  <th className="p-2 font-black text-xs uppercase tracking-wide">DEDUCTIONS COMPONENT</th>
-                  <th className="p-2 font-black text-xs text-right uppercase tracking-wide">AMOUNT (₹)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {deductions.map((d) => (
-                  <tr key={d.code} className="hover:bg-slate-50/60">
-                    <td className="p-2 font-semibold text-slate-900 text-xs">{d.label}</td>
-                    <td className="p-2 text-right font-mono font-bold text-rose-800 text-xs">
-                      ₹{d.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                ))}
-                {deductions.length === 0 && (
-                  <tr>
-                    <td colSpan={2} className="p-4 text-center text-slate-400 italic text-xs">
-                      Zero deductions applied (₹0.00)
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-
-            <div className="p-2.5 bg-rose-50/80 border-t-2 border-rose-600 flex items-center justify-between text-xs font-black">
-              <span className="text-rose-900 uppercase tracking-wide text-xs">TOTAL DEDUCTIONS</span>
-              <span className="font-mono text-sm text-rose-900">
-                ₹{totals.totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+            <div className="p-3 space-y-2">
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-dashed border-slate-100">
+                <span className="text-[10px] font-extrabold text-[#0f2d59] uppercase">BANK ACCOUNT</span>
+                <span className="font-mono font-bold text-slate-900">{employee.bankAccountMasked}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-dashed border-slate-100">
+                <span className="text-[10px] font-extrabold text-[#0f2d59] uppercase">BANK &amp; IFSC</span>
+                <span className="font-mono text-slate-800">{employee.bankName} ({employee.ifscCode})</span>
+              </div>
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-dashed border-slate-100">
+                <span className="text-[10px] font-extrabold text-[#0f2d59] uppercase">PAYMENT STATUS</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  ((payroll as any)?.disbursedAt || (payroll.payrollStatus as string) === 'PAID')
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    : 'bg-sky-100 text-sky-800 border border-sky-300'
+                }`}>
+                  {((payroll as any)?.disbursedAt || (payroll.payrollStatus as string) === 'PAID') ? 'Disbursed / Paid' : 'Payment Scheduled'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-dashed border-slate-100">
+                <span className="text-[10px] font-extrabold text-[#0f2d59] uppercase">UAN / EPF NO.</span>
+                <span className="font-mono text-slate-800">{employee.uanMasked || 'Not Applicable'}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-dashed border-slate-100">
+                <span className="text-[10px] font-extrabold text-[#0f2d59] uppercase">ESIC NUMBER</span>
+                <span className="font-mono text-slate-800">{employee.esiMasked || 'Not Applicable'}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-[10px] font-extrabold text-[#0f2d59] uppercase">PAN NUMBER</span>
+                <span className="font-mono text-slate-800">{employee.panMasked || '—'}</span>
+              </div>
             </div>
           </div>
         </div>
 
         {/* =================================================================== */}
-        {/* 5. NET TAKE-HOME SALARY HERO BANNER */}
+        {/* 3. MODULAR ATTENDANCE SUMMARY RIBBON */}
         {/* =================================================================== */}
-        <div className="p-4 bg-emerald-50 border-2 border-emerald-500 rounded-lg mb-3 flex items-center justify-between shadow-2xs">
+        <div className="border-2 border-slate-300 rounded-lg overflow-hidden mb-3 bg-white text-center">
+          <div className="grid grid-cols-3 border-b border-slate-200">
+            <div className="p-2 sm:p-2.5 bg-emerald-50 border-r border-slate-200">
+              <span className="text-[10px] font-extrabold text-emerald-800 uppercase block">PAYABLE DAYS</span>
+              <strong className="text-sm sm:text-base font-black font-mono text-emerald-950">{attendance.payableDays} Days</strong>
+            </div>
+            <div className="p-2 sm:p-2.5 bg-slate-50 border-r border-slate-200">
+              <span className="text-[10px] font-extrabold text-slate-600 uppercase block">WORKED DAYS</span>
+              <strong className="text-sm sm:text-base font-black font-mono text-slate-900">
+                {typeof (attendance as any).workedDays === 'number' ? (attendance as any).workedDays : (attendance.presentDays || attendance.payableDays)} Days
+              </strong>
+            </div>
+            <div className="p-2 sm:p-2.5 bg-amber-50">
+              <span className="text-[10px] font-extrabold text-amber-800 uppercase block">OVERTIME (OT)</span>
+              <strong className="text-sm sm:text-base font-black font-mono text-amber-950">{attendance.overtimeHours || 0} Hrs</strong>
+            </div>
+          </div>
+
+          <div className="p-2 bg-white flex flex-wrap justify-around items-center text-xs font-mono text-slate-600 gap-2">
+            <span>Calendar Days: <strong className="text-slate-900">{attendance.calendarDays || 30}</strong></span>
+            <span>Weekly Offs: <strong className="text-slate-900">{attendance.weeklyOffDays ?? 4}</strong></span>
+            <span>Paid Holidays: <strong className="text-slate-900">{attendance.paidHolidays ?? 0}</strong></span>
+            <span>Loss of Pay (LOP): <strong className={attendance.lopDays > 0 ? 'text-rose-700 font-black' : 'text-slate-900'}>{attendance.lopDays || 0}</strong></span>
+          </div>
+        </div>
+
+        {/* =================================================================== */}
+        {/* 4. FINANCIAL STATEMENT: EARNINGS & DEDUCTIONS */}
+        {/* =================================================================== */}
+        {deductions.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+            {/* Earnings Table */}
+            <div className="border border-slate-300 rounded-lg overflow-hidden bg-white">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-100 text-slate-800 border-b border-slate-300">
+                  <tr>
+                    <th className="p-2 font-black text-xs uppercase tracking-wide">EARNINGS COMPONENT</th>
+                    <th className="p-2 font-bold text-xs text-center">UNITS</th>
+                    <th className="p-2 font-black text-xs text-right uppercase tracking-wide">AMOUNT (₹)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {earnings.map((e) => (
+                    <tr key={e.code} className="hover:bg-slate-50/60">
+                      <td className="p-2 font-semibold text-slate-900 text-xs">{e.label}</td>
+                      <td className="p-2 text-center text-slate-600 text-xs font-mono">{e.units || '—'}</td>
+                      <td className="p-2 text-right font-mono font-bold text-slate-950 text-xs">
+                        ₹{e.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="p-2 bg-emerald-50 border-t border-emerald-200 flex items-center justify-between text-xs font-black">
+                <span className="text-emerald-900 uppercase tracking-wide text-xs">GROSS EARNINGS</span>
+                <span className="font-mono text-sm text-emerald-900">
+                  ₹{totals.grossEarnings.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            {/* Deductions Table */}
+            <div className="border border-slate-300 rounded-lg overflow-hidden bg-white">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-100 text-slate-800 border-b border-slate-300">
+                  <tr>
+                    <th className="p-2 font-black text-xs uppercase tracking-wide">DEDUCTIONS COMPONENT</th>
+                    <th className="p-2 font-bold text-xs text-center">CATEGORY</th>
+                    <th className="p-2 font-black text-xs text-right uppercase tracking-wide">AMOUNT (₹)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {deductions.map((d) => (
+                    <tr key={d.code} className="hover:bg-slate-50/60">
+                      <td className="p-2 font-semibold text-slate-900 text-xs">{d.label}</td>
+                      <td className="p-2 text-center text-slate-600 text-xs font-mono">{d.units || 'Employee'}</td>
+                      <td className="p-2 text-right font-mono font-bold text-rose-800 text-xs">
+                        ₹{d.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="p-2 bg-rose-50 border-t border-rose-200 flex items-center justify-between text-xs font-black">
+                <span className="text-rose-900 uppercase tracking-wide text-xs">TOTAL DEDUCTIONS</span>
+                <span className="font-mono text-sm text-rose-900">
+                  ₹{totals.totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mb-3 space-y-2">
+            <div className="border border-slate-300 rounded-lg overflow-hidden bg-white">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-100 text-slate-800 border-b border-slate-300">
+                  <tr>
+                    <th className="p-2 font-black text-xs uppercase tracking-wide">EARNINGS COMPONENT</th>
+                    <th className="p-2 font-bold text-xs text-center">RATE / UNITS</th>
+                    <th className="p-2 font-black text-xs text-right uppercase tracking-wide">AMOUNT (₹)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {earnings.map((e) => (
+                    <tr key={e.code} className="hover:bg-slate-50/60">
+                      <td className="p-2 font-semibold text-slate-900 text-xs">{e.label}</td>
+                      <td className="p-2 text-center text-slate-600 text-xs font-mono">{e.units || '—'}</td>
+                      <td className="p-2 text-right font-mono font-bold text-slate-950 text-xs">
+                        ₹{e.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="p-2 bg-emerald-50 border-t border-emerald-200 flex items-center justify-between text-xs font-black">
+                <span className="text-emerald-900 uppercase tracking-wide text-xs">GROSS EARNINGS</span>
+                <span className="font-mono text-sm text-emerald-900">
+                  ₹{totals.grossEarnings.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between text-xs font-semibold text-slate-700">
+              <span><strong>DEDUCTIONS:</strong> No statutory or voluntary deductions applied for this payroll cycle.</span>
+              <span className="font-mono font-bold text-emerald-800">₹0.00</span>
+            </div>
+          </div>
+        )}
+
+        {/* =================================================================== */}
+        {/* 5. NET TAKE-HOME SALARY HERO CARD */}
+        {/* =================================================================== */}
+        <div className="p-3.5 bg-emerald-50 border-2 border-emerald-600 rounded-lg mb-3 flex flex-col sm:flex-row sm:items-center justify-between shadow-xs gap-2">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-black text-emerald-950 uppercase tracking-wide">NET TAKE-HOME SALARY</span>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                {employee.paymentMode || 'Direct Bank Transfer'}
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                ((payroll as any)?.disbursedAt || (payroll.payrollStatus as string) === 'PAID')
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : 'bg-sky-100 text-sky-800 border border-sky-300'
+              }`}>
+                {((payroll as any)?.disbursedAt || (payroll.payrollStatus as string) === 'PAID') ? 'Disbursed / Paid' : 'Payment Scheduled'}
               </span>
             </div>
             <div className="text-xs font-bold text-emerald-900 mt-1">
@@ -343,15 +350,15 @@ export const PayslipDocument: React.FC<PayslipDocumentProps> = ({
             </div>
           </div>
 
-          <div className="text-2xl font-black text-emerald-900 font-mono tracking-tight text-right">
+          <div className="text-2xl font-black text-emerald-900 font-mono tracking-tight sm:text-right">
             ₹{totals.netPayable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         </div>
 
         {/* =================================================================== */}
-        {/* 6. SYMMETRICAL STATUTORY SUMMARY & EMPLOYER CONTRIBUTIONS (CTC) */}
+        {/* 6. STATUTORY SUMMARY & EMPLOYER CONTRIBUTIONS (CTC) */}
         {/* =================================================================== */}
-        <div className="grid grid-cols-2 gap-3 mb-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
           {/* Left Box: Symmetrical Statutory Breakdown */}
           <div className="p-3 bg-slate-50 border-2 border-slate-300 rounded-lg text-xs flex flex-col justify-between">
             <div>
@@ -388,10 +395,16 @@ export const PayslipDocument: React.FC<PayslipDocumentProps> = ({
                       {ptEmployee > 0 ? `₹${ptEmployee.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Nil'}
                     </td>
                   </tr>
-                  <tr>
+                  <tr className="border-b border-slate-200">
                     <td className="py-1 text-slate-600 font-sans">Tax Deducted at Source (TDS):</td>
                     <td className="py-1 text-right font-bold text-slate-900">
                       {tdsEmployee > 0 ? `₹${tdsEmployee.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Nil'}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 text-slate-600 font-sans">Labour Welfare Fund (LWF):</td>
+                    <td className="py-1 text-right font-bold text-slate-900">
+                      {lwfEmployee > 0 ? `₹${lwfEmployee.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Nil'}
                     </td>
                   </tr>
                 </tbody>
@@ -421,9 +434,6 @@ export const PayslipDocument: React.FC<PayslipDocumentProps> = ({
                   <tr className="border-b border-blue-100">
                     <td className="py-1 text-slate-700 font-sans">
                       <div className="font-semibold text-slate-800">Employer EPF ({erPf > 0 ? (Math.round((erPf / (earnings.find(e => e.code === 'BASIC')?.amount || (totals.grossEarnings * 0.5))) * 100)) : 12}%):</div>
-                      <div className="text-[9.5px] text-slate-500 font-sans">
-                        Split: 3.67% EPF + 8.33% EPS{erPf > 0 && Math.round((erPf / (earnings.find(e => e.code === 'BASIC')?.amount || (totals.grossEarnings * 0.5))) * 100) > 12 ? ' + 1% Admin/EDLI' : ''}
-                      </div>
                     </td>
                     <td className="py-1 text-right font-bold text-slate-900 align-top">
                       {erPf > 0 ? `₹${erPf.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Not Applicable'}
@@ -432,9 +442,6 @@ export const PayslipDocument: React.FC<PayslipDocumentProps> = ({
                   <tr className="border-b border-blue-100">
                     <td className="py-1 text-slate-700 font-sans">
                       <div className="font-semibold text-slate-800">Employer ESIC (3.25%):</div>
-                      <div className="text-[9.5px] text-slate-500 font-sans">
-                        Medical &amp; Disability Social Security
-                      </div>
                     </td>
                     <td className="py-1 text-right font-bold text-slate-900 align-top">
                       {erEsi > 0 ? `₹${erEsi.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Not Applicable'}
@@ -468,15 +475,15 @@ export const PayslipDocument: React.FC<PayslipDocumentProps> = ({
       {/* 7. SECURE STATUTORY FOOTER */}
       {/* =================================================================== */}
       <div className="border-t border-slate-300 pt-2.5 text-center text-slate-600 text-xs mt-auto">
-        <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 mb-1">
+        <div className="flex flex-col sm:flex-row items-center justify-between text-[10px] font-mono text-slate-500 mb-1 gap-1">
           <span>
             Generated: <strong>{new Date(metadata.generatedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</strong>
           </span>
           <span>JOY PeopleHR • Secure Statutory Enterprise Suite</span>
-          <span>Doc ID: <strong>{metadata.payslipNumber}</strong> • Page 1 of 1</span>
+          <span>Ref: <strong>{metadata.payslipNumber}</strong></span>
         </div>
         <div className="italic text-[10px] text-slate-400">
-          *** This is a computer-generated payslip and does not require a physical signature. Confidential & Proprietary. ***
+          *** This is a computer-generated payslip and does not require a physical signature. Confidential &amp; Proprietary. ***
         </div>
       </div>
     </div>

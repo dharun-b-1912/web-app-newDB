@@ -106,6 +106,11 @@ export interface AttendanceRuleAction {
     cutoff_time?: string;
     flag_reason?: string;
     attendance_mode?: 'FIRST_IN_LAST_OUT' | 'PAIR_PUNCHES' | 'DEVICE_DIRECTION' | 'AUTO';
+    check_in_window_start?: string;
+    check_in_window_end?: string;
+    midday_buffer_start?: string;
+    midday_buffer_end?: string;
+    check_out_window_start?: string;
   };
 }
 

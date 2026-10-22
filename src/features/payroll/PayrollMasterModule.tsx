@@ -19,6 +19,7 @@ import { PayrollStageKey } from './components/PayrollContextBar';
 import { PayrollWorkflowStepper } from './components/PayrollWorkflowStepper';
 import { PayrollStatusBadge } from './components/PayrollStatusBadge';
 import { payrollApi } from '../../services/payrollApi';
+import { attendanceApi } from '../../services/attendanceApi';
 import { payrollPeriodService, PayrollPeriod } from '../../services/payroll/payrollPeriodService';
 import { Payslip } from '../../types/payroll';
 import { cn } from '../../lib/utils';
@@ -142,8 +143,13 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
     ? tabs
     : tabs.filter(t => t.category === selectedCategory);
 
-  const handleOpenPayslip = (employeeId: string) => {
-    const slip = payrollApi.getPayslipForEmployee(employeeId, 'August 2026');
+  const handleOpenPayslip = async (employeeId: string, customPeriod?: string) => {
+    const periodToUse = customPeriod || activePeriod || 'August 2026';
+    const pObj = payrollPeriods.find(p => p.period_name === periodToUse);
+    if (pObj) {
+      await attendanceApi.getDailyAttendanceForPeriodAsync(pObj.start_date, pObj.end_date).catch(() => {});
+    }
+    const slip = payrollApi.getPayslipForEmployee(employeeId, periodToUse);
     if (slip) {
       setSelectedPayslip(slip);
       setIsPayslipModalOpen(true);
@@ -168,7 +174,10 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
       setPayrollPeriods(periods);
       const todayStr = new Date().toISOString().split('T')[0];
       const cur = periods.find(p => todayStr >= p.start_date && todayStr <= p.end_date) || periods[0];
-      if (cur) setActivePeriod(cur.period_name);
+      if (cur) {
+        setActivePeriod(cur.period_name);
+        attendanceApi.getDailyAttendanceForPeriodAsync(cur.start_date, cur.end_date).catch(() => {});
+      }
     });
   }, []);
 
@@ -290,6 +299,7 @@ export const PayrollMasterModule: React.FC<PayrollMasterModuleProps> = ({ initia
       <div className="transition-all duration-200">
         {activeTab === 'dashboard' && (
           <PayrollDashboardView
+            activePeriod={activePeriod}
             onNavigateTab={tabKey => handleSelectTab(tabKey)}
             onOpenPayslip={handleOpenPayslip}
           />

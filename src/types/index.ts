@@ -551,13 +551,16 @@ export interface EmploymentDetails {
   attendance_policy_id?: string;
   leave_policy_id?: string;
   leave_policy_name?: string;
+  salary_structure_id?: string;
   salary_structure_code?: string;
   salary_structure_name?: string;
   salary_effective_from?: string;
   payroll_group_id?: string;
   annual_ctc?: number;
   monthly_ctc?: number;
+  monthly_gross?: number;
   ctc?: number;
+  compensation_basis?: string;
   history?: LifecycleHistoryItem[];
 }
 
@@ -573,15 +576,22 @@ export interface EmployeeBankAccount {
 export interface EmployeeStatutory {
   pan?: string;
   pan_number?: string;
+  aadhaar_number?: string;
+  aadhaar_masked?: string;
   uan?: string;
   uan_number?: string;
   pf_number?: string;
   esi_number?: string;
   pf_applicable?: boolean;
+  is_pf_eligible?: boolean;
   esi_applicable?: boolean;
+  is_esi_eligible?: boolean;
   pt_applicable?: boolean;
+  is_pt_eligible?: boolean;
   tds_applicable?: boolean;
   is_tds_eligible?: boolean;
+  lwf_applicable?: boolean;
+  is_lwf_eligible?: boolean;
   tax_regime?: 'NEW' | 'OLD';
 }
 
@@ -592,6 +602,11 @@ export interface Employee {
   company_name?: string;
   branch_id?: string;
   branch_name?: string;
+  location_id?: string;
+  location?: string;
+  work_location?: string;
+  work_location_name?: string;
+  work_mode?: string;
   department_id: string;
   department_name?: string;
   department?: string;
@@ -616,6 +631,8 @@ export interface Employee {
   employment_type: EmploymentType;
   reporting_manager_id?: string | null;
   reporting_manager_name?: string;
+  team_lead_id?: string | null;
+  team_lead_name?: string;
   employment_source?: EmploymentSource;
   vendor_id?: string;
   vendor_name?: string;
@@ -851,6 +868,8 @@ export interface UniversalAsset {
   assignedTo?: string;
   empCode?: string;
   value?: string;
+  is_returnable?: boolean;
+  deduction_amount?: number;
 }
 
 // Backwards-compatible alias for existing references
@@ -859,6 +878,7 @@ export type Asset = UniversalAsset;
 export interface AssetAssignment {
   id: string;
   asset_id: string;
+  employee_id?: string;
   target_type: AssignmentTargetType;
   target_id: string;
   target_name: string;
@@ -872,6 +892,9 @@ export interface AssetAssignment {
   purpose?: string;
   notes?: string;
   status: 'ACTIVE' | 'RETURNED' | 'TRANSFER_REQUESTED' | 'OVERDUE';
+  is_returnable?: boolean;
+  deduction_amount?: number;
+  deduction_status?: 'NO_DEDUCTION' | 'DEDUCTED_PAYROLL' | 'DEPOSIT_HELD' | 'WAIVED' | 'REFUNDED';
 }
 
 export interface AssetTransfer {

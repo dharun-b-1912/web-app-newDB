@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import {
@@ -30,6 +30,9 @@ import { useToast } from '../../../components/ui/Toast';
 import { SalaryStructure, StructureComponentRule } from '../../../types/payroll';
 import { payrollApi } from '../../../services/payrollApi';
 import { PayrollCalculationEngine } from '../../../services/payroll/payrollCalculationEngine';
+import { api } from '../../../services/api';
+import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
+import { Department } from '../../../types';
 
 export interface CustomStructureComponent {
   id: string;
@@ -59,6 +62,7 @@ export const IntelligentSalaryStructureBuilder: React.FC<IntelligentSalaryStruct
 
   // Wizard Step (1 to 7)
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5 | 6 | 7>(1);
+  const [isSaving, setIsSaving] = useState(false);
 
   const isInitialDaily = Boolean(
     existingStructure?.code?.toLowerCase().includes('daily') ||
@@ -85,22 +89,24 @@ export const IntelligentSalaryStructureBuilder: React.FC<IntelligentSalaryStruct
 
   // Step 1: Structure Profile
   const [workforceCategory, setWorkforceCategory] = useState<'manufacturing' | 'corporate' | 'contract' | 'daily' | 'custom'>(
-    isInitialDaily ? 'daily' : 'manufacturing'
+    isInitialDaily ? 'daily' : 'corporate'
   );
   const [structureName, setStructureName] = useState(
-    existingStructure?.name || (isInitialDaily ? 'Daily Wage / Plant Manufacturing Structure' : 'Factory Monthly Staff (Industrial Plant)')
+    existingStructure?.name || (isInitialDaily ? 'Daily Wage / Field Operations Structure' : 'Corporate Standard Structure')
   );
   const [structureCode, setStructureCode] = useState(
-    existingStructure?.code || (isInitialDaily ? 'STR_DAILY_PLANT' : 'FACTORY_MONTHLY_01')
+    existingStructure?.code || (isInitialDaily ? 'STR_DAILY_OPS' : 'CORP_STD_02')
   );
   const [applicableGrade, setApplicableGrade] = useState(
-    existingStructure?.applicable_grade || (isInitialDaily ? 'Daily Worker / Plant Grade L1' : 'Worker / Grade L1 - L4')
+    existingStructure?.applicable_grade || (isInitialDaily ? 'Daily Worker / Field Grade L1' : 'Corporate Staff / Grade L1 - L4')
   );
   const [payFrequency, setPayFrequency] = useState<'Monthly' | 'Daily' | 'Hourly'>(
     isInitialDaily ? 'Daily' : 'Monthly'
   );
-  const [location, setLocation] = useState('Coimbatore Plant (Unit I)');
-  const [effectiveFrom, setEffectiveFrom] = useState('2026-04-01');
+  const [location, setLocation] = useState('All Operating Locations');
+  const [effectiveFrom, setEffectiveFrom] = useState(
+    existingStructure?.effective_from || new Date().toISOString().split('T')[0]
+  );
 
   // Step 2: Pay Basis & Base Amount
   const [payBasisType, setPayBasisType] = useState<'annual_ctc' | 'monthly_gross' | 'daily_wage'>(
@@ -119,32 +125,72 @@ export const IntelligentSalaryStructureBuilder: React.FC<IntelligentSalaryStruct
   const [workingDaysPerMonth, setWorkingDaysPerMonth] = useState<number>(26);
 
   // Step 3 & 4: Selected Components & Formulas
-  const [basicPct, setBasicPct] = useState<number>(isInitialDaily ? 70 : 50); // 70% of Daily Wage or 50% of Gross
-  const [hraPct, setHraPct] = useState<number>(isInitialDaily ? 30 : 40); // 30% of Daily Wage or 40% of Basic
-  const [includeConveyance, setIncludeConveyance] = useState<boolean>(!isInitialDaily);
-  const [conveyanceMonthly, setConveyanceMonthly] = useState<number>(1600);
-  const [includeFoodAllowance, setIncludeFoodAllowance] = useState<boolean>(true);
-  const [foodAllowanceMonthly, setFoodAllowanceMonthly] = useState<number>(1500);
-  const [includeAttendanceBonus, setIncludeAttendanceBonus] = useState<boolean>(true);
-  const [attendanceBonusMonthly, setAttendanceBonusMonthly] = useState<number>(1000);
-  const [includeNightAllowance, setIncludeNightAllowance] = useState<boolean>(true);
+  const findExistingComp = (code: string) => existingStructure?.components?.find(
+    (c: any) => (c.component_code && c.component_code.toUpperCase() === code) || (c.code && c.code.toUpperCase() === code)
+  );
+
+  const [basicPct, setBasicPct] = useState<number>(() => {
+    const bComp = findExistingComp('BASIC');
+    if (bComp?.value && bComp.value <= 100) return bComp.value;
+    return isInitialDaily ? 70 : 50;
+  });
+  const [hraPct, setHraPct] = useState<number>(() => {
+    const hComp = findExistingComp('HRA');
+    if (hComp?.value && hComp.value <= 100) return hComp.value;
+    return isInitialDaily ? 30 : 40;
+  });
+  const [includeConveyance, setIncludeConveyance] = useState<boolean>(
+    existingStructure ? Boolean(findExistingComp('CONV') || findExistingComp('CONVEYANCE')) : !isInitialDaily
+  );
+  const [conveyanceMonthly, setConveyanceMonthly] = useState<number>(
+    findExistingComp('CONV')?.value ?? findExistingComp('CONVEYANCE')?.value ?? 1600
+  );
+  const [includeFoodAllowance, setIncludeFoodAllowance] = useState<boolean>(
+    existingStructure ? Boolean(findExistingComp('FOOD') || findExistingComp('MEAL_ALLOW')) : false
+  );
+  const [foodAllowanceMonthly, setFoodAllowanceMonthly] = useState<number>(
+    findExistingComp('FOOD')?.value ?? findExistingComp('MEAL_ALLOW')?.value ?? 1500
+  );
+  const [includeAttendanceBonus, setIncludeAttendanceBonus] = useState<boolean>(
+    existingStructure ? Boolean(findExistingComp('ATTN_BONUS') || findExistingComp('ATT_BONUS')) : false
+  );
+  const [attendanceBonusMonthly, setAttendanceBonusMonthly] = useState<number>(
+    findExistingComp('ATTN_BONUS')?.value ?? findExistingComp('ATT_BONUS')?.value ?? 1000
+  );
+  const [includeNightAllowance, setIncludeNightAllowance] = useState<boolean>(
+    existingStructure ? Boolean(findExistingComp('NIGHT_ALLOW')) : false
+  );
   const [nightAllowancePerShift, setNightAllowancePerShift] = useState<number>(150);
-  const [includeSiteAllowance, setIncludeSiteAllowance] = useState<boolean>(false);
+  const [includeSiteAllowance, setIncludeSiteAllowance] = useState<boolean>(
+    existingStructure ? Boolean(findExistingComp('SITE_ALLOW')) : false
+  );
   const [siteAllowanceMonthly, setSiteAllowanceMonthly] = useState<number>(2000);
-  const [includeUniformAllowance, setIncludeUniformAllowance] = useState<boolean>(false);
-  const [uniformAllowanceMonthly, setUniformAllowanceMonthly] = useState<number>(800);
-  const [includeOtWages, setIncludeOtWages] = useState<boolean>(true);
+  const [includeUniformAllowance, setIncludeUniformAllowance] = useState<boolean>(
+    existingStructure ? Boolean(findExistingComp('UNIFORM_ALLOW')) : false
+  );
+  const [uniformAllowanceMonthly, setUniformAllowanceMonthly] = useState<number>(
+    findExistingComp('UNIFORM_ALLOW')?.value ?? 800
+  );
+  const [includeOtWages, setIncludeOtWages] = useState<boolean>(
+    existingStructure ? Boolean(findExistingComp('OT_WAGES')) : false
+  );
   const [otHourlyRate, setOtHourlyRate] = useState<number>(75);
 
   // Custom User-Defined Components
   const [customComponents, setCustomComponents] = useState<CustomStructureComponent[]>(() => {
     if (!existingStructure?.components) return [];
     const standardCodes = new Set([
-      'BASIC', 'HRA', 'CONV', 'FOOD', 'SPL_ALLOW', 'PF_EMP', 'PT', 'ER_PF',
-      'ESI_EMP', 'ER_ESI', 'LWF', 'GRATUITY', 'OT_WAGES', 'NIGHT_ALLOW', 'ATTN_BONUS', 'SITE_ALLOW', 'UNIFORM_ALLOW'
+      'BASIC', 'HRA', 'CONV', 'CONVEYANCE', 'FOOD', 'MEAL_ALLOW',
+      'SPL_ALLOW', 'SA', 'SPECIAL_ALLOWANCE',
+      'PF_EMP', 'PT', 'TDS', 'ER_PF', 'ESI_EMP', 'ER_ESI', 'LWF', 'GRATUITY',
+      'OT_WAGES', 'NIGHT_ALLOW', 'ATTN_BONUS', 'ATT_BONUS', 'SITE_ALLOW', 'UNIFORM_ALLOW',
+      'COMM_ALLOW', 'MED'
     ]);
     return existingStructure.components
-      .filter((c: any) => !standardCodes.has(c.component_code) && !standardCodes.has(c.code))
+      .filter((c: any) => {
+        const cCode = (c.component_code || c.code || '').toUpperCase();
+        return !standardCodes.has(cCode);
+      })
       .map((c: any) => ({
         id: c.component_id || `cust-${Date.now()}-${Math.random()}`,
         code: c.component_code || c.code || 'CUSTOM',
@@ -178,8 +224,51 @@ export const IntelligentSalaryStructureBuilder: React.FC<IntelligentSalaryStruct
   const [includeGratuity, setIncludeGratuity] = useState<boolean>(true);
 
   // Step 6: Employee Applicability
-  const [assignedPayrollGroup, setAssignedPayrollGroup] = useState('Factory Workers & Technicians');
-  const [assignedDepartment, setAssignedDepartment] = useState('All Plant Operations');
+  const [assignedPayrollGroup, setAssignedPayrollGroup] = useState(
+    existingStructure?.payroll_group || 'Monthly Main Payroll (All Corporate & Operations Staff)'
+  );
+  const [assignedDepartment, setAssignedDepartment] = useState(
+    existingStructure?.department || 'All Departments'
+  );
+  const [departmentsList, setDepartmentsList] = useState<Department[]>([]);
+  const [payrollGroupsWithCount, setPayrollGroupsWithCount] = useState<Array<{ id: string; name: string; count: number }>>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    Promise.all([
+      api.getDepartments().catch(() => []),
+      api.getEmployees().catch(() => []),
+    ]).then(([depts, emps]) => {
+      if (!isMounted) return;
+      if (Array.isArray(depts) && depts.length > 0) {
+        setDepartmentsList(depts);
+      }
+      const activeEmps = (emps || []).filter((e: any) => e.status !== 'Terminated');
+      const groupCounts: Record<string, number> = {
+        'pg-monthly-main': 0,
+        'pg-exec-mgmt': 0,
+        'pg-field-staff': 0,
+      };
+
+      activeEmps.forEach((e: any) => {
+        const pgId = e.payroll_group_id || 'pg-monthly-main';
+        if (groupCounts[pgId] !== undefined) {
+          groupCounts[pgId]++;
+        } else {
+          groupCounts['pg-monthly-main']++;
+        }
+      });
+
+      setPayrollGroupsWithCount([
+        { id: 'pg-monthly-main', name: 'Monthly Main Payroll (All Corporate & Operations Staff)', count: groupCounts['pg-monthly-main'] },
+        { id: 'pg-exec-mgmt', name: 'Executive & Management Payroll', count: groupCounts['pg-exec-mgmt'] },
+        { id: 'pg-field-staff', name: 'Weekly / Bi-Weekly Field Staff', count: groupCounts['pg-field-staff'] },
+      ]);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Dynamic Live Calculation Engine synced with Authoritative Payroll Engine
   const calculations = useMemo(() => {
@@ -286,7 +375,8 @@ export const IntelligentSalaryStructureBuilder: React.FC<IntelligentSalaryStruct
       erPfMonthly,
       erEsiMonthly,
       gratuityMonthly,
-      totalEmployerCost: isCtcInclusive ? monthlyCtc : (finalMonthlyGross + totalEmployerCost),
+      totalEmployerCost: Math.round(isCtcInclusive ? Math.max(0, monthlyCtc - finalMonthlyGross) : totalEmployerCost),
+      totalCtc: isCtcInclusive ? monthlyCtc : (finalMonthlyGross + totalEmployerCost),
       eePfMonthly,
       eeEsiMonthly,
       ptMonthly,
@@ -337,9 +427,9 @@ export const IntelligentSalaryStructureBuilder: React.FC<IntelligentSalaryStruct
       setIncludeConveyance(false);
       setIncludeAttendanceBonus(true);
       if (!existingStructure) {
-        setStructureName('Daily Wage / Plant Manufacturing Structure');
-        setStructureCode('STR_DAILY_PLANT');
-        setApplicableGrade('Daily Worker / Plant Grade L1');
+        setStructureName('Daily Wage / Field Operations Structure');
+        setStructureCode('STR_DAILY_OPS');
+        setApplicableGrade('Daily Worker / Field Grade L1');
         setDailyWageInput(600);
       }
     } else if (id === 'corporate') {
@@ -375,9 +465,9 @@ export const IntelligentSalaryStructureBuilder: React.FC<IntelligentSalaryStruct
       setIncludeConveyance(true);
       setIncludeAttendanceBonus(true);
       if (!existingStructure) {
-        setStructureName('Factory Monthly Staff (Industrial Plant)');
-        setStructureCode('FACTORY_MONTHLY_01');
-        setApplicableGrade('Worker / Grade L1 - L4');
+        setStructureName('Manufacturing & Operations Monthly Staff');
+        setStructureCode('OPS_MONTHLY_01');
+        setApplicableGrade('Operations / Grade L1 - L4');
       }
     }
   };
@@ -412,7 +502,7 @@ export const IntelligentSalaryStructureBuilder: React.FC<IntelligentSalaryStruct
 
   if (!isOpen) return null;
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     const componentsList: StructureComponentRule[] = [];
     let order = 1;
 
@@ -738,16 +828,19 @@ export const IntelligentSalaryStructureBuilder: React.FC<IntelligentSalaryStruct
       });
     }
 
+    const activeTenant = getActiveOrgId();
     const newStructure: SalaryStructure = {
       id: existingStructure?.id || `str-${Date.now()}`,
-      tenant_id: 'org-joy-01',
+      tenant_id: activeTenant,
       code: structureCode.toUpperCase().trim(),
       name: structureName.trim(),
       description: `${workforceCategory.toUpperCase()} compensation package for ${applicableGrade}`,
-      company_id: 'org-joy-01',
+      company_id: activeTenant,
       applicable_grade: applicableGrade,
       base_annual_ctc: calculations.annualCtc,
       compensation_basis: compensationBasis,
+      payroll_group: assignedPayrollGroup,
+      department: assignedDepartment,
       components: componentsList,
       status: 'Active',
       version: existingStructure ? (existingStructure.version || 1) + 1 : 1,
@@ -756,10 +849,18 @@ export const IntelligentSalaryStructureBuilder: React.FC<IntelligentSalaryStruct
       updated_at: new Date().toISOString(),
     };
 
-    payrollApi.saveSalaryStructure(newStructure);
-    onStructureSaved(newStructure);
-    showToast(`✓ Published Salary Structure: ${newStructure.name} (${newStructure.code})`);
-    onClose();
+    try {
+      setIsSaving(true);
+      const saved = await payrollApi.saveSalaryStructureAsync(newStructure);
+      onStructureSaved(saved);
+      showToast(`✓ Published Salary Structure: ${saved.name} (${saved.code})`);
+      onClose();
+    } catch (err: any) {
+      console.error('[Builder] Failed to publish structure to database:', err);
+      showToast(`Error publishing structure: ${err.message || 'Database error'}`, 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const stepsList = [
@@ -1793,9 +1894,14 @@ export const IntelligentSalaryStructureBuilder: React.FC<IntelligentSalaryStruct
                     <span>Special Allowance (Balancing Residual Component)</span>
                     <Badge variant="emerald">Auto-Balanced</Badge>
                   </div>
-                  <p className="text-[11px] text-gray-600 leading-relaxed font-mono">
-                    ₹ {Math.round(calculations.specialAllowanceBalancing).toLocaleString('en-IN')} = Monthly CTC (₹ {Math.round(calculations.monthlyCtc).toLocaleString('en-IN')}) − Employer Cost (₹ {Math.round(calculations.totalEmployerCost).toLocaleString('en-IN')}) − Fixed Earnings (₹ {Math.round(calculations.basicMonthly + calculations.hraMonthly + calculations.convMonthly + calculations.foodMonthly + calculations.attnBonusMonthly + calculations.siteMonthly + calculations.uniformMonthly + calculations.customEarningsTotal).toLocaleString('en-IN')})
+                  <p className="text-[11px] text-gray-700 leading-relaxed font-mono">
+                    ₹ {Math.round(calculations.specialAllowanceBalancing).toLocaleString('en-IN')} = Monthly Gross (₹ {Math.round(calculations.finalMonthlyGross).toLocaleString('en-IN')}) − Fixed Earnings (₹ {Math.round(calculations.basicMonthly + calculations.hraMonthly + calculations.convMonthly + calculations.foodMonthly + calculations.attnBonusMonthly + calculations.siteMonthly + calculations.uniformMonthly + calculations.customEarningsTotal).toLocaleString('en-IN')})
                   </p>
+                  {compensationBasis === 'CTC_INCLUSIVE' && (
+                    <p className="text-[10px] text-gray-500 font-mono">
+                      * Monthly Gross ₹ {Math.round(calculations.finalMonthlyGross).toLocaleString('en-IN')} = Monthly CTC (₹ {Math.round(calculations.monthlyCtc).toLocaleString('en-IN')}) − Employer Statutory Cost (₹ {Math.round(calculations.totalEmployerCost).toLocaleString('en-IN')})
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -2051,20 +2157,42 @@ export const IntelligentSalaryStructureBuilder: React.FC<IntelligentSalaryStruct
                     onChange={e => setAssignedPayrollGroup(e.target.value)}
                     className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl font-bold text-gray-900"
                   >
-                    <option value="Factory Workers & Technicians">Factory Workers & Technicians (56 Staff)</option>
-                    <option value="Corporate Monthly Staff">Corporate Monthly Staff (24 Staff)</option>
-                    <option value="Contract Labour Workforce">Contract Labour Workforce (40 Workers)</option>
+                    {payrollGroupsWithCount.length > 0 ? (
+                      payrollGroupsWithCount.map(pg => (
+                        <option key={pg.id} value={pg.name}>
+                          {pg.name} ({pg.count} Staff)
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="Monthly Main Payroll (All Corporate & Operations Staff)">
+                          Monthly Main Payroll (All Corporate & Operations Staff)
+                        </option>
+                        <option value="Executive & Management Payroll">
+                          Executive & Management Payroll
+                        </option>
+                        <option value="Weekly / Bi-Weekly Field Staff">
+                          Weekly / Bi-Weekly Field Staff
+                        </option>
+                      </>
+                    )}
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-gray-700 font-bold mb-1">Applicable Department</label>
-                  <input
-                    type="text"
+                  <select
                     value={assignedDepartment}
                     onChange={e => setAssignedDepartment(e.target.value)}
                     className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl font-medium text-gray-900"
-                  />
+                  >
+                    <option value="All Departments">All Departments (Organization-Wide)</option>
+                    {departmentsList.map(d => (
+                      <option key={d.id} value={d.name}>
+                        {d.name} {d.code ? `(${d.code})` : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="p-3 rounded-xl bg-blue-50 text-blue-900 text-[11px] font-medium leading-relaxed">
@@ -2155,9 +2283,16 @@ export const IntelligentSalaryStructureBuilder: React.FC<IntelligentSalaryStruct
                 size="sm"
                 variant="primary"
                 onClick={handlePublish}
-                className="bg-[#07563D] hover:bg-[#064e37] text-white font-black text-xs shadow-md"
+                disabled={isSaving}
+                className="bg-[#07563D] hover:bg-[#064e37] text-white font-black text-xs shadow-md disabled:opacity-50"
               >
-                <Check className="w-4 h-4 mr-1" /> Publish Structure
+                {isSaving ? (
+                  <span>Saving to Database...</span>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4 mr-1" /> Publish Structure
+                  </>
+                )}
               </Button>
             )}
           </div>

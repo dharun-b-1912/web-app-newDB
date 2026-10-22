@@ -22,11 +22,13 @@ function makeCommKey(key = 123456, sessionId = 0) {
 }
 
 (async () => {
-  const ip = '192.168.1.201';
-  const port = 4370;
-  const commKey = 123456;
+  const ip = process.argv[2] || process.env.DEVICE_IP || '192.168.1.201';
+  const port = parseInt(process.argv[3] || process.env.DEVICE_PORT || '4370', 10);
+  const commKey = process.argv[4] !== undefined ? parseInt(process.argv[4], 10) : (process.env.COMM_KEY ? parseInt(process.env.COMM_KEY, 10) : 0);
   console.log(`\n========================================`);
-  console.log(`🔌 Probing eSSL AiFace Magnum at ${ip}:${port}...`);
+  console.log(`🔌 Probing eSSL / ZKTeco Biometric Terminal`);
+  console.log(`   Target : ${ip}:${port}`);
+  console.log(`   Key    : ${commKey || '0 (Default/Open)'}`);
   console.log(`========================================\n`);
 
   const zk = new ZKLib(ip, port, 8000, 5000);
@@ -35,13 +37,15 @@ function makeCommKey(key = 123456, sessionId = 0) {
     await zk.createSocket();
     console.log('✓ TCP Socket connected!');
 
-    const authPayload = makeCommKey(commKey, zk.sessionId || 0);
-    if (authPayload) {
-      try {
-        await zk.executeCmd(1102, authPayload);
-        console.log('✓ Comm Key (123456) Authenticated!');
-      } catch (e) {
-        console.log('⚠️ Comm Key auth notice:', e.message);
+    if (commKey > 0) {
+      const authPayload = makeCommKey(commKey, zk.sessionId || 0);
+      if (authPayload) {
+        try {
+          await zk.executeCmd(1102, authPayload);
+          console.log(`✓ Comm Key (${commKey}) Authenticated!`);
+        } catch (e) {
+          console.log('⚠️ Comm Key auth notice:', e.message);
+        }
       }
     }
 

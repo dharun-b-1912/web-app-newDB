@@ -5,6 +5,15 @@ import './index.css';
 import { GlobalErrorInterceptor } from './services/observability/globalErrorInterceptor';
 import { supabaseProject, supabaseUrl, ensureSupabaseSession } from './lib/supabase';
 
+// ── PRODUCTION PII & CONSOLE HARDENING ─────────────────────────────────────
+// Strip all debug and information logs in production to prevent leaking sensitive
+// customer PII (employee emails, names, tenant context, token metadata).
+if (import.meta.env.PROD) {
+  console.log = () => {};
+  console.debug = () => {};
+  console.info = () => {};
+}
+
 // ── SESSION PRE-WARM ────────────────────────────────────────────────────────
 // Fire Supabase session restoration immediately at boot — before React mounts.
 // This ensures auth is resolved (or in-flight) before any component calls
@@ -14,19 +23,19 @@ if (typeof window !== 'undefined') {
   ensureSupabaseSession().catch(() => {});
 }
 
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && !import.meta.env.PROD) {
   console.log(`[BOOT] start: Application bootstrapping at ${window.location.pathname}${window.location.search} (origin=${window.location.origin})`);
 }
 
 // Initialize zero-leakage global observability interceptor
 GlobalErrorInterceptor.initialize();
 
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && !import.meta.env.PROD) {
   console.log(`[WF][SUPABASE][RUNTIME] project=${supabaseProject}`);
 }
 
-// Expose security audit runners for dev inspection via dynamic on-demand import
-if (typeof window !== 'undefined') {
+// Expose security audit runners for dev inspection only
+if (typeof window !== 'undefined' && !import.meta.env.PROD) {
   (window as any).__runSecurityAudit = async () => {
     const m = await import('./services/__tests__/securityAuditSuite.test');
     return m.runAllSecurityAuditTests();

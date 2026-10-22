@@ -11,6 +11,7 @@ import { attendanceApi } from '../attendanceApi';
 import { attendanceRosterService } from './attendanceRosterService';
 import { hrEventBus } from '../hrEventBus';
 import { api } from '../api';
+import { formatDeviationDuration } from '../../lib/attendance/attendanceEngine';
 
 export type LateEarlyStatus =
   | 'PENDING_ACTION'
@@ -237,7 +238,9 @@ class AttendanceOperationsEngine {
       department: le.department,
       date: le.date,
       shift_name: le.shift_name,
-      issue_type: le.late_minutes > 0 ? `Late Arrival (+${le.late_minutes}m)` : `Early Exit (-${le.early_minutes}m)`,
+      issue_type: le.late_minutes > 0
+        ? `Late Arrival (+${formatDeviationDuration(le.late_minutes, { showBoth: le.late_minutes >= 60 })})`
+        : `Early Exit (-${formatDeviationDuration(le.early_minutes, { showBoth: le.early_minutes >= 60 })})`,
       original_in: le.actual_in,
       original_out: le.actual_out,
       requested_in: payload.requested_in,

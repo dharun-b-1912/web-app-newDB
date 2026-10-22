@@ -40,6 +40,7 @@ import {
 } from '../../../services/attendance/attendanceRosterService';
 import { ShiftMaster, ShiftType, BreakMode } from '../../../types/shiftRoster';
 import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
+import { hrEventBus } from '../../../services/hrEventBus';
 import { cn } from '../../../lib/utils';
 
 export const ShiftMasterView: React.FC = () => {
@@ -87,11 +88,24 @@ export const ShiftMasterView: React.FC = () => {
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['Production', 'People & HR', 'Engineering']);
 
   const loadShifts = () => {
-    setShifts(attendanceRosterService.getShifts());
+    attendanceRosterService.fetchShiftsFromDb().then(s => setShifts(s)).catch(() => {
+      setShifts(attendanceRosterService.getShifts());
+    });
   };
 
   useEffect(() => {
     loadShifts();
+  }, []);
+
+  // Event-driven listener for live shift updates
+  useEffect(() => {
+    const unsub = hrEventBus.subscribe('shift.*', () => {
+      loadShifts();
+    });
+
+    return () => {
+      unsub();
+    };
   }, []);
 
   const resetForm = () => {
@@ -152,43 +166,59 @@ export const ShiftMasterView: React.FC = () => {
     setIsWizardOpen(true);
   };
 
-  const handleSaveShift = () => {
-    attendanceRosterService.saveShift({
-      id: editingShiftId || undefined,
-      tenant_id: getActiveOrgId(),
-      shift_code: shiftCode,
-      shift_name: shiftName,
-      description,
-      shift_type: shiftType,
-      start_time: startTime,
-      end_time: endTime,
-      scheduled_duration_minutes: 540,
-      net_working_minutes: 480,
-      cross_midnight: crossMidnight,
-      attendance_date_cutoff: attendanceDateCutoff,
-      grace_in_minutes: graceInMinutes,
-      grace_out_minutes: graceOutMinutes,
-      early_out_tolerance_minutes: 15,
-      late_threshold_minutes: lateThresholdMinutes,
-      min_hours_full_day: minHoursFullDay,
-      min_hours_half_day: minHoursHalfDay,
-      break_mode: breakMode,
-      breaks: [{ id: 'b1', name: 'Meal Break', duration_minutes: breakDurationMinutes, is_paid: false }],
-      ot_enabled: otEnabled,
-      min_ot_threshold_minutes: minOtThresholdMinutes,
-      weekday_ot_rate: weekdayOtRate,
-      weekly_off_ot_rate: weeklyOffOtRate,
-      holiday_ot_rate: holidayOtRate,
-      requires_manager_approval: true,
-      requires_hr_approval: false,
-      applies_to: { type: appliesToType, ids: selectedDepartments },
-      effective_from: '2026-01-01',
-      status: 'ACTIVE',
-    });
+  const [isSaving, setIsSaving] = useState(false);
 
-    showToast(editingShiftId ? `Shift ${shiftCode} updated successfully.` : `Shift ${shiftCode} created!`);
-    setIsWizardOpen(false);
-    loadShifts();
+  const handleSaveShift = async () => {
+    setIsSaving(true);
+    try {
+      const saved = attendanceRosterService.saveShift({
+        id: editingShiftId || undefined,
+        tenant_id: getActiveOrgId(),
+        shift_code: shiftCode,
+        shift_name: shiftName,
+        description,
+        shift_type: shiftType,
+        start_time: startTime,
+        end_time: endTime,
+        scheduled_duration_minutes: 540,
+        net_working_minutes: 480,
+        cross_midnight: crossMidnight,
+        attendance_date_cutoff: attendanceDateCutoff,
+        grace_in_minutes: graceInMinutes,
+        grace_out_minutes: graceOutMinutes,
+        early_out_tolerance_minutes: 15,
+        late_threshold_minutes: lateThresholdMinutes,
+        min_hours_full_day: minHoursFullDay,
+        min_hours_half_day: minHoursHalfDay,
+        break_mode: breakMode,
+        breaks: [{ id: 'b1', name: 'Meal Break', duration_minutes: breakDurationMinutes, is_paid: false }],
+        ot_enabled: otEnabled,
+        min_ot_threshold_minutes: minOtThresholdMinutes,
+        weekday_ot_rate: weekdayOtRate,
+        weekly_off_ot_rate: weeklyOffOtRate,
+        holiday_ot_rate: holidayOtRate,
+        requires_manager_approval: true,
+        requires_hr_approval: false,
+        applies_to: { type: appliesToType, ids: selectedDepartments },
+        effective_from: '2026-01-01',
+        status: 'ACTIVE',
+      });
+
+      // Synchronize in realtime to Supabase
+      const syncRes = await attendanceRosterService.syncShiftToDb(saved);
+      if (syncRes && !syncRes.success && syncRes.error) {
+        console.warn('[ShiftMasterView] Remote DB sync warning:', syncRes.error);
+        showToast(`Shift saved locally; DB sync warning: ${syncRes.error.message || 'Check connection'}`, 'warning');
+      } else {
+        showToast(editingShiftId ? `Shift ${shiftCode} updated successfully.` : `Shift ${shiftCode} created!`);
+      }
+      setIsWizardOpen(false);
+      loadShifts();
+    } catch (e: any) {
+      showToast(`Error saving shift: ${e?.message || e}`, 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDeleteShift = (shift: ShiftMaster) => {

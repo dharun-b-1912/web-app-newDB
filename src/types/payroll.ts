@@ -150,6 +150,8 @@ export interface SalaryStructure {
   status: 'Active' | 'Draft' | 'Archived';
   compensation_basis?: 'CTC_INCLUSIVE' | 'GROSS_BASED';
   ctc_inclusive?: boolean;
+  payroll_group?: string;
+  department?: string;
   version: number;
   effective_from: string;
   created_at: string;
@@ -183,6 +185,7 @@ export interface EmployeeSalaryAssignment {
   esi_applicable?: boolean;
   pt_applicable?: boolean;
   tds_applicable?: boolean;
+  lwf_applicable?: boolean;
   is_pf_exempt?: boolean;
   is_esi_exempt?: boolean;
   hra_monthly?: number;

@@ -232,18 +232,29 @@ export const roleResolutionService = {
           }
         }
 
-        // 4. Query employee record if employee_id exists to verify role assignments
-        if (employeeId && rawRoles.length === 0) {
+        // 4. Query employee record if employee_id exists, OR if matching work_email exists
+        if ((employeeId || emailLower) && rawRoles.length === 0) {
           try {
-            const { data: empRow } = await supabase
+            let empQuery = supabase
               .from('employees')
-              .select('id, organization_id, company_id, role, designation_id, is_hr_head')
-              .eq('id', employeeId)
-              .maybeSingle();
+              .select('id, employee_code, first_name, last_name, display_name, organization_id, company_id, role, designation_id, is_hr_head, work_email, personal_email');
+
+            if (employeeId) {
+              empQuery = empQuery.eq('id', employeeId);
+            } else if (emailLower) {
+              empQuery = empQuery.or(`work_email.ilike.${emailLower},personal_email.ilike.${emailLower}`);
+            }
+
+            const { data: empRow } = await empQuery.maybeSingle();
 
             if (empRow) {
+              employeeId = empRow.id;
+              if (empRow.display_name || empRow.first_name) {
+                fullName = empRow.display_name || `${empRow.first_name || ''} ${empRow.last_name || ''}`.trim() || fullName;
+              }
               if (empRow.role) rawRoles.push(empRow.role);
               if (empRow.is_hr_head) rawRoles.push('HR_HEAD');
+              if (!empRow.role && !empRow.is_hr_head) rawRoles.push('EMPLOYEE');
               if (empRow.organization_id && !organizationId) organizationId = empRow.organization_id;
               if (empRow.company_id && !companyId) companyId = empRow.company_id;
             }

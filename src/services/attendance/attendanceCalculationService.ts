@@ -1,6 +1,7 @@
 import { PayrollPeriod } from '../payroll/payrollPeriodService';
 import { attendanceRosterService } from './attendanceRosterService';
 import { AttendanceTimeService } from './attendanceTimeService';
+import { timeStringToMinutes } from '../../lib/attendance/attendanceEngine';
 
 export interface DailyAttendanceRow {
   id: string;
@@ -108,8 +109,19 @@ class AttendanceCalculationService {
     const endDate = new Date(period.end_date);
     const numDays = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const now = new Date();
+    let currentMins = now.getHours() * 60 + now.getMinutes();
+    let todayStr = '';
+    try {
+      todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+      const istTimeStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
+      const [h, m] = istTimeStr.split(':').map(Number);
+      if (!isNaN(h) && !isNaN(m)) {
+        currentMins = h * 60 + m;
+      }
+    } catch {
+      todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
 
     let totalWeeklyOffs = 0;
     let scheduledWorkingDays = 0;
@@ -149,7 +161,6 @@ class AttendanceCalculationService {
       
       const isSunday = dayOfWeek === 0;
       const isSaturday = dayOfWeek === 6;
-      const isWeeklyOff = isSunday || isSaturday;
       const dayName = curDate.toLocaleDateString('en-US', { weekday: 'short' });
       
       const isToday = dateStr === todayStr;
@@ -169,11 +180,16 @@ class AttendanceCalculationService {
       const scheduledStart = shiftMaster?.start_time || '09:00';
       const scheduledEnd = shiftMaster?.end_time || '18:00';
       const scheduledTime = `${scheduledStart} – ${scheduledEnd}`;
+      const shiftStartMins = timeStringToMinutes(scheduledStart) || 540;
+      const shiftEndMins = timeStringToMinutes(scheduledEnd) || 1080;
+      const shiftGrace = 15;
+      const shiftEndBufferMins = shiftEndMins + shiftGrace;
+      const isShiftEnded = isPast || (isToday && currentMins >= shiftEndBufferMins);
 
       // Check if employee has raw attendance record from ledger or biometric sync
       const rawRec = rawAttendanceList.find(
         (r) =>
-          r.date === dateStr &&
+          (r.date === dateStr || r.attendance_date === dateStr) &&
           (r.employee_id === employee?.id ||
             r.employee_code === employee?.employee_code ||
             r.employee_id === employee?.employee_code ||
@@ -193,14 +209,36 @@ class AttendanceCalculationService {
       let statusBadgeVariant: DailyAttendanceRow['statusBadgeVariant'] = 'default';
       let firstIn: string | null = null;
       let lastOut: string | null = null;
-      let rawFirstIn: string | null = null;
-      let rawLastOut: string | null = null;
+      let rawFirstIn: string | null = rawRec ? (rawRec.first_check_in || rawRec.first_in || null) : null;
+      let rawLastOut: string | null = rawRec ? (rawRec.last_check_out || rawRec.last_out || null) : null;
       let workedMinutes = 0;
       let workedDurationStr = '–';
       let lateMinutes = 0;
       let earlyMinutes = 0;
       let otMinutes = otReq ? (otReq.approved_hours ? Math.round(otReq.approved_hours * 60) : 0) : 0;
       let source: DailyAttendanceRow['source'] = 'POLICY';
+
+      // Check if there is an approved regularization for this employee on this date
+      const regForDate = regularizations.find(
+        (r) =>
+          ((r.attendance_date && r.attendance_date === dateStr) || (r.date && r.date === dateStr)) &&
+          (r.employee_id === employee?.id ||
+            r.employee_code === employee?.employee_code ||
+            (employee?.display_name && r.employee_name && r.employee_name.trim().toLowerCase() === employee.display_name.trim().toLowerCase()))
+      );
+      const isRegApproved = regForDate && (regForDate.status === 'Approved' || regForDate.status === 'APPROVED');
+      if (isRegApproved && !rawLastOut) {
+        rawLastOut = regForDate.requested_check_out || regForDate.requested_out_time || '18:00';
+      }
+
+      const hasRealPunch = Boolean(rawFirstIn || rawLastOut);
+
+      // Real punches ALWAYS override weekly off (an employee who came in on weekend worked!)
+      const isWeeklyOff = !hasRealPunch && (
+        roster?.is_weekly_off !== undefined
+          ? roster.is_weekly_off
+          : (rawRec?.status === 'Weekly Off' || rawRec?.status === 'WEEKLY_OFF') || isSunday || (isSaturday && (rawRec?.status === 'Weekly Off' || !roster))
+      );
 
       if (isPreJoining) {
         // Pre-Joining days prior to DOJ are non-punitive and not scheduled working days
@@ -223,123 +261,94 @@ class AttendanceCalculationService {
           remainingWorkingDays++;
         }
 
-        rawFirstIn = rawRec ? (rawRec.first_check_in || rawRec.first_in || null) : null;
-        rawLastOut = rawRec ? (rawRec.last_check_out || rawRec.last_out || null) : null;
+        firstIn = rawFirstIn ? AttendanceTimeService.formatAttendanceTime(rawFirstIn, 'Asia/Kolkata', false) : null;
+        lastOut = rawLastOut ? AttendanceTimeService.formatAttendanceTime(rawLastOut, 'Asia/Kolkata', false) : null;
+        workedMinutes = rawRec?.net_working_minutes || rawRec?.gross_working_minutes || 0;
+        lateMinutes = rawRec?.late_entry_minutes ?? rawRec?.late_minutes ?? 0;
+        earlyMinutes = rawRec?.early_exit_minutes ?? rawRec?.early_checkout_minutes ?? 0;
+        otMinutes = rawRec?.overtime_minutes || otMinutes;
+        source = (rawRec?.source as any) || (firstIn ? 'MOBILE_GPS' : 'POLICY');
 
-        // Check if there is an approved regularization for this employee on this date
-        const regForDate = regularizations.find(
-          (r) =>
-            ((r.attendance_date && r.attendance_date === dateStr) || (r.date && r.date === dateStr)) &&
-            (r.employee_id === employee?.id ||
-              r.employee_code === employee?.employee_code ||
-              (employee?.display_name && r.employee_name && r.employee_name.trim().toLowerCase() === employee.display_name.trim().toLowerCase()))
-        );
-        const isRegApproved = regForDate && (regForDate.status === 'Approved' || regForDate.status === 'APPROVED');
-
-        // If regularization is approved and check-out was missing, resolve out-punch
-        if (isRegApproved && !rawLastOut) {
-          rawLastOut = regForDate.requested_check_out || regForDate.requested_out_time || '18:00';
-        }
-
-        const hasRealPunch = Boolean(rawFirstIn || rawLastOut);
-        const hasLeaveOrStatus = rawRec && (
-          rawRec.status === 'Paid Leave' ||
-          rawRec.status === 'On Leave' ||
-          rawRec.status === 'Leave' ||
-          rawRec.status === 'Absent' ||
-          rawRec.status === 'WFH' ||
-          rawRec.status === 'Present' ||
-          rawRec.status === 'PRESENT' ||
-          rawRec.status === 'Late' ||
-          rawRec.status === 'Half Day' ||
-          rawRec.status === 'Checked In'
-        );
-
-        if (hasRealPunch || hasLeaveOrStatus || isRegApproved) {
-          firstIn = rawFirstIn ? AttendanceTimeService.formatAttendanceTime(rawFirstIn, 'Asia/Kolkata', false) : null;
-          lastOut = rawLastOut ? AttendanceTimeService.formatAttendanceTime(rawLastOut, 'Asia/Kolkata', false) : null;
-          workedMinutes = rawRec?.net_working_minutes || rawRec?.gross_working_minutes || 0;
-          lateMinutes = rawRec?.late_minutes || 0;
-          earlyMinutes = rawRec?.early_checkout_minutes || 0;
-          otMinutes = rawRec?.overtime_minutes || otMinutes;
-          source = (rawRec?.source as any) || (firstIn ? 'MOBILE_GPS' : 'POLICY');
-
-          if (isRegApproved) {
-            status = 'Regularized';
-            statusBadgeVariant = 'info';
-            workedMinutes = workedMinutes > 0 ? workedMinutes : 480; // 8 standard hours
-            workedDurationStr = '8h 0m (Reg)';
-          } else if (rawRec?.status === 'Paid Leave' || rawRec?.status === 'Leave' || rawRec?.status === 'On Leave') {
-            status = 'Paid Leave';
-            statusBadgeVariant = 'info';
-          } else if (rawRec?.status === 'Unpaid Leave') {
-            status = 'Unpaid Leave';
-            statusBadgeVariant = 'error';
-          } else if (rawRec?.status === 'Absent' && !firstIn) {
-            status = 'Absent';
-            statusBadgeVariant = 'error';
-          } else if (rawRec?.status === 'Half Day') {
-            status = 'Half Day';
-            statusBadgeVariant = 'warning';
-          } else if (rawRec?.status === 'WFH') {
-            status = 'WFH';
-            statusBadgeVariant = 'info';
-          } else if (firstIn && !lastOut) {
-            // PUNCHED IN BUT NO CHECK-OUT (MISSING PUNCH EXCEPTION)
-            if (isPast) {
-              // Past day without checkout: Requires regularization, NOT PAYABLE (LOP)
-              status = 'Missing Punch';
-              statusBadgeVariant = 'warning';
-              workedMinutes = 0;
-              workedDurationStr = 'Missing Punch';
-              missingPunchCount++;
-            } else if (isToday) {
-              status = 'Checked In';
-              statusBadgeVariant = 'info';
-              if (workedMinutes > 0) {
-                const hrs = Math.floor(workedMinutes / 60);
-                const mins = workedMinutes % 60;
-                workedDurationStr = `${hrs}h ${mins}m (In Progress)`;
-              } else {
-                workedDurationStr = 'In Progress';
-              }
-            } else {
-              status = 'Scheduled';
-              statusBadgeVariant = 'default';
-            }
-          } else if (firstIn && lastOut) {
-            if (rawRec?.status === 'Late' || lateMinutes > 0) {
-              status = 'Late';
-              statusBadgeVariant = 'warning';
-            } else {
-              status = 'Present';
-              statusBadgeVariant = 'success';
-            }
-            workedMinutes = rawRec?.net_working_minutes || rawRec?.gross_working_minutes || 0;
-          } else if (isToday && (firstIn || rawRec?.status === 'Checked In')) {
+        if (isRegApproved) {
+          status = 'Regularized';
+          statusBadgeVariant = 'info';
+          workedMinutes = workedMinutes > 0 ? workedMinutes : 480; // 8 standard hours
+          workedDurationStr = '8h 0m (Reg)';
+        } else if (rawRec?.status === 'Paid Leave' || rawRec?.status === 'Leave' || rawRec?.status === 'On Leave' || rawRec?.status === 'ON_LEAVE') {
+          status = 'Paid Leave';
+          statusBadgeVariant = 'info';
+          workedDurationStr = 'On Leave';
+        } else if (rawRec?.status === 'Unpaid Leave') {
+          status = 'Unpaid Leave';
+          statusBadgeVariant = 'error';
+          workedDurationStr = 'Unpaid Leave';
+        } else if (rawRec?.status === 'WFH') {
+          status = 'WFH';
+          statusBadgeVariant = 'info';
+          workedMinutes = 480;
+          workedDurationStr = '8h 0m (WFH)';
+        } else if (firstIn && !lastOut) {
+          // PUNCHED IN BUT NO CHECK-OUT
+          if (isToday && !isShiftEnded) {
+            // Active shift in progress
             status = 'Checked In';
             statusBadgeVariant = 'info';
-            workedDurationStr = 'In Progress';
+            const inM = (rawFirstIn ? timeStringToMinutes(rawFirstIn) : null) || shiftStartMins;
+            const liveElapsed = Math.max(0, currentMins - inM);
+            workedMinutes = liveElapsed;
+            const hrs = Math.floor(liveElapsed / 60);
+            const mins = liveElapsed % 60;
+            workedDurationStr = `${hrs}h ${mins}m (In Progress)`;
           } else {
+            // Past day or today after shift end: Missing Punch
+            status = 'Missing Punch';
+            statusBadgeVariant = 'warning';
+            workedMinutes = 0;
+            workedDurationStr = 'Missing Punch';
+            missingPunchCount++;
+          }
+        } else if (firstIn && lastOut) {
+          // COMPLETED SHIFT: BOTH PUNCHES LOGGED
+          let effectiveWorked = workedMinutes;
+          if (effectiveWorked === 0 && rawFirstIn && rawLastOut) {
+            const inM = timeStringToMinutes(rawFirstIn);
+            const outM = timeStringToMinutes(rawLastOut);
+            if (inM !== null && outM !== null) {
+              effectiveWorked = outM >= inM ? (outM - inM) : (1440 - inM + outM);
+            }
+          }
+          workedMinutes = effectiveWorked;
+
+          if (effectiveWorked < 120) {
+            // Less than 2 hours: Does not qualify for Half Day -> Marked Absent
             status = 'Absent';
             statusBadgeVariant = 'error';
+          } else if (effectiveWorked < 240 || rawRec?.status === 'Half Day') {
+            // Between 2h and 4h (or flagged Half Day): Half Day
+            status = 'Half Day';
+            statusBadgeVariant = 'warning';
+          } else if (rawRec?.status === 'Late' || lateMinutes > 0) {
+            status = 'Late';
+            statusBadgeVariant = 'warning';
+          } else {
+            status = 'Present';
+            statusBadgeVariant = 'success';
           }
-        } else if (isPast) {
-          firstIn = null;
-          lastOut = null;
-          workedMinutes = 0;
-          workedDurationStr = '–';
-          source = 'POLICY';
+        } else if (rawRec?.status === 'Half Day') {
+          status = 'Half Day';
+          statusBadgeVariant = 'warning';
+        } else if (isShiftEnded) {
+          // Completely not checked in and shift has ended (past day or today after shift end)
           status = 'Absent';
           statusBadgeVariant = 'error';
-        } else {
-          firstIn = null;
-          lastOut = null;
           workedMinutes = 0;
           workedDurationStr = '–';
-          source = 'POLICY';
+        } else {
+          // Today before shift end, or future days: Scheduled / Not Checked In
           status = 'Scheduled';
           statusBadgeVariant = 'default';
+          workedMinutes = 0;
+          workedDurationStr = '–';
         }
       }
 

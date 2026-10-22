@@ -629,6 +629,27 @@ export const onboardingService = {
       console.warn('[OnboardingService] Could not update employee status:', err);
     }
 
+    // Auto-dispatch WhatsApp Welcome Template joy_hr_welcome_v2 upon activation
+    try {
+      const emps = await api.getEmployees();
+      const emp = emps.find((e: any) => e.id === onb.employee_id);
+      const targetPhone = emp?.phone || onb.personal_info?.phone;
+      if (targetPhone) {
+        const { whatsAppNotificationService } = await import('./whatsapp/whatsappNotificationService');
+        await whatsAppNotificationService.sendEmployeeWelcomeOnboarding({
+          phone: targetPhone,
+          employeeName: emp?.display_name || `${onb.personal_info?.first_name || ''} ${onb.personal_info?.last_name || ''}`.trim() || 'Employee',
+          employeeCode: emp?.employee_code || onb.employee_id,
+          companyName: 'Joy Corporate Solutions',
+          organizationId: emp?.organization_id,
+          employeeId: onb.employee_id,
+          workEmail: emp?.work_email || (emp as any)?.email || onb.personal_info?.email,
+        });
+      }
+    } catch (waErr) {
+      console.warn('[OnboardingService] WhatsApp welcome dispatch notice:', waErr);
+    }
+
     await this.logAudit(onboardingId, 'EMPLOYEE_ACTIVATED', { employeeId: onb.employee_id, activatedBy });
     hrEventBus.publish('employee.activated', { employeeId: onb.employee_id, onboardingId });
     hrEventBus.publish('onboarding.updated', { onboardingId });
@@ -695,8 +716,8 @@ export const onboardingService = {
   }> {
     const employeeId = ensureUUID(payload.identity?.id || payload.id);
     const employeeCode = payload.identity?.employee_code || payload.employee_code || `JCS-${Math.floor(100 + Math.random() * 900)}`;
-    const annualCtc = Number(payload.compensation?.annual_ctc) || 1200000;
-    const monthlyCtc = Math.round(annualCtc / 12);
+    const annualCtc = Number(payload.compensation?.annual_ctc) || 0;
+    const monthlyCtc = Number(payload.compensation?.monthly_ctc) || (annualCtc > 0 ? Math.round(annualCtc / 12) : 0);
 
     const activeOrgId = payload.organization_id || (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || 'org-joy-corporate-solutions-private-') : 'org-joy-corporate-solutions-private-');
     const activeCompanyId = payload.company_id || (typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_company_id') || `comp-${activeOrgId.replace('org-', '')}`) : `comp-${activeOrgId.replace('org-', '')}`);

@@ -13,13 +13,23 @@ export const ShiftScheduleView: React.FC = () => {
   const [shifts, setShifts] = useState<ShiftMaster[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
 
+  const todayStr = new Date().toISOString().split('T')[0];
+
   const loadData = async () => {
-    const loadedShifts = attendanceRosterService.getShifts();
-    setShifts(loadedShifts);
+    try {
+      const loadedShifts = await attendanceRosterService.fetchShiftsFromDb();
+      setShifts(loadedShifts);
+    } catch {
+      setShifts(attendanceRosterService.getShifts());
+    }
+
+    try {
+      await attendanceRosterService.fetchRostersFromDb(todayStr, todayStr);
+    } catch {}
 
     try {
       const emps = await api.getEmployees();
-      setEmployees(emps);
+      setEmployees(emps || []);
     } catch {
       // Fallback
     }
@@ -28,8 +38,6 @@ export const ShiftScheduleView: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
-
-  const todayStr = new Date().toISOString().split('T')[0];
 
   return (
     <div className="space-y-6">

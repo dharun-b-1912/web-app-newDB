@@ -23,6 +23,21 @@ export interface AirtelSmsResponse {
   provider: 'AIRTEL_IQ';
 }
 
+// Detect credentials safely from Vite environment (browser) or Node process (server)
+const getEnvVar = (key: string, defaultValue: string = ''): string => {
+  try {
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env[key]) {
+      return (import.meta as any).env[key];
+    }
+  } catch {}
+  try {
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
+      return process.env[key] || defaultValue;
+    }
+  } catch {}
+  return defaultValue;
+};
+
 export class AirtelSmsClient {
   private static instance: AirtelSmsClient;
   private readonly baseUrl: string;
@@ -35,32 +50,32 @@ export class AirtelSmsClient {
 
   private constructor() {
     this.baseUrl =
-      process.env.AIRTEL_IQ_SMS_BASE_URL ||
-      process.env.VITE_AIRTEL_IQ_SMS_BASE_URL ||
+      getEnvVar('AIRTEL_IQ_SMS_BASE_URL') ||
+      getEnvVar('VITE_AIRTEL_IQ_SMS_BASE_URL') ||
       'https://iqsms.airtel.in/api/v1/send-prepaid-sms';
     this.customerId =
-      process.env.AIRTEL_CUSTOMER_ID ||
-      process.env.VITE_AIRTEL_CUSTOMER_ID ||
+      getEnvVar('AIRTEL_CUSTOMER_ID') ||
+      getEnvVar('VITE_AIRTEL_CUSTOMER_ID') ||
       '';
     this.username =
-      process.env.AIRTEL_IQ_USERNAME ||
-      process.env.VITE_AIRTEL_IQ_USERNAME ||
+      getEnvVar('AIRTEL_IQ_USERNAME') ||
+      getEnvVar('VITE_AIRTEL_IQ_USERNAME') ||
       '';
     this.password =
-      process.env.AIRTEL_IQ_PASSWORD ||
-      process.env.VITE_AIRTEL_IQ_PASSWORD ||
+      getEnvVar('AIRTEL_IQ_PASSWORD') ||
+      getEnvVar('VITE_AIRTEL_IQ_PASSWORD') ||
       '';
     this.apiKey =
-      process.env.AIRTEL_API_KEY ||
-      process.env.VITE_AIRTEL_API_KEY ||
+      getEnvVar('AIRTEL_API_KEY') ||
+      getEnvVar('VITE_AIRTEL_API_KEY') ||
       '';
     this.defaultSenderId =
-      process.env.AIRTEL_DEFAULT_SENDER_ID ||
-      process.env.VITE_AIRTEL_DEFAULT_SENDER_ID ||
+      getEnvVar('AIRTEL_DEFAULT_SENDER_ID') ||
+      getEnvVar('VITE_AIRTEL_DEFAULT_SENDER_ID') ||
       'JCSPRL';
     this.defaultEntityId =
-      process.env.AIRTEL_DLT_PE_ID ||
-      process.env.VITE_AIRTEL_DLT_PE_ID ||
+      getEnvVar('AIRTEL_DLT_PE_ID') ||
+      getEnvVar('VITE_AIRTEL_DLT_PE_ID') ||
       '1001333025440167393';
   }
 
@@ -86,10 +101,10 @@ export class AirtelSmsClient {
       req.messageType ||
       (dltTemplateId === '1077449880060256831' ? 'TRANSACTIONAL' : 'SERVICE_IMPLICIT');
 
-    const username = this.username || process.env.AIRTEL_IQ_USERNAME || process.env.VITE_AIRTEL_IQ_USERNAME || '';
-    const password = this.password || process.env.AIRTEL_IQ_PASSWORD || process.env.VITE_AIRTEL_IQ_PASSWORD || '';
-    const customerId = this.customerId || process.env.AIRTEL_CUSTOMER_ID || process.env.VITE_AIRTEL_CUSTOMER_ID || '';
-    const apiKey = this.apiKey || process.env.AIRTEL_API_KEY || process.env.VITE_AIRTEL_API_KEY || '';
+    const username = this.username || getEnvVar('AIRTEL_IQ_USERNAME') || getEnvVar('VITE_AIRTEL_IQ_USERNAME') || '';
+    const password = this.password || getEnvVar('AIRTEL_IQ_PASSWORD') || getEnvVar('VITE_AIRTEL_IQ_PASSWORD') || '';
+    const customerId = this.customerId || getEnvVar('AIRTEL_CUSTOMER_ID') || getEnvVar('VITE_AIRTEL_CUSTOMER_ID') || '';
+    const apiKey = this.apiKey || getEnvVar('AIRTEL_API_KEY') || getEnvVar('VITE_AIRTEL_API_KEY') || '';
 
     const hasBasicAuth = Boolean(username && password);
     const hasBearerAuth = Boolean(apiKey);

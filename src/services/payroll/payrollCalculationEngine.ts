@@ -220,18 +220,21 @@ export class PayrollCalculationEngine {
 
     // ── 6. Statutory Rule Evaluations ─────────────────────────────────────────
     // A. ESI 2-Step Assessment
+    const isEsiActive = snapshot.esi_eligible !== false && (snapshot as any).esi_applicable !== false;
     const esiAssessment = StatutoryRuleEngine.evaluateESI(
       esiCoverageWage,
       esiOvertimeWage,
       snapshot.esi_coverage_status === 'CONTINUING_COVERAGE' ? 'CONTINUING_COVERAGE' : 'NEW_COVERAGE',
-      statutoryConfig
+      statutoryConfig,
+      isEsiActive
     );
 
     // B. PF Assessment
+    const isPfActive = snapshot.pf_eligible !== false && (snapshot as any).pf_applicable !== false;
     const pfAssessment = StatutoryRuleEngine.evaluatePF(
       pfWage,
       pfCapped,
-      snapshot.pf_eligible,
+      isPfActive,
       statutoryConfig
     );
 
@@ -239,29 +242,38 @@ export class PayrollCalculationEngine {
     const gratuityAssessment = StatutoryRuleEngine.evaluateGratuity(gratuityWage, 0.0481);
 
     // D. Professional Tax (PT)
-    const ptEval = StatutoryRuleEngine.evaluateProfessionalTax(actualGrossEarnings, stateJurisdiction, statutoryConfig);
-    const professionalTax = snapshot.pt_eligible !== false ? ptEval.ptAmount : 0;
+    const isPtActive = snapshot.pt_eligible !== false && (snapshot as any).pt_applicable !== false;
+    const ptEval = isPtActive
+      ? StatutoryRuleEngine.evaluateProfessionalTax(actualGrossEarnings, stateJurisdiction, statutoryConfig)
+      : { ptAmount: 0, slabDescription: 'PT Exempt', ruleVersion: 'PT-2026.04' };
+    const professionalTax = isPtActive ? ptEval.ptAmount : 0;
 
     // E. Dynamic Projected TDS (April 2026 framework)
-    const tdsEval = StatutoryRuleEngine.evaluateProjectedTDS(
-      actualGrossEarnings,
-      actualGrossEarnings * 12,
-      snapshot.tax_regime || 'NEW',
-      0,
-      0,
-      8
-    );
-    const estimatedTds = tdsEval.monthlyTdsWithholding;
+    const isTdsActive = (snapshot as any).tds_applicable !== false;
+    const tdsEval = isTdsActive
+      ? StatutoryRuleEngine.evaluateProjectedTDS(
+          actualGrossEarnings,
+          actualGrossEarnings * 12,
+          snapshot.tax_regime || 'NEW',
+          0,
+          0,
+          8
+        )
+      : { monthlyTdsWithholding: 0, totalAnnualTaxLiability: 0, effectiveTaxRate: 0, slabBreakdown: [] };
+    const estimatedTds = isTdsActive ? tdsEval.monthlyTdsWithholding : 0;
 
     // F. Labour Welfare Fund (LWF)
+    const isLwfActive = (snapshot as any).lwf_eligible !== false && (snapshot as any).lwf_applicable !== false;
     const isManagerial = snapshot.designation
       ? /manager|director|lead|vp|head|officer|supervisor/i.test(snapshot.designation)
       : false;
-    const lwfEval = StatutoryRuleEngine.evaluateLWF(stateJurisdiction, statutoryConfig, {
-      payrollMonth,
-      isManagerial,
-      monthlyGrossWage: actualGrossEarnings,
-    });
+    const lwfEval = isLwfActive
+      ? StatutoryRuleEngine.evaluateLWF(stateJurisdiction, statutoryConfig, {
+          payrollMonth,
+          isManagerial,
+          monthlyGrossWage: actualGrossEarnings,
+        })
+      : { employeeContribution: 0, employerContribution: 0, isEligible: false, explanation: 'LWF Not Applicable' };
 
     // ── 7. Deductions Aggregation ─────────────────────────────────────────────
     const loanEmi = snapshot.loan_emi_due || 0;
@@ -545,7 +557,7 @@ export class PayrollCalculationEngine {
         formula: `${snapshot.tax_regime || 'NEW'} Regime Annualized Projection`,
         amount: estimatedTds,
         source: 'Income Tax Act Slabs',
-        rule_version: tdsEval.ruleVersion,
+        rule_version: (tdsEval as any).ruleVersion || 'TDS-2026.04',
         is_employer_cost: false,
         is_taxable: false,
       });
@@ -563,7 +575,7 @@ export class PayrollCalculationEngine {
         formula: lwfEval.explanation,
         amount: lwfEval.employeeContribution,
         source: `${stateJurisdiction} LWF Board`,
-        rule_version: lwfEval.ruleVersion,
+        rule_version: (lwfEval as any).ruleVersion || 'LWF-2026.04',
         is_employer_cost: false,
         is_taxable: false,
       });
@@ -725,8 +737,8 @@ export class PayrollCalculationEngine {
       esiAssessment,
       pfAssessment,
       gratuityAssessment,
-      tdsAssessment: tdsEval,
-      lwfAssessment: lwfEval,
+      tdsAssessment: tdsEval as any,
+      lwfAssessment: lwfEval as any,
       calculationLines,
       exceptions,
       prorationDetails: isProrated
@@ -780,18 +792,21 @@ export class PayrollCalculationEngine {
       } catch (_) {}
     }
 
-    const isPfEnabled = statutoryConfig?.pf_enabled !== false && resolvedInput.pfApplicable !== false;
-    const isEsiEnabled = statutoryConfig?.esi_enabled !== false && resolvedInput.esiApplicable !== false;
+    const isPfActive = statutoryConfig?.pf_enabled !== false && resolvedInput.pfApplicable !== false;
+    const isEsiActive = statutoryConfig?.esi_enabled !== false && resolvedInput.esiApplicable === true;
+    const isPtActive = statutoryConfig?.pt_enabled !== false && resolvedInput.ptApplicable !== false;
+    const isTdsActive = statutoryConfig?.tds_auto_deduct !== false && resolvedInput.tdsApplicable !== false;
+    const isLwfActive = statutoryConfig?.lwf_enabled !== false && resolvedInput.lwfApplicable === true;
 
     const pfEmployeeRate = (statutoryConfig?.pf_employee_percent !== undefined ? statutoryConfig.pf_employee_percent : 12) / 100;
     const pfEmployerRate = (statutoryConfig?.pf_employer_percent !== undefined ? statutoryConfig.pf_employer_percent : 12) / 100;
     const pfAdminRate = 0.01; // 0.5% Admin + 0.5% EDLI
-    const totalPfErFactor = isPfEnabled ? (pfEmployerRate + pfAdminRate) : 0;
+    const totalPfErFactor = isPfActive ? (pfEmployerRate + pfAdminRate) : 0;
     const pfWageCeiling = statutoryConfig?.pf_wage_ceiling || 15000;
 
     const esiEmployeeRate = (statutoryConfig?.esi_employee_percent !== undefined ? statutoryConfig.esi_employee_percent : 0.75) / 100;
     const esiEmployerRate = (statutoryConfig?.esi_employer_percent !== undefined ? statutoryConfig.esi_employer_percent : 3.25) / 100;
-    const totalEsiErFactor = isEsiEnabled ? esiEmployerRate : 0;
+    const totalEsiErFactor = isEsiActive ? esiEmployerRate : 0;
     const esiWageCeiling = statutoryConfig?.esi_wage_ceiling || 21000;
 
     // ── Exact Deterministic CTC-to-Gross Derivation ──────────────────────────
@@ -807,7 +822,7 @@ export class PayrollCalculationEngine {
       const denominatorWithEsi = 1 + (0.5 * totalPfErFactor) + totalEsiErFactor;
       const trialGrossWithEsi = monthlyCtc / denominatorWithEsi;
 
-      if (isEsiEnabled && trialGrossWithEsi <= esiWageCeiling) {
+      if (isEsiActive && trialGrossWithEsi <= esiWageCeiling) {
         grossMonthly = Math.round(trialGrossWithEsi);
       } else {
         // ESI is not covered (Gross > esiWageCeiling or ESI disabled)
@@ -815,11 +830,11 @@ export class PayrollCalculationEngine {
         const denominatorWithoutEsi = 1 + (0.5 * totalPfErFactor);
         const trialGrossWithoutEsi = monthlyCtc / denominatorWithoutEsi;
 
-        if (!isPfEnabled || trialGrossWithoutEsi <= pfWageCeiling * 2) {
+        if (!isPfActive || trialGrossWithoutEsi <= pfWageCeiling * 2) {
           grossMonthly = Math.round(trialGrossWithoutEsi);
         } else {
           // Trial 3: Basic is above PF wage ceiling, so Employer PF is capped
-          const cappedPfCost = isPfEnabled ? Math.round(pfWageCeiling * totalPfErFactor) : 0;
+          const cappedPfCost = isPfActive ? Math.round(pfWageCeiling * totalPfErFactor) : 0;
           grossMonthly = Math.max(0, Math.round(monthlyCtc - cappedPfCost));
         }
       }
@@ -827,31 +842,71 @@ export class PayrollCalculationEngine {
 
     const basic = Math.round(grossMonthly * 0.50);
     const hra = Math.round(basic * 0.40);
-    const specialAllowance = Math.max(0, grossMonthly - basic - hra);
-    const conveyance = 0;
-    const medical = 0;
+    let conveyance = 0;
+    let medical = 0;
+    if (resolvedInput.structureCode === 'ASSOCIATE_STD_20K') {
+      conveyance = 1600;
+      medical = 1250;
+    } else if (resolvedInput.structureCode === 'CORP_STD_01') {
+      conveyance = 1600;
+      medical = 2500;
+    }
+    const specialAllowance = Math.max(0, grossMonthly - basic - hra - conveyance - medical);
 
-    const pfEval = StatutoryRuleEngine.evaluatePF(
-      basic,
-      true,
-      resolvedInput.pfApplicable !== false,
-      statutoryConfig
-    );
+    const pfEval = isPfActive
+      ? StatutoryRuleEngine.evaluatePF(
+          basic,
+          true,
+          true,
+          statutoryConfig
+        )
+      : {
+          pf_wage: 0,
+          wage_ceiling: pfWageCeiling,
+          employee_rate: pfEmployeeRate,
+          employee_contribution: 0,
+          employer_pf_rate: pfEmployerRate,
+          employer_pf_amount: 0,
+          employer_gov_portion_rate: 0.01,
+          employer_gov_portion_amount: 0,
+          total_employer_pf_cost: 0,
+          rule_version: 'PF-2026.04',
+          explanation: 'EPF is disabled or not applicable.',
+        };
 
-    const esiEval = StatutoryRuleEngine.evaluateESI(
-      grossMonthly,
-      0,
-      'NEW_COVERAGE',
-      statutoryConfig
-    );
+    const esiEval = isEsiActive
+      ? StatutoryRuleEngine.evaluateESI(
+          grossMonthly,
+          0,
+          'NEW_COVERAGE',
+          statutoryConfig,
+          true
+        )
+      : {
+          coverage_wage: 0,
+          coverage_limit: esiWageCeiling,
+          overtime_wage: 0,
+          is_covered: false,
+          coverage_status: 'NOT_COVERED' as const,
+          contribution_wage: 0,
+          employee_rate: esiEmployeeRate,
+          employee_contribution: 0,
+          employer_rate: esiEmployerRate,
+          employer_contribution: 0,
+          rule_version: 'ESI-2026.04',
+          explanation: 'ESIC is disabled or not applicable.',
+        };
 
-    const ptEval = StatutoryRuleEngine.evaluateProfessionalTax(
-      grossMonthly,
-      resolvedInput.state || 'Tamil Nadu',
-      statutoryConfig
-    );
+    const ptEval = isPtActive
+      ? StatutoryRuleEngine.evaluateProfessionalTax(
+          grossMonthly,
+          resolvedInput.state || 'Tamil Nadu',
+          statutoryConfig
+        )
+      : { ptAmount: 0, slabDescription: 'Professional Tax not applicable.', ruleVersion: 'PT-2026.04' };
 
-    const isTdsActive = resolvedInput.tdsApplicable !== false;
+    const ptAmount = isPtActive ? ptEval.ptAmount : 0;
+
     const tdsEval = isTdsActive
       ? StatutoryRuleEngine.evaluateProjectedTDS(
           grossMonthly,
@@ -860,12 +915,10 @@ export class PayrollCalculationEngine {
         )
       : { monthlyTdsWithholding: 0, totalAnnualTaxLiability: 0, effectiveTaxRate: 0, slabBreakdown: [] };
 
-    const ptAmount = resolvedInput.ptApplicable !== false ? ptEval.ptAmount : 0;
     const tdsAmount = isTdsActive ? tdsEval.monthlyTdsWithholding : 0;
 
     // LWF Assessment via Statutory Rule Engine
     const lwfState = resolvedInput.state || statutoryConfig?.lwf_state_jurisdiction || 'Tamil Nadu';
-    const isLwfActive = statutoryConfig?.lwf_enabled !== false && resolvedInput.lwfApplicable !== false;
     const lwfEval = isLwfActive
       ? StatutoryRuleEngine.evaluateLWF(lwfState, statutoryConfig, {
           payrollMonth: resolvedInput.payrollMonth || 12,
@@ -912,20 +965,22 @@ export class PayrollCalculationEngine {
     const earnings: ComponentLineItem[] = [
       { componentCode: 'BASIC', componentName: 'Basic Salary', type: 'EARNING', monthlyAmount: basic, annualAmount: basic * 12, calculationBasis: '50% of Gross', taxable: true, isStatutory: false },
       { componentCode: 'HRA', componentName: 'House Rent Allowance', type: 'EARNING', monthlyAmount: hra, annualAmount: hra * 12, calculationBasis: '40% of Basic', taxable: true, isStatutory: false },
+      ...(conveyance > 0 ? [{ componentCode: 'CONV', componentName: 'Conveyance Allowance', type: 'EARNING' as const, monthlyAmount: conveyance, annualAmount: conveyance * 12, calculationBasis: 'Fixed Travel Standard', taxable: false, isStatutory: false }] : []),
+      ...(medical > 0 ? [{ componentCode: 'MED', componentName: 'Medical Allowance', type: 'EARNING' as const, monthlyAmount: medical, annualAmount: medical * 12, calculationBasis: 'Medical Expense Reimbursement', taxable: false, isStatutory: false }] : []),
       { componentCode: 'SPECIAL', componentName: 'Special Allowance', type: 'EARNING', monthlyAmount: specialAllowance, annualAmount: specialAllowance * 12, calculationBasis: 'Balancing Allowance', taxable: true, isStatutory: false },
     ];
 
     const deductions: ComponentLineItem[] = [
-      { componentCode: 'PF_EE', componentName: `Employee EPF (${(pfEmployeeRate * 100)}%)`, type: 'DEDUCTION', monthlyAmount: pfEval.employee_contribution, annualAmount: pfEval.employee_contribution * 12, calculationBasis: `${(pfEmployeeRate * 100)}% of Basic (capped at ₹${pfWageCeiling.toLocaleString('en-IN')})`, taxable: false, isStatutory: true },
-      { componentCode: 'ESI_EE', componentName: `Employee ESIC (${(esiEmployeeRate * 100)}%)`, type: 'DEDUCTION', monthlyAmount: esiEval.employee_contribution, annualAmount: esiEval.employee_contribution * 12, calculationBasis: `${(esiEmployeeRate * 100)}% of Gross`, taxable: false, isStatutory: true },
-      { componentCode: 'PT', componentName: 'Professional Tax (PT)', type: 'DEDUCTION', monthlyAmount: ptAmount, annualAmount: ptAmount * 12, calculationBasis: ptEval.slabDescription, taxable: false, isStatutory: true },
+      ...(pfEval.employee_contribution > 0 ? [{ componentCode: 'PF_EE', componentName: `Employee EPF (${(pfEmployeeRate * 100)}%)`, type: 'DEDUCTION' as const, monthlyAmount: pfEval.employee_contribution, annualAmount: pfEval.employee_contribution * 12, calculationBasis: `${(pfEmployeeRate * 100)}% of Basic (capped at ₹${pfWageCeiling.toLocaleString('en-IN')})`, taxable: false, isStatutory: true }] : []),
+      ...(esiEval.employee_contribution > 0 ? [{ componentCode: 'ESI_EE', componentName: `Employee ESIC (${(esiEmployeeRate * 100)}%)`, type: 'DEDUCTION' as const, monthlyAmount: esiEval.employee_contribution, annualAmount: esiEval.employee_contribution * 12, calculationBasis: `${(esiEmployeeRate * 100)}% of Gross`, taxable: false, isStatutory: true }] : []),
+      ...(ptAmount > 0 ? [{ componentCode: 'PT', componentName: 'Professional Tax (PT)', type: 'DEDUCTION' as const, monthlyAmount: ptAmount, annualAmount: ptAmount * 12, calculationBasis: ptEval.slabDescription, taxable: false, isStatutory: true }] : []),
       ...(isTdsActive && tdsAmount > 0 ? [{ componentCode: 'TDS', componentName: 'Estimated TDS', type: 'DEDUCTION' as const, monthlyAmount: tdsAmount, annualAmount: tdsEval.totalAnnualTaxLiability, calculationBasis: 'Annualized Slab Projection', taxable: false, isStatutory: true }] : []),
       ...(lwfEmployee > 0 ? [{ componentCode: 'LWF_EE', componentName: 'Labour Welfare Fund (LWF)', type: 'DEDUCTION' as const, monthlyAmount: lwfEmployee, annualAmount: lwfEmployee * 12, calculationBasis: 'State Statutory Board Slab', taxable: false, isStatutory: true }] : []),
     ];
 
     const employerContributions: ComponentLineItem[] = [
-      { componentCode: 'PF_ER', componentName: `Employer EPF (${(pfEmployerRate * 100)}%) + Admin/EDLI (1%)`, type: 'EMPLOYER_CONTRIBUTION', monthlyAmount: pfEval.total_employer_pf_cost, annualAmount: pfEval.total_employer_pf_cost * 12, calculationBasis: `${((pfEmployerRate + pfAdminRate) * 100)}% of Basic (capped)`, taxable: false, isStatutory: true },
-      { componentCode: 'ESI_ER', componentName: `Employer ESIC (${(esiEmployerRate * 100)}%)`, type: 'EMPLOYER_CONTRIBUTION', monthlyAmount: esiEval.employer_contribution, annualAmount: esiEval.employer_contribution * 12, calculationBasis: `${(esiEmployerRate * 100)}% of Gross`, taxable: false, isStatutory: true },
+      ...(pfEval.total_employer_pf_cost > 0 ? [{ componentCode: 'PF_ER', componentName: `Employer EPF (${(pfEmployerRate * 100)}%) + Admin/EDLI (1%)`, type: 'EMPLOYER_CONTRIBUTION' as const, monthlyAmount: pfEval.total_employer_pf_cost, annualAmount: pfEval.total_employer_pf_cost * 12, calculationBasis: `${((pfEmployerRate + pfAdminRate) * 100)}% of Basic (capped)`, taxable: false, isStatutory: true }] : []),
+      ...(esiEval.employer_contribution > 0 ? [{ componentCode: 'ESI_ER', componentName: `Employer ESIC (${(esiEmployerRate * 100)}%)`, type: 'EMPLOYER_CONTRIBUTION' as const, monthlyAmount: esiEval.employer_contribution, annualAmount: esiEval.employer_contribution * 12, calculationBasis: `${(esiEmployerRate * 100)}% of Gross`, taxable: false, isStatutory: true }] : []),
       ...(lwfEmployer > 0 ? [{ componentCode: 'LWF_ER', componentName: 'Employer LWF Contribution', type: 'EMPLOYER_CONTRIBUTION' as const, monthlyAmount: lwfEmployer, annualAmount: lwfEmployer * 12, calculationBasis: 'State Statutory Board Ratio', taxable: false, isStatutory: true }] : []),
     ];
 

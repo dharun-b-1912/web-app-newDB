@@ -57,7 +57,8 @@ export interface WhatsAppTemplateParameter {
     filename?: string;
   };
   image?: {
-    link: string;
+    link?: string;
+    id?: string;
   };
   payload?: string;
 }
@@ -145,11 +146,16 @@ export interface WhatsAppSendTextPayload {
 
 export interface WhatsAppSendDocumentPayload {
   to: string;
-  documentUrl: string;
+  documentUrl?: string;
+  fileBuffer?: Buffer | Uint8Array;
   filename: string;
   caption?: string;
   organizationId: string;
   employeeId?: string;
+  mediaId?: string;
+  sha256Checksum?: string;
+  mimeType?: string;
+  runId?: string;
 }
 
 // ============================================================================
@@ -405,13 +411,18 @@ export interface BotSessionContext {
 export interface WhatsAppPayslipTrigger {
   organizationId: string;
   employeeId: string;
+  employeeCode?: string;
+  companyName?: string;
   employeeName: string;
   phone: string;
   monthYear: string;
   netPay: string | number;
   bankAccountMasked: string;
   payDate: string;
+  paymentStatus?: string;
+  portalUrl?: string;
   payslipPdfUrl: string;
+  templateName?: string;
 }
 
 export interface WhatsAppLeaveApprovalTrigger {
@@ -490,6 +501,41 @@ export interface WhatsAppAuthOtpTrigger {
   otpCode: string;
   expiryMinutes: number;
   companyName: string;
+}
+
+export interface WhatsAppPayrollMisReportTrigger {
+  organizationId: string;
+  recipientPhone: string;
+  recipientName: string;
+  companyName: string;
+  monthYear: string;
+  totalHeadcount: number;
+  totalGrossPay: string | number;
+  totalNetPay: string | number;
+  totalStatutoryDeductions: string | number;
+  reportPdfUrl?: string;
+  runId?: string;
+}
+
+export interface WhatsAppAttendanceMisReportTrigger {
+  organizationId: string;
+  recipientPhone: string;
+  recipientName: string;           // {{1}} Recipient (e.g. HR Operations / HR Head)
+  reportTitle?: string;            // {{2}} Report Title (e.g. Daily Attendance & Biometric Audit Report)
+  reportDate: string;              // {{3}} Audit Date (e.g. 17 October 2026)
+  companyName: string;             // {{4}} Company Name (e.g. Joy Corporate Solutions)
+  totalWorkforce: number;          // {{5}} Total Workforce (e.g. 21)
+  presentTurnout: string;          // {{6}} Present Turnout (e.g. 13 Staff (62% Turnout))
+  lateClockIns: number;            // {{7}} Late Clock-ins (e.g. 12)
+  weeklyOffOrLeave: number;        // {{8}} Weekly Off / Leave (e.g. 8)
+  cumulativeWorkHours: string;     // {{9}} Cumulative Billed Hours (e.g. 86h 48m)
+  reportPdfUrl?: string;           // Header document URL
+  pdfFilename?: string;            // Header document attachment filename
+  portalUrl?: string;              // Dynamic button URL
+  templateName?: string;
+  sha256Checksum?: string;         // Cryptographic SHA-256 hash guaranteeing identical artifact
+  runId?: string;                  // Execution run identifier
+  mediaId?: string;                // Pre-uploaded Meta media identifier
 }
 
 // ============================================================================

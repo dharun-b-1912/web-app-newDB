@@ -12,6 +12,7 @@ import { getActiveOrgId } from './biometricCommandService';
 import { hrEventBus } from '../hrEventBus';
 import { api } from '../api';
 import { notificationService } from '../notification/notificationService';
+import { formatTimeToIST } from './attendanceDeviationService';
 
 export type RegularizationStage =
   | 'MANAGER_REVIEW'
@@ -91,6 +92,20 @@ export interface RegularizationRequest {
   updated_at: string;
 }
 
+export function toIsoTimestamptz(dateStr: string, timeStr: string): string | null {
+  if (!timeStr) return null;
+  const str = String(timeStr).trim();
+  if (str.includes('T') || str.includes('Z')) return str;
+  const match = str.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?/i);
+  if (!match) return null;
+  let h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const ampm = match[3] ? match[3].toUpperCase() : null;
+  if (ampm === 'PM' && h < 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return `${dateStr}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00+05:30`;
+}
+
 const STORAGE_KEY_REGULARIZATIONS = 'workforceos_regularization_master_v3';
 
 class AttendanceRegularizationService {
@@ -110,7 +125,6 @@ class AttendanceRegularizationService {
       const storageKeys = [
         'workforceos_attendance_daily_v2',
         `workforceos_attendance_daily_v2_${tenantId}`,
-        'workforceos_attendance_daily_v2_org-joy-01',
       ];
 
       for (const sKey of storageKeys) {
@@ -128,11 +142,11 @@ class AttendanceRegularizationService {
           const record = {
             id: `daily-${req.employee_id}-${req.attendance_date}`,
             organization_id: tenantId,
-            company_id: 'comp-joy-01',
+            company_id: tenantId,
             employee_id: req.employee_id,
             employee_code: req.employee_code,
             employee_name: req.employee_name,
-            department: req.department || 'Engineering & Management',
+            department: req.department || 'Operations',
             designation: 'Staff',
             date: req.attendance_date,
             shift_id: 'sh-gen-01',
@@ -176,8 +190,6 @@ class AttendanceRegularizationService {
     try {
       const storageKeys = [
         this.getStorageKey(tenantId),
-        'workforceos_regularization_master_v3_org-joy-01',
-        'workforceos_regularization_master_v3_org-joy-corp',
         STORAGE_KEY_REGULARIZATIONS,
       ];
 
@@ -189,6 +201,10 @@ class AttendanceRegularizationService {
             const list: RegularizationRequest[] = JSON.parse(raw);
             list.forEach((item) => {
               if (item && item.id && !map.has(item.id)) {
+                // Multi-tenant check: filter by tenant if item has tenant_id/organization_id
+                if (tenantId && item.organization_id && item.organization_id !== tenantId && item.organization_id.length === 36) {
+                  return;
+                }
                 map.set(item.id, item);
               }
             });
@@ -213,7 +229,6 @@ class AttendanceRegularizationService {
       this.syncApprovedToDailyAttendance(items, tenantId);
       const sKey = this.getStorageKey(tenantId);
       localStorage.setItem(sKey, JSON.stringify(items));
-      localStorage.setItem('workforceos_regularization_master_v3_org-joy-01', JSON.stringify(items));
     } catch (e) {
       console.warn('[Regularization] saveLocalStore error:', e);
     }
@@ -248,30 +263,44 @@ class AttendanceRegularizationService {
 
     if (isSupabaseEnabled) {
       try {
-        // 1. Primary: Fetch from canonical 'attendance_regularizations' table
-        const { data: dbRows, error: dbErr } = await supabase
+        // Fast bounded query with 3.5s timeout
+        const abortCtrl = new AbortController();
+        const timeoutId = setTimeout(() => abortCtrl.abort(), 3500);
+
+        // 1. Primary: Fetch from canonical 'attendance_regularizations' table with strict multi-tenant isolation
+        let query = supabase
           .from('attendance_regularizations')
           .select('*')
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(100)
+          .abortSignal(abortCtrl.signal);
+
+        if (tenantId && tenantId.length === 36) {
+          query = query.eq('organization_id', tenantId);
+        }
+
+        const { data: dbRows, error: dbErr } = await query;
+
+        clearTimeout(timeoutId);
 
         if (!dbErr && dbRows && dbRows.length > 0) {
-          // Resolve employee details
+          // Resolve employee details with ultra-fast skipEnrichment (no 20s multi-table joins)
           let employeeMap = new Map<string, any>();
           try {
-            const emps = await api.getEmployees();
+            const emps = await api.getEmployees({ skipEnrichment: true });
             emps.forEach((e) => employeeMap.set(e.id, e));
           } catch (_) {}
 
           dbRows.forEach((r: any) => {
             if (r.id) {
               const emp = employeeMap.get(r.employee_id);
-              const empName = emp ? (`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || 'Employee') : 'Staff Member';
+              const empName = emp ? (`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || 'Employee') : `Employee (${r.employee_id.substring(0, 8)})`;
               const empCode = emp?.employee_code || r.employee_id.substring(0, 8);
               const dept = emp?.department_name || 'Operations';
 
               const rawStatus = (r.status || 'PENDING').toUpperCase();
-              let state: RegularizationState = 'MANAGER_PENDING';
-              let stage: RegularizationStage = 'MANAGER_REVIEW';
+              let state: RegularizationState = 'HR_PENDING';
+              let stage: RegularizationStage = 'HR_REVIEW';
 
               if (rawStatus === 'APPROVED') {
                 state = 'APPROVED';
@@ -279,6 +308,9 @@ class AttendanceRegularizationService {
               } else if (rawStatus === 'REJECTED') {
                 state = 'REJECTED';
                 stage = 'REJECTED';
+              } else if (rawStatus === 'MANAGER_PENDING' || rawStatus === 'PENDING_MANAGER') {
+                state = 'HR_PENDING';
+                stage = 'HR_REVIEW';
               }
 
               map.set(r.id, {
@@ -296,8 +328,8 @@ class AttendanceRegularizationService {
                 original_check_out: null,
                 original_status: 'ABSENT',
                 original_source: 'MOBILE_GPS',
-                requested_check_in: r.requested_check_in || '09:30 AM',
-                requested_check_out: r.requested_check_out || '06:30 PM',
+                requested_check_in: r.requested_check_in ? formatTimeToIST(r.requested_check_in) : '09:30 AM',
+                requested_check_out: r.requested_check_out ? formatTimeToIST(r.requested_check_out) : '06:30 PM',
                 difference_minutes: 0,
                 reason_code: 'REGULARIZATION',
                 reason: r.reason || 'Attendance punch regularization',
@@ -364,14 +396,18 @@ class AttendanceRegularizationService {
     let empName = params.employeeName || 'Dharun B';
     let empCode = params.employeeCode || 'JCS-017';
     let dept = params.department || 'Development';
+    let actualEmployeeUuid: string | null = null;
 
     try {
-      const emps = await api.getEmployees();
-      const match = emps.find((e) => e.id === params.employeeId || e.employee_code === params.employeeCode);
+      const emps = await api.getEmployees({ skipEnrichment: true });
+      const match = emps.find((e) => e.id === params.employeeId || e.employee_code === params.employeeCode || e.employee_code === params.employeeId);
       if (match) {
         empName = `${match.first_name || ''} ${match.last_name || ''}`.trim() || match.display_name || empName;
-        empCode = match.employee_code || match.id || empCode;
+        empCode = match.employee_code || empCode;
         dept = match.department_name || dept;
+        if (match.id && match.id.length === 36) {
+          actualEmployeeUuid = match.id;
+        }
       }
     } catch {}
 
@@ -398,11 +434,14 @@ class AttendanceRegularizationService {
       } catch {}
     }
 
+    const isoIn = toIsoTimestamptz(params.date, params.requestedIn);
+    const isoOut = toIsoTimestamptz(params.date, params.requestedOut);
+
     const newRequest: RegularizationRequest = {
       id: requestId,
       tenant_id: tenantId,
       organization_id: tenantId,
-      employee_id: params.employeeId,
+      employee_id: actualEmployeeUuid || params.employeeId,
       employee_code: empCode,
       employee_name: empName,
       department: dept,
@@ -419,10 +458,10 @@ class AttendanceRegularizationService {
       reason_code: params.reasonCode || 'FORGOT_CHECK_IN',
       reason: params.reason,
       evidence_url: params.evidenceUrl,
-      status: 'MANAGER_PENDING',
-      current_stage: 'MANAGER_REVIEW',
-      manager_id: 'emp-hr-001',
-      manager_name: 'Haripriya (HR Head)',
+      status: 'HR_PENDING',
+      current_stage: 'HR_REVIEW',
+      hr_reviewer_id: 'emp-hr-001',
+      hr_reviewer_name: 'Haripriya (HR Head)',
       timeline: [
         {
           stage: 'SUBMITTED',
@@ -439,22 +478,25 @@ class AttendanceRegularizationService {
     // Save to Supabase 'attendance_regularizations'
     if (isSupabaseEnabled) {
       try {
-        const { data: inserted, error: insErr } = await supabase
-          .from('attendance_regularizations')
-          .insert({
-            organization_id: tenantId,
-            employee_id: params.employeeId,
-            attendance_date: params.date,
-            requested_check_in: params.requestedIn,
-            requested_check_out: params.requestedOut,
-            reason: params.reason,
-            status: 'PENDING',
-          })
-          .select()
-          .single();
+        const targetEmpId = actualEmployeeUuid || (params.employeeId && params.employeeId.length === 36 ? params.employeeId : null);
+        if (targetEmpId) {
+          const { data: inserted, error: insErr } = await supabase
+            .from('attendance_regularizations')
+            .insert({
+              organization_id: tenantId,
+              employee_id: targetEmpId,
+              attendance_date: params.date,
+              requested_check_in: isoIn,
+              requested_check_out: isoOut,
+              reason: params.reason,
+              status: 'PENDING',
+            })
+            .select()
+            .single();
 
-        if (inserted && inserted.id) {
-          newRequest.id = inserted.id;
+          if (inserted && inserted.id) {
+            newRequest.id = inserted.id;
+          }
         }
       } catch (err) {
         console.warn('[Regularization] DB insert notice:', err);
@@ -465,6 +507,27 @@ class AttendanceRegularizationService {
     const list = this.getRequests(tenantId);
     list.unshift(newRequest);
     this.saveLocalStore(list, tenantId);
+
+    // Sync legacy attendanceApi key so regularizations desk reflects instantly
+    try {
+      const rawApi = localStorage.getItem('workforceos_attendance_regularizations_v2');
+      const apiList = rawApi ? JSON.parse(rawApi) : [];
+      apiList.unshift({
+        id: newRequest.id,
+        employee_id: newRequest.employee_id,
+        employee_code: newRequest.employee_code,
+        employee_name: newRequest.employee_name,
+        date: newRequest.attendance_date,
+        original_check_in: newRequest.original_check_in || '—',
+        original_check_out: newRequest.original_check_out || '—',
+        requested_check_in: newRequest.requested_check_in,
+        requested_check_out: newRequest.requested_check_out,
+        reason: newRequest.reason,
+        status: 'Pending Manager',
+        submitted_at: new Date().toLocaleString(),
+      });
+      localStorage.setItem('workforceos_attendance_regularizations_v2', JSON.stringify(apiList));
+    } catch (_) {}
 
     hrEventBus.publish('regularization.submitted', {
       requestId: newRequest.id,
@@ -539,11 +602,11 @@ class AttendanceRegularizationService {
     const dailyRecord = {
       id: `daily-${req.employee_id}-${req.attendance_date}`,
       organization_id: tenantId,
-      company_id: 'comp-joy-01',
+      company_id: tenantId,
       employee_id: req.employee_id,
       employee_code: req.employee_code,
       employee_name: req.employee_name,
-      department: req.department || 'Engineering & Management',
+      department: req.department || 'Operations',
       designation: 'Staff',
       date: req.attendance_date,
       shift_id: 'sh-gen-01',

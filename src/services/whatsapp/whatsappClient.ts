@@ -192,6 +192,59 @@ export class WhatsAppClient {
 
   /**
    * Dispatches a document (PDF, DOCX) attachment
+  /**
+   * Upload binary media (PDF document, JPEG/PNG image) to Meta Media API
+   * Returns the Meta mediaId for guaranteed, resilient delivery without external CDN / URL fetching errors.
+   */
+  async uploadMedia(params: {
+    fileBuffer: Buffer | Uint8Array;
+    filename: string;
+    mimeType?: string;
+  }): Promise<{ success: boolean; mediaId?: string; error?: string }> {
+    const isMock =
+      (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') ||
+      !this.config.metaAccessToken ||
+      this.config.metaAccessToken.startsWith('mock_') ||
+      this.config.provider === 'MOCK_SANDBOX';
+
+    if (isMock) {
+      const mockMediaId = `media_mock_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      return { success: true, mediaId: mockMediaId };
+    }
+
+    try {
+      const mime = params.mimeType || 'application/pdf';
+      const formData = new FormData();
+      formData.append('messaging_product', 'whatsapp');
+      formData.append('type', mime);
+      formData.append(
+        'file',
+        new Blob([params.fileBuffer as any], { type: mime }),
+        params.filename
+      );
+
+      const url = `https://graph.facebook.com/${this.config.metaApiVersion}/${this.config.metaPhoneNumberId}/media`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.config.metaAccessToken}`,
+        },
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.id) {
+        return { success: false, error: data?.error?.message || 'Media upload failed' };
+      }
+
+      return { success: true, mediaId: data.id };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Media upload exception' };
+    }
+  }
+
+  /**
+   * Dispatches a raw Document (PDF/DOCX) message
    */
   async sendDocument(payload: WhatsAppSendDocumentPayload): Promise<{
     success: boolean;
@@ -199,17 +252,36 @@ export class WhatsAppClient {
     error?: string;
   }> {
     const normalizedPhone = normalizeIndianPhone(payload.to);
+    let mediaId = payload.mediaId;
+
+    // If fileBuffer is provided, upload directly to Meta Media API first
+    if (!mediaId && payload.fileBuffer) {
+      const up = await this.uploadMedia({
+        fileBuffer: payload.fileBuffer,
+        filename: payload.filename,
+        mimeType: payload.mimeType || 'application/pdf',
+      });
+      if (up.success && up.mediaId) {
+        mediaId = up.mediaId;
+      }
+    }
+
+    const docObj: Record<string, any> = {
+      filename: payload.filename,
+      caption: payload.caption || '',
+    };
+    if (mediaId) {
+      docObj.id = mediaId;
+    } else if (payload.documentUrl) {
+      docObj.link = payload.documentUrl;
+    }
 
     const metaBody = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: normalizedPhone,
       type: 'document',
-      document: {
-        link: payload.documentUrl,
-        filename: payload.filename,
-        caption: payload.caption || '',
-      },
+      document: docObj,
     };
 
     return this.dispatchHttpMessage({
@@ -217,7 +289,14 @@ export class WhatsAppClient {
       organizationId: payload.organizationId,
       employeeId: payload.employeeId,
       templateKey: 'DOCUMENT_DISPATCH',
-      dynamicPayload: { filename: payload.filename, url: payload.documentUrl },
+      dynamicPayload: {
+        filename: payload.filename,
+        url: payload.documentUrl,
+        mediaId,
+        sha256Checksum: payload.sha256Checksum,
+        mimeType: payload.mimeType || 'application/pdf',
+        runId: payload.runId,
+      },
       bodyPayload: metaBody,
     });
   }

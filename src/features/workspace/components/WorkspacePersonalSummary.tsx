@@ -46,9 +46,9 @@ export const WorkspacePersonalSummary: React.FC<Props> = ({
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
         {leaveEntitlements.map((ent) => {
-          const used = ent.used || 0;
-          const available = ent.available_balance ?? ((ent as any).available || 8);
-          const total = ent.granted ? (ent.granted + (ent.accrued || 0)) : (available + used);
+          const used = Number(ent.used || 0);
+          const available = Number(ent.available_balance ?? ((ent as any).available || 0));
+          const total = ent.granted ? (Number(ent.granted) + (Number(ent.accrued) || 0)) : (available + used);
           const percentUsed = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
 
           return (

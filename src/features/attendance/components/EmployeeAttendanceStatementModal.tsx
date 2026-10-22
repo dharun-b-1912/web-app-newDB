@@ -42,7 +42,7 @@ import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { attendanceApi } from '../../../services/attendanceApi';
 import { payrollApi } from '../../../services/payrollApi';
-import { formatMinutesToHoursStr } from '../../../lib/attendance/attendanceEngine';
+import { formatMinutesToHoursStr, formatDeviationDuration } from '../../../lib/attendance/attendanceEngine';
 import { useToast } from '../../../components/ui/Toast';
 import { api } from '../../../services/api';
 import { hrEventBus } from '../../../services/hrEventBus';
@@ -188,8 +188,8 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
     setRegularizingDay(row.dateStr);
     try {
       const empName =
-        currentEmployee.display_name ||
         `${currentEmployee.first_name || ''} ${currentEmployee.last_name || ''}`.trim() ||
+        currentEmployee.display_name ||
         'Employee';
       const newReq = attendanceApi.submitRegularization({
         employee_id: currentEmployee.id,
@@ -360,17 +360,38 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
     const isEsiApplicable =
       (currentEmployee as any)?.statutory?.esi_applicable !== undefined
         ? (currentEmployee as any)?.statutory?.esi_applicable !== false
+        : (currentEmployee as any)?.statutory?.is_esi_eligible !== undefined
+        ? (currentEmployee as any)?.statutory?.is_esi_eligible !== false
+        : currentEmployee?.is_esi_eligible !== undefined
+        ? currentEmployee.is_esi_eligible !== false
         : (currentEmployee?.esi_applicable !== undefined ? currentEmployee.esi_applicable !== false : true);
 
     const isPfApplicable =
       (currentEmployee as any)?.statutory?.pf_applicable !== undefined
         ? (currentEmployee as any)?.statutory?.pf_applicable !== false
+        : (currentEmployee as any)?.statutory?.is_pf_eligible !== undefined
+        ? (currentEmployee as any)?.statutory?.is_pf_eligible !== false
+        : currentEmployee?.is_pf_eligible !== undefined
+        ? currentEmployee.is_pf_eligible !== false
         : currentEmployee?.pf_applicable !== false;
 
     const isPtApplicable =
       (currentEmployee as any)?.statutory?.pt_applicable !== undefined
         ? (currentEmployee as any)?.statutory?.pt_applicable !== false
+        : (currentEmployee as any)?.statutory?.is_pt_eligible !== undefined
+        ? (currentEmployee as any)?.statutory?.is_pt_eligible !== false
+        : currentEmployee?.is_pt_eligible !== undefined
+        ? currentEmployee.is_pt_eligible !== false
         : currentEmployee?.pt_applicable !== false;
+
+    const isLwfApplicable =
+      (currentEmployee as any)?.statutory?.lwf_applicable !== undefined
+        ? (currentEmployee as any)?.statutory?.lwf_applicable !== false
+        : (currentEmployee as any)?.statutory?.is_lwf_eligible !== undefined
+        ? (currentEmployee as any)?.statutory?.is_lwf_eligible !== false
+        : currentEmployee?.is_lwf_eligible !== undefined
+        ? currentEmployee.is_lwf_eligible !== false
+        : currentEmployee?.lwf_applicable === true;
 
     return payrollImpactCalculationEngine.calculateImpact({
       annualCtc,
@@ -381,6 +402,7 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
       pfApplicable: isPfApplicable,
       esiApplicable: isEsiApplicable,
       ptApplicable: isPtApplicable,
+      lwfApplicable: isLwfApplicable,
     });
   }, [annualCtc, monthlyCtc, metrics, currentEmployee]);
 
@@ -460,7 +482,7 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
   };
 
   // Real dynamic employee values for display (no mock or hardcoded fallback personas)
-  const empName = currentEmployee?.display_name || [currentEmployee?.first_name, currentEmployee?.last_name].filter(Boolean).join(' ') || 'Employee';
+  const empName = [currentEmployee?.first_name, currentEmployee?.last_name].filter(Boolean).join(' ') || currentEmployee?.display_name || 'Employee';
   const empCode = currentEmployee?.employee_code || '';
   const empDept = currentEmployee?.department_name || currentEmployee?.department || 'Engineering';
   const empDesignation = currentEmployee?.designation_title || currentEmployee?.designation || currentEmployee?.role || 'Senior Software Engineer';
@@ -1226,7 +1248,7 @@ export const EmployeeAttendanceStatementModal: React.FC<EmployeeAttendanceStatem
                       <div>
                         <strong className="text-amber-950 block">Date: {d.dateStr} ({d.dayName})</strong>
                         <span className="text-amber-800 text-[11px]">
-                          Punch IN: {d.firstIn || '—'} • Late by {d.lateMinutes} mins (Grace 15m applied)
+                          Punch IN: {d.firstIn || '—'} • Late by {formatDeviationDuration(d.lateMinutes, { showBoth: d.lateMinutes >= 60, verbose: true })} (Grace 15m applied)
                         </span>
                       </div>
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900">

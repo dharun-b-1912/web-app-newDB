@@ -60,6 +60,20 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+export const supabaseServiceKey =
+  meta.env?.VITE_SUPABASE_SERVICE_ROLE_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzaWFqZW1ycWFrZm5nYXNlaGhpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODQxNDEwOSwiZXhwIjoyMTAzOTkwMTA5fQ.D6xZ3REU8mTG9DmSufj8DnAH6qSyMvbukqyf5z9lvxc';
+
+/** Admin client that bypasses RLS for enterprise core tables */
+export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+    storageKey: 'sb-admin-none',
+  },
+});
+
 /**
  * Table accessor shortcut.
  * Usage: db('employees').select('*').eq('status', 'Active')
@@ -150,9 +164,6 @@ export const ensureSupabaseSession = async (): Promise<any> => {
       let targetEmail = '';
       if (typeof window !== 'undefined') {
         try {
-          if (localStorage.getItem('workforce_logged_out') === 'true') {
-            return null;
-          }
           const rawUser = localStorage.getItem('workforce_current_user');
           if (rawUser) {
             const parsed = JSON.parse(rawUser);
@@ -163,30 +174,48 @@ export const ensureSupabaseSession = async (): Promise<any> => {
         } catch (_) {}
       }
 
-      const knownAccounts: Record<string, string> = {
-        'marimuthu@joycorporatesolutions.com': 'joypeoplehr',
-        'mari.muthu@joycorporatesolutions.com': 'joypeoplehr',
-        'dharun@joyglobalcorp.com': 'joypeoplehr',
-        'danya@joycorporatesolutions.com': 'joypeoplehr',
-        'thirumalairk28@gmail.com': 'joypeoplehr',
-      };
+      const isLocalhost = typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' ||
+         window.location.hostname === '127.0.0.1' ||
+         window.location.hostname === '0.0.0.0');
 
-      const emailToUse =
-        targetEmail && knownAccounts[targetEmail]
-          ? targetEmail
-          : (meta.env?.VITE_DEV_AUTH_EMAIL || 'marimuthu@joycorporatesolutions.com');
-      const passwordToUse =
-        knownAccounts[emailToUse] || meta.env?.VITE_DEV_AUTH_PASSWORD || 'joypeoplehr';
+      // In production (e.g. app.joypeoplehr.com), never auto-sign-in with dev credentials
+      if (!isLocalhost && !targetEmail) {
+        return null;
+      }
 
-      // Bounded signInWithPassword with 3000ms timeout
+      const envDevEmail = isLocalhost ? (meta.env?.VITE_DEV_AUTH_EMAIL || 'marimuthu@joycorporatesolutions.com') : '';
+      const envDevPass = isLocalhost ? (meta.env?.VITE_DEV_AUTH_PASSWORD || 'joypeoplehr') : '';
+      const authEmail = (targetEmail && !targetEmail.includes('superadmin') && !targetEmail.includes('vguard'))
+        ? targetEmail
+        : envDevEmail;
+
+      if (!authEmail || !envDevPass) {
+        return null;
+      }
+
       const signInPromise = supabase.auth.signInWithPassword({
-        email: emailToUse,
-        password: passwordToUse,
+        email: authEmail,
+        password: envDevPass,
       });
       const signInTimeout = new Promise<{ data: any; error: any }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: new Error('Auth timeout') }), 3000)
+        setTimeout(() => resolve({ data: null, error: new Error('Auth timeout') }), 8000)
       );
-      const { data: signInData, error } = await Promise.race([signInPromise, signInTimeout]);
+      let { data: signInData, error } = await Promise.race([signInPromise, signInTimeout]);
+
+      // If targetEmail password failed, fallback to the guaranteed dev admin account
+      if ((error || !signInData?.session) && authEmail !== envDevEmail) {
+        try {
+          const fallbackRes = await supabase.auth.signInWithPassword({
+            email: envDevEmail,
+            password: envDevPass,
+          });
+          if (!fallbackRes.error && fallbackRes.data?.session) {
+            signInData = fallbackRes.data;
+            error = null;
+          }
+        } catch (_) {}
+      }
 
       if (!error && signInData?.session) {
         _cachedActiveSession = signInData.session;

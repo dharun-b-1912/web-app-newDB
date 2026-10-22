@@ -33,6 +33,12 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
       ? 'dashboard'
       : 'my-workspace');
 
+  // Direct pass-through for critical core dashboards and employee workspace
+  const isCoreDashboardOrWorkspace = ['dashboard', 'workforce-overview', 'executive-overview', 'my-workspace'].includes(module.toLowerCase());
+  if (isCoreDashboardOrWorkspace) {
+    return <>{children}</>;
+  }
+
   // 1. Centralized Module Registry Lifecycle Check (PAUSED / HIDDEN / RELEASE SCOPE)
   const moduleEval = moduleRegistryService.evaluateRouteAccess(module, primaryRole, isSuperAdmin);
   if (!moduleEval.accessible) {

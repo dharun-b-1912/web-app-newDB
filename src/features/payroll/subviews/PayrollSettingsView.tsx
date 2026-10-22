@@ -599,17 +599,7 @@ export const PayrollSettingsView: React.FC = () => {
               <h3 className="text-sm font-bold text-gray-900">Monthly Payroll Execution Calendar & Cutoff Policies</h3>
               <p className="text-xs text-gray-500 mt-0.5">Deterministic cutoff rules for attendance synchronization, standard monthly working days, and wage basis</p>
             </div>
-
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                showToast('✓ Applied Plant / Factory Policy (25 Fixed Days, ₹600/Day Base, ₹75/Hr OT Rate)', 'success');
-              }}
-              className="bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-[#07563D] font-bold text-xs"
-            >
-              🏭 Apply Plant 21-Worker Policy (25 Days, ₹600/Day, ₹75/Hr OT)
-            </Button>
+            <Badge variant="emerald">Active Calendar Schedule</Badge>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
@@ -629,40 +619,6 @@ export const PayrollSettingsView: React.FC = () => {
               <span className="text-[10px] font-bold text-gray-400 uppercase font-mono">Disbursement Day</span>
               <div className="text-sm font-black text-[#07563D] font-mono">Last Working Day (31st)</div>
               <p className="text-[11px] text-gray-500">Bank transfer file staged for Maker signoff</p>
-            </div>
-          </div>
-
-          {/* Plant & Manufacturing Specific Wage Formula Policy */}
-          <div className="p-5 rounded-2xl bg-emerald-50/50 border border-emerald-200/80 space-y-3">
-            <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-emerald-700" />
-              <h4 className="text-xs font-bold text-emerald-900">Plant & Manufacturing Wage Calculation Policy (21 Workers Dataset)</h4>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
-              <div className="p-3 bg-white rounded-xl border border-emerald-100">
-                <span className="text-[10px] font-bold text-gray-400 uppercase block">Daily Standard Base</span>
-                <span className="text-base font-black text-gray-900 font-mono block mt-0.5">₹ 600.00 / day</span>
-                <span className="text-[10px] text-gray-500">25 Days = ₹15,000/mo</span>
-              </div>
-
-              <div className="p-3 bg-white rounded-xl border border-emerald-100">
-                <span className="text-[10px] font-bold text-gray-400 uppercase block">Basic Wages (Fixed)</span>
-                <span className="text-base font-black text-emerald-700 font-mono block mt-0.5">₹ 420.00 / day</span>
-                <span className="text-[10px] text-gray-500">70% of Daily Wage</span>
-              </div>
-
-              <div className="p-3 bg-white rounded-xl border border-emerald-100">
-                <span className="text-[10px] font-bold text-gray-400 uppercase block">HRA (Fixed)</span>
-                <span className="text-base font-black text-emerald-700 font-mono block mt-0.5">₹ 180.00 / day</span>
-                <span className="text-[10px] text-gray-500">30% of Daily Wage</span>
-              </div>
-
-              <div className="p-3 bg-white rounded-xl border border-emerald-100">
-                <span className="text-[10px] font-bold text-gray-400 uppercase block">Hourly Overtime (OT)</span>
-                <span className="text-base font-black text-purple-700 font-mono block mt-0.5">₹ 75.00 / hour</span>
-                <span className="text-[10px] text-gray-500">Formula: ₹600 / 8 hrs</span>
-              </div>
             </div>
           </div>
         </div>

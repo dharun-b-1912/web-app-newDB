@@ -38,11 +38,19 @@ import {
   RegularizationRequest,
   RegularizationState,
 } from '../../../services/attendance/attendanceRegularizationService';
+import { formatTimeToIST } from '../../../services/attendance/attendanceDeviationService';
 import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { useAuth } from '../../../hooks/useAuth';
 import { api } from '../../../services/api';
+
+import {
+  AttendanceDateFilter,
+  DateFilterValue,
+  INITIAL_DATE_FILTER,
+  matchDateFilter,
+} from '../components/AttendanceDateFilter';
 
 export interface RegularizationViewProps {
   onNavigateSubPath?: (subPath: string) => void;
@@ -57,7 +65,8 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
   const { user } = useAuth();
 
   const [requests, setRequests] = useState<RegularizationRequest[]>([]);
-  const [activeTab, setActiveTab] = useState<'ALL' | 'MANAGER_PENDING' | 'HR_PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [activeTab, setActiveTab] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(INITIAL_DATE_FILTER);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRequest, setSelectedRequest] = useState<RegularizationRequest | null>(null);
   const [actionComment, setActionComment] = useState('');
@@ -91,7 +100,7 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
   useEffect(() => {
     loadData();
 
-    api.getEmployees().then((emps) => {
+    api.getEmployees({ skipEnrichment: true }).then((emps) => {
       setEmployeesList(emps);
       if (emps.length > 0 && !selectedEmpId) {
         setSelectedEmpId(emps[0].id);
@@ -111,12 +120,11 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
     };
   }, [loadData, selectedEmpId]);
 
-  // Dynamic Metric Counts from Real Database
+  // Dynamic Metric Counts: Direct HR Final Authority (unified pending queue)
   const metrics = useMemo(() => {
     return {
       allRequests: requests.length,
-      managerQueue: requests.filter((r) => r.status === 'MANAGER_PENDING' || (r.status as any) === 'PENDING').length,
-      hrSignoff: requests.filter((r) => r.status === 'HR_PENDING').length,
+      pendingQueue: requests.filter((r) => r.status === 'MANAGER_PENDING' || r.status === 'HR_PENDING' || (r.status as any) === 'PENDING').length,
       approved: requests.filter((r) => r.status === 'APPROVED').length,
       rejected: requests.filter((r) => r.status === 'REJECTED').length,
     };
@@ -125,11 +133,12 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
   // Filtered List
   const filteredRequests = useMemo(() => {
     return requests.filter((r) => {
-      const isPending = r.status === 'MANAGER_PENDING' || (r.status as any) === 'PENDING';
-      if (activeTab === 'MANAGER_PENDING' && !isPending) return false;
-      if (activeTab === 'HR_PENDING' && r.status !== 'HR_PENDING') return false;
+      const isPending = r.status === 'MANAGER_PENDING' || r.status === 'HR_PENDING' || (r.status as any) === 'PENDING';
+      if (activeTab === 'PENDING' && !isPending) return false;
       if (activeTab === 'APPROVED' && r.status !== 'APPROVED') return false;
       if (activeTab === 'REJECTED' && r.status !== 'REJECTED') return false;
+
+      if (!matchDateFilter(r.attendance_date, dateFilter)) return false;
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -143,25 +152,20 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
       }
       return true;
     });
-  }, [requests, activeTab, searchQuery]);
+  }, [requests, activeTab, searchQuery, dateFilter]);
 
-  // Handle Approve
+  // Handle Approve: Direct HR Final Decision
   const handleApprove = async (req: RegularizationRequest) => {
     setIsProcessingAction(true);
     try {
-      const res = await attendanceRegularizationService.approveRequest(
+      await attendanceRegularizationService.approveRequest(
         req.id,
         user?.id,
         user?.name || 'Haripriya (HR Head)',
         actionComment || 'Approved: Attendance regularized & recalculated.'
       );
 
-      if (res.isFinal) {
-        showToast(`✓ Attendance regularized for ${req.employee_name} (${req.attendance_date}). Daily ledger & punches updated.`, 'success');
-      } else {
-        showToast(`✓ 1st line manager approval recorded. Request routed to HR Sign-off.`, 'info');
-      }
-
+      showToast(`✓ Attendance regularized for ${req.employee_name} (${req.attendance_date}). Daily ledger & punches updated.`, 'success');
       setSelectedRequest(null);
       setActionComment('');
       await loadData();
@@ -299,57 +303,40 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
         </div>
       </div>
 
-      {/* 2. Interactive Counter Badges */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      {/* 2. Direct HR Decision Queues */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <button
           onClick={() => setActiveTab('ALL')}
           className={cn(
             'p-3.5 rounded-xl border text-left transition-all cursor-pointer',
             activeTab === 'ALL'
-              ? 'bg-gray-100 border-gray-400 ring-2 ring-gray-400/20'
-              : 'bg-white border-gray-200 hover:border-gray-300'
+              ? 'bg-slate-100 border-slate-400 ring-2 ring-slate-400/20 shadow-xs'
+              : 'bg-white border-gray-200/80 hover:border-gray-300 shadow-2xs'
           )}
         >
-          <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
+          <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
             <span>All Requests</span>
             <Layers className="w-3.5 h-3.5 text-gray-600" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{metrics.allRequests}</div>
-          <span className="text-[10px] text-gray-500 font-semibold">Total claims</span>
+          <div className="text-lg font-bold text-gray-900 mt-1">{metrics.allRequests}</div>
+          <span className="text-[11px] text-gray-500 font-medium">Total audit claims</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('MANAGER_PENDING')}
+          onClick={() => setActiveTab('PENDING')}
           className={cn(
             'p-3.5 rounded-xl border text-left transition-all cursor-pointer',
-            activeTab === 'MANAGER_PENDING'
-              ? 'bg-purple-50 border-purple-300 ring-2 ring-purple-500/20'
-              : 'bg-white border-gray-200 hover:border-purple-300'
+            activeTab === 'PENDING'
+              ? 'bg-amber-50/60 border-amber-300 ring-2 ring-amber-500/10 shadow-xs'
+              : 'bg-white border-gray-200/80 hover:border-gray-300 shadow-2xs'
           )}
         >
-          <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
-            <span>Manager Queue</span>
-            <UserCheck className="w-3.5 h-3.5 text-purple-600" />
+          <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
+            <span>Pending HR Review</span>
+            <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{metrics.managerQueue}</div>
-          <span className="text-[10px] text-purple-700 font-semibold">Awaiting 1st line review</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('HR_PENDING')}
-          className={cn(
-            'p-3.5 rounded-xl border text-left transition-all cursor-pointer',
-            activeTab === 'HR_PENDING'
-              ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-500/20'
-              : 'bg-white border-gray-200 hover:border-blue-300'
-          )}
-        >
-          <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
-            <span>HR Signoff</span>
-            <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-          </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{metrics.hrSignoff}</div>
-          <span className="text-[10px] text-blue-700 font-semibold">Payroll policy review</span>
+          <div className="text-lg font-bold text-gray-900 mt-1">{metrics.pendingQueue}</div>
+          <span className="text-[11px] text-amber-700 font-medium">Awaiting HR Sign-off</span>
         </button>
 
         <button
@@ -357,16 +344,16 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
           className={cn(
             'p-3.5 rounded-xl border text-left transition-all cursor-pointer',
             activeTab === 'APPROVED'
-              ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-500/20'
-              : 'bg-white border-gray-200 hover:border-emerald-300'
+              ? 'bg-emerald-50/60 border-emerald-300 ring-2 ring-[#07563D]/10 shadow-xs'
+              : 'bg-white border-gray-200/80 hover:border-gray-300 shadow-2xs'
           )}
         >
-          <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
-            <span>Approved</span>
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
+            <span>Approved & Cleared</span>
+            <CheckCircle2 className="w-3.5 h-3.5 text-[#07563D]" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{metrics.approved}</div>
-          <span className="text-[10px] text-emerald-700 font-semibold">Recalculated & Cleared</span>
+          <div className="text-lg font-bold text-gray-900 mt-1">{metrics.approved}</div>
+          <span className="text-[11px] text-[#07563D] font-medium">Recalculated & credited</span>
         </button>
 
         <button
@@ -374,57 +361,77 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
           className={cn(
             'p-3.5 rounded-xl border text-left transition-all cursor-pointer',
             activeTab === 'REJECTED'
-              ? 'bg-rose-50 border-rose-300 ring-2 ring-rose-500/20'
-              : 'bg-white border-gray-200 hover:border-rose-300'
+              ? 'bg-rose-50/60 border-rose-300 ring-2 ring-rose-500/10 shadow-xs'
+              : 'bg-white border-gray-200/80 hover:border-gray-300 shadow-2xs'
           )}
         >
-          <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
+          <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
             <span>Rejected</span>
             <XCircle className="w-3.5 h-3.5 text-rose-600" />
           </div>
-          <div className="text-xl font-black text-gray-900 mt-1">{metrics.rejected}</div>
-          <span className="text-[10px] text-rose-700 font-semibold">Deviation maintained</span>
+          <div className="text-lg font-bold text-gray-900 mt-1">{metrics.rejected}</div>
+          <span className="text-[11px] text-rose-700 font-medium">Insufficient justification</span>
         </button>
       </div>
 
       {/* 3. Regularization Action Queue Table */}
       <Card className="p-5 bg-white rounded-2xl border border-gray-200/80 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-sm font-extrabold text-gray-900">Regularization Action Queue</h3>
-            <span className="text-xs text-gray-500">({filteredRequests.length} in inbox)</span>
+            <span className="text-xs font-semibold px-2 py-0.5 bg-gray-100 text-gray-700 rounded-md">
+              {filteredRequests.length} in inbox
+            </span>
+            {(activeTab !== 'ALL' || dateFilter.preset !== 'ALL' || searchQuery.trim() !== '') && (
+              <button
+                onClick={() => {
+                  setActiveTab('ALL');
+                  setDateFilter(INITIAL_DATE_FILTER);
+                  setSearchQuery('');
+                }}
+                className="text-[11px] text-[#07563D] font-semibold hover:underline cursor-pointer"
+              >
+                Clear All Filters
+              </button>
+            )}
           </div>
 
-          <div className="relative text-xs">
-            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
-            <input
-              type="text"
-              placeholder="Search request or reason..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#07563D]"
-            />
+          <div className="flex items-center gap-2 flex-wrap">
+            <AttendanceDateFilter value={dateFilter} onChange={setDateFilter} />
+
+            <div className="relative text-xs">
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
+              <input
+                type="text"
+                placeholder="Search request or reason..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#07563D]"
+              />
+            </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-200 uppercase text-[10px] tracking-wider">
+        <div className="max-h-[580px] overflow-x-auto overflow-y-auto border border-gray-100 rounded-b-xl no-scrollbar scrollbar-none">
+          <table className="w-full text-left text-xs min-w-[1250px] border-collapse">
+            <thead className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-xs text-gray-600 font-semibold border-b border-gray-200 uppercase text-[10px] tracking-wider shadow-xs">
               <tr>
-                <th className="p-3">Req ID</th>
-                <th className="p-3">Employee</th>
-                <th className="p-3">Date</th>
-                <th className="p-3">Attendance Issue</th>
-                <th className="p-3">Original Punch</th>
-                <th className="p-3">Requested Punch</th>
-                <th className="p-3">Reason</th>
-                <th className="p-3">Submitted On</th>
-                <th className="p-3">Approver</th>
-                <th className="p-3">Status</th>
-                <th className="p-3 text-right">Action</th>
+                <th className="p-3 whitespace-nowrap">Req ID</th>
+                <th className="p-3 whitespace-nowrap">Employee</th>
+                <th className="p-3 whitespace-nowrap">Date</th>
+                <th className="p-3 whitespace-nowrap">Attendance Issue</th>
+                <th className="p-3 whitespace-nowrap">Original Punch</th>
+                <th className="p-3 whitespace-nowrap">Requested Punch</th>
+                <th className="p-3 whitespace-nowrap min-w-[180px]">Reason</th>
+                <th className="p-3 whitespace-nowrap">Submitted On</th>
+                <th className="p-3 whitespace-nowrap">Approver</th>
+                <th className="p-3 whitespace-nowrap">Status</th>
+                <th className="p-3 text-right whitespace-nowrap sticky right-0 z-30 bg-slate-50/95 backdrop-blur-xs border-l border-gray-200 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.03)] min-w-[140px]">
+                  Action
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 bg-white">
               {filteredRequests.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="p-12 text-center text-gray-500">
@@ -439,64 +446,84 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
                 </tr>
               ) : (
                 filteredRequests.map((req) => (
-                  <tr key={req.id} className="hover:bg-gray-50/70 transition-colors">
-                    <td className="p-3 font-mono text-gray-500 font-semibold text-[11px]">{req.id.substring(0, 12)}</td>
-                    <td className="p-3 font-bold text-gray-900">
+                  <tr key={req.id} className="hover:bg-slate-50/70 transition-colors group">
+                    <td className="p-3 whitespace-nowrap">
+                      <span className="font-mono text-[11px] font-bold px-2 py-0.5 bg-gray-100 text-gray-700 border border-gray-200 rounded">
+                        #{req.id.length > 8 ? req.id.slice(-6).toUpperCase() : req.id}
+                      </span>
+                    </td>
+                    <td className="p-3 font-bold text-gray-900 whitespace-nowrap">
                       <button
                         onClick={() => onOpenEmployeeProfile && onOpenEmployeeProfile(req.employee_id)}
-                        className="text-left hover:text-[#07563D] hover:underline cursor-pointer"
+                        className="text-left hover:text-[#07563D] hover:underline cursor-pointer block"
                       >
                         {req.employee_name}
                       </button>
-                      <div className="text-[10px] text-gray-400 font-mono">{req.employee_code} · {req.department}</div>
+                      <div className="text-[10px] text-gray-400 font-mono font-normal">
+                        {req.employee_code} · {req.department}
+                      </div>
                     </td>
-                    <td className="p-3 font-mono text-gray-600 whitespace-nowrap font-medium">{req.attendance_date}</td>
-                    <td className="p-3 font-medium text-rose-700">
-                      <span className="px-2 py-0.5 bg-rose-50 border border-rose-100 rounded text-[11px]">
+                    <td className="p-3 font-mono text-gray-600 whitespace-nowrap font-medium">
+                      {req.attendance_date}
+                    </td>
+                    <td className="p-3 font-medium whitespace-nowrap">
+                      <span className="px-2 py-0.5 bg-rose-50 border border-rose-100 rounded text-[11px] text-rose-700 font-semibold">
                         {req.original_check_in ? 'Missing Out / Late' : 'Missing Punch (Absent)'}
                       </span>
                     </td>
-                    <td className="p-3 font-mono text-gray-500">
-                      {req.original_check_in || '—'} → {req.original_check_out || '—'}
+                    <td className="p-3 font-mono text-gray-500 whitespace-nowrap text-[11px]">
+                      {formatTimeToIST(req.original_check_in, '—')} → {formatTimeToIST(req.original_check_out, '—')}
                     </td>
-                    <td className="p-3 font-mono font-bold text-[#07563D]">
-                      {req.requested_check_in} → {req.requested_check_out}
+                    <td className="p-3 font-mono font-bold text-[#07563D] whitespace-nowrap text-[11px]">
+                      {formatTimeToIST(req.requested_check_in, '09:30 AM')} → {formatTimeToIST(req.requested_check_out, '06:30 PM')}
                     </td>
-                    <td className="p-3 text-gray-600 max-w-xs truncate font-medium" title={req.reason}>
+                    <td className="p-3 text-gray-600 max-w-xs truncate font-medium text-[11px]" title={req.reason}>
                       {req.reason}
                     </td>
                     <td className="p-3 font-mono text-gray-400 text-[11px] whitespace-nowrap">
                       {new Date(req.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
                     </td>
-                    <td className="p-3 text-gray-700 font-medium">{req.manager_name || 'Haripriya (HR)'}</td>
-                    <td className="p-3 whitespace-nowrap">
+                    <td className="p-3 text-gray-700 font-medium whitespace-nowrap text-[11px]">
+                      {req.hr_reviewer_name || req.manager_name || 'Haripriya (HR)'}
+                    </td>
+                    <td className="p-3 whitespace-nowrap min-w-[120px]">
                       {req.status === 'APPROVED' ? (
-                        <span className="px-2.5 py-0.5 text-[11px] font-bold bg-emerald-100 text-emerald-800 rounded-full">
-                          Approved
+                        <span className="px-2.5 py-1 text-[11px] font-bold bg-emerald-100 text-emerald-800 rounded-full inline-flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Approved
                         </span>
                       ) : req.status === 'REJECTED' ? (
-                        <span className="px-2.5 py-0.5 text-[11px] font-bold bg-rose-100 text-rose-800 rounded-full">
-                          Rejected
-                        </span>
-                      ) : req.status === 'HR_PENDING' ? (
-                        <span className="px-2.5 py-0.5 text-[11px] font-bold bg-blue-100 text-blue-800 rounded-full">
-                          HR Review
+                        <span className="px-2.5 py-1 text-[11px] font-bold bg-rose-100 text-rose-800 rounded-full inline-flex items-center gap-1">
+                          <XCircle className="w-3 h-3" /> Rejected
                         </span>
                       ) : (
-                        <span className="px-2.5 py-0.5 text-[11px] font-bold bg-purple-100 text-purple-800 rounded-full">
-                          Manager Review
+                        <span className="px-2.5 py-1 text-[11px] font-bold bg-blue-100 text-blue-800 rounded-full inline-flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> Pending HR Review
                         </span>
                       )}
                     </td>
-                    <td className="p-3 text-right whitespace-nowrap">
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        onClick={() => setSelectedRequest(req)}
-                        className="text-gray-800 hover:bg-gray-100 border-gray-200 font-bold text-xs cursor-pointer"
-                      >
-                        View & Review
-                      </Button>
+                    <td className="p-3 text-right whitespace-nowrap sticky right-0 z-10 bg-white group-hover:bg-slate-50/70 border-l border-gray-100 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.03)] min-w-[140px]">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {req.status !== 'APPROVED' && req.status !== 'REJECTED' && (
+                          <Button
+                            size="xs"
+                            variant="primary"
+                            onClick={() => handleApprove(req)}
+                            disabled={isProcessingAction}
+                            className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-[11px] px-2 py-1 h-auto cursor-pointer"
+                            title="Direct Approve & Recalculate"
+                          >
+                            Approve
+                          </Button>
+                        )}
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => setSelectedRequest(req)}
+                          className="text-gray-700 hover:bg-gray-100 border-gray-200 font-semibold text-[11px] px-2 py-1 h-auto cursor-pointer"
+                        >
+                          Review
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -561,10 +588,10 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
                   <Sparkles className="w-3 h-3" /> Requested Correction
                 </span>
                 <div className="font-mono font-black text-emerald-900 text-sm">
-                  {selectedRequest.requested_check_in} → {selectedRequest.requested_check_out}
+                  {formatTimeToIST(selectedRequest.requested_check_in, '09:30 AM')} → {formatTimeToIST(selectedRequest.requested_check_out, '06:30 PM')}
                 </div>
                 <span className="text-[11px] text-emerald-700 font-bold">
-                  +39m adjustment · Net 8h 00m
+                  Recalculates punch timings to standard work window
                 </span>
               </div>
             </div>

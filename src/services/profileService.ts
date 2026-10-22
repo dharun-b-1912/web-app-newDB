@@ -181,66 +181,94 @@ class ProfileService {
     const isPlatformAdmin = user.role === 'superadmin' || (user.roles || []).some(r => r.name.toLowerCase().includes('admin'));
     const empCode = user.employee_code || `WF-${(user.id || '1001').replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase()}`;
 
+    let dbEmp: any = null;
+    let managerName = '';
+
+    if (isSupabaseEnabled) {
+      try {
+        const query = user.employee_id
+          ? supabase
+              .from('employees')
+              .select('*, departments(id, name), designations(id, title), branches(id, name), companies(id, name, legal_name)')
+              .eq('id', user.employee_id)
+              .maybeSingle()
+          : user.email
+          ? supabase
+              .from('employees')
+              .select('*, departments(id, name), designations(id, title), branches(id, name), companies(id, name, legal_name)')
+              .ilike('work_email', user.email)
+              .maybeSingle()
+          : null;
+
+        if (query) {
+          const { data } = await query;
+          if (data) {
+            dbEmp = data;
+            const mgrId = dbEmp.reporting_manager_id || dbEmp.manager_id;
+            if (mgrId) {
+              const { data: mgr } = await supabase
+                .from('employees')
+                .select('first_name, last_name, display_name')
+                .eq('id', mgrId)
+                .maybeSingle();
+              if (mgr) {
+                managerName = mgr.display_name || `${mgr.first_name || ''} ${mgr.last_name || ''}`.trim();
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[ProfileService] employee query notice:', err);
+      }
+    }
+
+    const resolvedFirstName = dbEmp?.first_name || firstName;
+    const resolvedLastName = dbEmp?.last_name || lastName;
+    const resolvedDisplayName = dbEmp?.display_name || `${resolvedFirstName} ${resolvedLastName}`.trim() || displayName;
+    const resolvedEmpCode = dbEmp?.employee_code || user.employee_code || empCode;
+    const resolvedDept = dbEmp?.departments?.name || dbEmp?.department_name || (isPlatformAdmin ? 'Platform Management' : 'General Operations');
+    const resolvedDesig = dbEmp?.designations?.title || dbEmp?.designation_title || primaryRole;
+    const resolvedBranch = dbEmp?.branches?.name || dbEmp?.branch_name || 'Main Office';
+    const resolvedManager = managerName || dbEmp?.reporting_manager_name || (isPlatformAdmin ? 'Executive Management' : 'Not Assigned');
+
     let baseEmployee: Employee = {
-      id: user.employee_id || `emp-${user.id || 'user-01'}`,
-      employee_code: empCode,
-      first_name: firstName,
-      last_name: lastName,
-      display_name: displayName,
-      work_email: user.email,
-      organization_id: orgContext.activeOrganization.id,
-      company_id: orgContext.activeLegalEntity.id,
-      department_id: isPlatformAdmin ? 'dept-admin-01' : 'dept-gen-01',
-      department_name: isPlatformAdmin ? 'Platform Management & Operations' : 'Enterprise Operations',
-      designation_id: 'desig-01',
-      designation_title: primaryRole,
-      status: 'Active',
-      employment_type: 'Full Time',
-      branch_name: 'Coimbatore Campus',
-      avatar_url: user.avatar_url || '',
+      id: dbEmp?.id || user.employee_id || `emp-${user.id || 'user-01'}`,
+      employee_code: resolvedEmpCode,
+      first_name: resolvedFirstName,
+      last_name: resolvedLastName,
+      display_name: resolvedDisplayName,
+      work_email: dbEmp?.work_email || user.email,
+      organization_id: dbEmp?.organization_id || orgContext.activeOrganization.id,
+      company_id: dbEmp?.company_id || orgContext.activeLegalEntity.id,
+      department_id: dbEmp?.department_id || (isPlatformAdmin ? 'dept-admin-01' : 'dept-gen-01'),
+      department_name: resolvedDept,
+      designation_id: dbEmp?.designation_id || 'desig-01',
+      designation_title: resolvedDesig,
+      status: dbEmp?.status || 'Active',
+      employment_type: dbEmp?.employment_type || 'Full Time',
+      branch_name: resolvedBranch,
+      avatar_url: dbEmp?.avatar_url || user.avatar_url || '',
       profile: {
-        preferred_name: displayName,
-        personal_email: user.email,
-        phone: user.phone || '+91 98401 00000',
-        date_of_birth: '1995-01-01',
-        gender: 'Prefer not to say',
-        marital_status: 'Single',
-        blood_group: 'O+',
-        nationality: 'Indian',
+        preferred_name: resolvedDisplayName,
+        personal_email: dbEmp?.personal_email || user.email,
+        phone: dbEmp?.phone || user.phone || '',
+        date_of_birth: dbEmp?.date_of_birth || '',
+        gender: dbEmp?.gender || 'Not Specified',
+        marital_status: dbEmp?.marital_status || 'Single',
+        blood_group: dbEmp?.blood_group || '',
+        nationality: dbEmp?.nationality || 'Indian',
       },
       employment: {
-        doj: '2024-01-01',
-        employment_type: 'Full Time',
-        work_location: 'Coimbatore HQ, Joy Tech Park',
-        reporting_manager_name: isPlatformAdmin ? 'Board of Directors' : 'Executive Management',
+        doj: dbEmp?.employment?.doj || dbEmp?.joining_date || '2024-01-01',
+        employment_type: dbEmp?.employment_type || 'Full Time',
+        work_location: resolvedBranch,
+        reporting_manager_name: resolvedManager,
       },
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
+      created_at: dbEmp?.created_at || new Date().toISOString(),
+      updated_at: dbEmp?.updated_at || new Date().toISOString(),
     };
 
     let finalProfile: FullProfileContext | null = null;
-
-    if (cached) {
-      try {
-        const parsed: FullProfileContext = JSON.parse(cached);
-        // Security check: Validate cached profile belongs to this user session
-        const isUserMatch =
-          (parsed.user?.id && (parsed.user.id === user.id || (parsed.user as any).auth_user_id === user.id)) ||
-          (parsed.user?.email && user.email && parsed.user.email.toLowerCase() === user.email.toLowerCase()) ||
-          (parsed.contact?.workEmail && user.email && parsed.contact.workEmail.toLowerCase() === user.email.toLowerCase());
-
-        if (isUserMatch && parsed.personal) {
-          finalProfile = {
-            ...parsed,
-            user,
-            organization: orgContext.activeOrganization,
-            legalEntity: orgContext.activeLegalEntity,
-          };
-        }
-      } catch (_) {
-        localStorage.removeItem(storageKey);
-      }
-    }
 
     if (!finalProfile) {
       finalProfile = {

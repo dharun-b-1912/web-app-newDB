@@ -259,12 +259,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             // No real Supabase session or valid cached user -> clear local session
             authService.forceClearLocalSession();
 
-            const isDev = import.meta.env.DEV;
-            const devAutoLogin = import.meta.env.VITE_DEV_AUTO_LOGIN === 'true' || (isDev && import.meta.env.VITE_DEV_AUTO_LOGIN !== 'false');
+            const devAutoLogin = import.meta.env.VITE_DEV_AUTO_LOGIN === 'true';
             const devEmail = import.meta.env.VITE_DEV_AUTH_EMAIL || '';
             const devPassword = import.meta.env.VITE_DEV_AUTH_PASSWORD || '';
 
-            if (isDev && devAutoLogin && devEmail && devPassword) {
+            if (devAutoLogin && devEmail && devPassword) {
               console.log('[useAuth] JOY PeopleHR DEV AUTH MODE ACTIVE');
               try {
                 const res = await authService.signInWithCredentials(devEmail, devPassword, initialMode || 'tenant');

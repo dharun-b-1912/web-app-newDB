@@ -14,13 +14,38 @@ import {
 import { hrEventBus } from '../hrEventBus';
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 
-const STORAGE_KEY_MODULES = 'workforce_module_registry_v2';
-const STORAGE_KEY_AUDIT = 'workforce_module_registry_audit_v2';
+const STORAGE_KEY_MODULES = 'workforce_module_registry_v5';
+const STORAGE_KEY_AUDIT = 'workforce_module_registry_audit_v5';
 
 /**
  * CANONICAL MASTER INVENTORY OF ALL JOY PEOPLEHR DOMAINS & MODULES
  */
 export const CANONICAL_MODULES: ModuleRegistryItem[] = [
+  // ─── 0. CORE DASHBOARDS & WORKFORCE INTELLIGENCE (LIVE LAUNCH CRITICAL) ─
+  {
+    module_key: 'workforce_executive_dashboards',
+    module_name: 'Workforce & Executive HR Intelligence',
+    category: 'CORE_HR',
+    status: 'LIVE',
+    launch_scope: true,
+    launch_scope_category: 'LAUNCH_CRITICAL',
+    navigation_visible: true,
+    route_accessible: true,
+    required_plan: 'Starter',
+    required_permissions: ['dashboard.view', 'employees.view'],
+    dependencies: [],
+    web_enabled: true,
+    mobile_enabled: true,
+    certification_status: 'LAUNCH_CERTIFIED',
+    last_certified_at: '2026-09-08T05:30:00Z',
+    planned_phase: 'Phase 1 (Launch)',
+    priority: 'CRITICAL_P0',
+    completion_percentage: 100,
+    development_notes: 'Enterprise real-time workforce intelligence and executive strategic HR analytics dashboards.',
+    associated_routes: ['workforce-overview', 'executive-overview', 'dashboard', 'my-workspace'],
+    associated_nav_ids: ['workforce-overview', 'executive-overview', 'dashboard', 'my-workspace'],
+  },
+
   // ─── 1. CORE HR & EMPLOYEE LIFECYCLE (LAUNCH CRITICAL) ───────────────
   {
     module_key: 'people',
@@ -358,7 +383,7 @@ export const CANONICAL_MODULES: ModuleRegistryItem[] = [
       'analytics-payroll', 'analytics-recruitment', 'analytics-performance',
       'analytics-training', 'analytics-attrition', 'analytics-workforce',
       'analytics-cost', 'analytics-reports', 'analytics-settings',
-      'workforce-overview', 'executive-overview', 'insights'
+      'insights'
     ],
     associated_nav_ids: [
       'analytics', 'analytics-overview', 'analytics-hr', 'analytics-ceo',
@@ -810,6 +835,11 @@ class ModuleRegistryService {
     }
 
     const rLower = route.toLowerCase();
+
+    // Core HR Dashboards and Workspace are always directly accessible in production
+    if (['workforce-overview', 'executive-overview', 'dashboard', 'my-workspace'].includes(rLower)) {
+      return { accessible: true };
+    }
 
     // Internal Platform Portal routes are strictly guarded against tenant roles
     if (rLower.startsWith('platform-') || rLower.startsWith('saas-')) {

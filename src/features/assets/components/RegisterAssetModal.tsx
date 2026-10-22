@@ -1,172 +1,144 @@
-import React, { useState, useEffect } from 'react';
+// src/features/assets/components/RegisterAssetModal.tsx
+// ============================================================================
+// Joy PeopleHR — Universal Asset Registration Modal
+// Modular, Easy-to-Use: Supports Manufacturing, Factory, PPE, Uniforms, Tools & IT
+// Returnable vs Consumable Switch & Deduction / Security Deposit Amount
+// ============================================================================
+
+import React, { useState } from 'react';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
-import { Badge } from '../../../components/ui/Badge';
 import { useToast } from '../../../components/ui/Toast';
-import { assetService } from '../../../services/asset/assetService';
-import {
-  AssetCategory,
-  AssetTypeMaster,
-  AssetAttributeDefinition,
-  AssetCondition,
-  IndustryProfileCode,
-} from '../../../types';
+import { assetService, MODULAR_CATEGORIES } from '../../../services/asset/assetService';
+import { AssetCondition } from '../../../types';
 import {
   Package,
+  Wrench,
+  Shield,
   Cpu,
+  Laptop,
   Truck,
+  Key,
   Layers,
-  ShieldCheck,
+  FileCode,
+  DollarSign,
+  AlertCircle,
   CheckCircle2,
   Calendar,
-  DollarSign,
-  Plus,
-  QrCode,
-  Tag,
+  RotateCcw,
 } from 'lucide-react';
 
 interface RegisterAssetModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  activeIndustry?: IndustryProfileCode;
 }
 
 export const RegisterAssetModal: React.FC<RegisterAssetModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  activeIndustry = 'IT',
 }) => {
   const { showToast } = useToast();
 
-  const [categories, setCategories] = useState<AssetCategory[]>([]);
-  const [assetTypes, setAssetTypes] = useState<AssetTypeMaster[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('IT_HARDWARE');
-  const [selectedType, setSelectedType] = useState<string>('LAPTOP');
-
-  // Form Fields
+  const [categoryCode, setCategoryCode] = useState<string>('TOOLS_HARDWARE');
   const [assetName, setAssetName] = useState<string>('');
-  const [manufacturer, setManufacturer] = useState<string>('');
-  const [model, setModel] = useState<string>('');
+  const [assetCode, setAssetCode] = useState<string>('');
   const [serialNumber, setSerialNumber] = useState<string>('');
-  const [condition, setCondition] = useState<AssetCondition>('NEW');
+  const [isReturnable, setIsReturnable] = useState<boolean>(true);
+  const [deductionAmount, setDeductionAmount] = useState<string>('0');
+  const [purchaseCost, setPurchaseCost] = useState<string>('1500');
   const [purchaseDate, setPurchaseDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [purchasePrice, setPurchasePrice] = useState<number>(1499);
-  const [warrantyEnd, setWarrantyEnd] = useState<string>('');
+  const [condition, setCondition] = useState<AssetCondition>('NEW');
   const [description, setDescription] = useState<string>('');
-
-  // Dynamic Custom Attributes State
-  const [attributeDefs, setAttributeDefs] = useState<AssetAttributeDefinition[]>([]);
-  const [dynamicAttributes, setDynamicAttributes] = useState<Record<string, any>>({});
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (isOpen) {
-      const cats = assetService.getCategories(activeIndustry);
-      setCategories(cats);
-      const types = assetService.getAssetTypes();
-      setAssetTypes(types);
-      if (cats.length > 0) setSelectedCategory(cats[0].code);
-    }
-  }, [isOpen, activeIndustry]);
-
-  useEffect(() => {
-    const matchingTypes = assetTypes.filter(t => t.category_id === selectedCategory);
-    if (matchingTypes.length > 0 && !matchingTypes.some(t => t.code === selectedType)) {
-      setSelectedType(matchingTypes[0].code);
-    }
-  }, [selectedCategory, assetTypes]);
-
-  useEffect(() => {
-    const defs = assetService.getAttributeDefinitions(selectedType);
-    setAttributeDefs(defs);
-    const initialDyn: Record<string, any> = {};
-    defs.forEach(d => {
-      initialDyn[d.field_code] = d.options ? d.options[0] : '';
-    });
-    setDynamicAttributes(initialDyn);
-  }, [selectedType]);
-
-  const handleDynamicChange = (fieldCode: string, value: any) => {
-    setDynamicAttributes(prev => ({ ...prev, [fieldCode]: value }));
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!assetName.trim()) {
-      showToast('Please provide an asset title.', 'error');
+      showToast('Please enter an asset name or title.', 'error');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      assetService.createAsset({
-        assetCategoryCode: selectedCategory,
-        assetTypeCode: selectedType,
-        assetName,
-        manufacturer,
-        model,
-        serialNumber,
-        condition,
+      await assetService.createAsset({
+        assetName: assetName.trim(),
+        categoryCode,
+        assetCode: assetCode.trim() || undefined,
+        serialNumber: serialNumber.trim() || undefined,
+        purchaseCost: Number(purchaseCost) || 0,
         purchaseDate,
-        purchasePrice,
-        warrantyEnd: warrantyEnd || undefined,
-        customAttributes: dynamicAttributes,
-        description,
+        isReturnable,
+        deductionAmount: Number(deductionAmount) || 0,
+        description: description.trim(),
       });
 
-      showToast('Universal asset registered with dynamic attributes and QR code.', 'success');
+      showToast(`Asset "${assetName}" registered in inventory successfully!`, 'success');
       onSuccess();
       onClose();
+      // Reset form
+      setAssetName('');
+      setAssetCode('');
+      setSerialNumber('');
+      setIsReturnable(true);
+      setDeductionAmount('0');
+      setPurchaseCost('1500');
+      setDescription('');
     } catch (err: any) {
-      showToast(err.message || 'Failed to register asset.', 'error');
+      showToast(err.message || 'Failed to register asset in Supabase.', 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Register Universal Organization Asset" size="lg">
-      <form onSubmit={handleSubmit} className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
-        {/* Step 1: Category & Type Selection */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-              Asset Category *
-            </label>
-            <select
-              value={selectedCategory}
-              onChange={e => setSelectedCategory(e.target.value)}
-              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
-            >
-              {categories.map(c => (
-                <option key={c.id} value={c.code}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-              Asset Type Master *
-            </label>
-            <select
-              value={selectedType}
-              onChange={e => setSelectedType(e.target.value)}
-              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
-            >
-              {assetTypes.map(t => (
-                <option key={t.id} value={t.code}>
-                  {t.name} ({t.asset_class})
-                </option>
-              ))}
-            </select>
+    <Modal isOpen={isOpen} onClose={onClose} title="Register Organization Asset" size="lg">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Category Selection */}
+        <div>
+          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+            Asset Category & Niche *
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {MODULAR_CATEGORIES.map(cat => {
+              const isSelected = categoryCode === cat.code;
+              return (
+                <button
+                  type="button"
+                  key={cat.code}
+                  onClick={() => {
+                    setCategoryCode(cat.code);
+                    if (cat.code === 'SAFETY_UNIFORMS') {
+                      setIsReturnable(false);
+                      setDeductionAmount('500');
+                    } else if (cat.code === 'TOOLS_HARDWARE') {
+                      setIsReturnable(true);
+                      setDeductionAmount('1200');
+                    } else if (cat.code === 'IT_HARDWARE') {
+                      setIsReturnable(true);
+                      setDeductionAmount('0');
+                    }
+                  }}
+                  className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                    isSelected
+                      ? 'border-[#07563D] bg-emerald-50/60 ring-2 ring-[#07563D]/20 shadow-xs'
+                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className={`text-xs font-bold ${isSelected ? 'text-[#07563D]' : 'text-gray-800'}`}>
+                    {cat.name}
+                  </span>
+                  <span className="text-[10px] text-gray-400 mt-1 uppercase font-semibold">
+                    {cat.dbCategory}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Step 2: Primary Identifiers */}
+        {/* Asset Title / Name */}
         <div>
           <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
             Asset Title / Model Name *
@@ -174,119 +146,128 @@ export const RegisterAssetModal: React.FC<RegisterAssetModalProps> = ({
           <input
             type="text"
             required
-            placeholder="e.g. MacBook Pro 16 M3 Max or Mazak CNC 5-Axis Lathe"
             value={assetName}
             onChange={e => setAssetName(e.target.value)}
-            className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
+            placeholder="e.g. DeWalt 18V Hammer Drill, Factory Uniform Set (L), Dell Latitude 5420, Forklift 2-Ton"
+            className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Asset Code & Serial Identifier */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-              Manufacturer / Brand
+              Asset Code (Auto or Custom)
             </label>
             <input
               type="text"
-              placeholder="e.g. Apple, Dell, Mazak, CAT"
-              value={manufacturer}
-              onChange={e => setManufacturer(e.target.value)}
-              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
+              value={assetCode}
+              onChange={e => setAssetCode(e.target.value)}
+              placeholder="e.g. AST-0024 (Leave blank for auto)"
+              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
             />
           </div>
 
           <div>
             <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-              Model Number
+              Serial / Tag / Batch Number
             </label>
             <input
               type="text"
-              placeholder="e.g. A2780 / VCN-530C"
-              value={model}
-              onChange={e => setModel(e.target.value)}
-              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-              Serial Number / Tag
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. C02G1234MD6R"
               value={serialNumber}
               onChange={e => setSerialNumber(e.target.value)}
-              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden font-mono"
+              placeholder="e.g. SN-889920 or BATCH-2026-A"
+              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
             />
           </div>
         </div>
 
-        {/* Step 3: Dynamic Industry-Specific Custom Attributes */}
-        {attributeDefs.length > 0 && (
-          <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl space-y-3">
-            <div className="flex items-center gap-2 text-xs font-extrabold text-gray-900">
-              <Cpu className="w-4 h-4 text-[#07563D]" />
-              Industry Specifications for {selectedType}
+        {/* Returnable vs Consumable & Deduction Configuration Card */}
+        <div className="p-4 bg-emerald-50/50 border border-emerald-200/80 rounded-2xl space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-emerald-950 block">Returnable vs Consumable Asset</span>
+              <span className="text-[11px] text-emerald-700 block">
+                {isReturnable
+                  ? 'Returnable item — must be surrendered upon resignation, project end, or role transfer.'
+                  : 'Non-Returnable / Consumable — permanently issued (uniform, shoes, personal PPE).'}
+              </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {attributeDefs.map(attr => (
-                <div key={attr.id}>
-                  <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                    {attr.field_label} {attr.is_required && '*'}
-                  </label>
-                  {attr.data_type === 'DROPDOWN' && attr.options ? (
-                    <select
-                      value={dynamicAttributes[attr.field_code] || ''}
-                      onChange={e => handleDynamicChange(attr.field_code, e.target.value)}
-                      className="w-full bg-white border border-gray-300 rounded-xl px-3 py-1.5 text-xs text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
-                    >
-                      {attr.options.map(opt => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
-                  ) : attr.data_type === 'NUMBER' ? (
-                    <div className="relative">
-                      <input
-                        type="number"
-                        value={dynamicAttributes[attr.field_code] || ''}
-                        onChange={e => handleDynamicChange(attr.field_code, parseFloat(e.target.value))}
-                        className="w-full bg-white border border-gray-300 rounded-xl px-3 py-1.5 text-xs text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
-                      />
-                      {attr.unit_of_measure && (
-                        <span className="absolute right-3 top-2 text-[10px] text-gray-400 font-bold">
-                          {attr.unit_of_measure}
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <input
-                      type="text"
-                      value={dynamicAttributes[attr.field_code] || ''}
-                      onChange={e => handleDynamicChange(attr.field_code, e.target.value)}
-                      className="w-full bg-white border border-gray-300 rounded-xl px-3 py-1.5 text-xs text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
-                    />
-                  )}
-                </div>
-              ))}
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsReturnable(true)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  isReturnable
+                    ? 'bg-[#07563D] text-white shadow-xs'
+                    : 'bg-white border border-gray-300 text-gray-600'
+                }`}
+              >
+                Returnable
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsReturnable(false)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  !isReturnable
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-white border border-gray-300 text-gray-600'
+                }`}
+              >
+                Consumable
+              </button>
             </div>
           </div>
-        )}
 
-        {/* Step 4: Financials & Condition */}
+          {/* Deduction Amount / Security Deposit */}
+          <div className="pt-3 border-t border-emerald-200/60 grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+            <div>
+              <label className="block text-xs font-bold text-emerald-950 uppercase tracking-wider mb-1">
+                Default Deduction / Deposit (₹)
+              </label>
+              <p className="text-[11px] text-emerald-700">
+                Amount deducted if damaged/lost or issued as paid gear.
+              </p>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-xs text-gray-400 font-bold">₹</span>
+              <input
+                type="number"
+                min="0"
+                value={deductionAmount}
+                onChange={e => setDeductionAmount(e.target.value)}
+                placeholder="0"
+                className="w-full bg-white border border-gray-300 rounded-xl pl-8 pr-3.5 py-2 text-xs font-bold text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Purchase Cost & Date */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-              Purchase Cost (USD)
+              Purchase Cost (₹)
             </label>
             <input
               type="number"
-              min={0}
-              value={purchasePrice}
-              onChange={e => setPurchasePrice(parseFloat(e.target.value) || 0)}
-              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
+              min="0"
+              value={purchaseCost}
+              onChange={e => setPurchaseCost(e.target.value)}
+              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-bold text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+              Purchase Date
+            </label>
+            <input
+              type="date"
+              value={purchaseDate}
+              onChange={e => setPurchaseDate(e.target.value)}
+              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
             />
           </div>
 
@@ -301,36 +282,38 @@ export const RegisterAssetModal: React.FC<RegisterAssetModalProps> = ({
             >
               <option value="NEW">Brand New</option>
               <option value="EXCELLENT">Excellent</option>
-              <option value="GOOD">Good / Tested</option>
-              <option value="FAIR">Fair (Operational)</option>
-              <option value="DAMAGED">Damaged (Needs Repair)</option>
+              <option value="GOOD">Good / Serviceable</option>
+              <option value="FAIR">Fair / Functional</option>
             </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-              Warranty Expiration
-            </label>
-            <input
-              type="date"
-              value={warrantyEnd}
-              onChange={e => setWarrantyEnd(e.target.value)}
-              className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
-            />
           </div>
         </div>
 
-        {/* Modal Action Buttons */}
+        {/* Description / Notes */}
+        <div>
+          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+            Description & Specifications (Optional)
+          </label>
+          <textarea
+            rows={2}
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="e.g. Size XL, includes safety goggles and protective gloves, calibration valid until Dec 2026."
+            className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-medium text-gray-900 focus:ring-2 focus:ring-[#07563D] focus:outline-hidden"
+          />
+        </div>
+
+        {/* Modal Actions */}
         <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-200">
-          <Button variant="outline" type="button" onClick={onClose} disabled={isSubmitting}>
+          <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={isSubmitting}>
             Cancel
           </Button>
           <Button
             type="submit"
-            disabled={isSubmitting || !assetName.trim()}
-            className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold"
+            size="sm"
+            disabled={isSubmitting}
+            className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold"
           >
-            {isSubmitting ? 'Registering...' : 'Register Asset in Inventory'}
+            {isSubmitting ? 'Registering...' : 'Register Asset in Supabase'}
           </Button>
         </div>
       </form>

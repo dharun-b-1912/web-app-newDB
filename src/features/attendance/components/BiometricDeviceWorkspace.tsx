@@ -1,4 +1,4 @@
-
+  
 // src/features/attendance/components/BiometricDeviceWorkspace.tsx
 // ============================================================================
 // Joy PeopleHR — Enterprise Biometric Device Dedicated Workspace
@@ -111,6 +111,14 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
   const [usersPage, setUsersPage] = useState(1);
   const [usersPerPage, setUsersPerPage] = useState(50);
 
+  const isDeviceOnline = useMemo(() => {
+    if (liveDevice.status === 'Online') return true;
+    if (liveDevice.last_heartbeat_at && (Date.now() - new Date(liveDevice.last_heartbeat_at).getTime() < 10 * 60 * 1000)) return true;
+    const syncTime = liveDevice.last_sync || (liveDevice as any).last_sync_at;
+    if (syncTime && (Date.now() - new Date(syncTime).getTime() < 10 * 60 * 1000)) return true;
+    return false;
+  }, [liveDevice.status, liveDevice.last_heartbeat_at, liveDevice.last_sync]);
+
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const employeesCacheRef = useRef<any[]>([]);
   const activeTabRef = useRef(activeTab);
@@ -123,8 +131,7 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
   const loadWorkspaceData = (targetTab: string = activeTabRef.current) => {
     try {
       // Always refresh device state (fast in-memory lookup)
-      const allDevs = biometricGatewayService.getBiometricDevices();
-      const updatedDev = allDevs.find(d => d.id === device.id) || device;
+      const updatedDev = biometricGatewayService.findDevice(device.id) || device;
       setLiveDevice(updatedDev);
 
       // 1. Always load users so tab header Machine Users (${users.length}) always has the real 16 users
@@ -132,7 +139,7 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
       setUsers(devUsers);
 
       // Auto-hydrate real users from live eSSL terminal gateway if cached list is completely empty
-      if (devUsers.length === 0 && updatedDev.status === 'Online') {
+      if (devUsers.length === 0 && (updatedDev.status === 'Online' || isDeviceOnline)) {
         biometricGatewayService.triggerDeviceUserSync(device.id, 'Live Terminal Hydration')
           .then(res => {
             if (res.status === 'COMPLETED') {
@@ -446,8 +453,8 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
   };
 
   const handlePullUsersFromTerminal = async () => {
-    if (liveDevice.status !== 'Online') {
-      showToast(`Cannot sync users: ${liveDevice.device_name} is currently offline (No power). Please connect power supply before reading users.`, 'error');
+    if (!isDeviceOnline) {
+      showToast(`Cannot sync users: ${liveDevice.device_name} is currently offline. Please connect device before reading users.`, 'error');
       return;
     }
     setIsSyncingUsers(true);
@@ -557,12 +564,12 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-black text-gray-900 tracking-tight">{liveDevice.device_name}</h1>
               <Badge
-                variant={liveDevice.status === 'Online' ? 'emerald' : 'rose'}
+                variant={isDeviceOnline ? 'emerald' : 'rose'}
                 size="sm"
                 className="gap-1 font-mono text-[11px]"
               >
-                <span className={cn("w-1.5 h-1.5 rounded-full", liveDevice.status === 'Online' ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} />
-                {liveDevice.status === 'Online'
+                <span className={cn("w-1.5 h-1.5 rounded-full", isDeviceOnline ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} />
+                {isDeviceOnline
                   ? `Online (${socketLatency || 12}ms)`
                   : (liveDevice.status === 'No Power' ? 'Offline (No Power)' : 'Offline')}
               </Badge>
@@ -1280,7 +1287,8 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
                     const rawCard = u.card_number && u.card_number !== 'null' && u.card_number !== 'undefined' ? u.card_number : (u as any).credentials?.card?.uid;
                     const activeCard = rawCard ? String(rawCard).trim() : null;
 
-                    const fpCount = Number(u.fingerprint_count || (u as any).fingerprints_count || (u as any).credentials?.fingerprint?.count || (u as any).fingerprintCount || 1);
+                    const rawFp = Number(u.fingerprint_count ?? (u as any).fingerprints_count ?? (u as any).credentials?.fingerprint?.count ?? (u as any).fingerprintCount ?? 1);
+                    const fpCount = (rawFp > 10) ? 1 : Math.max(1, rawFp);
                     const hasFace = Boolean(u.face_enrolled || (u as any).has_face_enrolled || (u as any).credentials?.face?.status === 'ENROLLED' || (u.face_count && u.face_count > 0) || (u as any).faceCount > 0);
                     const isFaceUnknown = !hasFace && (u as any).credentials?.face?.status === 'UNKNOWN';
 
@@ -1489,7 +1497,7 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
                       <TableCell className="font-mono text-xs text-gray-700">#{p.biometric_pin}</TableCell>
                       <TableCell>
                         <Badge
-                          variant={p.punch_direction === 'IN' ? 'emerald' : 'blue'}
+                          variant={p.punch_direction === 'IN' ? 'emerald' : p.punch_direction === 'MIDDAY' ? 'amber' : 'blue'}
                           size="sm"
                           className="text-[10px] font-bold"
                         >
@@ -1502,8 +1510,10 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
                           variant={
                             (p as any).decision_code === 'IGNORED_SOURCE_LOCK' || p.processed_status === ('IGNORED_SOURCE_LOCK' as any)
                               ? 'amber'
-                              : (p as any).decision_code === 'DUPLICATE' || p.processed_status === ('DUPLICATE' as any)
+                              : (p as any).decision_code === 'DUPLICATE' || p.processed_status === ('DUPLICATE' as any) || p.is_duplicate
                               ? 'gray'
+                              : p.punch_direction === 'MIDDAY'
+                              ? 'amber'
                               : 'emerald'
                           }
                           size="sm"
@@ -1512,8 +1522,10 @@ const BiometricDeviceWorkspaceComponent: React.FC<Props> = ({
                         >
                           {(p as any).decision_code === 'IGNORED_SOURCE_LOCK' || p.processed_status === ('IGNORED_SOURCE_LOCK' as any)
                             ? 'IGNORED (MOBILE ACTIVE)'
-                            : (p as any).decision_code === 'DUPLICATE' || p.processed_status === ('DUPLICATE' as any)
+                            : (p as any).decision_code === 'DUPLICATE' || p.processed_status === ('DUPLICATE' as any) || p.is_duplicate
                             ? 'DUPLICATE'
+                            : p.punch_direction === 'MIDDAY'
+                            ? 'BUFFER (NO PROCESS)'
                             : 'PROCESSED'}
                         </Badge>
                       </TableCell>

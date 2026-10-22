@@ -28,6 +28,7 @@ export interface Step5FormData {
 
   // Statutory Identifiers
   pan?: string;
+  aadhaar_number?: string;
   uan?: string;
   pf_number?: string;
   esi_number?: string;
@@ -297,14 +298,14 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
 
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">
-              UAN (Universal Account Number)
+              Aadhaar Number <span className="text-gray-400 font-normal">(12-digit UID)</span>
             </label>
             <input
               type="text"
-              placeholder="101234567890"
-              maxLength={12}
-              value={formData.uan || ''}
-              onChange={(e) => onChange({ uan: e.target.value })}
+              placeholder="1234 5678 9012"
+              maxLength={14}
+              value={formData.aadhaar_number || ''}
+              onChange={(e) => onChange({ aadhaar_number: e.target.value })}
               className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium"
             />
           </div>
@@ -321,6 +322,49 @@ export const Step5Emergency: React.FC<Props> = ({ formData, onChange }) => {
               <option value="NEW">New Tax Regime (Default / Lower Slabs)</option>
               <option value="OLD">Old Tax Regime (With 80C/80D Exemptions)</option>
             </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">
+              UAN <span className="text-gray-400 font-normal">(Universal Account Number)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="101234567890"
+              maxLength={12}
+              value={formData.uan || ''}
+              onChange={(e) => onChange({ uan: e.target.value })}
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">
+              PF Number / Member ID
+            </label>
+            <input
+              type="text"
+              placeholder="TN/MAS/0012345/000/0001234"
+              value={formData.pf_number || ''}
+              onChange={(e) => onChange({ pf_number: e.target.value.toUpperCase() })}
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-bold uppercase"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">
+              ESIC Insurance Number <span className="text-gray-400 font-normal">(17 Digits)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="31000123450000001"
+              maxLength={17}
+              value={formData.esi_number || ''}
+              onChange={(e) => onChange({ esi_number: e.target.value })}
+              className="w-full px-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:border-[#07563D] focus:ring-1 focus:ring-[#07563D] focus:outline-none font-medium"
+            />
           </div>
         </div>
 

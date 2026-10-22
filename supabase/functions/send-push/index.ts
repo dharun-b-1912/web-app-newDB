@@ -176,6 +176,8 @@ serve(async (req) => {
       ) : {}),
     };
 
+    const notificationTag = route ? `joy_${route.replace(/[^a-zA-Z0-9_]/g, '_')}` : 'joy_general_alert';
+
     const androidConfig = {
       priority: "HIGH" as const,
       notification: {
@@ -185,6 +187,7 @@ serve(async (req) => {
         notification_priority: "PRIORITY_MAX",
         icon: "ic_launcher",
         color: "#1A56DB",
+        tag: notificationTag,
       },
     };
 
@@ -212,26 +215,28 @@ serve(async (req) => {
       results.push({ target: `topic:${topic}`, ...topicResult });
     }
 
-    // Lookup device tokens
+    // Lookup device tokens (preferring most recently active token)
     const tokens: string[] = [];
 
     if (employee_id) {
       const { data: dt } = await supabase
         .from("employee_device_tokens")
-        .select("fcm_token")
-        .eq("employee_id", employee_id);
-      if (dt) {
-        tokens.push(...dt.map((r: any) => r.fcm_token).filter(Boolean));
+        .select("fcm_token, updated_at")
+        .eq("employee_id", employee_id)
+        .order("updated_at", { ascending: false });
+      if (dt && dt.length > 0) {
+        tokens.push(dt[0].fcm_token);
       }
     }
 
     if (auth_user_id) {
       const { data: dt2 } = await supabase
         .from("employee_device_tokens")
-        .select("fcm_token")
-        .eq("auth_user_id", auth_user_id);
-      if (dt2) {
-        tokens.push(...dt2.map((r: any) => r.fcm_token).filter(Boolean));
+        .select("fcm_token, updated_at")
+        .eq("auth_user_id", auth_user_id)
+        .order("updated_at", { ascending: false });
+      if (dt2 && dt2.length > 0) {
+        tokens.push(dt2[0].fcm_token);
       }
 
       const { data: ps } = await supabase

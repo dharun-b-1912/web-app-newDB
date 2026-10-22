@@ -340,7 +340,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
         location_description: `${branch} — Main Turnstile`,
         direction_mode: 'BOTH',
         gateway_agent_id: 'agent-default',
-        registered_users_count: isEsslPhysical ? 16 : (employees.length || 1),
+        registered_users_count: (employees && employees.length > 0) ? employees.length : 0,
         sync_frequency_mins: 1,
       });
 
@@ -371,7 +371,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
         location_description: `${branch} — Main Turnstile`,
         direction_mode: 'BOTH',
         gateway_agent_id: 'agent-default',
-        registered_users_count: isEsslPhysical ? 16 : 1,
+        registered_users_count: (employees && employees.length > 0) ? employees.length : 0,
         sync_frequency_mins: 1,
       });
       setCreatedDevice(fallbackDev);
@@ -398,7 +398,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
         location_description: `${branch} — Main Turnstile`,
         direction_mode: 'BOTH',
         gateway_agent_id: 'agent-default',
-        registered_users_count: isEsslPhysical ? 16 : 1,
+        registered_users_count: (employees && employees.length > 0) ? employees.length : 0,
         sync_frequency_mins: 1,
       });
       setCreatedDevice(dev);
@@ -474,7 +474,7 @@ export const BiometricSetupWizardModal: React.FC<Props> = ({
         location_description: `${branch} — Main Turnstile`,
         direction_mode: 'BOTH',
         gateway_agent_id: 'agent-default',
-        registered_users_count: isEsslPhysical ? 16 : 1,
+        registered_users_count: (employees && employees.length > 0) ? employees.length : 0,
         sync_frequency_mins: 1,
       });
       setCreatedDevice(finalDev);

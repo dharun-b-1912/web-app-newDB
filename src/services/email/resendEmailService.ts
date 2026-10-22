@@ -14,6 +14,7 @@ export interface EmailAttachment {
 
 export interface SendEmailPayload {
   to: string | string[];
+  cc?: string | string[];
   subject: string;
   html: string;
   text?: string;
@@ -249,11 +250,11 @@ class ResendEmailService {
   private readonly defaultFrom: string = 'Joy PeopleHR <noreply@joypeoplehr.com>';
 
   private getApiUrl(): string {
-    return '/api/resend/emails';
+    return '/api/email/send';
   }
 
   /**
-   * Generic low-level email sender through secure server proxy (/api/resend/emails)
+   * Outbound email dispatcher through Hostinger SMTP Gateway (/api/email/send)
    */
   async sendEmail(payload: SendEmailPayload): Promise<EmailDeliveryResponse> {
     const recipients = Array.isArray(payload.to) ? payload.to : [payload.to];
@@ -269,6 +270,7 @@ class ResendEmailService {
     const requestBody = JSON.stringify({
       from: payload.from || this.defaultFrom,
       to: validRecipients,
+      cc: payload.cc,
       subject: payload.subject,
       html: payload.html,
       text: payload.text || payload.subject,
@@ -277,10 +279,8 @@ class ResendEmailService {
       attachments: payload.attachments,
     });
 
-    const apiKey = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_RESEND_API_KEY) || '';
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
     };
 
     // In Node test runner or offline environments without active browser origin
@@ -303,31 +303,11 @@ class ResendEmailService {
       const data = await response.json().catch(() => ({ message: response.statusText }));
 
       if (!response.ok) {
-        // If Resend API key is unconfigured or sandbox restricts sending only to account owner (403 validation_error)
-        const isSandboxOrDev =
-          response.status === 401 ||
-          response.status === 403 ||
-          data?.name === 'validation_error' ||
-          data?.name === 'missing_api_key' ||
-          (data?.message && data.message.includes('only send testing emails'));
-
-        if (isSandboxOrDev) {
-          console.info(
-            `[ResendService] Demo Delivery Gateway: Dispatched report to ${validRecipients.join(', ')} (${data?.message || 'Sandbox Mode'}).`
-          );
-          return {
-            success: true,
-            id: `demo-resend-${Date.now()}`,
-            message: `Attendance Miss Report dispatched successfully to ${validRecipients.join(', ')} (Demo Gateway).`,
-            delivered_at: new Date().toISOString(),
-          };
-        }
-
-        console.warn('[ResendService] API returned error:', data);
+        console.warn('[Hostinger SMTP Gateway] Gateway returned notice:', data);
         const errMsg =
+          data.error ||
           data.message ||
-          data.error?.message ||
-          (typeof data === 'string' ? data : `Resend Error (${response.status}): ${response.statusText}`);
+          (typeof data === 'string' ? data : `SMTP Gateway Error (${response.status}): ${response.statusText}`);
         return {
           success: false,
           error: errMsg,
@@ -335,21 +315,59 @@ class ResendEmailService {
         };
       }
 
-      console.log('[ResendService] Email successfully dispatched in realtime:', data.id);
+      console.log('[Hostinger SMTP Gateway] Email successfully processed:', data.id || data.provider);
       return {
         success: true,
         id: data.id,
-        message: 'Email delivered to mail transfer agent.',
+        message: data.message || 'Email successfully processed by Hostinger SMTP gateway.',
         delivered_at: new Date().toISOString(),
       };
     } catch (err: any) {
-      console.warn('[ResendService] Network or proxy unreachable in demo mode, simulating successful delivery:', err);
-      return {
-        success: true,
-        id: `demo-fallback-${Date.now()}`,
-        message: `Attendance Miss Report dispatched successfully to ${validRecipients.join(', ')} (Offline Demo Mode).`,
-        delivered_at: new Date().toISOString(),
-      };
+      console.warn('[Hostinger SMTP Gateway] Hostinger endpoint unreachable, attempting Resend API fallback...', err);
+
+      // Real Fallback to Resend API (NO simulated delivery)
+      const resendKey = (import.meta as any).env?.VITE_RESEND_API_KEY || 're_mock_dummy_resend_api_key_sanitized';
+      try {
+        const resendResp = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${resendKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: payload.from || this.defaultFrom,
+            to: validRecipients,
+            cc: payload.cc,
+            subject: payload.subject,
+            html: payload.html,
+            attachments: payload.attachments?.map((a) => ({
+              filename: a.filename,
+              content: a.content,
+            })),
+          }),
+        });
+
+        const resendData = await resendResp.json().catch(() => null);
+        if (resendResp.ok && resendData?.id) {
+          return {
+            success: true,
+            id: resendData.id,
+            message: `Email dispatched successfully via Resend API to ${validRecipients.join(', ')}.`,
+            delivered_at: new Date().toISOString(),
+          };
+        } else {
+          const failMsg = resendData?.message || `Resend HTTP ${resendResp.status}`;
+          return {
+            success: false,
+            error: `Failed to deliver email: Hostinger SMTP unreachable and Resend returned: ${failMsg}`,
+          };
+        }
+      } catch (resendErr: any) {
+        return {
+          success: false,
+          error: `Failed to deliver email: ${err.message || 'SMTP Gateway unavailable'} and Resend: ${resendErr.message}`,
+        };
+      }
     }
   }
 
@@ -1951,6 +1969,126 @@ class ResendEmailService {
           {
             filename: params.excelFilename || `JoyPeopleHR-Attendance-OT-Recon-${params.periodLabel.replace(/\s+/g, '-')}.xlsx`,
             content: params.excelAttachmentBase64,
+          },
+        ]
+      : undefined;
+
+    return this.sendEmail({
+      to: params.to,
+      subject,
+      html,
+      attachments,
+    });
+  }
+
+  /**
+   * Dispatches the official monthly employee payslip via business email
+   * with the exact same canonical PDF attached.
+   */
+  async sendEmployeePayslipEmail(params: {
+    to: string;
+    employeeName: string;
+    employeeCode: string;
+    periodLabel: string;
+    netPay: string;
+    grossPay?: string;
+    bankName?: string;
+    accountMasked?: string;
+    pdfBuffer?: Buffer | Uint8Array;
+    pdfBase64?: string;
+    pdfFilename?: string;
+    companyName?: string;
+  }): Promise<EmailDeliveryResponse> {
+    const company = params.companyName || 'Joy Corporate Solutions Pvt. Ltd.';
+    const subject = `Official Salary Payslip — ${params.periodLabel} | ${params.employeeName} (${params.employeeCode})`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${subject}</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px; color: #0f172a;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 620px; margin: 0 auto; background: #ffffff; border-radius: 14px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 12px rgba(15,23,42,0.06);">
+    <!-- Header -->
+    <tr>
+      <td style="background-color: #0f2d59; padding: 24px 28px; color: #ffffff;">
+        <div style="font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #38bdf8;">JOY PEOPLEHR ENTERPRISE</div>
+        <div style="font-size: 18px; font-weight: 900; margin-top: 4px;">Salary Payslip — ${params.periodLabel}</div>
+        <div style="font-size: 12px; color: #cbd5e1; margin-top: 2px;">${company}</div>
+      </td>
+    </tr>
+
+    <!-- Body -->
+    <tr>
+      <td style="padding: 24px 28px;">
+        <p style="margin: 0 0 16px 0; font-size: 14px; color: #334155; line-height: 1.5;">
+          Dear <strong>${params.employeeName}</strong>,
+        </p>
+        <p style="margin: 0 0 20px 0; font-size: 13px; color: #475569; line-height: 1.6;">
+          Your official salary payslip for <strong>${params.periodLabel}</strong> has been published and finalized by HR &amp; Finance Operations. Please find your official digitally signed PDF payslip attached to this email.
+        </p>
+
+        <!-- Summary Card -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; margin-bottom: 20px; font-size: 12px;">
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0;">
+              <span style="color: #64748b;">Employee ID / Code:</span>
+              <strong style="float: right; color: #0f172a; font-family: monospace;">${params.employeeCode}</strong>
+            </td>
+          </tr>
+          ${params.grossPay ? `
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0;">
+              <span style="color: #64748b;">Gross Monthly Earnings:</span>
+              <strong style="float: right; color: #0f172a; font-family: monospace;">₹${params.grossPay}</strong>
+            </td>
+          </tr>` : ''}
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; background: #ecfdf5;">
+              <span style="color: #047857; font-weight: 800;">Net Take-Home Salary:</span>
+              <strong style="float: right; color: #065f46; font-size: 15px; font-family: monospace;">₹${params.netPay}</strong>
+            </td>
+          </tr>
+          ${params.bankName ? `
+          <tr>
+            <td style="padding: 12px 16px;">
+              <span style="color: #64748b;">Disbursed To Account:</span>
+              <strong style="float: right; color: #0f172a; font-family: monospace;">${params.bankName} (${params.accountMasked || '•••• •••• 7890'})</strong>
+            </td>
+          </tr>` : ''}
+        </table>
+
+        <!-- Attachment Notice -->
+        <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; font-size: 12px; color: #1e3a8a;">
+          📎 <strong>Attached Document:</strong> <code>${params.pdfFilename || `JoyPeopleHR_Payslip_${params.employeeCode}_${params.periodLabel.replace(/\s+/g, '_')}.pdf`}</code>
+          <div style="margin-top: 4px; font-size: 11px; color: #3b82f6;">This PDF document is encrypted and cryptographically sealed for statutory compliance.</div>
+        </div>
+
+        <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.5;">
+          If you have any questions regarding your salary computation or tax deductions, please reach out to your HR Operations team or access the Joy PeopleHR Employee Portal.
+        </p>
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="background-color: #0f172a; padding: 18px 28px; text-align: center; color: #94a3b8; font-size: 11px;">
+        <div style="font-weight: 700; color: #ffffff;">JOY CORPORATE SOLUTIONS PVT. LTD.</div>
+        <div>WorkforceOS Enterprise HRMS • Automated Payroll &amp; Compliance</div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `;
+
+    const attachments = params.pdfBase64 || params.pdfBuffer
+      ? [
+          {
+            filename: params.pdfFilename || `JoyPeopleHR_Payslip_${params.employeeCode}_${params.periodLabel.replace(/\s+/g, '_')}.pdf`,
+            content: params.pdfBase64 || (params.pdfBuffer ? Buffer.from(params.pdfBuffer).toString('base64') : ''),
           },
         ]
       : undefined;

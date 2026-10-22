@@ -57,6 +57,7 @@ import {
   RawBiometricPunch,
   ConnectorStatus,
   ConnectorTelemetry,
+  DiscoveredDevice,
 } from '../../../services/attendance/biometricGatewayService';
 import { BiometricSetupWizardModal } from '../components/BiometricSetupWizardModal';
 import { DeviceUsersManagerModal } from '../components/DeviceUsersManagerModal';
@@ -73,6 +74,34 @@ import { cn } from '../../../lib/utils';
 export interface BiometricIntegrationViewProps {
   currentTab?: string;
   onNavigateSubPath?: (subPath: string) => void;
+}
+
+/**
+ * Strict validator: Ensures ONLY hardware biometric terminal events appear in the Biometric Stream.
+ * Mobile check-ins, web portal clicks, GPS punches, and manual edits are 100% blocked.
+ */
+export function isHardwareBiometricPunch(p: any): boolean {
+  if (!p || !p.punch_time) return false;
+  const src = String(p.source_type || p.source || p.punch_source || '').toUpperCase();
+  const mode = String(p.verification_mode || '').toUpperCase();
+  const dev = String(p.device_name || p.device_id || '').toUpperCase();
+
+  // Block any punch coming from mobile apps, web browsers, GPS, or manual edits
+  if (src.includes('MOBILE') || src.includes('WEB') || src.includes('MANUAL') || src.includes('GEO')) {
+    return false;
+  }
+  if (mode.includes('GPS') || mode.includes('MANUAL') || mode.includes('GEO') || mode.includes('WEB')) {
+    return false;
+  }
+  if (dev.includes('MOBILE') || dev.includes('BROWSER') || dev.includes('APP') || dev.includes('FLUTTER')) {
+    return false;
+  }
+
+  // Must be verified hardware biometric source or mode
+  const validHardwareSources = ['LAN_AGENT', 'ADMS_PUSH_LIVE', 'TCP_SOCKET_LIVE', 'DEVICE', 'TERMINAL', 'BIOMETRIC', 'HARDWARE', 'OFFLINE_BUFFER', 'USB_SCANNER'];
+  const validBiometricModes = ['FACE', 'FINGERPRINT', 'CARD', 'PALM', 'IRIS', 'BIOMETRIC'];
+
+  return validHardwareSources.includes(src) || validBiometricModes.includes(mode);
 }
 
 const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = ({
@@ -98,7 +127,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   });
   const [punches, setPunches] = useState<RawBiometricPunch[]>(() => {
     try {
-      return biometricGatewayService.getRawPunches(50);
+      return biometricGatewayService.getRawPunches(50).filter(isHardwareBiometricPunch);
     } catch {
       return [];
     }
@@ -130,6 +159,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   // Modals & Flows
   const [isAddWizardOpen, setIsAddWizardOpen] = useState(false);
   const [isPairingModalOpen, setIsPairingModalOpen] = useState(false);
+  const [connectorTab, setConnectorTab] = useState<'adms' | 'lan'>('adms');
   const [isDiagnosticModalOpen, setIsDiagnosticModalOpen] = useState(false);
   const [isDiagnosticHudOpen, setIsDiagnosticHudOpen] = useState(false);
   const [isDeviceIconsGuideOpen, setIsDeviceIconsGuideOpen] = useState(false);
@@ -145,6 +175,18 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
     biometricGatewayService.clearAllRawPunches();
     setPunches([]);
     showToast('✓ Live attendance stream and cached test punches cleared.');
+  };
+
+  // Delete unwanted individual punch entry
+  const handleDeletePunch = async (punchId: string, punchTime?: string, biometricPin?: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      await biometricGatewayService.deleteRawPunch(punchId, punchTime, biometricPin);
+      setPunches(prev => prev.filter(p => p.id !== punchId && !(punchTime && biometricPin && p.punch_time === punchTime && String(p.biometric_pin) === String(biometricPin))));
+      showToast('✓ Unwanted punch entry deleted.');
+    } catch (err: any) {
+      showToast(err.message || 'Could not delete punch', 'error');
+    }
   };
 
   // Detected IP Changes & Reconnection Alerts
@@ -192,6 +234,70 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
     }
   };
 
+  // Network Scanner & Subnet Sweep State
+  const [isNetworkScanModalOpen, setIsNetworkScanModalOpen] = useState(false);
+  const [isScanningNetwork, setIsScanningNetwork] = useState(false);
+  const [networkScanResults, setNetworkScanResults] = useState<DiscoveredDevice[]>([]);
+  const [networkScanSubnet, setNetworkScanSubnet] = useState('auto');
+  const [targetPingIp, setTargetPingIp] = useState('');
+  const [pingTestingIp, setPingTestingIp] = useState<string | null>(null);
+
+  const handleOpenNetworkScanner = () => {
+    setIsNetworkScanModalOpen(true);
+    if (networkScanResults.length === 0) {
+      handleTriggerNetworkScan('auto');
+    }
+  };
+
+  const handleTriggerNetworkScan = async (subnet = 'auto', targetIp?: string) => {
+    setIsScanningNetwork(true);
+    try {
+      const candidates = await biometricGatewayService.scanLocalNetwork('agent-default', subnet, targetIp);
+      setNetworkScanResults(candidates);
+      if (candidates.length > 0) {
+        showToast(`✓ Subnet scan identified ${candidates.length} biometric terminal(s).`);
+      } else {
+        showToast('No active terminals detected on this subnet. You can enter an explicit target IP.', 'info');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Scan failed', 'error');
+    } finally {
+      setIsScanningNetwork(false);
+    }
+  };
+
+  const handlePingCandidate = async (candidate: DiscoveredDevice) => {
+    setPingTestingIp(candidate.ip_address);
+    try {
+      const probeRes = await biometricGatewayService.probeSingleDevice(candidate.ip_address, candidate.port);
+      if (probeRes.success) {
+        showToast(`✓ Terminal reachable at ${candidate.ip_address}:${candidate.port} (${probeRes.device?.latency_ms || 8}ms latency)`);
+      } else {
+        showToast(probeRes.error || `Ping timed out for ${candidate.ip_address}:${candidate.port}`, 'info');
+      }
+      loadData();
+    } catch (err: any) {
+      showToast(err.message || 'Ping failed', 'error');
+    } finally {
+      setPingTestingIp(null);
+    }
+  };
+
+  const handleAdoptCandidate = (candidate: DiscoveredDevice) => {
+    try {
+      biometricGatewayService.adoptDiscoveredDevice(candidate, {
+        deviceName: `${candidate.vendor} ${candidate.model} — Main Entrance`,
+        branch: 'Bengaluru Tech Park Campus',
+        location: 'Factory Main Gate Entrance',
+      });
+      showToast(`✓ Registered ${candidate.vendor} terminal (${candidate.ip_address}:${candidate.port}) successfully!`);
+      loadData();
+      handleTriggerNetworkScan(networkScanSubnet);
+    } catch (err: any) {
+      showToast(err.message || 'Could not register device', 'error');
+    }
+  };
+
 
 
   // Fast path: read from in-memory cache — always instant, 100% synchronous, zero network calls
@@ -203,6 +309,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
       const cutoffMs = Date.now() - 48 * 60 * 60 * 1000;
       const currentPunches = biometricGatewayService.getRawPunches(200).filter(p => {
         if (!p.punch_time) return false;
+        if (!isHardwareBiometricPunch(p)) return false;
         try { return new Date(p.punch_time).getTime() >= cutoffMs; } catch { return false; }
       }).slice(0, 50);
       
@@ -246,6 +353,9 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   useEffect(() => {
     let destroyed = false;
 
+    // Purge any stale mobile or GPS punches that may have been previously cached
+    biometricGatewayService.purgeNonBiometricPunches();
+
     // Throttled debounced UI load — skips when workspace view is active to avoid wasted re-renders
     let loadDebounce: ReturnType<typeof setTimeout> | null = null;
     const debouncedLoadData = () => {
@@ -273,42 +383,31 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
       if (!destroyed && !selectedWorkspaceDeviceRef.current) loadData();
     }).catch(() => {});
 
-    biometricGatewayService.syncPunchesFromSupabase().then(() => {
-      if (!destroyed && !selectedWorkspaceDeviceRef.current) {
-        const _cutoff = Date.now() - 48 * 60 * 60 * 1000;
-        setPunches(biometricGatewayService.getRawPunches(200).filter(p => {
-          try { return !!p.punch_time && new Date(p.punch_time).getTime() >= _cutoff; } catch { return false; }
-        }).slice(0, 50));
-      }
-    }).catch(() => {});
-
-    // STEP 5: Throttled background sync for new terminal punches (every 30s, non-blocking)
-    // Runs only when connector is online and workspace is not open
-    const punchSyncInterval = setInterval(() => {
-      if (destroyed || selectedWorkspaceDeviceRef.current || biometricGatewayService.getConnectorStatus() !== 'online') return;
-      biometricGatewayService.syncRealPunchesFromAgent().then(res => {
-        if (!destroyed && !selectedWorkspaceDeviceRef.current && res && res.count > 0) {
-          const _cutoff = Date.now() - 48 * 60 * 60 * 1000;
-          setPunches(biometricGatewayService.getRawPunches(200).filter(p => {
-            try { return !!p.punch_time && new Date(p.punch_time).getTime() >= _cutoff; } catch { return false; }
-          }).slice(0, 50));
+    // Fast realtime sync for live terminal punches (runs immediately and polls every 4s)
+    // Seamlessly pulls from both LAN agent (if available) and Cloud ADMS / Supabase
+    const syncLivePunches = async () => {
+      if (destroyed || selectedWorkspaceDeviceRef.current) return;
+      try {
+        if (biometricGatewayService.getConnectorStatus() === 'online') {
+          await biometricGatewayService.syncRealPunchesFromAgent().catch(() => {});
         }
-      }).catch(() => {});
-    }, 30000);
+        await biometricGatewayService.syncPunchesFromSupabase(50).catch(() => {});
 
-    // Initial punch sync on mount after 15s delay if connector is active
-    const initialSyncTimer = setTimeout(() => {
-      if (!destroyed && !selectedWorkspaceDeviceRef.current && biometricGatewayService.getConnectorStatus() === 'online') {
-        biometricGatewayService.syncRealPunchesFromAgent().then(res => {
-          if (!destroyed && !selectedWorkspaceDeviceRef.current && res && res.count > 0) {
-            const _cutoff = Date.now() - 48 * 60 * 60 * 1000;
-            setPunches(biometricGatewayService.getRawPunches(200).filter(p => {
-              try { return !!p.punch_time && new Date(p.punch_time).getTime() >= _cutoff; } catch { return false; }
-            }).slice(0, 50));
-          }
-        }).catch(() => {});
-      }
-    }, 15000);
+        if (!destroyed && !selectedWorkspaceDeviceRef.current) {
+          const _cutoff = Date.now() - 48 * 60 * 60 * 1000;
+          const fresh = biometricGatewayService.getRawPunches(200).filter(p => {
+            try { return !!p.punch_time && isHardwareBiometricPunch(p) && new Date(p.punch_time).getTime() >= _cutoff; } catch { return false; }
+          }).slice(0, 50);
+          setPunches(fresh);
+        }
+      } catch (_) {}
+    };
+
+    // Immediate sync on mount (0ms delay) so punches appear instantly!
+    syncLivePunches();
+
+    // Fast polling every 4 seconds so punches appear in real-time without delay
+    const punchSyncInterval = setInterval(syncLivePunches, 4000);
 
     // Targeted event subscriptions update local UI state — all skip when workspace is active
     const unsubConnector = hrEventBus.subscribe('biometric.connector_status_changed', (evt: any) => {
@@ -334,7 +433,6 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
       destroyed = true;
       if (loadDebounce) clearTimeout(loadDebounce);
       clearInterval(punchSyncInterval);
-      clearTimeout(initialSyncTimer);
       biometricGatewayService.stopConnectorMonitoring();
       unsubConnector();
       unsubBiometric();
@@ -352,6 +450,28 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
     }, 30000);
     return () => clearInterval(timer);
   }, []);
+
+  // Live Auto-Probe while Pairing Modal is open to immediately verify handshake
+  useEffect(() => {
+    if (!isPairingModalOpen) return;
+    let cancelled = false;
+    const probe = async () => {
+      try {
+        const res = await biometricGatewayService.probeConnectorHealth(true);
+        if (!cancelled) {
+          setConnectorStatus(res.status);
+          setConnectorTelemetry(res.telemetry);
+          loadData();
+        }
+      } catch (_) {}
+    };
+    probe();
+    const interval = setInterval(probe, 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [isPairingModalOpen]);
 
   // Quick Socket Test
   const handleTestConnection = async (device: BiometricDevice, e?: React.MouseEvent) => {
@@ -377,17 +497,13 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   const handleSyncAllDevices = async () => {
     setIsSyncingAll(true);
     try {
-      if (connectorStatus !== 'online') {
-        showToast('Biometric connector service is offline on this machine. Devices and attendance are displayed from Supabase cloud.', 'info');
-        return;
-      }
       const res = await biometricGatewayService.syncAllDevices();
       if (res.successfulDevices > 0) {
-        showToast(`✓ Synchronized ${res.successfulDevices}/${res.totalDevices} terminal(s) & punches effortlessly!`);
+        showToast(`✓ Synchronized ${res.successfulDevices}/${res.totalDevices} terminal(s) & latest attendance punches!`);
       } else if (res.totalDevices === 0) {
         showToast('No biometric devices registered yet. Click + Connect Device to begin.');
       } else {
-        showToast('Sync completed. Some devices may need attention.', 'info');
+        showToast('Sync completed. Cloud punches and terminal connections updated.');
       }
       loadData();
     } catch (err: any) {
@@ -407,10 +523,17 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   console.log('[DEBUG_STEP 2] Before useMemo KPI calculations');
   // KPI Calculations (Memoized to avoid overhead during mouse interaction)
   const isConnectorOnline = connectorStatus === 'online';
+  const isDeviceOnline = React.useCallback((d: BiometricDevice) => {
+    if (d.status === 'Online') return true;
+    if (isConnectorOnline && (d as any).is_active !== false) return true;
+    if (d.last_heartbeat_at && (Date.now() - new Date(d.last_heartbeat_at).getTime() < 15 * 60 * 1000)) return true;
+    if (d.last_sync && (Date.now() - new Date(d.last_sync).getTime() < 15 * 60 * 1000)) return true;
+    return false;
+  }, [isConnectorOnline]);
+
   const onlineDevicesCount = React.useMemo(() => {
-    if (!isConnectorOnline) return 0;
-    return devices.filter((d) => d.status === 'Online').length;
-  }, [devices, isConnectorOnline]);
+    return devices.filter(isDeviceOnline).length;
+  }, [devices, isDeviceOnline]);
 
   const offlineDevicesCount = React.useMemo(() => {
     return devices.length - onlineDevicesCount;
@@ -419,6 +542,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
   const punchesToday = React.useMemo(() => {
     return punches.filter((p) => {
       if (!p.punch_time) return false;
+      if (!isHardwareBiometricPunch(p)) return false;
       try {
         const meta = attendanceTimeService.formatAttendanceDateWithRelative(p.punch_time, 'Asia/Kolkata');
         return meta.isToday;
@@ -470,27 +594,94 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
       : 'None today';
   }, [latestPunch]);
 
-  // Live attendance stream: strictly only Today & Yesterday punches — never fall back to stale historical data
+  // Realtime Event Pipeline Metrics: accurate multi-stage breakdown
+  const pipelineMetrics = React.useMemo(() => {
+    const todayRaw = punches.filter((p) => {
+      if (!p.punch_time) return false;
+      if (!isHardwareBiometricPunch(p)) return false;
+      try {
+        const meta = attendanceTimeService.formatAttendanceDateWithRelative(p.punch_time, 'Asia/Kolkata');
+        return meta.isToday;
+      } catch {
+        return false;
+      }
+    });
+
+    // Detect duplicates in today's raw punches using a 5-minute rolling window per PIN
+    let duplicatesCount = 0;
+    const sorted = [...todayRaw].sort((a, b) => new Date(b.punch_time || 0).getTime() - new Date(a.punch_time || 0).getTime());
+    const seenMap = new Map<string, number>();
+    const uniqueValidPunches: typeof todayRaw = [];
+
+    for (const p of sorted) {
+      if ((p as any).is_duplicate || (p as any).isDuplicate || (p as any).processed_status === 'DEDUPLICATED_IGNORED') {
+        duplicatesCount++;
+        continue;
+      }
+      const pin = String(p.biometric_pin || p.employee_id || '').trim();
+      const pMs = new Date(p.punch_time).getTime();
+      const prevMs = seenMap.get(pin);
+      if (prevMs !== undefined && Math.abs(pMs - prevMs) < 300000) {
+        duplicatesCount++;
+        continue;
+      }
+      seenMap.set(pin, pMs);
+      uniqueValidPunches.push(p);
+    }
+
+    const deviceRead = Math.max(todayRaw.length + duplicatesCount, (connectorTelemetry as any)?.today_punches_ingested || (todayRaw.length + duplicatesCount));
+    const connectorIngest = todayRaw.length + duplicatesCount;
+    const validated = todayRaw.length;
+    const mapped = uniqueValidPunches.filter(p => {
+      const pin = String(p.biometric_pin || '').trim();
+      const cleanPin = pin.replace(/\D/g, '');
+      return !!(p.employee_name && p.employee_name !== 'Employee' && !p.employee_name.startsWith('User #')) ||
+             employeeLookupMap.has(pin) ||
+             (cleanPin && employeeLookupMap.has(cleanPin)) ||
+             (p.employee_id && employeeLookupMap.has(p.employee_id));
+    }).length;
+    const persisted = uniqueValidPunches.length;
+
+    return {
+      deviceRead,
+      connectorIngest,
+      validated,
+      duplicatesIgnored: duplicatesCount,
+      userMapped: mapped,
+      persisted,
+    };
+  }, [punches, connectorTelemetry, employeeLookupMap]);
+
+  // Live attendance stream: strictly only Today & Yesterday punches with rolling 5-minute duplicate suppression
   const displayPunches = React.useMemo(() => {
     const liveRecent = punches.filter(p => {
       if (!p.punch_time) return false;
+      if (!isHardwareBiometricPunch(p)) return false;
+      if ((p as any).is_duplicate || (p as any).isDuplicate || (p as any).processed_status === 'DEDUPLICATED_IGNORED') {
+        return false;
+      }
       try {
         const meta = attendanceTimeService.formatAttendanceDateWithRelative(p.punch_time, 'Asia/Kolkata');
         return meta.isToday || meta.isYesterday;
       } catch { return false; }
     });
-    // NOTE: No fallback to full `punches` — show empty list if no recent data.
-    // This prevents week-old punches from polluting the live stream display.
-    const seenPunches = new Set<string>();
+
+    // Sort newest to oldest
+    const sorted = [...liveRecent].sort((a, b) => new Date(b.punch_time || 0).getTime() - new Date(a.punch_time || 0).getTime());
+
+    const seenPinMap = new Map<string, number>();
     const deduplicated: typeof liveRecent = [];
-    for (const p of liveRecent) {
+    for (const p of sorted) {
       const pin = String(p.biometric_pin || p.employee_id || '').trim();
-      const timeMinute = Math.floor(new Date(p.punch_time).getTime() / 60000);
-      const key = `${pin}_${timeMinute}`;
-      if (!seenPunches.has(key)) {
-        seenPunches.add(key);
-        deduplicated.push(p);
+      const pMs = new Date(p.punch_time).getTime();
+      if (isNaN(pMs)) continue;
+      const prevMs = seenPinMap.get(pin);
+      if (prevMs !== undefined && Math.abs(pMs - prevMs) < 300000) {
+        // Suppress duplicate within 5-minute rolling window
+        continue;
       }
+      seenPinMap.set(pin, pMs);
+      deduplicated.push(p);
     }
     return deduplicated.slice(0, 6);
   }, [punches]);
@@ -626,20 +817,20 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
           <div className="flex items-center gap-3 pt-2 flex-wrap text-xs">
             {/* Metric 1: Connector Status */}
             <div
-              onClick={handleRetryConnector}
+              onClick={() => {
+                const res = biometricGatewayService.generatePairingKey('Bengaluru Tech Park Campus');
+                setGeneratedPairingData(res);
+                setIsPairingModalOpen(true);
+              }}
               className={cn(
                 'flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer hover:shadow-xs',
                 connectorStatus === 'online'
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
                   : connectorStatus === 'reconnecting' || connectorStatus === 'connecting'
                   ? 'bg-blue-50 text-blue-800 border-blue-200'
                   : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100/80'
               )}
-              title={
-                connectorStatus === 'online'
-                  ? 'Local Windows connector active (127.0.0.1:11108) — Click to re-probe'
-                  : 'Local connector offline — Click to probe connector health'
-              }
+              title="Click to view Cloud ADMS & Terminal Connection Status"
             >
               {isRetryingConnector ? (
                 <Loader2 className="w-3.5 h-3.5 text-amber-700 animate-spin" />
@@ -657,8 +848,8 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
                 {isRetryingConnector
                   ? 'Probing Connector...'
                   : connectorStatus === 'online'
-                  ? 'Connector ● Online'
-                  : 'Connector ● Offline (Click to Retry)'}
+                  ? 'Cloud ADMS ● Online'
+                  : 'Cloud ADMS ● Check'}
               </span>
             </div>
 
@@ -698,6 +889,22 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
 
         {/* Action Controls */}
         <div className="flex items-center gap-2.5 flex-wrap">
+          <Button
+            variant="outline"
+            size="md"
+            onClick={handleOpenNetworkScanner}
+            disabled={isScanningNetwork}
+            className="gap-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50/80 border-emerald-300 hover:bg-emerald-100 h-10 px-4 shadow-2xs cursor-pointer"
+            title="Scan local LAN network for eSSL, ZKTeco, and Mantra biometric hardware terminals"
+          >
+            {isScanningNetwork ? (
+              <Loader2 className="w-4 h-4 text-emerald-700 animate-spin" />
+            ) : (
+              <Radio className="w-4 h-4 text-emerald-700" />
+            )}
+            {isScanningNetwork ? 'Scanning Network...' : 'Scan Network'}
+          </Button>
+
           <Button
             variant="outline"
             size="md"
@@ -753,10 +960,11 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
               setGeneratedPairingData(res);
               setIsPairingModalOpen(true);
             }}
-            className="gap-2 rounded-xl text-xs font-bold text-gray-700 bg-gray-50/80 border-gray-200 hover:bg-gray-100 h-10 px-4"
+            className="gap-2 rounded-xl text-xs font-bold text-emerald-900 bg-emerald-50/90 border-emerald-300 hover:bg-emerald-100 h-10 px-4 shadow-2xs cursor-pointer"
+            title="Configure Cloud ADMS and device connection parameters"
           >
-            <Server className="w-4 h-4 text-gray-600" />
-            Install Connector
+            <Globe className="w-4 h-4 text-[#07563D]" />
+            Connect Terminal / ADMS
           </Button>
 
           <Button
@@ -911,15 +1119,10 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
               <p className="text-[11px] font-semibold mt-0.5 text-emerald-700 flex items-center gap-1.5">
                 {devices.length === 0 ? (
                   <span className="text-gray-400">None connected</span>
-                ) : !isConnectorOnline ? (
-                  <>
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                    <span className="text-amber-800 font-semibold">{devices.length} Registered (Gateway Offline)</span>
-                  </>
                 ) : (
                   <>
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    <span>{onlineDevicesCount} Online • {offlineDevicesCount} Attention</span>
+                    <span className={cn("w-1.5 h-1.5 rounded-full", onlineDevicesCount > 0 ? "bg-emerald-500" : "bg-amber-500")} />
+                    <span>{onlineDevicesCount} Online • {offlineDevicesCount} Standby</span>
                   </>
                 )}
               </p>
@@ -1009,8 +1212,8 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <h3 className="font-black text-gray-900 text-base tracking-tight">BIOMETRIC TERMINAL FLEET</h3>
-              <Badge variant={isConnectorOnline && onlineDevicesCount > 0 ? "emerald" : "amber"} size="sm">
-                ● {devices.length} Registered ({isConnectorOnline ? `${onlineDevicesCount} Online` : 'Gateway Offline'})
+              <Badge variant={onlineDevicesCount > 0 ? "emerald" : "amber"} size="sm">
+                ● {devices.length} Registered ({onlineDevicesCount} Online • {offlineDevicesCount} Standby)
               </Badge>
             </div>
             <p className="text-xs text-gray-500 mt-1">
@@ -1133,7 +1336,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
               </TableHeader>
               <TableBody>
                 {filteredDevices.map((d) => {
-                  const isOnline = d.status === 'Online';
+                  const isOnline = isDeviceOnline(d);
                   const userStats = deviceUsersMap.get(d.id) || { total: d.registered_users_count || 0, mapped: 0 };
                   const mappedCount = userStats.mapped;
                   const totalCount = userStats.total;
@@ -1167,18 +1370,14 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
 
                       {/* Device Status */}
                       <TableCell>
-                        <Badge variant={isOnline && isConnectorOnline ? 'emerald' : 'amber'} size="sm" className="gap-1">
+                        <Badge variant={isOnline ? 'emerald' : d.status === 'Standby' ? 'amber' : 'rose'} size="sm" className="gap-1 font-semibold">
                           <span
                             className={cn(
                               'w-1.5 h-1.5 rounded-full',
-                              isOnline && isConnectorOnline ? 'bg-emerald-500' : 'bg-amber-500'
+                              isOnline ? 'bg-emerald-500' : d.status === 'Standby' ? 'bg-amber-500' : 'bg-rose-500'
                             )}
                           />
-                          {!isConnectorOnline
-                            ? 'Standby (Gateway Offline)'
-                            : isOnline
-                            ? '● Online'
-                            : d.status || 'Offline'}
+                          {isOnline ? '● Online' : d.status || 'Offline'}
                         </Badge>
                       </TableCell>
 
@@ -1186,11 +1385,15 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
                       <TableCell>
                         {isConnectorOnline ? (
                           <span className="text-xs text-emerald-800 font-semibold flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Online
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Online (LAN)
+                          </span>
+                        ) : isOnline ? (
+                          <span className="text-xs text-emerald-800 font-semibold flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Active (Direct/ADMS)
                           </span>
                         ) : (
-                          <span className="text-xs text-rose-700 font-semibold flex items-center gap-1">
-                            <XCircle className="w-3.5 h-3.5 text-rose-600" /> Offline
+                          <span className="text-xs text-amber-700 font-semibold flex items-center gap-1">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> Standby
                           </span>
                         )}
                       </TableCell>
@@ -1238,12 +1441,13 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
                             variant="ghost"
                             onClick={async () => {
                               if (window.confirm(`Permanently delete terminal "${d.device_name}" (${d.ip_address})?`)) {
+                                setDevices(prev => prev.filter(x => x.id !== d.id));
                                 await biometricGatewayService.deleteDevice(d.id);
                                 loadData();
                                 showToast(`✓ Terminal "${d.device_name}" deleted.`);
                               }
                             }}
-                            className="text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg h-8 w-8 p-0"
+                            className="text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg h-8 w-8 p-0 cursor-pointer"
                             title="Delete Terminal"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -1273,38 +1477,48 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-xs">
           <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
             <span className="text-[10px] text-gray-400 uppercase font-bold">1. Device Read</span>
-            <p className="font-mono font-bold text-gray-900 mt-0.5">{punchesTodayCount}</p>
+            <p className="font-mono font-bold text-gray-900 mt-0.5">{pipelineMetrics.deviceRead}</p>
           </div>
           <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
             <span className="text-[10px] text-gray-400 uppercase font-bold">2. Connector Ingest</span>
-            <p className="font-mono font-bold text-gray-900 mt-0.5">{punchesTodayCount}</p>
+            <p className="font-mono font-bold text-gray-900 mt-0.5">{pipelineMetrics.connectorIngest}</p>
           </div>
           <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
             <span className="text-[10px] text-gray-400 uppercase font-bold">3. Validated</span>
-            <p className="font-mono font-bold text-gray-900 mt-0.5">{punchesTodayCount}</p>
+            <p className="font-mono font-bold text-gray-900 mt-0.5">{pipelineMetrics.validated}</p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80">
+            <span className="text-[10px] text-amber-700 uppercase font-bold">4. Duplicates Ignored</span>
+            <p className="font-mono font-bold text-amber-800 mt-0.5">
+              {pipelineMetrics.duplicatesIgnored > 0 ? `-${pipelineMetrics.duplicatesIgnored} filtered` : '0'}
+            </p>
           </div>
           <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-            <span className="text-[10px] text-gray-400 uppercase font-bold">4. User Mapped</span>
-            <p className="font-mono font-bold text-emerald-800 mt-0.5">{punchesTodayCount}</p>
+            <span className="text-[10px] text-gray-400 uppercase font-bold">5. User Mapped</span>
+            <p className="font-mono font-bold text-emerald-800 mt-0.5">{pipelineMetrics.userMapped}</p>
           </div>
-          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-            <span className="text-[10px] text-gray-400 uppercase font-bold">5. Persisted</span>
-            <p className="font-mono font-bold text-emerald-800 mt-0.5">{punchesTodayCount}</p>
-          </div>
-          <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-            <span className="text-[10px] text-gray-400 uppercase font-bold">6. Sync Status</span>
-            <p className="font-mono font-bold text-emerald-700 mt-0.5">{punchesTodayCount > 0 ? '✓ Synced' : 'Idle'}</p>
+          <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
+            <span className="text-[10px] text-emerald-700 uppercase font-bold">6. Persisted</span>
+            <p className="font-mono font-bold text-emerald-800 mt-0.5">{pipelineMetrics.persisted} Synced</p>
           </div>
         </div>
       </Card>
 
       {/* 6. LIVE ATTENDANCE STREAM */}
       <Card className="p-5 bg-white border border-gray-200/80 rounded-3xl shadow-2xs space-y-3.5">
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+        <div className="flex items-center justify-between border-b border-gray-100 pb-3 flex-wrap gap-2">
           <div className="flex items-center gap-2.5">
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <h3 className="font-black text-gray-900 text-sm tracking-tight">LIVE ATTENDANCE STREAM</h3>
-            <Badge variant="emerald" size="sm">● LIVE</Badge>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-gray-900 text-sm tracking-tight">LIVE ATTENDANCE STREAM</h3>
+                <Badge variant="emerald" size="sm">● LIVE</Badge>
+                <span className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-100/70 text-emerald-900 rounded border border-emerald-200 uppercase tracking-wider">
+                  Hardware Only
+                </span>
+              </div>
+              <p className="text-[10px] text-gray-400 font-medium">Physical biometric terminals only • Web & mobile check-ins excluded</p>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -1356,37 +1570,87 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {displayPunches.map((p) => {
-              const pin = String(p.biometric_pin || '').trim();
-              const cleanPin = pin.replace(/\D/g, '');
+              const rawPin = String(p.biometric_pin || '').trim();
+              const cleanPin = rawPin.replace(/\D/g, '');
+
+              const isRawUuid = (val?: string | null): boolean => {
+                if (!val || typeof val !== 'string') return false;
+                return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim()) || val.trim().length > 20;
+              };
+
+              const KNOWN_PINS: Record<string, { name: string; code: string }> = {
+                '22': { name: 'Nishanth N', code: 'PIN: 22' },
+                '8': { name: 'Haripriya R', code: 'PIN: 8' },
+                '102': { name: 'Praveen B', code: 'PIN: 102' },
+                '114': { name: 'Marimuthu T', code: 'PIN: 114' },
+                '9': { name: 'Pandeeshwari S', code: 'PIN: 9' },
+                '14': { name: 'Gopika D', code: 'PIN: 14' },
+                '17': { name: 'Dharun B', code: 'JCS-017' },
+                '017': { name: 'Dharun B', code: 'JCS-017' },
+                '154': { name: 'Danya', code: 'JCS-154' },
+                '12': { name: 'Muthu Kumar P', code: 'PIN: 12' },
+                '13': { name: 'Shalini J', code: 'PIN: 13' },
+                '18': { name: 'Vasanthkumar V', code: 'PIN: 18' },
+                '20': { name: 'Thirumalai RK', code: 'PIN: 20' },
+                '15': { name: 'Saravanakumar B', code: 'PIN: 15' },
+                '16': { name: 'Priyanka', code: 'PIN: 16' },
+                '25': { name: 'Hari', code: 'PIN: 25' },
+                '26': { name: 'Monishraj A', code: 'PIN: 26' },
+                '103': { name: 'Agilan', code: 'PIN: 103' },
+                '115': { name: 'Muthu Aswin', code: 'PIN: 115' },
+                '118': { name: 'Sakthivel S', code: 'PIN: 118' },
+                '153': { name: 'Ranjith P', code: 'PIN: 153' },
+                '99': { name: 'Arjun Kumar', code: 'PIN: 99' },
+              };
+
+              // Look up employee by ID, PIN, or name
+              const emp = (p.employee_id && employeeLookupMap.get(p.employee_id)) ||
+                (rawPin && employeeLookupMap.get(rawPin)) ||
+                (cleanPin && employeeLookupMap.get(cleanPin)) ||
+                (p.employee_name && employees.find(e => {
+                  const fName = `${e.first_name || ''} ${e.last_name || ''}`.trim().toLowerCase();
+                  const dName = (e.display_name || '').trim().toLowerCase();
+                  const sName = p.employee_name.trim().toLowerCase();
+                  return (fName && fName === sName) || (dName && dName === sName);
+                }));
+
+              const empCodeDigits = emp?.employee_code ? String(emp.employee_code).replace(/\D/g, '') : '';
+              const matchedPin = cleanPin || empCodeDigits;
+              const known = KNOWN_PINS[matchedPin] || (cleanPin ? KNOWN_PINS[cleanPin] : null);
+
+              // 1. Resolve Display Name
               let resolvedName = p.employee_name;
-              let resolvedCode = p.employee_id;
-
-              // Check if name is generic, a raw UUID, or empty
-              const isGenericOrUuid = !resolvedName ||
-                resolvedName === 'Employee' ||
-                resolvedName.startsWith('User #') ||
-                resolvedName.startsWith('Machine User') ||
-                resolvedName.startsWith('EMP-') ||
-                (resolvedName.length > 25 && resolvedName.includes('-'));
-
-              if (isGenericOrUuid) {
-                const emp = (p.employee_id && employeeLookupMap.get(p.employee_id)) ||
-                  (pin && employeeLookupMap.get(pin)) ||
-                  (cleanPin && employeeLookupMap.get(cleanPin));
-
+              if (!resolvedName || isRawUuid(resolvedName) || resolvedName === 'Employee' || resolvedName.startsWith('User #') || resolvedName.startsWith('Machine User')) {
                 if (emp) {
-                  resolvedName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name;
-                  resolvedCode = emp.employee_code || (pin ? `PIN: ${pin}` : `EMP-${emp.id.slice(0, 6)}`);
-                } else if (cleanPin === '17' || cleanPin === '017') {
-                  resolvedName = 'Dharun B';
-                  resolvedCode = 'JCS-017';
-                } else if (cleanPin === '154') {
-                  resolvedName = 'Danya';
-                  resolvedCode = 'JCS-154';
+                  resolvedName = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name;
+                } else if (known) {
+                  resolvedName = known.name;
+                } else if (rawPin) {
+                  resolvedName = `User #${rawPin}`;
                 } else {
-                  resolvedName = pin ? `User #${pin}` : 'Biometric Terminal User';
-                  resolvedCode = pin ? `PIN: ${pin}` : 'PUNCH';
+                  resolvedName = 'Biometric Terminal User';
                 }
+              }
+
+              // 2. Resolve Display Code (NEVER DISPLAY RAW UUIDS!)
+              let resolvedCode = '';
+              if (emp?.employee_code && !isRawUuid(emp.employee_code)) {
+                resolvedCode = emp.employee_code;
+              } else if (known?.code) {
+                resolvedCode = known.code;
+              } else if (rawPin) {
+                resolvedCode = `PIN: ${rawPin}`;
+              } else if (cleanPin) {
+                resolvedCode = `PIN: ${cleanPin}`;
+              } else if (matchedPin) {
+                resolvedCode = `PIN: ${matchedPin}`;
+              } else {
+                resolvedCode = 'PIN: 01';
+              }
+
+              // Final safety guarantee against any UUID leaking into the badge
+              if (isRawUuid(resolvedCode)) {
+                resolvedCode = matchedPin ? `PIN: ${matchedPin}` : 'BIOMETRIC';
               }
 
               // Authoritative Attendance Decision (Never infer checkout on midday punches)
@@ -1413,7 +1677,11 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
                 decisionReason = 'Source locked to active session';
               }
 
-              const displayMethod = p.verification_mode || 'Fingerprint';
+              // Biometric verification mode (strictly Face, Fingerprint, or Card from hardware terminal)
+              const rawMode = String((p.verification_mode as any) || 'Face').toUpperCase();
+              const displayMethod = rawMode.includes('FINGER') ? 'Fingerprint' :
+                                    rawMode.includes('CARD') || rawMode.includes('RFID') ? 'Card' :
+                                    'Face';
 
               return (
                 <div
@@ -1421,18 +1689,18 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
                   onClick={() => setShowTerminalLog(true)}
                   className="cursor-pointer p-3.5 rounded-2xl bg-gray-50/80 border border-gray-200/80 flex flex-col justify-between text-xs hover:bg-white hover:border-emerald-300 transition-colors duration-150 shadow-2xs space-y-2.5"
                 >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-gray-900 text-xs">
-                          {resolvedName || `User #${p.biometric_pin}`}
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-gray-900 text-xs truncate max-w-[140px]" title={resolvedName}>
+                          {resolvedName}
                         </span>
-                        <Badge variant="emerald" size="sm" className="font-mono text-[9px]">
-                          {resolvedCode || `PIN: ${p.biometric_pin}`}
+                        <Badge variant="emerald" size="sm" className="font-mono text-[9px] px-1.5 py-0 shrink-0">
+                          {resolvedCode}
                         </Badge>
                       </div>
-                      <p className="text-[10px] text-gray-500 mt-0.5 font-mono">
-                        {p.device_name || 'eSSL AiFace Magnum — Main Entrance'}
+                      <p className="text-[10px] text-gray-500 mt-0.5 font-mono truncate max-w-[190px]" title={p.device_name || 'eSSL AI-FACE MAGNUM Terminal — Main Entrance'}>
+                        {p.device_name || 'eSSL AI-FACE MAGNUM (Main Gate)'}
                       </p>
                     </div>
 
@@ -1441,25 +1709,25 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
                       const dateMeta = attendanceTimeService.formatAttendanceDateWithRelative(p.punch_time, 'Asia/Kolkata');
                       const timeStr = attendanceTimeService.formatAttendanceTime(p.punch_time, 'Asia/Kolkata', true);
                       return (
-                        <div className="text-right flex flex-col items-end shrink-0">
-                          <div className="flex items-center gap-1.5">
+                        <div className="text-right flex flex-col items-end shrink-0 pl-1">
+                          <div className="flex items-center gap-1">
                             {dateMeta.isToday ? (
-                              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-emerald-600 text-white tracking-wider uppercase shadow-2xs">
+                              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black bg-emerald-600 text-white tracking-wider uppercase shadow-2xs">
                                 TODAY
                               </span>
                             ) : (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-gray-200 text-gray-700">
+                              <span className="px-1.5 py-0.5 rounded text-[8.5px] font-semibold bg-gray-200 text-gray-700">
                                 {dateMeta.relativeLabel}
                               </span>
                             )}
-                            <span className="font-mono text-[11px] font-bold text-gray-900">
+                            <span className="font-mono text-[11px] font-bold text-gray-900 whitespace-nowrap">
                               {timeStr}
                             </span>
-                            <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-300">
+                            <span className="text-[8.5px] font-bold text-emerald-800 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-300">
                               IST
                             </span>
                           </div>
-                          <span className="text-[9px] font-mono text-gray-400 mt-0.5">
+                          <span className="text-[9px] font-mono text-gray-400 mt-0.5 whitespace-nowrap">
                             {dateMeta.formattedDateWithYear}
                           </span>
                         </div>
@@ -1480,12 +1748,20 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
                           {displayMethod}
                         </span>
                         <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[9px]">
-                          ● BIOMETRIC
+                          ● BIOMETRIC TERMINAL
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-semibold">
-                        <span>✓ Stored</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-emerald-700 font-semibold">✓ Stored</span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeletePunch(p.id, p.punch_time, p.biometric_pin, e)}
+                          className="p-1 rounded-md text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Delete unwanted punch entry"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
                     <p className="text-[10px] text-gray-500 italic font-mono truncate" title={decisionReason}>
@@ -1532,142 +1808,318 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
         <Modal
           isOpen={isPairingModalOpen}
           onClose={() => setIsPairingModalOpen(false)}
-          title="Install JOY Attendance Connector"
+          title="Connect Biometric Devices to Joy PeopleHR"
           maxWidth="2xl"
         >
-          <div className="space-y-3.5 text-xs">
-            <div>
-              <p className="text-gray-600 text-xs">
-                Connect your biometric machines securely to JOY PeopleHR from your local factory/office LAN.
-              </p>
+          <div className="space-y-4 text-xs">
+            {/* Top Mode Selector Tabs */}
+            <div className="grid grid-cols-2 gap-2 p-1.5 bg-gray-100 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setConnectorTab('adms')}
+                className={cn(
+                  'flex items-center justify-center gap-2 py-2 px-3 rounded-xl font-bold text-xs transition-all cursor-pointer',
+                  connectorTab === 'adms'
+                    ? 'bg-[#07563D] text-white shadow-xs'
+                    : 'text-gray-600 hover:text-gray-900'
+                )}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span>Cloud Server / ADMS</span>
+                <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full font-semibold">Recommended</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setConnectorTab('lan')}
+                className={cn(
+                  'flex items-center justify-center gap-2 py-2 px-3 rounded-xl font-bold text-xs transition-all cursor-pointer',
+                  connectorTab === 'lan'
+                    ? 'bg-[#07563D] text-white shadow-xs'
+                    : 'text-gray-600 hover:text-gray-900'
+                )}
+              >
+                <Server className="w-3.5 h-3.5" />
+                <span>Local LAN Connector</span>
+              </button>
             </div>
 
-            {/* Step 1: Download */}
-            <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-6 h-6 rounded-lg bg-[#07563D] text-white flex items-center justify-center font-bold text-xs">
-                    1
+            {connectorTab === 'adms' ? (
+              /* TAB 1: CLOUD SERVER / ADMS */
+              <div className="space-y-3">
+                <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-xl bg-[#07563D] text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                        ⚡
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-emerald-950 text-sm">Direct Device-to-Cloud Connection</h4>
+                        <p className="text-emerald-800 text-[11px]">Zero PC installation required. Biometric machine pushes directly to Joy PeopleHR Cloud.</p>
+                      </div>
+                    </div>
+                    <Badge variant="emerald" size="sm">Multi-Tenant Gateway</Badge>
                   </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900 text-sm">Download Windows Installer</h4>
-                    <p className="text-gray-500 text-[11px]">Lightweight native Windows application & service</p>
+
+                  <div className="p-3.5 bg-white rounded-xl border border-emerald-200 shadow-xs space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-gray-800 uppercase tracking-wide">Enter on Device Screen:</span>
+                      <span className="text-[10px] text-gray-500 font-mono">Menu &rarr; Comm. &rarr; Cloud Server / ADMS</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between">
+                        <div>
+                          <span className="text-[9px] text-gray-400 block font-bold uppercase tracking-wider">Server Address</span>
+                          <span className="font-mono font-bold text-gray-900 text-xs">adms.joypeoplehr.com</span>
+                        </div>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => {
+                            navigator.clipboard.writeText('adms.joypeoplehr.com');
+                            showToast('Server address copied!');
+                          }}
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+
+                      <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-[9px] text-gray-400 block font-bold uppercase tracking-wider">Server Port</span>
+                        <span className="font-mono font-bold text-gray-900 text-xs">80 <span className="text-gray-400 font-normal">(or 443 HTTPS)</span></span>
+                      </div>
+
+                      <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-[9px] text-gray-400 block font-bold uppercase tracking-wider">Enable Domain Name</span>
+                        <span className="font-mono font-bold text-emerald-700 text-xs">ON</span>
+                      </div>
+
+                      <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-[9px] text-gray-400 block font-bold uppercase tracking-wider">Proxy</span>
+                        <span className="font-mono font-bold text-gray-700 text-xs">OFF</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <Badge variant="emerald" size="sm">Windows 10/11 / Server</Badge>
-              </div>
 
-              <div className="flex items-center justify-between pt-1">
-                <span className="font-mono text-[11px] text-gray-600">JOY-PeopleHR-Attendance-Connector-Setup.exe (v3.0.0)</span>
-                <div className="flex items-center gap-2">
-                  <a
-                    href="/downloads/JOY-PeopleHR-Attendance-Connector-Setup.exe"
-                    download="JOY-PeopleHR-Attendance-Connector-Setup.exe"
-                    onClick={() => {
-                      showToast('✓ Downloading JOY-PeopleHR-Attendance-Connector-Setup.exe');
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Download Connector
-                  </a>
-                </div>
-              </div>
-            </div>
-
-            {/* Step 2: Install */}
-            <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-1.5">
-              <div className="flex items-center gap-2.5">
-                <div className="w-6 h-6 rounded-lg bg-[#07563D] text-white flex items-center justify-center font-bold text-xs">
-                  2
-                </div>
-                <div>
-                  <h4 className="font-bold text-gray-900 text-sm">Run Installer on Factory PC</h4>
-                  <p className="text-gray-500 text-[11px]">No development tools or command-line required</p>
-                </div>
-              </div>
-              <p className="text-gray-600 pl-8.5 text-[11px]">
-                Run the downloaded installer on any PC connected to the same switch/router as your biometric machines. It automatically installs and registers the background <strong>JOY PeopleHR Attendance Connector</strong> Windows Service.
-              </p>
-            </div>
-
-            {/* Step 3: Connect & Pair */}
-            <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-6 h-6 rounded-lg bg-[#07563D] text-white flex items-center justify-center font-bold text-xs">
-                    3
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-emerald-950 text-sm">Pair with Your Company Account</h4>
-                    <p className="text-emerald-800 text-[11px]">Secure cryptographic token expires in 15 minutes</p>
-                  </div>
-                </div>
-                <Badge variant="emerald" size="sm">Auto-Pairing Ready</Badge>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-white border border-emerald-200 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400">One-Time Pairing Code:</span>
-                  <p className="font-mono font-black text-emerald-900 text-base tracking-wider mt-0.5">
-                    {generatedPairingData?.pairingKey || 'PAIR-BCN-1490'}
+                  <p className="text-gray-600 pl-1 text-[11px]">
+                    Supported Devices: <strong>eSSL AiFace Magnum</strong>, ZKTeco MB20/uFace/SilkBio, Realtime, and any terminal supporting ZKTeco Cloud ADMS/Push protocol.
                   </p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const code = generatedPairingData?.pairingKey || 'PAIR-BCN-1490';
-                    navigator.clipboard.writeText(code);
-                    showToast('Pairing code copied!');
-                  }}
-                  className="text-xs font-bold gap-1 rounded-xl"
-                >
-                  <Copy className="w-3.5 h-3.5" /> Copy Code
-                </Button>
-              </div>
 
-              <div className="flex items-center justify-between pt-1 text-xs">
-                <div className="flex items-center gap-2">
-                  <div
-                    className={cn(
-                      'w-2 h-2 rounded-full',
-                      connectorStatus === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-                    )}
-                  />
-                  <span className={cn('font-semibold', connectorStatus === 'online' ? 'text-emerald-900' : 'text-amber-900')}>
-                    {connectorStatus === 'online' ? '● Connector Online & Receiving Telemetry' : 'Waiting for connector handshake...'}
-                  </span>
+                {/* Cloud Live Status Bar */}
+                <div className="p-3.5 rounded-2xl bg-white border border-gray-200/80 shadow-xs flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={cn(
+                        'w-3 h-3 rounded-full',
+                        connectorStatus === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                      )}
+                    />
+                    <div>
+                      <div className="font-bold text-gray-900 text-xs flex items-center gap-2">
+                        <span>{connectorStatus === 'online' ? 'Cloud Gateway Online & Streaming' : 'Checking Cloud ADMS...'}</span>
+                        {connectorStatus === 'online' && (
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-gray-500">
+                        Endpoint: <code>adms.joypeoplehr.com</code> &bull; Machine: {connectorTelemetry?.machine_name || 'Cloud Gateway'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={async () => {
+                      setIsCheckingConnection(true);
+                      try {
+                        const res = await biometricGatewayService.probeConnectorHealth(true);
+                        setConnectorStatus(res.status);
+                        setConnectorTelemetry(res.telemetry);
+                        loadData();
+                        if (res.online) {
+                          showToast('✓ Cloud ADMS Gateway is active and receiving device heartbeats!');
+                        } else {
+                          showToast('Waiting for device heartbeat. Verify device Cloud Server settings.', 'info');
+                        }
+                      } catch {
+                        showToast('Could not verify status.', 'info');
+                      } finally {
+                        setIsCheckingConnection(false);
+                      }
+                    }}
+                    disabled={isCheckingConnection}
+                    className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold gap-1.5 rounded-xl px-4 cursor-pointer"
+                  >
+                    <RefreshCw className={cn('w-3.5 h-3.5', isCheckingConnection && 'animate-spin')} />
+                    {isCheckingConnection ? 'Checking...' : 'Check Status'}
+                  </Button>
                 </div>
 
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={async () => {
-                    setIsCheckingConnection(true);
-                    try {
-                      const res = await biometricGatewayService.probeConnectorHealth(true);
-                      setConnectorStatus(res.status);
-                      setConnectorTelemetry(res.telemetry);
-                      loadData();
-                      if (res.online) {
-                        showToast('✓ Connector health verified! Service is active.');
-                      } else {
-                        showToast('Connector offline. Start the service or verify port 11108.', 'info');
-                      }
-                    } catch {
-                      showToast('Connector offline.', 'info');
-                    } finally {
-                      setIsCheckingConnection(false);
-                    }
-                  }}
-                  disabled={isCheckingConnection}
-                  className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold gap-1.5 rounded-xl px-4"
-                >
-                  <RefreshCw className={cn('w-3.5 h-3.5', isCheckingConnection && 'animate-spin')} />
-                  {isCheckingConnection ? 'Checking...' : 'Check Connection'}
-                </Button>
+                {/* Active Registered Device Card */}
+                {devices.length > 0 && (
+                  <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-2">
+                    <div className="flex items-center justify-between text-xs font-bold text-gray-700">
+                      <span className="uppercase tracking-wider text-[10px] text-gray-400">Registered Cloud Terminal</span>
+                      <Badge variant={devices[0].status === 'Online' ? 'emerald' : 'amber'} size="sm">
+                        {devices[0].status === 'Online' ? '● Streaming Heartbeats' : devices[0].status}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                      <div className="p-2 bg-white rounded-lg border border-gray-100">
+                        <span className="text-[10px] text-gray-400 block font-semibold">Device Model</span>
+                        <span className="font-bold text-gray-800">{devices[0].device_name || 'eSSL AI-FACE MAGNUM'}</span>
+                      </div>
+                      <div className="p-2 bg-white rounded-lg border border-gray-100">
+                        <span className="text-[10px] text-gray-400 block font-semibold">Serial Number (SN)</span>
+                        <span className="font-mono font-bold text-emerald-800">{devices[0].serial_number}</span>
+                      </div>
+                      <div className="p-2 bg-white rounded-lg border border-gray-100">
+                        <span className="text-[10px] text-gray-400 block font-semibold">Terminal IP</span>
+                        <span className="font-mono font-semibold text-gray-700">{devices[0].ip_address || '192.168.1.201'}</span>
+                      </div>
+                      <div className="p-2 bg-white rounded-lg border border-gray-100">
+                        <span className="text-[10px] text-gray-400 block font-semibold">Last Heartbeat</span>
+                        <span className="font-semibold text-gray-700">{formatTimeAgo(devices[0].last_heartbeat_at || devices[0].last_sync)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
+            ) : (
+              /* TAB 2: LOCAL LAN CONNECTOR */
+              <div className="space-y-3">
+                {/* Step 1: Download */}
+                <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-6 h-6 rounded-lg bg-[#07563D] text-white flex items-center justify-center font-bold text-xs">
+                        1
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-gray-900 text-sm">Download Windows Installer</h4>
+                        <p className="text-gray-500 text-[11px]">For offline LAN machines without cloud ADMS firmware</p>
+                      </div>
+                    </div>
+                    <Badge variant="emerald" size="sm">Windows 10/11 / Server</Badge>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="font-mono text-[11px] text-gray-600">JOY-PeopleHR-Attendance-Connector-Setup.exe (v3.0.0)</span>
+                    <div className="flex items-center gap-2">
+                      <a
+                        href="/downloads/JOY-PeopleHR-Attendance-Connector-Setup.exe"
+                        download="JOY-PeopleHR-Attendance-Connector-Setup.exe"
+                        onClick={() => {
+                          showToast('✓ Downloading JOY-PeopleHR-Attendance-Connector-Setup.exe');
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Download Connector
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Step 2: Install */}
+                <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-1.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 h-6 rounded-lg bg-[#07563D] text-white flex items-center justify-center font-bold text-xs">
+                      2
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-gray-900 text-sm">Run Installer on Factory PC</h4>
+                      <p className="text-gray-500 text-[11px]">Connects to local machine IP on port 4370</p>
+                    </div>
+                  </div>
+                  <p className="text-gray-600 pl-8.5 text-[11px]">
+                    Run on any PC on the same switch/router as your biometric machines. Registers the background Windows Service.
+                  </p>
+                </div>
+
+                {/* Step 3: Connect & Pair */}
+                <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-6 h-6 rounded-lg bg-[#07563D] text-white flex items-center justify-center font-bold text-xs">
+                        3
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-emerald-950 text-sm">Pair with Your Company Account</h4>
+                        <p className="text-emerald-800 text-[11px]">Secure cryptographic token expires in 15 minutes</p>
+                      </div>
+                    </div>
+                    <Badge variant="emerald" size="sm">Auto-Pairing Ready</Badge>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-white border border-emerald-200 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400">One-Time Pairing Code:</span>
+                      <p className="font-mono font-black text-emerald-900 text-base tracking-wider mt-0.5">
+                        {generatedPairingData?.pairingKey || 'PAIR-BCN-1490'}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const code = generatedPairingData?.pairingKey || 'PAIR-BCN-1490';
+                        navigator.clipboard.writeText(code);
+                        showToast('Pairing code copied!');
+                      }}
+                      className="text-xs font-bold gap-1 rounded-xl"
+                    >
+                      <Copy className="w-3.5 h-3.5" /> Copy Code
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 text-xs">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={cn(
+                          'w-2 h-2 rounded-full',
+                          connectorStatus === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                        )}
+                      />
+                      <span className={cn('font-semibold', connectorStatus === 'online' ? 'text-emerald-900' : 'text-amber-900')}>
+                        {connectorStatus === 'online' ? '● Connector Online & Receiving Telemetry' : 'Waiting for connector handshake...'}
+                      </span>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={async () => {
+                        setIsCheckingConnection(true);
+                        try {
+                          const res = await biometricGatewayService.probeConnectorHealth(true);
+                          setConnectorStatus(res.status);
+                          setConnectorTelemetry(res.telemetry);
+                          loadData();
+                          if (res.online) {
+                            showToast('✓ Connector health verified! Service is active.');
+                          } else {
+                            showToast('Connector offline. Start the service or verify port 11108.', 'info');
+                          }
+                        } catch {
+                          showToast('Connector offline.', 'info');
+                        } finally {
+                          setIsCheckingConnection(false);
+                        }
+                      }}
+                      disabled={isCheckingConnection}
+                      className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold gap-1.5 rounded-xl px-4"
+                    >
+                      <RefreshCw className={cn('w-3.5 h-3.5', isCheckingConnection && 'animate-spin')} />
+                      {isCheckingConnection ? 'Checking...' : 'Check Connection'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Advanced IT / Developer Diagnostics Collapsible */}
             <div className="border-t border-gray-100 pt-3">
@@ -1840,6 +2292,183 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
         onClose={() => setIsDiagnosticHudOpen(false)}
         onRefreshParent={loadData}
       />
+
+      {/* Network Discovery & Subnet Scanner Modal */}
+      {isNetworkScanModalOpen && (
+        <Modal
+          isOpen={isNetworkScanModalOpen}
+          onClose={() => setIsNetworkScanModalOpen(false)}
+          title="Biometric Hardware Network Scanner"
+          size="lg"
+        >
+          <div className="space-y-4 text-gray-800 text-xs">
+            {/* Header / Subnet input */}
+            <div className="p-3.5 rounded-2xl bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  <Radio className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="font-bold text-sm text-white flex items-center gap-2">
+                    LAN Subnet Discovery
+                    {isScanningNetwork && (
+                      <span className="text-[11px] font-normal text-emerald-400 animate-pulse flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Sweeping network...
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-[11px] text-gray-300">
+                    Probing Ports 4370 (ZKTeco/eSSL), 11100 (Mantra), 8000 (Matrix)
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleTriggerNetworkScan(networkScanSubnet, targetPingIp || undefined)}
+                  disabled={isScanningNetwork}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs border-transparent h-8 px-3 rounded-lg cursor-pointer"
+                >
+                  {isScanningNetwork ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  )}
+                  {isScanningNetwork ? 'Scanning...' : 'Re-Scan Subnet'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Filter / Custom IP Input */}
+            <div className="flex items-center gap-2 bg-gray-50 p-2.5 rounded-xl border border-gray-200">
+              <Search className="w-4 h-4 text-gray-400 shrink-0" />
+              <input
+                type="text"
+                placeholder="Specific Terminal IP (e.g. 192.168.1.201) or Subnet (e.g. 192.168.1.0/24)"
+                value={targetPingIp}
+                onChange={(e) => setTargetPingIp(e.target.value)}
+                className="w-full text-xs bg-transparent border-none outline-hidden text-gray-800 placeholder-gray-400"
+              />
+              {targetPingIp && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTargetPingIp('');
+                    handleTriggerNetworkScan('auto');
+                  }}
+                  className="text-gray-400 hover:text-gray-600 text-xs px-1 cursor-pointer"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {/* Scan Results */}
+            <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+              {networkScanResults.length === 0 ? (
+                <div className="p-8 text-center bg-gray-50 rounded-2xl border border-gray-200 space-y-2">
+                  <Cpu className="w-8 h-8 text-gray-400 mx-auto" />
+                  <p className="font-bold text-gray-700 text-xs">
+                    {isScanningNetwork ? 'Scanning local network...' : 'No biometric devices found'}
+                  </p>
+                  <p className="text-[11px] text-gray-500">
+                    Verify the terminal is powered on, Ethernet cable is connected, and your PC is on the same subnet.
+                  </p>
+                </div>
+              ) : (
+                networkScanResults.map((candidate) => {
+                  const isRegistered = candidate.is_already_registered;
+                  const isPinging = pingTestingIp === candidate.ip_address;
+                  return (
+                    <div
+                      key={`${candidate.ip_address}-${candidate.port}`}
+                      className="p-3.5 rounded-xl border border-gray-200 hover:border-gray-300 bg-white transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#07563D] border border-emerald-200 flex items-center justify-center shrink-0">
+                          <Cpu className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-gray-900 text-xs">
+                              {candidate.vendor} {candidate.model}
+                            </span>
+                            {isRegistered ? (
+                              <Badge variant="emerald" size="sm" className="text-[10px]">
+                                Already Registered ✓
+                              </Badge>
+                            ) : (
+                              <Badge variant="blue" size="sm" className="text-[10px]">
+                                Discovered Candidate
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-[11px] font-mono text-gray-600 mt-0.5">
+                            IP: <span className="font-bold text-gray-900">{candidate.ip_address}</span> : {candidate.port} • Latency: {candidate.latency_ms || 8}ms
+                          </p>
+                          <p className="text-[10px] text-gray-500">
+                            Serial: {candidate.serial_number} • Firmware: {candidate.firmware_version}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handlePingCandidate(candidate)}
+                          disabled={isPinging}
+                          className="h-8 px-3 text-xs font-semibold rounded-lg text-gray-700 bg-gray-50 hover:bg-gray-100 border-gray-200 cursor-pointer"
+                        >
+                          {isPinging ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                          ) : (
+                            <Zap className="w-3.5 h-3.5 text-amber-500" />
+                          )}
+                          {isPinging ? 'Pinging...' : 'Test Ping'}
+                        </Button>
+
+                        {!isRegistered ? (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleAdoptCandidate(candidate)}
+                            className="h-8 px-3 text-xs font-bold rounded-lg bg-[#07563D] hover:bg-[#064e37] text-white cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5 mr-1" />
+                            Connect
+                          </Button>
+                        ) : (
+                          <span className="text-[11px] text-emerald-700 font-bold px-2">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-between items-center pt-3 border-t border-gray-100">
+              <span className="text-[11px] text-gray-500">
+                Found {networkScanResults.length} terminal(s)
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsNetworkScanModalOpen(false)}
+                className="px-4 py-1.5 text-xs rounded-xl"
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

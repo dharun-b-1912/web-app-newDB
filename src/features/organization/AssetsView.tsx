@@ -10,30 +10,21 @@ import {
   Plus,
   Search,
   Filter,
-  Laptop,
-  Smartphone,
-  Monitor,
   ShieldCheck,
   CheckCircle2,
   RotateCcw,
-  Cpu,
-  Factory,
-  HardHat,
-  Activity,
-  Truck,
-  Building,
-  Wrench,
-  Clock,
-  AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
   UserCheck,
-  QrCode,
-  Layers,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
   Eye,
+  FileSpreadsheet,
+  ArrowRightLeft,
+  Wrench,
+  AlertTriangle,
+  Layers,
+  Banknote,
+  Tag,
 } from 'lucide-react';
 
 import { assetService } from '../../services/asset/assetService';
@@ -43,35 +34,32 @@ import { inventoryService } from '../../services/asset/inventoryService';
 import { assetMaintenanceService } from '../../services/asset/assetMaintenanceService';
 import { assetAuditService } from '../../services/asset/assetAuditService';
 import { hrEventBus } from '../../services/hrEventBus';
+import { api } from '../../services/api';
 import {
   UniversalAsset,
   AssetCategory,
-  AssetTypeMaster,
-  IndustryProfile,
-  IndustryProfileCode,
   AssetSummaryMetrics,
   InventoryItem,
   AssetAssignment,
   AssetTransfer,
   AssetMaintenanceRecord,
   AssetAuditLog,
+  Employee,
 } from '../../types';
 
 import { RegisterAssetModal } from '../assets/components/RegisterAssetModal';
 import { AssignAssetModal } from '../assets/components/AssignAssetModal';
+import { ReturnAssetModal } from '../assets/components/ReturnAssetModal';
+import { AssetExportModal } from '../assets/components/AssetExportModal';
 import { StockTransactionModal } from '../assets/components/StockTransactionModal';
 import { AssetDetailDrawer } from '../assets/components/AssetDetailDrawer';
 
 export const AssetsView: React.FC = () => {
   const { showToast } = useToast();
 
-  // Industry Profile Selection
-  const [selectedIndustry, setSelectedIndustry] = useState<IndustryProfileCode>('IT');
-  const [industryProfiles, setIndustryProfiles] = useState<IndustryProfile[]>([]);
-
   // Operational Tabs
   const [activeTab, setActiveTab] = useState<
-    'all_assets' | 'inventory' | 'assignments' | 'transfers' | 'maintenance' | 'warranty' | 'audit'
+    'all_assets' | 'inventory' | 'assignments' | 'transfers' | 'maintenance' | 'audit'
   >('all_assets');
 
   // Search & Filter State
@@ -79,9 +67,10 @@ export const AssetsView: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedCondition, setSelectedCondition] = useState<string>('ALL');
+  const [returnableFilter, setReturnableFilter] = useState<'ALL' | 'RETURNABLE' | 'CONSUMABLE'>('ALL');
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Data States
+  // Data States (All Live from Supabase)
   const [assets, setAssets] = useState<UniversalAsset[]>([]);
   const [totalAssetsCount, setTotalAssetsCount] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(1);
@@ -92,33 +81,49 @@ export const AssetsView: React.FC = () => {
   const [transfers, setTransfers] = useState<AssetTransfer[]>([]);
   const [maintenanceRecords, setMaintenanceRecords] = useState<AssetMaintenanceRecord[]>([]);
   const [auditLogs, setAuditLogs] = useState<AssetAuditLog[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
 
   // Modals & Drawers
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState<boolean>(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState<boolean>(false);
+  const [isReturnModalOpen, setIsReturnModalOpen] = useState<boolean>(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [isStockModalOpen, setIsStockModalOpen] = useState<boolean>(false);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState<boolean>(false);
 
   const [activeAsset, setActiveAsset] = useState<UniversalAsset | null>(null);
+  const [activeAssignment, setActiveAssignment] = useState<AssetAssignment | null>(null);
   const [activeInventoryItem, setActiveInventoryItem] = useState<InventoryItem | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-  const loadData = () => {
+  const loadData = async (forceDb = false) => {
     try {
-      const indProfiles = assetService.getIndustryProfiles();
-      setIndustryProfiles(indProfiles);
+      // 1. Fetch live assets from Supabase
+      const liveAssets = await assetService.fetchAssetsFromDb(forceDb);
+      const liveAssignments = await assetAssignmentService.fetchAssignmentsFromDb(forceDb);
 
-      const cats = assetService.getCategories(selectedIndustry);
+      // 2. Fetch live employees roster
+      let empList: Employee[] = [];
+      try {
+        const rawEmps = await api.getEmployees();
+        empList = Array.isArray(rawEmps) ? rawEmps : [];
+        setEmployees(empList);
+      } catch {
+        // Fallback gracefully if offline
+      }
+
+      // 3. Categories & Metrics
+      const cats = assetService.getCategories();
       setCategories(cats);
 
       const summary = assetService.getSummaryMetrics();
       setMetrics(summary);
 
+      // 4. Assignments & Secondary tables
+      setAssignments(liveAssignments);
+
       const inv = inventoryService.getInventoryItems();
       setInventoryItems(inv);
-
-      const asgns = assetAssignmentService.getAssignments();
-      setAssignments(asgns);
 
       const trfs = assetTransferService.getTransfers();
       setTransfers(trfs);
@@ -129,35 +134,60 @@ export const AssetsView: React.FC = () => {
       const logs = assetAuditService.getLogs(undefined, 50);
       setAuditLogs(logs);
 
-      // Fetch primary paginated asset list
-      const tabFilter = activeTab === 'all_assets' ? undefined : activeTab;
-      const res = assetService.getAssets({
-        search: searchQuery,
-        categoryCode: selectedCategory,
-        status: selectedStatus,
-        condition: selectedCondition,
-        tab: tabFilter,
-        page: currentPage,
-        limit: 10,
-      });
+      // 5. Query and paginate asset list
+      let filtered = [...liveAssets];
 
-      setAssets(res.items);
-      setTotalAssetsCount(res.total);
-      setTotalPages(res.totalPages);
+      if (returnableFilter === 'RETURNABLE') {
+        filtered = filtered.filter(a => a.is_returnable !== false);
+      } else if (returnableFilter === 'CONSUMABLE') {
+        filtered = filtered.filter(a => a.is_returnable === false);
+      }
+
+      if (selectedCategory !== 'ALL') {
+        filtered = filtered.filter(a => a.asset_category_code === selectedCategory || a.category === selectedCategory);
+      }
+
+      if (selectedStatus !== 'ALL') {
+        filtered = filtered.filter(a => a.status === selectedStatus);
+      }
+
+      if (selectedCondition !== 'ALL') {
+        filtered = filtered.filter(a => a.condition === selectedCondition);
+      }
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        filtered = filtered.filter(a => {
+          const name = (a.asset_name || '').toLowerCase();
+          const code = (a.asset_code || '').toLowerCase();
+          const serial = (a.serial_number || '').toLowerCase();
+          const cat = (a.category || '').toLowerCase();
+          return name.includes(q) || code.includes(q) || serial.includes(q) || cat.includes(q);
+        });
+      }
+
+      const limit = 10;
+      const total = filtered.length;
+      const totalP = Math.ceil(total / limit) || 1;
+      const start = (currentPage - 1) * limit;
+
+      setAssets(filtered.slice(start, start + limit));
+      setTotalAssetsCount(total);
+      setTotalPages(totalP);
     } catch (err) {
       console.error('Error loading asset data:', err);
     }
   };
 
   useEffect(() => {
-    loadData();
-  }, [selectedIndustry, activeTab, searchQuery, selectedCategory, selectedStatus, selectedCondition, currentPage]);
+    loadData(false);
+  }, [activeTab, searchQuery, selectedCategory, selectedStatus, selectedCondition, returnableFilter, currentPage]);
 
   // Realtime Event Mesh Subscription
   useEffect(() => {
-    const unsubAsset = hrEventBus.subscribe('asset.*', () => loadData());
-    const unsubInv = hrEventBus.subscribe('inventory.*', () => loadData());
-    const unsubMnt = hrEventBus.subscribe('maintenance.*', () => loadData());
+    const unsubAsset = hrEventBus.subscribe('asset.*', () => loadData(true));
+    const unsubInv = hrEventBus.subscribe('inventory.*', () => loadData(true));
+    const unsubMnt = hrEventBus.subscribe('maintenance.*', () => loadData(true));
 
     return () => {
       unsubAsset();
@@ -166,13 +196,56 @@ export const AssetsView: React.FC = () => {
     };
   }, []);
 
-  const handleManualRefresh = () => {
+  const handleManualRefresh = async () => {
     setIsRefreshing(true);
-    loadData();
+    await loadData(true);
     setTimeout(() => {
       setIsRefreshing(false);
-      showToast('Asset & inventory engine synchronized.', 'success');
+      showToast('Asset engine synchronized with live database.', 'success');
     }, 400);
+  };
+
+  const handleOpenAssign = (asset: UniversalAsset) => {
+    setActiveAsset(asset);
+    setIsAssignModalOpen(true);
+  };
+
+  const handleOpenReturnForAsset = (asset: UniversalAsset) => {
+    // Find active assignment for this asset
+    const activeAsgn = assignments.find(
+      a => a.asset_id === asset.id && a.status === 'ACTIVE'
+    );
+    if (activeAsgn) {
+      setActiveAssignment(activeAsgn);
+      setActiveAsset(asset);
+      setIsReturnModalOpen(true);
+    } else {
+      // Create a fallback assignment shell if none exists in history
+      const fallbackAsgn: AssetAssignment = {
+        id: `asgn-direct-${asset.id}`,
+        asset_id: asset.id,
+        target_type: 'EMPLOYEE',
+        target_id: asset.id,
+        target_name: asset.assignedTo || 'Assigned Custodian',
+        assigned_by_id: 'admin',
+        assigned_by_name: 'HR Admin',
+        assigned_at: asset.created_at,
+        condition_at_assign: 'GOOD',
+        status: 'ACTIVE',
+        is_returnable: asset.is_returnable !== false,
+        deduction_amount: asset.deduction_amount || 0,
+      };
+      setActiveAssignment(fallbackAsgn);
+      setActiveAsset(asset);
+      setIsReturnModalOpen(true);
+    }
+  };
+
+  const handleOpenReturnForAssignment = (assignment: AssetAssignment) => {
+    const matchingAsset = assets.find(a => a.id === assignment.asset_id) || null;
+    setActiveAssignment(assignment);
+    setActiveAsset(matchingAsset);
+    setIsReturnModalOpen(true);
   };
 
   const getStatusBadge = (status: string) => {
@@ -201,17 +274,17 @@ export const AssetsView: React.FC = () => {
       {/* Top Header & Breadcrumb */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <Breadcrumb items={[{ label: 'Joy PeopleHR', href: '/' }, { label: 'Asset & Inventory Management' }]} />
+          <Breadcrumb items={[{ label: 'Joy PeopleHR', href: '/' }, { label: 'Asset Management' }]} />
           <h1 className="text-2xl font-black tracking-tight text-gray-900 mt-1 flex items-center gap-2.5">
             <Package className="w-6 h-6 text-[#07563D]" />
             Universal Asset & Inventory Management Engine
           </h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Track assets, machinery, fleet, inventory stock, maintenance, and multi-target custody across your enterprise.
+            Live real-time asset registry, returnable tracking, deduction deposits, and Excel audit reporting.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
             size="sm"
@@ -220,6 +293,16 @@ export const AssetsView: React.FC = () => {
             className="text-xs font-bold"
           >
             Sync
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsExportModalOpen(true)}
+            leftIcon={<FileSpreadsheet className="w-4 h-4 text-emerald-600" />}
+            className="text-xs font-bold border-emerald-600/30 text-emerald-800 hover:bg-emerald-50"
+          >
+            Export Excel
           </Button>
 
           <Button
@@ -233,36 +316,6 @@ export const AssetsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Multi-Industry Configuration Strip */}
-      <div className="p-4 bg-white border border-gray-200/80 rounded-2xl shadow-xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold uppercase text-gray-500 tracking-wider">Industry Profile:</span>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {industryProfiles.map(ind => (
-              <button
-                key={ind.code}
-                onClick={() => {
-                  setSelectedIndustry(ind.code);
-                  setSelectedCategory('ALL');
-                  setCurrentPage(1);
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  selectedIndustry === ind.code
-                    ? 'bg-[#07563D] text-white shadow-xs'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {ind.name.split('&')[0]}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <span className="text-xs text-gray-400 font-medium">
-          Adapts dynamic specifications for {selectedIndustry}
-        </span>
-      </div>
-
       {/* Live Dynamic KPI Metrics Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card className="p-4 bg-white border border-gray-200/80 shadow-xs hover:border-[#07563D]/40 transition-colors">
@@ -271,7 +324,7 @@ export const AssetsView: React.FC = () => {
             <Package className="w-4 h-4 text-[#07563D]" />
           </div>
           <div className="text-2xl font-black text-gray-900">{metrics?.total_assets ?? 0}</div>
-          <span className="text-[10px] text-gray-400 font-medium">Across all locations</span>
+          <span className="text-[10px] text-gray-400 font-medium">Real-time database count</span>
         </Card>
 
         <Card className="p-4 bg-white border border-gray-200/80 shadow-xs hover:border-emerald-400 transition-colors">
@@ -279,8 +332,8 @@ export const AssetsView: React.FC = () => {
             <span className="text-[11px] font-bold uppercase tracking-wider">Total Valuation</span>
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-2xl font-black text-emerald-700">{metrics?.total_valuation_formatted ?? '$0'}</div>
-          <span className="text-[10px] text-emerald-700/80 font-medium">Book inventory value</span>
+          <div className="text-2xl font-black text-emerald-700">{metrics?.total_valuation_formatted ?? '₹0'}</div>
+          <span className="text-[10px] text-emerald-700/80 font-medium">Combined asset cost</span>
         </Card>
 
         <Card className="p-4 bg-white border border-gray-200/80 shadow-xs hover:border-blue-400 transition-colors">
@@ -289,7 +342,7 @@ export const AssetsView: React.FC = () => {
             <UserCheck className="w-4 h-4 text-blue-600" />
           </div>
           <div className="text-2xl font-black text-blue-600">{metrics?.currently_assigned ?? 0}</div>
-          <span className="text-[10px] text-blue-700/80 font-medium">Active custody</span>
+          <span className="text-[10px] text-blue-700/80 font-medium">Active staff custody</span>
         </Card>
 
         <Card className="p-4 bg-white border border-gray-200/80 shadow-xs hover:border-emerald-400 transition-colors">
@@ -307,16 +360,21 @@ export const AssetsView: React.FC = () => {
             <Wrench className="w-4 h-4 text-amber-500" />
           </div>
           <div className="text-2xl font-black text-amber-600">{metrics?.under_maintenance ?? 0}</div>
-          <span className="text-[10px] text-amber-700/80 font-medium">Service & calibration</span>
+          <span className="text-[10px] text-amber-700/80 font-medium">Under repair/service</span>
         </Card>
 
-        <Card className="p-4 bg-white border border-gray-200/80 shadow-xs hover:border-red-400 transition-colors">
+        <Card className="p-4 bg-white border border-gray-200/80 shadow-xs hover:border-purple-400 transition-colors">
           <div className="flex items-center justify-between text-gray-500 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Low Stock SKUs</span>
-            <AlertTriangle className="w-4 h-4 text-red-500" />
+            <span className="text-[11px] font-bold uppercase tracking-wider">Deduction Ledger</span>
+            <Banknote className="w-4 h-4 text-purple-600" />
           </div>
-          <div className="text-2xl font-black text-red-600">{metrics?.low_stock_items_count ?? 0}</div>
-          <span className="text-[10px] text-red-600/80 font-medium">Reorder required</span>
+          <div className="text-2xl font-black text-purple-700">
+            ₹
+            {assignments
+              .reduce((sum, a) => sum + (Number(a.deduction_amount) || 0), 0)
+              .toLocaleString('en-IN')}
+          </div>
+          <span className="text-[10px] text-purple-600/80 font-medium">Tracked deposit/deductions</span>
         </Card>
       </div>
 
@@ -326,10 +384,10 @@ export const AssetsView: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2">
             {[
               { id: 'all_assets', label: `All Assets (${metrics?.total_assets ?? 0})` },
-              { id: 'inventory', label: `Inventory & Stock (${metrics?.total_inventory_items ?? 0})` },
               { id: 'assignments', label: `Custody & Handover (${assignments.length})` },
+              { id: 'inventory', label: `Inventory Stock (${inventoryItems.length})` },
               { id: 'transfers', label: `Transfers (${transfers.length})` },
-              { id: 'maintenance', label: `Maintenance & Service (${maintenanceRecords.length})` },
+              { id: 'maintenance', label: `Maintenance (${maintenanceRecords.length})` },
               { id: 'audit', label: 'Audit Ledger' },
             ].map(tab => (
               <button
@@ -365,6 +423,17 @@ export const AssetsView: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {/* Returnable Filter */}
+              <select
+                value={returnableFilter}
+                onChange={e => setReturnableFilter(e.target.value as any)}
+                className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-700 focus:outline-hidden focus:ring-2 focus:ring-[#07563D]"
+              >
+                <option value="ALL">All Return Types</option>
+                <option value="RETURNABLE">Returnable Assets Only</option>
+                <option value="CONSUMABLE">Consumable / Non-Returnable</option>
+              </select>
+
               <select
                 value={selectedCategory}
                 onChange={e => setSelectedCategory(e.target.value)}
@@ -415,10 +484,10 @@ export const AssetsView: React.FC = () => {
               <TableHeader>
                 <TableRow className="bg-gray-50/70">
                   <TableHead className="font-bold text-gray-900 text-xs">Asset Name & Code</TableHead>
-                  <TableHead className="font-bold text-gray-900 text-xs">Type & Class</TableHead>
-                  <TableHead className="font-bold text-gray-900 text-xs">Serial / Identifier</TableHead>
-                  <TableHead className="font-bold text-gray-900 text-xs">Current Custodian</TableHead>
-                  <TableHead className="font-bold text-gray-900 text-xs">Condition</TableHead>
+                  <TableHead className="font-bold text-gray-900 text-xs">Nature</TableHead>
+                  <TableHead className="font-bold text-gray-900 text-xs">Serial / Tag</TableHead>
+                  <TableHead className="font-bold text-gray-900 text-xs">Deduction / Deposit</TableHead>
+                  <TableHead className="font-bold text-gray-900 text-xs">Custodian</TableHead>
                   <TableHead className="font-bold text-gray-900 text-xs">Valuation</TableHead>
                   <TableHead className="font-bold text-gray-900 text-xs">Status</TableHead>
                   <TableHead className="font-bold text-gray-900 text-xs text-right">Actions</TableHead>
@@ -429,9 +498,9 @@ export const AssetsView: React.FC = () => {
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-12 text-gray-400">
                       <Package className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                      <p className="text-xs font-bold text-gray-700">No assets registered yet</p>
+                      <p className="text-xs font-bold text-gray-700">No assets registered in database</p>
                       <p className="text-[11px] text-gray-400 mt-0.5">
-                        Click '+ Register Asset' to ingest hardware, machinery, tools, or vehicles into your enterprise pool.
+                        Click '+ Register Asset' to add tools, PPE, machinery, or computing assets into your pool.
                       </p>
                     </TableCell>
                   </TableRow>
@@ -456,18 +525,23 @@ export const AssetsView: React.FC = () => {
                               {asset.asset_name}
                             </span>
                             <span className="text-[10px] font-mono text-gray-400 block">
-                              {asset.asset_code} • {asset.manufacturer || 'OEM'}
+                              {asset.asset_code} • {asset.category || asset.asset_category_code}
                             </span>
                           </div>
                         </div>
                       </TableCell>
 
-                      {/* Type & Class */}
+                      {/* Returnable vs Consumable Badge */}
                       <TableCell>
-                        <div>
-                          <span className="font-bold text-gray-900 text-xs block">{asset.asset_type_code}</span>
-                          <span className="text-[10px] text-gray-400 font-mono">{asset.asset_class}</span>
-                        </div>
+                        {asset.is_returnable !== false ? (
+                          <Badge variant="emerald" className="text-[10px] font-bold">
+                            Returnable
+                          </Badge>
+                        ) : (
+                          <Badge variant="amber" className="text-[10px] font-bold">
+                            Consumable
+                          </Badge>
+                        )}
                       </TableCell>
 
                       {/* Serial Tag */}
@@ -477,24 +551,31 @@ export const AssetsView: React.FC = () => {
                         </span>
                       </TableCell>
 
+                      {/* Deduction Amount */}
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono text-xs font-bold text-gray-900">
+                            ₹{(asset.deduction_amount || 0).toLocaleString('en-IN')}
+                          </span>
+                          {(asset.deduction_amount || 0) > 0 && (
+                            <Badge variant="purple" className="text-[9px] px-1 py-0">
+                              Deposit
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+
                       {/* Current Custodian */}
                       <TableCell>
                         <span className="text-xs font-bold text-gray-900 block">
-                          {asset.custodian_name || 'Unassigned (Pool)'}
+                          {asset.assignedTo || 'Unassigned (Pool)'}
                         </span>
-                      </TableCell>
-
-                      {/* Condition */}
-                      <TableCell>
-                        <Badge variant={asset.condition === 'NEW' || asset.condition === 'EXCELLENT' ? 'emerald' : 'amber'}>
-                          {asset.condition}
-                        </Badge>
                       </TableCell>
 
                       {/* Valuation */}
                       <TableCell>
                         <span className="font-mono text-xs font-bold text-gray-900">
-                          ${asset.purchase_price.toLocaleString()}
+                          ₹{Number(asset.purchase_price || 0).toLocaleString('en-IN')}
                         </span>
                       </TableCell>
 
@@ -508,13 +589,19 @@ export const AssetsView: React.FC = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => {
-                                setActiveAsset(asset);
-                                setIsAssignModalOpen(true);
-                              }}
+                              onClick={() => handleOpenAssign(asset)}
                               className="h-7 px-2.5 text-xs text-[#07563D] border-[#07563D]/30 hover:bg-[#07563D]/5 font-bold"
                             >
                               Assign
+                            </Button>
+                          ) : asset.status === 'ASSIGNED' ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenReturnForAsset(asset)}
+                              className="h-7 px-2.5 text-xs text-amber-700 border-amber-300 hover:bg-amber-50 font-bold"
+                            >
+                              Return
                             </Button>
                           ) : (
                             <Button
@@ -570,7 +657,104 @@ export const AssetsView: React.FC = () => {
         )}
 
         {/* ========================================================================= */}
-        {/* TAB 2: INVENTORY & STOCK ITEMS */}
+        {/* TAB 2: CUSTODY & ASSIGNMENTS LEDGER */}
+        {/* ========================================================================= */}
+        {activeTab === 'assignments' && (
+          <Card className="border border-gray-200/80 shadow-xs overflow-hidden bg-white">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50/70">
+                  <TableHead className="font-bold text-gray-900 text-xs">Employee / Custodian</TableHead>
+                  <TableHead className="font-bold text-gray-900 text-xs">Nature</TableHead>
+                  <TableHead className="font-bold text-gray-900 text-xs">Assigned Date</TableHead>
+                  <TableHead className="font-bold text-gray-900 text-xs">Expected Return</TableHead>
+                  <TableHead className="font-bold text-gray-900 text-xs">Deduction / Deposit</TableHead>
+                  <TableHead className="font-bold text-gray-900 text-xs">Condition</TableHead>
+                  <TableHead className="font-bold text-gray-900 text-xs">Status</TableHead>
+                  <TableHead className="font-bold text-gray-900 text-xs text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {assignments.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-10 text-gray-400 text-xs">
+                      No active employee asset handovers recorded in database.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  assignments.map(asgn => (
+                    <TableRow key={asgn.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <UserCheck className="w-4 h-4 text-[#07563D]" />
+                          <div>
+                            <span className="font-bold text-gray-900 text-xs block">{asgn.target_name}</span>
+                            <span className="font-mono text-[10px] text-gray-400">By {asgn.assigned_by_name}</span>
+                          </div>
+                        </div>
+                      </TableCell>
+
+                      <TableCell>
+                        {asgn.is_returnable !== false ? (
+                          <Badge variant="emerald" className="text-[10px]">Returnable</Badge>
+                        ) : (
+                          <Badge variant="amber" className="text-[10px]">Consumable</Badge>
+                        )}
+                      </TableCell>
+
+                      <TableCell className="font-mono text-xs text-gray-600">
+                        {asgn.assigned_at ? new Date(asgn.assigned_at).toLocaleDateString() : '-'}
+                      </TableCell>
+
+                      <TableCell className="font-mono text-xs text-gray-600">
+                        {asgn.expected_return_date || 'Ongoing'}
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-xs font-bold text-gray-900">
+                            ₹{(asgn.deduction_amount || 0).toLocaleString('en-IN')}
+                          </span>
+                          {asgn.deduction_status && asgn.deduction_status !== 'NO_DEDUCTION' && (
+                            <Badge variant="purple" className="text-[9px] px-1 py-0">
+                              {asgn.deduction_status}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+
+                      <TableCell>
+                        <Badge variant="emerald">{asgn.condition_at_assign}</Badge>
+                      </TableCell>
+
+                      <TableCell>
+                        <Badge variant={asgn.status === 'ACTIVE' ? 'blue' : 'neutral'}>
+                          {asgn.status}
+                        </Badge>
+                      </TableCell>
+
+                      <TableCell className="text-right">
+                        {asgn.status === 'ACTIVE' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleOpenReturnForAssignment(asgn)}
+                            className="h-7 px-2.5 text-xs text-amber-700 border-amber-300 hover:bg-amber-50 font-bold"
+                          >
+                            Return / Clear
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 3: INVENTORY STOCK */}
         {/* ========================================================================= */}
         {activeTab === 'inventory' && (
           <div className="space-y-4">
@@ -588,7 +772,7 @@ export const AssetsView: React.FC = () => {
                     unitCost: 29,
                   });
                   showToast('Sample SKU added to inventory.', 'success');
-                  loadData();
+                  loadData(true);
                 }}
                 leftIcon={<Plus className="w-4 h-4" />}
                 className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold"
@@ -661,54 +845,6 @@ export const AssetsView: React.FC = () => {
               </Table>
             </Card>
           </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* TAB 3: CUSTODY & ASSIGNMENTS */}
-        {/* ========================================================================= */}
-        {activeTab === 'assignments' && (
-          <Card className="border border-gray-200/80 shadow-xs overflow-hidden bg-white">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50/70">
-                  <TableHead className="font-bold text-gray-900 text-xs">Recipient / Target</TableHead>
-                  <TableHead className="font-bold text-gray-900 text-xs">Target Scope</TableHead>
-                  <TableHead className="font-bold text-gray-900 text-xs">Assigned Date</TableHead>
-                  <TableHead className="font-bold text-gray-900 text-xs">Assigned By</TableHead>
-                  <TableHead className="font-bold text-gray-900 text-xs">Condition</TableHead>
-                  <TableHead className="font-bold text-gray-900 text-xs">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {assignments.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-10 text-gray-400 text-xs">
-                      No active asset assignments.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  assignments.map(asgn => (
-                    <TableRow key={asgn.id}>
-                      <TableCell className="font-bold text-gray-900 text-xs">{asgn.target_name}</TableCell>
-                      <TableCell>
-                        <Badge variant="neutral" className="text-[10px]">{asgn.target_type}</Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-gray-600">
-                        {new Date(asgn.assigned_at).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className="text-xs text-gray-700">{asgn.assigned_by_name}</TableCell>
-                      <TableCell>
-                        <Badge variant="emerald">{asgn.condition_at_assign}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={asgn.status === 'ACTIVE' ? 'blue' : 'neutral'}>{asgn.status}</Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </Card>
         )}
 
         {/* ========================================================================= */}
@@ -848,23 +984,43 @@ export const AssetsView: React.FC = () => {
       <RegisterAssetModal
         isOpen={isRegisterModalOpen}
         onClose={() => setIsRegisterModalOpen(false)}
-        onSuccess={loadData}
-        activeIndustry={selectedIndustry}
+        onSuccess={() => loadData(true)}
       />
 
       {/* Assign Asset Modal */}
       <AssignAssetModal
         isOpen={isAssignModalOpen}
         onClose={() => setIsAssignModalOpen(false)}
-        onSuccess={loadData}
+        onSuccess={() => loadData(true)}
         asset={activeAsset}
+      />
+
+      {/* Return Asset & Clearance Modal */}
+      <ReturnAssetModal
+        isOpen={isReturnModalOpen}
+        onClose={() => {
+          setIsReturnModalOpen(false);
+          setActiveAssignment(null);
+        }}
+        onSuccess={() => loadData(true)}
+        assignment={activeAssignment}
+        asset={activeAsset}
+      />
+
+      {/* Day-Wise & Monthly Excel Export Modal */}
+      <AssetExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        assignments={assignments}
+        assets={assets}
+        employees={employees}
       />
 
       {/* Stock Transaction Modal */}
       <StockTransactionModal
         isOpen={isStockModalOpen}
         onClose={() => setIsStockModalOpen(false)}
-        onSuccess={loadData}
+        onSuccess={() => loadData(true)}
         item={activeInventoryItem}
       />
 
@@ -873,7 +1029,7 @@ export const AssetsView: React.FC = () => {
         isOpen={isDetailDrawerOpen}
         onClose={() => setIsDetailDrawerOpen(false)}
         asset={activeAsset}
-        onRefresh={loadData}
+        onRefresh={() => loadData(true)}
         onOpenAssign={asset => {
           setActiveAsset(asset);
           setIsAssignModalOpen(true);
@@ -882,4 +1038,5 @@ export const AssetsView: React.FC = () => {
     </div>
   );
 };
+
 export default AssetsView;

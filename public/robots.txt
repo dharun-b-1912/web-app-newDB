@@ -1,0 +1,45 @@
+# Joy PeopleHR — Search Engine Crawling Directives
+# joypeoplehr.com is the public landing page domain
+# app.joypeoplehr.com is the private application workspace
+
+User-agent: *
+# Public Landing Pages & Marketing Resources
+Allow: /$
+Allow: /launch.html
+Allow: /about
+Allow: /contact
+Allow: /pricing
+
+# Disallow Private Enterprise Application Routes
+Disallow: /admin
+Disallow: /admin/
+Disallow: /people
+Disallow: /people/
+Disallow: /employees
+Disallow: /employees/
+Disallow: /attendance
+Disallow: /attendance/
+Disallow: /payroll
+Disallow: /payroll/
+Disallow: /dashboard
+Disallow: /dashboard/
+Disallow: /workspace
+Disallow: /workspace/
+Disallow: /workforce
+Disallow: /workforce/
+Disallow: /ess
+Disallow: /ess/
+Disallow: /tl
+Disallow: /tl/
+Disallow: /login
+Disallow: /vendor
+Disallow: /vendors
+Disallow: /vendors/
+Disallow: /platform
+Disallow: /platform/
+Disallow: /superadmin
+Disallow: /superadmin/
+Disallow: /api/
+Disallow: /auth/
+
+Sitemap: https://joypeoplehr.com/sitemap.xml

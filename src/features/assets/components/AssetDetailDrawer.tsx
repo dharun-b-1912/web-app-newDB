@@ -46,12 +46,19 @@ export const AssetDetailDrawer: React.FC<AssetDetailDrawerProps> = ({
 
   if (!isOpen || !asset) return null;
 
-  const handleReturn = () => {
+  const assignments = assetAssignmentService.getAssignments(asset.id);
+  const maintenanceRecords = assetMaintenanceService.getMaintenanceRecords(asset.id);
+  const transfers = assetTransferService.getTransfers(asset.id);
+  const auditLogs = assetAuditService.getLogs(asset.id);
+
+  const handleReturn = async () => {
     try {
-      assetAssignmentService.returnAsset({
+      const activeAsgn = assignments.find(a => a.status === 'ACTIVE');
+      await assetAssignmentService.returnAsset({
+        assignmentId: activeAsgn?.id || `asgn-${asset.id}`,
         assetId: asset.id,
         conditionAtReturn: returnCondition,
-        notes: returnNotes,
+        remarks: returnNotes,
       });
       showToast('Asset returned to pool successfully.', 'success');
       setIsReturnModalOpen(false);
@@ -60,11 +67,6 @@ export const AssetDetailDrawer: React.FC<AssetDetailDrawerProps> = ({
       showToast(err.message || 'Failed to return asset.', 'error');
     }
   };
-
-  const assignments = assetAssignmentService.getAssignments(asset.id);
-  const maintenanceRecords = assetMaintenanceService.getMaintenanceRecords(asset.id);
-  const transfers = assetTransferService.getTransfers(asset.id);
-  const auditLogs = assetAuditService.getLogs(asset.id);
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-black/40 backdrop-blur-xs flex justify-end">

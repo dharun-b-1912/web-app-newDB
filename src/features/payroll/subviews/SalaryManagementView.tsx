@@ -43,8 +43,6 @@ import {
 import { cn } from '../../../lib/utils';
 import { useToast } from '../../../components/ui/Toast';
 import { hrEventBus } from '../../../services/hrEventBus';
-import { LiveDataPayrollVerificationService } from '../../../services/payroll/liveDataPayrollVerificationService';
-import { FileSpreadsheet } from 'lucide-react';
 
 interface SalaryManagementViewProps {
   initialSubTab?: string;
@@ -121,13 +119,21 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
   const [simResult, setSimResult] = useState<any>(null);
 
   const loadData = async () => {
-    setStructures(payrollApi.getSalaryStructures());
-    setComponents(payrollApi.getComponents());
+    const rawStructures = await payrollApi.getSalaryStructuresAsync();
+    const cleanStructures = rawStructures.filter(
+      s => s.id !== 'str-daily-wage-plant' && s.code !== 'STR-DAILY-PLANT'
+    );
+    setStructures(cleanStructures);
+    const rawComps = await payrollApi.getComponentsAsync();
+    setComponents(rawComps);
     setTagRules(payrollApi.getOrgTagRuleAssignments());
-    const salList = await payrollApi.getEmployeeSalaries();
-    setSalaries(salList);
-    if (salList.length > 0 && !simEmpId) {
-      setSimEmpId(salList[0].employee_id);
+    const rawSalaries = await payrollApi.getEmployeeSalaries();
+    const cleanSalaries = rawSalaries.filter(
+      s => !s.id.startsWith('sal-ce') && !s.employee_code?.toUpperCase().startsWith('CE0') && s.salary_structure_id !== 'str-daily-wage-plant'
+    );
+    setSalaries(cleanSalaries);
+    if (cleanSalaries.length > 0 && !simEmpId) {
+      setSimEmpId(cleanSalaries[0].employee_id);
     }
   };
 
@@ -367,7 +373,7 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
     setIsRevisionModalOpen(true);
   };
 
-  const handleSaveRevision = () => {
+  const handleSaveRevision = async () => {
     if (!selectedEmpSal) return;
     const grossMonthly = Math.round(revNewCtc / 12);
     const basicMonthly = Math.round(grossMonthly * 0.5);
@@ -384,20 +390,20 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
       updated_at: new Date().toISOString(),
     };
 
-    payrollApi.saveEmployeeSalary(updated);
-    loadData();
+    await payrollApi.saveEmployeeSalaryAsync(updated);
+    await loadData();
     setIsRevisionModalOpen(false);
     showToast(`✓ Revised salary for ${selectedEmpSal.employee_name} to ₹${(revNewCtc || 0).toLocaleString('en-IN')}/yr.`);
   };
 
-  const handleBulkAssign = () => {
+  const handleBulkAssign = async () => {
     if (!bulkTargetStructureId) {
       showToast('Please select a target salary structure', 'error');
       return;
     }
     const empIds = bulkSelectedEmpIds.length > 0 ? bulkSelectedEmpIds : salaries.map(s => s.employee_id);
-    const res = payrollApi.bulkAssignSalaryStructure(empIds, bulkTargetStructureId, bulkEffectiveFrom);
-    loadData();
+    const res = await payrollApi.bulkAssignSalaryStructureAsync(empIds, bulkTargetStructureId, bulkEffectiveFrom);
+    await loadData();
     setIsBulkAssignModalOpen(false);
     showToast(`✓ Successfully assigned structure to ${res.assignedCount} employees effective ${bulkEffectiveFrom}.`);
   };
@@ -477,21 +483,6 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
             />
           </div>
 
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              const res = LiveDataPayrollVerificationService.seed21WorkersIntoPlatform();
-              if (res.success) {
-                showToast(`✓ Seeded & Mapped Daily Wage Structure (₹600/day) to 21 Workers!`, 'success');
-                loadData();
-              }
-            }}
-            className="bg-purple-50 hover:bg-purple-100 border-purple-300 text-purple-900 font-semibold px-3 py-1.5 h-8 text-xs rounded-xl"
-            title="Maps 21 workers (CE0017-CE0039) to Daily Wage Structure (Basic ₹420, HRA ₹180, OT ₹75/hr)"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 mr-1 text-purple-700" /> ⚡ Seed 21 Workers Structure
-          </Button>
 
           <Button
             size="sm"
@@ -582,11 +573,26 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
                       const val = c.value ?? c.default_value ?? 0;
                       let displayVal = `₹ ${Number(val).toLocaleString('en-IN')}`;
                       if (c.calculation_type === 'PercentageOfGross') {
-                        displayVal = `${val}% of Gross`;
+                        let pct = Number(val);
+                        if (pct > 100 && c.formula_expression) {
+                          const m = c.formula_expression.match(/([0-9.]+)\s*\*\s*GROSS/i);
+                          if (m) pct = Math.round(parseFloat(m[1]) * 100);
+                        }
+                        displayVal = `${pct}% of Gross`;
                       } else if (c.calculation_type === 'PercentageOfBasic') {
-                        displayVal = `${val}% of Basic`;
+                        let pct = Number(val);
+                        if (pct > 100 && c.formula_expression) {
+                          const m = c.formula_expression.match(/([0-9.]+)\s*\*\s*BASIC/i);
+                          if (m) pct = Math.round(parseFloat(m[1]) * 100);
+                        }
+                        displayVal = `${pct}% of Basic`;
                       } else if (c.calculation_type === 'PercentageOfCTC') {
-                        displayVal = `${val}% of CTC`;
+                        let pct = Number(val);
+                        if (pct > 100 && c.formula_expression) {
+                          const m = c.formula_expression.match(/([0-9.]+)\s*\*\s*CTC/i);
+                          if (m) pct = Math.round(parseFloat(m[1]) * 100);
+                        }
+                        displayVal = `${pct}% of CTC`;
                       } else if (c.calculation_type === 'FixedDailyAmount' || c.calculation_type === 'PerDay') {
                         displayVal = `₹ ${Number(val).toLocaleString('en-IN')} / day`;
                       } else if (c.calculation_type === 'PerHour') {

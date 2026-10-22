@@ -17,7 +17,7 @@ echo  Terminal Mode: ADMS Real-Time Face / Fingerprint Push
 echo ================================================================
 echo.
 
-node scripts/joy-attendance-connector.cjs --prod
+node scripts/workforce-gateway-agent.cjs
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

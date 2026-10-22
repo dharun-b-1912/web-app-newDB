@@ -30,7 +30,7 @@ export const WorkspaceQuickActions: React.FC<Props> = ({
     {
       id: 'payslip',
       label: 'View Payslip',
-      sublabel: 'July 2026 Breakdown',
+      sublabel: 'Latest Salary Breakdown',
       icon: Receipt,
       color: 'bg-teal-50 text-teal-700 group-hover:bg-teal-100',
       onClick: onViewPayslip,

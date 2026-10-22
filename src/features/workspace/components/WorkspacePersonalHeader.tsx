@@ -31,11 +31,12 @@ export const WorkspacePersonalHeader: React.FC<Props> = ({
 }) => {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const fullName = employee.display_name || user.name || 'Team Member';
-  const designation = employee.designation_title || (user.roles?.[0]?.name) || 'Team Member';
-  const department = employee.department_name || 'Enterprise Operations';
-  const managerName = employee.employment?.reporting_manager_name || 'Dharun B (Company Admin)';
-  const location = employee.branch_name || 'Coimbatore HQ';
+  const fullName = employee.display_name || `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || user.name || 'Team Member';
+  const designation = employee.designation_title || (user.roles?.[0]?.name) || 'Staff';
+  const department = employee.department_name || 'General Operations';
+  const managerName = employee.employment?.reporting_manager_name || (employee as any).manager_name || 'Not Assigned';
+  const location = employee.branch_name || (employee.employment as any)?.work_location_name || (employee as any).location || 'Office Campus';
+  const companyName = activeCompany?.legal_name || activeCompany?.trade_name || 'Joy PeopleHR';
 
   const isCheckedIn = attendanceState === 'CheckedIn';
   const isCheckedOut = attendanceState === 'CheckedOut';
@@ -88,7 +89,7 @@ export const WorkspacePersonalHeader: React.FC<Props> = ({
           <p className="text-xs text-gray-500 flex items-center gap-4 pt-0.5 flex-wrap">
             <span className="flex items-center gap-1.5">
               <Building2 className="w-3.5 h-3.5 text-gray-400" />
-              {activeCompany?.legal_name || 'Joy Corporate Solutions Pvt Ltd'}
+              {companyName}
             </span>
             <span className="flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-gray-400" />

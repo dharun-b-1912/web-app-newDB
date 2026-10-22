@@ -12,10 +12,11 @@ import {
   WfhRequest,
 } from '../types/attendance';
 import { DEFAULT_ATTENDANCE_POLICY, minutesToTimeString, processAttendanceStatus, timeStringToMinutes, formatCleanTime } from '../lib/attendance/attendanceEngine';
-import { supabase, isSupabaseEnabled, ensureSupabaseSession } from '../lib/supabase';
+import { supabase, supabaseAdmin, isSupabaseEnabled, ensureSupabaseSession } from '../lib/supabase';
 import { JoyRedis } from '../lib/redis';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
 import { attendanceTimeService } from './attendance/attendanceTimeService';
+import { attendanceIngestionService } from './attendance/attendanceIngestionService';
 import { getActiveOrgId } from './attendance/biometricCommandService';
 import { api } from './api';
 
@@ -103,7 +104,7 @@ export const attendanceApi = {
         await ensureSupabaseSession();
         const tenantId = getActiveOrgId();
         const ctrl = new AbortController();
-        const tid = setTimeout(() => ctrl.abort(), 4000);
+        const tid = setTimeout(() => ctrl.abort(), 12000);
 
         let q = supabase
           .from('attendance_daily')
@@ -163,12 +164,12 @@ export const attendanceApi = {
               const dev = (p.device_id || '').toUpperCase();
 
               let resolved: PunchSource = 'MOBILE';
-              if (mode === 'GPS' || psource === 'WEB_GPS' || psource === 'MOBILE' || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')) {
+              if (mode === 'FACE' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || psource === 'BIOMETRIC' || psource === 'FACE_RECOGNITION') {
+                resolved = 'BIOMETRIC';
+              } else if (mode === 'GPS' || psource === 'WEB_GPS' || psource === 'MOBILE_GPS' || psource.includes('GPS') || psource.includes('MOBILE') || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')) {
                 resolved = 'MOBILE';
               } else if (psource === 'WEB' || dev.includes('BROWSER')) {
                 resolved = 'WEB';
-              } else if (mode === 'BIOMETRIC' || psource === 'BIOMETRIC') {
-                resolved = 'BIOMETRIC';
               } else if (mode === 'MANUAL') {
                 resolved = 'MANUAL';
               }
@@ -183,7 +184,11 @@ export const attendanceApi = {
                 existing.checkOutSource = resolved;
                 existing.lastOutIso = p.punch_time;
               }
-              existing.source = resolved;
+              if (!existing.source) {
+                existing.source = resolved;
+              } else if (existing.checkInSource) {
+                existing.source = existing.checkInSource;
+              }
               existing.organizationId = p.organization_id || existing.organizationId;
               punchMap.set(empId, existing);
             }
@@ -229,7 +234,7 @@ export const attendanceApi = {
 
           const checkInSource: PunchSource | undefined = punchInfo?.checkInSource || (rawFirstIn ? 'MOBILE' : undefined);
           const checkOutSource: PunchSource | undefined = punchInfo?.checkOutSource;
-          const source: PunchSource = punchInfo?.source || checkInSource || 'MOBILE';
+          const source: PunchSource = punchInfo?.checkInSource || punchInfo?.source || checkInSource || 'MOBILE';
 
           const formattedIn = rawFirstIn ? attendanceTimeService.formatAttendanceTime(rawFirstIn, 'Asia/Kolkata', true) : undefined;
           const formattedOut = rawLastOut ? attendanceTimeService.formatAttendanceTime(rawLastOut, 'Asia/Kolkata', true) : undefined;
@@ -237,7 +242,7 @@ export const attendanceApi = {
           // Compute late minutes and working minutes accurately
           const inMins = formattedIn ? timeStringToMinutes(formattedIn) : null;
           const outMins = formattedOut ? timeStringToMinutes(formattedOut) : null;
-          const calc = processAttendanceStatus(inMins, outMins, 540, 1080);
+          const calc = processAttendanceStatus(inMins, outMins, 540, 1080, DEFAULT_ATTENDANCE_POLICY, false, false, false, d.attendance_date);
 
           let grossMins = d.total_work_minutes || calc.grossMinutes || 0;
           if (!rawLastOut && rawFirstIn) {
@@ -247,7 +252,7 @@ export const attendanceApi = {
             }
           }
           const breakMins = d.break_minutes || 0;
-          const netMins = Math.max(0, grossMins - breakMins);
+          const netMins = calc.netMinutes || grossMins;
           const lateMins = (d.late_entry_minutes && d.late_entry_minutes > 0) ? d.late_entry_minutes : calc.lateMinutes;
 
           return {
@@ -265,7 +270,7 @@ export const attendanceApi = {
             shift_name: 'General Shift',
             expected_check_in: '09:00 AM',
             expected_check_out: '06:00 PM',
-            status: d.status === 'PRESENT' || rawFirstIn ? 'Present' : d.status === 'ABSENT' ? 'Absent' : 'Half Day',
+            status: calc.status,
             first_check_in: formattedIn,
             last_check_out: formattedOut,
             gross_working_minutes: grossMins,
@@ -314,7 +319,8 @@ export const attendanceApi = {
     if (isSupabaseEnabled) {
       try {
         await ensureSupabaseSession();
-        let q = supabase
+        const client = supabaseAdmin || supabase;
+        let q = client
           .from('attendance_daily')
           .select('*')
           .gte('attendance_date', startDate)
@@ -332,7 +338,7 @@ export const attendanceApi = {
         // Fetch employee details
         let empMap = new Map<string, any>();
         try {
-          const { data: empList } = await supabase
+          const { data: empList } = await client
             .from('employees')
             .select('id, employee_code, first_name, last_name, display_name, avatar_url');
           if (empList) {
@@ -347,9 +353,9 @@ export const attendanceApi = {
         endRange.setHours(endRange.getHours() + 14);
 
         const ctrl = new AbortController();
-        const tid = setTimeout(() => ctrl.abort(), 4000);
+        const tid = setTimeout(() => ctrl.abort(), 12000);
 
-        let pq = supabase
+        let pq = client
           .from('attendance_punches')
           .select('employee_id, organization_id, punch_type, verification_mode, punch_source, device_id, punch_time')
           .eq('organization_id', tenantId)
@@ -386,12 +392,12 @@ export const attendanceApi = {
             const dev = (p.device_id || '').toUpperCase();
 
             let resolved: PunchSource = 'MOBILE';
-            if (mode === 'GPS' || psource === 'WEB_GPS' || psource === 'MOBILE' || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')) {
+            if (mode === 'FACE' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || psource === 'BIOMETRIC' || psource === 'FACE_RECOGNITION') {
+              resolved = 'BIOMETRIC';
+            } else if (mode === 'GPS' || psource === 'WEB_GPS' || psource === 'MOBILE_GPS' || psource.includes('GPS') || psource.includes('MOBILE') || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')) {
               resolved = 'MOBILE';
             } else if (psource === 'WEB' || dev.includes('BROWSER')) {
               resolved = 'WEB';
-            } else if (mode === 'BIOMETRIC' || psource === 'BIOMETRIC') {
-              resolved = 'BIOMETRIC';
             } else if (mode === 'MANUAL') {
               resolved = 'MANUAL';
             }
@@ -418,7 +424,11 @@ export const attendanceApi = {
               existing.checkOutSource = resolved;
               existing.lastOutIso = p.punch_time;
             }
-            existing.source = resolved;
+            if (!existing.source) {
+              existing.source = resolved;
+            } else if (existing.checkInSource) {
+              existing.source = existing.checkInSource;
+            }
             punchMap.set(key, existing);
           }
         }
@@ -460,14 +470,16 @@ export const attendanceApi = {
 
           const checkInSource: PunchSource | undefined = punchInfo?.checkInSource || (rawFirstIn ? 'MOBILE' : undefined);
           const checkOutSource: PunchSource | undefined = punchInfo?.checkOutSource;
-          const source: PunchSource = punchInfo?.source || checkInSource || 'MOBILE';
+          const source: PunchSource = punchInfo?.checkInSource || punchInfo?.source || checkInSource || 'MOBILE';
 
           const formattedIn = rawFirstIn ? attendanceTimeService.formatAttendanceTime(rawFirstIn, 'Asia/Kolkata', true) : undefined;
           const formattedOut = rawLastOut ? attendanceTimeService.formatAttendanceTime(rawLastOut, 'Asia/Kolkata', true) : undefined;
 
           const inMins = formattedIn ? timeStringToMinutes(formattedIn) : null;
           const outMins = formattedOut ? timeStringToMinutes(formattedOut) : null;
-          const calc = processAttendanceStatus(inMins, outMins, 540, 1080);
+          const isLeaveStatus = d.status === 'ON_LEAVE' || d.status === 'Leave' || d.status === 'On Leave';
+          const isHolidayStatus = d.status === 'HOLIDAY' || d.status === 'Holiday';
+          const calc = processAttendanceStatus(inMins, outMins, 540, 1080, DEFAULT_ATTENDANCE_POLICY, isLeaveStatus, false, isHolidayStatus, d.attendance_date);
 
           let grossMins = d.total_work_minutes || calc.grossMinutes || 0;
           if (!rawLastOut && rawFirstIn) {
@@ -479,6 +491,23 @@ export const attendanceApi = {
           const breakMins = d.break_minutes || 0;
           const netMins = Math.max(0, grossMins - breakMins);
           const lateMins = (d.late_entry_minutes && d.late_entry_minutes > 0) ? d.late_entry_minutes : calc.lateMinutes;
+
+          let resolvedStatus = calc.status;
+          if (isLeaveStatus) {
+            resolvedStatus = 'On Leave';
+          } else if (isHolidayStatus) {
+            resolvedStatus = 'Holiday';
+          } else if (d.status === 'WEEKLY_OFF' || d.status === 'Weekly Off') {
+            resolvedStatus = 'Weekly Off';
+          } else if (d.status === 'PRESENT' || rawFirstIn) {
+            resolvedStatus = calc.status || 'Present';
+          } else if (d.status === 'ABSENT') {
+            if (netMins >= 120 && netMins < 240) {
+              resolvedStatus = 'Half Day';
+            } else {
+              resolvedStatus = 'Absent';
+            }
+          }
 
           return {
             id: d.id,
@@ -495,7 +524,7 @@ export const attendanceApi = {
             shift_name: 'General Shift',
             expected_check_in: '09:00 AM',
             expected_check_out: '06:00 PM',
-            status: d.status === 'PRESENT' || rawFirstIn ? 'Present' : d.status === 'ABSENT' ? 'Absent' : 'Half Day',
+            status: resolvedStatus,
             first_check_in: formattedIn,
             last_check_out: formattedOut,
             gross_working_minutes: grossMins,
@@ -512,6 +541,18 @@ export const attendanceApi = {
           };
         });
 
+        // Cache mapped records so synchronous payroll/payslip calls can immediately access them
+        if (mapped.length > 0) {
+          try {
+            const cacheKey = `period_att_${startDate}_${endDate}`;
+            const existing = loadStorage<AttendanceDaily[]>(cacheKey, []);
+            const mergedMap = new Map<string, AttendanceDaily>();
+            for (const it of existing) mergedMap.set(`${it.employee_id}_${it.date}`, it);
+            for (const it of mapped) mergedMap.set(`${it.employee_id}_${it.date}`, it);
+            saveStorage(cacheKey, Array.from(mergedMap.values()));
+          } catch {}
+        }
+
         // Return ONLY actual database attendance records — zero pre-filling
         return mapped;
       } catch (err) {
@@ -519,6 +560,33 @@ export const attendanceApi = {
       }
     }
     return this.getDailyAttendance();
+  },
+
+  getDailyAttendanceForPeriodSync: (startDate: string, endDate: string, employeeIdOrCode?: string): AttendanceDaily[] => {
+    let list: AttendanceDaily[] = [];
+    try {
+      const cacheKey = `period_att_${startDate}_${endDate}`;
+      list = loadStorage<AttendanceDaily[]>(cacheKey, []);
+      if (list.length === 0) {
+        list = attendanceApi.getDailyAttendance();
+      }
+    } catch {
+      list = attendanceApi.getDailyAttendance();
+    }
+    const target = (employeeIdOrCode || '').toLowerCase().trim();
+    return list.filter(r => {
+      const matchDate = r.date >= startDate && r.date <= endDate;
+      if (!matchDate) return false;
+      if (!target) return true;
+      const rEmpId = (r.employee_id || '').toLowerCase();
+      const rEmpCode = ((r as any).employee_code || '').toLowerCase();
+      const rEmpName = ((r as any).employee_name || '').toLowerCase();
+      return (
+        rEmpId === target ||
+        rEmpCode === target ||
+        (target.length > 2 && (rEmpId.includes(target) || rEmpCode.includes(target) || rEmpName.includes(target)))
+      );
+    });
   },
 
   getDailyAttendance: (date?: string, department?: string, status?: string, search?: string): AttendanceDaily[] => {
@@ -560,6 +628,9 @@ export const attendanceApi = {
           e =>
             e.status !== 'Terminated' &&
             e.status !== 'Exited' &&
+            e.status !== 'Inactive' &&
+            e.status !== 'Suspended' &&
+            (e as any).employment_status !== 'SUSPENDED' &&
             (!isSupabaseEnabled || isUuid(e.id)) &&
             !String(e.employee_code || '').toUpperCase().startsWith('CE0')
         );
@@ -587,8 +658,8 @@ export const attendanceApi = {
               seenEmpKeys.add(empKey);
               const roster = attendanceRosterService.getRosterForEmployeeOnDate(matchedEmp.id, item.date || targetDate, undefined, matchedEmp);
               const shiftDef = attendanceRosterService.getShiftById(roster.shift_id);
-              const shiftStart = shiftDef?.start_time || '09:30';
-              const shiftEnd = shiftDef?.end_time || '18:30';
+              const shiftStart = shiftDef?.start_time || '09:00';
+              const shiftEnd = shiftDef?.end_time || '18:00';
 
               const rawIn = item.first_check_in || (item as any).in_time || (item as any).check_in;
               const rawOut = item.last_check_out || (item as any).out_time || (item as any).check_out;
@@ -665,8 +736,8 @@ export const attendanceApi = {
             const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, targetDate, undefined, emp);
             const isOff = roster.is_weekly_off;
             const shiftDef = attendanceRosterService.getShiftById(roster.shift_id);
-            const shiftStart = shiftDef?.start_time || '09:30';
-            const shiftEnd = shiftDef?.end_time || '18:30';
+            const shiftStart = shiftDef?.start_time || '09:00';
+            const shiftEnd = shiftDef?.end_time || '18:00';
 
             cleaned.push({
               id: `att-dyn-${emp.id}-${targetDate}`,
@@ -736,12 +807,39 @@ export const attendanceApi = {
     const existingIdx = list.findIndex(e => e.employee_id === employeeId && e.date === today);
     const calculation = attendanceTimeService.calculateWorkingMinutes(nowIso);
 
+    // If an accepted check-in already exists today: FIRST VALID CHECK-IN WINS!
+    // Suppress duplicate check-in, do not overwrite timestamp or source, log diagnostic event.
+    if (existingIdx >= 0 && list[existingIdx].first_check_in) {
+      const existing = list[existingIdx];
+      attendanceIngestionService.ingestAttendanceEvent({
+        organizationId: existing.organization_id || getActiveOrgId(),
+        employeeId,
+        source: (source as any) || 'WEB',
+        punchType: 'CHECK_IN',
+        punchTime: nowIso,
+        rawPayload: { employeeName, locationName },
+      }).catch(err => console.warn('[attendanceApi] checkIn deduplication notice:', err));
+
+      return existing;
+    }
+
+    // Ingest first valid check-in through centralized ingestion service
+    attendanceIngestionService.ingestAttendanceEvent({
+      organizationId: getActiveOrgId(),
+      employeeId,
+      source: (source as any) || 'WEB',
+      punchType: 'CHECK_IN',
+      punchTime: nowIso,
+      rawPayload: { employeeName, locationName },
+    }).catch(err => console.warn('[attendanceApi] checkIn ingestion notice:', err));
+
     if (existingIdx >= 0) {
       const updated: AttendanceDaily = {
         ...list[existingIdx],
         status: 'Present',
         first_check_in: nowIso,
         source,
+        check_in_source: source,
         updated_at: nowIso,
       };
       list[existingIdx] = updated;
@@ -752,37 +850,6 @@ export const attendanceApi = {
         if (cIdx >= 0) _dailyCache.data[cIdx] = updated;
         else _dailyCache.data.unshift(updated);
       }
-
-      if (isSupabaseEnabled) {
-        // 1. Immutable audit punch
-        Promise.resolve(
-          supabase
-            .from('attendance_punches')
-            .insert({
-              organization_id: updated.organization_id && updated.organization_id.length === 36 ? updated.organization_id : '00000000-0000-0000-0000-000000000000',
-              employee_id: updated.employee_id,
-              punch_type: 'CHECK_IN',
-              verification_mode: source === 'BIOMETRIC' ? 'BIOMETRIC' : 'MANUAL',
-              punch_time: nowIso,
-            })
-        ).catch((e: any) => console.warn('[Supabase Attendance] punch insert notice:', e));
-
-        // 2. Daily summary record
-        Promise.resolve(
-          supabase
-            .from('attendance_daily')
-            .upsert({
-              id: updated.id,
-              organization_id: updated.organization_id && updated.organization_id.length === 36 ? updated.organization_id : '00000000-0000-0000-0000-000000000000',
-              employee_id: updated.employee_id,
-              attendance_date: today,
-              first_check_in: updated.first_check_in,
-              status: (updated.status || 'PRESENT').toUpperCase(),
-              updated_at: nowIso,
-            })
-        ).catch((e: any) => console.warn('[Supabase Attendance] checkIn upsert failed:', e));
-      }
-
       return updated;
     } else {
       const newItem: AttendanceDaily = {
@@ -808,6 +875,7 @@ export const attendanceApi = {
         early_checkout_minutes: 0,
         overtime_minutes: 0,
         source,
+        check_in_source: source,
         created_at: nowIso,
         updated_at: nowIso,
       };
@@ -817,37 +885,6 @@ export const attendanceApi = {
       if (_dailyCache) {
         _dailyCache.data.unshift(newItem);
       }
-
-      if (isSupabaseEnabled) {
-        // 1. Immutable audit punch
-        Promise.resolve(
-          supabase
-            .from('attendance_punches')
-            .insert({
-              organization_id: newItem.organization_id && newItem.organization_id.length === 36 ? newItem.organization_id : '00000000-0000-0000-0000-000000000000',
-              employee_id: newItem.employee_id,
-              punch_type: 'CHECK_IN',
-              verification_mode: source === 'BIOMETRIC' ? 'BIOMETRIC' : 'MANUAL',
-              punch_time: nowIso,
-            })
-        ).catch((e: any) => console.warn('[Supabase Attendance] punch insert notice:', e));
-
-        // 2. Daily summary record
-        Promise.resolve(
-          supabase
-            .from('attendance_daily')
-            .upsert({
-              id: newItem.id,
-              organization_id: newItem.organization_id && newItem.organization_id.length === 36 ? newItem.organization_id : '00000000-0000-0000-0000-000000000000',
-              employee_id: newItem.employee_id,
-              attendance_date: today,
-              status: (newItem.status || 'PRESENT').toUpperCase(),
-              first_check_in: newItem.first_check_in,
-              updated_at: newItem.updated_at,
-            })
-        ).catch((e: any) => console.warn('[Supabase Attendance] checkIn insert failed:', e));
-      }
-
       return newItem;
     }
   },
@@ -891,36 +928,14 @@ export const attendanceApi = {
     }
 
     if (isSupabaseEnabled) {
-      // 1. Immutable audit punch
-      Promise.resolve(
-        supabase
-          .from('attendance_punches')
-          .insert({
-            organization_id: updated.organization_id && updated.organization_id.length === 36 ? updated.organization_id : '00000000-0000-0000-0000-000000000000',
-            employee_id: updated.employee_id,
-            punch_type: 'CHECK_OUT',
-            verification_mode: source === 'BIOMETRIC' ? 'BIOMETRIC' : 'MANUAL',
-            punch_time: nowIso,
-          })
-      ).catch((e: any) => console.warn('[Supabase Attendance] checkOut punch insert notice:', e));
-
-      // 2. Daily summary record update
-      Promise.resolve(
-        supabase
-          .from('attendance_daily')
-          .update({
-            last_check_out: updated.last_check_out,
-            status: updated.status,
-            gross_working_minutes: updated.gross_working_minutes,
-            net_working_minutes: updated.net_working_minutes,
-            late_minutes: updated.late_minutes,
-            early_checkout_minutes: updated.early_checkout_minutes,
-            overtime_minutes: updated.overtime_minutes,
-            source: updated.source,
-            updated_at: updated.updated_at,
-          })
-          .eq('id', updated.id)
-      ).catch((e: any) => console.warn('[Supabase Attendance] checkOut update failed:', e));
+      // Shared ingestion path for CHECK_OUT
+      attendanceIngestionService.ingestAttendanceEvent({
+        organizationId: updated.organization_id || getActiveOrgId(),
+        employeeId: updated.employee_id,
+        source: (source as any) || 'WEB',
+        punchType: 'CHECK_OUT',
+        punchTime: nowIso,
+      }).catch(err => console.warn('[Supabase Attendance] checkOut ingestion notice:', err));
     }
 
     return updated;
@@ -942,38 +957,75 @@ export const attendanceApi = {
 
     const existingIdx = list.findIndex(e => (e.employee_id === payload.employeeId || e.employee_code === payload.employeeId) && (e.date === todayStr || (e as any).attendance_date === todayStr));
 
+    const punchIso = payload.punchTime && (payload.punchTime.endsWith('Z') || payload.punchTime.includes('+'))
+      ? payload.punchTime
+      : attendanceTimeService.normalizeDeviceTimestamp(payload.punchTime, 'Asia/Kolkata').eventTimestampUtc;
+
     if (existingIdx >= 0) {
       const existing = list[existingIdx];
-      if (!existing.first_check_in || payload.direction === 'IN') {
-        existing.first_check_in = existing.first_check_in || timeStr;
-        existing.status = 'Present';
-        existing.source = 'BIOMETRIC';
-      } else if (payload.direction === 'OUT') {
-        existing.last_check_out = timeStr;
-        const checkInMins = timeStringToMinutes(existing.first_check_in);
-        const checkOutMins = timeStringToMinutes(timeStr);
-        const calc = processAttendanceStatus(checkInMins, checkOutMins);
-        existing.gross_working_minutes = calc.grossMinutes;
-        existing.net_working_minutes = calc.netMinutes;
-        existing.status = calc.status;
-        existing.source = 'BIOMETRIC';
-      } else {
-        // AUTO Mode: Only set last_check_out if more than 30 mins after first_check_in
+
+      // DUPLICATE CHECK-IN SUPPRESSION & MONITOR MODE:
+      // If employee already has a valid check-in:
+      if (existing.first_check_in) {
         const checkInMins = timeStringToMinutes(existing.first_check_in);
         const currentMins = timeStringToMinutes(timeStr);
-        if (currentMins - checkInMins >= 30) {
+        const elapsedMins = (checkInMins !== null && currentMins !== null) ? (currentMins - checkInMins) : 0;
+
+        // In Monitor Mode, if direction is OUT, or if punch is >= 15 mins after check-in (even if device sent IN/AUTO):
+        if (payload.direction === 'OUT' || elapsedMins >= 15) {
           existing.last_check_out = timeStr;
+          existing.check_out_source = 'BIOMETRIC';
           const calc = processAttendanceStatus(checkInMins, currentMins);
           existing.gross_working_minutes = calc.grossMinutes;
           existing.net_working_minutes = calc.netMinutes;
           existing.status = calc.status;
-          existing.source = 'BIOMETRIC';
+
+          attendanceIngestionService.ingestAttendanceEvent({
+            organizationId: existing.organization_id || getActiveOrgId(),
+            employeeId: payload.employeeId,
+            source: 'BIOMETRIC',
+            punchType: 'CHECK_OUT',
+            verificationMode: (payload.verificationMode as any) || 'BIOMETRIC',
+            punchTime: punchIso,
+            deviceId: payload.deviceName,
+            rawPayload: { ...payload, monitorMode: true, checkInTime: existing.first_check_in },
+          }).catch(err => console.warn('[attendanceApi] biometric monitor mode checkOut notice:', err));
+
+          return existing;
         } else {
-          // Re-affirm check-in
-          existing.source = 'BIOMETRIC';
-          existing.status = existing.status || 'Present';
+          // Rapid duplicate punch within 15 mins: suppress and log diagnostic
+          attendanceIngestionService.ingestAttendanceEvent({
+            organizationId: existing.organization_id || getActiveOrgId(),
+            employeeId: payload.employeeId,
+            source: 'BIOMETRIC',
+            punchType: 'CHECK_IN',
+            verificationMode: (payload.verificationMode as any) || 'BIOMETRIC',
+            punchTime: punchIso,
+            deviceId: payload.deviceName,
+            rawPayload: payload,
+          }).catch(err => console.warn('[attendanceApi] biometric duplicate check-in notice:', err));
+
+          return existing;
         }
+      } else {
+        // Employee record existed as 'Not Checked In' placeholder: this is first valid check-in!
+        existing.first_check_in = timeStr;
+        existing.status = 'Present';
+        existing.source = 'BIOMETRIC';
+        existing.check_in_source = 'BIOMETRIC';
+
+        attendanceIngestionService.ingestAttendanceEvent({
+          organizationId: existing.organization_id || getActiveOrgId(),
+          employeeId: payload.employeeId,
+          source: 'BIOMETRIC',
+          punchType: 'CHECK_IN',
+          verificationMode: (payload.verificationMode as any) || 'BIOMETRIC',
+          punchTime: punchIso,
+          deviceId: payload.deviceName,
+          rawPayload: payload,
+        }).catch(err => console.warn('[attendanceApi] biometric checkIn notice:', err));
       }
+
       existing.updated_at = new Date().toISOString();
       list[existingIdx] = existing;
       saveStorage(STORAGE_KEY_DAILY, list);
@@ -1020,6 +1072,7 @@ export const attendanceApi = {
         overtime_minutes: 0,
         status: 'Present',
         source: 'BIOMETRIC',
+        check_in_source: 'BIOMETRIC',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -1028,19 +1081,17 @@ export const attendanceApi = {
       _dailyCache = null;
       JoyRedis.invalidateLedgerCache(getActiveOrgId()).catch(() => {});
 
-      if (isSupabaseEnabled) {
-        Promise.resolve(
-          supabase.from('attendance_daily').upsert({
-            id: newItem.id,
-            organization_id: getActiveOrgId(),
-            employee_id: newItem.employee_id,
-            attendance_date: todayStr,
-            status: 'PRESENT',
-            first_check_in: timeStr,
-            updated_at: new Date().toISOString(),
-          })
-        ).catch(() => {});
-      }
+      // Ingest first valid check-in through centralized ingestion service
+      attendanceIngestionService.ingestAttendanceEvent({
+        organizationId: getActiveOrgId(),
+        employeeId: payload.employeeId,
+        source: 'BIOMETRIC',
+        punchType: 'CHECK_IN',
+        verificationMode: (payload.verificationMode as any) || 'BIOMETRIC',
+        punchTime: payload.punchTime || new Date().toISOString(),
+        deviceId: payload.deviceName,
+        rawPayload: payload,
+      }).catch(err => console.warn('[attendanceApi] biometric first check-in notice:', err));
 
       return newItem;
     }

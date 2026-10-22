@@ -75,9 +75,10 @@ export class StatutoryRuleEngine {
     coverageWage: number,
     overtimeWage: number = 0,
     historicalStatus: 'NEW_COVERAGE' | 'CONTINUING_COVERAGE' | 'NOT_COVERED' | 'COVERAGE_ENDED' = 'NEW_COVERAGE',
-    config?: Partial<StatutoryConfig>
+    config?: Partial<StatutoryConfig>,
+    esiEligible: boolean = true
   ): ESIStatutoryAssessment {
-    const isEsiEnabled = config?.esi_enabled !== false;
+    const isEsiEnabled = config?.esi_enabled !== false && esiEligible;
     const coverageLimit = config?.esi_wage_ceiling || 21000;
     const employeeRate = config?.esi_employee_percent !== undefined ? config.esi_employee_percent / 100 : 0.0075;
     const employerRate = config?.esi_employer_percent !== undefined ? config.esi_employer_percent / 100 : 0.0325;

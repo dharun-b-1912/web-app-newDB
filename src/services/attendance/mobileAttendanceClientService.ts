@@ -13,6 +13,7 @@ import { api } from '../api';
 import { hrEventBus } from '../hrEventBus';
 import { JoyRedis } from '../../lib/redis';
 import { attendanceDecisionEngine } from './attendanceDecisionEngine';
+import { attendanceIngestionService } from './attendanceIngestionService';
 
 export interface MobileGpsEvidence {
   latitude: number;
@@ -194,8 +195,31 @@ class MobileAttendanceClientService {
       tenantId
     );
 
-    // 4. Trigger Unified Multi-Mode Attendance Decision Engine
-    // Authoritative Single-Session Model • Source Lock • Concurrency Protection
+    // 4. Centralized Cross-Channel Ingestion & Deduplication Check
+    const ingestionResult = await attendanceIngestionService.ingestAttendanceEvent({
+      organizationId: tenantId,
+      employeeId: request.employeeId,
+      source: 'MOBILE',
+      punchType: request.punchType,
+      verificationMode: 'GPS',
+      punchTime: now.toISOString(),
+      idempotencyKey: attemptId,
+      deviceId: request.evidence?.deviceId || 'MOBILE-APP',
+      latitude: userLat,
+      longitude: userLon,
+      rawPayload: {
+        workLocationId: locId,
+        locationName: locName,
+        locationVerificationStatus: effectiveStatus,
+        locationReason: request.locationReason,
+      },
+    });
+
+    if (!ingestionResult.accepted && ingestionResult.outcome === 'DUPLICATE_CHECK_IN') {
+      throw new Error(ingestionResult.user_message || `Check-in already recorded via ${ingestionResult.existing_source || 'another channel'}.`);
+    }
+
+    // Trigger Unified Decision Engine for in-memory session synchronization
     const decisionResult = await attendanceDecisionEngine.processEvent({
       organizationId: tenantId,
       employeeId: request.employeeId,

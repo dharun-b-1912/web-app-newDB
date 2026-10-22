@@ -15,7 +15,7 @@ echo Starting JOY PeopleHR Production Connector Daemon on port 11108 (REST/ADMS)
 echo Target Cloud Domain: app.joypeoplehr.in
 echo.
 
-node scripts/joy-attendance-connector.cjs --prod
+node scripts/workforce-gateway-agent.cjs
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

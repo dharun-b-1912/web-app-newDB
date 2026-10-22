@@ -243,7 +243,7 @@ class AttendanceMisReportService {
       return {
         id: emp.id,
         code: emp.employee_code || 'EMP',
-        name: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee',
+        name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || 'Employee',
         email: emp.work_email || (emp as any).personal_email || `${emp.employee_code?.toLowerCase() || 'emp'}@joypeoplehr.com`,
         department: emp.department_name || (emp as any).department || 'Operations',
         designation: emp.designation_title || (emp as any).designation || 'Staff',
@@ -506,7 +506,7 @@ class AttendanceMisReportService {
         flatExceptions.push({
           employeeId: emp.id,
           employeeCode: emp.employee_code || 'EMP-1024',
-          employeeName: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee',
+          employeeName: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || 'Employee',
           designation: emp.designation_title || (emp as any).designation || 'Software Engineer',
           department: emp.department_name || (emp as any).department || 'Engineering',
           location: (emp as any).work_location || (emp as any).location || 'Coimbatore',

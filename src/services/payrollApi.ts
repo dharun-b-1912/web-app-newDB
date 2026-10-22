@@ -7,6 +7,10 @@
 import {
   SalaryComponent,
   SalaryStructure,
+  StructureComponentRule,
+  ComponentType,
+  ComponentCategory,
+  CalculationType,
   EmployeeSalaryAssignment,
   SalaryRevision,
   PayrollRun,
@@ -41,7 +45,9 @@ import { leaveApi } from './leaveApi';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
 import { hrEventBus } from './hrEventBus';
 import { getActiveOrgId } from './attendance/biometricCommandService';
-import { supabase, isSupabaseEnabled } from '../lib/supabase';
+import { supabase, supabaseAdmin, isSupabaseEnabled, ensureSupabaseSession } from '../lib/supabase';
+
+const dbClient = isSupabaseEnabled ? (supabaseAdmin || supabase) : supabase;
 import { notificationService } from './notification/notificationService';
 import { PayrollCalculationEngine, DetailedEmployeePayrollResult } from './payroll/payrollCalculationEngine';
 import { api } from './api';
@@ -246,32 +252,84 @@ class PayrollApi {
   async getComponentsAsync(tenantId = getActiveOrgId()): Promise<SalaryComponent[]> {
     if (isSupabaseEnabled) {
       try {
-        let q = supabase.from('salary_components').select('*');
+        await ensureSupabaseSession();
+        let q = supabase.from('salary_components').select('*').order('created_at', { ascending: true });
         if (isValidUUID(tenantId)) {
-          q = q.eq('organization_id', tenantId);
+          q = q.or(`organization_id.eq.${tenantId},organization_id.eq.0c621892-e938-4707-9957-13534ea32c19`);
         }
         const { data, error } = await q;
         if (!error && Array.isArray(data) && data.length > 0) {
-          const mapped: SalaryComponent[] = data.map((d: any) => ({
-            id: d.id,
-            tenant_id: d.organization_id || tenantId,
-            code: d.code,
-            name: d.name,
-            type: (d.type === 'EARNING' ? 'Earning' : d.type === 'DEDUCTION' ? 'Deduction' : d.type === 'REIMBURSEMENT' ? 'Reimbursement' : 'Statutory') as any,
-            category: (d.category || 'Basic') as any,
-            calculation_type: (d.calculation_type === 'PERCENTAGE' ? 'PercentageOfBasic' : d.calculation_type === 'FORMULA' ? 'Formula' : 'FixedAmount') as any,
-            default_value: Number(d.default_value || 0),
-            formula_expression: d.formula_expression,
-            is_taxable: d.is_taxable ?? true,
-            is_pf_applicable: d.is_statutory ?? false,
-            is_esi_applicable: d.is_statutory ?? false,
-            is_pt_applicable: d.is_statutory ?? false,
-            is_active: d.is_active ?? true,
-            description: d.description || '',
-            version: 1,
-            status: d.is_active === false ? 'Archived' : 'Active',
-            effective_from: '2026-04-01',
-          }));
+          const mapped: SalaryComponent[] = data.map((d: any) => {
+            let calcType: CalculationType = 'FixedAmount';
+            const fExpr = (d.formula_expression || '').toUpperCase();
+            if (fExpr.includes('* GROSS')) {
+              calcType = 'PercentageOfGross';
+            } else if (fExpr.includes('* BASIC')) {
+              calcType = 'PercentageOfBasic';
+            } else if (fExpr.includes('* CTC')) {
+              calcType = 'PercentageOfCTC';
+            } else if (d.code === 'TDS') {
+              calcType = 'Variable';
+            } else if (d.calculation_type === 'FORMULA' || fExpr.includes('-') || fExpr.includes('+')) {
+              calcType = 'Formula';
+            } else if (d.calculation_type === 'PERCENTAGE') {
+              calcType = 'PercentageOfBasic';
+            } else {
+              calcType = 'FixedAmount';
+            }
+
+            let compType: ComponentType = 'Earning';
+            if (d.type === 'EARNING') compType = 'Earning';
+            else if (d.type === 'DEDUCTION') compType = 'Deduction';
+            else if (d.type === 'STATUTORY') compType = 'Statutory';
+            else if (d.type === 'REIMBURSEMENT') compType = 'Reimbursement';
+            else if (d.type === 'EMPLOYER_CONTRIBUTION') compType = 'Employer Contribution';
+            else compType = (d.type || 'Earning') as ComponentType;
+
+            let compCategory: ComponentCategory = 'Allowance';
+            const cat = (d.category || '').toUpperCase();
+            if (cat === 'BASIC') compCategory = 'Basic';
+            else if (cat === 'HRA') compCategory = 'HRA';
+            else if (cat === 'DA') compCategory = 'DA';
+            else if (cat === 'SPECIAL_ALLOWANCE' || cat === 'SPECIALALLOWANCE') compCategory = 'SpecialAllowance';
+            else if (cat === 'CONVEYANCE') compCategory = 'Conveyance';
+            else if (cat === 'MEDICAL') compCategory = 'Medical';
+            else if (cat === 'PF') compCategory = 'PF';
+            else if (cat === 'ESI') compCategory = 'ESI';
+            else if (cat === 'PROFESSIONAL_TAX' || cat === 'PROFESSIONALTAX') compCategory = 'ProfessionalTax';
+            else if (cat === 'TDS') compCategory = 'TDS';
+            else if (cat === 'LWF') compCategory = 'LWF';
+            else if (cat === 'BONUS') compCategory = 'Bonus';
+            else if (cat === 'INCENTIVE') compCategory = 'Incentive';
+            else if (cat === 'OVERTIME') compCategory = 'Overtime';
+            else if (cat === 'REIMBURSEMENT') compCategory = 'Reimbursement';
+            else if (cat === 'LOAN') compCategory = 'Loan';
+            else if (cat === 'ADVANCE') compCategory = 'Advance';
+            else if (cat === 'GRATUITY') compCategory = 'Gratuity';
+            else if (cat === 'RETIRAL') compCategory = 'Retiral';
+
+            return {
+              id: d.id,
+              tenant_id: d.organization_id || tenantId,
+              code: d.code,
+              name: d.name,
+              type: compType,
+              category: compCategory,
+              calculation_type: calcType,
+              default_value: Number(d.default_value || 0),
+              formula_expression: d.formula_expression || undefined,
+              is_taxable: d.is_taxable ?? true,
+              is_pf_applicable: d.is_statutory || d.is_pf_applicable || d.code === 'BASIC' || d.code === 'PF_EMP',
+              is_esi_applicable: d.is_statutory || d.is_esi_applicable || d.code === 'BASIC' || d.code === 'HRA' || d.code === 'ESI_EMP',
+              is_pt_applicable: d.is_pt_applicable ?? true,
+              is_tds_applicable: d.is_tds_applicable ?? true,
+              is_active: d.is_active ?? true,
+              description: d.description || '',
+              version: d.version || 1,
+              status: d.is_active === false ? 'Archived' : 'Active',
+              effective_from: d.effective_from || '2026-04-01',
+            };
+          });
           setStore(STORAGE_KEYS.COMPONENTS, mapped, tenantId);
           _componentsCache = { data: mapped, timestamp: Date.now() };
           return mapped;
@@ -432,31 +490,98 @@ class PayrollApi {
   async getSalaryStructuresAsync(tenantId = getActiveOrgId()): Promise<SalaryStructure[]> {
     if (isSupabaseEnabled) {
       try {
-        let q = supabase.from('salary_structures').select('*');
+        await ensureSupabaseSession();
+        let q = dbClient.from('salary_structures').select('*').order('created_at', { ascending: true });
         if (isValidUUID(tenantId)) {
-          q = q.eq('organization_id', tenantId);
+          q = q.or(`organization_id.eq.${tenantId},organization_id.eq.0c621892-e938-4707-9957-13534ea32c19`);
         }
         const { data, error } = await q;
         if (!error && Array.isArray(data) && data.length > 0) {
-          const mapped: SalaryStructure[] = data.map((s: any) => ({
-            id: s.id,
-            tenant_id: s.organization_id || tenantId,
-            code: s.code || s.structure_code || '',
-            name: s.name || s.structure_name || '',
-            description: s.description || '',
-            company_id: s.organization_id || 'comp-01',
-            applicable_grade: 'All',
-            base_annual_ctc: 0,
-            components: [],
-            status: s.is_active === false ? 'Archived' : 'Active',
-            version: 1,
-            effective_from: '2026-04-01',
-            created_at: s.created_at,
-            updated_at: s.updated_at,
-          }));
-          setStore(STORAGE_KEYS.STRUCTURES, mapped, tenantId);
-          _structuresCache = { data: mapped, timestamp: Date.now() };
-          return mapped;
+          const structIds = data.map((s: any) => s.id);
+          const { data: compMappings } = await dbClient
+            .from('salary_structure_components')
+            .select('*, salary_components(*)')
+            .in('salary_structure_id', structIds)
+            .order('display_order', { ascending: true });
+
+          const compByStruct: Record<string, StructureComponentRule[]> = {};
+          if (compMappings) {
+            for (const cm of compMappings) {
+              if (!compByStruct[cm.salary_structure_id]) {
+                compByStruct[cm.salary_structure_id] = [];
+              }
+              const comp = cm.salary_components;
+              const fExpr = (cm.formula_expression || '').toUpperCase();
+              const rule: StructureComponentRule = {
+                component_id: cm.salary_component_id,
+                component_code: comp?.code || '',
+                component_name: comp?.name || '',
+                type: (comp?.type === 'EARNING' ? 'Earning' : comp?.type === 'DEDUCTION' ? 'Deduction' : comp?.type === 'STATUTORY' ? 'Statutory' : comp?.type === 'REIMBURSEMENT' ? 'Reimbursement' : comp?.type === 'EMPLOYER_CONTRIBUTION' ? 'Employer Contribution' : (comp?.type || 'Earning')) as any,
+                calculation_type: (
+                  fExpr.includes('* GROSS') ? 'PercentageOfGross'
+                  : fExpr.includes('* BASIC') ? 'PercentageOfBasic'
+                  : fExpr.includes('* CTC') ? 'PercentageOfCTC'
+                  : (fExpr.includes('-') || fExpr.includes('+')) ? 'Formula'
+                  : 'FixedAmount'
+                ),
+                value: Number(cm.value || 0),
+                formula_expression: cm.formula_expression || undefined,
+                display_order: cm.display_order || 1,
+              };
+              compByStruct[cm.salary_structure_id].push(rule);
+            }
+          }
+
+          const STRUCTURE_METADATA_BY_CODE: Record<string, { ctc: number; grade: string }> = {
+            'CORP_EXEC_01': { ctc: 1800000, grade: 'Grade L5 - L6 (Executive Leadership)' },
+            'CORP_TECH_01': { ctc: 960000, grade: 'Grade L3 - L5 (Engineering & Tech)' },
+            'CORP_OPS_01': { ctc: 480000, grade: 'Grade L2 - L4 (Operations & Admin)' },
+            'PLANT_OPS_01': { ctc: 360000, grade: 'Grade L1 - L3 (Plant Operations)' },
+            'CORP_STD_01': { ctc: 600000, grade: 'Grade L1 - L5 (Corporate Standard)' },
+            'ASSOCIATE_STD_20K': { ctc: 240000, grade: 'Grade L1 - L2 (Associate / Entry)' },
+          };
+
+          const mapped: SalaryStructure[] = data.map((s: any) => {
+            const code = s.code || s.structure_code || '';
+            const meta = STRUCTURE_METADATA_BY_CODE[code] || { ctc: 480000, grade: 'All Grades' };
+
+            let parsedMeta: any = null;
+            if (s.description && s.description.includes(' || META:')) {
+              try {
+                parsedMeta = JSON.parse(s.description.split(' || META:')[1]);
+              } catch (_) {}
+            }
+
+            const baseCtc = parsedMeta?.ctc ? Number(parsedMeta.ctc) : (Number(s.base_annual_ctc) > 0 ? Number(s.base_annual_ctc) : meta.ctc);
+            const grade = parsedMeta?.grade || ((s.applicable_grade && s.applicable_grade !== 'All Grades') ? s.applicable_grade : meta.grade);
+            const cleanDesc = s.description ? s.description.split(' || META:')[0].trim() : '';
+
+            return {
+              id: s.id,
+              tenant_id: s.organization_id || tenantId,
+              code,
+              name: s.name || s.structure_name || '',
+              description: cleanDesc,
+              company_id: s.organization_id || 'comp-01',
+              applicable_grade: grade,
+              base_annual_ctc: baseCtc,
+              compensation_basis: parsedMeta?.basis || (code.includes('DAILY') ? 'GROSS_BASED' : 'CTC_INCLUSIVE'),
+              payroll_group: parsedMeta?.payroll_group,
+              department: parsedMeta?.department,
+              components: compByStruct[s.id] || [],
+              status: s.is_active === false ? 'Archived' : 'Active',
+              version: 1,
+              effective_from: '2026-04-01',
+              created_at: s.created_at,
+              updated_at: s.updated_at,
+            };
+          });
+          const cleanMapped = mapped.filter(
+            (s: any) => s.id !== 'str-daily-wage-plant' && s.code !== 'STR-DAILY-PLANT'
+          );
+          setStore(STORAGE_KEYS.STRUCTURES, cleanMapped, tenantId);
+          _structuresCache = { data: cleanMapped, timestamp: Date.now() };
+          return cleanMapped;
         }
       } catch (err) {
         console.warn('[payrollApi] getSalaryStructuresAsync notice:', err);
@@ -467,12 +592,26 @@ class PayrollApi {
 
   getSalaryStructures(tenantId = getActiveOrgId()): SalaryStructure[] {
     if (_structuresCache?.data && _structuresCache.data.length > 0) {
-      return [..._structuresCache.data];
+      const filtered = _structuresCache.data.filter(
+        s => s.id !== 'str-daily-wage-plant' && s.code !== 'STR-DAILY-PLANT'
+      );
+      if (filtered.length !== _structuresCache.data.length) {
+        _structuresCache.data = filtered;
+      }
+      if (filtered.length > 0) {
+        return [...filtered];
+      }
     }
     const list = getStore<SalaryStructure[]>(STORAGE_KEYS.STRUCTURES, [], tenantId);
-    if (list.length > 0) {
-      _structuresCache = { data: list, timestamp: Date.now() };
-      return list;
+    const cleanList = list.filter(
+      s => s.id !== 'str-daily-wage-plant' && s.code !== 'STR-DAILY-PLANT'
+    );
+    if (cleanList.length !== list.length) {
+      setStore(STORAGE_KEYS.STRUCTURES, cleanList, tenantId);
+    }
+    if (cleanList.length > 0) {
+      _structuresCache = { data: cleanList, timestamp: Date.now() };
+      return cleanList;
     }
     if (isSupabaseEnabled && !_structuresInFlight) {
       _structuresInFlight = this.getSalaryStructuresAsync(tenantId).finally(() => {
@@ -482,20 +621,147 @@ class PayrollApi {
 
     const initialStructures: SalaryStructure[] = [
       {
-        id: 'str-corp-std',
+        id: '91377446-5b40-448c-b112-9b0fa418af50',
+        tenant_id: tenantId,
+        code: 'ASSOCIATE_STD_20K',
+        name: 'Associate / Entry Level CTC Structure (₹20,000/mo)',
+        description: 'Standard ₹20,000 monthly CTC structure: 50% Basic (₹10,000), 40% HRA (₹4,000), Conveyance (₹1,600), Medical (₹1,250), Special Allowance (₹3,150) with statutory EPF, ESIC & PT',
+        company_id: 'comp-01',
+        applicable_grade: 'Grade L1 - L2 (Associate / Entry)',
+        base_annual_ctc: 240000,
+        components: [
+          { component_id: 'cmp-basic', component_code: 'BASIC', component_name: 'Basic Salary', type: 'Earning', calculation_type: 'PercentageOfGross', value: 50, display_order: 1 },
+          { component_id: 'cmp-hra', component_code: 'HRA', component_name: 'House Rent Allowance', type: 'Earning', calculation_type: 'PercentageOfBasic', value: 40, display_order: 2 },
+          { component_id: 'cmp-sa', component_code: 'SA', component_name: 'Special Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 3150, display_order: 3 },
+          { component_id: 'cmp-conv', component_code: 'CONV', component_name: 'Conveyance Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 1600, display_order: 4 },
+          { component_id: 'cmp-med', component_code: 'MED', component_name: 'Medical Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 1250, display_order: 5 },
+          { component_id: 'cmp-pf', component_code: 'PF_EMP', component_name: 'Employee Provident Fund (EPF 12%)', type: 'Statutory', calculation_type: 'PercentageOfBasic', value: 12, display_order: 6 },
+          { component_id: 'cmp-esi', component_code: 'ESI_EMP', component_name: 'Employee State Insurance (ESIC 0.75%)', type: 'Statutory', calculation_type: 'PercentageOfGross', value: 0.75, display_order: 7 },
+          { component_id: 'cmp-pt', component_code: 'PT', component_name: 'Professional Tax (PT)', type: 'Statutory', calculation_type: 'FixedAmount', value: 208, display_order: 8 },
+        ],
+        status: 'Active',
+        version: 1,
+        effective_from: '2026-04-01',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'e5119489-d5fc-4eae-9d84-c2df2b51dc9d',
         tenant_id: tenantId,
         code: 'CORP_STD_01',
         name: 'Corporate Standard CTC Structure',
         description: 'Standard corporate wage package: 50% Basic, 40% HRA, Special & Conveyance allowances',
         company_id: 'comp-01',
-        applicable_grade: 'Grade L1 - L5',
-        base_annual_ctc: 1200000,
+        applicable_grade: 'Grade L1 - L5 (Corporate Standard)',
+        base_annual_ctc: 600000,
         components: [
-          { component_id: 'cmp-basic', component_code: 'BASIC', component_name: 'Basic Salary', type: 'Earning', calculation_type: 'PercentageOfGross', value: 50 },
-          { component_id: 'cmp-hra', component_code: 'HRA', component_name: 'House Rent Allowance', type: 'Earning', calculation_type: 'PercentageOfBasic', value: 40 },
-          { component_id: 'cmp-sa', component_code: 'SA', component_name: 'Special Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 15000 },
-          { component_id: 'cmp-med', component_code: 'MED', component_name: 'Medical Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 2500 },
-          { component_id: 'cmp-conv', component_code: 'CONV', component_name: 'Conveyance Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 1600 },
+          { component_id: 'cmp-basic', component_code: 'BASIC', component_name: 'Basic Salary', type: 'Earning', calculation_type: 'PercentageOfGross', value: 50, display_order: 1 },
+          { component_id: 'cmp-hra', component_code: 'HRA', component_name: 'House Rent Allowance', type: 'Earning', calculation_type: 'PercentageOfBasic', value: 40, display_order: 2 },
+          { component_id: 'cmp-sa', component_code: 'SA', component_name: 'Special Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 15000, display_order: 3 },
+          { component_id: 'cmp-med', component_code: 'MED', component_name: 'Medical Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 2500, display_order: 4 },
+          { component_id: 'cmp-conv', component_code: 'CONV', component_name: 'Conveyance Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 1600, display_order: 5 },
+          { component_id: 'cmp-pf', component_code: 'PF_EMP', component_name: 'Employee Provident Fund (EPF 12%)', type: 'Statutory', calculation_type: 'PercentageOfBasic', value: 12, display_order: 6 },
+          { component_id: 'cmp-esi', component_code: 'ESI_EMP', component_name: 'Employee State Insurance (ESIC 0.75%)', type: 'Statutory', calculation_type: 'PercentageOfGross', value: 0.75, display_order: 7 },
+          { component_id: 'cmp-pt', component_code: 'PT', component_name: 'Professional Tax (PT)', type: 'Statutory', calculation_type: 'FixedAmount', value: 200, display_order: 8 },
+        ],
+        status: 'Active',
+        version: 1,
+        effective_from: '2026-04-01',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'b96fd046-39dd-48ae-bf0f-910525d045a5',
+        tenant_id: tenantId,
+        code: 'CORP_EXEC_01',
+        name: 'Corporate Executive & Leadership CTC',
+        description: 'L5 Leadership CTC Structure with Executive Allowances',
+        company_id: 'comp-01',
+        applicable_grade: 'Grade L5 - L6 (Executive Leadership)',
+        base_annual_ctc: 1800000,
+        components: [
+          { component_id: 'cmp-basic', component_code: 'BASIC', component_name: 'Basic Salary', type: 'Earning', calculation_type: 'PercentageOfGross', value: 50, display_order: 1 },
+          { component_id: 'cmp-hra', component_code: 'HRA', component_name: 'House Rent Allowance', type: 'Earning', calculation_type: 'PercentageOfBasic', value: 50, display_order: 2 },
+          { component_id: 'cmp-sa', component_code: 'SA', component_name: 'Special Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 20000, display_order: 3 },
+          { component_id: 'cmp-comm', component_code: 'COMM_ALLOW', component_name: 'Communication & Internet Reimbursement', type: 'Reimbursement', calculation_type: 'FixedAmount', value: 3000, display_order: 4 },
+          { component_id: 'cmp-med', component_code: 'MED', component_name: 'Medical Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 2500, display_order: 5 },
+          { component_id: 'cmp-conv', component_code: 'CONV', component_name: 'Conveyance Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 1600, display_order: 6 },
+          { component_id: 'cmp-pf', component_code: 'PF_EMP', component_name: 'Employee Provident Fund (EPF 12%)', type: 'Statutory', calculation_type: 'PercentageOfBasic', value: 12, display_order: 7 },
+          { component_id: 'cmp-pt', component_code: 'PT', component_name: 'Professional Tax (PT)', type: 'Statutory', calculation_type: 'FixedAmount', value: 208, display_order: 8 },
+        ],
+        status: 'Active',
+        version: 1,
+        effective_from: '2026-04-01',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: '23b92bbd-4b58-4186-83d4-70f5dd019c16',
+        tenant_id: tenantId,
+        code: 'CORP_TECH_01',
+        name: 'Engineering & Technology CTC Structure',
+        description: 'Standard software and engineering salary structure',
+        company_id: 'comp-01',
+        applicable_grade: 'Grade L3 - L5 (Engineering & Tech)',
+        base_annual_ctc: 960000,
+        components: [
+          { component_id: 'cmp-basic', component_code: 'BASIC', component_name: 'Basic Salary', type: 'Earning', calculation_type: 'PercentageOfGross', value: 50, display_order: 1 },
+          { component_id: 'cmp-hra', component_code: 'HRA', component_name: 'House Rent Allowance', type: 'Earning', calculation_type: 'PercentageOfBasic', value: 40, display_order: 2 },
+          { component_id: 'cmp-sa', component_code: 'SA', component_name: 'Special Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 15000, display_order: 3 },
+          { component_id: 'cmp-comm', component_code: 'COMM_ALLOW', component_name: 'Communication & Internet Reimbursement', type: 'Reimbursement', calculation_type: 'FixedAmount', value: 2000, display_order: 4 },
+          { component_id: 'cmp-med', component_code: 'MED', component_name: 'Medical Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 2500, display_order: 5 },
+          { component_id: 'cmp-conv', component_code: 'CONV', component_name: 'Conveyance Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 1600, display_order: 6 },
+          { component_id: 'cmp-pf', component_code: 'PF_EMP', component_name: 'Employee Provident Fund (EPF 12%)', type: 'Statutory', calculation_type: 'PercentageOfBasic', value: 12, display_order: 7 },
+          { component_id: 'cmp-pt', component_code: 'PT', component_name: 'Professional Tax (PT)', type: 'Statutory', calculation_type: 'FixedAmount', value: 208, display_order: 8 },
+        ],
+        status: 'Active',
+        version: 1,
+        effective_from: '2026-04-01',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: '560388d4-15f4-46c5-8156-7cc02e64136d',
+        tenant_id: tenantId,
+        code: 'CORP_OPS_01',
+        name: 'Operations & Business Staff CTC',
+        description: 'Operations, HR, Finance and Administration CTC structure',
+        company_id: 'comp-01',
+        applicable_grade: 'Grade L2 - L4 (Operations & Admin)',
+        base_annual_ctc: 480000,
+        components: [
+          { component_id: 'cmp-basic', component_code: 'BASIC', component_name: 'Basic Salary', type: 'Earning', calculation_type: 'PercentageOfGross', value: 50, display_order: 1 },
+          { component_id: 'cmp-hra', component_code: 'HRA', component_name: 'House Rent Allowance', type: 'Earning', calculation_type: 'PercentageOfBasic', value: 40, display_order: 2 },
+          { component_id: 'cmp-sa', component_code: 'SA', component_name: 'Special Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 10000, display_order: 3 },
+          { component_id: 'cmp-conv', component_code: 'CONV', component_name: 'Conveyance Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 1600, display_order: 4 },
+          { component_id: 'cmp-med', component_code: 'MED', component_name: 'Medical Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 1250, display_order: 5 },
+          { component_id: 'cmp-pf', component_code: 'PF_EMP', component_name: 'Employee Provident Fund (EPF 12%)', type: 'Statutory', calculation_type: 'PercentageOfBasic', value: 12, display_order: 6 },
+          { component_id: 'cmp-pt', component_code: 'PT', component_name: 'Professional Tax (PT)', type: 'Statutory', calculation_type: 'FixedAmount', value: 208, display_order: 7 },
+        ],
+        status: 'Active',
+        version: 1,
+        effective_from: '2026-04-01',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: '38392a24-88ca-4044-b27e-6cedd542ef6e',
+        tenant_id: tenantId,
+        code: 'PLANT_OPS_01',
+        name: 'Plant Operations & Manufacturing Structure',
+        description: 'Manufacturing, technical supervisors and plant staff',
+        company_id: 'comp-01',
+        applicable_grade: 'Grade L1 - L3 (Plant Operations)',
+        base_annual_ctc: 360000,
+        components: [
+          { component_id: 'cmp-basic', component_code: 'BASIC', component_name: 'Basic Salary', type: 'Earning', calculation_type: 'PercentageOfGross', value: 50, display_order: 1 },
+          { component_id: 'cmp-hra', component_code: 'HRA', component_name: 'House Rent Allowance', type: 'Earning', calculation_type: 'PercentageOfBasic', value: 40, display_order: 2 },
+          { component_id: 'cmp-sa', component_code: 'SA', component_name: 'Special Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 5000, display_order: 3 },
+          { component_id: 'cmp-att', component_code: 'ATT_BONUS', component_name: 'Attendance Performance Bonus', type: 'Earning', calculation_type: 'FixedAmount', value: 1000, display_order: 4 },
+          { component_id: 'cmp-uniform', component_code: 'UNIFORM_ALLOW', component_name: 'Uniform & Washing Allowance', type: 'Earning', calculation_type: 'FixedAmount', value: 500, display_order: 5 },
+          { component_id: 'cmp-pf', component_code: 'PF_EMP', component_name: 'Employee Provident Fund (EPF 12%)', type: 'Statutory', calculation_type: 'PercentageOfBasic', value: 12, display_order: 6 },
+          { component_id: 'cmp-esi', component_code: 'ESI_EMP', component_name: 'Employee State Insurance (ESIC 0.75%)', type: 'Statutory', calculation_type: 'PercentageOfGross', value: 0.75, display_order: 7 },
+          { component_id: 'cmp-pt', component_code: 'PT', component_name: 'Professional Tax (PT)', type: 'Statutory', calculation_type: 'FixedAmount', value: 208, display_order: 8 },
         ],
         status: 'Active',
         version: 1,
@@ -508,7 +774,7 @@ class PayrollApi {
     return initialStructures;
   }
 
-  saveSalaryStructure(structure: SalaryStructure, tenantId = getActiveOrgId()): SalaryStructure {
+  async saveSalaryStructureAsync(structure: SalaryStructure, tenantId = getActiveOrgId()): Promise<SalaryStructure> {
     const list = this.getSalaryStructures(tenantId);
     const idx = list.findIndex(s => s.id === structure.id);
     let saved: SalaryStructure;
@@ -540,20 +806,92 @@ class PayrollApi {
     }
 
     if (isSupabaseEnabled) {
-      Promise.resolve(
-        supabase.from('salary_structures').upsert({
+      try {
+        const metaObj = {
+          ctc: saved.base_annual_ctc,
+          grade: saved.applicable_grade,
+          basis: saved.compensation_basis || 'CTC_INCLUSIVE',
+          payroll_group: saved.payroll_group || '',
+          department: saved.department || '',
+        };
+        const baseDesc = (saved.description || '').split(' || META:')[0].trim();
+        const fullDesc = `${baseDesc} || META:${JSON.stringify(metaObj)}`;
+
+        // 1. Authoritative upsert into salary_structures SQL table
+        await dbClient.from('salary_structures').upsert({
           id: saved.id,
           organization_id: tenantId,
           code: saved.code,
           name: saved.name,
-          description: saved.description || '',
+          description: fullDesc,
           is_active: saved.status === 'Active',
           updated_at: new Date().toISOString(),
-        })
-      ).catch((e: any) => console.warn('[Supabase Payroll] upsert structure notice:', e));
+        });
+
+        // 2. Resolve component IDs from salary_components SQL table
+        const { data: dbComps } = await dbClient.from('salary_components').select('id, code');
+        const codeToIdMap = new Map<string, string>();
+        if (dbComps) {
+          dbComps.forEach((c: any) => codeToIdMap.set(c.code.toUpperCase(), c.id));
+        }
+
+        // 3. Sync all components in salary_structure_components SQL table
+        if (saved.components && saved.components.length > 0) {
+          await dbClient.from('salary_structure_components').delete().eq('salary_structure_id', saved.id);
+
+          const rowsToInsert = saved.components.map((c, i) => {
+            const rawCode = (c.component_code || (c as any).code || '').toUpperCase();
+            const resolvedCode =
+              rawCode === 'SPL_ALLOW' || rawCode === 'SPECIAL_ALLOWANCE' ? 'SA' :
+              rawCode === 'ER_PF' ? 'PF_ER' :
+              rawCode === 'ER_ESI' ? 'ESI_ER' :
+              rawCode === 'LWF' ? 'LWF_EMP' :
+              rawCode;
+
+            const compId = codeToIdMap.get(resolvedCode) || codeToIdMap.get(rawCode) || c.component_id;
+            const fExpr = c.formula_expression || (
+              c.calculation_type === 'PercentageOfBasic' ? `${(c.value / 100).toFixed(2)} * BASIC` :
+              c.calculation_type === 'PercentageOfGross' ? `${(c.value / 100).toFixed(2)} * GROSS` :
+              c.calculation_type === 'PercentageOfCTC' ? `${(c.value / 100).toFixed(2)} * CTC` :
+              `${c.value}`
+            );
+
+            return {
+              organization_id: tenantId,
+              salary_structure_id: saved.id,
+              salary_component_id: compId,
+              value: c.value,
+              formula_expression: fExpr,
+              display_order: c.display_order || i + 1,
+            };
+          });
+
+          await dbClient.from('salary_structure_components').insert(rowsToInsert);
+        }
+
+        // 4. Authoritatively sync employee_salary_assignments in SQL for assigned employees
+        const monthlyGross = Math.round(saved.base_annual_ctc / 12);
+        await dbClient.from('employee_salary_assignments')
+          .update({
+            annual_ctc: saved.base_annual_ctc,
+            monthly_gross: monthlyGross,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('salary_structure_id', saved.id);
+
+      } catch (err) {
+        console.warn('[Supabase Payroll] saveSalaryStructureAsync SQL error:', err);
+      }
     }
 
+    _structuresCache = null;
+    hrEventBus.emit('salary.structure.saved', saved);
     return saved;
+  }
+
+  saveSalaryStructure(structure: SalaryStructure, tenantId = getActiveOrgId()): SalaryStructure {
+    this.saveSalaryStructureAsync(structure, tenantId).catch(err => console.warn(err));
+    return structure;
   }
 
   duplicateSalaryStructure(structureId: string, newCode: string, newName: string, tenantId = getActiveOrgId()): SalaryStructure {
@@ -596,31 +934,80 @@ class PayrollApi {
     return true;
   }
 
+  async bulkAssignSalaryStructureAsync(
+    employeeIds: string[],
+    structureId: string,
+    effectiveFrom: string,
+    tenantId = getActiveOrgId()
+  ): Promise<{ assignedCount: number }> {
+    const structures = await this.getSalaryStructuresAsync(tenantId);
+    const targetStructure = structures.find(s => s.id === structureId);
+    if (!targetStructure) throw new Error('Target structure not found');
+
+    const monthlyGross = Math.round(targetStructure.base_annual_ctc / 12);
+    let count = 0;
+
+    if (isSupabaseEnabled) {
+      try {
+        for (const empId of employeeIds) {
+          const { data: existing } = await dbClient
+            .from('employee_salary_assignments')
+            .select('id')
+            .eq('employee_id', empId)
+            .maybeSingle();
+
+          if (existing?.id) {
+            await dbClient.from('employee_salary_assignments').update({
+              salary_structure_id: targetStructure.id,
+              annual_ctc: targetStructure.base_annual_ctc,
+              monthly_gross: monthlyGross,
+              effective_from: effectiveFrom,
+              updated_at: new Date().toISOString(),
+            }).eq('id', existing.id);
+          } else {
+            await dbClient.from('employee_salary_assignments').insert({
+              organization_id: tenantId,
+              employee_id: empId,
+              salary_structure_id: targetStructure.id,
+              annual_ctc: targetStructure.base_annual_ctc,
+              monthly_gross: monthlyGross,
+              effective_from: effectiveFrom,
+              is_active: true,
+            });
+          }
+          count++;
+        }
+      } catch (err) {
+        console.warn('[payrollApi] bulkAssignSalaryStructureAsync SQL notice:', err);
+      }
+    }
+
+    const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+    salaries.forEach(sal => {
+      if (employeeIds.includes(sal.employee_id)) {
+        sal.salary_structure_id = targetStructure.id;
+        sal.salary_structure_name = targetStructure.name;
+        sal.annual_ctc = targetStructure.base_annual_ctc;
+        sal.gross_monthly = monthlyGross;
+        sal.effective_from = effectiveFrom;
+        sal.status = 'Active';
+        sal.updated_at = new Date().toISOString();
+      }
+    });
+    setStore(STORAGE_KEYS.SALARIES, salaries, tenantId);
+    hrEventBus.emit('payroll.salary.updated', { structureId, tenantId });
+
+    return { assignedCount: count || employeeIds.length };
+  }
+
   bulkAssignSalaryStructure(
     employeeIds: string[],
     structureId: string,
     effectiveFrom: string,
     tenantId = getActiveOrgId()
   ): { assignedCount: number } {
-    const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
-    const structures = this.getSalaryStructures(tenantId);
-    const targetStructure = structures.find(s => s.id === structureId);
-    if (!targetStructure) throw new Error('Target structure not found');
-
-    let count = 0;
-    salaries.forEach(sal => {
-      if (employeeIds.includes(sal.employee_id)) {
-        sal.salary_structure_id = targetStructure.id;
-        sal.salary_structure_name = targetStructure.name;
-        sal.effective_from = effectiveFrom;
-        sal.status = 'Active';
-        sal.updated_at = new Date().toISOString();
-        count++;
-      }
-    });
-
-    setStore(STORAGE_KEYS.SALARIES, salaries, tenantId);
-    return { assignedCount: count };
+    this.bulkAssignSalaryStructureAsync(employeeIds, structureId, effectiveFrom, tenantId).catch(err => console.warn(err));
+    return { assignedCount: employeeIds.length };
   }
 
   testRuleSimulation(employeeId: string, tenantId = getActiveOrgId()): {
@@ -630,7 +1017,7 @@ class PayrollApi {
   } {
     const rules = this.getOrgTagRuleAssignments(tenantId);
     const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
-    const sal = salaries.find(s => s.employee_id === employeeId);
+    const sal = salaries.find(s => s.employee_id === employeeId || s.employee_code === employeeId);
 
     const evaluated = rules.map(r => {
       // Check department & grade match
@@ -661,53 +1048,49 @@ class PayrollApi {
   }
 
   async getEmployeeSalaries(tenantId = getActiveOrgId()): Promise<EmployeeSalaryAssignment[]> {
-    let stored = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+    let dbAssignmentsMap = new Map<string, any>();
+    let dbBanksMap = new Map<string, any>();
+    let dbStatsMap = new Map<string, any>();
+    let dbStructuresMap = new Map<string, any>();
 
     if (isSupabaseEnabled) {
       try {
-        let q = supabase.from('employee_salary_assignments').select('*');
-        if (isValidUUID(tenantId)) {
-          q = q.eq('organization_id', tenantId);
+        const [assignRes, bankRes, statRes, structRes] = await Promise.all([
+          dbClient.from('employee_salary_assignments').select('*').eq('organization_id', tenantId),
+          dbClient.from('employee_bank_details').select('*').eq('organization_id', tenantId),
+          dbClient.from('employee_statutory_details').select('*').eq('organization_id', tenantId),
+          dbClient.from('salary_structures').select('*').eq('organization_id', tenantId),
+        ]);
+
+        if (Array.isArray(assignRes.data)) {
+          assignRes.data.forEach((d: any) => dbAssignmentsMap.set(d.employee_id, d));
         }
-        let { data, error } = await q;
-        if (!error && Array.isArray(data) && data.length > 0) {
-          const dbMap = new Map(data.map((d: any) => [d.employee_id, d]));
-          stored = stored.map(s => {
-            const db = dbMap.get(s.employee_id);
-            if (db) {
-              return {
-                ...s,
-                annual_ctc: Number(db.annual_ctc) || s.annual_ctc,
-                gross_monthly: Number(db.gross_monthly) || s.gross_monthly,
-                basic_monthly: Number(db.basic_monthly) || s.basic_monthly,
-                net_monthly_estimate: Number(db.net_monthly_estimate) || s.net_monthly_estimate,
-                bank_name: db.bank_name || s.bank_name,
-                account_number: db.account_number || s.account_number,
-                ifsc_code: db.ifsc_code || s.ifsc_code,
-                pan_number: db.pan_number || s.pan_number,
-                pf_uan: db.pf_uan || s.pf_uan,
-                esic_number: db.esic_number || s.esic_number,
-              };
-            }
-            return s;
+        if (Array.isArray(bankRes.data)) {
+          bankRes.data.forEach((d: any) => dbBanksMap.set(d.employee_id, d));
+        }
+        if (Array.isArray(statRes.data)) {
+          statRes.data.forEach((d: any) => dbStatsMap.set(d.employee_id, d));
+        }
+        if (Array.isArray(structRes.data)) {
+          structRes.data.forEach((d: any) => {
+            dbStructuresMap.set(d.id, d);
+            if (d.code) dbStructuresMap.set(d.code, d);
           });
         }
       } catch (err) {
-        console.warn('[payrollApi] getEmployeeSalaries db notice:', err);
+        console.warn('[payrollApi] getEmployeeSalaries live Supabase fetch notice:', err);
       }
     }
 
     // Fetch live active employees to ensure every real tenant employee has an accurate salary mapping
     const activeCompany = api.getActiveCompany();
     const realEmployees = await api.getEmployees(activeCompany?.id);
-    const structures = this.getSalaryStructures(tenantId);
+    const structures = await this.getSalaryStructuresAsync(tenantId);
     const defaultStructure = structures[0];
 
     const updatedList: EmployeeSalaryAssignment[] = [];
-    const storedMap = new Map(stored.map(s => [s.employee_id, s]));
 
-    // Build a department-ID → department-name lookup from the local cache so that
-    // we NEVER render a raw UUID as a human-readable department name on a payslip.
+    // Build a department-ID → department-name lookup
     const _deptLookupRaw = (() => {
       try {
         const raw = (typeof localStorage !== 'undefined')
@@ -729,59 +1112,52 @@ class PayrollApi {
       return 'Not Assigned';
     };
 
-
     for (const emp of realEmployees) {
       if (emp.status === 'Terminated' || emp.status === 'Exited') continue;
 
-      const existing = storedMap.get(emp.id);
+      const dbAssign = dbAssignmentsMap.get(emp.id);
+      const dbBank = dbBanksMap.get(emp.id);
+      const dbStat = dbStatsMap.get(emp.id);
 
-      // Extract real CTC from employee master / compensation records
-      const empMasterCtc = Number(
-        emp.employment?.ctc ||
-        emp.employment?.annual_ctc ||
-        (emp as any).ctc ||
-        (emp as any).annual_ctc ||
-        (emp.profile as any)?.ctc ||
-        (emp as any).compensation?.annual_ctc ||
-        0
-      );
+      // Extract real CTC from employee master or Supabase salary assignment
+      const annualCtc = Number(dbAssign?.annual_ctc) > 0
+        ? Number(dbAssign.annual_ctc)
+        : Number(emp.employment?.ctc || emp.employment?.annual_ctc || (emp as any).ctc || 480000);
 
-      const effectiveAnnualCtc = empMasterCtc > 0 
-        ? empMasterCtc 
-        : (existing?.annual_ctc && existing.annual_ctc > 0 
-          ? existing.annual_ctc 
-          : (defaultStructure?.base_annual_ctc || 600000));
+      const grossMonthly = Number(dbAssign?.monthly_gross) > 0
+        ? Number(dbAssign.monthly_gross)
+        : Math.round(annualCtc / 12);
 
-      const structId = existing?.salary_structure_id || defaultStructure?.id || 'str-corp-std';
-      const structName = existing?.salary_structure_name || defaultStructure?.name || 'Corporate Standard CTC Structure';
+      const isPf = dbStat?.is_pf_eligible !== undefined ? dbStat.is_pf_eligible : (emp.statutory?.is_pf_eligible !== undefined ? emp.statutory.is_pf_eligible : true);
+      const isEsi = dbStat?.is_esi_eligible !== undefined ? dbStat.is_esi_eligible : (emp.statutory?.is_esi_eligible !== undefined ? emp.statutory.is_esi_eligible : false);
+      const isPt = dbStat?.is_pt_eligible !== undefined ? dbStat.is_pt_eligible : (emp.statutory?.is_pt_eligible !== undefined ? emp.statutory.is_pt_eligible : true);
+      const isLwf = dbStat?.is_lwf_eligible !== undefined ? dbStat.is_lwf_eligible : (emp.statutory?.is_lwf_eligible !== undefined ? emp.statutory.is_lwf_eligible : false);
 
-      const grossMonthly = (existing?.gross_monthly && existing.gross_monthly > 0)
-        ? existing.gross_monthly
-        : Math.round(effectiveAnnualCtc / 12);
-      const basicMonthly = (existing?.basic_monthly && existing.basic_monthly > 0)
-        ? existing.basic_monthly
-        : Math.round(grossMonthly * 0.5);
+      const basicMonthly = Math.round(grossMonthly * 0.5);
       const halfYearGross = grossMonthly * 6;
-      const ptMonthly = halfYearGross > 75000 ? 208 : halfYearGross > 60000 ? 171 : halfYearGross > 45000 ? 115 : halfYearGross > 30000 ? 53 : halfYearGross > 21000 ? 23 : 0;
-      const pfMonthly = Math.round(Math.min(basicMonthly, 15000) * 0.12);
-      const esiMonthly = grossMonthly <= 21000 ? Math.round(grossMonthly * 0.0075) : 0;
-      const netEstimated = (existing?.net_monthly_estimate && existing.net_monthly_estimate > 0)
-        ? existing.net_monthly_estimate
-        : Math.max(0, grossMonthly - pfMonthly - esiMonthly - ptMonthly);
+      const ptMonthly = isPt ? (halfYearGross > 75000 ? 208 : halfYearGross > 60000 ? 171 : halfYearGross > 45000 ? 115 : halfYearGross > 30000 ? 53 : halfYearGross > 21000 ? 23 : 0) : 0;
+      const pfMonthly = isPf ? Math.round(Math.min(basicMonthly, 15000) * 0.12) : 0;
+      const esiMonthly = isEsi && grossMonthly <= 21000 ? Math.round(grossMonthly * 0.0075) : 0;
+      const lwfMonthly = isLwf ? 20 : 0;
+      const netEstimated = Math.max(0, grossMonthly - pfMonthly - esiMonthly - ptMonthly - lwfMonthly);
 
-      // Extract real-time bank details
-      const empBankName = emp.bank?.bank_name || emp.profile?.bank_name || (emp.employment as any)?.bank_name || existing?.bank_name || 'HDFC Bank Ltd';
-      const empAccNo = emp.bank?.account_number || (emp.employment as any)?.bank_account_no || emp.profile?.bank_account_masked || existing?.account_number || '';
-      const empIfsc = emp.bank?.ifsc || emp.bank?.ifsc_code || (emp.employment as any)?.bank_ifsc || existing?.ifsc_code || '';
+      // Extract real-time bank details from employee_bank_details table
+      const empBankName = dbBank?.bank_name || emp.bank?.bank_name || 'HDFC Bank Ltd';
+      const empAccNo = dbBank?.account_number || emp.bank?.account_number || '';
+      const empIfsc = dbBank?.ifsc_code || emp.bank?.ifsc || 'HDFC0001242';
 
-      // Extract real-time statutory numbers
-      const empPan = emp.statutory?.pan || emp.statutory?.pan_number || (emp.profile as any)?.pan_number || existing?.pan_number || '';
-      const empUan = emp.statutory?.uan || emp.statutory?.uan_number || (emp.employment as any)?.pf_uan || (emp.profile as any)?.uan || existing?.pf_uan || '';
-      const empEsic = emp.statutory?.esi_number || (emp.employment as any)?.esi_number || (emp.profile as any)?.esi_number || existing?.esic_number || '';
-      const effectiveFrom = emp.employment?.doj || (emp.employment as any)?.start_date || existing?.effective_from || '2026-04-01';
+      // Extract real-time statutory numbers from employee_statutory_details table
+      const empPan = dbStat?.pan_number || emp.statutory?.pan || '';
+      const empUan = dbStat?.uan_number || emp.statutory?.uan || '';
+      const empEsic = dbStat?.esi_number || emp.statutory?.esi_number || '';
+      const effectiveFrom = dbAssign?.effective_from || emp.employment?.doj || '2026-04-01';
+
+      const structId = dbAssign?.salary_structure_id || (emp.employment as any)?.salary_structure_code || (emp.employment as any)?.salary_structure_id || defaultStructure?.id || 'str-corp-std';
+      const structObj = dbStructuresMap.get(structId) || dbStructuresMap.get((emp.employment as any)?.salary_structure_code);
+      const structName = structObj?.name || (emp.employment as any)?.salary_structure_name || defaultStructure?.name || 'Corporate Standard CTC Structure';
 
       updatedList.push({
-        id: existing?.id || `sal-${emp.id}`,
+        id: dbAssign?.id || `sal-${emp.id}`,
         tenant_id: tenantId,
         employee_id: emp.id,
         employee_code: emp.employee_code || `WF-${emp.id}`,
@@ -790,7 +1166,7 @@ class PayrollApi {
         designation: emp.designation_title || 'Staff',
         salary_structure_id: structId,
         salary_structure_name: structName,
-        annual_ctc: effectiveAnnualCtc,
+        annual_ctc: annualCtc,
         gross_monthly: grossMonthly,
         basic_monthly: basicMonthly,
         net_monthly_estimate: netEstimated,
@@ -802,68 +1178,83 @@ class PayrollApi {
         pf_uan: empUan,
         esic_number: empEsic,
         effective_from: effectiveFrom,
-        pf_applicable: (existing as any)?.pf_applicable !== false,
-        esi_applicable: (existing as any)?.esi_applicable !== false && grossMonthly <= 21000,
-        pt_applicable: (existing as any)?.pt_applicable !== false,
-        status: 'Active',
+        pf_applicable: isPf,
+        esi_applicable: isEsi,
+        pt_applicable: isPt,
+        lwf_applicable: isLwf,
+        status: ((emp.status === 'Inactive' || emp.status === 'Suspended' || (emp as any).employment_status === 'SUSPENDED') ? 'Inactive' : 'Active') as 'Active' | 'Inactive',
         updated_at: new Date().toISOString(),
       });
-    }
-
-    // Retain any manually or programmatically assigned salaries not present in mock company list
-    for (const s of stored) {
-      if (!updatedList.some(u => u.employee_id === s.employee_id)) {
-        updatedList.push(s);
-      }
     }
 
     setStore(STORAGE_KEYS.SALARIES, updatedList, tenantId);
     return updatedList;
   }
 
-saveEmployeeSalary(assignment: EmployeeSalaryAssignment, tenantId = getActiveOrgId()): EmployeeSalaryAssignment {
-  const list = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
-  const idx = list.findIndex(s => s.employee_id === assignment.employee_id);
-  if (idx >= 0) {
-    list[idx] = assignment;
-  } else {
-    list.push(assignment);
-  }
-  setStore(STORAGE_KEYS.SALARIES, list, tenantId);
-  hrEventBus.emit('payroll.salary.updated', { assignment, tenantId });
+  async saveEmployeeSalaryAsync(assignment: EmployeeSalaryAssignment, tenantId = getActiveOrgId()): Promise<EmployeeSalaryAssignment> {
+    const list = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+    const idx = list.findIndex(s => s.employee_id === assignment.employee_id);
+    if (idx >= 0) {
+      list[idx] = assignment;
+    } else {
+      list.push(assignment);
+    }
+    setStore(STORAGE_KEYS.SALARIES, list, tenantId);
+    hrEventBus.emit('payroll.salary.updated', { assignment, tenantId });
 
-  if (isSupabaseEnabled) {
-    (async () => {
+    if (isSupabaseEnabled) {
       try {
         let structureId = assignment.salary_structure_id;
         if (!structureId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(structureId)) {
-          const { data: sList } = await supabase.from('salary_structures').select('id').limit(1);
+          const { data: sList } = await dbClient.from('salary_structures').select('id').limit(1);
           if (sList && sList.length > 0) {
             structureId = sList[0].id;
           }
         }
-        if (structureId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(structureId)) {
-          await supabase.from('employee_salary_assignments').upsert({
-            id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(assignment.id) ? assignment.id : undefined,
+
+        const gross = assignment.gross_monthly || Math.round(assignment.annual_ctc / 12);
+
+        const { data: existingSal } = await dbClient
+          .from('employee_salary_assignments')
+          .select('id')
+          .eq('employee_id', assignment.employee_id)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingSal?.id) {
+          await dbClient.from('employee_salary_assignments').update({
             organization_id: tenantId,
-            employee_id: assignment.employee_id,
             salary_structure_id: structureId,
             annual_ctc: assignment.annual_ctc,
-            monthly_gross: assignment.gross_monthly,
+            monthly_gross: gross,
             effective_from: assignment.effective_from || new Date().toISOString().split('T')[0],
             effective_to: (assignment as any).effective_to || null,
             is_active: assignment.status !== 'Inactive',
             updated_at: new Date().toISOString(),
-          }, { onConflict: 'employee_id' });
+          }).eq('id', existingSal.id);
+        } else {
+          await dbClient.from('employee_salary_assignments').insert({
+            organization_id: tenantId,
+            employee_id: assignment.employee_id,
+            salary_structure_id: structureId,
+            annual_ctc: assignment.annual_ctc,
+            monthly_gross: gross,
+            effective_from: assignment.effective_from || new Date().toISOString().split('T')[0],
+            effective_to: (assignment as any).effective_to || null,
+            is_active: assignment.status !== 'Inactive',
+          });
         }
       } catch (e: any) {
-        console.warn('[Supabase Payroll] upsert salary notice:', e);
+        console.warn('[Supabase Payroll] saveEmployeeSalaryAsync notice:', e);
       }
-    })();
+    }
+    return assignment;
   }
 
-  return assignment;
-}
+  saveEmployeeSalary(assignment: EmployeeSalaryAssignment, tenantId = getActiveOrgId()): EmployeeSalaryAssignment {
+    this.saveEmployeeSalaryAsync(assignment, tenantId).catch(err => console.warn(err));
+    return assignment;
+  }
 
 // ==========================================================================
 // 3. PAYROLL RUNS & CALCULATION ENGINE
@@ -931,13 +1322,23 @@ async getPayrollRunsAsync(tenantId = getActiveOrgId()): Promise<PayrollRun[]> {
           };
         });
 
+        const isLegacySeedRun = (r: any) =>
+          r.id === '70000000-0000-4000-8000-000000000726' ||
+          r.id === 'f8ab7933-b3f0-43ed-a693-cc3841999abc' ||
+          r.id === '9bce8b31-e175-4a93-9eca-d277cbf54e26' ||
+          r.id === 'PRUN-2026-08' ||
+          r.run_number === 'RUN-2026-08' ||
+          (Number(r.total_employees) === 6 && Number(r.total_gross_pay || r.total_gross) === 450000);
+
+        const cleanMerged = merged.filter(r => !isLegacySeedRun(r));
+
         // Preserve valid local runs not in Supabase
         const supabaseIds = new Set(data.map((d: any) => d.id));
-        const localOnlyRuns = currentRuns.filter(r => !supabaseIds.has(r.id) && (r.total_employees > 0 || (r.employee_records && r.employee_records.length > 0)));
-        const combined = [...merged, ...localOnlyRuns];
+        const localOnlyRuns = currentRuns.filter(r => !supabaseIds.has(r.id) && !isLegacySeedRun(r) && (r.total_employees > 0 || (r.employee_records && r.employee_records.length > 0)));
+        const combined = [...cleanMerged, ...localOnlyRuns];
 
         // Filter out empty ghost runs
-        const finalRuns = combined.filter(r => r.total_employees > 0 || (r.employee_records && r.employee_records.length > 0) || r.total_gross > 0);
+        const finalRuns = combined.filter(r => (r.total_employees > 0 || (r.employee_records && r.employee_records.length > 0) || r.total_gross > 0) && !isLegacySeedRun(r));
 
         if (finalRuns.length > 0) {
           setStore(STORAGE_KEYS.RUNS, finalRuns, tenantId);
@@ -955,11 +1356,17 @@ async getPayrollRunsAsync(tenantId = getActiveOrgId()): Promise<PayrollRun[]> {
 getPayrollRuns(tenantId = getActiveOrgId()): PayrollRun[] {
   let list = getStore<PayrollRun[]>(STORAGE_KEYS.RUNS, [], tenantId);
 
-  // Filter out any ghost unpopulated runs or legacy 21-worker seeded runs
+  const isLegacySeedRun = (r: any) =>
+    r.id === '70000000-0000-4000-8000-000000000726' ||
+    r.id === 'f8ab7933-b3f0-43ed-a693-cc3841999abc' ||
+    r.id === '9bce8b31-e175-4a93-9eca-d277cbf54e26' ||
+    r.id === 'PRUN-2026-08' ||
+    r.run_number === 'RUN-2026-08' ||
+    (Number(r.total_employees) === 6 && Number(r.total_gross_pay || r.total_gross) === 450000);
+
+  // Filter out any ghost unpopulated runs or legacy test runs
   const validList = (list || []).filter((r: any) =>
-    r.id !== 'PRUN-2026-08' &&
-    r.run_number !== 'RUN-2026-08' &&
-    Number(r.total_employees) !== 21 &&
+    !isLegacySeedRun(r) &&
     (Number(r.total_employees || (r.employee_records?.length ?? 0)) > 0 || Number(r.total_gross || (r as any).total_gross_pay || 0) > 0) &&
     Boolean(r.pay_period || r.period_name) &&
     (r.pay_period || r.period_name).trim() !== '' &&
@@ -1063,7 +1470,9 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
     const allLoans = this.getLoans(tenantId);
     const allAdvances = this.getSalaryAdvances(tenantId);
     const allReimbursements = this.getReimbursements(tenantId);
-    const allDailyAttendance = attendanceApi.getDailyAttendance();
+    const allDailyAttendance = isSupabaseEnabled
+      ? await attendanceApi.getDailyAttendanceForPeriodAsync(periodStart, periodEnd)
+      : attendanceApi.getDailyAttendance();
     const allLeaveRequests = leaveApi.getLeaveRequests();
 
     const periodStartDate = new Date(periodStart);
@@ -1085,6 +1494,8 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
     const runId = typeof crypto !== 'undefined' && crypto.randomUUID 
       ? crypto.randomUUID() 
       : ('00000000-0000-4000-8000-' + String(Date.now()).padStart(12, '0').slice(-12));
+
+    const todayStr = new Date().toISOString().split('T')[0];
 
     for (const sal of salaries) {
       // 1. Pull Real Attendance & Leave Data across full month calendar
@@ -1155,29 +1566,46 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
           continue;
         }
 
-        // Check roster / weekly off
+        // Check explicit daily attendance record from Supabase or daily punches first
+        const att = allDailyAttendance.find(d =>
+          ((d.employee_id && empId && d.employee_id.toLowerCase() === empId.toLowerCase()) ||
+           (d.employee_code && empCode && d.employee_code.toLowerCase() === empCode.toLowerCase()) ||
+           (d.employee_name && empName && d.employee_name.toLowerCase() === empName.toLowerCase())) &&
+          (d.date === dateStr || (d as any).attendance_date === dateStr)
+        );
+
+        const hasRealPunch = Boolean(att?.first_check_in || (att as any)?.check_in_time || (att as any)?.check_in || att?.last_check_out);
+
+        // Check roster / weekly off / weekend (only if employee did NOT punch in to work)
+        const isSunday = curDate.getDay() === 0;
         const roster = attendanceRosterService.getRosterForEmployeeOnDate(empId, dateStr);
-        if (roster?.is_weekly_off) {
+        if (!hasRealPunch && (roster?.is_weekly_off || (isSunday && roster?.is_weekly_off !== false))) {
           weeklyOffDays++;
           curDate.setDate(curDate.getDate() + 1);
           continue;
         }
 
-        // Check explicit daily attendance record
-        const att = allDailyAttendance.find(d =>
-          ((d.employee_id && empId && d.employee_id.toLowerCase() === empId.toLowerCase()) ||
-           (d.employee_code && empCode && d.employee_code.toLowerCase() === empCode.toLowerCase()) ||
-           (d.employee_name && empName && d.employee_name.toLowerCase() === empName.toLowerCase())) &&
-          d.date === dateStr
-        );
+        const now = new Date();
+        const currentMins = now.getHours() * 60 + now.getMinutes();
+        const isShiftEndedToday = dateStr < todayStr || (dateStr === todayStr && currentMins >= (1080 + 15));
 
         if (att) {
           if (att.status === 'Absent') {
-            recordedAbsent++;
+            if (isShiftEndedToday) {
+              recordedAbsent++;
+            } else {
+              recordedPresent++;
+            }
           } else if (att.status === 'Half Day') {
             recordedHalfDays++;
             recordedPresent += 0.5;
             recordedAbsent += 0.5;
+          } else if (att.status === 'Missing Punch') {
+            if (isShiftEndedToday) {
+              recordedAbsent++;
+            } else {
+              recordedPresent++;
+            }
           } else if (
             att.status === 'Present' ||
             att.status === 'WFH' ||
@@ -1185,21 +1613,34 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
             att.status === 'Early Checkout' ||
             att.status === 'Checked Out' ||
             att.status === 'Overtime' ||
-            att.first_check_in
+            hasRealPunch
           ) {
             recordedPresent++;
           } else if (att.status === 'On Leave') {
             paidLeaveDays++;
+          } else if (att.status === 'Holiday') {
+            recordedPresent++;
+          } else if (att.status === 'Weekly Off' && !hasRealPunch) {
+            weeklyOffDays++;
           } else {
-            recordedAbsent++;
+            // 'Not Checked In' or null or unknown
+            if (!isShiftEndedToday) {
+              // Current day or future day before shift end: do not penalize as absent
+              recordedPresent++;
+            } else if (empHasPunches) {
+              recordedAbsent++;
+            } else {
+              recordedPresent++;
+            }
           }
           if (att.overtime_minutes && att.overtime_minutes > 0) {
             recordedOtHours += att.overtime_minutes / 60;
           }
         } else {
-          // If biometric punches exist for the month, an unpunched working day is absent.
-          // Otherwise, if default salaried cycle, mark present.
-          if (empHasPunches) {
+          // If past date (or today after shift end) and punches exist for this employee elsewhere in month: absent.
+          if (!isShiftEndedToday) {
+            recordedPresent++;
+          } else if (empHasPunches) {
             recordedAbsent++;
           } else {
             recordedPresent++;
@@ -1207,22 +1648,6 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
         }
 
         curDate.setDate(curDate.getDate() + 1);
-      }
-
-      // Check pre-compiled attendance input (e.g. 21 Workers dataset or uploaded monthly inputs)
-      let precompiledInput: any = null;
-      if (typeof localStorage !== 'undefined') {
-        const pKey = `workforce_attendance_inputs_${periodName.toLowerCase().replace(' ', '_')}`;
-        const rawP = localStorage.getItem(pKey) || localStorage.getItem('workforce_attendance_inputs_aug_2026') || localStorage.getItem('workforce_attendance_inputs_august_2026');
-        if (rawP) {
-          try {
-            const parsed = JSON.parse(rawP);
-            precompiledInput = parsed.find((p: any) =>
-              (p.employee_id && empId && p.employee_id.toLowerCase() === empId.toLowerCase()) ||
-              (p.employee_code && empCode && p.employee_code.toLowerCase() === empCode.toLowerCase())
-            );
-          } catch (_) {}
-        }
       }
 
       let lopDays = recordedAbsent + unpaidLeaveDays;
@@ -1237,12 +1662,7 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
       let payableDays = Math.max(0, effectiveEligibleDays - lopDays);
       let presentDays = recordedPresent;
 
-      if (precompiledInput) {
-        payableDays = precompiledInput.payable_days ?? precompiledInput.payableDays ?? payableDays;
-        presentDays = precompiledInput.worked_days ?? precompiledInput.workedDays ?? payableDays;
-        lopDays = precompiledInput.loss_of_pay_days ?? precompiledInput.lop_days ?? Math.max(0, 25 - payableDays);
-        overtimeHours = precompiledInput.ot_hours ?? precompiledInput.otHours ?? 0;
-      } else if (isDailyPlant) {
+      if (isDailyPlant) {
         payableDays = payableDays > 0 ? Math.min(25, payableDays) : 25;
         presentDays = payableDays;
         lopDays = Math.max(0, 25 - payableDays);
@@ -1251,21 +1671,7 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
         presentDays = payableDays;
       }
 
-      // Check canteen deductions
       let canteenDeduction = 0;
-      if (typeof localStorage !== 'undefined') {
-        const canteenRaw = localStorage.getItem('workforce_payroll_canteen_aug_2026');
-        if (canteenRaw) {
-          try {
-            const cList = JSON.parse(canteenRaw);
-            const foundC = cList.find((c: any) =>
-              (c.employee_id && empId && c.employee_id.toLowerCase() === empId.toLowerCase()) ||
-              (c.employee_code && empCode && c.employee_code.toLowerCase() === empCode.toLowerCase())
-            );
-            if (foundC) canteenDeduction = foundC.amount || 0;
-          } catch (_) {}
-        }
-      }
 
       // Approved Reimbursements
       const empReimbs = allReimbursements.filter(r => r.employee_id === sal.employee_id && (r.status === 'Finance Approved' || r.status === 'Manager Approved'));
@@ -1384,12 +1790,20 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
         continue;
       }
 
+      // Authoritative Component Breakdown matching configured Structure
       const grossFixed = sal.gross_monthly || 0;
       const basicFixed = sal.basic_monthly || Math.round(grossFixed * 0.5);
-      const hraFixed = Math.round(basicFixed * 0.4);
-      const conveyanceFixed = 1600;
-      const medicalFixed = 2500;
-      const specialFixed = Math.max(0, grossFixed - basicFixed - hraFixed - conveyanceFixed - medicalFixed);
+      const hraFixed = (sal as any).hra_monthly || Math.round(basicFixed * 0.4);
+      const conveyanceFixed = (sal as any).conveyance_monthly || 0;
+      const medicalFixed = (sal as any).medical_monthly || 0;
+      const otherFixed = (sal as any).other_allowance_monthly || 0;
+      const specialFixed = Math.max(0, grossFixed - basicFixed - hraFixed - conveyanceFixed - medicalFixed - otherFixed);
+
+      const isPfEligible = (sal.pf_applicable !== undefined ? Boolean(sal.pf_applicable) : statutory.pf_enabled) && !!sal.pf_uan;
+      const isEsiEligible = (sal.esi_applicable !== undefined ? Boolean(sal.esi_applicable) : statutory.esi_enabled) && (grossFixed <= statutory.esi_wage_ceiling);
+      const isPtEligible = sal.pt_applicable !== undefined ? Boolean(sal.pt_applicable) : statutory.pt_enabled;
+      const isLwfEligible = sal.lwf_applicable !== undefined ? Boolean(sal.lwf_applicable) : false;
+      const isTdsEligible = (sal as any).tds_applicable !== undefined ? Boolean((sal as any).tds_applicable) : (statutory.tds_auto_deduct ?? false);
 
       // Construct Layer 2 Immutable Snapshot
       const snapshot: PayrollInputSnapshot = {
@@ -1406,13 +1820,13 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
         is_new_joiner: isNewJoiner,
         is_exit_period: false,
         employment_status: 'Active',
-        pf_eligible: (sal.pf_applicable !== undefined ? sal.pf_applicable : statutory.pf_enabled) && !!sal.pf_uan,
+        pf_eligible: isPfEligible,
         pf_uan: sal.pf_uan || '',
         pf_capped: true,
-        esi_eligible: (sal.esi_applicable !== undefined ? sal.esi_applicable : statutory.esi_enabled) && (grossFixed <= statutory.esi_wage_ceiling),
+        esi_eligible: isEsiEligible,
         esi_ip_number: sal.esic_number || '',
         esi_coverage_status: sal.esic_number ? 'CONTINUING_COVERAGE' : 'NEW_COVERAGE',
-        pt_eligible: sal.pt_applicable !== undefined ? sal.pt_applicable : statutory.pt_enabled,
+        pt_eligible: isPtEligible,
         pt_state_jurisdiction: 'Tamil Nadu',
         tax_regime: 'NEW',
         salary_structure_id: sal.salary_structure_id,
@@ -1424,7 +1838,7 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
         special_allowance_fixed: specialFixed,
         conveyance_fixed: conveyanceFixed,
         medical_fixed: medicalFixed,
-        other_allowances_fixed: 0,
+        other_allowances_fixed: otherFixed,
         total_calendar_days: totalDaysInMonth,
         payable_days: payableDays,
         present_days: presentDays,
@@ -1442,6 +1856,12 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
         voluntary_deductions: canteenDeduction,
         snapshot_created_at: new Date().toISOString(),
       };
+      (snapshot as any).pf_applicable = isPfEligible;
+      (snapshot as any).esi_applicable = isEsiEligible;
+      (snapshot as any).pt_applicable = isPtEligible;
+      (snapshot as any).lwf_eligible = isLwfEligible;
+      (snapshot as any).lwf_applicable = isLwfEligible;
+      (snapshot as any).tds_applicable = isTdsEligible;
       snapshots.push(snapshot);
 
       // Execute Layer 4 Layered Calculation
@@ -1457,6 +1877,10 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
       empRec.account_number = sal.account_number;
       empRec.ifsc_code = sal.ifsc_code;
       empRec.pan_number = sal.pan_number;
+      empRec.conveyance = conveyanceFixed;
+      empRec.medical = medicalFixed;
+      empRec.special_allowance = specialFixed;
+      (empRec as any).lwf_deduction = (detailedResult as any).lwfAssessment?.employeeContribution || 0;
       empRec.net_pay_in_words = numberToWordsIndian(empRec.net_pay);
       employeeRecords.push(empRec);
 
@@ -1694,20 +2118,71 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
 
     // Fallback: construct live breakdown from active employee salary
     const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
-    const sal = salaries.find(s => s.employee_id === employeeId);
+    const sal = salaries.find(s => s.employee_id === employeeId || s.employee_code === employeeId);
     if (!sal) return null;
 
     const gross = sal.gross_monthly;
-    const basic = Math.round(gross * 0.5);
-    const hra = Math.round(basic * 0.4);
-    const conveyance = 1600;
-    const medical = 2500;
-    const special = Math.max(0, gross - basic - hra - conveyance - medical);
-    const epf = Math.round(Math.min(basic, 15000) * 0.12);
-    const esic = gross <= 21000 ? Math.round(gross * 0.0075) : 0;
-    const pt = 208;
-    const totalDeductions = epf + esic + pt;
+    const basic = sal.basic_monthly || Math.round(gross * 0.5);
+    const hra = (sal as any).hra_monthly || Math.round(basic * 0.4);
+    const conveyance = (sal as any).conveyance_monthly || 0;
+    const medical = (sal as any).medical_monthly || 0;
+    const other = (sal as any).other_allowance_monthly || 0;
+    const special = ((sal as any).special_allowance_monthly ?? sal.special_allowance) ?? Math.max(0, gross - basic - hra - conveyance - medical - other);
+
+    const isPf = sal.pf_applicable !== false && (sal.pf_applicable !== undefined ? sal.pf_applicable : true);
+    const isEsi = sal.esi_applicable !== false && (sal.esi_applicable !== undefined ? sal.esi_applicable : (gross <= 21000));
+    const isPt = sal.pt_applicable !== false && (sal.pt_applicable !== undefined ? sal.pt_applicable : true);
+    const isLwf = Boolean(sal.lwf_applicable);
+
+    const epf = isPf ? Math.round(Math.min(basic, 15000) * 0.12) : 0;
+    const esic = isEsi && gross <= 21000 ? Math.round(gross * 0.0075) : 0;
+    const pt = isPt ? 208 : 0;
+    const lwf = isLwf ? 20 : 0;
+    const totalDeductions = epf + esic + pt + lwf;
     const net = gross - totalDeductions;
+
+    const earningsBreakdown: CalculationSourceItem[] = [
+      { name: 'Basic Salary', category: 'Basic', amount: basic, source: 'Salary Structure (50% of Gross)', formula_applied: `₹${gross} × 50% = ₹${basic}` },
+      { name: 'House Rent Allowance (HRA)', category: 'HRA', amount: hra, source: 'Salary Structure (40% of Basic)', formula_applied: `₹${basic} × 40% = ₹${hra}` },
+    ];
+    if (special > 0) {
+      earningsBreakdown.push({ name: 'Special Allowance', category: 'SpecialAllowance', amount: special, source: 'Salary Structure (Balancing Figure)', formula_applied: `Gross - Basic - HRA = ₹${special}` });
+    }
+    if (conveyance > 0) {
+      earningsBreakdown.push({ name: 'Conveyance Allowance', category: 'Conveyance', amount: conveyance, source: 'Fixed Component', formula_applied: `Standard Monthly Allowance` });
+    }
+    if (medical > 0) {
+      earningsBreakdown.push({ name: 'Medical Allowance', category: 'Medical', amount: medical, source: 'Fixed Component', formula_applied: `Standard Monthly Allowance` });
+    }
+    if (other > 0) {
+      earningsBreakdown.push({ name: 'Other Allowance', category: 'Allowance', amount: other, source: 'Fixed Component', formula_applied: `Other Monthly Allowance` });
+    }
+
+    const deductionsBreakdown: CalculationSourceItem[] = [];
+    if (epf > 0) {
+      deductionsBreakdown.push({ name: 'Employee Provident Fund (EPF 12%)', category: 'PF', amount: epf, source: 'Statutory Rule Engine', formula_applied: `₹${Math.min(basic, 15000)} × 12% = ₹${epf}` });
+    }
+    if (esic > 0) {
+      deductionsBreakdown.push({ name: 'Employee State Insurance (ESIC 0.75%)', category: 'ESI', amount: esic, source: 'Statutory Rule Engine', formula_applied: `₹${gross} × 0.75% = ₹${esic}` });
+    }
+    if (pt > 0) {
+      deductionsBreakdown.push({ name: 'Professional Tax (PT)', category: 'ProfessionalTax', amount: pt, source: 'Tamil Nadu Slabs', formula_applied: `Gross > ₹75,000 = ₹208/month` });
+    }
+    if (lwf > 0) {
+      deductionsBreakdown.push({ name: 'Labour Welfare Fund (LWF)', category: 'LWF', amount: lwf, source: 'Tamil Nadu LWF Board', formula_applied: 'Employee Contribution ₹20' });
+    }
+
+    const statutoryBreakdown: CalculationSourceItem[] = [];
+    if (isPf) {
+      statutoryBreakdown.push(
+        { name: 'Employer EPF (12%)', category: 'PF', amount: epf, source: 'Statutory Rule Engine', formula_applied: `₹${Math.min(basic, 15000)} × 12% = ₹${epf}`, notes: 'Employer Liability' },
+        { name: 'Employer Gov Portion (1% Admin + EDLI)', category: 'PF', amount: Math.round(Math.min(basic, 15000) * 0.01), source: 'Statutory Rule Engine', formula_applied: `₹${Math.min(basic, 15000)} × 1% = ₹${Math.round(Math.min(basic, 15000) * 0.01)}`, notes: 'Employer Liability' }
+      );
+    }
+    if (isEsi && gross <= 21000) {
+      statutoryBreakdown.push({ name: 'Employer ESIC (3.25%)', category: 'ESI', amount: Math.round(gross * 0.0325), source: 'Statutory Rule Engine', formula_applied: `₹${gross} × 3.25% = ₹${Math.round(gross * 0.0325)}`, notes: 'Employer Liability' });
+    }
+    statutoryBreakdown.push({ name: 'Employer Gratuity Provision (4.81%)', category: 'Custom', amount: Math.round(basic * 0.0481), source: 'Company Policy', formula_applied: `₹${basic} × 4.81% = ₹${Math.round(basic * 0.0481)}`, notes: 'Employer Liability' });
 
     return {
       employee_id: sal.employee_id,
@@ -1719,23 +2194,9 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
       total_deductions: totalDeductions,
       net_pay: net,
       net_pay_in_words: numberToWordsIndian(net),
-      earnings_breakdown: [
-        { name: 'Basic Salary', category: 'Basic', amount: basic, source: 'Salary Structure (50% of Gross)', formula_applied: `₹${gross} × 50% = ₹${basic}` },
-        { name: 'House Rent Allowance (HRA)', category: 'HRA', amount: hra, source: 'Salary Structure (40% of Basic)', formula_applied: `₹${basic} × 40% = ₹${hra}` },
-        { name: 'Special Allowance', category: 'SpecialAllowance', amount: special, source: 'Salary Structure (Balancing Figure)', formula_applied: `Gross - Basic - HRA - Conv - Med = ₹${special}` },
-        { name: 'Conveyance Allowance', category: 'Conveyance', amount: conveyance, source: 'Fixed Component', formula_applied: `Standard Monthly Allowance` },
-        { name: 'Medical Allowance', category: 'Medical', amount: medical, source: 'Fixed Component', formula_applied: `Standard Monthly Allowance` },
-      ],
-      deductions_breakdown: [
-        { name: 'Employee Provident Fund (EPF 12%)', category: 'PF', amount: epf, source: 'Statutory Rule Engine', formula_applied: `₹${Math.min(basic, 15000)} × 12% = ₹${epf}` },
-        { name: 'Employee State Insurance (ESIC 0.75%)', category: 'ESI', amount: esic, source: 'Statutory Rule Engine', formula_applied: gross <= 21000 ? `₹${gross} × 0.75% = ₹${esic}` : 'Gross > ₹21,000 (Exempt)' },
-        { name: 'Professional Tax (PT)', category: 'ProfessionalTax', amount: pt, source: 'Tamil Nadu Slabs', formula_applied: `Gross > ₹75,000 = ₹208/month` },
-      ],
-      statutory_breakdown: [
-        { name: 'Employer EPF (12%)', category: 'PF', amount: epf, source: 'Statutory Rule Engine', formula_applied: `₹${Math.min(basic, 15000)} × 12% = ₹${epf}`, notes: 'Employer Liability' },
-        { name: 'Employer Gov Portion (1% Admin + EDLI)', category: 'PF', amount: Math.round(Math.min(basic, 15000) * 0.01), source: 'Statutory Rule Engine', formula_applied: `₹${Math.min(basic, 15000)} × 1% = ₹${Math.round(Math.min(basic, 15000) * 0.01)}`, notes: 'Employer Liability' },
-        { name: 'Employer Gratuity Provision (4.81%)', category: 'Custom', amount: Math.round(basic * 0.0481), source: 'Company Policy', formula_applied: `₹${basic} × 4.81% = ₹${Math.round(basic * 0.0481)}`, notes: 'Employer Liability' },
-      ],
+      earnings_breakdown: earningsBreakdown,
+      deductions_breakdown: deductionsBreakdown,
+      statutory_breakdown: statutoryBreakdown,
       tax_projection: {
         regime: 'New Regime (Sec 115BAC)',
         projected_annual_gross: gross * 12,
@@ -1764,7 +2225,7 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
 
   getDetailedEmployeeCalculation(employeeId: string, runId?: string, tenantId = getActiveOrgId()): DetailedEmployeePayrollResult | null {
     const snapshots = getStore<PayrollInputSnapshot[]>(STORAGE_KEYS.SNAPSHOTS, [], tenantId);
-    const snap = snapshots.find(s => s.employee_id === employeeId && (!runId || s.payroll_run_id === runId));
+    const snap = snapshots.find(s => (s.employee_id === employeeId || (s as any).employee_code === employeeId) && (!runId || s.payroll_run_id === runId));
     if (snap) {
       return PayrollCalculationEngine.calculateSnapshot(snap);
     }
@@ -1931,7 +2392,9 @@ finalizeAndLockPayroll(runId: string, actorName = 'HR Administrator', tenantId =
         created_at: new Date().toISOString()
       };
 
-      Promise.resolve(supabase.from('payslips').insert(payslipPayload)).catch(() => {});
+      Promise.resolve(
+        supabase.from('payslips').upsert(payslipPayload, { onConflict: 'payslip_number' })
+      ).catch(() => {});
 
       notificationService.emitEmployeeNotification({
         employeeId: rec.employee_id,
@@ -2017,10 +2480,11 @@ async fetchStatutoryConfigFromDb(tenantId = getActiveOrgId()): Promise<Statutory
       const orgUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)
         ? tenantId
         : '0c621892-e938-4707-9957-13534ea32c19';
-      const { data, error } = await supabase
-        .from('statutory_configs')
+      const { data, error } = await dbClient
+        .from('payroll_statutory_configs')
         .select('*')
         .eq('organization_id', orgUuid)
+        .limit(1)
         .maybeSingle();
 
       if (data && !error) {
@@ -2040,8 +2504,8 @@ async fetchStatutoryConfigFromDb(tenantId = getActiveOrgId()): Promise<Statutory
           tds_auto_deduct: data.tds_auto_deduct ?? true,
           lwf_enabled: data.lwf_enabled ?? true,
           lwf_amount: Number(data.lwf_amount) ?? 20,
-          lwf_employee_amount: Number(data.lwf_amount) ?? 20,
-          lwf_employer_amount: (Number(data.lwf_amount) ?? 20) * 2,
+          lwf_employee_amount: Number(data.lwf_employee_amount || data.lwf_amount) ?? 20,
+          lwf_employer_amount: Number(data.lwf_employer_amount) || ((Number(data.lwf_amount) ?? 20) * 2),
         };
         setStore(STORAGE_KEYS.STATUTORY, mapped, tenantId);
         return mapped;
@@ -2080,31 +2544,57 @@ saveStatutoryConfig(config: StatutoryConfig, tenantId = getActiveOrgId()): Statu
     localStorage.setItem('workforce_statutory_rules_active', JSON.stringify(config));
   } catch (_) {}
 
-  // Database-first sync to Supabase statutory_configs
+  // Database-first sync to Supabase payroll_statutory_configs
   if (isSupabaseEnabled) {
     const orgUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)
       ? tenantId
       : '0c621892-e938-4707-9957-13534ea32c19';
-    supabase.from('statutory_configs').upsert({
-      organization_id: orgUuid,
-      pf_enabled: config.pf_enabled ?? true,
-      pf_employee_percent: config.pf_employee_percent ?? 12,
-      pf_employer_percent: config.pf_employer_percent ?? 12,
-      pf_wage_ceiling: config.pf_wage_ceiling ?? 15000,
-      esi_enabled: config.esi_enabled ?? true,
-      esi_employee_percent: config.esi_employee_percent ?? 0.75,
-      esi_employer_percent: config.esi_employer_percent ?? 3.25,
-      esi_wage_ceiling: config.esi_wage_ceiling ?? 21000,
-      pt_enabled: config.pt_enabled ?? true,
-      pt_monthly_slab: config.pt_monthly_slab ?? 208,
-      tds_auto_deduct: config.tds_auto_deduct ?? true,
-      lwf_enabled: config.lwf_enabled ?? true,
-      lwf_amount: config.lwf_employee_amount || config.lwf_amount || 20,
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'organization_id' }).then(({ error }) => {
-      if (error) console.warn('[payrollApi] statutory_configs remote sync notice:', error);
-    });
+    
+    (async () => {
+      try {
+        const { data: existingCfg } = await dbClient
+          .from('payroll_statutory_configs')
+          .select('id')
+          .eq('organization_id', orgUuid)
+          .limit(1)
+          .maybeSingle();
+
+        const payload = {
+          organization_id: orgUuid,
+          pf_enabled: config.pf_enabled ?? true,
+          pf_employee_percent: config.pf_employee_percent ?? 12,
+          pf_employer_percent: config.pf_employer_percent ?? 12,
+          pf_wage_ceiling: config.pf_wage_ceiling ?? 15000,
+          esi_enabled: config.esi_enabled ?? true,
+          esi_employee_percent: config.esi_employee_percent ?? 0.75,
+          esi_employer_percent: config.esi_employer_percent ?? 3.25,
+          esi_wage_ceiling: config.esi_wage_ceiling ?? 21000,
+          pt_enabled: config.pt_enabled ?? true,
+          pt_monthly_slab: config.pt_monthly_slab ?? 208,
+          tds_auto_deduct: config.tds_auto_deduct ?? true,
+          lwf_enabled: config.lwf_enabled ?? true,
+          lwf_amount: config.lwf_employee_amount || config.lwf_amount || 20,
+          lwf_employee_amount: config.lwf_employee_amount || 20,
+          lwf_employer_amount: config.lwf_employer_amount || 40,
+          updated_at: new Date().toISOString(),
+        };
+
+        if (existingCfg?.id) {
+          const { error } = await dbClient
+            .from('payroll_statutory_configs')
+            .update(payload)
+            .eq('id', existingCfg.id);
+          if (error) console.warn('[payrollApi] payroll_statutory_configs update error:', error);
+        } else {
+          const { error } = await dbClient
+            .from('payroll_statutory_configs')
+            .insert(payload);
+          if (error) console.warn('[payrollApi] payroll_statutory_configs insert error:', error);
+        }
+      } catch (err) {
+        console.warn('[payrollApi] payroll_statutory_configs remote sync notice:', err);
+      }
+    })();
   }
 
   this.logAudit({
@@ -3322,7 +3812,7 @@ calculateFnFSettlement(
   }
 ): FnFSettlement {
   const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
-  const sal = salaries.find(s => s.employee_id === employeeId);
+  const sal = salaries.find(s => s.employee_id === employeeId || s.employee_code === employeeId);
 
   const gross = sal?.gross_monthly || 100000;
   const dailyRate = Math.round(gross / 30);

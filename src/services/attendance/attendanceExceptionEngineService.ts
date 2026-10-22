@@ -10,6 +10,7 @@ import { getActiveOrgId } from './biometricCommandService';
 import { attendanceRegularizationService } from './attendanceRegularizationService';
 import { formatTimeToIST } from './attendanceDeviationService';
 import { hrEventBus } from '../hrEventBus';
+import { api } from '../api';
 
 export type AttendanceExceptionType =
   | 'MISSING_CHECK_IN'
@@ -155,14 +156,30 @@ class AttendanceExceptionEngineService {
     const getExceptionKey = (exc: AttendanceException) =>
       `${exc.tenant_id}_${exc.employee_id || 'unmapped'}_${exc.work_date}_${exc.exception_type}`;
 
-    // 1. Fetch Real Daily Records from Supabase to evaluate operational exceptions
     if (isSupabaseEnabled) {
       try {
-        const { data: dailyRows } = await supabase
+        // Fetch employees map dynamically (skipEnrichment for speed)
+        let employeeMap = new Map<string, any>();
+        try {
+          const emps = await api.getEmployees({ skipEnrichment: true });
+          emps.forEach((e) => {
+            employeeMap.set(e.id, e);
+            if (e.employee_code) employeeMap.set(e.employee_code, e);
+          });
+        } catch (_) {}
+
+        // 1. Fetch Real Daily Records from Supabase scoped to tenant
+        let dailyQuery = supabase
           .from('attendance_daily')
           .select('*')
           .order('attendance_date', { ascending: false })
-          .limit(50);
+          .limit(100);
+
+        if (tenantId && tenantId.length === 36) {
+          dailyQuery = dailyQuery.eq('organization_id', tenantId);
+        }
+
+        const { data: dailyRows } = await dailyQuery;
 
         // Fetch regularizations to sync resolution status
         const regularizations = await attendanceRegularizationService.fetchRequestsFromDb(tenantId);
@@ -171,10 +188,15 @@ class AttendanceExceptionEngineService {
           const todayStr = new Date().toISOString().split('T')[0];
 
           for (const row of dailyRows) {
-            const empId = row.employee_id || 'emp-admin-001';
-            const empCode = row.employee_code || 'JCS-017';
-            const empName = row.employee_name || 'Staff';
-            const dept = row.department || 'Operations';
+            const rawEmpId = row.employee_id;
+            const emp = employeeMap.get(rawEmpId) || employeeMap.get(row.employee_code);
+
+            const empId = rawEmpId || emp?.id || `emp-${row.id}`;
+            const empCode = emp?.employee_code || row.employee_code || (rawEmpId ? String(rawEmpId).substring(0, 8) : 'STAFF');
+            const empName = emp
+              ? (`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || 'Employee')
+              : (row.employee_name && row.employee_name !== 'Staff' ? row.employee_name : `Employee (${empCode})`);
+            const dept = emp?.department_name || row.department || 'Operations';
             const date = row.attendance_date || row.date || todayStr;
             const shiftName = row.shift_name || 'General Shift';
 
@@ -187,7 +209,7 @@ class AttendanceExceptionEngineService {
             const matchingReg = regularizations.find(
               (r) => (r.employee_id === empId || r.employee_code === empCode) && r.attendance_date === date
             );
-            const isRegularized = matchingReg?.status === 'APPROVED' || row.status === 'Regularized';
+            const isRegularized = matchingReg?.status === 'APPROVED' || row.status === 'Regularized' || row.is_regularized === true;
 
             // Condition 1: Missing Check-Out on past dates or closed shifts
             if (actualIn && (!actualOut || actualOut === '—') && date < todayStr && !isRegularized) {
@@ -207,7 +229,7 @@ class AttendanceExceptionEngineService {
                 department: dept,
                 employment_type: 'REGULAR',
                 vendor_name: 'Internal Employee',
-                reporting_manager_name: 'Haripriya (HR Head)',
+                reporting_manager_name: 'HR Operations',
                 work_date: date,
                 shift_code: 'GEN-09',
                 shift_name: shiftName,

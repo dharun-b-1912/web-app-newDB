@@ -76,3 +76,8 @@ Essl Support files/
 /playwright/.auth/
 *.aab
 *.apk
+
+# Scratch and Temp
+scratch/
+*.dll
+*.tar.gz

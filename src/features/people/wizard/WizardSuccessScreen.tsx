@@ -77,6 +77,7 @@ export const WizardSuccessScreen: React.FC<Props> = ({
           employeeId: emp.id,
           portalUrl: 'https://app.joypeoplehr.com',
           imageUrl: 'https://app.joypeoplehr.com/joy-people-hr-logo.png',
+          workEmail: emp.work_email || emp.email,
         });
         if (res.success) {
           setWhatsAppSent(true);
@@ -120,6 +121,7 @@ export const WizardSuccessScreen: React.FC<Props> = ({
         organizationId: emp.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
         employeeId: emp.id,
         portalUrl: 'https://app.joypeoplehr.com',
+        workEmail: emp.work_email || emp.email,
       });
       if (res.success) {
         setWhatsAppSent(true);

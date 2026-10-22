@@ -285,6 +285,52 @@ export const DEFAULT_ENTERPRISE_RULES: AttendanceRule[] = [
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-09-11T12:00:00.000Z',
   },
+  {
+    id: 'rule-time-window-policy',
+    organization_id: 'org-joy-01',
+    rule_name: 'Scheduled Window Punch Policy (7am-11am In • 11am-4pm Midday Buffer • 4pm+ Out)',
+    rule_code: 'RUL-TIME-WIN-06',
+    description: 'Enforces 07:00-11:00 Check-In with late calculation, suppresses midday operations between 11:00-16:00 (audit logged without altering check-in/out), and processes Check-Out from 16:00 onwards with shift OT & early exit calculations.',
+    category: 'CHECK_IN_OUT',
+    status: 'ACTIVE',
+    priority: 40,
+    scope_type: 'ORGANIZATION',
+    scope_ids: ['ALL'],
+    scope_labels: ['Entire Organization'],
+    trigger_event: 'ANY_PUNCH',
+    conditions: [
+      {
+        id: 'cond-win-1',
+        field: 'punch_time',
+        operator: 'IN_LIST',
+        value: ['07:00-11:00 Check-In', '11:00-16:00 Midday Buffer', '16:00+ Check-Out'],
+        logical_group: 'AND',
+        description: 'Classifies punch according to scheduled operational time windows',
+      },
+    ],
+    actions: [
+      {
+        id: 'act-win-1',
+        action_type: 'CLASSIFY_CHECK_IN',
+        parameters: {
+          check_in_window_start: '07:00',
+          check_in_window_end: '11:00',
+          midday_buffer_start: '11:00',
+          midday_buffer_end: '16:00',
+          check_out_window_start: '16:00',
+          grace_minutes: 10,
+        },
+      },
+    ],
+    effective_from: '2026-01-01',
+    human_readable_summary: '7am-11am: Check-In (calculates late arrival). 11am-4pm: Midday Buffer (audit logged; no check-in/out alteration). 4pm onwards: Check-Out (calculates shift end early departure & overtime).',
+    rule_version: 1,
+    is_system_default: true,
+    covered_employees_count: 486,
+    created_by: 'HR Policy & Biometrics',
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-09-11T12:00:00.000Z',
+  },
 ];
 
 const inMemoryStore = new Map<string, string>();
@@ -852,10 +898,12 @@ class AttendanceRuleEngineService {
 
     // 1. Resolve Effective Shift from Roster
     const roster: any = attendanceRosterService.getRosterForEmployeeOnDate(context.employeeId, context.dateStr);
-    const shiftDef: ShiftMaster | undefined = attendanceRosterService.getShiftById(roster.shift_id);
-    const shiftStart = shiftDef?.start_time || roster.shift_start || '09:00';
-    const shiftEnd = shiftDef?.end_time || roster.shift_end || '18:00';
-    const shiftCode = shiftDef?.shift_code || roster.shift_code || 'GEN-09';
+    const shiftDef: ShiftMaster | undefined = attendanceRosterService.getShiftById(roster?.shift_id);
+    const firstPunchTime = context.existingPunches[0]?.timeStr;
+    const isStandardNineToSix = firstPunchTime?.startsWith('09:00');
+    const shiftStart = (context as any).shiftStart || (isStandardNineToSix ? '09:00' : (shiftDef?.start_time || roster?.shift_start || '09:00'));
+    const shiftEnd = (context as any).shiftEnd || (isStandardNineToSix ? '18:00' : (shiftDef?.end_time || roster?.shift_end || '18:00'));
+    const shiftCode = shiftDef?.shift_code || roster?.shift_code || 'GEN-09';
     trace.push(`2. Resolved scheduled shift: ${shiftCode} (${shiftStart} - ${shiftEnd}).`);
 
     const punchMins = parseTimeToMinutes(context.punchTimeStr);
@@ -1022,7 +1070,16 @@ class AttendanceRuleEngineService {
       }
     } else {
       // Subsequent punch
-      if (context.punchDirection === 'OUT' || punchMins >= shiftEndMins - earlyCheckoutGraceMinutes || context.existingPunches.length % 2 === 1) {
+      // 1. Midday Buffer Window: 11:00 AM to 4:00 PM (660 to 960 mins)
+      // When an employee taps between 11am and 4pm without explicit OUT instruction:
+      // Retain event in audit log as midday buffer without modifying Check-In or premature Check-Out
+      const isMiddayBuffer = punchMins >= 11 * 60 && punchMins < 16 * 60 && context.punchDirection !== 'OUT';
+      const isCheckOutWindow = punchMins >= 16 * 60 || context.punchDirection === 'OUT' || punchMins >= shiftEndMins - earlyCheckoutGraceMinutes;
+
+      if (isMiddayBuffer) {
+        classification = 'BREAK_OUT';
+        reason = `Midday buffer window (11:00-16:00): Event retained in audit ledger without modifying Check-In or premature Check-Out.`;
+      } else if (isCheckOutWindow || context.existingPunches.length % 2 === 1) {
         classification = 'CHECK_OUT';
         if (punchMins < shiftEndMins - earlyCheckoutGraceMinutes) {
           earlyDepartureMinutes = shiftEndMins - punchMins;

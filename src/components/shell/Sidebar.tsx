@@ -423,7 +423,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         const activeComp = api.getActiveCompany();
         const emps = await api.getEmployees(activeComp?.id);
         const accessible = filterAccessibleEmployees(emps);
-        setEmployeeCount(accessible.length);
+        const activeEmployees = accessible.filter(
+          (e) => (e.status || 'Active').toLowerCase() === 'active' && (e as any).employment_status !== 'SUSPENDED'
+        );
+        setEmployeeCount(activeEmployees.length);
       } catch { }
 
       try {

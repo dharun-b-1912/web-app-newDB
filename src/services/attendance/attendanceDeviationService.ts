@@ -215,25 +215,35 @@ class AttendanceDeviationService {
     const getEmpDateKey = (dev: AttendanceDeviation) =>
       `${dev.employee_id || dev.employee_code || 'emp'}_${dev.attendance_date}`;
 
+    let regularizations: any[] = [];
+
     // 1. Fetch Real Daily Attendance from Supabase and Evaluate (Authoritative Source)
     if (isSupabaseEnabled) {
       try {
         await ensureSupabaseSession();
+
+        const abortCtrl = new AbortController();
+        const timeoutId = setTimeout(() => abortCtrl.abort(), 3500);
+
         const [{ data: dailyRows }, { data: empList }] = await Promise.all([
           supabase
             .from('attendance_daily')
             .select('*')
             .order('attendance_date', { ascending: false })
-            .limit(50),
+            .limit(50)
+            .abortSignal(abortCtrl.signal),
           supabase
             .from('employees')
-            .select('id, employee_code, first_name, last_name, display_name'),
+            .select('id, employee_code, first_name, last_name, display_name')
+            .abortSignal(abortCtrl.signal),
         ]);
+
+        clearTimeout(timeoutId);
 
         const empMap = new Map((empList || []).map((e: any) => [e.id, e]));
 
-        // Fetch regularizations to sync regularization status
-        const regularizations = await attendanceRegularizationService.fetchRequestsFromDb(tenantId);
+        // Fetch regularizations to sync regularization status (fast bounded query)
+        regularizations = await attendanceRegularizationService.fetchRequestsFromDb(tenantId);
 
         if (dailyRows && dailyRows.length > 0) {
           for (const row of dailyRows) {
@@ -242,7 +252,7 @@ class AttendanceDeviationService {
               ? {
                   ...row,
                   employee_code: emp.employee_code || row.employee_code,
-                  employee_name: emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || row.employee_name,
+                  employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || row.employee_name,
                 }
               : row;
             const dev = this.evaluateRow(enrichedRow, regularizations, tenantId);
@@ -256,9 +266,35 @@ class AttendanceDeviationService {
       }
     }
 
-    // 2. Fallback to Local Cache for any missing dates
+    if (regularizations.length === 0) {
+      regularizations = attendanceRegularizationService.getRequests(tenantId);
+    }
+
+    // 2. Fallback to Local Cache and sync with regularizations
     this.loadLocalStore(tenantId).forEach((d) => {
       const key = getEmpDateKey(d);
+
+      // Harmonize status with regularizations
+      const matchingReg = regularizations.find(
+        (r) =>
+          (r.employee_id === d.employee_id ||
+            r.employee_code === d.employee_code ||
+            r.employee_name?.toLowerCase() === d.employee_name?.toLowerCase()) &&
+          r.attendance_date === d.attendance_date
+      );
+      if (matchingReg) {
+        d.regularization_request_id = matchingReg.id;
+        const regStatus = (matchingReg.status || '').toUpperCase();
+        if (regStatus === 'APPROVED') {
+          d.status = 'REGULARIZED';
+          d.payroll_deduction_days = 0;
+        } else if (regStatus === 'REJECTED') {
+          d.status = 'REJECTED';
+        } else {
+          d.status = 'MANAGER_REVIEW';
+        }
+      }
+
       if (!deviationsMap.has(key)) {
         deviationsMap.set(key, d);
       }
@@ -271,6 +307,41 @@ class AttendanceDeviationService {
     this.memoryCache = list;
     this.saveLocalStore(list, tenantId);
     return list;
+  }
+
+  // Instant local status update on regularization submission
+  public updateDeviationStatusForRegularization(
+    employeeId: string,
+    employeeCode: string,
+    attendanceDate: string,
+    regId: string,
+    status: DeviationStatus = 'MANAGER_REVIEW'
+  ): void {
+    const tenantId = getActiveOrgId();
+    const list = this.loadLocalStore(tenantId);
+    let changed = false;
+    list.forEach((d) => {
+      if (
+        (d.employee_id === employeeId || d.employee_code === employeeCode || d.id === employeeId) &&
+        d.attendance_date === attendanceDate
+      ) {
+        d.status = status;
+        d.regularization_request_id = regId;
+        d.timeline = d.timeline || [];
+        d.timeline.push({
+          stage: 'MANAGER_REVIEW',
+          timestamp: new Date().toISOString(),
+          action: 'REGULARIZATION_SUBMITTED',
+          details: `Regularization request ${regId} linked and submitted to Manager Review`,
+        });
+        changed = true;
+      }
+    });
+    if (changed) {
+      this.saveLocalStore(list, tenantId);
+      this.memoryCache = list;
+      hrEventBus.publish('deviation.updated' as any, { tenant_id: tenantId } as any);
+    }
   }
 
   // ==========================================================================

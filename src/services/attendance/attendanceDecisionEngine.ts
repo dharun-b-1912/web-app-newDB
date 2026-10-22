@@ -322,8 +322,9 @@ class AttendanceDecisionEngine {
       }
 
       if (Array.isArray(employees) && employees.length > 0) {
+        const orgEmployees = employees.filter((e: any) => !orgId || !e.organization_id || e.organization_id === orgId);
         if (cleanId) {
-          const found: any = employees.find((e: any) => e.id === cleanId);
+          const found: any = orgEmployees.find((e: any) => e.id === cleanId);
           if (found) {
             return {
               id: found.id,
@@ -336,7 +337,7 @@ class AttendanceDecisionEngine {
         }
 
         if (cleanCode) {
-          const found: any = employees.find((e: any) => e.employee_code?.toLowerCase() === cleanCode.toLowerCase());
+          const found: any = orgEmployees.find((e: any) => e.employee_code?.toLowerCase() === cleanCode.toLowerCase());
           if (found) {
             return {
               id: found.id,
@@ -349,7 +350,7 @@ class AttendanceDecisionEngine {
         }
 
         if (cleanPin) {
-          const found: any = employees.find((e: any) => {
+          const found: any = orgEmployees.find((e: any) => {
             const eCodeDigits = (e.employee_code || '').replace(/\D/g, '');
             const eIdDigits = (e.id || '').replace(/\D/g, '');
             return (
@@ -865,12 +866,13 @@ class AttendanceDecisionEngine {
     const currentMinsUtcOrLocal = punchH * 60 + punchM;
     const currentMinsIst = attendanceTimeService.getMinutesFromMidnight(timestamp, 'Asia/Kolkata');
     const thresholdMins = shiftEndMins - (shift.early_out_tolerance_minutes ?? 15);
-    const isPastOrNearShiftEnd = currentMinsUtcOrLocal >= thresholdMins || currentMinsIst >= thresholdMins;
+    const isAfter4pm = currentMinsIst >= 16 * 60; // 16:00 (4:00 PM onwards Check-Out window)
+    const isPastOrNearShiftEnd = currentMinsUtcOrLocal >= thresholdMins || currentMinsIst >= thresholdMins || isAfter4pm;
 
     // A punch is eligible for checkout ONLY if:
     // 1. Explicit user checkout action / OUT direction, OR
-    // 2. Scheduled shift window is completing / completed (near/past shift end).
-    // Midday punches during working hours are NEVER auto-converted to CHECK-OUT.
+    // 2. Scheduled shift window is completing / completed (near/past shift end, or 4:00 PM+ window).
+    // Midday punches (11:00 AM - 4:00 PM) during working hours are NEVER auto-converted to CHECK-OUT.
     const isEligibleForCheckout = isExplicitOut || isPastOrNearShiftEnd;
 
     // If NOT eligible for checkout (e.g. 12:37:29 PM midday verification during 09:00-18:00 shift)
