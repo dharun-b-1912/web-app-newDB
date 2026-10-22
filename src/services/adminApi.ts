@@ -272,6 +272,54 @@ export const adminApi = {
         if (updates.name) dbUpdates.full_name = updates.name;
         if (updates.status) dbUpdates.status = updates.status;
         if (updates.email) dbUpdates.email = updates.email;
+
+        if (updates.role_name) {
+          const { data: prof } = await supabase
+            .from('user_profiles')
+            .select('id, organization_id, auth_user_id')
+            .eq('id', id)
+            .maybeSingle();
+
+          if (prof?.organization_id) {
+            const cleanRole = updates.role_name.trim();
+            const { data: roles } = await supabase
+              .from('roles')
+              .select('id, code, name')
+              .or(`organization_id.eq.${prof.organization_id},organization_id.is.null`);
+
+            const matchedRole = roles?.find(
+              r =>
+                r.name.toLowerCase() === cleanRole.toLowerCase() ||
+                r.code.toLowerCase() === cleanRole.toLowerCase().replace(/\s+/g, '_')
+            );
+
+            if (matchedRole) {
+              dbUpdates.role = matchedRole.code;
+
+              const { data: existingUr } = await supabase
+                .from('user_roles')
+                .select('id')
+                .eq('user_profile_id', id)
+                .maybeSingle();
+
+              if (existingUr) {
+                await supabase
+                  .from('user_roles')
+                  .update({ role_id: matchedRole.id })
+                  .eq('id', existingUr.id);
+              } else {
+                await supabase
+                  .from('user_roles')
+                  .insert({
+                    organization_id: prof.organization_id,
+                    user_profile_id: id,
+                    role_id: matchedRole.id,
+                  });
+              }
+            }
+          }
+        }
+
         if (Object.keys(dbUpdates).length > 0) {
           await supabase.from('user_profiles').update(dbUpdates).eq('id', id);
         }

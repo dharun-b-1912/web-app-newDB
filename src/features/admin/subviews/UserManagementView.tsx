@@ -13,6 +13,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { Users, Mail, Plus, ShieldCheck, Trash2, Send, Search, CheckCircle2, Pencil, AlertTriangle } from 'lucide-react';
 import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
+import { realtimeChannelManager } from '../../../services/realtime/realtimeChannelManager';
 
 export const UserManagementView: React.FC = () => {
   const { showToast } = useToast();
@@ -105,6 +106,12 @@ export const UserManagementView: React.FC = () => {
 
   useEffect(() => {
     refreshData();
+    try {
+      realtimeChannelManager.subscribeToTable('user_profiles', () => refreshData());
+      realtimeChannelManager.subscribeToTable('user_roles', () => refreshData());
+    } catch (err) {
+      console.warn('[UserManagementView] Realtime subscription notice:', err);
+    }
   }, []);
 
   const handleCreateOrInviteUser = async (e: React.FormEvent) => {
