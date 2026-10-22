@@ -101,7 +101,12 @@ export const UserManagementView: React.FC = () => {
     } catch {
       setUsers(adminApi.getUsers());
     }
-    setInvitations(adminApi.getInvitations());
+    try {
+      const liveInvs = await adminApi.getInvitationsAsync();
+      setInvitations(liveInvs);
+    } catch {
+      setInvitations(adminApi.getInvitations());
+    }
   };
 
   useEffect(() => {
@@ -109,6 +114,7 @@ export const UserManagementView: React.FC = () => {
     try {
       realtimeChannelManager.subscribeToTable('user_profiles', () => refreshData());
       realtimeChannelManager.subscribeToTable('user_roles', () => refreshData());
+      realtimeChannelManager.subscribeToTable('organization_invitations', () => refreshData());
     } catch (err) {
       console.warn('[UserManagementView] Realtime subscription notice:', err);
     }
@@ -162,8 +168,8 @@ export const UserManagementView: React.FC = () => {
     }
   };
 
-  const handleCancelInvitation = (id: string, email: string) => {
-    adminApi.cancelInvitation(id);
+  const handleCancelInvitation = async (id: string, email: string) => {
+    await adminApi.cancelInvitationAsync(id);
     showToast(`Invitation for ${email} cancelled`, 'info');
     refreshData();
   };

@@ -64,7 +64,7 @@ export const adminApi = {
               id,
               employee_code,
               work_email,
-              departments (
+              departments!employees_department_id_fkey (
                 name
               )
             `)
@@ -220,6 +220,42 @@ export const adminApi = {
   },
 
   /**
+   * Retrieves pending email invitations from PostgreSQL database.
+   */
+  async getInvitationsAsync(organizationId?: string): Promise<UserInvitation[]> {
+    try {
+      const activeComp = api.getActiveCompany();
+      const orgId = organizationId || activeComp?.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
+      
+      const { data, error } = await supabase
+        .from('organization_invitations')
+        .select('*')
+        .eq('organization_id', orgId)
+        .order('created_at', { ascending: false });
+
+      if (error || !data || data.length === 0) {
+        return this.getInvitations();
+      }
+
+      return data.map((inv: any) => ({
+        id: inv.id,
+        email: inv.email,
+        employee_name: inv.full_name,
+        role_name: inv.metadata?.display_role || inv.role_code || 'Employee',
+        company_name: activeComp?.legal_name || 'JOY CORPORATE SOLUTIONS PVE LTD',
+        department_name: inv.metadata?.department || 'People Operations',
+        invited_by: inv.metadata?.invited_by_name || 'Company Administrator',
+        status: inv.status === 'INVITED' ? 'Pending' : inv.status,
+        expiration_date: inv.expires_at,
+        created_at: inv.created_at,
+      }));
+    } catch (err) {
+      console.warn('[AdminApi] getInvitationsAsync notice:', err);
+      return this.getInvitations();
+    }
+  },
+
+  /**
    * Sends an email invitation to a new staff member.
    */
   async sendInvitationAsync(params: {
@@ -229,9 +265,13 @@ export const adminApi = {
     organization_id?: string;
     company_name?: string;
   }): Promise<UserInvitation> {
-    const orgId = params.organization_id || 'e539780b-df07-4b45-beaa-ccf1d2224be8';
+    const activeComp = api.getActiveCompany();
+    const currentUser = api.getCurrentUser();
+    const orgId = params.organization_id || activeComp?.organization_id || currentUser?.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
+    const orgName = params.company_name || activeComp?.legal_name || activeComp?.name || 'JOY CORPORATE SOLUTIONS PVE LTD';
+
     const roleMapping: Record<string, any> = {
-      'Company Admin': 'Organization Admin',
+      'Company Admin': 'Company Admin',
       'HR Head': 'HR Head',
       'Employee': 'Employee',
       'Manager': 'Manager',
@@ -240,12 +280,12 @@ export const adminApi = {
     try {
       await platformAuthInvitationService.inviteUser({
         organizationId: orgId,
-        organizationName: params.company_name || 'Joy Corporate Solutions Pvt Ltd',
+        organizationName: orgName,
         email: params.email,
         fullName: params.employee_name,
-        role: roleMapping[params.role_name] || 'Employee',
-        department: params.role_name === 'HR Head' ? 'Human Resources' : 'Engineering',
-        invitedBy: 'Company Admin',
+        role: roleMapping[params.role_name] || params.role_name || 'Employee',
+        department: params.role_name === 'HR Head' ? 'Human Resources' : 'Executive Operations',
+        invitedBy: currentUser?.name || 'Company Administrator',
       });
     } catch (err) {
       console.warn('[AdminApi] Live inviteUser dispatch warning:', err);
@@ -255,7 +295,7 @@ export const adminApi = {
       email: params.email,
       employee_name: params.employee_name,
       role_name: params.role_name,
-      company_name: params.company_name || 'Joy Corporate Solutions Pvt Ltd',
+      company_name: orgName,
       expiration_date: new Date(Date.now() + 7 * 86400000).toLocaleDateString(),
     });
   },
@@ -274,6 +314,20 @@ export const adminApi = {
       console.warn('Failed to save invitation:', err);
     }
     return newInv;
+  },
+
+  /**
+   * Cancels a pending user invitation in both database and local state.
+   */
+  async cancelInvitationAsync(id: string): Promise<void> {
+    try {
+      if (id && id.length > 20 && !id.startsWith('inv-')) {
+        await supabase.from('organization_invitations').delete().eq('id', id);
+      }
+    } catch (err) {
+      console.warn('[AdminApi] Failed to cancel DB invitation:', err);
+    }
+    this.cancelInvitation(id);
   },
 
   /**

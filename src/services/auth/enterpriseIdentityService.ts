@@ -261,34 +261,15 @@ export const enterpriseIdentityService = {
 
       const roleTitle = roleDisplayNames[params.role_code] || params.role_code;
 
-      await resendEmailService.sendEmail({
+      await resendEmailService.sendOrganizationUserInvitationEmail({
         to: cleanEmail,
-        subject: `You've been invited as ${roleTitle} — Joy PeopleHR`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
-            <div style="background: linear-gradient(135deg, #073B2A, #0D9488); padding: 28px; text-align: center; color: white;">
-              <h1 style="margin:0; font-size: 24px; font-weight: 800;">Joy PeopleHR</h1>
-              <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 14px;">Role Invitation & Activation</p>
-            </div>
-            <div style="padding: 28px; background: #ffffff; color: #1e293b;">
-              <h2 style="font-size: 18px; color: #0f172a; margin-top:0;">You've been invited to Joy PeopleHR</h2>
-              <p style="font-size: 14px; line-height: 1.6; color: #475569;">
-                Hello <strong>${cleanName}</strong>,
-              </p>
-              <p style="font-size: 14px; line-height: 1.6; color: #475569;">
-                You have been granted access as <strong>${roleTitle}</strong>. Click below to securely create your password and activate your portal access:
-              </p>
-              <div style="text-align: center; margin: 28px 0;">
-                <a href="${activationUrl}" style="background: #073B2A; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 700; display: inline-block;">
-                  Activate Account
-                </a>
-              </div>
-              <p style="font-size: 12px; color: #64748b;">
-                This one-time activation link is valid for 7 days.
-              </p>
-            </div>
-          </div>
-        `,
+        recipientName: cleanName,
+        organizationName: 'JOY CORPORATE SOLUTIONS PVE LTD',
+        roleDisplayName: roleTitle,
+        roleKey: params.role_code,
+        invitationUrl: activationUrl,
+        token: inviteToken,
+        expiresInDays: 7,
       });
 
       return {

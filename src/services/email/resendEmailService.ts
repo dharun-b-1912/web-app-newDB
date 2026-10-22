@@ -1018,23 +1018,24 @@ class ResendEmailService {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <title>Invitation to Join ${orgName} — Joy PeopleHR</title>
 </head>
-<body style="margin: 0; padding: 32px 16px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
-  <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);">
+<body style="margin: 0; padding: 24px 12px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);">
     
     <!-- Top Header Banner -->
     <tr>
-      <td style="background: linear-gradient(135deg, #047857 0%, #064e3b 50%, #022c22 100%); padding: 36px 32px 28px 32px; text-align: center;">
+      <td bgcolor="#047857" style="background: linear-gradient(135deg, #047857 0%, #064e3b 50%, #022c22 100%); background-color: #047857; padding: 36px 32px 28px 32px; text-align: center;">
         <table align="center" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 12px;">
           <tr>
-            <td style="background-color: rgba(255, 255, 255, 0.18); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 999px; padding: 4px 14px;">
-              <span style="font-size: 11px; font-weight: 800; color: #a7f3d0; text-transform: uppercase; letter-spacing: 1.2px;">⚡ Organization Onboarding</span>
+            <td bgcolor="#065f46" style="background-color: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 999px; padding: 5px 16px;">
+              <span style="font-size: 11px; font-weight: 800; color: #a7f3d0; text-transform: uppercase; letter-spacing: 1.2px;">⚡ Joy PeopleHR • Enterprise IAM</span>
             </td>
           </tr>
         </table>
         <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">${orgName}</h1>
-        <p style="margin: 6px 0 0 0; font-size: 13px; color: #d1fae5; font-weight: 500;">Joy PeopleHR Enterprise Access Invitation</p>
+        <p style="margin: 6px 0 0 0; font-size: 13px; color: #d1fae5; font-weight: 500;">Authorized Workforce & Portal Access Invitation</p>
       </td>
     </tr>
 
@@ -1044,28 +1045,28 @@ class ResendEmailService {
         <p style="margin: 0 0 16px 0; font-size: 15px; color: #0f172a;">
           Hello <strong style="color: #047857;">${params.recipientName}</strong>,
         </p>
-        <p style="margin: 0 0 20px 0; color: #475569;">
-          You have been invited by <strong>${params.invitedBy || 'the Organization Administrator'}</strong> to join <strong>${orgName}</strong> on the Joy PeopleHR Workforce Platform. Your profile has been assigned authorized credentials.
+        <p style="margin: 0 0 20px 0; color: #475569; font-size: 14px; line-height: 1.6;">
+          You have been formally invited by <strong>${params.invitedBy || 'the Organization Administrator'}</strong> to join <strong>${orgName}</strong> on the Joy PeopleHR Workforce Platform. Your role and profile permissions have been provisioned in the enterprise directory.
         </p>
 
         <!-- Access Profile Card -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; margin: 20px 0; overflow: hidden;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; margin: 20px 0; overflow: hidden;">
           <tr>
-            <td style="padding: 12px 18px; background-color: #f1f5f9; border-bottom: 1px solid #e2e8f0;">
-              <span style="font-size: 11px; font-weight: 800; color: #047857; text-transform: uppercase; letter-spacing: 0.8px;">Invitation & Role Credentials</span>
+            <td bgcolor="#f1f5f9" style="padding: 12px 18px; background-color: #f1f5f9; border-bottom: 1px solid #e2e8f0;">
+              <span style="font-size: 11px; font-weight: 800; color: #047857; text-transform: uppercase; letter-spacing: 0.8px;">📋 Invitation & Role Credentials</span>
             </td>
           </tr>
           <tr>
             <td style="padding: 18px;">
               <table border="0" cellpadding="0" cellspacing="0" width="100%" style="font-size: 13px;">
                 <tr>
-                  <td style="padding: 6px 0; color: #64748b; width: 42%;">Target Organization:</td>
+                  <td style="padding: 6px 0; color: #64748b; width: 40%;">Target Organization:</td>
                   <td style="padding: 6px 0; color: #0f172a; font-weight: 700; text-align: right;">${orgName}</td>
                 </tr>
                 <tr>
                   <td style="padding: 6px 0; color: #64748b;">Assigned Role:</td>
                   <td style="padding: 6px 0; text-align: right;">
-                    <span style="background-color: #ecfdf5; color: #047857; font-weight: 800; font-size: 11px; padding: 3px 10px; border-radius: 6px; border: 1px solid #a7f3d0;">
+                    <span style="background-color: #ecfdf5; color: #047857; font-weight: 800; font-size: 11px; padding: 4px 12px; border-radius: 6px; border: 1px solid #a7f3d0; display: inline-block;">
                       ${params.roleDisplayName}
                     </span>
                   </td>
@@ -1080,7 +1081,7 @@ class ResendEmailService {
                 </tr>
                 <tr>
                   <td style="padding: 6px 0; color: #64748b;">Invited By:</td>
-                  <td style="padding: 6px 0; color: #334155; font-weight: 600; text-align: right;">${params.invitedBy || 'Platform Super Admin'}</td>
+                  <td style="padding: 6px 0; color: #334155; font-weight: 600; text-align: right;">${params.invitedBy || 'Company Administrator'}</td>
                 </tr>
                 <tr>
                   <td style="padding: 6px 0; color: #64748b;">Validity:</td>
@@ -1092,23 +1093,27 @@ class ResendEmailService {
         </table>
 
         <!-- One-Time Invitation Code Box -->
-        <div style="margin: 22px 0; padding: 16px 20px; background-color: #f0fdf4; border: 1.5px dashed #10b981; border-radius: 14px; text-align: center;">
-          <div style="font-size: 11px; font-weight: 800; color: #047857; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 6px;">
-            🔑 One-Time Invitation Code
-          </div>
-          <div style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace; font-size: 18px; font-weight: 800; color: #064e3b; letter-spacing: 1.5px; background: #ffffff; padding: 8px 16px; border-radius: 8px; display: inline-block; border: 1px solid #bbf7d0; user-select: all;">
-            ${token}
-          </div>
-          <p style="margin: 6px 0 0 0; font-size: 11px; color: #047857;">
-            Enter this code in the activation modal, or click the button below for instant 1-click setup.
-          </p>
-        </div>
-
-        <!-- Primary CTA Button -->
-        <table align="center" border="0" cellpadding="0" cellspacing="0" style="margin: 20px auto;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 20px 0; background-color: #f0fdf4; border: 1.5px dashed #10b981; border-radius: 12px;">
           <tr>
-            <td align="center" style="background: linear-gradient(135deg, #047857 0%, #064e3b 100%); border-radius: 12px; box-shadow: 0 4px 14px rgba(4, 120, 87, 0.35);">
-              <a href="${invitationLink}" target="_blank" style="display: inline-block; padding: 14px 34px; font-size: 14px; font-weight: 800; color: #ffffff; text-decoration: none; letter-spacing: 0.2px;">
+            <td style="padding: 16px 20px; text-align: center;">
+              <div style="font-size: 11px; font-weight: 800; color: #047857; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 6px;">
+                🔑 One-Time Security Activation Code
+              </div>
+              <div style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace; font-size: 18px; font-weight: 800; color: #064e3b; letter-spacing: 1.5px; background: #ffffff; padding: 8px 18px; border-radius: 8px; display: inline-block; border: 1px solid #bbf7d0;">
+                ${token}
+              </div>
+              <p style="margin: 8px 0 0 0; font-size: 11px; color: #047857;">
+                Click the direct button below to activate your account in 1 click.
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Primary CTA Button (Outlook Bulletproof) -->
+        <table align="center" border="0" cellpadding="0" cellspacing="0" style="margin: 24px auto;">
+          <tr>
+            <td align="center" bgcolor="#047857" style="background-color: #047857; border-radius: 10px;">
+              <a href="${invitationLink}" target="_blank" style="display: inline-block; padding: 14px 36px; font-size: 14px; font-weight: 800; color: #ffffff !important; text-decoration: none; letter-spacing: 0.2px; background-color: #047857; border-radius: 10px; border: 1px solid #064e3b;">
                 Accept Invitation & Set Password →
               </a>
             </td>
@@ -1118,11 +1123,11 @@ class ResendEmailService {
         <!-- Direct Link Box -->
         <div style="background-color: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 12px 14px; margin-top: 20px; font-size: 11px; word-break: break-all; color: #64748b;">
           <span style="color: #475569; font-weight: bold; display: block; margin-bottom: 4px;">Direct Invitation URL (Single-use):</span>
-          <a href="${invitationLink}" style="color: #047857; text-decoration: none; word-break: break-all;">${invitationLink}</a>
+          <a href="${invitationLink}" style="color: #047857; text-decoration: underline; word-break: break-all;">${invitationLink}</a>
         </div>
 
         <!-- Security Note -->
-        <div style="margin-top: 24px; padding: 12px 16px; background-color: #fefce8; border: 1px solid #fef08a; border-radius: 10px; font-size: 12px; color: #854d0e; line-height: 1.5;">
+        <div style="margin-top: 22px; padding: 12px 16px; background-color: #fefce8; border: 1px solid #fef08a; border-radius: 10px; font-size: 12px; color: #854d0e; line-height: 1.5;">
           <strong>🔒 Security Compliance:</strong> This invitation is designated exclusively for <strong>${params.to}</strong>. Do not forward or share this link. Once accepted, you will create your private password and security authentication profile.
         </div>
       </td>
@@ -1130,9 +1135,9 @@ class ResendEmailService {
 
     <!-- Footer -->
     <tr>
-      <td style="padding: 24px 32px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8;">
-        <p style="margin: 0 0 6px 0; font-weight: 600; color: #64748b;">Joy PeopleHR Enterprise • Organization Management & IAM</p>
-        <p style="margin: 0;">Automated System Dispatch • Real-time Delivery via Resend Gateway</p>
+      <td bgcolor="#f8fafc" style="padding: 24px 32px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8;">
+        <p style="margin: 0 0 6px 0; font-weight: 600; color: #64748b;">Joy PeopleHR Enterprise • Identity & Access Management (IAM)</p>
+        <p style="margin: 0;">Automated System Dispatch • Enterprise SMTP Gateway • Secured by TLS</p>
       </td>
     </tr>
   </table>
