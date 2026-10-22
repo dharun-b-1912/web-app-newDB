@@ -71,10 +71,10 @@ export async function generatePdfDocument(
   // -------------------------------------------------------------------------
   const totalStaff = rows.length;
   const presentCount = rows.filter(
-    r => r.record?.status === 'Present' || r.record?.status === 'Checked Out' || (r.record?.status as string) === 'Working' || !!r.record?.first_check_in
+    r => r.record?.status === 'Present' || r.record?.status === 'Half Day' || r.record?.status === 'Checked Out' || (r.record?.status as string) === 'Working' || !!r.record?.first_check_in
   ).length;
   const lateCount = rows.filter(
-    r => (r.record?.late_minutes || 0) > 0 || r.record?.status === 'Late'
+    r => (r.record?.late_minutes || r.record?.late_entry_minutes || 0) > 0 || r.record?.status === 'Late'
   ).length;
   const absentCount = rows.filter(
     r => (r.record?.status === 'Absent' || r.record?.status === 'Not Checked In' || !r.record?.status) && !r.record?.first_check_in
@@ -93,7 +93,7 @@ export async function generatePdfDocument(
     }
   });
 
-  const totalNetMins = rows.reduce((acc, r) => acc + (r.record?.net_working_minutes || 0), 0);
+  const totalNetMins = rows.reduce((acc, r) => acc + (r.record?.total_work_minutes || r.record?.net_working_minutes || 0), 0);
   const turnoutRatio = Math.round((presentCount / (totalStaff || 1)) * 100);
 
   // Yesterday Records for Day-over-Day Audit
@@ -366,16 +366,16 @@ export async function generatePdfDocument(
     }
     const d = deptMap.get(dept)!;
     d.total += 1;
-    if (r.record?.status === 'Present' || r.record?.status === 'Checked Out' || (r.record?.status as string) === 'Working' || !!r.record?.first_check_in) {
+    if (r.record?.status === 'Present' || r.record?.status === 'Half Day' || r.record?.status === 'Checked Out' || (r.record?.status as string) === 'Working' || !!r.record?.first_check_in) {
       d.present += 1;
     }
-    if ((r.record?.late_minutes || 0) > 0 || r.record?.status === 'Late') {
+    if ((r.record?.late_minutes || r.record?.late_entry_minutes || 0) > 0 || r.record?.status === 'Late') {
       d.late += 1;
     }
     if ((r.record?.status === 'Not Checked In' || !r.record?.status) && !r.record?.first_check_in) {
       d.notCheckedIn += 1;
     }
-    d.netMins += r.record?.net_working_minutes || 0;
+    d.netMins += (r.record?.total_work_minutes || r.record?.net_working_minutes || 0);
     const ot = computeEmployeeOvertime(r.record, r.shift, isMorning);
     if (ot.hasOvertime) {
       d.otMins += ot.overtimeMinutes;
@@ -649,12 +649,12 @@ export async function generatePdfDocument(
     { label: 'EMP CODE', width: 18, align: 'left' },
     { label: 'EMPLOYEE NAME', width: 44, align: 'left' },
     { label: 'DEPARTMENT & ROLE', width: 42, align: 'left' },
-    { label: 'SHIFT & SCHEDULE', width: 34, align: 'left' },
-    { label: isMorning ? 'CHECK-IN (SOURCE)' : 'FIRST CHECK-IN', width: 32, align: 'left' },
-    { label: isMorning ? 'EXPECTED OUT' : 'LAST CHECK-OUT', width: 24, align: 'center' },
-    { label: 'NET WORK', width: 22, align: 'center' },
+    { label: 'SHIFT & SCHEDULE', width: 33, align: 'left' },
+    { label: 'CHECK-IN (MODE)', width: 30, align: 'left' },
+    { label: isMorning ? 'EXPECTED OUT' : 'CHECK-OUT (MODE)', width: 30, align: 'left' },
+    { label: 'NET WORK', width: 20, align: 'center' },
     { label: 'TIMING / OT', width: 24, align: 'center' },
-    { label: 'STATUS', width: 25, align: 'center' },
+    { label: 'STATUS', width: 24, align: 'center' },
   ];
 
   let ledgerY = 22;
@@ -688,18 +688,34 @@ export async function generatePdfDocument(
     const shiftCode = shift.shift_code || shift.code || shift.name || 'GEN-09';
     const shiftTime = shift.start_time && shift.end_time ? `${shift.start_time.slice(0, 5)} - ${shift.end_time.slice(0, 5)}` : '09:00 - 18:00';
 
-    const checkInTime = rec.first_check_in || '—';
-    const checkInSrc = rec.first_check_in ? (rec.check_in_source || rec.source || 'BIOMETRIC') : '';
-    const checkOutTime = rec.last_check_out || (isMorning ? 'In Shift' : (rec.first_check_in ? 'In Shift' : '—'));
+    const formatCleanMode = (src?: string | null) => {
+      if (!src) return '';
+      const s = String(src).toUpperCase();
+      if (s.includes('BIO') || s.includes('FINGER') || s.includes('FACE') || s.includes('TERMINAL') || s.includes('DEVICE')) return '(BIO)';
+      if (s.includes('MOB') || s.includes('GPS') || s.includes('GEO') || s.includes('APP')) return '(GPS)';
+      if (s.includes('WEB') || s.includes('PORTAL') || s.includes('BROWSER')) return '(WEB)';
+      return '(BIO)';
+    };
 
-    const netWorkStr = rec.net_working_minutes > 0
-      ? formatMinutesToHoursStr(rec.net_working_minutes)
-      : (rec.first_check_in ? 'In Progress' : '0h 00m');
+    const checkInTime = formatTo12HourTime(rec.first_check_in);
+    const inMode = rec.first_check_in ? formatCleanMode(rec.check_in_source || rec.source) : '';
+    const checkInDisplay = checkInTime && checkInTime !== '—' ? `${checkInTime} ${inMode}`.trim() : '—';
+
+    const checkOutSrc = rec.check_out_source || rec.source;
+    const outMode = rec.last_check_out ? formatCleanMode(checkOutSrc) : '';
+    const checkOutTime = rec.last_check_out ? formatTo12HourTime(rec.last_check_out) : '';
+    const checkOutDisplay = checkOutTime ? `${checkOutTime} ${outMode}`.trim() : (isMorning ? 'In Shift' : (rec.first_check_in ? 'In Shift' : '—'));
+
+    const netMins = rec.total_work_minutes || rec.net_working_minutes || 0;
+    const netWorkStr = netMins > 0
+      ? formatMinutesToHoursStr(netMins)
+      : (rec.first_check_in && !rec.last_check_out ? 'In Progress' : '0h 00m');
 
     const ot = computeEmployeeOvertime(rec, shift, isMorning);
     let timingStr = 'On Time';
-    if ((rec.late_minutes || 0) > 0) {
-      timingStr = `Late ${rec.late_minutes}m`;
+    const lateMins = rec.late_entry_minutes || rec.late_minutes || 0;
+    if (lateMins > 0) {
+      timingStr = `Late ${lateMins}m`;
     } else if (ot.hasOvertime) {
       timingStr = `+OT ${ot.formatted}`;
     } else if (!rec.first_check_in) {
@@ -708,7 +724,7 @@ export async function generatePdfDocument(
 
     let status = rec.status || (rec.first_check_in ? 'Present' : 'Not Checked In');
     if (isMorning && rec.first_check_in) {
-      status = (rec.late_minutes || 0) > 0 ? 'Late In' : 'Checked In';
+      status = lateMins > 0 ? 'Late In' : 'Checked In';
     }
 
     const isAlt = rowIdx % 2 === 1;
@@ -750,23 +766,28 @@ export async function generatePdfDocument(
     doc.text(`${shiftCode} (${shiftTime})`, margin + 112 + 1.5, ledgerY + 4.2);
 
     // 6. Check-In & Source
-    doc.setFont('helvetica', checkInTime !== '—' ? 'bold' : 'normal');
+    doc.setFont('helvetica', checkInTime && checkInTime !== '—' ? 'bold' : 'normal');
     doc.setFontSize(6.5);
-    doc.setTextColor(checkInTime !== '—' ? 6 : 148, checkInTime !== '—' ? 78 : 163, checkInTime !== '—' ? 59 : 184);
-    const cleanSrc = checkInSrc ? `(${String(checkInSrc).replace(/[^a-zA-Z]/g, '').slice(0, 9)})` : '';
-    doc.text(`${checkInTime} ${cleanSrc}`.trim(), margin + 146 + 1.5, ledgerY + 4.2);
+    doc.setTextColor(checkInTime && checkInTime !== '—' ? 6 : 148, checkInTime && checkInTime !== '—' ? 78 : 163, checkInTime && checkInTime !== '—' ? 59 : 184);
+    doc.text(checkInDisplay, margin + 145 + 1.5, ledgerY + 4.2);
 
-    // 7. Check-Out
-    doc.setFont('helvetica', 'normal');
+    // 7. Check-Out & Source
+    doc.setFont('helvetica', checkOutTime ? 'bold' : 'normal');
     doc.setFontSize(6.5);
-    doc.setTextColor(checkOutTime === 'In Shift' ? 55 : 51, checkOutTime === 'In Shift' ? 48 : 65, checkOutTime === 'In Shift' ? 163 : 85);
-    doc.text(checkOutTime, margin + 178 + 12, ledgerY + 4.2, { align: 'center' });
+    if (checkOutDisplay === 'In Shift') {
+      doc.setTextColor(55, 48, 163);
+    } else if (checkOutTime) {
+      doc.setTextColor(15, 23, 42);
+    } else {
+      doc.setTextColor(148, 163, 184);
+    }
+    doc.text(checkOutDisplay, margin + 175 + 1.5, ledgerY + 4.2);
 
     // 8. Net Work
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6.5);
     doc.setTextColor(3, 105, 161);
-    doc.text(netWorkStr, margin + 202 + 11, ledgerY + 4.2, { align: 'center' });
+    doc.text(netWorkStr, margin + 205 + 10, ledgerY + 4.2, { align: 'center' });
 
     // 9. Timing / OT
     doc.setFont('helvetica', 'bold');
@@ -778,12 +799,12 @@ export async function generatePdfDocument(
     } else {
       doc.setTextColor(100, 116, 139);
     }
-    doc.text(timingStr, margin + 224 + 12, ledgerY + 4.2, { align: 'center' });
+    doc.text(timingStr, margin + 225 + 12, ledgerY + 4.2, { align: 'center' });
 
     // 10. Status Badge
     const statusW = 21;
     const statusH = 4.2;
-    const statusX = margin + 248 + 2;
+    const statusX = margin + 249 + 1.5;
     const statusY = ledgerY + 1.2;
 
     const sLower = status.toLowerCase();
@@ -904,10 +925,10 @@ export async function generatePdfDocument(
       const name = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee';
       const dept = emp.department_name || emp.department || 'General';
       const shiftTimes = `${shift.start_time || '09:00'} - ${shift.end_time || '18:00'}`;
-      const inTime = rec.first_check_in || '—';
-      const outTime = rec.last_check_out || (isMorning ? 'In Shift' : (rec.first_check_in ? 'In Shift' : '—'));
+      const inTime = formatTo12HourTime(rec.first_check_in);
+      const outTime = rec.last_check_out ? formatTo12HourTime(rec.last_check_out) : (isMorning ? 'In Shift' : (rec.first_check_in ? 'In Shift' : '—'));
 
-      const lateMins = rec.late_minutes || 0;
+      const lateMins = rec.late_entry_minutes || rec.late_minutes || 0;
       const ot = computeEmployeeOvertime(rec, shift, isMorning);
 
       let actionStr = 'Standard Shift';
@@ -1029,7 +1050,10 @@ export async function generatePdfDocument(
     }
   });
 
-  const punchDisplayList = combinedPunchList.slice(0, 10);
+  const signY = pageHeight - 27;
+  const availablePunchHeight = signY - 5 - devY;
+  const maxPunchRows = Math.max(1, Math.floor(availablePunchHeight / 5.2));
+  const punchDisplayList = combinedPunchList.slice(0, maxPunchRows);
   if (punchDisplayList.length === 0) {
     doc.setFillColor(248, 250, 252);
     doc.rect(margin, devY, contentWidth, 7, 'F');
@@ -1087,8 +1111,15 @@ export async function generatePdfDocument(
     });
   }
 
+  if (combinedPunchList.length > punchDisplayList.length) {
+    const remaining = combinedPunchList.length - punchDisplayList.length;
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(5.8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`* ${remaining} additional hardware/mobile verified punches securely recorded in consolidated time ledger`, margin + 2, signY - 1.5);
+  }
+
   // HR Operations Authorization Seals
-  const signY = pageHeight - 27;
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(203, 213, 225);
   doc.roundedRect(margin, signY, contentWidth, 16, 2, 2, 'FD');

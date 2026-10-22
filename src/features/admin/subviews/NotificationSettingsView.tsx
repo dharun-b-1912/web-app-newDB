@@ -47,6 +47,7 @@ import {
   NotificationDispatchResult,
 } from '../../../services/notification/universalNotificationEngine';
 import { useTenant } from '../../../hooks/useTenant';
+import { AttendancePushPolicyView } from './AttendancePushPolicyView';
 
 // Official Brand Icons for Unmistakable Visual Recognition
 export const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
@@ -69,7 +70,7 @@ export const NotificationSettingsView: React.FC = () => {
   const activeOrgId = organization?.id || '0c621892-e938-4707-9957-13534ea32c19';
 
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'rules' | 'logs'>('rules');
+  const [activeTab, setActiveTab] = useState<'attendance_alerts' | 'rules' | 'logs'>('attendance_alerts');
   const [selectedModule, setSelectedModule] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -527,23 +528,41 @@ export const NotificationSettingsView: React.FC = () => {
       <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs space-y-4">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-gray-100 pb-3">
           {/* Main Tabs */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
+            <button
+              onClick={() => setActiveTab('attendance_alerts')}
+              className={cn(
+                'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap',
+                activeTab === 'attendance_alerts'
+                  ? 'bg-[#07563D] text-white shadow-2xs'
+                  : 'text-gray-600 hover:bg-gray-100'
+              )}
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Punch & Push Alert Rules</span>
+              <span className={cn(
+                'text-[10px] font-black px-1.5 py-0.2 rounded-full',
+                activeTab === 'attendance_alerts' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-[#07563D]'
+              )}>
+                50–100 Team Shield
+              </span>
+            </button>
             <button
               onClick={() => setActiveTab('rules')}
               className={cn(
-                'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5',
+                'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap',
                 activeTab === 'rules'
                   ? 'bg-[#07563D] text-white shadow-2xs'
                   : 'text-gray-600 hover:bg-gray-100'
               )}
             >
               <Sliders className="w-3.5 h-3.5" />
-              <span>Notification Rules Matrix ({rules.length})</span>
+              <span>Multi-Channel Rules Matrix ({rules.length})</span>
             </button>
             <button
               onClick={() => setActiveTab('logs')}
               className={cn(
-                'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5',
+                'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap',
                 activeTab === 'logs'
                   ? 'bg-[#07563D] text-white shadow-2xs'
                   : 'text-gray-600 hover:bg-gray-100'
@@ -555,16 +574,18 @@ export const NotificationSettingsView: React.FC = () => {
           </div>
 
           {/* Search Input */}
-          <div className="relative w-full sm:w-72">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search rules, triggers, copy..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#07563D]/20 focus:border-[#07563D]"
-            />
-          </div>
+          {activeTab !== 'attendance_alerts' && (
+            <div className="relative w-full sm:w-72">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search rules, triggers, copy..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#07563D]/20 focus:border-[#07563D]"
+              />
+            </div>
+          )}
         </div>
 
         {/* Module Filter Chips */}
@@ -597,7 +618,9 @@ export const NotificationSettingsView: React.FC = () => {
       </div>
 
       {/* 4. Tab Content */}
-      {activeTab === 'rules' ? (
+      {activeTab === 'attendance_alerts' ? (
+        <AttendancePushPolicyView />
+      ) : activeTab === 'rules' ? (
         /* Rules Table */
         <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs overflow-hidden">
           <div className="overflow-x-auto">

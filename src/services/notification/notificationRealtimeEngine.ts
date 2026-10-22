@@ -153,6 +153,9 @@ class NotificationRealtimeEngine {
       this.playAlertSound();
     }
 
+    // Display native OS Desktop System Tray notification if browser permission granted
+    this.displayDesktopTrayNotification(event);
+
     // Broadcast locally to listeners
     this.listeners.forEach((listener) => {
       try {
@@ -169,6 +172,51 @@ class NotificationRealtimeEngine {
       } catch (err) {
         console.warn('Cross-tab broadcast failed', err);
       }
+    }
+  }
+
+  /**
+   * Display native OS System Tray / Notification Center banner
+   */
+  public displayDesktopTrayNotification(event: WorkForceEvent) {
+    try {
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        const title = event.title || 'Joy PeopleHR Alert';
+        const body = event.body || '';
+        const tag = event.eventId || `joy-notif-${Date.now()}`;
+
+        const notif = new Notification(title, {
+          body,
+          icon: '/favicon.ico',
+          badge: '/favicon.ico',
+          tag,
+          requireInteraction: event.severity === 'CRITICAL' || event.title?.includes('Late'),
+        });
+
+        notif.onclick = () => {
+          window.focus();
+          if (event.actionUrl) {
+            window.location.hash = event.actionUrl;
+          }
+          notif.close();
+        };
+      }
+    } catch (err) {
+      console.warn('[NotificationRealtimeEngine] Desktop tray popup notice:', err);
+    }
+  }
+
+  /**
+   * Request native desktop notification permission from user
+   */
+  public async requestDesktopNotificationPermission(): Promise<NotificationPermission> {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return 'denied';
+    }
+    try {
+      return await Notification.requestPermission();
+    } catch {
+      return 'denied';
     }
   }
 

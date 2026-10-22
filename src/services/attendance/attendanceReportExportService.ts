@@ -150,38 +150,40 @@ export function computeEmployeeOvertime(
     };
   }
 
-  let ot = rec.overtime_minutes || 0;
+  // Priority 1: Check if attendance record already has explicit overtime_minutes
+  let ot = typeof rec.overtime_minutes === 'number' ? rec.overtime_minutes : 0;
 
-  // 1. If not set or 0, evaluate check-out time past scheduled shift end
+  // Priority 2: If not set, evaluate check-out time past scheduled shift end
   if (ot <= 0 && rec.last_check_out && shift?.end_time) {
-    const parseMins = (str: string) => {
-      const parts = str.trim().split(':');
-      const h = parseInt(parts[0], 10) || 0;
-      const m = parseInt(parts[1], 10) || 0;
-      return h * 60 + m;
-    };
-
-    const outMins = parseMins(rec.last_check_out);
-    const endMins = parseMins(shift.end_time);
-    if (outMins > endMins) {
+    const outMins = extractIstMinutesOfDay(rec.last_check_out);
+    const endMins = extractIstMinutesOfDay(shift.end_time);
+    if (outMins !== null && endMins !== null && outMins > endMins + 15) {
       ot = outMins - endMins;
     }
   }
 
-  // 2. Only if employee has actually checked out, check if net_working_minutes exceeds 8 hours (480 mins)
-  if (ot <= 0 && rec.last_check_out && rec.net_working_minutes && rec.net_working_minutes > 480) {
-    ot = rec.net_working_minutes - 480;
+  // Priority 3: Only if employee has actually checked out, check if net working minutes exceeds shift duration
+  const workMins = rec?.total_work_minutes ?? rec?.net_working_minutes ?? 0;
+  const shiftDuration = shift?.scheduled_duration_minutes || 480;
+  if (ot <= 0 && rec.last_check_out && workMins > shiftDuration + 15) {
+    ot = workMins - shiftDuration;
   }
+
+  // Safety guard: Single shift overtime capped at 360 mins (6 hours)
+  if (ot > 360) {
+    ot = 360;
+  }
+  if (ot < 0) ot = 0;
 
   const hasOvertime = ot > 0;
   const hours = Math.floor(ot / 60);
   const minutes = ot % 60;
   const formatted = hasOvertime
-    ? (hours > 0 ? `${hours}h ${String(minutes).padStart(2, '0')}m` : `${minutes}m`)
+    ? (hours > 0 ? `${hours}h ${minutes > 0 ? `${minutes}m` : ''}`.trim() : `${minutes}m`)
     : '—';
   const verbose = hasOvertime
     ? (hours > 0
-        ? `${hours} hr${hours > 1 ? 's' : ''} ${minutes > 0 ? `${minutes} min${minutes > 1 ? 's' : ''}` : ''}`.trim()
+        ? `${hours} hr${hours > 1 ? 's' : ''}${minutes > 0 ? ` ${minutes} min${minutes > 1 ? 's' : ''}` : ''}`.trim()
         : `${minutes} min${minutes > 1 ? 's' : ''}`)
     : '0 mins';
 
@@ -196,30 +198,74 @@ export function computeEmployeeOvertime(
 }
 
 /**
- * Formats timestamps or time strings (HH:mm:ss, HH:mm, or ISO) to 12-hour AM/PM format (e.g. "09:55:46 AM")
+ * Helper to parse any time representation (ISO timestamp, "HH:MM", "HH:MM:SS", "hh:mm AM/PM")
+ * into total minutes from start of day in IST.
+ */
+export function extractIstMinutesOfDay(val?: string | null): number | null {
+  if (!val || typeof val !== 'string') return null;
+  const str = val.trim();
+  if (!str || str === '—' || str.includes('In Shift')) return null;
+
+  // 1. ISO format with date: e.g. "2026-10-22T12:08:20+00:00"
+  if (str.includes('T') || (str.includes('-') && str.length > 10)) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      const istDate = new Date(d.getTime() + (5 * 60 + 30) * 60 * 1000);
+      return istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
+    }
+  }
+
+  // 2. 12-Hour format with AM/PM: e.g. "05:38 PM"
+  const ampmMatch = str.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)/i);
+  if (ampmMatch) {
+    let h = parseInt(ampmMatch[1], 10);
+    const m = parseInt(ampmMatch[2], 10);
+    const meridiem = ampmMatch[3].toUpperCase();
+    if (meridiem === 'PM' && h < 12) h += 12;
+    if (meridiem === 'AM' && h === 12) h = 0;
+    return h * 60 + m;
+  }
+
+  // 3. 24-Hour format: e.g. "18:00"
+  const parts = str.split(':');
+  if (parts.length >= 2) {
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (!isNaN(h) && !isNaN(m) && h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      return h * 60 + m;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Formats timestamps or time strings (HH:mm:ss, HH:mm, or ISO) to 12-hour AM/PM format (e.g. "09:55 AM")
  * matching the Verified Punch Log biometric terminal format.
  */
 export function formatTo12HourTime(val?: string | null): string {
-  if (!val || !val.trim() || val === '—') return '—';
+  if (!val || typeof val !== 'string' || !val.trim() || val === '—') return '—';
   const str = val.trim();
 
-  // If already formatted like "09:55:46 AM" or "9:55 AM"
-  if (/AM|PM/i.test(str)) {
-    return str.toUpperCase();
+  // If already formatted like "09:49 AM" or "09:49:15 AM", clean and return
+  const ampmMatch = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    const h = ampmMatch[1].padStart(2, '0');
+    const m = ampmMatch[2];
+    const p = ampmMatch[3].toUpperCase();
+    return `${h}:${m} ${p}`;
   }
 
   // Check if it's an ISO timestamp e.g. "2026-10-15T09:55:46.000Z"
-  if (str.includes('T')) {
+  if (str.includes('T') || (str.includes('-') && str.length > 10)) {
     const d = new Date(str);
     if (!isNaN(d.getTime())) {
-      // Force conversion to IST (Asia/Kolkata UTC+05:30)
-      const istTime = new Date(d.getTime() + (5 * 60 + 30) * 60 * 1000);
-      const hours = istTime.getUTCHours();
-      const minutes = istTime.getUTCMinutes();
-      const seconds = istTime.getUTCSeconds();
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      const h12 = hours % 12 || 12;
-      return `${String(h12).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')} ${ampm}`;
+      return d.toLocaleTimeString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
     }
   }
 
@@ -228,12 +274,10 @@ export function formatTo12HourTime(val?: string | null): string {
   if (parts.length >= 2) {
     const hours = parseInt(parts[0], 10);
     const minutes = parseInt(parts[1], 10);
-    const secPart = parts[2] ? parseInt(parts[2].substring(0, 2), 10) : 0;
-    if (!isNaN(hours) && !isNaN(minutes)) {
+    if (!isNaN(hours) && !isNaN(minutes) && hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
       const ampm = hours >= 12 ? 'PM' : 'AM';
       const h12 = hours % 12 || 12;
-      const s = String(!isNaN(secPart) ? secPart : 0).padStart(2, '0');
-      return `${String(h12).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${s} ${ampm}`;
+      return `${String(h12).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${ampm}`;
     }
   }
 
@@ -317,9 +361,9 @@ export const attendanceReportExportService = {
     // -------------------------------------------------------------------------
     const totalHeadcount = rows.length;
     const presentCount = rows.filter(
-      r => r.record.status === 'Present' || r.record.status === 'Checked Out' || !!r.record.first_check_in
+      r => r.record.status === 'Present' || r.record.status === 'Half Day' || r.record.status === 'Checked Out' || !!r.record.first_check_in
     ).length;
-    const lateCount = rows.filter(r => (r.record.late_minutes || 0) > 0 || r.record.status === 'Late').length;
+    const lateCount = rows.filter(r => (r.record.late_minutes || r.record.late_entry_minutes || 0) > 0 || r.record.status === 'Late').length;
     const notCheckedInCount = rows.filter(
       r => (r.record.status === 'Not Checked In' || !r.record.status) && !r.record.first_check_in
     ).length;
@@ -334,7 +378,7 @@ export const attendanceReportExportService = {
       }
     });
 
-    const totalNetMinutes = rows.reduce((acc, r) => acc + (r.record.net_working_minutes || 0), 0);
+    const totalNetMinutes = rows.reduce((acc, r) => acc + (r.record.total_work_minutes || r.record.net_working_minutes || 0), 0);
     const turnoutRatio = Math.round((presentCount / (totalHeadcount || 1)) * 100);
 
     // -------------------------------------------------------------------------
@@ -609,16 +653,16 @@ export const attendanceReportExportService = {
       }
       const d = deptMap.get(dept)!;
       d.total += 1;
-      if (r.record.status === 'Present' || r.record.status === 'Checked Out' || !!r.record.first_check_in) {
+      if (r.record.status === 'Present' || r.record.status === 'Half Day' || r.record.status === 'Checked Out' || !!r.record.first_check_in) {
         d.present += 1;
       }
-      if ((r.record.late_minutes || 0) > 0 || r.record.status === 'Late') {
+      if ((r.record.late_minutes || r.record.late_entry_minutes || 0) > 0 || r.record.status === 'Late') {
         d.late += 1;
       }
       if ((r.record.status === 'Not Checked In' || !r.record.status) && !r.record.first_check_in) {
         d.notCheckedIn += 1;
       }
-      d.netMins += r.record.net_working_minutes || 0;
+      d.netMins += (r.record.total_work_minutes || r.record.net_working_minutes || 0);
       const ot = computeEmployeeOvertime(r.record, r.shift, isMorning);
       if (ot.hasOvertime) {
         d.otMins += ot.overtimeMinutes;
@@ -1463,18 +1507,19 @@ export const attendanceReportExportService = {
         checkOutSrc = '— (Active Shift)';
       }
 
-      const breakMins = rec.total_break_minutes || 0;
+      const breakMins = rec.break_minutes ?? rec.total_break_minutes ?? 0;
+      const workMins = rec.total_work_minutes ?? rec.net_working_minutes ?? 0;
       let netStr = '0h 00m';
-      if (rec.net_working_minutes && rec.net_working_minutes > 0) {
+      if (workMins > 0) {
         netStr = isMorning && !checkOutRaw
-          ? `${formatMinutesToHoursStr(rec.net_working_minutes)} (Elapsed)`
-          : formatMinutesToHoursStr(rec.net_working_minutes);
+          ? `${formatMinutesToHoursStr(workMins)} (Elapsed)`
+          : formatMinutesToHoursStr(workMins);
       } else if (checkInRaw && !checkOutRaw) {
         netStr = 'Active (Live)';
       }
 
-      const lateMins = rec.late_minutes || 0;
-      const earlyMins = rec.early_checkout_minutes || 0;
+      const lateMins = rec.late_entry_minutes ?? rec.late_minutes ?? 0;
+      const earlyMins = rec.early_exit_minutes ?? rec.early_checkout_minutes ?? 0;
       const lateStr = lateMins > 0 ? formatDeviationDuration(lateMins, { showBoth: lateMins >= 60 }) : '0m';
       const earlyStr = earlyMins > 0 ? formatDeviationDuration(earlyMins, { showBoth: earlyMins >= 60 }) : '0m';
 
@@ -2479,10 +2524,10 @@ export const attendanceReportExportService = {
     // -------------------------------------------------------------------------
     const totalStaff = rows.length;
     const presentCount = rows.filter(
-      r => r.record?.status === 'Present' || r.record?.status === 'Checked Out' || (r.record?.status as string) === 'Working' || !!r.record?.first_check_in
+      r => r.record?.status === 'Present' || r.record?.status === 'Half Day' || r.record?.status === 'Checked Out' || (r.record?.status as string) === 'Working' || !!r.record?.first_check_in
     ).length;
     const lateCount = rows.filter(
-      r => (r.record?.late_minutes || 0) > 0 || r.record?.status === 'Late'
+      r => (r.record?.late_minutes || r.record?.late_entry_minutes || 0) > 0 || r.record?.status === 'Late'
     ).length;
     const absentCount = rows.filter(
       r => (r.record?.status === 'Absent' || r.record?.status === 'Not Checked In' || !r.record?.status) && !r.record?.first_check_in
@@ -2501,7 +2546,7 @@ export const attendanceReportExportService = {
       }
     });
 
-    const totalNetMins = rows.reduce((acc, r) => acc + (r.record?.net_working_minutes || 0), 0);
+    const totalNetMins = rows.reduce((acc, r) => acc + (r.record?.total_work_minutes || r.record?.net_working_minutes || 0), 0);
     const turnoutRatio = Math.round((presentCount / (totalStaff || 1)) * 100);
 
     // Fetch Yesterday Records for Day-over-Day Audit
@@ -2793,16 +2838,16 @@ export const attendanceReportExportService = {
       }
       const d = deptMap.get(dept)!;
       d.total += 1;
-      if (r.record?.status === 'Present' || r.record?.status === 'Checked Out' || (r.record?.status as string) === 'Working' || !!r.record?.first_check_in) {
+      if (r.record?.status === 'Present' || r.record?.status === 'Half Day' || r.record?.status === 'Checked Out' || (r.record?.status as string) === 'Working' || !!r.record?.first_check_in) {
         d.present += 1;
       }
-      if ((r.record?.late_minutes || 0) > 0 || r.record?.status === 'Late') {
+      if ((r.record?.late_minutes || r.record?.late_entry_minutes || 0) > 0 || r.record?.status === 'Late') {
         d.late += 1;
       }
       if ((r.record?.status === 'Not Checked In' || !r.record?.status) && !r.record?.first_check_in) {
         d.notCheckedIn += 1;
       }
-      d.netMins += r.record?.net_working_minutes || 0;
+      d.netMins += (r.record?.total_work_minutes || r.record?.net_working_minutes || 0);
       const ot = computeEmployeeOvertime(r.record, r.shift, isMorning);
       if (ot.hasOvertime) {
         d.otMins += ot.overtimeMinutes;
@@ -3077,12 +3122,12 @@ export const attendanceReportExportService = {
       { label: 'EMP CODE', width: 18, align: 'left' },
       { label: 'EMPLOYEE NAME', width: 44, align: 'left' },
       { label: 'DEPARTMENT & ROLE', width: 42, align: 'left' },
-      { label: 'SHIFT & SCHEDULE', width: 34, align: 'left' },
-      { label: isMorning ? 'CHECK-IN (SOURCE)' : 'FIRST CHECK-IN', width: 32, align: 'left' },
-      { label: isMorning ? 'EXPECTED OUT' : 'LAST CHECK-OUT', width: 24, align: 'center' },
-      { label: 'NET WORK', width: 22, align: 'center' },
+      { label: 'SHIFT & SCHEDULE', width: 33, align: 'left' },
+      { label: 'CHECK-IN (MODE)', width: 30, align: 'left' },
+      { label: isMorning ? 'EXPECTED OUT' : 'CHECK-OUT (MODE)', width: 30, align: 'left' },
+      { label: 'NET WORK', width: 20, align: 'center' },
       { label: 'TIMING / OT', width: 24, align: 'center' },
-      { label: 'STATUS', width: 25, align: 'center' },
+      { label: 'STATUS', width: 24, align: 'center' },
     ];
 
     let ledgerY = 22;
@@ -3117,18 +3162,34 @@ export const attendanceReportExportService = {
       const shiftCode = shift.shift_code || shift.code || shift.name || 'GEN-09';
       const shiftTime = shift.start_time && shift.end_time ? `${shift.start_time.slice(0, 5)} - ${shift.end_time.slice(0, 5)}` : '09:00 - 18:00';
 
-      const checkInTime = rec.first_check_in || '—';
-      const checkInSrc = rec.first_check_in ? (rec.check_in_source || rec.source || 'BIOMETRIC') : '';
-      const checkOutTime = rec.last_check_out || (isMorning ? 'In Shift' : (rec.first_check_in ? 'In Shift' : '—'));
+      const formatCleanMode = (src?: string | null) => {
+        if (!src) return '';
+        const s = String(src).toUpperCase();
+        if (s.includes('BIO') || s.includes('FINGER') || s.includes('FACE') || s.includes('TERMINAL') || s.includes('DEVICE')) return '(BIO)';
+        if (s.includes('MOB') || s.includes('GPS') || s.includes('GEO') || s.includes('APP')) return '(GPS)';
+        if (s.includes('WEB') || s.includes('PORTAL') || s.includes('BROWSER')) return '(WEB)';
+        return '(BIO)';
+      };
 
-      const netWorkStr = rec.net_working_minutes > 0
-        ? formatMinutesToHoursStr(rec.net_working_minutes)
-        : (rec.first_check_in ? 'In Progress' : '0h 00m');
+      const checkInTime = formatTo12HourTime(rec.first_check_in);
+      const inMode = rec.first_check_in ? formatCleanMode(rec.check_in_source || rec.source) : '';
+      const checkInDisplay = checkInTime && checkInTime !== '—' ? `${checkInTime} ${inMode}`.trim() : '—';
+
+      const checkOutSrc = rec.check_out_source || rec.source;
+      const outMode = rec.last_check_out ? formatCleanMode(checkOutSrc) : '';
+      const checkOutTime = rec.last_check_out ? formatTo12HourTime(rec.last_check_out) : '';
+      const checkOutDisplay = checkOutTime ? `${checkOutTime} ${outMode}`.trim() : (isMorning ? 'In Shift' : (rec.first_check_in ? 'In Shift' : '—'));
+
+      const netMins = rec.total_work_minutes || rec.net_working_minutes || 0;
+      const netWorkStr = netMins > 0
+        ? formatMinutesToHoursStr(netMins)
+        : (rec.first_check_in && !rec.last_check_out ? 'In Progress' : '0h 00m');
 
       const ot = computeEmployeeOvertime(rec, shift, isMorning);
       let timingStr = 'On Time';
-      if ((rec.late_minutes || 0) > 0) {
-        timingStr = `Late ${rec.late_minutes}m`;
+      const lateMins = rec.late_entry_minutes || rec.late_minutes || 0;
+      if (lateMins > 0) {
+        timingStr = `Late ${lateMins}m`;
       } else if (ot.hasOvertime) {
         timingStr = `+OT ${ot.formatted}`;
       } else if (!rec.first_check_in) {
@@ -3137,7 +3198,7 @@ export const attendanceReportExportService = {
 
       let status = rec.status || (rec.first_check_in ? 'Present' : 'Not Checked In');
       if (isMorning && rec.first_check_in) {
-        status = (rec.late_minutes || 0) > 0 ? 'Late In' : 'Checked In';
+        status = lateMins > 0 ? 'Late In' : 'Checked In';
       }
 
       // Zebra background fill
@@ -3180,23 +3241,28 @@ export const attendanceReportExportService = {
       doc.text(`${shiftCode} (${shiftTime})`, margin + 112 + 1.5, ledgerY + 4.2);
 
       // 6. Check-In & Source
-      doc.setFont('helvetica', checkInTime !== '—' ? 'bold' : 'normal');
+      doc.setFont('helvetica', checkInTime && checkInTime !== '—' ? 'bold' : 'normal');
       doc.setFontSize(6.5);
-      doc.setTextColor(checkInTime !== '—' ? 6 : 148, checkInTime !== '—' ? 78 : 163, checkInTime !== '—' ? 59 : 184);
-      const cleanSrc = checkInSrc ? `(${checkInSrc.replace(/[^a-zA-Z]/g, '').slice(0, 9)})` : '';
-      doc.text(`${checkInTime} ${cleanSrc}`.trim(), margin + 146 + 1.5, ledgerY + 4.2);
+      doc.setTextColor(checkInTime && checkInTime !== '—' ? 6 : 148, checkInTime && checkInTime !== '—' ? 78 : 163, checkInTime && checkInTime !== '—' ? 59 : 184);
+      doc.text(checkInDisplay, margin + 145 + 1.5, ledgerY + 4.2);
 
-      // 7. Check-Out
-      doc.setFont('helvetica', 'normal');
+      // 7. Check-Out & Source
+      doc.setFont('helvetica', checkOutTime ? 'bold' : 'normal');
       doc.setFontSize(6.5);
-      doc.setTextColor(checkOutTime === 'In Shift' ? 55 : 51, checkOutTime === 'In Shift' ? 48 : 65, checkOutTime === 'In Shift' ? 163 : 85);
-      doc.text(checkOutTime, margin + 178 + 12, ledgerY + 4.2, { align: 'center' });
+      if (checkOutDisplay === 'In Shift') {
+        doc.setTextColor(55, 48, 163);
+      } else if (checkOutTime) {
+        doc.setTextColor(15, 23, 42);
+      } else {
+        doc.setTextColor(148, 163, 184);
+      }
+      doc.text(checkOutDisplay, margin + 175 + 1.5, ledgerY + 4.2);
 
       // 8. Net Work
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(6.5);
       doc.setTextColor(3, 105, 161);
-      doc.text(netWorkStr, margin + 202 + 11, ledgerY + 4.2, { align: 'center' });
+      doc.text(netWorkStr, margin + 205 + 10, ledgerY + 4.2, { align: 'center' });
 
       // 9. Timing / OT
       doc.setFont('helvetica', 'bold');
@@ -3208,12 +3274,12 @@ export const attendanceReportExportService = {
       } else {
         doc.setTextColor(100, 116, 139);
       }
-      doc.text(timingStr, margin + 224 + 12, ledgerY + 4.2, { align: 'center' });
+      doc.text(timingStr, margin + 225 + 12, ledgerY + 4.2, { align: 'center' });
 
       // 10. Status Badge
       const statusW = 21;
       const statusH = 4.2;
-      const statusX = margin + 248 + 2;
+      const statusX = margin + 249 + 1.5;
       const statusY = ledgerY + 1.2;
 
       const sLower = status.toLowerCase();
@@ -3335,10 +3401,10 @@ export const attendanceReportExportService = {
         const name = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee';
         const dept = emp.department_name || emp.department || 'General';
         const shiftTimes = `${shift.start_time || '09:00'} - ${shift.end_time || '18:00'}`;
-        const inTime = rec.first_check_in || '—';
-        const outTime = rec.last_check_out || (isMorning ? 'In Shift' : (rec.first_check_in ? 'In Shift' : '—'));
+        const inTime = formatTo12HourTime(rec.first_check_in);
+        const outTime = rec.last_check_out ? formatTo12HourTime(rec.last_check_out) : (isMorning ? 'In Shift' : (rec.first_check_in ? 'In Shift' : '—'));
 
-        const lateMins = rec.late_minutes || 0;
+        const lateMins = rec.late_entry_minutes || rec.late_minutes || 0;
         const ot = computeEmployeeOvertime(rec, shift, isMorning);
 
         let actionStr = 'Standard Shift';
@@ -3461,7 +3527,10 @@ export const attendanceReportExportService = {
       }
     });
 
-    const punchDisplayList = combinedPunchList.slice(0, 10);
+    const signY = pageHeight - 27;
+    const availablePunchHeight = signY - 5 - devY;
+    const maxPunchRows = Math.max(1, Math.floor(availablePunchHeight / 5.2));
+    const punchDisplayList = combinedPunchList.slice(0, maxPunchRows);
     if (punchDisplayList.length === 0) {
       doc.setFillColor(248, 250, 252);
       doc.rect(margin, devY, contentWidth, 7, 'F');
@@ -3519,10 +3588,17 @@ export const attendanceReportExportService = {
       });
     }
 
+    if (combinedPunchList.length > punchDisplayList.length) {
+      const remaining = combinedPunchList.length - punchDisplayList.length;
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(5.8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`* ${remaining} additional hardware/mobile verified punches securely recorded in consolidated time ledger`, margin + 2, signY - 1.5);
+    }
+
     // -------------------------------------------------------------------------
     // HR OPERATIONS AUTHORIZATION & SIGN-OFF SEAL
     // -------------------------------------------------------------------------
-    const signY = pageHeight - 27;
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(203, 213, 225);
     doc.roundedRect(margin, signY, contentWidth, 16, 2, 2, 'FD');

@@ -841,128 +841,20 @@ app.use((req, res) => {
 });
 
 // ============================================================================
-// Automated Attendance Report Scheduler Daemon (Production 24/7 Runner)
-// Guarantees zero missed reports in production without requiring open browser tabs
-// Enforces atomic lock to prevent duplicate dispatches
+// Automated Attendance Punch Notifications & Daily MIS Report Schedulers
+// Managed 24/7 by server_attendance_daemon.js (Native REST, zero external deps)
 // ============================================================================
-let isAttendanceReportRunning = false;
 
-async function checkAndRunAttendanceReportScheduler() {
-  if (isAttendanceReportRunning) return;
-  try {
-    const schedules = await supabaseFetch('attendance_report_schedules?enabled=eq.true&order=updated_at.desc&limit=5');
-    if (!schedules || !Array.isArray(schedules) || schedules.length === 0) return;
-
-    const now = new Date();
-    const istDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD in IST
-    const istTimeParts = now.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }).split(':');
-    const curHour = parseInt(istTimeParts[0], 10);
-    const curMin = parseInt(istTimeParts[1], 10);
-    const curTotalMin = curHour * 60 + curMin;
-
-    for (const sched of schedules) {
-      if (sched.frequency === 'WEEKDAYS') {
-        const istDay = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).getDay();
-        if (istDay === 0 || istDay === 6) continue;
-      }
-
-      // Check Morning Slot
-      if (sched.morning_enabled !== false) {
-        const [mH, mM] = (sched.morning_time || '10:30').split(':').map(Number);
-        const mTargetMin = mH * 60 + mM;
-        const lastMorningDate = sched.last_morning_run_at ? sched.last_morning_run_at.slice(0, 10) : '';
-        const alreadyDoneMorning = lastMorningDate === istDateStr && (sched.last_morning_status === 'SUCCESS' || sched.last_morning_status === 'IN_PROGRESS');
-
-        if (!alreadyDoneMorning && curTotalMin >= mTargetMin && curTotalMin <= mTargetMin + 10) {
-          isAttendanceReportRunning = true;
-          console.log(`[Attendance Daemon] Slot MORNING triggered for ${istDateStr} (${sched.morning_time}). Acquiring lock...`);
-          
-          // Atomic lock claim in Supabase
-          const claim = await supabaseFetch(`attendance_report_schedules?id=eq.${sched.id}`, {
-            method: 'PATCH',
-            body: JSON.stringify({
-              last_morning_status: 'IN_PROGRESS',
-              last_morning_run_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            }),
-          });
-
-          if (claim) {
-            try {
-              const res = await fetch('https://ysiajemrqakfngasehhi.supabase.co/functions/v1/attendance-report-dispatcher', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  slot: 'MORNING',
-                  mode: 'AUTOMATED_SCHEDULE',
-                  organization_id: sched.organization_id,
-                }),
-              });
-              const data = await res.json().catch(() => null);
-              console.log('[Attendance Daemon] Morning dispatch completed:', data);
-            } catch (err) {
-              console.error('[Attendance Daemon] Morning dispatch error:', err.message);
-            }
-          }
-          isAttendanceReportRunning = false;
-          return;
-        }
-      }
-
-      // Check Evening Slot
-      if (sched.evening_enabled !== false) {
-        const [eH, eM] = (sched.evening_time || '19:00').split(':').map(Number);
-        const eTargetMin = eH * 60 + eM;
-        const lastEveningDate = sched.last_evening_run_at ? sched.last_evening_run_at.slice(0, 10) : '';
-        const alreadyDoneEvening = lastEveningDate === istDateStr && (sched.last_evening_status === 'SUCCESS' || sched.last_evening_status === 'IN_PROGRESS');
-
-        if (!alreadyDoneEvening && curTotalMin >= eTargetMin && curTotalMin <= eTargetMin + 10) {
-          isAttendanceReportRunning = true;
-          console.log(`[Attendance Daemon] Slot EVENING triggered for ${istDateStr} (${sched.evening_time}). Acquiring lock...`);
-
-          // Atomic lock claim in Supabase
-          const claim = await supabaseFetch(`attendance_report_schedules?id=eq.${sched.id}`, {
-            method: 'PATCH',
-            body: JSON.stringify({
-              last_evening_status: 'IN_PROGRESS',
-              last_evening_run_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            }),
-          });
-
-          if (claim) {
-            try {
-              const res = await fetch('https://ysiajemrqakfngasehhi.supabase.co/functions/v1/attendance-report-dispatcher', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  slot: 'EVENING',
-                  mode: 'AUTOMATED_SCHEDULE',
-                  organization_id: sched.organization_id,
-                }),
-              });
-              const data = await res.json().catch(() => null);
-              console.log('[Attendance Daemon] Evening dispatch completed:', data);
-            } catch (err) {
-              console.error('[Attendance Daemon] Evening dispatch error:', err.message);
-            }
-          }
-          isAttendanceReportRunning = false;
-          return;
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('[Attendance Daemon] Periodic check notice:', err.message);
-    isAttendanceReportRunning = false;
-  }
-}
-
-// Start daemon: initial check after 5s, then every 60s
+// Start 24/7 attendance punch & push notification daemon
 setTimeout(() => {
-  checkAndRunAttendanceReportScheduler();
-  setInterval(checkAndRunAttendanceReportScheduler, 60000);
-}, 5000);
+  import('./server_attendance_daemon.js')
+    .then((daemon) => {
+      daemon.startAttendanceRealtimeDaemon();
+    })
+    .catch((err) => {
+      console.warn('[AttendanceDaemon] Notice starting attendance daemon:', err.message);
+    });
+}, 3000);
 
 app.listen(PORT, () => {
   console.log(`[Joy PeopleHR Enterprise] Production Server active on port ${PORT} with Enhanced Security Headers`);
