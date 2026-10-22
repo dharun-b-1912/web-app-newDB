@@ -9,3 +9,4 @@ export * from './approvalService';
 export * from './notificationPreferencesService';
 export * from './webPushService';
 export * from './notificationRealtimeEngine';
+export * from './universalNotificationEngine';
