@@ -37,37 +37,63 @@ export const adminApi = {
   async getUsersAsync(): Promise<AdminUser[]> {
     if (isSupabaseEnabled) {
       try {
-        const { data: profiles, error } = await supabase
-          .from('user_profiles')
-          .select(`
-            id,
-            auth_user_id,
-            organization_id,
-            employee_id,
-            email,
-            full_name,
-            phone,
-            status,
-            created_at,
-            user_roles (
-              role_id,
-              roles (
-                name,
-                code
+        const [profilesRes, empsRes] = await Promise.all([
+          supabase
+            .from('user_profiles')
+            .select(`
+              id,
+              auth_user_id,
+              organization_id,
+              employee_id,
+              email,
+              full_name,
+              phone,
+              status,
+              created_at,
+              user_roles (
+                role_id,
+                roles (
+                  name,
+                  code
+                )
               )
-            )
-          `);
+            `),
+          supabase
+            .from('employees')
+            .select(`
+              id,
+              employee_code,
+              work_email,
+              departments (
+                name
+              )
+            `)
+        ]);
 
-        if (!error && profiles && profiles.length > 0) {
+        const profiles = profilesRes.data;
+        const emps = empsRes.data || [];
+
+        const empsById = new Map<string, any>();
+        const empsByEmail = new Map<string, any>();
+        for (const e of emps) {
+          if (e.id) empsById.set(e.id, e);
+          if (e.work_email) empsByEmail.set(e.work_email.trim().toLowerCase(), e);
+        }
+
+        if (!profilesRes.error && profiles && profiles.length > 0) {
           return profiles.map((p: any, idx: number) => {
-            const roleName = p.user_roles?.[0]?.roles?.name || p.user_roles?.[0]?.roles?.code || 'Employee';
+            const roleName = p.user_roles?.[0]?.roles?.name || p.user_roles?.[0]?.roles?.code || p.role || 'Employee';
+            const emp = (p.employee_id && empsById.get(p.employee_id)) || (p.email && empsByEmail.get(p.email.trim().toLowerCase()));
+            const empCode = emp?.employee_code || (p.employee_id ? `EMP-${p.employee_id.slice(0, 8)}` : `AUTH-${p.auth_user_id?.slice(0, 8) || 'USR'}`);
+            const deptName = (emp?.departments as any)?.name || (roleName.includes('Admin') ? 'Administration' : roleName.includes('HR') ? 'Human Resources' : 'Operations');
+
             return {
               id: p.id,
               user_code: `USR-${String(idx + 1).padStart(3, '0')}`,
               name: p.full_name || p.email,
               email: p.email,
-              employee_id: p.employee_id || `AUTH-${p.auth_user_id?.slice(0, 8)}`,
-              department_name: roleName.includes('Admin') ? 'Administration' : roleName.includes('HR') ? 'Human Resources' : 'Engineering',
+              employee_id: empCode,
+              department_name: deptName,
               role_name: roleName,
               status: p.status || 'Active',
               mfa_enabled: true,
