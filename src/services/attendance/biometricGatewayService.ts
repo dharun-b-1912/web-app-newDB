@@ -562,6 +562,7 @@ function setStore<T>(baseKey: string, val: T, orgId?: string, notify: boolean = 
 class BiometricGatewayService {
   public activeGatewayPort = 11108;
   private _connectorStatus: ConnectorStatus = 'offline';
+  private _isLocalAgentOnline: boolean = false;
   private _connectorTelemetry: ConnectorTelemetry = {
     status: 'OFFLINE',
     uptime_seconds: 0,
@@ -590,6 +591,10 @@ class BiometricGatewayService {
 
   public getConnectorStatus(): ConnectorStatus {
     return this._connectorStatus;
+  }
+
+  public isLocalAgentOnline(): boolean {
+    return this._isLocalAgentOnline;
   }
 
   public getConnectorTelemetry(): ConnectorTelemetry {
@@ -670,7 +675,7 @@ class BiometricGatewayService {
         resp = results.find(r => r && (r.ok || r.status < 500)) || null;
       }
 
-      if (resp && (resp.ok || resp.status < 500)) {
+      if (resp && resp.ok) {
         let data: any = {};
         try {
           data = await resp.json();
@@ -678,6 +683,7 @@ class BiometricGatewayService {
 
         const prevStatus = this._connectorStatus;
         this._connectorStatus = 'online';
+        this._isLocalAgentOnline = true;
         this._offlineBackoffMs = 8000;
         this._connectorTelemetry = {
           status: 'ONLINE',
@@ -783,6 +789,7 @@ class BiometricGatewayService {
             if (activeDevice) {
               const prevStatus = this._connectorStatus;
               this._connectorStatus = 'online';
+              this._isLocalAgentOnline = false; // Cloud ADMS is active; local loopback daemon is not running
               this._offlineBackoffMs = 8000;
               this._connectorTelemetry = {
                 status: 'ONLINE',
@@ -829,6 +836,7 @@ class BiometricGatewayService {
 
         const prevStatus = this._connectorStatus;
         this._connectorStatus = 'offline';
+        this._isLocalAgentOnline = false;
         this._gwOpenUntil = Date.now() + 15000; // 15-second gentle backoff when offline
         this._connectorTelemetry = {
           ...this._connectorTelemetry,
@@ -915,12 +923,14 @@ class BiometricGatewayService {
 
   private async fetchGateway(endpoint: string, options?: RequestInit): Promise<Response | null> {
     const isScanOrProbe = endpoint.includes('scan') || endpoint.includes('probe') || endpoint.includes('health') || endpoint.includes('auto-resolve');
+    if (!this._isLocalAgentOnline && !isScanOrProbe) return null;
     if (this.isGatewayOffline() && !isScanOrProbe) return null;
 
     if (this._gwInFlight) {
       try {
         await this._gwInFlight;
       } catch (_) { }
+      if (!this._isLocalAgentOnline && !isScanOrProbe) return null;
       if (this.isGatewayOffline() && !isScanOrProbe) return null;
     }
 
@@ -949,10 +959,11 @@ class BiometricGatewayService {
           const tid = setTimeout(() => ctrl.abort(), timeoutMs);
           const resp = await fetch(targetUrl, { ...options, signal: ctrl.signal }).catch(() => null);
           clearTimeout(tid);
-          if (resp && (resp.ok || resp.status < 500)) {
+          if (resp && resp.ok) {
             this._gwOpenUntil = 0;
             this._gwFailureCount = 0;
             this._connectorStatus = 'online';
+            this._isLocalAgentOnline = true;
             return resp;
           }
         } catch (_) {}
@@ -960,11 +971,11 @@ class BiometricGatewayService {
 
       // CRITICAL: NEVER trip global circuit breaker or force offline on scan, probe, or punch sync.
       // Only multiple consecutive /health failures can place connector in short offline standby.
-      if (endpoint.includes('health')) {
+      if (endpoint.includes('health') || endpoint.includes('punches')) {
         this._gwFailureCount++;
         if (this._gwFailureCount >= 2) {
           this._gwOpenUntil = Date.now() + 15000; // 15-second gentle backoff
-          this._connectorStatus = 'offline';
+          this._isLocalAgentOnline = false;
         }
       }
       return null;
@@ -5434,8 +5445,8 @@ class BiometricGatewayService {
   }
 
   async syncRealPunchesFromAgent(deviceId?: string, force = false): Promise<{ count: number; message: string }> {
-    if (this._connectorStatus !== 'online' || this.isGatewayOffline()) {
-      return { count: 0, message: 'JOY Connector daemon is offline. Punches are synchronized directly via Supabase.' };
+    if (!this._isLocalAgentOnline || this._connectorStatus !== 'online' || this.isGatewayOffline()) {
+      return { count: 0, message: 'JOY Connector local agent daemon is offline. Punches are synchronized directly via Supabase / Cloud ADMS.' };
     }
     const devices = this.getBiometricDevices();
     if (!devices || devices.length === 0) {
