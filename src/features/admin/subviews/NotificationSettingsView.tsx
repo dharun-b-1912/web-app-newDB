@@ -48,6 +48,21 @@ import {
 } from '../../../services/notification/universalNotificationEngine';
 import { useTenant } from '../../../hooks/useTenant';
 
+// Official Brand Icons for Unmistakable Visual Recognition
+export const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+  </svg>
+);
+
+export const SmsBubbleIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    <path d="M8 9h8" strokeWidth="2.2" />
+    <path d="M8 13h5" strokeWidth="2.2" />
+  </svg>
+);
+
 export const NotificationSettingsView: React.FC = () => {
   const { showToast } = useToast();
   const { organization } = useTenant();
@@ -414,14 +429,14 @@ export const NotificationSettingsView: React.FC = () => {
         </div>
 
         {/* Email Provider */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs hover:border-emerald-300 transition-all flex flex-col justify-between">
+        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs hover:border-blue-300 transition-all flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-500 flex items-center gap-1.5">
-                <Mail className="w-4 h-4 text-emerald-700" />
+                <Mail className="w-4 h-4 text-blue-600" />
                 Enterprise SMTP Gateway
               </span>
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                 Verified
               </span>
             </div>
@@ -432,7 +447,7 @@ export const NotificationSettingsView: React.FC = () => {
           </div>
           <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400 font-mono">
             <span>DKIM / SPF: Valid</span>
-            <span className="text-emerald-700 font-sans font-medium">Outlook & Gmail Ready</span>
+            <span className="text-blue-700 font-sans font-medium">Outlook & Gmail Ready</span>
           </div>
         </div>
 
@@ -441,7 +456,7 @@ export const NotificationSettingsView: React.FC = () => {
           <div>
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-500 flex items-center gap-1.5">
-                <MessageSquare className="w-4 h-4 text-emerald-800" />
+                <WhatsAppIcon className="w-4 h-4 text-[#25D366]" />
                 WhatsApp Business API
               </span>
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -450,7 +465,7 @@ export const NotificationSettingsView: React.FC = () => {
             </div>
             <div className="mt-2.5">
               <span className="text-lg font-black text-gray-900 block">Cloud API v20.0</span>
-              <span className="text-gray-500 text-[11px] block mt-0.5">2-Way Bot & Interactive Receipts</span>
+              <span className="text-gray-500 text-[11px] block mt-0.5">Official Graph Gateway</span>
             </div>
           </div>
           <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400 font-mono">
@@ -460,14 +475,14 @@ export const NotificationSettingsView: React.FC = () => {
         </div>
 
         {/* SMS Gateway */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs hover:border-emerald-300 transition-all flex flex-col justify-between">
+        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-2xs hover:border-amber-300 transition-all flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-500 flex items-center gap-1.5">
-                <Smartphone className="w-4 h-4 text-blue-700" />
+                <SmsBubbleIcon className="w-4 h-4 text-amber-500" />
                 Enterprise SMS Gateway
               </span>
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                 DLT TRAI
               </span>
             </div>
@@ -478,7 +493,7 @@ export const NotificationSettingsView: React.FC = () => {
           </div>
           <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400 font-mono">
             <span>DLT Header: Registered</span>
-            <span className="text-blue-700 font-sans font-medium">Prepaid Ready</span>
+            <span className="text-amber-700 font-sans font-medium">Prepaid Ready</span>
           </div>
         </div>
       </div>
@@ -566,7 +581,18 @@ export const NotificationSettingsView: React.FC = () => {
                 <tr className="bg-gray-50/75 border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
                   <th className="py-3 px-4">Rule Name & Trigger</th>
                   <th className="py-3 px-4">Target Module</th>
-                  <th className="py-3 px-4 text-center">Active Delivery Channels</th>
+                  <th className="py-3 px-4 text-center">
+                    <span className="block font-bold">Active Delivery Channels</span>
+                    <div className="flex items-center justify-center gap-1.5 mt-1 text-[9px] font-mono normal-case tracking-normal text-gray-500 font-normal">
+                      <span className="inline-flex items-center gap-0.5 text-[#07563D]"><Bell className="w-2.5 h-2.5" /> In-App</span>
+                      <span>•</span>
+                      <span className="inline-flex items-center gap-0.5 text-blue-600"><Mail className="w-2.5 h-2.5" /> Email</span>
+                      <span>•</span>
+                      <span className="inline-flex items-center gap-0.5 text-emerald-700"><WhatsAppIcon className="w-2.5 h-2.5 text-[#25D366]" /> WhatsApp</span>
+                      <span>•</span>
+                      <span className="inline-flex items-center gap-0.5 text-amber-600"><SmsBubbleIcon className="w-2.5 h-2.5 text-amber-500" /> SMS</span>
+                    </div>
+                  </th>
                   <th className="py-3 px-4">Recipients</th>
                   <th className="py-3 px-4 text-center">Priority</th>
                   <th className="py-3 px-4 text-center">Status</th>
@@ -636,14 +662,14 @@ export const NotificationSettingsView: React.FC = () => {
 
                       {/* Active Channels Matrix */}
                       <td className="py-3.5 px-4 text-center">
-                        <div className="inline-flex items-center gap-1 p-1 bg-gray-50 border border-gray-200/60 rounded-xl">
+                        <div className="inline-flex items-center gap-1.5 p-1 bg-gray-50 border border-gray-200/80 rounded-xl">
                           {/* In-App */}
                           <button
                             type="button"
-                            title={`In-App: ${rule.enable_in_app ? 'Enabled' : 'Disabled'} (Click to toggle)`}
+                            title={`In-App Bell: ${rule.enable_in_app ? 'Enabled' : 'Disabled'} (Click to toggle)`}
                             onClick={e => handleToggleChannel(rule, 'enable_in_app', e)}
                             className={cn(
-                              'p-1.5 rounded-lg transition-all cursor-pointer',
+                              'p-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center',
                               rule.enable_in_app
                                 ? 'bg-[#07563D] text-white shadow-2xs hover:bg-[#064e35]'
                                 : 'bg-gray-100 text-gray-300 hover:text-gray-500'
@@ -655,12 +681,12 @@ export const NotificationSettingsView: React.FC = () => {
                           {/* Email */}
                           <button
                             type="button"
-                            title={`Email: ${rule.enable_email ? 'Enabled' : 'Disabled'} (Click to toggle)`}
+                            title={`Email SMTP: ${rule.enable_email ? 'Enabled' : 'Disabled'} (Click to toggle)`}
                             onClick={e => handleToggleChannel(rule, 'enable_email', e)}
                             className={cn(
-                              'p-1.5 rounded-lg transition-all cursor-pointer',
+                              'p-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center',
                               rule.enable_email
-                                ? 'bg-emerald-700 text-white shadow-2xs hover:bg-emerald-800'
+                                ? 'bg-blue-600 text-white shadow-2xs hover:bg-blue-700'
                                 : 'bg-gray-100 text-gray-300 hover:text-gray-500'
                             )}
                           >
@@ -670,31 +696,31 @@ export const NotificationSettingsView: React.FC = () => {
                           {/* WhatsApp */}
                           <button
                             type="button"
-                            title={`WhatsApp: ${rule.enable_whatsapp ? 'Enabled' : 'Disabled'} (Click to toggle)`}
+                            title={`WhatsApp Business: ${rule.enable_whatsapp ? 'Enabled' : 'Disabled'} (Click to toggle)`}
                             onClick={e => handleToggleChannel(rule, 'enable_whatsapp', e)}
                             className={cn(
-                              'p-1.5 rounded-lg transition-all cursor-pointer',
+                              'p-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center',
                               rule.enable_whatsapp
-                                ? 'bg-emerald-800 text-white shadow-2xs hover:bg-emerald-900'
+                                ? 'bg-[#25D366] text-white shadow-2xs hover:bg-[#20bd5a]'
                                 : 'bg-gray-100 text-gray-300 hover:text-gray-500'
                             )}
                           >
-                            <MessageSquare className="w-3.5 h-3.5" />
+                            <WhatsAppIcon className="w-3.5 h-3.5" />
                           </button>
 
                           {/* SMS */}
                           <button
                             type="button"
-                            title={`SMS: ${rule.enable_sms ? 'Enabled' : 'Disabled'} (Click to toggle)`}
+                            title={`SMS Gateway: ${rule.enable_sms ? 'Enabled' : 'Disabled'} (Click to toggle)`}
                             onClick={e => handleToggleChannel(rule, 'enable_sms', e)}
                             className={cn(
-                              'p-1.5 rounded-lg transition-all cursor-pointer',
+                              'p-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center',
                               rule.enable_sms
-                                ? 'bg-blue-600 text-white shadow-2xs hover:bg-blue-700'
+                                ? 'bg-amber-500 text-white shadow-2xs hover:bg-amber-600'
                                 : 'bg-gray-100 text-gray-300 hover:text-gray-500'
                             )}
                           >
-                            <Smartphone className="w-3.5 h-3.5" />
+                            <SmsBubbleIcon className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -832,9 +858,9 @@ export const NotificationSettingsView: React.FC = () => {
                     <tr key={log.id || index} className="hover:bg-gray-50/70 transition-colors">
                       <td className="py-3 px-4 font-sans">
                         <div className="flex items-center gap-1.5">
-                          {log.channel === 'EMAIL' && <Mail className="w-3.5 h-3.5 text-emerald-700" />}
-                          {log.channel === 'WHATSAPP' && <MessageSquare className="w-3.5 h-3.5 text-emerald-800" />}
-                          {log.channel === 'SMS' && <Smartphone className="w-3.5 h-3.5 text-blue-600" />}
+                          {log.channel === 'EMAIL' && <Mail className="w-3.5 h-3.5 text-blue-600" />}
+                          {log.channel === 'WHATSAPP' && <WhatsAppIcon className="w-3.5 h-3.5 text-[#25D366]" />}
+                          {log.channel === 'SMS' && <SmsBubbleIcon className="w-3.5 h-3.5 text-amber-500" />}
                           {log.channel === 'IN_APP' && <Bell className="w-3.5 h-3.5 text-[#07563D]" />}
                           <span className="font-bold text-gray-800">{log.channel}</span>
                         </div>
@@ -981,17 +1007,17 @@ export const NotificationSettingsView: React.FC = () => {
                 className={cn(
                   'p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between',
                   enableEmail
-                    ? 'bg-emerald-50/50 border-emerald-600 shadow-2xs'
+                    ? 'bg-blue-50/50 border-blue-600 shadow-2xs'
                     : 'bg-gray-50 border-gray-200 opacity-60'
                 )}
               >
                 <div className="flex items-center justify-between">
-                  <Mail className={cn('w-4 h-4', enableEmail ? 'text-emerald-700' : 'text-gray-400')} />
+                  <Mail className={cn('w-4 h-4', enableEmail ? 'text-blue-600' : 'text-gray-400')} />
                   <input
                     type="checkbox"
                     checked={enableEmail}
                     onChange={() => {}}
-                    className="accent-emerald-700 cursor-pointer"
+                    className="accent-blue-600 cursor-pointer"
                   />
                 </div>
                 <div className="mt-2">
@@ -1006,22 +1032,22 @@ export const NotificationSettingsView: React.FC = () => {
                 className={cn(
                   'p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between',
                   enableWhatsApp
-                    ? 'bg-emerald-50/50 border-emerald-700 shadow-2xs'
+                    ? 'bg-green-50/50 border-[#25D366] shadow-2xs'
                     : 'bg-gray-50 border-gray-200 opacity-60'
                 )}
               >
                 <div className="flex items-center justify-between">
-                  <MessageSquare className={cn('w-4 h-4', enableWhatsApp ? 'text-emerald-800' : 'text-gray-400')} />
+                  <WhatsAppIcon className={cn('w-4 h-4', enableWhatsApp ? 'text-[#25D366]' : 'text-gray-400')} />
                   <input
                     type="checkbox"
                     checked={enableWhatsApp}
                     onChange={() => {}}
-                    className="accent-emerald-800 cursor-pointer"
+                    className="accent-[#25D366] cursor-pointer"
                   />
                 </div>
                 <div className="mt-2">
                   <span className="font-bold text-xs text-gray-900 block">WhatsApp</span>
-                  <span className="text-[10px] text-gray-500 block">Meta Cloud API</span>
+                  <span className="text-[10px] text-gray-500 block">Official Meta API</span>
                 </div>
               </div>
 
@@ -1031,17 +1057,17 @@ export const NotificationSettingsView: React.FC = () => {
                 className={cn(
                   'p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between',
                   enableSms
-                    ? 'bg-blue-50/50 border-blue-600 shadow-2xs'
+                    ? 'bg-amber-50/50 border-amber-500 shadow-2xs'
                     : 'bg-gray-50 border-gray-200 opacity-60'
                 )}
               >
                 <div className="flex items-center justify-between">
-                  <Smartphone className={cn('w-4 h-4', enableSms ? 'text-blue-600' : 'text-gray-400')} />
+                  <SmsBubbleIcon className={cn('w-4 h-4', enableSms ? 'text-amber-500' : 'text-gray-400')} />
                   <input
                     type="checkbox"
                     checked={enableSms}
                     onChange={() => {}}
-                    className="accent-blue-600 cursor-pointer"
+                    className="accent-amber-500 cursor-pointer"
                   />
                 </div>
                 <div className="mt-2">
@@ -1240,12 +1266,28 @@ export const NotificationSettingsView: React.FC = () => {
           {testRule && (
             <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-xs space-y-1.5">
               <span className="font-bold text-gray-700 block">Rule Configuration Summary:</span>
-              <div className="flex items-center gap-2 text-[11px]">
-                <span>Channels:</span>
-                {testRule.enable_in_app && <Badge variant="neutral" size="sm">In-App</Badge>}
-                {testRule.enable_email && <Badge variant="success" size="sm">Email</Badge>}
-                {testRule.enable_whatsapp && <Badge variant="success" size="sm">WhatsApp</Badge>}
-                {testRule.enable_sms && <Badge variant="info" size="sm">SMS</Badge>}
+              <div className="flex items-center gap-1.5 text-[11px] flex-wrap">
+                <span className="font-semibold text-gray-500">Channels:</span>
+                {testRule.enable_in_app && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[10px] bg-emerald-100 text-[#07563D]">
+                    <Bell className="w-3 h-3" /> In-App
+                  </span>
+                )}
+                {testRule.enable_email && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[10px] bg-blue-100 text-blue-800">
+                    <Mail className="w-3 h-3" /> Email
+                  </span>
+                )}
+                {testRule.enable_whatsapp && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[10px] bg-green-100 text-green-900">
+                    <WhatsAppIcon className="w-3 h-3 text-[#25D366]" /> WhatsApp
+                  </span>
+                )}
+                {testRule.enable_sms && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[10px] bg-amber-100 text-amber-900">
+                    <SmsBubbleIcon className="w-3 h-3 text-amber-600" /> SMS
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-gray-500 italic mt-1 line-clamp-2">
                 Preview: "{testRule.body_template}"
@@ -1270,12 +1312,12 @@ export const NotificationSettingsView: React.FC = () => {
               <div className="space-y-1 pt-1 border-t border-emerald-200/50">
                 {testResult.channels.map(c => (
                   <div key={c.channel} className="flex items-center justify-between text-[11px]">
-                    <span className="font-medium text-gray-700 flex items-center gap-1">
-                      {c.channel === 'EMAIL' && <Mail className="w-3 h-3 text-emerald-700" />}
-                      {c.channel === 'WHATSAPP' && <MessageSquare className="w-3 h-3 text-emerald-800" />}
-                      {c.channel === 'SMS' && <Smartphone className="w-3 h-3 text-blue-600" />}
-                      {c.channel === 'IN_APP' && <Bell className="w-3 h-3 text-[#07563D]" />}
-                      {c.channel}
+                    <span className="font-medium text-gray-700 flex items-center gap-1.5">
+                      {c.channel === 'EMAIL' && <Mail className="w-3.5 h-3.5 text-blue-600" />}
+                      {c.channel === 'WHATSAPP' && <WhatsAppIcon className="w-3.5 h-3.5 text-[#25D366]" />}
+                      {c.channel === 'SMS' && <SmsBubbleIcon className="w-3.5 h-3.5 text-amber-500" />}
+                      {c.channel === 'IN_APP' && <Bell className="w-3.5 h-3.5 text-[#07563D]" />}
+                      <span>{c.channel}</span>
                     </span>
                     <span>
                       {!c.enabled ? (
