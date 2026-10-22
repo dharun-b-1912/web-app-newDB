@@ -497,7 +497,7 @@ serve(async (req: Request) => {
       } catch (smtpErr: any) {
         console.warn("[EdgeFunction] Hostinger SMTP notice, trying Resend API fallback:", smtpErr.message);
 
-        const resendApiKey = Deno.env.get("RESEND_API_KEY") || "re_mock_dummy_resend_api_key_sanitized";
+        const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
         try {
           const resendResp = await fetch("https://api.resend.com/emails", {
             method: "POST",

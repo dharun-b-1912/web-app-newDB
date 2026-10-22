@@ -8,7 +8,61 @@
   <meta http-equiv="X-XSS-Protection" content="1; mode=block" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   
-  <!-- Primary SEO Meta Tags -->
+  <!-- Subdomain Privacy & Domain Separation Routing Guard -->
+  <script>
+    (function () {
+      var hostname = (window.location.hostname || '').toLowerCase();
+      var pathname = (window.location.pathname || '/').toLowerCase();
+      
+      // 1. If on app subdomain or any private tenant subdomain, enforce NOINDEX immediately
+      var isAppDomain = hostname.indexOf('app.') === 0 || 
+                        (hostname !== 'joypeoplehr.com' && hostname !== 'www.joypeoplehr.com' && hostname !== 'localhost' && !/^(\d+\.){3}\d+$/.test(hostname));
+      
+      if (isAppDomain) {
+        var metaRobots = document.querySelector('meta[name="robots"]');
+        if (!metaRobots) {
+          metaRobots = document.createElement('meta');
+          metaRobots.setAttribute('name', 'robots');
+          document.head.appendChild(metaRobots);
+        }
+        metaRobots.setAttribute('content', 'noindex, nofollow, noarchive');
+        
+        var metaGoogle = document.querySelector('meta[name="googlebot"]');
+        if (!metaGoogle) {
+          metaGoogle = document.createElement('meta');
+          metaGoogle.setAttribute('name', 'googlebot');
+          document.head.appendChild(metaGoogle);
+        }
+        metaGoogle.setAttribute('content', 'noindex, nofollow, noarchive');
+      }
+
+      // 2. Domain separation:
+      // If user is on joypeoplehr.com root landing domain:
+      if (hostname === 'joypeoplehr.com' || hostname === 'www.joypeoplehr.com') {
+        var appPaths = [
+          '/admin', '/people', '/employees', '/attendance', '/payroll',
+          '/vendor', '/vendors', '/dashboard', '/workforce', '/workspace',
+          '/profile', '/organization', '/departments', '/designations',
+          '/locations', '/documents', '/assets', '/onboarding', '/offboarding',
+          '/recruitment', '/talent', '/performance', '/lms', '/client-billing',
+          '/platform', '/superadmin', '/login', '/ess', '/tl', '/auth'
+        ];
+        var isAppRoute = appPaths.some(function (p) {
+          return pathname === p || pathname.indexOf(p + '/') === 0;
+        });
+
+        if (isAppRoute) {
+          // Immediately redirect to app.joypeoplehr.com with full path and params preserved
+          window.location.replace('https://app.joypeoplehr.com' + window.location.pathname + window.location.search + window.location.hash);
+        } else {
+          // If accessing joypeoplehr.com on any non-app route, strictly redirect to the landing page
+          window.location.replace('/launch.html');
+        }
+      }
+    })();
+  </script>
+
+  <!-- Primary SEO Meta Tags (Public Landing Page Only) -->
   <title>Joy PeopleHR — Modern HR & Payroll Management SaaS Platform</title>
   <meta name="title" content="Joy PeopleHR — Modern HR & Payroll Management SaaS Platform" />
   <meta name="description" content="Joy PeopleHR is a comprehensive cloud HR & Payroll Management SaaS platform. Automate payroll calculation, attendance tracking, statutory compliance (PF, ESI, TDS), employee lifecycle management, and ESS." />
@@ -39,7 +93,33 @@
 </head>
 
 <body style="margin: 0; padding: 0; background-color: #ffffff; color-scheme: light;">
-  <div id="root"></div>
+  <div id="root">
+    <div id="initial-page-loader" style="position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; z-index: 99999;">
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+        <div style="width: 44px; height: 44px; border-radius: 12px; background: #07563D; display: flex; align-items: center; justify-content: center; color: #ffffff; font-weight: 900; font-size: 20px; box-shadow: 0 4px 14px rgba(7, 86, 61, 0.25);">
+          J
+        </div>
+        <div style="font-size: 22px; font-weight: 800; color: #111827; letter-spacing: -0.5px;">
+          Joy People<span style="color: #07563D;">HR</span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; color: #4B5563; font-size: 13px; font-weight: 500;">
+        <div style="width: 18px; height: 18px; border: 2.5px solid #E5E7EB; border-top-color: #07563D; border-radius: 50%; animation: spinLoader 0.75s linear infinite;"></div>
+        <span>Loading Enterprise Workspace & Biometric Hub...</span>
+      </div>
+      <style>
+        @keyframes spinLoader {
+          to { transform: rotate(360deg); }
+        }
+      </style>
+    </div>
+  </div>
+  <script>
+    window.addEventListener('vite:preloadError', function () {
+      console.warn('[Vite] Dynamic chunk out of date after deployment. Reloading...');
+      window.location.reload();
+    });
+  </script>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 

@@ -6,6 +6,8 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './tests',
+  testMatch: '**/*.spec.ts',
+  testIgnore: ['**/unit/**', '**/__tests__/**'],
   /* Maximum time one test can run for */
   timeout: 60 * 1000,
   expect: {
@@ -19,11 +21,12 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   /* Workers: 1 worker ensures stable serial execution across stateful workflows */
   workers: 1,
+  outputDir: './scratch/test-results',
   /* Reporters: terminal list + HTML report + JSON output */
   reporter: [
     ['list'],
-    ['html', { outputFolder: 'playwright-report', open: 'never' }],
-    ['json', { outputFile: 'playwright-report/test-results.json' }],
+    ['html', { outputFolder: './scratch/playwright-report', open: 'never' }],
+    ['json', { outputFile: './scratch/playwright-report/test-results.json' }],
   ],
   /* Shared settings for test runs */
   use: {

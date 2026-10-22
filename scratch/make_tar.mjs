@@ -34,6 +34,10 @@ function walkDir(dir) {
     if (entry.isDirectory()) {
       walkDir(full);
     } else {
+      const ext = path.extname(entry.name).toLowerCase();
+      if (['.apk', '.aab', '.zip', '.tar', '.gz', '.rar', '.pdf'].includes(ext)) {
+        continue;
+      }
       fileList.push(full);
     }
   }
