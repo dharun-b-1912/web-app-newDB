@@ -7,6 +7,7 @@
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://ysiajemrqakfngasehhi.supabase.co';
 const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_i_pb_iFcxX0BEJFok_XfZA_gZF3W8mj';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzaWFqZW1ycWFrZm5nYXNlaGhpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODQxNDEwOSwiZXhwIjoyMTAzOTkwMTA5fQ.D6xZ3REU8mTG9DmSufj8DnAH6qSyMvbukqyf5z9lvxc';
 const PHONE_NUMBER_ID = process.env.META_WA_PHONE_NUMBER_ID || process.env.VITE_META_WA_PHONE_NUMBER_ID || '1352826481241407';
 const ACCESS_TOKEN = process.env.META_WA_ACCESS_TOKEN || process.env.VITE_META_WA_ACCESS_TOKEN || 'EAAVABkQlajUBSjPw0ZChZCPzoO3nFz2aI2tDnnkZBOsgUquxD0Dw8NZCIOKYfCr0vk7hDfWYyIiDuWkZCzqjhwU6CwnxnumN1IDlu9pKhAKFLOMUZAmGT0gOBZBhtcXZApEUGmUSHtNC7or1Nv3z9HKHtyvSVGF3dH5J2GbVGYKzsSMiuRvmJ8KhqdSIQV0kkAZDZD';
 const API_VERSION = process.env.VITE_META_WA_API_VERSION || 'v20.0';
@@ -1720,7 +1721,7 @@ async function handleBotMisReportDispatch(session, slot = 'MORNING') {
   try {
     const todayStr = new Date().toISOString().split('T')[0];
     const edgeUrl = `${SUPABASE_URL}/functions/v1/attendance-report-dispatcher`;
-    const token = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || (await getAdminToken());
+    const token = SUPABASE_SERVICE_ROLE_KEY;
 
     console.log(`[WhatsApp Bot] Triggering Edge Function attendance-report-dispatcher for ${cleanPhone} (${slot})...`);
     const resp = await fetch(edgeUrl, {
@@ -1744,6 +1745,8 @@ async function handleBotMisReportDispatch(session, slot = 'MORNING') {
     console.log('[WhatsApp Bot] Edge dispatcher response:', result);
 
     if (resp.ok && result?.success) {
+      const altSlot = slot === 'MORNING' ? 'EVENING' : 'MORNING';
+      const altTitle = slot === 'MORNING' ? '🌙 Evening Final' : '🌅 Morning Turnout';
       return sendMetaInteractive(cleanPhone, {
         type: 'button',
         header: { type: 'text', text: 'MIS Report Dispatched' },
@@ -1752,12 +1755,13 @@ async function handleBotMisReportDispatch(session, slot = 'MORNING') {
             `✅ *${slotLabel} Dispatched Successfully*\n\n` +
             `• *Turnout:* ${result.summary?.turnoutPct ?? 'N/A'}% (${result.summary?.presentCount ?? 0} Present / ${result.summary?.headcount ?? 0} Total)\n` +
             `• *Audit Log ID:* ${result.auditLogIds?.[0] ? result.auditLogIds[0].slice(0, 8) : 'RECORDED'}\n` +
-            `• *Status:* PDF document delivered via WhatsApp\n\n` +
-            `Please review the attached PDF document above and tap *Acknowledge Audit* to record your review.`,
+            `• *Document Status:* PDF audit ledger sent above\n\n` +
+            `Please review the attached PDF document and tap *Acknowledge Audit* to record your review.`,
         },
         footer: { text: 'Joy PeopleHR Cryptographic Time Engine' },
         action: {
           buttons: [
+            { type: 'reply', reply: { id: `MIS_${altSlot}`, title: altTitle } },
             { type: 'reply', reply: { id: 'MAIN_MENU', title: '🔙 Main Menu' } },
           ],
         },
@@ -1985,18 +1989,44 @@ export async function processInboundWhatsAppMessage(params) {
     return sendRoleAwareHomeMenu(session);
   }
 
-  // 1. Payslip & Salary
+  // 1. Attendance & Workforce MIS Report Request & Dispatch (CRITICAL: Placed FIRST so "Attendance MIS Reports" is NEVER hijacked by generic "ATTENDANCE")
+  if (
+    action === 'MENU_MIS_REPORT' ||
+    action === 'MIS_MORNING' ||
+    action === 'MIS_EVENING' ||
+    rawUpper.includes('MIS') ||
+    rawUpper === 'REPORT' ||
+    rawUpper === 'REPORTS' ||
+    rawUpper.includes('TURNOUT') ||
+    rawUpper.includes('AUDIT REPORT')
+  ) {
+    if (action === 'MIS_MORNING' || rawUpper.includes('MORNING')) {
+      return handleBotMisReportDispatch(session, 'MORNING');
+    }
+    if (action === 'MIS_EVENING' || rawUpper.includes('EVENING')) {
+      return handleBotMisReportDispatch(session, 'EVENING');
+    }
+    // For MENU_MIS_REPORT / general MIS request: Directly dispatch the current active slot's PDF report!
+    const currentHour = new Date().getHours();
+    const activeSlot = currentHour < 15 ? 'MORNING' : 'EVENING';
+    return handleBotMisReportDispatch(session, activeSlot);
+  }
+
+  // 2. Payslip & Salary
   if (action === 'MENU_PAYSLIP' || action.startsWith('CONFIRM_PAYSLIP_') || rawUpper === '1' || rawUpper.includes('PAYSLIP') || rawUpper.includes('SALARY')) {
     return sendPayslipSummary(session);
   }
 
-  // 2. Leave Balances
+  // 3. Leave Balances
   if (action === 'MENU_LEAVE' || rawUpper === '2' || rawUpper.includes('LEAVE') || rawUpper.includes('HOLIDAY') || rawUpper === 'BALANCE') {
     return sendLeaveSummary(session);
   }
 
-  // 3. Attendance Status & Punches
-  if (action === 'MENU_ATTENDANCE' || rawUpper === '3' || rawUpper.includes('ATTENDANCE') || rawUpper === 'STATUS' || rawUpper === 'HOURS') {
+  // 4. Employee Personal Attendance Status & Punches (Clock In / Out Status)
+  if (
+    action === 'MENU_ATTENDANCE' ||
+    (!rawUpper.includes('MIS') && !rawUpper.includes('REPORT') && (rawUpper === '3' || rawUpper === 'ATTENDANCE' || rawUpper === 'PUNCH' || rawUpper === 'STATUS' || rawUpper === 'HOURS' || (rawUpper.includes('ATTENDANCE') && !rawUpper.includes('MIS'))))
+  ) {
     return sendAttendanceStatus(session);
   }
 
@@ -2008,7 +2038,7 @@ export async function processInboundWhatsAppMessage(params) {
     return handlePunch(session, 'OUT');
   }
 
-  // 4. Shift & Roster Schedule: sends 7-day roster or requested schedule details
+  // 5. Shift & Roster Schedule: sends 7-day roster or requested schedule details
   if (action === 'MENU_SCHEDULE' || rawUpper === '4' || rawUpper.includes('SCHEDULE') || rawUpper.includes('ROSTER') || rawUpper.includes('SHIFT')) {
     return sendScheduleRoster(session);
   }
@@ -2025,7 +2055,7 @@ export async function processInboundWhatsAppMessage(params) {
     return sendShiftDetails(session);
   }
 
-  // 5. Manager Team Approvals
+  // 6. Manager Team Approvals
   if (action === 'MENU_TEAM_APPROVALS') {
     return sendMetaText(
       cleanPhone,
@@ -2037,7 +2067,7 @@ export async function processInboundWhatsAppMessage(params) {
     );
   }
 
-  // 6. Web Portal Link
+  // 7. Web Portal Link
   if (action === 'MENU_PORTAL' || rawUpper === '5' || rawUpper.includes('PORTAL')) {
     return sendMetaText(
       cleanPhone,
@@ -2046,37 +2076,6 @@ export async function processInboundWhatsAppMessage(params) {
       `🔗 Portal: https://app.joypeoplehr.com\n\n` +
       `Please log in using your registered enterprise credentials to access protected documents.`
     );
-  }
-
-  // 7. Attendance & Workforce MIS Report Request & Dispatch
-  if (
-    action === 'MENU_MIS_REPORT' ||
-    rawUpper === 'MIS' ||
-    rawUpper === 'REPORT' ||
-    rawUpper === 'REPORTS' ||
-    rawUpper.includes('MIS REPORT') ||
-    rawUpper.includes('TURNOUT') ||
-    rawUpper.includes('ATTENDANCE REPORT')
-  ) {
-    return sendMisReportMenu(session);
-  }
-
-  if (
-    action === 'MIS_MORNING' ||
-    rawUpper.includes('MORNING MIS') ||
-    rawUpper.includes('MORNING REPORT') ||
-    rawUpper.includes('MORNING SNAPSHOT')
-  ) {
-    return handleBotMisReportDispatch(session, 'MORNING');
-  }
-
-  if (
-    action === 'MIS_EVENING' ||
-    rawUpper.includes('EVENING MIS') ||
-    rawUpper.includes('EVENING REPORT') ||
-    rawUpper.includes('EVENING FINAL')
-  ) {
-    return handleBotMisReportDispatch(session, 'EVENING');
   }
 
   // 8. Attendance & Workforce MIS Report Audit Acknowledgment
