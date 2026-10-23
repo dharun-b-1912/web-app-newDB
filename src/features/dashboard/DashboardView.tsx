@@ -25,7 +25,6 @@ import { RecentHRActivity, RecentHRActivityItem } from './components/RecentHRAct
 import { ApprovalsActionDrawer } from './components/ApprovalsActionDrawer';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
 import { DashboardErrorState } from './components/DashboardErrorState';
-import { DashboardNavigationTabs } from './components/DashboardNavigationTabs';
 import { EmployeeCreateWizardModal } from '../people/EmployeeCreateWizardModal';
 
 export interface DashboardViewProps {
@@ -472,13 +471,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           setSelectedAttentionItem(null);
           setIsApprovalsDrawerOpen(true);
         }}
-      />
-
-      {/* Synchronized Dashboard Suite Switcher */}
-      <DashboardNavigationTabs
-        activeTab="dashboard"
-        onNavigate={onNavigate}
-        pendingApprovalsCount={kpiData.pendingApprovalsCount}
       />
 
       {/* 2. KPI Summary Grid */}

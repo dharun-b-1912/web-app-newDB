@@ -17,7 +17,6 @@ import { OrganizationalHealthAndAvailability } from './executive/OrganizationalH
 import { PeopleRiskAndDecisionQueue } from './executive/PeopleRiskAndDecisionQueue';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
 import { DashboardErrorState } from './components/DashboardErrorState';
-import { DashboardNavigationTabs } from './components/DashboardNavigationTabs';
 
 interface Props {
   onNavigate?: (route: string) => void;
@@ -196,12 +195,6 @@ export const ExecutiveOverviewView: React.FC<Props> = ({ onNavigate }) => {
         onComparisonChange={setComparisonMode}
         onRefresh={() => loadExecutiveData(true)}
         onExport={handleExportReport}
-        onNavigate={navigate}
-      />
-
-      {/* Synchronized Dashboard Suite Switcher */}
-      <DashboardNavigationTabs
-        activeTab="executive-overview"
         onNavigate={navigate}
       />
 

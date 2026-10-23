@@ -32,7 +32,6 @@ import { EmployeeQuickViewDrawer } from './workforce/EmployeeQuickViewDrawer';
 import { EmployeeCreateWizardModal } from '../people/EmployeeCreateWizardModal';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
 import { DashboardErrorState } from './components/DashboardErrorState';
-import { DashboardNavigationTabs } from './components/DashboardNavigationTabs';
 import { UserPlus, Users } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 
@@ -370,12 +369,6 @@ export const WorkforceOverviewView: React.FC<Props> = ({ onNavigate }) => {
         onExport={handleExportCsv}
         onAddEmployee={() => setIsWizardOpen(true)}
         onViewDirectory={() => navigate('people')}
-        onNavigate={navigate}
-      />
-
-      {/* Synchronized Dashboard Suite Switcher */}
-      <DashboardNavigationTabs
-        activeTab="workforce-overview"
         onNavigate={navigate}
       />
 
