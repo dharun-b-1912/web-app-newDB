@@ -497,20 +497,44 @@ async function sendVerificationPrompt(phone, emp) {
   });
 }
 
+// ── Authoritative MIS Report Recipient & Permission Validator ──────────────
+async function checkMisReportAccess(phone, orgId) {
+  const cleanPhone = normalizePhone(phone);
+  const tenDigit = getTenDigit(cleanPhone);
+  try {
+    const endpoint = `mis_report_recipients?is_active=eq.true&is_verified=eq.true&or=(phone.eq.${cleanPhone},phone.eq.${tenDigit},phone.eq.91${tenDigit})`;
+    const recipients = await supabaseFetch(endpoint);
+    if (recipients && recipients.length > 0) {
+      const match = orgId
+        ? recipients.find(r => r.organization_id === orgId) || recipients[0]
+        : recipients[0];
+      return {
+        authorized: true,
+        recipient: match,
+        allowBotSelfService: match.allow_bot_self_service !== false,
+        permittedReportTypes: match.permitted_report_types || ['MORNING_CHECKIN', 'EVENING_FINAL'],
+      };
+    }
+  } catch (err) {
+    console.warn('[WhatsApp Bot] Check MIS access warning:', err.message);
+  }
+  return { authorized: false, recipient: null, allowBotSelfService: false, permittedReportTypes: [] };
+}
+
 // ── Step 4: Role-Aware Dynamic Home Menu ────────────────────────────────────
 async function sendRoleAwareHomeMenu(session) {
-  const emp = session.employee;
+  const emp = session.employee || {};
   const isManager = emp.roleContext === 'MANAGER';
   const roleBadge = isManager ? 'Manager Self-Service' : 'Employee Self-Service';
 
   const text =
     `*JOY PEOPLEHR SELF-SERVICE*\n\n` +
-    `*Employee:* ${emp.fullName}\n` +
-    `*Employee ID:* ${emp.employeeCode}\n` +
-    `*Company:* ${emp.companyName}\n` +
-    `*Designation:* ${emp.designation}\n` +
+    `*Employee:* ${emp.fullName || 'Team Member'}\n` +
+    `*Employee ID:* ${emp.employeeCode || 'EMP'}\n` +
+    `*Company:* ${emp.companyName || 'Joy Corporate Solutions'}\n` +
+    `*Designation:* ${emp.designation || 'Staff'}\n` +
     `*Access Level:* ${roleBadge}\n\n` +
-    (isManager ? `*Direct Reports:* ${emp.directReports} team member(s)\n\n` : '') +
+    (isManager ? `*Direct Reports:* ${emp.directReports || 0} team member(s)\n\n` : '') +
     `Select a service from the menu below:`;
 
   const rows = [
@@ -525,6 +549,16 @@ async function sendRoleAwareHomeMenu(session) {
       id: 'MENU_TEAM_APPROVALS',
       title: 'Team Approvals',
       description: 'Review pending leave requests',
+    });
+  }
+
+  // Authoritative Check: Add Attendance MIS Reports option for authorized recipients & managers
+  const misAccess = await checkMisReportAccess(session.phone, emp.organizationId);
+  if (misAccess.authorized || isManager) {
+    rows.push({
+      id: 'MENU_MIS_REPORT',
+      title: 'Attendance MIS Reports',
+      description: 'Daily turnout, biometric audit & PDF',
     });
   }
 
@@ -550,6 +584,7 @@ async function sendRoleAwareHomeMenu(session) {
     },
   });
 }
+
 
 // ── Account Not Found & Fallbacks ───────────────────────────────────────────
 async function sendAccountNotFound(phone) {
@@ -1593,6 +1628,156 @@ async function handleMisReportAcknowledgment(session, action, cleanPhone) {
   return sendMetaText(cleanPhone, ackText);
 }
 
+// ── Service: Interactive MIS Report Request Options ────────────────────────
+async function sendMisReportMenu(session) {
+  const cleanPhone = normalizePhone(session.phone);
+  const emp = session.employee || {};
+  const orgId = emp.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+  const isManager = emp.roleContext === 'MANAGER';
+
+  // 1. Authorize Requester against mis_report_recipients or manager role
+  const access = await checkMisReportAccess(cleanPhone, orgId);
+  if (!access.authorized && !isManager) {
+    return sendMetaText(
+      cleanPhone,
+      `*ACCESS RESTRICTED — ATTENDANCE MIS REPORTS*\n\n` +
+      `Your WhatsApp mobile number (*+${cleanPhone}*) is not authorized by HR for MIS Report self-service.\n\n` +
+      `Only designated HR Officers, Directors, and Managers can request executive workforce turnout and biometric audit documents.\n\n` +
+      `Please contact your HR Administrator to authorize your number in the Web Portal under *MIS Recipients & WhatsApp Access*.`
+    );
+  }
+
+  if (access.authorized && access.allowBotSelfService === false) {
+    return sendMetaText(
+      cleanPhone,
+      `*SELF-SERVICE REQUESTS DISABLED*\n\n` +
+      `On-demand bot report requests have been disabled for your profile by HR.\n\n` +
+      `Scheduled automatic reports will continue according to your configured schedule.`
+    );
+  }
+
+  const todayFormatted = new Date().toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+
+  const recipientName = access.recipient?.name || emp.fullName || 'Authorized Management';
+  const companyName = emp.companyName || 'Joy Corporate Solutions Pvt. Ltd.';
+
+  return sendMetaInteractive(cleanPhone, {
+    type: 'button',
+    header: { type: 'text', text: 'Joy PeopleHR MIS Reports' },
+    body: {
+      text:
+        `*EXECUTIVE ATTENDANCE & MIS REPORTS*\n\n` +
+        `*Authorized Recipient:* ${recipientName}\n` +
+        `*Organization:* ${companyName}\n` +
+        `*Date:* ${todayFormatted}\n\n` +
+        `Please select the report you would like to generate:\n\n` +
+        `🌅 *Morning Turnout Snapshot:*\n` +
+        `Live check-in count, turnout %, late arrivals & first biometric punches.\n\n` +
+        `🌙 *Evening Final Reconciliation:*\n` +
+        `Full-day shift hours, overtime ledger, check-out status & landscape A4 PDF.`,
+    },
+    footer: { text: 'Joy PeopleHR Cryptographic Time Engine' },
+    action: {
+      buttons: [
+        { type: 'reply', reply: { id: 'MIS_MORNING', title: '🌅 Morning Turnout' } },
+        { type: 'reply', reply: { id: 'MIS_EVENING', title: '🌙 Evening Final' } },
+        { type: 'reply', reply: { id: 'MAIN_MENU',   title: '🔙 Main Menu' } },
+      ],
+    },
+  });
+}
+
+// ── Service: Dispatch MIS Report On-Demand via Edge Function ────────────────
+async function handleBotMisReportDispatch(session, slot = 'MORNING') {
+  const cleanPhone = normalizePhone(session.phone);
+  const emp = session.employee || {};
+  const orgId = emp.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+  const isManager = emp.roleContext === 'MANAGER';
+  const slotLabel = slot === 'MORNING' ? 'Morning Check-In Turnout' : 'Evening Final Reconciliation';
+
+  // 1. Authorize
+  const access = await checkMisReportAccess(cleanPhone, orgId);
+  if (!access.authorized && !isManager) {
+    return sendMetaText(
+      cleanPhone,
+      `*ACCESS RESTRICTED*\n\nYour WhatsApp mobile number is not authorized for MIS Report requests.`
+    );
+  }
+
+  // 2. Immediate progress feedback
+  await sendMetaText(
+    cleanPhone,
+    `⏳ *Generating ${slotLabel} MIS Report...*\n\n` +
+    `Assembling verified biometric ledger, calculating department turnout, and compiling executive landscape A4 PDF. The document will arrive shortly!`
+  );
+
+  // 3. Trigger unified attendance-report-dispatcher Edge Function
+  try {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const edgeUrl = `${SUPABASE_URL}/functions/v1/attendance-report-dispatcher`;
+    const token = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || (await getAdminToken());
+
+    console.log(`[WhatsApp Bot] Triggering Edge Function attendance-report-dispatcher for ${cleanPhone} (${slot})...`);
+    const resp = await fetch(edgeUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        slot,
+        mode: 'BOT_SELF_SERVICE',
+        organization_id: orgId,
+        whatsAppRecipients: [cleanPhone],
+        date: todayStr,
+        requesterPhone: cleanPhone,
+        requesterName: access.recipient?.name || emp.fullName || 'Authorized Management',
+      }),
+    });
+
+    const result = await resp.json();
+    console.log('[WhatsApp Bot] Edge dispatcher response:', result);
+
+    if (resp.ok && result?.success) {
+      return sendMetaInteractive(cleanPhone, {
+        type: 'button',
+        header: { type: 'text', text: 'MIS Report Dispatched' },
+        body: {
+          text:
+            `✅ *${slotLabel} Dispatched Successfully*\n\n` +
+            `• *Turnout:* ${result.summary?.turnoutPct ?? 'N/A'}% (${result.summary?.presentCount ?? 0} Present / ${result.summary?.headcount ?? 0} Total)\n` +
+            `• *Audit Log ID:* ${result.auditLogIds?.[0] ? result.auditLogIds[0].slice(0, 8) : 'RECORDED'}\n` +
+            `• *Status:* PDF document delivered via WhatsApp\n\n` +
+            `Please review the attached PDF document above and tap *Acknowledge Audit* to record your review.`,
+        },
+        footer: { text: 'Joy PeopleHR Cryptographic Time Engine' },
+        action: {
+          buttons: [
+            { type: 'reply', reply: { id: 'MAIN_MENU', title: '🔙 Main Menu' } },
+          ],
+        },
+      });
+    } else {
+      console.error('[WhatsApp Bot] Dispatch error:', result?.error);
+      return sendMetaText(
+        cleanPhone,
+        `⚠️ *DISPATCH FAILED*\n\nCould not compile or dispatch the ${slotLabel} report at this time. Error: ${result?.error || 'Service timeout'}. Please try again later.`
+      );
+    }
+  } catch (err) {
+    console.error('[WhatsApp Bot] Edge dispatcher exception:', err.message);
+    return sendMetaText(
+      cleanPhone,
+      `⚠️ *DISPATCH ERROR*\n\nAn unexpected error occurred while generating your report: ${err.message}`
+    );
+  }
+}
+
 // Per-phone debounce cache to prevent rapid double-processing (< 1000ms)
 const lastProcessedByPhone = new Map();
 const PHONE_DEBOUNCE_WINDOW_MS = 1000;
@@ -1611,6 +1796,9 @@ const SUPPORTED_ACTION_IDS = new Set([
   'MENU_SCHEDULE',
   'MENU_PORTAL',
   'MENU_TEAM_APPROVALS',
+  'MENU_MIS_REPORT',
+  'MIS_MORNING',
+  'MIS_EVENING',
   'ATT_CLOCK_IN',
   'ATT_CLOCK_OUT',
   'SCHED_ROSTER',
@@ -1860,7 +2048,38 @@ export async function processInboundWhatsAppMessage(params) {
     );
   }
 
-  // 7. Attendance & Workforce MIS Report Audit Acknowledgment
+  // 7. Attendance & Workforce MIS Report Request & Dispatch
+  if (
+    action === 'MENU_MIS_REPORT' ||
+    rawUpper === 'MIS' ||
+    rawUpper === 'REPORT' ||
+    rawUpper === 'REPORTS' ||
+    rawUpper.includes('MIS REPORT') ||
+    rawUpper.includes('TURNOUT') ||
+    rawUpper.includes('ATTENDANCE REPORT')
+  ) {
+    return sendMisReportMenu(session);
+  }
+
+  if (
+    action === 'MIS_MORNING' ||
+    rawUpper.includes('MORNING MIS') ||
+    rawUpper.includes('MORNING REPORT') ||
+    rawUpper.includes('MORNING SNAPSHOT')
+  ) {
+    return handleBotMisReportDispatch(session, 'MORNING');
+  }
+
+  if (
+    action === 'MIS_EVENING' ||
+    rawUpper.includes('EVENING MIS') ||
+    rawUpper.includes('EVENING REPORT') ||
+    rawUpper.includes('EVENING FINAL')
+  ) {
+    return handleBotMisReportDispatch(session, 'EVENING');
+  }
+
+  // 8. Attendance & Workforce MIS Report Audit Acknowledgment
   if (
     action.startsWith('ACK_DAILY_MIS_') ||
     rawUpper.includes('ACKNOWLEDGE AUDIT') ||
