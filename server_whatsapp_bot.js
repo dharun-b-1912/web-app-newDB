@@ -1733,6 +1733,11 @@ async function handleBotMisReportDispatch(session, slot = 'MORNING') {
     const edgeUrl = `${SUPABASE_URL}/functions/v1/attendance-report-dispatcher`;
     const token = SUPABASE_SERVICE_ROLE_KEY;
 
+    const requesterEmail = access.recipient?.email || null;
+    const emailEnabled = Array.isArray(access.recipient?.delivery_channels)
+      ? access.recipient.delivery_channels.includes('EMAIL')
+      : false;
+
     console.log(`[WhatsApp Bot] Triggering Edge Function attendance-report-dispatcher for ${cleanPhone} (${slot})...`);
     const resp = await fetch(edgeUrl, {
       method: 'POST',
@@ -1745,6 +1750,7 @@ async function handleBotMisReportDispatch(session, slot = 'MORNING') {
         mode: 'BOT_SELF_SERVICE',
         organization_id: orgId,
         whatsAppRecipients: [cleanPhone],
+        recipients: (emailEnabled && requesterEmail) ? [requesterEmail] : [],
         date: todayStr,
         requesterPhone: cleanPhone,
         requesterName: access.recipient?.name || emp.fullName || 'Authorized Management',

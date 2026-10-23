@@ -226,6 +226,18 @@ serve(async (req: Request) => {
     let targetRecipients: string[] = [];
     if (body.recipients && Array.isArray(body.recipients) && body.recipients.length > 0) {
       targetRecipients = body.recipients;
+    } else if (body.mode === "BOT_SELF_SERVICE") {
+      // In BOT self-service mode, send email ONLY to the respective requester if their profile has EMAIL enabled
+      const reqPhoneClean = String(body.requesterPhone || "").replace(/\D/g, "");
+      const reqRec = authorizedRecipients.find((r) => {
+        const p = String(r.phone || "").replace(/\D/g, "");
+        return p === reqPhoneClean || p.endsWith(reqPhoneClean.slice(-10)) || reqPhoneClean.endsWith(p.slice(-10));
+      });
+      if (reqRec && reqRec.email && (Array.isArray(reqRec.delivery_channels) ? reqRec.delivery_channels.includes("EMAIL") : true)) {
+        targetRecipients = [reqRec.email];
+      } else {
+        targetRecipients = []; // Strict: Do NOT broadcast to other recipients!
+      }
     } else if (slotMatchingRecipients.length > 0) {
       targetRecipients = slotMatchingRecipients
         .filter((r) => Array.isArray(r.delivery_channels) ? r.delivery_channels.includes("EMAIL") : true)
