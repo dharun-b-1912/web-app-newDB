@@ -3167,9 +3167,13 @@ export const attendanceReportExportService = {
 
       // Normalize Capture Channel and Verification Method distinctly
       const rawInSrc = String(rec.check_in_source || rec.source || '').toUpperCase();
+      const isManual = rec.is_regularized || rawInSrc.includes('MANUAL') || rawInSrc.includes('REGULAR');
       let captureChannel = 'Biometric Terminal';
       let verifMethod = 'FACIAL / FINGER';
-      if (rawInSrc.includes('MOBILE') || rawInSrc.includes('APP')) {
+      if (isManual) {
+        captureChannel = 'Manual Override (HR)';
+        verifMethod = 'HR Regularization';
+      } else if (rawInSrc.includes('MOBILE') || rawInSrc.includes('APP')) {
         captureChannel = 'Mobile App';
         verifMethod = 'GPS Geo-fence';
       } else if (rawInSrc.includes('WEB') || rawInSrc.includes('PORTAL')) {
@@ -3510,14 +3514,19 @@ export const attendanceReportExportService = {
       if (rec.first_check_in && rec.first_check_in !== '—' && !existingPunchKeys.has(`${codeKey}_IN`)) {
         existingPunchKeys.add(`${codeKey}_IN`);
         const inSource = String(rec.check_in_source || rec.source || 'BIOMETRIC').toUpperCase();
-        const isMobile = inSource.includes('MOBILE') || inSource.includes('GPS') || inSource.includes('GEO');
-        const isWeb = inSource.includes('WEB');
+        const isManual = rec.is_regularized || inSource.includes('MANUAL') || inSource.includes('REGULAR');
+        const isMobile = !isManual && (inSource.includes('MOBILE') || inSource.includes('GPS') || inSource.includes('GEO'));
+        const isWeb = !isManual && inSource.includes('WEB');
 
         let devLabel = 'Biometric Terminal HQ';
         let modeLabel = 'FACIAL / FINGER';
         let noteLabel = 'Verified Hardware Clock In';
 
-        if (isWeb) {
+        if (isManual) {
+          devLabel = 'HR Operations Desk';
+          modeLabel = 'MANUAL / REGULARIZED';
+          noteLabel = 'HR Authorized Manual Override';
+        } else if (isWeb) {
           devLabel = 'Joy Web Portal';
           modeLabel = 'BROWSER GEO';
           noteLabel = 'Verified Web Browser Punch';

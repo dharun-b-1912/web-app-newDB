@@ -164,14 +164,14 @@ export const attendanceApi = {
               const dev = (p.device_id || '').toUpperCase();
 
               let resolved: PunchSource = 'MOBILE';
-              if (mode === 'FACE' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || psource === 'BIOMETRIC' || psource === 'FACE_RECOGNITION') {
+              if (psource === 'MANUAL' || mode === 'MANUAL' || psource.includes('MANUAL')) {
+                resolved = 'MANUAL';
+              } else if (mode === 'FACE' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || psource === 'BIOMETRIC' || psource === 'FACE_RECOGNITION') {
                 resolved = 'BIOMETRIC';
               } else if (mode === 'GPS' || psource === 'WEB_GPS' || psource === 'MOBILE_GPS' || psource.includes('GPS') || psource.includes('MOBILE') || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')) {
                 resolved = 'MOBILE';
               } else if (psource === 'WEB' || dev.includes('BROWSER')) {
                 resolved = 'WEB';
-              } else if (mode === 'MANUAL') {
-                resolved = 'MANUAL';
               }
 
               const empId = p.employee_id;
@@ -232,9 +232,13 @@ export const attendanceApi = {
           const rawFirstIn = d.first_check_in || punchInfo?.firstInIso;
           const rawLastOut = d.last_check_out || punchInfo?.lastOutIso;
 
-          const checkInSource: PunchSource | undefined = punchInfo?.checkInSource || (rawFirstIn ? 'MOBILE' : undefined);
+          const checkInSource: PunchSource | undefined = (d.is_regularized || punchInfo?.checkInSource === 'MANUAL')
+            ? 'MANUAL'
+            : (punchInfo?.checkInSource || (rawFirstIn ? 'MOBILE' : undefined));
           const checkOutSource: PunchSource | undefined = punchInfo?.checkOutSource;
-          const source: PunchSource = punchInfo?.checkInSource || punchInfo?.source || checkInSource || 'MOBILE';
+          const source: PunchSource = (d.is_regularized || punchInfo?.checkInSource === 'MANUAL')
+            ? 'MANUAL'
+            : (punchInfo?.checkInSource || punchInfo?.source || checkInSource || 'MOBILE');
 
           const formattedIn = rawFirstIn ? attendanceTimeService.formatAttendanceTime(rawFirstIn, 'Asia/Kolkata', true) : undefined;
           const formattedOut = rawLastOut ? attendanceTimeService.formatAttendanceTime(rawLastOut, 'Asia/Kolkata', true) : undefined;
@@ -392,14 +396,14 @@ export const attendanceApi = {
             const dev = (p.device_id || '').toUpperCase();
 
             let resolved: PunchSource = 'MOBILE';
-            if (mode === 'FACE' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || psource === 'BIOMETRIC' || psource === 'FACE_RECOGNITION') {
+            if (psource === 'MANUAL' || mode === 'MANUAL' || psource.includes('MANUAL')) {
+              resolved = 'MANUAL';
+            } else if (mode === 'FACE' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || psource === 'BIOMETRIC' || psource === 'FACE_RECOGNITION') {
               resolved = 'BIOMETRIC';
             } else if (mode === 'GPS' || psource === 'WEB_GPS' || psource === 'MOBILE_GPS' || psource.includes('GPS') || psource.includes('MOBILE') || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')) {
               resolved = 'MOBILE';
             } else if (psource === 'WEB' || dev.includes('BROWSER')) {
               resolved = 'WEB';
-            } else if (mode === 'MANUAL') {
-              resolved = 'MANUAL';
             }
 
             const existing: {
