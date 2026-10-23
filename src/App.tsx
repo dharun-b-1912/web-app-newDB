@@ -562,6 +562,7 @@ const AppContent: React.FC = () => {
       case 'settings':
         return <AdministrationWorkspace initialTab="settings" initialSubTab="general" onNavigate={handleNavigate} />;
       case 'recruitment':
+      case 'talent-recruitment':
       case 'recruitment-dashboard':
       case 'recruitment-requisitions':
       case 'recruitment-jobs':

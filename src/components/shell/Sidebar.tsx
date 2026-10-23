@@ -230,7 +230,7 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'lms-dashboard' && (currentNav === 'lms' || currentNav === 'lms-dashboard')) return true;
 
   // Workspace & Modern SaaS mappings
-  if (itemId === 'command-center' && (currentNav === 'command-center' || currentNav === 'executive-overview')) return true;
+  if (itemId === 'command-center' && currentNav === 'command-center') return true;
   if (itemId === 'resources' && currentNav === 'resources') return true;
   if (itemId === 'approvals' && (currentNav === 'approvals' || currentNav === 'requests' || currentNav === 'admin-approvals' || currentNav === 'leave-approval')) return true;
   if (itemId === 'admin-access' && (currentNav === 'admin-access' || currentNav === 'admin-roles' || currentNav === 'admin-users' || currentNav === 'admin-permissions' || currentNav === 'admin' || currentNav === 'rbac' || currentNav === 'roles' || currentNav === 'users')) return true;
