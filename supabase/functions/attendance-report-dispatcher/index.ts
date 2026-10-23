@@ -378,12 +378,10 @@ serve(async (req: Request) => {
       const empPunches = punchMap.get(emp.id) || punchMap.get(emp.employee_code) || [];
 
       const inPunch = empPunches.find((p) => p.punch_type === "IN" || p.punch_type === "CHECK_IN") || empPunches[0];
-      const outPunch =
-        empPunches
-          .slice()
-          .reverse()
-          .find((p) => p.punch_type === "OUT" || p.punch_type === "CHECK_OUT") ||
-        (empPunches.length > 1 ? empPunches[empPunches.length - 1] : undefined);
+      const outPunch = empPunches
+        .slice()
+        .reverse()
+        .find((p) => p.punch_type === "OUT" || p.punch_type === "CHECK_OUT");
 
       const deptName = (emp.department_id && deptMap.get(emp.department_id)) || "General";
       const desigTitle = (emp.designation_id && desigMap.get(emp.designation_id)) || "Staff";

@@ -490,7 +490,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         const shiftEndMins = timeStringToMinutes(shift.end_time) || 1110;
         const validOutPunch = sortedPunches.find((p) => {
           const pMins = timeStringToMinutes(p.event_time_str);
-          const isExplicitOut = p.classification === 'CHECK_OUT' || (p as any).punch_direction === 'OUT';
+          const isExplicitOut = p.classification === 'CHECK_OUT' || (p as any).punch_direction === 'OUT' || (p as any).punch_type === 'OUT' || (p as any).punch_type === 'CHECK_OUT';
           const isNearOrAfterShiftEnd = pMins >= shiftEndMins - 15;
           return isExplicitOut || isNearOrAfterShiftEnd;
         });
@@ -498,6 +498,16 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         if (validOutPunch) {
           lastOut = validOutPunch.event_time_str;
           checkOutSrc = validOutPunch.source || 'BIOMETRIC';
+        } else if (sortedPunches.length > 0) {
+          // If all recorded punches are IN/CHECK_IN, employee is actively working; never mark as checked out
+          const hasOnlyInPunches = sortedPunches.every((p) => {
+            const cls = p.classification || (p as any).punch_type || (p as any).punch_direction;
+            return cls === 'CHECK_IN' || cls === 'IN';
+          });
+          if (hasOnlyInPunches) {
+            lastOut = undefined;
+            checkOutSrc = undefined;
+          }
         }
 
         if (firstIn) {
