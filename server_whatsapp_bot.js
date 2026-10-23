@@ -553,9 +553,9 @@ async function sendRoleAwareHomeMenu(session) {
     });
   }
 
-  // Authoritative Check: Add Attendance MIS Reports option for authorized recipients & managers
+  // Authoritative Check: Add Attendance MIS Reports option ONLY for configured recipients in mis_report_recipients
   const misAccess = await checkMisReportAccess(session.phone, emp.organizationId);
-  if (misAccess.authorized || isManager) {
+  if (misAccess.authorized && misAccess.allowBotSelfService) {
     rows.push({
       id: 'MENU_MIS_REPORT',
       title: 'Attendance MIS Reports',
@@ -1636,19 +1636,19 @@ async function sendMisReportMenu(session) {
   const orgId = emp.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
   const isManager = emp.roleContext === 'MANAGER';
 
-  // 1. Authorize Requester against mis_report_recipients or manager role
+  // 1. Authorize Requester strictly against authoritative mis_report_recipients table
   const access = await checkMisReportAccess(cleanPhone, orgId);
-  if (!access.authorized && !isManager) {
+  if (!access.authorized) {
     return sendMetaText(
       cleanPhone,
       `*ACCESS RESTRICTED — ATTENDANCE MIS REPORTS*\n\n` +
       `Your WhatsApp mobile number (*+${cleanPhone}*) is not authorized by HR for MIS Report self-service.\n\n` +
-      `Only designated HR Officers, Directors, and Managers can request executive workforce turnout and biometric audit documents.\n\n` +
-      `Please contact your HR Administrator to authorize your number in the Web Portal under *MIS Recipients & WhatsApp Access*.`
+      `Only designated HR Officers and Organization Executives configured in the Web Portal under *MIS Recipients & WhatsApp Access* can access executive turnout and biometric audit documents.\n\n` +
+      `Please contact your HR Administrator to authorize your profile.`
     );
   }
 
-  if (access.authorized && access.allowBotSelfService === false) {
+  if (access.allowBotSelfService === false) {
     return sendMetaText(
       cleanPhone,
       `*SELF-SERVICE REQUESTS DISABLED*\n\n` +
@@ -1698,15 +1698,25 @@ async function handleBotMisReportDispatch(session, slot = 'MORNING') {
   const cleanPhone = normalizePhone(session.phone);
   const emp = session.employee || {};
   const orgId = emp.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
-  const isManager = emp.roleContext === 'MANAGER';
   const slotLabel = slot === 'MORNING' ? 'Morning Check-In Turnout' : 'Evening Final Reconciliation';
 
-  // 1. Authorize
+  // 1. Authorize strictly against authoritative mis_report_recipients table
   const access = await checkMisReportAccess(cleanPhone, orgId);
-  if (!access.authorized && !isManager) {
+  if (!access.authorized) {
     return sendMetaText(
       cleanPhone,
-      `*ACCESS RESTRICTED*\n\nYour WhatsApp mobile number is not authorized for MIS Report requests.`
+      `*ACCESS RESTRICTED — ATTENDANCE MIS REPORTS*\n\n` +
+      `Your WhatsApp mobile number (*+${cleanPhone}*) is not authorized by HR for MIS Report access.\n\n` +
+      `Only designated HR Officers and Organization Executives configured in the Web Portal under *MIS Recipients & WhatsApp Access* can access executive turnout and biometric audit documents.\n\n` +
+      `Please contact your HR Administrator to authorize your profile.`
+    );
+  }
+
+  if (access.allowBotSelfService === false) {
+    return sendMetaText(
+      cleanPhone,
+      `*SELF-SERVICE REQUESTS DISABLED*\n\n` +
+      `On-demand bot report requests have been disabled for your profile by HR.`
     );
   }
 
