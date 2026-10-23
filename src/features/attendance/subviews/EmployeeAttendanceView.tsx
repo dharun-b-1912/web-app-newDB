@@ -880,7 +880,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             leftIcon={<Plus className="w-3.5 h-3.5" />}
             className="text-xs font-bold bg-[#07563D] hover:bg-[#064e37]"
           >
-            + Manual Punch Record
+            Manual Punch Record
           </Button>
         </div>
       </div>

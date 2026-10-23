@@ -617,6 +617,10 @@ const AppContent: React.FC = () => {
       case 'employee-attendance':
       case 'employees':
       case 'daily':
+      case 'manual':
+      case 'manual-punch':
+      case 'attendance/manual':
+      case 'attendance-manual':
       case 'history':
       case 'attendance-history':
       case 'attendance/history':

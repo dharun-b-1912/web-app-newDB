@@ -594,7 +594,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
           />
         );
       case 'manual':
-        return <ManualAttendanceView />;
+        return <ManualAttendanceView onBack={() => handleSelectTab('employees')} />;
       case 'holidays':
         return <HolidaysView />;
       case 'approvals':
