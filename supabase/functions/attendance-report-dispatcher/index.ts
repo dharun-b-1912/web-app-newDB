@@ -301,10 +301,9 @@ serve(async (req: Request) => {
     // 9. Query Biometric Punch Logs for Today
     const { data: punchesData, error: pErr } = await supabase
       .from("attendance_punches")
-      .select("id, employee_id, punch_time, punch_type, punch_source, verification_mode")
+      .select("id, employee_id, punch_time, punch_type, punch_source, verification_mode, attendance_date")
       .eq("organization_id", orgId)
-      .gte("punch_time", `${todayStr}T00:00:00+05:30`)
-      .lte("punch_time", `${todayStr}T23:59:59+05:30`)
+      .or(`attendance_date.eq.${todayStr},and(attendance_date.is.null,punch_time.gte.${todayStr}T00:00:00+05:30,punch_time.lte.${todayStr}T23:59:59+05:30)`)
       .order("punch_time", { ascending: true });
 
     if (pErr) {
@@ -435,8 +434,19 @@ serve(async (req: Request) => {
       const breakMins = typeof rec.break_minutes === "number" ? rec.break_minutes : (typeof rec.total_break_minutes === "number" ? rec.total_break_minutes : 0);
       const otMins = typeof rec.overtime_minutes === "number" ? rec.overtime_minutes : 0;
 
-      // If workMins is 0 or missing, but both first and last punches exist, calculate actual difference
-      if (workMins <= 0 && rawFirstIn && rawLastOut) {
+      // In a morning snapshot, if employee has checked in but not checked out, calculate elapsed time to snapshot cutoff
+      if (isMorning && rawFirstIn && !rawLastOut) {
+        if (inMins !== null) {
+          const cutoffMins = istTime.getUTCHours() * 60 + istTime.getUTCMinutes();
+          // Guard: If employee punched in today, elapsed time = cutoff - inMins
+          if (cutoffMins >= inMins) {
+            workMins = cutoffMins - inMins;
+          } else {
+            workMins = 0;
+          }
+        }
+      } else if (workMins <= 0 && rawFirstIn && rawLastOut) {
+        // If workMins is 0 or missing, but both first and last punches exist, calculate actual difference
         try {
           const tIn = new Date(rawFirstIn).getTime();
           const tOut = new Date(rawLastOut).getTime();
@@ -496,6 +506,22 @@ serve(async (req: Request) => {
         const isOut = p.punch_type === "OUT" || p.punch_type === "CHECK_OUT" || (pIdx === empPunches.length - 1 && empPunches.length > 1);
         const pSourceUpper = String(p.punch_source || "").toUpperCase();
         const isBio = pSourceUpper.includes("BIO") || p.verification_mode === "FACE" || p.verification_mode === "FINGER";
+        const isWeb = pSourceUpper.includes("WEB");
+        const isMobile = pSourceUpper.includes("MOB") || (!isBio && !isWeb);
+
+        let deviceLabel = "Biometric Terminal HQ";
+        let verifLabel = "FACIAL / FINGER";
+        let reasonLabel = "Verified Biometric Terminal Event";
+
+        if (isWeb) {
+          deviceLabel = "Joy Web Portal";
+          verifLabel = "BROWSER GEOLOCATION";
+          reasonLabel = "Verified Web Browser Geo-Punch";
+        } else if (isMobile) {
+          deviceLabel = "Joy PeopleHR Mobile App";
+          verifLabel = "MOBILE GPS GEOFENCE";
+          reasonLabel = "Verified Mobile Native Geo-Punch";
+        }
 
         classifiedPunches.push({
           employee_id: emp.id,
@@ -506,9 +532,9 @@ serve(async (req: Request) => {
           event_time_str: formatTimeHelper(p.punch_time),
           classification: isOut ? "CHECK_OUT" : "CHECK_IN",
           punch_direction: isOut ? "OUT" : "IN",
-          device_name: isBio ? "Biometric Terminal HQ" : "Joy Mobile App (Geo-fenced)",
-          verification_method: isBio ? "FACIAL / FINGER" : "GPS GEO-FENCE",
-          classification_reason: isBio ? "Verified Real-Time Biometric Punch" : "Verified Real-Time Mobile Geo-Punch",
+          device_name: deviceLabel,
+          verification_method: verifLabel,
+          classification_reason: reasonLabel,
         });
       });
 

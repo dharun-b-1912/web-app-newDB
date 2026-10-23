@@ -156,9 +156,28 @@ export async function processPunchRecord(punch) {
     const orgId = emp.organization_id || punch.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
     const eventType = isOut ? 'attendance.check_out.accepted' : 'attendance.check_in.accepted';
 
-    // 7. Punch events are pure push notifications directly to supervisor tray
-    // They are intentionally NOT inserted into notification_events to prevent polluting
-    // the employee home screen 'Recent Activities' carousel.
+    // 7. Persist in notification_events so the alert appears in supervisor's in-app notification center & mobile bell
+    if (recipientProfileId) {
+      try {
+        await sbFetch('notification_events', {
+          method: 'POST',
+          body: [{
+            organization_id: orgId,
+            recipient_user_id: recipientProfileId,
+            channel: 'IN_APP',
+            title,
+            message,
+            action_url: `/attendance?emp=${emp.id}&date=${punchTime.toISOString().split('T')[0]}`,
+            is_read: false,
+            is_sent: true,
+            sent_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          }],
+        });
+      } catch (e) {
+        console.warn('[AttendanceDaemon] In-app notification persistence notice:', e.message);
+      }
+    }
 
     // 8. Dispatch FCM Push Notifications to Supervisor Tray
     if (devTokens.length > 0) {

@@ -81,3 +81,6 @@ Essl Support files/
 scratch/
 *.dll
 *.tar.gz
+1 PRIVATE KEY/
+*.pdf
+!Test Data/MIS REPORT TEST/*.pdf

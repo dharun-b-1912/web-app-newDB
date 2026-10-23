@@ -288,3 +288,66 @@ export function generateMisReportFilename(params: {
   const cleanDate = reportDate ? reportDate.replace(/[^0-9-]/g, '') : new Date().toISOString().split('T')[0];
   return `${orgPrefix}_${typeTag}_${cleanDate}.pdf`;
 }
+
+export interface DetailedLateness {
+  scheduledStartStr: string;
+  actualCheckInStr: string;
+  rawDelayMinutes: number;
+  graceAllowedMinutes: number;
+  latenessBeyondGrace: number;
+  isLate: boolean;
+  displayBreakdown: string;
+}
+
+export function computeLatenessDetails(
+  checkInVal?: string | null,
+  shiftStartVal?: string | null,
+  graceMinutes: number = 15
+): DetailedLateness {
+  const inMins = extractIstMinutesOfDay(checkInVal);
+  const startMins = extractIstMinutesOfDay(shiftStartVal) ?? 540;
+
+  if (inMins === null) {
+    return {
+      scheduledStartStr: formatTo12HourTime(shiftStartVal) || '09:00 AM',
+      actualCheckInStr: '—',
+      rawDelayMinutes: 0,
+      graceAllowedMinutes: graceMinutes,
+      latenessBeyondGrace: 0,
+      isLate: false,
+      displayBreakdown: '—',
+    };
+  }
+
+  const rawDelay = Math.max(0, inMins - startMins);
+  const beyondGrace = Math.max(0, rawDelay - graceMinutes);
+  const isLate = beyondGrace > 0;
+
+  return {
+    scheduledStartStr: formatTo12HourTime(shiftStartVal) || '09:00 AM',
+    actualCheckInStr: formatTo12HourTime(checkInVal) || '—',
+    rawDelayMinutes: rawDelay,
+    graceAllowedMinutes: graceMinutes,
+    latenessBeyondGrace: beyondGrace,
+    isLate,
+    displayBreakdown: isLate
+      ? `Late ${beyondGrace}m (Delay ${rawDelay}m, Grace ${graceMinutes}m)`
+      : (rawDelay > 0 ? `On Time (Within ${graceMinutes}m grace)` : 'On Time'),
+  };
+}
+
+export async function computeSha256Hex(content: string | Uint8Array): Promise<string> {
+  let data: Uint8Array;
+  if (typeof content === 'string') {
+    data = new TextEncoder().encode(content);
+  } else {
+    data = content;
+  }
+  const cryptoObj: any = typeof crypto !== 'undefined' ? crypto : (globalThis as any).crypto;
+  if (cryptoObj?.subtle) {
+    const hashBuffer = await cryptoObj.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b: number) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return '0'.repeat(64);
+}

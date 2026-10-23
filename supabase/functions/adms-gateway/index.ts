@@ -61,6 +61,117 @@ async function sendAirtelSms(recipientPhone: string, message: string, templateId
   }
 }
 
+async function notifyReportingManager(
+  supabase: any,
+  emp: any,
+  punchType: 'CHECK_IN' | 'CHECK_OUT',
+  timeFormatted: string,
+  organizationId: string
+) {
+  try {
+    let managerId = emp.reporting_manager_id;
+    if (!managerId && emp.department_id) {
+      const { data: dept } = await supabase
+        .from('departments')
+        .select('head_employee_id')
+        .eq('id', emp.department_id)
+        .maybeSingle();
+      if (dept?.head_employee_id && dept.head_employee_id !== emp.id) {
+        managerId = dept.head_employee_id;
+      }
+    }
+
+    if (!managerId) {
+      console.log(`[ADMS-EDGE] No reporting manager for ${emp.first_name || emp.employee_code}`);
+      return;
+    }
+
+    // Fetch manager details
+    const { data: mgr } = await supabase
+      .from('employees')
+      .select('id, employee_code, first_name, last_name, display_name, phone, user_id')
+      .eq('id', managerId)
+      .maybeSingle();
+
+    if (!mgr) return;
+
+    // Resolve manager profile / auth ID
+    let authUserId = mgr.user_id;
+    let profileId = mgr.user_id;
+    const { data: prof } = await supabase
+      .from('user_profiles')
+      .select('id, auth_user_id')
+      .or(`employee_id.eq.${mgr.id},id.eq.${mgr.user_id || 'none'},auth_user_id.eq.${mgr.user_id || 'none'}`)
+      .limit(1)
+      .maybeSingle();
+    if (prof) {
+      if (prof.auth_user_id) authUserId = prof.auth_user_id;
+      if (prof.id) profileId = prof.id;
+    }
+
+    const empName = (emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`).trim();
+    const isOut = punchType === 'CHECK_OUT';
+    const title = isOut ? `👋 Employee Check-Out: ${empName}` : `🟢 Biometric Check-In: ${empName}`;
+    const body = isOut
+      ? `${empName} (${emp.employee_code || ''}) checked out at ${timeFormatted} via Biometric Terminal.`
+      : `${empName} (${emp.employee_code || ''}) checked in at ${timeFormatted} via Biometric Terminal.`;
+
+    const targetUserId = profileId || authUserId || mgr.id;
+    const nowIso = new Date().toISOString();
+
+    // 1. Insert In-App Notification into notification_events for manager
+    try {
+      await supabase.from('notification_events').insert([{
+        organization_id: organizationId,
+        recipient_user_id: targetUserId,
+        channel: 'IN_APP',
+        title,
+        message: body,
+        action_url: `/attendance?emp=${emp.id}&date=${nowIso.split('T')[0]}`,
+        is_read: false,
+        is_sent: true,
+        sent_at: nowIso,
+        created_at: nowIso,
+      }]);
+    } catch (e: any) {
+      console.warn('[ADMS-EDGE] In-app notification error:', e?.message || e);
+    }
+
+    // 2. Dispatch FCM Push Notification using send-push edge function
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SECRET_KEY') || '';
+      await fetch(`${supabaseUrl}/functions/v1/send-push`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          employee_id: mgr.id,
+          auth_user_id: authUserId,
+          title,
+          body,
+          route: 'attendance',
+          data: {
+            route: 'attendance',
+            eventType: isOut ? 'attendance.check_out.accepted' : 'attendance.check_in.accepted',
+            employeeId: emp.id,
+            employeeName: empName,
+            source: 'BIOMETRIC',
+            timestamp: String(Date.now()),
+          },
+        }),
+      });
+      console.log(`[ADMS-EDGE] ✓ Biometric alert sent to manager ${mgr.first_name} (${mgr.employee_code}) for ${empName}`);
+    } catch (e: any) {
+      console.warn('[ADMS-EDGE] Push notification error:', e?.message || e);
+    }
+  } catch (err: any) {
+    console.warn('[ADMS-EDGE] Manager notification notice:', err?.message || err);
+  }
+}
+
 serve(async (req: Request) => {
   const url = new URL(req.url);
   const pathname = url.pathname;
@@ -165,7 +276,7 @@ serve(async (req: Request) => {
       // Load all employees belonging to THIS SPECIFIC TENANT (Multi-Tenant Isolation)
       const { data: emps } = await supabase
         .from('employees')
-        .select('id, employee_code, first_name, last_name, phone, organization_id')
+        .select('id, employee_code, first_name, last_name, display_name, phone, organization_id, reporting_manager_id, department_id')
         .eq('organization_id', organizationId);
 
       const tenantEmployees = emps || [];
@@ -242,6 +353,54 @@ serve(async (req: Request) => {
         const checkOutKey = `${emp.id}_${todayDate}_CHECK_OUT`;
 
         // =====================================================================
+        // RULE 0: MIDNIGHT SHIFT / EXTENDED OVERTIME RECONCILER (00:00 to 05:00 IST)
+        // If employee punches after midnight and yesterday has an unclosed check-in,
+        // this is an extended checkout for yesterday, NOT a check-in for today!
+        // =====================================================================
+        if (eventIstHour < 5.0) {
+          const yDateObj = new Date(punchDate.getTime() - 24 * 60 * 60 * 1000);
+          const yesterdayDate = yDateObj.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+          const { data: yDailyRows } = await supabase
+            .from('attendance_daily')
+            .select('id, first_check_in, last_check_out')
+            .eq('employee_id', emp.id)
+            .eq('attendance_date', yesterdayDate)
+            .limit(1);
+
+          const yDaily = yDailyRows && yDailyRows.length > 0 ? yDailyRows[0] : null;
+          if (yDaily && yDaily.first_check_in && !yDaily.last_check_out) {
+            const yInMs = new Date(yDaily.first_check_in).getTime();
+            const yTotalMins = Math.max(0, Math.floor((currentPunchMs - yInMs) / 60000));
+            const yOvertimeMins = Math.max(0, yTotalMins - 480);
+
+            await supabase
+              .from('attendance_daily')
+              .update({
+                last_check_out: eventUtcIso,
+                total_work_minutes: yTotalMins,
+                overtime_minutes: yOvertimeMins,
+              })
+              .eq('id', yDaily.id);
+
+            await supabase.from('attendance_punches').insert({
+              employee_id: emp.id,
+              organization_id: organizationId,
+              device_id: device.id,
+              punch_time: eventUtcIso,
+              punch_type: 'CHECK_OUT',
+              punch_source: 'BIOMETRIC',
+              verification_mode: 'FACE',
+              attendance_date: yesterdayDate,
+            });
+
+            console.log(`[ADMS-EDGE] 🌙 Midnight checkout reconciled for ${emp.first_name} on shift ${yesterdayDate} at ${timeFormatted} (${Math.floor(yTotalMins / 60)}h ${yTotalMins % 60}m worked, ${Math.floor(yOvertimeMins / 60)}h ${yOvertimeMins % 60}m OT).`);
+            parsedCount++;
+            continue;
+          }
+        }
+
+        // =====================================================================
         // RULE 1: MORNING ARRIVAL WINDOW (< 13:00 IST or < 3.5 hours worked)
         // Morning punches are strictly Check-Ins. Never Check-Outs.
         // =====================================================================
@@ -291,6 +450,9 @@ serve(async (req: Request) => {
               await sendAirtelSms(emp.phone, msg, DLT_CHECKIN_TEMPLATE_ID);
               smsSentTodayCache.add(checkInKey);
             }
+
+            // Dispatch instant push & in-app alert to reporting manager
+            await notifyReportingManager(supabase, emp, 'CHECK_IN', timeFormatted, organizationId);
           }
           parsedCount++;
           continue;
@@ -326,6 +488,9 @@ serve(async (req: Request) => {
             await sendAirtelSms(emp.phone, msg, DLT_CHECKIN_TEMPLATE_ID);
             smsSentTodayCache.add(checkInKey);
           }
+
+          // Dispatch instant push & in-app alert to reporting manager
+          await notifyReportingManager(supabase, emp, 'CHECK_IN', timeFormatted, organizationId);
           parsedCount++;
           continue;
         }
@@ -399,6 +564,9 @@ serve(async (req: Request) => {
           await sendAirtelSms(emp.phone, msg, DLT_CHECKOUT_TEMPLATE_ID);
           smsSentTodayCache.add(checkOutKey);
         }
+
+        // Dispatch instant push & in-app alert to reporting manager
+        await notifyReportingManager(supabase, emp, 'CHECK_OUT', timeFormatted, organizationId);
 
         parsedCount++;
       }

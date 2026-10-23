@@ -121,7 +121,7 @@ export const DEFAULT_ATTENDANCE_NOTIFICATION_POLICY: AttendanceNotificationPolic
   enableMobileGpsPunches: true,
   enableWebPunches: true,
 
-  onTimeDeliveryMode: 'SILENT', // In-app feed only — prevents 100 morning vibrations!
+  onTimeDeliveryMode: 'PUSH', // Send push notification to reporting manager on check-in
   lateDeliveryMode: 'HIGH_PRIORITY_PUSH', // Loud push with vibration & sound for late check-in
   unauthorizedLocationMode: 'HIGH_PRIORITY_PUSH',
   earlyCheckoutMode: 'PUSH',
@@ -609,7 +609,7 @@ class AttendanceNotificationService {
                   sound: 'default',
                   default_vibrate_timings: true,
                   notification_priority: 'PRIORITY_MAX',
-                  icon: 'ic_launcher',
+                  icon: 'ic_stat_notify',
                   color: '#1A56DB',
                   visibility: 'PUBLIC',
                 },

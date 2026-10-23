@@ -179,7 +179,9 @@ serve(async (req) => {
       ) : {}),
     };
 
-    const notificationTag = route ? `joy_${route.replace(/[^a-zA-Z0-9_]/g, '_')}` : 'joy_general_alert';
+    const notificationTag = extraData?.punchId 
+      ? `joy_punch_${extraData.punchId}` 
+      : (route ? `joy_${route.replace(/[^a-zA-Z0-9_]/g, '_')}_${Date.now()}` : `joy_alert_${Date.now()}`);
 
     const androidConfig = {
       priority: "HIGH" as const,
@@ -188,8 +190,9 @@ serve(async (req) => {
         sound: "default",
         default_vibrate_timings: true,
         notification_priority: "PRIORITY_MAX",
-        icon: "ic_launcher",
+        icon: "ic_stat_notify",
         color: "#1A56DB",
+        visibility: "PUBLIC",
         tag: notificationTag,
       },
     };
