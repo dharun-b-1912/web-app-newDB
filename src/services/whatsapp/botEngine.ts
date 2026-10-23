@@ -1076,27 +1076,83 @@ export class WhatsAppBotEngine {
   }
 
   /**
-   * Dispatches a real-time Daily Attendance MIS Report via WhatsApp (daily_mis_report_v1)
-   * RBAC: Restricted to HR, ADMIN, MANAGER, SUPERVISOR roles only.
+   * Dispatches a real-time Daily Attendance MIS Report via WhatsApp
+   * Authoritative: Queries mis_report_recipients table for verified phone, organization_id, and permitted report types.
+   * Invokes unified attendance-report-dispatcher edge function ensuring identical PDF artifact and delivery audit logging.
    */
-  private async sendDailyMisReport(session: BotSessionContext): Promise<void> {
+  private async sendDailyMisReport(session: BotSessionContext, requestedSlot?: 'MORNING' | 'EVENING'): Promise<void> {
     try {
-      // Send a "generating" status immediately
+      const normalizedPhone = normalizeIndianPhone(session.waId);
+      const cleanPhone = normalizedPhone.replace(/[^0-9]/g, '');
+
+      // 1. Authorize Requester against authoritative mis_report_recipients table
+      const { data: recipientRecord, error: recErr } = await supabase
+        .from('mis_report_recipients')
+        .select('*')
+        .eq('organization_id', session.organizationId)
+        .eq('phone', cleanPhone)
+        .eq('is_active', true)
+        .eq('is_verified', true)
+        .maybeSingle();
+
+      if (recErr || !recipientRecord) {
+        return this.sendAccessDenied(
+          session,
+          'Your WhatsApp number is not authorized by HR for MIS Report self-service. Please contact your HR Administrator to grant access under "MIS Recipients & WhatsApp Access".'
+        );
+      }
+
+      if (recipientRecord.allow_bot_self_service === false) {
+        return this.sendAccessDenied(
+          session,
+          'Self-service bot report requests have been disabled for your profile. Scheduled automated reports will continue according to your configured schedule.'
+        );
+      }
+
+      const permittedTypes = recipientRecord.permitted_report_types || ['MORNING_CHECKIN', 'EVENING_FINAL'];
+      const slotToUse = requestedSlot || (new Date().getHours() < 14 ? 'MORNING' : 'EVENING');
+      const requiredType = slotToUse === 'MORNING' ? 'MORNING_CHECKIN' : 'EVENING_FINAL';
+
+      if (!permittedTypes.includes(requiredType)) {
+        return this.sendAccessDenied(
+          session,
+          `You do not have permission for ${slotToUse === 'MORNING' ? 'Morning Check-In Turnout' : 'Evening Final Reconciliation'} reports. Permitted types: ${permittedTypes.join(', ')}.`
+        );
+      }
+
+      // 2. Send "generating" status message immediately
       await whatsAppClient.sendText({
         to: session.waId,
         organizationId: session.organizationId,
         employeeId: session.employeeId,
-        text: `⏳ *Generating Daily MIS Report...*\n\nAssembling real-time biometric data, computing turnout statistics, and preparing your PDF report. This may take a few seconds.`,
+        text: `⏳ *Generating ${slotToUse === 'MORNING' ? 'Morning Check-In' : 'Evening Final'} MIS Report...*\n\nAssembling verified biometric ledger, calculating turnout statistics, and uploading executive PDF attachment. Please wait a moment.`,
       });
 
-      const result = await whatsAppNotificationService.sendAttendanceMisReportDirect({
-        phone: session.waId,
-        recipientName: session.employeeName || 'HR Operations',
-        organizationId: session.organizationId,
+      // 3. Invoke unified attendance-report-dispatcher Edge Function
+      const todayStr = new Date().toISOString().split('T')[0];
+      const edgeUrl = `${import.meta.env.VITE_SUPABASE_URL || 'https://ysiajemrqakfngasehhi.supabase.co'}/functions/v1/attendance-report-dispatcher`;
+
+      const response = await fetch(edgeUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          slot: slotToUse,
+          mode: 'BOT_SELF_SERVICE',
+          organization_id: session.organizationId,
+          whatsAppRecipients: [cleanPhone],
+          date: todayStr,
+          requesterPhone: cleanPhone,
+          requesterName: recipientRecord.name || session.employeeName || 'Authorized Executive',
+        }),
       });
 
-      if (result.success && result.stats) {
-        const s = result.stats;
+      const result = await response.json().catch(() => null);
+
+      if (response.ok && result?.success) {
+        const t = result.turnout || {};
         await whatsAppClient.sendInteractive({
           to: session.waId,
           organizationId: session.organizationId,
@@ -1105,21 +1161,22 @@ export class WhatsAppBotEngine {
           header: { type: 'text', text: 'Joy PeopleHR • MIS Report' },
           body: {
             text:
-              `✅ *Daily MIS Report Dispatched*\n\n` +
-              `📅 *Date:* ${new Date().toLocaleDateString('en-IN')}\n` +
-              `🏢 *Company:* ${session.companyName || 'Joy Corporate Solutions'}\n\n` +
-              `📊 *Live Statistics:*\n` +
-              `👥 Total Workforce: *${s.totalWorkforce}*\n` +
-              `🟢 Present: *${s.presentTurnout}*\n` +
-              `⏰ Late Clock-Ins: *${s.lateCount}*\n` +
-              `🌴 Weekly Off / Leave: *${s.weeklyOffLeave}*\n` +
-              `⏱️ Billed Hours: *${s.cumulativeHours}*\n\n` +
-              (result.artifact ? `📎 *Attachment:* \`${result.artifact.filename}\`\n🔒 *SHA-256:* \`${result.artifact.sha256Checksum.slice(0, 16)}...\`\n\n` : '') +
-              `The identical executive 3-page audit PDF has been attached to your chat.`,
+              `✅ *Workforce MIS Report Dispatched*\n\n` +
+              `🏢 *Organization:* ${result.companyName || 'Joy Corporate Solutions'}\n` +
+              `📅 *Date:* ${result.date}\n` +
+              `📋 *Slot:* ${slotToUse === 'MORNING' ? 'Morning Check-In Turnout' : 'Evening Reconciliation'}\n\n` +
+              `📊 *Executive Turnout Summary:*\n` +
+              `👥 Total Workforce: *${result.headcount || 0} Staff*\n` +
+              `🟢 Present: *${t.present || 0} Staff* (${t.turnoutPct || 0}%)\n` +
+              `⏰ Late Arrivals: *${t.late || 0} Staff*\n` +
+              `🌴 Weekly Off / Absent: *${t.absent || 0} Staff*\n\n` +
+              `📄 *Downloadable Executive PDF:* \`${result.attachments?.pdf?.filename || 'Workforce_MIS.pdf'}\`\n\n` +
+              `The verified PDF document attachment has been delivered directly to this chat above.`,
           },
           footer: { text: 'People First. Work Simplified.' },
           action: {
             buttons: [
+              { type: 'reply', reply: { id: slotToUse === 'MORNING' ? 'MIS_EVENING' : 'MIS_MORNING', title: slotToUse === 'MORNING' ? '🌙 Evening MIS' : '🌅 Morning MIS' } },
               { type: 'reply', reply: { id: 'MENU_ATTENDANCE', title: '⏰ Attendance' } },
               { type: 'reply', reply: { id: 'MENU_BACK', title: '🔙 Main Menu' } },
             ],
@@ -1133,7 +1190,7 @@ export class WhatsAppBotEngine {
           type: 'button',
           header: { type: 'text', text: 'Joy PeopleHR • MIS Report' },
           body: {
-            text: `⚠️ *MIS Report Issue*\n\n${result.error || 'Could not generate the report. Please try again or contact support.'}`,
+            text: `⚠️ *MIS Dispatch Notice*\n\n${result?.error || 'Unable to generate report at this time. Please retry or contact HR Operations.'}`,
           },
           footer: { text: 'People First. Work Simplified.' },
           action: {
@@ -2564,13 +2621,9 @@ export class WhatsAppBotEngine {
       'SCHED_SHIFT':            () => this.handleShiftDetails(session),
 
       // MIS Report
-      'MENU_MIS_REPORT':        () => {
-        const misRole = session.roleContext || 'EMPLOYEE';
-        if (!['HR', 'ADMIN', 'MANAGER', 'SUPERVISOR'].includes(misRole)) {
-          return this.sendAccessDenied(session, 'Daily MIS Report access is restricted to authorized HR personnel and management numbers only.');
-        }
-        return this.sendDailyMisReport(session);
-      },
+      'MENU_MIS_REPORT':        () => this.sendDailyMisReport(session),
+      'MIS_MORNING':            () => this.sendDailyMisReport(session, 'MORNING'),
+      'MIS_EVENING':            () => this.sendDailyMisReport(session, 'EVENING'),
 
       // Support & Verification
       'PORTAL_LINK':            () => this.sendPortalLink(session),

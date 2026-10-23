@@ -10,6 +10,8 @@ import {
   AttendanceExportOptions,
   ClassifiedPunchEvent,
   computeEmployeeOvertime,
+  computeLatenessDetails,
+  computeSha256Hex,
   formatMinutesToHoursStr,
   formatTo12HourTime,
   generateMisReportFilename,

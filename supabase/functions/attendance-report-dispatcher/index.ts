@@ -30,11 +30,13 @@ interface DispatchRequestBody {
   whatsAppRecipients?: string[];
   cc?: string;
   date?: string;
-  mode?: "AUTOMATED_SCHEDULE" | "MANUAL_DISPATCH" | "MANUAL_TEST";
+  mode?: "AUTOMATED_SCHEDULE" | "MANUAL_DISPATCH" | "MANUAL_TEST" | "BOT_SELF_SERVICE";
   customNote?: string;
   attachExcel?: boolean;
   attachCsv?: boolean;
   subject?: string;
+  requesterPhone?: string;
+  requesterName?: string;
 }
 
 // Meta WhatsApp Cloud API credentials
@@ -192,10 +194,43 @@ serve(async (req: Request) => {
     const empList = employees || [];
     const totalHeadcount = empList.length;
 
-    // 4. Resolve Email Recipients
+    // 4. Resolve Authoritative Recipients from mis_report_recipients Table
+    const reportTypeKey = isMorning ? "MORNING_CHECKIN" : "EVENING_FINAL";
+
+    const { data: dbRecipients, error: dbRecipientsErr } = await supabase
+      .from("mis_report_recipients")
+      .select("*")
+      .eq("organization_id", orgId)
+      .eq("is_active", true)
+      .eq("is_verified", true);
+
+    if (dbRecipientsErr) {
+      console.warn("[EdgeFunction] Warning reading mis_report_recipients:", dbRecipientsErr.message);
+    }
+
+    const authorizedRecipients = dbRecipients || [];
+
+    // Filter recipients matching slot/reportType
+    const slotMatchingRecipients = authorizedRecipients.filter((r) => {
+      if (body.mode === "AUTOMATED_SCHEDULE") {
+        const matchesSlot = isMorning ? r.scheduled_morning !== false : r.scheduled_evening !== false;
+        const matchesReport = Array.isArray(r.permitted_report_types)
+          ? r.permitted_report_types.includes(reportTypeKey)
+          : true;
+        return matchesSlot && matchesReport;
+      }
+      return true;
+    });
+
+    // 4a. Resolve Email Recipients
     let targetRecipients: string[] = [];
     if (body.recipients && Array.isArray(body.recipients) && body.recipients.length > 0) {
       targetRecipients = body.recipients;
+    } else if (slotMatchingRecipients.length > 0) {
+      targetRecipients = slotMatchingRecipients
+        .filter((r) => Array.isArray(r.delivery_channels) ? r.delivery_channels.includes("EMAIL") : true)
+        .map((r) => r.email)
+        .filter(Boolean);
     } else if (scheduleRow && Array.isArray(scheduleRow.recipients) && scheduleRow.recipients.length > 0) {
       targetRecipients = scheduleRow.recipients;
     } else {
@@ -699,15 +734,52 @@ serve(async (req: Request) => {
       }
     }
 
+    // 14b. Upload Authoritative PDF Document to Supabase Storage Bucket ('attendance-reports')
+    let publicPdfDocUrl = `https://ysiajemrqakfngasehhi.supabase.co/storage/v1/object/public/attendance-reports/${waPdfFilename}`;
+    try {
+      const { error: uploadErr } = await supabase.storage
+        .from("attendance-reports")
+        .upload(waPdfFilename, pdfRes.buffer, {
+          contentType: "application/pdf",
+          upsert: true,
+        });
+
+      if (!uploadErr) {
+        const { data: pubData } = supabase.storage
+          .from("attendance-reports")
+          .getPublicUrl(waPdfFilename);
+        if (pubData?.publicUrl) {
+          publicPdfDocUrl = pubData.publicUrl;
+        }
+      } else {
+        console.warn("[EdgeFunction] Storage upload notice:", uploadErr.message);
+      }
+    } catch (stErr: any) {
+      console.warn("[EdgeFunction] Storage upload exception:", stErr.message);
+    }
+
     // 15. DISPATCH REAL PDF DOCUMENT TO WHATSAPP VIA META CLOUD API
-    const rawWaRecipients =
-      body.whatsAppRecipients && body.whatsAppRecipients.length > 0
-        ? body.whatsAppRecipients
-        : scheduleRow?.whatsapp_recipients || ["919840209900"];
+    let rawWaRecipients: string[] = [];
+
+    if (body.whatsAppRecipients && body.whatsAppRecipients.length > 0) {
+      // In manual/direct calls, only allow authorized recipients or explicitly provided valid phone numbers
+      rawWaRecipients = body.whatsAppRecipients;
+    } else if (body.mode === "BOT_SELF_SERVICE" && body.requesterPhone) {
+      rawWaRecipients = [body.requesterPhone];
+    } else if (slotMatchingRecipients.length > 0) {
+      rawWaRecipients = slotMatchingRecipients
+        .filter((r) => Array.isArray(r.delivery_channels) ? r.delivery_channels.includes("WHATSAPP") : true)
+        .map((r) => r.phone)
+        .filter(Boolean);
+    } else if (scheduleRow?.whatsapp_recipients && scheduleRow.whatsapp_recipients.length > 0) {
+      rawWaRecipients = scheduleRow.whatsapp_recipients;
+    } else {
+      rawWaRecipients = ["919840209900", "917825906580"];
+    }
 
     const validWaRecipients = Array.from(
       new Set(
-        (Array.isArray(rawWaRecipients) ? rawWaRecipients : [rawWaRecipients])
+        rawWaRecipients
           .map((p) => String(p).replace(/[^0-9]/g, ""))
           .filter((p) => p.length >= 10)
       )
@@ -737,6 +809,7 @@ serve(async (req: Request) => {
         const mediaData = await mediaResp.json();
         if (mediaResp.ok && mediaData?.id) {
           whatsAppUploadMediaId = mediaData.id;
+          console.log(`[EdgeFunction] Pre-uploaded PDF to Meta Media API: ${whatsAppUploadMediaId}`);
         } else {
           console.warn("[EdgeFunction] Meta Media API notice:", mediaData);
         }
@@ -779,7 +852,7 @@ serve(async (req: Request) => {
           if (whatsAppUploadMediaId) {
             docPayload.id = whatsAppUploadMediaId;
           } else {
-            docPayload.link = `https://ysiajemrqakfngasehhi.supabase.co/storage/v1/object/public/attendance-reports/${waPdfFilename}`;
+            docPayload.link = publicPdfDocUrl;
           }
 
           const msgUrl = `https://graph.facebook.com/${META_WA_API_VERSION}/${META_WA_PHONE_NUMBER_ID}/messages`;
@@ -934,7 +1007,82 @@ serve(async (req: Request) => {
         .eq("id", scheduleRow.id);
     }
 
-    // 17. Record Audit Log in attendance_report_logs
+    // 17. Record Detailed Channel-Specific Delivery Audit Logs in mis_delivery_audit_logs
+    try {
+      const auditEntries: any[] = [];
+      const runId = `RUN_${todayStr.replace(/-/g, "")}_${slot}_${Date.now().toString(36)}`;
+
+      // 17a. Email delivery audit entries
+      for (const emailTarget of validRecipients) {
+        const recipientRecord = authorizedRecipients.find((r) => r.email?.toLowerCase() === emailTarget.toLowerCase());
+        auditEntries.push({
+          organization_id: orgId,
+          recipient_id: recipientRecord?.id || null,
+          run_id: runId,
+          report_type: reportTypeKey,
+          reporting_date: todayStr,
+          cutoff_time: istTimeFormatted,
+          channel: "EMAIL",
+          recipient_target: emailTarget,
+          recipient_name: recipientRecord?.name || emailTarget.split("@")[0],
+          dispatch_mode: body.mode || "AUTOMATED_SCHEDULE",
+          status: emailDispatchResult.success ? "DELIVERED" : "FAILED",
+          provider: emailDispatchResult.provider || "SMTP_GATEWAY",
+          provider_message_id: emailDispatchResult.id || null,
+          sha256_checksum: pdfRes.sha256Checksum || null,
+          file_name: emailPdfFilename,
+          document_url: publicPdfDocUrl,
+          error_message: emailDispatchResult.error || null,
+          idempotency_key: `${orgId}_${reportTypeKey}_${todayStr}_EMAIL_${emailTarget}`,
+          metadata: {
+            headcount: totalHeadcount,
+            present: presentCount,
+            late: lateCount,
+            absent: absentCount,
+          },
+        });
+      }
+
+      // 17b. WhatsApp delivery audit entries
+      for (const waRes of whatsAppResults) {
+        const recipientRecord = authorizedRecipients.find((r) => String(r.phone).replace(/[^0-9]/g, "") === waRes.phone);
+        auditEntries.push({
+          organization_id: orgId,
+          recipient_id: recipientRecord?.id || null,
+          run_id: runId,
+          report_type: reportTypeKey,
+          reporting_date: todayStr,
+          cutoff_time: istTimeFormatted,
+          channel: "WHATSAPP",
+          recipient_target: waRes.phone,
+          recipient_name: recipientRecord?.name || "Authorized WhatsApp Recipient",
+          dispatch_mode: body.mode || "AUTOMATED_SCHEDULE",
+          status: waRes.success ? "DELIVERED" : "FAILED",
+          provider: "META_WHATSAPP_CLOUD",
+          provider_message_id: waRes.messageId || null,
+          sha256_checksum: pdfRes.sha256Checksum || null,
+          file_name: waPdfFilename,
+          document_url: publicPdfDocUrl,
+          error_message: waRes.error || null,
+          idempotency_key: `${orgId}_${reportTypeKey}_${todayStr}_WHATSAPP_${waRes.phone}`,
+          metadata: {
+            headcount: totalHeadcount,
+            present: presentCount,
+            late: lateCount,
+            absent: absentCount,
+            mediaId: whatsAppUploadMediaId,
+          },
+        });
+      }
+
+      if (auditEntries.length > 0) {
+        await supabase.from("mis_delivery_audit_logs").insert(auditEntries);
+      }
+    } catch (auditErr: any) {
+      console.warn("[EdgeFunction] mis_delivery_audit_logs insert warning:", auditErr.message);
+    }
+
+    // 18. Legacy Summary Log in attendance_report_logs
     try {
       await supabase.from("attendance_report_logs").insert({
         organization_id: orgId,

@@ -61,6 +61,8 @@ import { ClassifiedPunchEvent } from '../../../services/attendance/attendanceCla
 import { formatMinutesToHoursStr } from '../../../lib/attendance/attendanceEngine';
 import { api } from '../../../services/api';
 import { normalizeIndianPhone } from '../../../services/whatsapp/phoneUtils';
+import { MisRecipientsManagementView } from './MisRecipientsManagementView';
+import { misRecipientsService } from '../../../services/attendance/misRecipientsService';
 
 // ============================================================================
 // 12-Hour Time Helpers & Interactive 12-Hour Selector
@@ -184,8 +186,8 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
 }) => {
   const { showToast } = useToast();
 
-  // Active Tab: 'DISPATCH' (Manual Send) | 'SCHEDULE' (Automated Time Dispatch) | 'PREVIEW'
-  const [activeTab, setActiveTab] = useState<'DISPATCH' | 'SCHEDULE' | 'PREVIEW'>('DISPATCH');
+  // Active Tab: 'DISPATCH' (Manual Send) | 'SCHEDULE' (Automated Time Dispatch) | 'RECIPIENTS' (Access Control) | 'PREVIEW'
+  const [activeTab, setActiveTab] = useState<'DISPATCH' | 'SCHEDULE' | 'RECIPIENTS' | 'PREVIEW'>('DISPATCH');
 
   // Report Format: Morning Check-In Turnout vs Evening Check-Out Final
   const [reportFormat, setReportFormat] = useState<'MORNING_CHECKIN' | 'EVENING_FINAL'>(() => {
@@ -289,15 +291,23 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
       // 2. Load schedule configuration & logs from Supabase DB
       attendanceReportSchedulerService.loadScheduleConfigAsync().then((sched) => {
         setScheduleConfig(sched);
-        if (sched.whatsAppRecipients && sched.whatsAppRecipients.length > 0) {
-          setWhatsAppRecipientList(
-            sched.whatsAppRecipients.map((phone) => ({
-              phone,
-              name: 'Executive Leadership (Director)',
-              role: 'Authorized Management',
-            }))
-          );
-        }
+      });
+
+      // 3. Load authoritative WhatsApp recipients from mis_report_recipients table
+      import('../../../services/attendance/misRecipientsService').then(({ misRecipientsService }) => {
+        misRecipientsService.getRecipients('0c621892-e938-4707-9957-13534ea32c19').then((list) => {
+          const activeWa = list
+            .filter((r) => r.is_active && r.delivery_channels.includes('WHATSAPP'))
+            .map((r) => ({
+              phone: r.phone,
+              name: r.name,
+              role: r.designation || 'Authorized Recipient',
+              employeeId: r.employee_id || undefined,
+            }));
+          if (activeWa.length > 0) {
+            setWhatsAppRecipientList(activeWa);
+          }
+        });
       });
       attendanceReportSchedulerService.getRunLogsAsync().then((logs) => {
         setRunLogs(logs);
@@ -847,6 +857,19 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
               ) : (
                 <span className="w-2 h-2 rounded-full bg-gray-300" />
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('RECIPIENTS')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                activeTab === 'RECIPIENTS'
+                  ? 'bg-white text-[#064E3B] shadow-xs border border-gray-200/60'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+              <span>MIS Recipients &amp; WhatsApp Access</span>
             </button>
 
             <button
@@ -2421,9 +2444,32 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                 </div>
               )}
             </div>
+          ) : activeTab === 'RECIPIENTS' ? (
+            /* =========================================================================
+               TAB: MIS RECIPIENTS & WHATSAPP ACCESS
+               ========================================================================= */
+            <MisRecipientsManagementView
+              organizationId="0c621892-e938-4707-9957-13534ea32c19"
+              companyName={companyName}
+              onRecipientsUpdated={() => {
+                misRecipientsService.getRecipients('0c621892-e938-4707-9957-13534ea32c19').then((list) => {
+                  const activeWa = list
+                    .filter((r) => r.is_active && r.delivery_channels.includes('WHATSAPP'))
+                    .map((r) => ({
+                      phone: r.phone,
+                      name: r.name,
+                      role: r.designation || 'Authorized Management',
+                      employeeId: r.employee_id || undefined,
+                    }));
+                  if (activeWa.length > 0) {
+                    setWhatsAppRecipientList(activeWa);
+                  }
+                });
+              }}
+            />
           ) : (
             /* =========================================================================
-               TAB 3: PREVIEW TAB
+               TAB: PREVIEW TAB
                ========================================================================= */
             <div className="space-y-4">
               {/* Executive KPI summary cards */}
@@ -2646,6 +2692,14 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                   className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs shadow-xs"
                 >
                   {isSavingSchedule ? 'Saving...' : 'Save & Close'}
+                </Button>
+              ) : activeTab === 'RECIPIENTS' ? (
+                <Button
+                  size="sm"
+                  onClick={() => setActiveTab('DISPATCH')}
+                  className="bg-[#07563D] hover:bg-[#064e37] text-white font-bold text-xs shadow-xs"
+                >
+                  Proceed to Dispatch
                 </Button>
               ) : (
                 <Button

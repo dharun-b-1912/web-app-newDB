@@ -405,6 +405,19 @@ export class AttendanceMisDeliveryService {
     const authorizedWhatsApp: AuthorizedMisRecipientWhatsApp[] = [];
     const rejected: Array<{ target: string; reason: string }> = [];
 
+    // Query authoritative mis_report_recipients table
+    let dbRecipients: any[] = [];
+    try {
+      const dbClient = supabaseAdmin || supabase;
+      const { data } = await dbClient
+        .from('mis_report_recipients')
+        .select('*')
+        .eq('organization_id', orgId)
+        .eq('is_active', true)
+        .eq('is_verified', true);
+      if (data) dbRecipients = data;
+    } catch (_) { }
+
     // Fetch authorized contacts from directory
     const contacts = attendanceReportContactService.getOrganizationContacts();
     const hrEmails = attendanceReportContactService.getAutoDetectedHrEmails();
@@ -425,6 +438,7 @@ export class AttendanceMisDeliveryService {
       'thirumalai@joyglobalcorp.com',
       'marimuthu@joycorporatesolutions.com',
       'saravanakumar@joycorporatesolutions.com',
+      ...dbRecipients.map((r) => r.email?.toLowerCase()).filter(Boolean),
     ];
 
     // Process Email Targets
@@ -482,8 +496,12 @@ export class AttendanceMisDeliveryService {
       }
     });
 
-    // Known management / test phone numbers configured for Joy PeopleHR
-    const knownAuthorizedPhones = ['919840209900', '919840111111', '918344787772'];
+    // Known management / test phone numbers configured for Joy PeopleHR + authoritative DB recipients
+    const knownAuthorizedPhones = [
+      '919840209900',
+      '917825906580',
+      ...dbRecipients.map((r) => String(r.phone).replace(/[^0-9]/g, '')).filter(Boolean),
+    ];
 
     // Process WhatsApp Targets
     whatsAppTargets.forEach((rawPhone) => {
@@ -552,11 +570,13 @@ export class AttendanceMisDeliveryService {
           empEmail.includes('joyglobalcorp.com') ||
           empEmail.includes('joycorporatesolutions.com');
 
-        if (isExecutive) {
+        const isDbAuthorized = dbRecipients.some((r) => String(r.phone).replace(/[^0-9]/g, '') === normPhone);
+        if (isExecutive || isDbAuthorized) {
+          const dbRec = dbRecipients.find((r) => String(r.phone).replace(/[^0-9]/g, '') === normPhone);
           authorizedWhatsApp.push({
             phone: normPhone,
-            name: matchedEmp.display_name || `${matchedEmp.first_name || ''} ${matchedEmp.last_name || ''}`.trim() || 'HR Leadership',
-            role: contact?.designation || 'HR Leadership',
+            name: dbRec?.name || matchedEmp.display_name || `${matchedEmp.first_name || ''} ${matchedEmp.last_name || ''}`.trim() || 'HR Leadership',
+            role: dbRec?.designation || contact?.designation || 'Authorized Management',
             employeeId: matchedEmp.id,
           });
         } else if (isManager) {

@@ -338,8 +338,6 @@ export async function checkAndRunScheduledReports() {
               slot: 'MORNING',
               mode: 'AUTOMATED_SCHEDULE',
               organization_id: sched.organization_id,
-              recipients: sched.recipients || ['thirumalai@joyglobalcorp.com'],
-              whatsAppRecipients: sched.whatsapp_recipients || ['919840209900'],
               date: istDateStr,
             }),
           });
@@ -397,8 +395,6 @@ export async function checkAndRunScheduledReports() {
               slot: 'EVENING',
               mode: 'AUTOMATED_SCHEDULE',
               organization_id: sched.organization_id,
-              recipients: sched.recipients || ['thirumalai@joyglobalcorp.com'],
-              whatsAppRecipients: sched.whatsapp_recipients || ['919840209900'],
               date: istDateStr,
             }),
           });
