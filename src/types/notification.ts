@@ -28,7 +28,10 @@ export type ApprovalType =
   | 'ShiftChange'
   | 'PayrollSignoff'
   | 'RoleChange'
-  | 'AccessRequest';
+  | 'AccessRequest'
+  | 'leave'
+  | 'attendance'
+  | 'AttendanceRegularization';
 
 export type ApprovalStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
 
@@ -135,7 +138,7 @@ export interface ApprovalRequestItem {
   status: ApprovalStatus;
   requested_by_id: string;
   requested_by_name: string;
-  requested_by_email: string;
+  requested_by_email?: string;
   requested_by_avatar?: string;
   department?: string;
   assigned_approver_id?: string;

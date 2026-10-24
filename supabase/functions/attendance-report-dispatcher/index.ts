@@ -194,6 +194,18 @@ serve(async (req: Request) => {
     const empList = employees || [];
     const totalHeadcount = empList.length;
 
+    // STRICT EMPTY DATA GUARD: Never dispatch empty / 0-headcount reports to executive leadership
+    if (totalHeadcount === 0) {
+      console.warn(`[EdgeFunction] Guard Triggered: Refusing to dispatch report for ${todayStr} because organization ${orgId} has 0 employee records. Aborting dispatch.`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Zero workforce records found for organization. Dispatch aborted to prevent empty report delivery.",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // 4. Resolve Authoritative Recipients from mis_report_recipients Table
     const reportTypeKey = isMorning ? "MORNING_CHECKIN" : "EVENING_FINAL";
 

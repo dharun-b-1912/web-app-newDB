@@ -46,12 +46,74 @@ export const isSupabaseEnabled: boolean = true;
 /** @deprecated Use isSupabaseEnabled (constant) instead */
 export const isSupabaseConfigured = () => isSupabaseEnabled;
 
+/**
+ * Circuit Breaker for Supabase connectivity.
+ * When Supabase origin is paused or timing out, suppresses outbound requests
+ * to prevent browser socket pool exhaustion and repeated net::ERR_CONNECTION_TIMED_OUT errors.
+ */
+let _circuitBreakerUntil = 0;
+let _probeInFlight = false;
+
+export const isSupabaseCircuitOpen = (): boolean => {
+  return Date.now() < _circuitBreakerUntil;
+};
+
+export const tripSupabaseCircuitBreaker = (durationMs = 90_000): void => {
+  _circuitBreakerUntil = Date.now() + durationMs;
+  console.warn(`[Supabase] Circuit breaker tripped. Suppressing network calls for ${durationMs / 1000}s while project is paused/unreachable.`);
+};
+
+export const resetSupabaseCircuitBreaker = (): void => {
+  _circuitBreakerUntil = 0;
+};
+
+const resilientSupabaseFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  // If circuit breaker is active and this is not an explicit probe, return fast 503 without touching network
+  if (Date.now() < _circuitBreakerUntil && !_probeInFlight) {
+    return new Response(JSON.stringify({ error: 'Supabase project paused or unreachable' }), {
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Fast 3000ms timeout controller so Chrome sockets never stall for 30s
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+  if (init?.signal) {
+    init.signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+
+  try {
+    const res = await fetch(input, { ...init, signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok || (res.status >= 200 && res.status < 500)) {
+      _circuitBreakerUntil = 0;
+    }
+    return res;
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    // Connection timed out or fetch failed -> trip circuit breaker
+    tripSupabaseCircuitBreaker(90_000);
+    return new Response(JSON.stringify({ error: 'Supabase connection timed out' }), {
+      status: 504,
+      statusText: 'Gateway Timeout',
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+};
+
 /** Supabase JS client — always created, only used when isSupabaseEnabled */
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
-    autoRefreshToken: true,
+    autoRefreshToken: false,
     detectSessionInUrl: true,
+    skipAutoInitialize: true,
+  },
+  global: {
+    fetch: resilientSupabaseFetch,
   },
   realtime: {
     params: {
@@ -71,6 +133,9 @@ export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     autoRefreshToken: false,
     detectSessionInUrl: false,
     storageKey: 'sb-admin-none',
+  },
+  global: {
+    fetch: resilientSupabaseFetch,
   },
 });
 
@@ -117,6 +182,7 @@ let _cachedActiveSession: any = null;
  */
 export const ensureSupabaseSession = async (): Promise<any> => {
   if (!isSupabaseEnabled) return null;
+  if (isSupabaseCircuitOpen()) return _cachedActiveSession;
 
   const now = Date.now();
   if (_cachedActiveSession && now - _sessionVerifiedTimestamp < 60_000) {
@@ -132,7 +198,7 @@ export const ensureSupabaseSession = async (): Promise<any> => {
         const session = parsed?.currentSession || parsed;
         if (session?.access_token && session?.user) {
           const expSec = session.expires_at || 0;
-          if (!expSec || expSec * 1000 > now + 30_000) {
+          if (!expSec || expSec * 1000 > now + 30_000 || isSupabaseCircuitOpen()) {
             _cachedActiveSession = session;
             _sessionVerifiedTimestamp = now;
             return session;
@@ -142,12 +208,20 @@ export const ensureSupabaseSession = async (): Promise<any> => {
     } catch (_) {}
   }
 
+  if (isSupabaseCircuitOpen()) {
+    return _cachedActiveSession;
+  }
+
   if (_sessionHealPromise) {
     return _sessionHealPromise;
   }
 
   _sessionHealPromise = (async () => {
     try {
+      if (isSupabaseCircuitOpen()) {
+        return _cachedActiveSession;
+      }
+
       // Bounded getSession with 1500ms timeout
       const sessionPromise = supabase.auth.getSession();
       const sessionTimeout = new Promise<{ data: { session: any } }>((resolve) =>
@@ -190,8 +264,8 @@ export const ensureSupabaseSession = async (): Promise<any> => {
         ? targetEmail
         : envDevEmail;
 
-      if (!authEmail || !envDevPass) {
-        return null;
+      if (!authEmail || !envDevPass || isSupabaseCircuitOpen()) {
+        return _cachedActiveSession;
       }
 
       const signInPromise = supabase.auth.signInWithPassword({
@@ -199,17 +273,21 @@ export const ensureSupabaseSession = async (): Promise<any> => {
         password: envDevPass,
       });
       const signInTimeout = new Promise<{ data: any; error: any }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: new Error('Auth timeout') }), 8000)
+        setTimeout(() => resolve({ data: null, error: new Error('Auth timeout') }), 2500)
       );
       let { data: signInData, error } = await Promise.race([signInPromise, signInTimeout]);
 
-      // If targetEmail password failed, fallback to the guaranteed dev admin account
-      if ((error || !signInData?.session) && authEmail !== envDevEmail) {
+      // If targetEmail password failed, fallback to the guaranteed dev admin account with fast 2500ms timeout
+      if ((error || !signInData?.session) && authEmail !== envDevEmail && !isSupabaseCircuitOpen()) {
         try {
-          const fallbackRes = await supabase.auth.signInWithPassword({
+          const fallbackPromise = supabase.auth.signInWithPassword({
             email: envDevEmail,
             password: envDevPass,
           });
+          const fallbackTimeout = new Promise<{ data: any; error: any }>((resolve) =>
+            setTimeout(() => resolve({ data: null, error: new Error('Auth timeout') }), 2500)
+          );
+          const fallbackRes = await Promise.race([fallbackPromise, fallbackTimeout]);
           if (!fallbackRes.error && fallbackRes.data?.session) {
             signInData = fallbackRes.data;
             error = null;

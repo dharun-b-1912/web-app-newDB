@@ -106,7 +106,8 @@ export const attendanceApi = {
         const ctrl = new AbortController();
         const tid = setTimeout(() => ctrl.abort(), 12000);
 
-        let q = supabase
+        const client = supabaseAdmin || supabase;
+        let q = client
           .from('attendance_daily')
           .select('*')
           .eq('organization_id', tenantId)
@@ -117,7 +118,7 @@ export const attendanceApi = {
         // Fetch employee details to enrich daily attendance summaries
         let empMap = new Map<string, any>();
         try {
-          const { data: empList } = await supabase
+          const { data: empList } = await client
             .from('employees')
             .select('id, organization_id, company_id, employee_code, first_name, last_name, display_name, avatar_url, department_id, designation_id, employment_status')
             .eq('organization_id', tenantId)
@@ -137,7 +138,7 @@ export const attendanceApi = {
           organizationId?: string;
         }>();
         try {
-          let pq = supabase
+          let pq = client
             .from('attendance_punches')
             .select('employee_id, organization_id, punch_type, verification_mode, punch_source, device_id, punch_time')
             .eq('organization_id', tenantId)

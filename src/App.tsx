@@ -14,7 +14,6 @@ import { realtimeSyncEngine } from './services/realtimeSyncEngine';
 import { navPerfTracker } from './services/observability/navigationPerfTracker';
 import { ShieldAlert } from 'lucide-react';
 import { JoySplashScreen } from './components/common/JoySplashScreen';
-import { JoyLoadingSpinner } from './components/common/JoyLoadingSpinner';
 
 // Primary workspaces code-split via React.lazy for instant initial page load & 90% bundle reduction
 const DashboardView = lazy(() => import('./features/dashboard/DashboardView').then(m => ({ default: m.DashboardView })));
@@ -246,11 +245,20 @@ const AppContent: React.FC = () => {
   }, [currentRoute]);
 
   useEffect(() => {
-    if (user && lastMountedRouteRef.current !== currentRoute) {
-      lastMountedRouteRef.current = currentRoute;
-      console.log(`[BOOT] route_mounted: Rendering module view for route /${currentRoute}`);
+    if (!isLoading) {
+      if (user) {
+        if (lastMountedRouteRef.current !== currentRoute) {
+          lastMountedRouteRef.current = currentRoute;
+          console.log(`[BOOT] route_mounted: Rendering module view for route /${currentRoute}`);
+        }
+      } else {
+        console.log('[BOOT] auth_ready: Rendering authentication view');
+      }
+      if (typeof window !== 'undefined') {
+        (window as any).__joyBootDismiss?.();
+      }
     }
-  }, [user, currentRoute]);
+  }, [isLoading, user, currentRoute]);
 
   // Synchronize route changes to URL and localStorage (strictly skipped on public landing page domain)
   useEffect(() => {
@@ -369,7 +377,7 @@ const AppContent: React.FC = () => {
             onNavigate={handleNavigate}
             onOpenCopilot={() => setIsCopilotOpen(true)}
           >
-            <Suspense fallback={<JoyLoadingSpinner size="lg" message="Loading Platform Workspace..." className="p-12 min-h-[400px]" />}>
+            <Suspense fallback={null}>
               <PlatformAdminMasterModule onNavigateTab={handleNavigate} initialTab="platform-dashboard" />
             </Suspense>
           </AppShell>
@@ -378,7 +386,7 @@ const AppContent: React.FC = () => {
     }
 
     return (
-      <Suspense fallback={<JoyLoadingSpinner size="lg" message="Loading Super Admin Gateway..." variant="dark" fullScreen />}>
+      <Suspense fallback={null}>
         <SuperAdminLoginPage onSwitchToCustomer={() => handleNavigate('dashboard')} />
       </Suspense>
     );
@@ -388,7 +396,7 @@ const AppContent: React.FC = () => {
   // Dedicated Accept Invitation & Account Activation
   if (currentRoute === 'accept-invite') {
     return (
-      <Suspense fallback={<JoyLoadingSpinner size="lg" message="Loading Activation Workspace..." fullScreen />}>
+      <Suspense fallback={null}>
         <AcceptInvitePage
           onSuccessRoute={(targetRoute) => handleNavigate(targetRoute)}
           onNavigateToLogin={() => handleNavigate('login')}
@@ -400,7 +408,7 @@ const AppContent: React.FC = () => {
   // Dedicated Password Reset Recovery
   if (currentRoute === 'reset-password') {
     return (
-      <Suspense fallback={<JoyLoadingSpinner size="lg" message="Loading Password Recovery..." fullScreen />}>
+      <Suspense fallback={null}>
         <ResetPasswordPage
           onNavigateToLogin={() => handleNavigate('login')}
         />
@@ -418,7 +426,7 @@ const AppContent: React.FC = () => {
 
   if (isVendorLoginRoute && !user) {
     return (
-      <Suspense fallback={<JoyLoadingSpinner size="lg" message="Loading Vendor Portal..." fullScreen />}>
+      <Suspense fallback={null}>
         <VendorLoginPage
           onNavigateToCompanyLogin={() => handleNavigate('login')}
           onSuccessRoute={(targetRoute) => handleNavigate(targetRoute)}
@@ -454,7 +462,7 @@ const AppContent: React.FC = () => {
   }
 
   if (isLoading && !renderSafetyTimedOut) {
-    return <JoyLoadingSpinner size="lg" message="Loading..." fullScreen />;
+    return null;
   }
 
   if (!user) {
@@ -631,6 +639,10 @@ const AppContent: React.FC = () => {
       case 'attendance/regularization':
       case 'exceptions':
       case 'attendance/exceptions':
+      case 'attendance-reports':
+      case 'attendance/reports':
+      case 'attendance/mis':
+      case 'reports-scope':
       case 'late-early':
       case 'attendance/late-early':
       case 'shifts':
@@ -1051,9 +1063,7 @@ const AppContent: React.FC = () => {
       >
         <RouteGuard module={currentRoute} onNavigate={handleNavigate}>
           <ErrorBoundary>
-            <Suspense fallback={
-              <JoyLoadingSpinner size="lg" message="Loading Module Workspace..." className="py-20 min-h-[420px]" />
-            }>
+            <Suspense fallback={null}>
               {renderViewContent()}
             </Suspense>
           </ErrorBoundary>

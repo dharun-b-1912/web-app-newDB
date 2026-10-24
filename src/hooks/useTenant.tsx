@@ -25,12 +25,13 @@ const TenantContext = createContext<TenantContextType | undefined>(undefined);
 
 export const TenantProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
-  const [organization, setOrganization] = useState<Organization | null>(null);
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [legalEntities, setLegalEntities] = useState<Company[]>([]);
-  const [activeLegalEntity, setActiveLegalEntity] = useState<Company | null>(null);
-  const [roleTitle, setRoleTitle] = useState<string>('Unassigned');
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const initialFastCtx = user ? organizationContextService.getCachedContextSync(user) : null;
+  const [organization, setOrganization] = useState<Organization | null>(() => initialFastCtx?.activeOrganization || null);
+  const [organizations, setOrganizations] = useState<Organization[]>(() => initialFastCtx?.organizations || []);
+  const [legalEntities, setLegalEntities] = useState<Company[]>(() => initialFastCtx?.authorizedLegalEntities || []);
+  const [activeLegalEntity, setActiveLegalEntity] = useState<Company | null>(() => initialFastCtx?.activeLegalEntity || null);
+  const [roleTitle, setRoleTitle] = useState<string>(() => initialFastCtx?.roleTitle || 'Unassigned');
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialFastCtx);
   const [error, setError] = useState<string | null>(null);
 
   const userId = user?.id || '';
@@ -62,13 +63,25 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
 
     const tenantSafetyTimer = setTimeout(() => {
       setIsLoading(false);
-    }, 6000);
+    }, 2500);
 
     try {
       setError(null);
       if (user) {
+        // FAST PATH: Hydrate synchronous context immediately if not yet set
+        const fastCtx = organizationContextService.getCachedContextSync(user);
+        if (fastCtx && (!orgRef.current || orgRef.current.id !== fastCtx.activeOrganization?.id)) {
+          setOrganization(fastCtx.activeOrganization);
+          setOrganizations(fastCtx.organizations);
+          setLegalEntities(fastCtx.authorizedLegalEntities);
+          setActiveLegalEntity(fastCtx.activeLegalEntity);
+          setRoleTitle(fastCtx.roleTitle);
+          api.setActiveCompany(fastCtx.activeLegalEntity);
+          setIsLoading(false);
+        }
+
         const ctxPromise = organizationContextService.resolveUserContext(user);
-        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500));
         const ctx = await Promise.race([ctxPromise, timeoutPromise]);
 
         if (ctx && ctx.activeOrganization) {
@@ -81,7 +94,10 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
           lastResolvedKeyRef.current = resolutionKey;
           const elapsed = (performance.now() - tenantStartTime).toFixed(1);
           console.log(`[BOOT] organization_resolved: Tenant context resolved (${elapsed}ms). Org: "${ctx.activeOrganization?.name || 'Default'}", Company: "${ctx.activeLegalEntity?.legal_name || 'HQ'}"`);
-        } else {
+          if (typeof window !== 'undefined') {
+            (window as any).__joyBootStep?.(90, 'Tenant Synchronized', `Org: ${ctx.activeOrganization?.name || 'Joy Corporate Solutions'}`);
+          }
+        } else if (!orgRef.current) {
           // Strict Tenant Isolation: Never silently replace with another organization's stored defaults!
           const targetOrgId = userOrgId || '0c621892-e938-4707-9957-13534ea32c19';
           console.warn('[TenantProvider] organizationContextService timed out; preserving strict tenant identity:', targetOrgId);

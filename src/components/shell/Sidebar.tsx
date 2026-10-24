@@ -169,6 +169,7 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'late-early' && (currentNav === 'late-early')) return true;
   if (itemId === 'regularization' && (currentNav === 'regularization')) return true;
   if (itemId === 'exceptions' && (currentNav === 'exceptions')) return true;
+  if (itemId === 'attendance-reports' && (currentNav === 'attendance-reports' || currentNav === 'reports' || currentNav === 'attendance/reports' || currentNav === '/attendance/reports' || currentNav === 'mis' || currentNav === 'attendance/mis')) return true;
   if (itemId === 'shifts' && (currentNav === 'shifts' || currentNav === 'shift-master' || currentNav === '/shifts')) return true;
   if (itemId === 'roster' && (currentNav === 'roster' || currentNav === 'shift-roster' || currentNav === 'shifts/roster' || currentNav === '/shifts/roster')) return true;
   if (itemId === 'shift-calendar' && (currentNav === 'shift-calendar' || currentNav === 'calendar' || currentNav === 'shifts/calendar' || currentNav === '/shifts/calendar')) return true;
@@ -582,6 +583,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
         { id: 'regularization', label: 'Regularization Desk', icon: FileText },
         { id: 'exceptions', label: 'Exceptions Queue', icon: ShieldAlert },
+        { id: 'attendance-reports', label: 'Reports & Scope MIS', icon: BarChart3 },
       ],
     },
     {
@@ -879,6 +881,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
         { id: 'regularization', label: 'Regularization Desk', icon: FileText },
         { id: 'exceptions', label: 'Exceptions Queue', icon: ShieldAlert },
+        { id: 'attendance-reports', label: 'Reports & Scope MIS', icon: BarChart3 },
       ],
     },
     {
@@ -1077,6 +1080,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
         { id: 'regularization', label: 'Regularization Desk', icon: FileText },
         { id: 'exceptions', label: 'Exceptions Queue', icon: ShieldAlert },
+        { id: 'attendance-reports', label: 'Reports & Scope MIS', icon: BarChart3 },
       ],
     },
     {

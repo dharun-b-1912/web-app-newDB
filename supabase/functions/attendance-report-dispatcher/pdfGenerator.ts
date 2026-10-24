@@ -21,7 +21,7 @@ export async function generatePdfDocument(
   rows: AttendanceReportRow[],
   punches: ClassifiedPunchEvent[] = [],
   options: AttendanceExportOptions
-): Promise<{ filename: string; buffer: Uint8Array; base64: string }> {
+): Promise<{ filename: string; buffer: Uint8Array; base64: string; sha256Checksum: string }> {
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
@@ -1262,5 +1262,6 @@ export async function generatePdfDocument(
     filename,
     buffer,
     base64,
+    sha256Checksum: auditSha256,
   };
 }

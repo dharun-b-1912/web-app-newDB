@@ -14,14 +14,7 @@ if (import.meta.env.PROD) {
   console.info = () => {};
 }
 
-// ── SESSION PRE-WARM ────────────────────────────────────────────────────────
-// Fire Supabase session restoration immediately at boot — before React mounts.
-// This ensures auth is resolved (or in-flight) before any component calls
-// getEmployees() or syncPunchesFromSupabase(), eliminating the AbortError caused
-// by the 5-second AbortController firing before the 34-second signInWithPassword.
-if (typeof window !== 'undefined') {
-  ensureSupabaseSession().catch(() => {});
-}
+
 
 if (typeof window !== 'undefined' && !import.meta.env.PROD) {
   console.log(`[BOOT] start: Application bootstrapping at ${window.location.pathname}${window.location.search} (origin=${window.location.origin})`);
@@ -90,6 +83,9 @@ if (typeof window !== 'undefined' && !import.meta.env.PROD) {
   };
 }
 
+if (typeof window !== 'undefined') {
+  (window as any).__joyBootStep?.(45, 'Mounting Application Core...', 'Initializing React concurrent engine');
+}
 console.log('[BOOT] root_mounting: Mounting React root to DOM node #root');
 
 const rootElement = document.getElementById('root');

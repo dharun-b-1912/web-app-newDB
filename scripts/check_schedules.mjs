@@ -1,41 +1,13 @@
-const fetch = globalThis.fetch || require('node-fetch');
+import { createClient } from '@supabase/supabase-js';
 
-let cachedToken = null;
+const SUPABASE_URL = 'https://ysiajemrqakfngasehhi.supabase.co';
+const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzaWFqZW1ycWFrZm5nYXNlaGhpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODQxNDEwOSwiZXhwIjoyMTAzOTkwMTA5fQ.D6xZ3REU8mTG9DmSufj8DnAH6qSyMvbukqyf5z9lvxc';
 
-async function getAdminToken() {
-  if (cachedToken) return cachedToken;
-  const res = await fetch('https://ysiajemrqakfngasehhi.supabase.co/auth/v1/token?grant_type=password', {
-    method: 'POST',
-    headers: {
-      'apikey': 'sb_publishable_i_pb_iFcxX0BEJFok_XfZA_gZF3W8mj',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ email: 'marimuthu@joycorporatesolutions.com', password: 'joypeoplehr' })
-  });
-  const data = await res.json();
-  cachedToken = data.access_token;
-  return cachedToken;
-}
-
-async function testFetch(endpoint) {
-  const token = await getAdminToken();
-  const url = `https://ysiajemrqakfngasehhi.supabase.co/rest/v1/${endpoint}`;
-  const res = await fetch(url, {
-    headers: {
-      'apikey': 'sb_publishable_i_pb_iFcxX0BEJFok_XfZA_gZF3W8mj',
-      'Authorization': `Bearer ${token}`
-    }
-  });
-  return await res.json();
-}
+const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
 async function main() {
-  const schedules = await testFetch('attendance_report_schedules?select=*');
-  console.log('Schedules count:', schedules?.length);
-  console.log('Schedules:', JSON.stringify(schedules, null, 2));
-
-  const logs = await testFetch('attendance_report_logs?select=*&order=executed_at.desc&limit=5');
-  console.log('Recent logs:', JSON.stringify(logs, null, 2));
+  const { data: schedules, error } = await admin.from('attendance_report_schedules').select('*');
+  console.log('Attendance report schedules:', schedules, error);
 }
 
-main();
+main().catch(console.error);

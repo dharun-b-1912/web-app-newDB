@@ -36,6 +36,9 @@ let cachedAdminToken = null;
 let adminTokenExpiresAt = 0;
 
 async function getAdminToken() {
+  if (SUPABASE_SERVICE_ROLE_KEY) {
+    return SUPABASE_SERVICE_ROLE_KEY;
+  }
   if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return process.env.SUPABASE_SERVICE_ROLE_KEY;
   }
@@ -499,27 +502,31 @@ async function sendVerificationPrompt(phone, emp) {
 }
 
 // ── Authoritative MIS Report Recipient & Permission Validator ──────────────
-async function checkMisReportAccess(phone, orgId) {
+export async function checkMisReportAccess(phone, orgId) {
   const cleanPhone = normalizePhone(phone);
   const tenDigit = getTenDigit(cleanPhone);
   try {
-    const endpoint = `mis_report_recipients?is_active=eq.true&is_verified=eq.true&or=(phone.eq.${cleanPhone},phone.eq.${tenDigit},phone.eq.91${tenDigit})`;
+    let endpoint = `mis_report_recipients?is_active=eq.true&is_verified=eq.true&or=(phone.eq.${cleanPhone},phone.eq.${tenDigit},phone.eq.91${tenDigit})`;
+    if (orgId) {
+      endpoint += `&organization_id=eq.${orgId}`;
+    }
     const recipients = await supabaseFetch(endpoint);
     if (recipients && recipients.length > 0) {
-      const match = orgId
-        ? recipients.find(r => r.organization_id === orgId) || recipients[0]
-        : recipients[0];
+      const match = recipients[0];
       return {
         authorized: true,
         recipient: match,
-        allowBotSelfService: match.allow_bot_self_service !== false,
+        allowBotSelfService: match.allow_bot_self_service !== false && match.bot_self_service_enabled !== false,
         permittedReportTypes: match.permitted_report_types || ['MORNING_CHECKIN', 'EVENING_FINAL'],
+        scope: match.workforce_scope || 'ALL',
+        departmentId: match.department_id || null,
+        reason: 'Authorized HR recipient',
       };
     }
   } catch (err) {
     console.warn('[WhatsApp Bot] Check MIS access warning:', err.message);
   }
-  return { authorized: false, recipient: null, allowBotSelfService: false, permittedReportTypes: [] };
+  return { authorized: false, recipient: null, allowBotSelfService: false, permittedReportTypes: [], reason: 'Recipient not authorized or cross-tenant access denied' };
 }
 
 // ── Step 4: Role-Aware Dynamic Home Menu ────────────────────────────────────
@@ -1630,7 +1637,7 @@ async function handleMisReportAcknowledgment(session, action, cleanPhone) {
 }
 
 // ── Service: Interactive MIS Report Request Options ────────────────────────
-async function sendMisReportMenu(session) {
+export async function sendMisReportMenu(session) {
   const cleanPhone = normalizePhone(session.phone);
   const emp = session.employee || {};
   const orgId = emp.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
@@ -1668,37 +1675,60 @@ async function sendMisReportMenu(session) {
   const companyName = emp.companyName || 'Joy Corporate Solutions Pvt. Ltd.';
 
   return sendMetaInteractive(cleanPhone, {
-    type: 'button',
-    header: { type: 'text', text: 'Joy PeopleHR MIS Reports' },
+    type: 'list',
+    header: { type: 'text', text: 'Joy PeopleHR Reports & MIS' },
     body: {
       text:
-        `*EXECUTIVE ATTENDANCE & MIS REPORTS*\n\n` +
+        `*EXECUTIVE HR INTELLIGENCE & MIS REPORTS*\n\n` +
         `*Authorized Recipient:* ${recipientName}\n` +
         `*Organization:* ${companyName}\n` +
         `*Date:* ${todayFormatted}\n\n` +
-        `Please select the report you would like to generate:\n\n` +
-        `🌅 *Morning Turnout Snapshot:*\n` +
-        `Live check-in count, turnout %, late arrivals & first biometric punches.\n\n` +
-        `🌙 *Evening Final Reconciliation:*\n` +
-        `Full-day shift hours, overtime ledger, check-out status & landscape A4 PDF.`,
+        `Select an executive report from the list below to receive the verified PDF document attachment:`,
     },
-    footer: { text: 'Joy PeopleHR Cryptographic Time Engine' },
+    footer: { text: 'Joy Corporate Solutions Pvt. Ltd.' },
     action: {
-      buttons: [
-        { type: 'reply', reply: { id: 'MIS_MORNING', title: '🌅 Morning Turnout' } },
-        { type: 'reply', reply: { id: 'MIS_EVENING', title: '🌙 Evening Final' } },
-        { type: 'reply', reply: { id: 'MAIN_MENU',   title: '🔙 Main Menu' } },
+      button: 'Choose Report',
+      sections: [
+        {
+          title: 'Turnout & Daily MIS',
+          rows: [
+            { id: 'MIS_MORNING',  title: 'Morning Turnout',       description: 'Check-in counts, turnout % & late arrivals' },
+            { id: 'MIS_EVENING',  title: 'Evening Final',         description: 'Full-day shift hours & complete reconciliation' },
+            { id: 'MIS_DAILY',    title: 'Daily Attendance MIS',  description: 'Detailed daily headcount & anomaly audit' },
+          ],
+        },
+        {
+          title: 'HR Intelligence & Governance',
+          rows: [
+            { id: 'MIS_OVERTIME', title: 'Overtime Governance',   description: '60h Annual / 20h 4-Month Period allocation' },
+            { id: 'MIS_WEEKLY',   title: 'Weekly HR MIS',         description: '7-day trend, repeated late & absence radar' },
+            { id: 'MIS_MONTHLY',  title: 'Monthly HR MIS',        description: 'Headcount movement, attendance % & attrition' },
+            { id: 'MIS_DEPT',     title: 'Department & Shift',    description: 'Comparative workforce turnout matrix' },
+          ],
+        },
       ],
     },
   });
 }
 
-// ── Service: Dispatch MIS Report On-Demand via Edge Function ────────────────
+export const sendMisReportOptions = sendMisReportMenu;
+
+// ── Service: Dispatch MIS Report On-Demand via Edge Function / Backend ────────
 async function handleBotMisReportDispatch(session, slot = 'MORNING') {
   const cleanPhone = normalizePhone(session.phone);
   const emp = session.employee || {};
   const orgId = emp.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
-  const slotLabel = slot === 'MORNING' ? 'Morning Check-In Turnout' : 'Evening Final Reconciliation';
+  
+  const slotLabels = {
+    MORNING: 'Morning Check-In Turnout',
+    EVENING: 'Evening Final Reconciliation',
+    DAILY: 'Daily Workforce Attendance MIS',
+    WEEKLY: 'Weekly HR Intelligence MIS',
+    MONTHLY: 'Monthly HR Workforce MIS',
+    OVERTIME: 'Overtime Governance (60h Annual / 20h Period)',
+    DEPT: 'Department & Shift Workforce Analytics',
+  };
+  const slotLabel = slotLabels[slot] || `${slot} MIS Report`;
 
   // 1. Authorize strictly against authoritative mis_report_recipients table
   const access = await checkMisReportAccess(cleanPhone, orgId);
@@ -1817,8 +1847,14 @@ const SUPPORTED_ACTION_IDS = new Set([
   'MENU_PORTAL',
   'MENU_TEAM_APPROVALS',
   'MENU_MIS_REPORT',
+  'MIS_MENU',
   'MIS_MORNING',
   'MIS_EVENING',
+  'MIS_DAILY',
+  'MIS_WEEKLY',
+  'MIS_MONTHLY',
+  'MIS_OVERTIME',
+  'MIS_DEPT',
   'ATT_CLOCK_IN',
   'ATT_CLOCK_OUT',
   'SCHED_ROSTER',
@@ -2008,24 +2044,45 @@ export async function processInboundWhatsAppMessage(params) {
   // 1. Attendance & Workforce MIS Report Request & Dispatch (CRITICAL: Placed FIRST so "Attendance MIS Reports" is NEVER hijacked by generic "ATTENDANCE")
   if (
     action === 'MENU_MIS_REPORT' ||
+    action === 'MIS_MENU' ||
     action === 'MIS_MORNING' ||
     action === 'MIS_EVENING' ||
+    action === 'MIS_DAILY' ||
+    action === 'MIS_WEEKLY' ||
+    action === 'MIS_MONTHLY' ||
+    action === 'MIS_OVERTIME' ||
+    action === 'MIS_DEPT' ||
     rawUpper.includes('MIS') ||
     rawUpper === 'REPORT' ||
     rawUpper === 'REPORTS' ||
     rawUpper.includes('TURNOUT') ||
     rawUpper.includes('AUDIT REPORT')
   ) {
+    if (action === 'MENU_MIS_REPORT' || action === 'MIS_MENU') {
+      return sendMisReportOptions(session);
+    }
+    if (action === 'MIS_OVERTIME' || rawUpper.includes('OVERTIME') || rawUpper.includes('OT REPORT')) {
+      return handleBotMisReportDispatch(session, 'OVERTIME');
+    }
+    if (action === 'MIS_WEEKLY' || rawUpper.includes('WEEKLY')) {
+      return handleBotMisReportDispatch(session, 'WEEKLY');
+    }
+    if (action === 'MIS_MONTHLY' || rawUpper.includes('MONTHLY')) {
+      return handleBotMisReportDispatch(session, 'MONTHLY');
+    }
+    if (action === 'MIS_DAILY' || rawUpper.includes('DAILY')) {
+      return handleBotMisReportDispatch(session, 'DAILY');
+    }
+    if (action === 'MIS_DEPT' || rawUpper.includes('DEPT') || rawUpper.includes('DEPARTMENT')) {
+      return handleBotMisReportDispatch(session, 'DEPT');
+    }
     if (action === 'MIS_MORNING' || rawUpper.includes('MORNING')) {
       return handleBotMisReportDispatch(session, 'MORNING');
     }
     if (action === 'MIS_EVENING' || rawUpper.includes('EVENING')) {
       return handleBotMisReportDispatch(session, 'EVENING');
     }
-    // For MENU_MIS_REPORT / general MIS request: Directly dispatch the current active slot's PDF report!
-    const currentHour = new Date().getHours();
-    const activeSlot = currentHour < 15 ? 'MORNING' : 'EVENING';
-    return handleBotMisReportDispatch(session, activeSlot);
+    return sendMisReportOptions(session);
   }
 
   // 2. Payslip & Salary

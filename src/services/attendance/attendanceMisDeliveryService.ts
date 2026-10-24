@@ -80,6 +80,7 @@ export interface UnifiedMisDeliverySummary {
     sha256Checksum: string;
     documentUrl: string;
     pageCount: number;
+    stats?: MisReportStats;
   };
   emailResults: {
     attempted: boolean;
@@ -252,15 +253,33 @@ export class AttendanceMisDeliveryService {
       organizationId?: string;
     };
   }): Promise<AttendanceMisReportArtifact> {
-    const { rows, punches = [], options } = params;
+    const options = params.options;
+    let rows = params.rows || [];
+    let punches = params.punches || [];
     const isMorning = options.reportType !== 'EVENING_FINAL';
     const reportType = isMorning ? 'MORNING_CHECKIN' : 'EVENING_FINAL';
     const dateStr = options.reportDate;
 
+    // Auto-assemble authentic workforce rows and punches if empty rows provided
+    if (!rows || rows.length === 0) {
+      try {
+        const { attendanceReportSchedulerService } = await import('./attendanceReportSchedulerService');
+        const assembled = await attendanceReportSchedulerService.assembleReportDataAsync(dateStr);
+        if (assembled.rows && assembled.rows.length > 0) {
+          rows = assembled.rows;
+          if (punches.length === 0 && assembled.punches) {
+            punches = assembled.punches;
+          }
+        }
+      } catch (err) {
+        console.warn('[AttendanceMIS] Error auto-assembling rows in generateMisReportArtifact:', err);
+      }
+    }
+
     const activeTenantComp = typeof api !== 'undefined' ? api.getActiveCompany() : null;
-    let company = (options.companyName && options.companyName !== 'Joy Corporate Solutions' && options.companyName !== 'Workforce Organization')
-      ? options.companyName
-      : (activeTenantComp?.name || activeTenantComp?.trade_name || activeTenantComp?.legal_name || options.companyName || 'Joy Corporate Solutions Pvt. Ltd.');
+    let company = (params.options.companyName && params.options.companyName !== 'Joy Corporate Solutions' && params.options.companyName !== 'Workforce Organization')
+      ? params.options.companyName
+      : (activeTenantComp?.name || activeTenantComp?.trade_name || activeTenantComp?.legal_name || params.options.companyName || 'Joy Corporate Solutions Pvt. Ltd.');
     if (company === 'Workforce Organization') {
       company = 'Joy Corporate Solutions';
     }
@@ -660,10 +679,64 @@ export class AttendanceMisDeliveryService {
       requestedByUserId: params.requestedByUserId,
     });
 
+    // Auto-assemble authentic workforce rows and punches if not provided
+    let rows = params.rows;
+    let punches = params.punches;
+    if (!rows || rows.length === 0) {
+      try {
+        console.log(`[UnifiedMIS] No pre-assembled rows passed for ${dateStr}. Assembling authentic workforce data from Supabase...`);
+        const { attendanceReportSchedulerService } = await import('./attendanceReportSchedulerService');
+        const assembled = await attendanceReportSchedulerService.assembleReportDataAsync(dateStr);
+        rows = assembled.rows;
+        if (!punches || punches.length === 0) {
+          punches = assembled.punches;
+        }
+        if (!params.companyName || params.companyName === 'Workforce Organization') {
+          companyName = assembled.companyName;
+        }
+      } catch (err) {
+        console.warn('[UnifiedMIS] Auto-assembly exception in deliverUnifiedMisReport:', err);
+        rows = [];
+      }
+    }
+
+    // STRICT EMPTY DATA GUARD: Never dispatch empty / 0-staff reports to executive leadership or WhatsApp
+    if (!rows || rows.length === 0) {
+      console.warn(`[UnifiedMIS] Guard Triggered: Refusing to dispatch report for ${dateStr} because workforce headcount is 0. Aborting dispatch to prevent empty report delivery.`);
+      return {
+        runId: `abort-${Date.now()}`,
+        reportDate: dateStr,
+        reportType,
+        companyName,
+        success: false,
+        artifact: {
+          filename: `JOY_Attendance_MIS_${dateStr}.pdf`,
+          buffer: new Uint8Array(),
+          base64: '',
+          sha256Checksum: '',
+          sizeBytes: 0,
+          pageCount: 0,
+          documentUrl: '',
+          stats: {
+            totalWorkforce: 0,
+            presentCount: 0,
+            turnoutPct: 0,
+            lateCount: 0,
+            weeklyOffLeave: 0,
+            cumulativeHours: '0h 0m',
+            presentTurnout: '0 Staff (0% Turnout)',
+          },
+        },
+        emailResults: { attempted: false, success: false, recipients: [], error: 'Aborted: 0 workforce rows available' },
+        whatsAppResults: { attempted: false, success: false, deliveries: [] },
+        rejectedRecipients: rejected,
+      };
+    }
+
     // Step 2: Generate the finalized PDF artifact ONCE (or reuse preGeneratedArtifact)
     const artifact = params.preGeneratedArtifact || (await this.generateMisReportArtifact({
-      rows: params.rows,
-      punches: params.punches,
+      rows,
+      punches,
       options: {
         companyName,
         reportDate: dateStr,
@@ -703,8 +776,8 @@ export class AttendanceMisDeliveryService {
           to: authorizedEmails,
           companyName,
           reportDate: dateStr,
-          rows: params.rows,
-          punches: params.punches,
+          rows,
+          punches,
           customMessage: params.customNote,
           attachPdf: true,
           attachExcel: params.attachExcel !== false,
@@ -725,7 +798,7 @@ export class AttendanceMisDeliveryService {
           status: res.success ? 'SUCCESS' : 'ERROR',
           mode: 'UNIFIED_DISPATCH_EMAIL',
           recipients: authorizedEmails,
-          headcount: params.rows.length,
+          headcount: rows.length,
           message: `Email MIS Report [${artifact.filename}] delivered (SHA-256: ${artifact.sha256Checksum.slice(0, 12)}...)`,
         });
       } catch (err: any) {
@@ -895,7 +968,7 @@ export class AttendanceMisDeliveryService {
             status: dispatchRes.success ? 'SUCCESS' : 'ERROR',
             mode: 'UNIFIED_DISPATCH_WHATSAPP',
             recipients: [recipient.phone],
-            headcount: params.rows.length,
+            headcount: rows.length,
             message: `WhatsApp MIS Document [${artifact.filename}] delivered to ${recipient.phone} (SHA-256: ${artifact.sha256Checksum.slice(0, 12)}...)`,
           });
         } catch (waErr: any) {
@@ -926,6 +999,7 @@ export class AttendanceMisDeliveryService {
         sha256Checksum: artifact.sha256Checksum,
         documentUrl: artifact.documentUrl,
         pageCount: artifact.pageCount,
+        stats: artifact.stats,
       },
       emailResults: emailResult,
       whatsAppResults: whatsAppResult,

@@ -125,6 +125,75 @@ class OrganizationContextService {
   }
 
   /**
+   * Fast synchronous context resolver from memory or localStorage.
+   * Enables immediate 0ms UI render without waiting for remote DB queries.
+   */
+  getCachedContextSync(user: User): EffectiveUserContext | null {
+    if (!user) return null;
+    const userKey = `${user?.id || 'anon'}_${user?.organization_id || ''}_${user?.role || ''}`;
+    const cachedEntry = OrganizationContextService.cachedUserContext.get(userKey);
+    if (cachedEntry) {
+      return cachedEntry.ctx;
+    }
+
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(`workforce_ctx_${user.id}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed?.activeOrganization && (!user.organization_id || parsed.activeOrganization.id === user.organization_id)) {
+            OrganizationContextService.cachedUserContext.set(userKey, { ctx: parsed, timestamp: Date.now() });
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Deterministic fallback based on user's organization_id (0ms)
+    const targetOrgId = user.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
+    const fallbackOrg = DEFAULT_ORGANIZATIONS.find((o) => o.id === targetOrgId) || {
+      id: targetOrgId,
+      name: (user as any).organization_name || 'Joy Corporate Solutions',
+      slug: `tenant-${targetOrgId.slice(0, 8)}`,
+      status: 'Active',
+      plan: 'Enterprise',
+      default_currency: 'INR',
+      timezone: 'Asia/Kolkata',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const fallbackComp = DEFAULT_LEGAL_ENTITIES.find((c) => c.organization_id === targetOrgId) || {
+      id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+      organization_id: targetOrgId,
+      legal_name: 'Joy Corporate Solutions Pvt Ltd',
+      trade_name: 'Joy Corporate Solutions',
+      statutory_registration_no: 'U72900TZ2024PTC032145',
+      country: 'India',
+      city: 'Coimbatore',
+      currency: 'INR',
+      timezone: 'Asia/Kolkata',
+      status: 'Active',
+      created_at: new Date().toISOString(),
+    };
+
+    const primaryRole = getPrimaryRole(user);
+    const roleName = primaryRole !== 'Unassigned' ? primaryRole : ((user as any).roleCode || (user as any).primaryRole || user.role || 'Unassigned');
+
+    const synCtx: EffectiveUserContext = {
+      userId: user.id,
+      organizations: [fallbackOrg],
+      activeOrganization: fallbackOrg,
+      authorizedLegalEntities: [fallbackComp],
+      activeLegalEntity: fallbackComp,
+      roleTitle: this.formatCleanRoleTitle(roleName),
+      isPlatformAdmin: primaryRole === 'Super Admin' || user.role === 'Super Admin' || (user as any).is_platform_admin === true,
+    };
+
+    return synCtx;
+  }
+
+  /**
    * Resolves the authoritative multi-tenant context for a user session.
    * Validates organization and legal entity hierarchy directly against DB.
    * Single-flight deduplicated and cached for 2 minutes to protect the browser HTTP pool.
@@ -174,7 +243,7 @@ class OrganizationContextService {
             }
 
             const abortCtrl = new AbortController();
-            const tid = setTimeout(() => abortCtrl.abort(), 4000);
+            const tid = setTimeout(() => abortCtrl.abort(), 2000);
 
             const [orgRes, compRes] = await Promise.all([
               orgQ.abortSignal(abortCtrl.signal),
@@ -295,6 +364,12 @@ class OrganizationContextService {
           ctx: finalContext,
           timestamp: Date.now(),
         });
+
+        if (typeof localStorage !== 'undefined' && user?.id) {
+          try {
+            localStorage.setItem(`workforce_ctx_${user.id}`, JSON.stringify(finalContext));
+          } catch (_) {}
+        }
 
         return finalContext;
       } finally {

@@ -7,7 +7,7 @@
 // Zero localStorage reliance • Persistent Supabase Storage • Real Edge Execution
 // ============================================================================
 
-import { supabase } from '../../lib/supabase';
+import { supabase, supabaseAdmin, isSupabaseCircuitOpen } from '../../lib/supabase';
 import { api } from '../api';
 import { attendanceApi } from '../attendanceApi';
 import { biometricGatewayService } from './biometricGatewayService';
@@ -130,19 +130,18 @@ class AttendanceReportSchedulerService {
       }
     } catch (_) {}
 
-    this.loadScheduleConfigAsync()
-      .then(() => {
-        this.initScheduler();
-      })
-      .catch(() => {
-        this.initScheduler();
-      });
+    // Note: Automated daily dispatches are exclusively executed on the backend daemon
+    // (server_attendance_daemon.js & supabase/functions/attendance-report-dispatcher).
+    // Browser does not run background dispatch loops. Config is loaded on-demand when user opens scheduler settings.
   }
 
   /**
    * Loads schedule configuration directly from Supabase PostgreSQL database for active tenant.
    */
   async loadScheduleConfigAsync(): Promise<AttendanceReportScheduleConfig> {
+    if (isSupabaseCircuitOpen()) {
+      return this.cachedConfig;
+    }
     try {
       const activeComp = api.getActiveCompany();
       const orgId = activeComp?.organization_id;
@@ -161,7 +160,12 @@ class AttendanceReportSchedulerService {
         .maybeSingle();
 
       if (error) {
-        console.warn('[AttendanceScheduler] Could not fetch schedules from DB:', error.message);
+        if (!isSupabaseCircuitOpen()) {
+          const errMsg = error?.message || (typeof error === 'string' ? error : (error as any)?.error);
+          if (errMsg) {
+            console.warn('[AttendanceScheduler] Could not fetch schedules from DB:', errMsg);
+          }
+        }
         return this.cachedConfig;
       }
 
@@ -584,12 +588,24 @@ class AttendanceReportSchedulerService {
 
     let allEmps: any[] = [];
     try {
-      allEmps = await api.getEmployees(activeComp?.id);
+      allEmps = await api.getEmployees({ skipEnrichment: true });
     } catch {
-      allEmps = api.getEmployeesSync ? api.getEmployeesSync(activeComp?.id) : [];
+      allEmps = api.getEmployeesSync ? api.getEmployeesSync() : [];
     }
     if (!allEmps || allEmps.length === 0) {
-      allEmps = api.getEmployeesSync ? api.getEmployeesSync(activeComp?.id) : [];
+      allEmps = api.getEmployeesSync ? api.getEmployeesSync() : [];
+    }
+    // Direct Supabase fallback if local memory cache was empty
+    if (!allEmps || allEmps.length === 0) {
+      try {
+        const { data: dbEmps } = await (supabaseAdmin || supabase)
+          .from('employees')
+          .select('*')
+          .eq('organization_id', '0c621892-e938-4707-9957-13534ea32c19');
+        if (dbEmps && dbEmps.length > 0) {
+          allEmps = dbEmps;
+        }
+      } catch (_) {}
     }
     const employees = allEmps.filter(
       e => isUuid(e.id) && !String(e.employee_code || '').toUpperCase().startsWith('CE0')
@@ -612,11 +628,11 @@ class AttendanceReportSchedulerService {
       const startIso = new Date(`${dateStr}T00:00:00+05:30`).toISOString();
       const endIso = new Date(`${dateStr}T23:59:59+05:30`).toISOString();
 
-      const { data, error } = await supabase
+      const dbClient = supabaseAdmin || supabase;
+      const { data, error } = await dbClient
         .from('attendance_punches')
         .select('*')
-        .gte('punch_time', startIso)
-        .lte('punch_time', endIso)
+        .or(`attendance_date.eq.${dateStr},and(attendance_date.is.null,punch_time.gte.${startIso},punch_time.lte.${endIso})`)
         .order('punch_time', { ascending: true });
 
       if (!error && data) {
@@ -1260,6 +1276,18 @@ class AttendanceReportSchedulerService {
         companyName = assembled.companyName;
       }
 
+      // STRICT EMPTY DATA GUARD: Never dispatch empty / 0-staff reports to leadership
+      if (!rows || rows.length === 0) {
+        console.warn(`[AttendanceScheduler] Aborting scheduled dispatch: 0 attendance rows compiled for ${todayStr}. Will not send empty report to leadership.`);
+        return {
+          success: false,
+          error: 'Aborted: No employee workforce attendance data available',
+          recipients,
+          deliveredAt: nowTimeStr,
+          slot: targetSlot,
+        };
+      }
+
       const subject = isMorning
         ? `[Joy PeopleHR] Morning Check-In & Turnout Status Report — ${todayStr} (${companyName})`
         : `[Joy PeopleHR] End-of-Day Final Attendance & Punching Audit Report — ${todayStr} (${companyName})`;
@@ -1378,13 +1406,10 @@ class AttendanceReportSchedulerService {
    * Evaluates if conditions are met to run automated dispatch for Morning and Evening slots.
    */
   initScheduler(): void {
-    if (this.daemonIntervalId) return;
-
-    this.daemonIntervalId = setInterval(() => {
-      this.evaluateScheduledCheck();
-    }, 60000);
-
-    this.evaluateScheduledCheck();
+    // Enterprise Architecture: Automated daily scheduled report delivery is executed
+    // strictly on the server backend (server_attendance_daemon.js & Supabase Edge Function).
+    // Client-side browser background loops are disabled to avoid duplicate dispatches across user tabs.
+    return;
   }
 
   stopScheduler(): void {
@@ -1395,6 +1420,7 @@ class AttendanceReportSchedulerService {
   }
 
   private evaluateScheduledCheck(): void {
+    if (typeof window === 'undefined') return;
     const config = this.getScheduleConfig();
     if (!config.enabled) return;
     if (this.isExecuting) return;
