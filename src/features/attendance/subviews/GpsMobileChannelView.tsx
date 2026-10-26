@@ -48,6 +48,7 @@ import { api } from '../../../services/api';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
+import { LiveShiftTrackingView } from './LiveShiftTrackingView';
 
 export interface GpsMobileChannelViewProps {
   currentTab?: string;
@@ -61,7 +62,8 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
   onOpenEmployeeProfile,
 }) => {
   const { showToast } = useToast();
-  const [activeSubTab, setActiveSubTab] = useState<'attendance' | 'geofences' | 'mapping' | 'mobile' | 'logs' | 'exceptions'>(() => {
+  const [activeSubTab, setActiveSubTab] = useState<'attendance' | 'geofences' | 'mapping' | 'mobile' | 'logs' | 'exceptions' | 'tracking'>(() => {
+    if (currentTab === 'tracking' || currentTab === 'live-tracking' || currentTab === 'shift-tracking') return 'tracking';
     if (currentTab === 'geofences') return 'geofences';
     if (currentTab === 'staff-mapping') return 'mapping';
     if (currentTab === 'mobile-clocking') return 'mobile';
@@ -71,7 +73,8 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
   });
 
   useEffect(() => {
-    if (currentTab === 'geofences') setActiveSubTab('geofences');
+    if (currentTab === 'tracking' || currentTab === 'live-tracking' || currentTab === 'shift-tracking') setActiveSubTab('tracking');
+    else if (currentTab === 'geofences') setActiveSubTab('geofences');
     else if (currentTab === 'staff-mapping') setActiveSubTab('mapping');
     else if (currentTab === 'mobile-clocking') setActiveSubTab('mobile');
     else if (currentTab === 'location-logs') setActiveSubTab('logs');
@@ -229,7 +232,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     else if (currentTab === 'gps' || currentTab === 'gps-attendance') setActiveSubTab('attendance');
   }, [currentTab]);
 
-  const handleTabSwitch = (tab: 'attendance' | 'geofences' | 'mapping' | 'mobile' | 'logs' | 'exceptions') => {
+  const handleTabSwitch = (tab: 'attendance' | 'geofences' | 'mapping' | 'mobile' | 'logs' | 'exceptions' | 'tracking') => {
     setActiveSubTab(tab);
   };
 
@@ -626,6 +629,16 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
           >
             <ShieldAlert className="w-3.5 h-3.5" />
             GPS Violations ({violationsCount})
+          </button>
+          <button
+            onClick={() => handleTabSwitch('tracking')}
+            className={cn(
+              'px-3 py-1.5 rounded-md font-semibold transition-all flex items-center gap-1.5 cursor-pointer',
+              activeSubTab === 'tracking' ? 'bg-emerald-700 text-white shadow-xs font-bold' : 'text-emerald-700 hover:bg-emerald-50'
+            )}
+          >
+            <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+            Shift Route & Live Radar
           </button>
         </div>
       </div>
@@ -1246,6 +1259,11 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
             )}
           </div>
         </div>
+      )}
+
+      {/* 8. SHIFT ROUTE & LIVE FLEET TRACKING RADAR */}
+      {activeSubTab === 'tracking' && (
+        <LiveShiftTrackingView onOpenEmployeeProfile={onOpenEmployeeProfile} />
       )}
 
       {/* REASON PROMPT MODAL FOR DIFFERENT LOCATION / GPS UNAVAILABLE */}

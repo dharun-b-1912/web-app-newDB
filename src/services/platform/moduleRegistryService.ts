@@ -14,8 +14,8 @@ import {
 import { hrEventBus } from '../hrEventBus';
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
 
-const STORAGE_KEY_MODULES = 'workforce_module_registry_v5';
-const STORAGE_KEY_AUDIT = 'workforce_module_registry_audit_v5';
+const STORAGE_KEY_MODULES = 'workforce_module_registry_v6';
+const STORAGE_KEY_AUDIT = 'workforce_module_registry_audit_v6';
 
 /**
  * CANONICAL MASTER INVENTORY OF ALL JOY PEOPLEHR DOMAINS & MODULES
@@ -462,35 +462,38 @@ export const CANONICAL_MODULES: ModuleRegistryItem[] = [
     ],
   },
 
-  // ─── PAUSED DOMAIN 03: LEARNING & DEVELOPMENT (LMS) ────────────────
+  // ─── DOMAIN: LEARNING & DEVELOPMENT (LMS) ───────────────────────────
   {
     module_key: 'lms',
     module_name: 'Learning & Development (LMS) Engine',
     category: 'LEARNING_DEVELOPMENT',
-    status: 'PAUSED',
-    launch_scope: false,
-    launch_scope_category: 'POST_LAUNCH_PHASE_3',
-    navigation_visible: false,
-    route_accessible: false,
-    required_plan: 'Enterprise',
-    required_permissions: ['lms.manage'],
-    dependencies: ['people'],
+    status: 'LIVE',
+    launch_scope: true,
+    launch_scope_category: 'LAUNCH_CRITICAL',
+    navigation_visible: true,
+    route_accessible: true,
+    required_plan: 'Starter',
+    required_permissions: ['lms.manage', 'lms.view'],
+    dependencies: [],
     web_enabled: true,
-    mobile_enabled: false,
-    certification_status: 'POST_LAUNCH',
-    planned_phase: 'Phase 3 (Q1 2027)',
-    priority: 'MEDIUM_P2',
-    completion_percentage: 65,
-    development_notes: 'Scope frozen for September 26 launch. Courses, SCORM player, assessments, and certifications fully preserved.',
+    mobile_enabled: true,
+    certification_status: 'LAUNCH_CERTIFIED',
+    last_certified_at: '2026-10-26T10:00:00Z',
+    planned_phase: 'Phase 1 (Launch)',
+    priority: 'CRITICAL_P0',
+    completion_percentage: 100,
+    development_notes: 'YouTube Video Publishing, Employee Watching, Anti-Skip Enforcement, MCQ Assessment & Pass/Fail Constraints, Real-Time HR Tracking & Mobile Push Reminders.',
     associated_routes: [
-      'lms-dashboard', 'lms-courses', 'lms-programs', 'lms-calendar',
+      'lms', 'lms-dashboard', 'lms-courses', 'lms-programs', 'lms-calendar',
       'lms-enrollment', 'lms-trainers', 'lms-assessments', 'lms-certifications',
-      'lms-mandatory', 'lms-skills', 'lms-feedback', 'lms-reports', 'lms-settings'
+      'lms-mandatory', 'lms-skills', 'lms-feedback', 'lms-reports', 'lms-settings',
+      'ess-learning', 'tl-training'
     ],
     associated_nav_ids: [
-      'lms-dashboard', 'lms-courses', 'lms-programs', 'lms-calendar',
+      'lms', 'lms-dashboard', 'lms-courses', 'lms-programs', 'lms-calendar',
       'lms-enrollment', 'lms-trainers', 'lms-assessments', 'lms-certifications',
-      'lms-mandatory', 'lms-skills', 'lms-feedback', 'lms-reports', 'lms-settings'
+      'lms-mandatory', 'lms-skills', 'lms-feedback', 'lms-reports', 'lms-settings',
+      'ess-learning', 'tl-training'
     ],
   },
 

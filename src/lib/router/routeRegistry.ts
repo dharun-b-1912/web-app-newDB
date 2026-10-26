@@ -75,6 +75,7 @@ export const APP_ROUTES = {
   attendance: {
     dashboard: '/attendance',
     employees: '/attendance/employees',
+    tracking: '/attendance/tracking',
     history: '/attendance/history',
     lateEarly: '/attendance/late-early',
     regularization: '/attendance/regularization',
@@ -294,6 +295,7 @@ export const ROUTE_MANIFEST: RouteDefinition[] = [
   // ── CORE ATTENDANCE ──
   { id: 'attendance', label: 'Attendance Dashboard', canonicalPath: '/attendance', section: 'CORE ATTENDANCE', aliases: ['/attendance-dashboard'], exact: true },
   { id: 'attendance-employees', label: 'Employee Attendance', canonicalPath: '/attendance/employees', section: 'CORE ATTENDANCE', aliases: ['/attendance-employees', '/employee-attendance'] },
+  { id: 'live-tracking', label: 'Shift Route & Live GPS Radar', canonicalPath: '/attendance/tracking', section: 'CORE ATTENDANCE', aliases: ['/attendance/tracking', '/live-tracking', '/tracking', '/shift-tracking'] },
   { id: 'history', label: 'Attendance History & Ledger', canonicalPath: '/attendance/history', section: 'CORE ATTENDANCE', aliases: ['/attendance-history', '/ledger'] },
   { id: 'late-early', label: 'Late / Early Tracking', canonicalPath: '/attendance/late-early', section: 'CORE ATTENDANCE', aliases: ['/late-early'] },
   { id: 'regularization', label: 'Regularization Desk', canonicalPath: '/attendance/regularization', section: 'CORE ATTENDANCE', aliases: ['/regularization'] },

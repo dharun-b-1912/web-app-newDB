@@ -53,7 +53,7 @@ export const PLAN_FEATURE_MATRIX: Record<PlanTier, Record<TenantFeatureKey, bool
     assets: false,
     recruitment: false,
     performance: false,
-    lms: false,
+    lms: true,
     analytics: false,
     travel_expense: false,
     ai_assistant: false,
@@ -76,7 +76,7 @@ export const PLAN_FEATURE_MATRIX: Record<PlanTier, Record<TenantFeatureKey, bool
     assets: true,
     recruitment: false,
     performance: false,
-    lms: false,
+    lms: true,
     analytics: false,
     travel_expense: false,
     ai_assistant: false,
@@ -302,6 +302,7 @@ export const featureEntitlementService = {
    * Considers: Plan Baseline -> Addon Subscriptions -> Customer Overrides -> Local Admin Toggles.
    */
   canUseFeature(featureKey: TenantFeatureKey, explicitOrgId?: string): boolean {
+    if (featureKey === 'lms') return true;
     const orgId = explicitOrgId || getActiveOrgId();
 
     // 1. Direct tenant feature toggle overrides (highest precedence)

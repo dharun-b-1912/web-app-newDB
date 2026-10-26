@@ -177,6 +177,15 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       return 'attendance-activity-logs';
     }
     if (
+      subPath === 'live-tracking' ||
+      subPath === 'tracking' ||
+      subPath === 'attendance/tracking' ||
+      subPath === '/attendance/tracking' ||
+      subPath === 'shift-tracking'
+    ) {
+      return 'live-tracking';
+    }
+    if (
       subPath === 'attendance-rules' ||
       subPath === 'biometric/rules' ||
       subPath === '/biometric/rules' ||
@@ -308,6 +317,8 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
         setLocalTab('regularization');
       } else if (urlPath.includes('/attendance/exceptions')) {
         setLocalTab('exceptions');
+      } else if (urlPath.includes('/attendance/tracking') || urlPath.includes('/live-tracking') || urlPath.includes('/tracking')) {
+        setLocalTab('live-tracking');
       } else if (urlPath.includes('/biometric/rules') || urlPath.includes('/attendance-rules')) {
         setLocalTab('attendance-rules');
       } else if (urlPath.includes('/biometric/gps') || urlPath.includes('/gps')) {
@@ -531,6 +542,9 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       case 'mobile-clocking':
       case 'location-logs':
       case 'location-exceptions':
+      case 'live-tracking':
+      case 'tracking':
+      case 'shift-tracking':
         return (
           <GpsMobileChannelView
             currentTab={activeTab}

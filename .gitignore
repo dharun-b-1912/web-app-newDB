@@ -81,3 +81,8 @@ Essl Support files/
 scratch/
 *.dll
 *.tar.gz
+/*.cjs
+/*.mjs
+/*.pptx
+/presentation/
+schema_keys.json

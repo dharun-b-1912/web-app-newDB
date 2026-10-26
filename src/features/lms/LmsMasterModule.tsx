@@ -27,31 +27,22 @@ import {
   FileSpreadsheet,
   Settings,
 } from 'lucide-react';
+import { cn } from '../../lib/utils';
+import { lmsRealtimeService } from '../../services/lms/lmsRealtimeService';
 
 interface LmsMasterModuleProps {
   initialTab?: string;
 }
 
 const resolveTabId = (route?: string): string => {
-  if (!route || route === 'lms') return 'dashboard';
-  const clean = route.replace(/^lms-/, '');
+  const clean = (route || '').replace(/^lms-/, '');
   if (clean === 'courses' || clean === 'my-courses' || clean === 'course-library') return 'courses';
-  if (clean === 'programs' || clean === 'sessions') return 'programs';
-  if (clean === 'calendar') return 'calendar';
-  if (clean === 'enrollment' || clean === 'enrollments') return 'enrollment';
-  if (clean === 'trainers') return 'trainers';
-  if (clean === 'assessments' || clean === 'exams') return 'assessments';
-  if (clean === 'certifications' || clean === 'expiry') return 'certifications';
-  if (clean === 'mandatory' || clean === 'compliance') return 'mandatory';
-  if (clean === 'skills' || clean === 'paths' || clean === 'gaps') return 'skills';
-  if (clean === 'feedback') return 'feedback';
-  if (clean === 'reports') return 'reports';
-  if (clean === 'settings') return 'settings';
   return 'dashboard';
 };
 
 export const LmsMasterModule: React.FC<LmsMasterModuleProps> = ({ initialTab }) => {
   const [activeTab, setActiveTab] = useState<string>(() => resolveTabId(initialTab));
+  const [liveCompliance, setLiveCompliance] = useState<string>('Live Tracking');
 
   useEffect(() => {
     if (initialTab) {
@@ -59,20 +50,15 @@ export const LmsMasterModule: React.FC<LmsMasterModuleProps> = ({ initialTab }) 
     }
   }, [initialTab]);
 
+  useEffect(() => {
+    lmsRealtimeService.getDashboardMetrics().then((m) => {
+      setLiveCompliance(m.mandatoryCompliance);
+    }).catch(() => {});
+  }, [activeTab]);
+
   const tabs = [
     { id: 'dashboard', label: 'Learning Dashboard', icon: LayoutDashboard },
     { id: 'courses', label: 'Courses & Player', icon: BookOpen },
-    { id: 'programs', label: 'Training Programs', icon: GraduationCap },
-    { id: 'calendar', label: 'Training Calendar', icon: Calendar },
-    { id: 'enrollment', label: 'Enrollments', icon: UserCheck },
-    { id: 'trainers', label: 'Trainers & Vendors', icon: Users },
-    { id: 'assessments', label: 'Assessments & Exams', icon: Award },
-    { id: 'certifications', label: 'Certifications & Expiry', icon: Award },
-    { id: 'mandatory', label: 'Mandatory Compliance', icon: ShieldCheck },
-    { id: 'skills', label: 'Skill Gap & Paths', icon: GitFork },
-    { id: 'feedback', label: 'Feedback & Ratings', icon: MessageSquare },
-    { id: 'reports', label: 'LMS Reports', icon: FileSpreadsheet },
-    { id: 'settings', label: 'LMS Settings', icon: Settings },
   ];
 
   return (
@@ -87,35 +73,43 @@ export const LmsMasterModule: React.FC<LmsMasterModuleProps> = ({ initialTab }) 
           </div>
           <h1 className="text-2xl font-black tracking-tight mt-1">Training & LMS Master Module</h1>
           <p className="text-xs text-emerald-100/80 mt-1 max-w-2xl">
-            Centralized employee learning, course player, cohorts, assessments, digital certificates, POSH/InfoSec compliance, and Performance skill gap integration.
+            Centralized employee learning, YouTube course player, MCQ assessments & pass/fail grading, anti-skip enforcement, and real-time employee compliance tracking.
           </p>
         </div>
 
         <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 shrink-0">
           <div className="text-right">
             <span className="text-[10px] uppercase font-bold text-emerald-200 block">Mandatory Compliance</span>
-            <span className="text-sm font-black font-mono">97.2% Compliant</span>
+            <span className="text-sm font-black font-mono">{liveCompliance} Compliant</span>
           </div>
         </div>
       </div>
 
-
-
-      {/* Subview Container */}
+      {/* Sub-navigation Tabs */}
+      <div className="flex items-center gap-2 border-b border-gray-200 overflow-x-auto pb-2 scrollbar-none">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer',
+                isActive
+                  ? 'bg-[#07563D] text-white shadow-sm'
+                  : 'bg-white text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-gray-200/60'
+              )}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
       <div className="transition-all duration-200">
         {activeTab === 'dashboard' && <LmsDashboardView onNavigateTab={tabKey => setActiveTab(tabKey)} />}
         {activeTab === 'courses' && <CoursesView />}
-        {activeTab === 'programs' && <TrainingProgramsView />}
-        {activeTab === 'calendar' && <TrainingCalendarView />}
-        {activeTab === 'enrollment' && <EnrollmentView />}
-        {activeTab === 'trainers' && <TrainersView />}
-        {activeTab === 'assessments' && <AssessmentsView />}
-        {activeTab === 'certifications' && <CertificationsView />}
-        {activeTab === 'mandatory' && <MandatoryTrainingView />}
-        {activeTab === 'skills' && <SkillDevelopmentView />}
-        {activeTab === 'feedback' && <TrainingFeedbackView />}
-        {activeTab === 'reports' && <LmsReportsView />}
-        {activeTab === 'settings' && <LmsSettingsView />}
       </div>
     </div>
   );

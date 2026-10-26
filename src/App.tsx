@@ -649,6 +649,10 @@ const AppContent: React.FC = () => {
       case 'face-devices':
       case 'face-logs':
       case 'face-exceptions':
+      case 'live-tracking':
+      case 'attendance/tracking':
+      case 'tracking':
+      case 'shift-tracking':
       case 'gps':
       case 'biometric/gps':
       case 'gps-attendance':

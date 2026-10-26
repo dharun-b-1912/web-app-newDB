@@ -578,6 +578,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
         { id: 'attendance-employees', label: 'Employee Attendance', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'live-tracking', label: 'Shift Route & Live GPS Radar', icon: Navigation, badge: 'Live' },
         { id: 'history', label: 'Attendance History & Ledger', icon: History },
         { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
         { id: 'regularization', label: 'Regularization Desk', icon: FileText },
@@ -704,17 +705,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'lms-dashboard', label: 'Learning Dashboard', icon: LayoutDashboard },
         { id: 'lms-courses', label: 'Courses & Player', icon: BookOpen },
-        { id: 'lms-programs', label: 'Training Programs', icon: GraduationCap },
-        { id: 'lms-calendar', label: 'Training Calendar', icon: Calendar },
-        { id: 'lms-enrollment', label: 'Enrollments', icon: UserCheck },
-        { id: 'lms-trainers', label: 'Trainers & Instructors', icon: Users },
-        { id: 'lms-assessments', label: 'Assessments & Exams', icon: Award },
-        { id: 'lms-certifications', label: 'Certifications & Expiry', icon: Award },
-        { id: 'lms-mandatory', label: 'Mandatory Compliance', icon: ShieldCheck },
-        { id: 'lms-skills', label: 'Skill Gap & Paths', icon: GitFork },
-        { id: 'lms-feedback', label: 'Feedback & Ratings', icon: MessageSquare },
-        { id: 'lms-reports', label: 'LMS Reports', icon: FileSpreadsheet },
-        { id: 'lms-settings', label: 'LMS Settings', icon: Settings },
       ],
     },
     {
@@ -876,6 +866,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
         { id: 'attendance-employees', label: 'Employee Attendance', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'live-tracking', label: 'Shift Route & Live GPS Radar', icon: Navigation, badge: 'Live' },
         { id: 'history', label: 'Attendance History & Ledger', icon: History },
         { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
         { id: 'regularization', label: 'Regularization Desk', icon: FileText },
@@ -995,17 +986,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'lms-dashboard', label: 'Learning Dashboard', icon: LayoutDashboard },
         { id: 'lms-courses', label: 'Courses & Player', icon: BookOpen },
-        { id: 'lms-programs', label: 'Training Programs', icon: GraduationCap },
-        { id: 'lms-calendar', label: 'Training Calendar', icon: Calendar },
-        { id: 'lms-enrollment', label: 'Enrollments', icon: UserCheck },
-        { id: 'lms-trainers', label: 'Trainers & Instructors', icon: Users },
-        { id: 'lms-assessments', label: 'Assessments & Exams', icon: Award },
-        { id: 'lms-certifications', label: 'Certifications & Expiry', icon: Award },
-        { id: 'lms-mandatory', label: 'Mandatory Compliance', icon: ShieldCheck },
-        { id: 'lms-skills', label: 'Skill Gap & Paths', icon: GitFork },
-        { id: 'lms-feedback', label: 'Feedback & Ratings', icon: MessageSquare },
-        { id: 'lms-reports', label: 'LMS Reports', icon: FileSpreadsheet },
-        { id: 'lms-settings', label: 'LMS Settings', icon: Settings },
       ],
     },
     {
@@ -1075,6 +1055,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
         { id: 'attendance-employees', label: 'Employee Attendance', icon: Users },
+        { id: 'live-tracking', label: 'Shift Route & Live GPS Radar', icon: Navigation, badge: 'Live' },
         { id: 'history', label: 'Attendance History & Ledger', icon: History },
         { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
         { id: 'regularization', label: 'Regularization Desk', icon: FileText },
@@ -1134,7 +1115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'LEARNING & DEVELOPMENT',
       items: [
         { id: 'lms-dashboard', label: 'Learning Dashboard', icon: LayoutDashboard },
-        { id: 'lms-enrollment', label: 'Enrollments', icon: UserCheck },
+        { id: 'lms-courses', label: 'Courses & Player', icon: BookOpen },
       ],
     },
     {
