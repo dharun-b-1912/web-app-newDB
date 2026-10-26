@@ -131,20 +131,23 @@ async function sendFCMMessage(target: FCMTarget): Promise<{ success: boolean; me
   }
 }
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-      },
+      headers: corsHeaders,
     });
   }
 
   try {
     const body = await req.json();
     const {
+      token,
       employee_id,
       auth_user_id,
       topic,
@@ -157,7 +160,7 @@ serve(async (req) => {
     if (!title || !messageBody) {
       return new Response(
         JSON.stringify({ error: "title and body are required" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -176,7 +179,9 @@ serve(async (req) => {
       ) : {}),
     };
 
-    const notificationTag = route ? `joy_${route.replace(/[^a-zA-Z0-9_]/g, '_')}` : 'joy_general_alert';
+    const notificationTag = extraData?.punchId 
+      ? `joy_punch_${extraData.punchId}` 
+      : (route ? `joy_${route.replace(/[^a-zA-Z0-9_]/g, '_')}_${Date.now()}` : `joy_alert_${Date.now()}`);
 
     const androidConfig = {
       priority: "HIGH" as const,
@@ -185,8 +190,9 @@ serve(async (req) => {
         sound: "default",
         default_vibrate_timings: true,
         notification_priority: "PRIORITY_MAX",
-        icon: "ic_launcher",
+        icon: "ic_stat_notify",
         color: "#1A56DB",
+        visibility: "PUBLIC",
         tag: notificationTag,
       },
     };
@@ -217,6 +223,11 @@ serve(async (req) => {
 
     // Lookup device tokens (preferring most recently active token)
     const tokens: string[] = [];
+
+    // If direct FCM device token is provided, prioritize it
+    if (token && typeof token === "string" && token.length > 10) {
+      tokens.push(token);
+    }
 
     if (employee_id) {
       const { data: dt } = await supabase
@@ -250,32 +261,22 @@ serve(async (req) => {
 
     const uniqueTokens = [...new Set(tokens)].filter((t) => t && t.length > 10);
 
-    for (const token of uniqueTokens) {
+    for (const tok of uniqueTokens) {
       const tokenResult = await sendFCMMessage({
-        token,
+        token: tok,
         notification: { title, body: messageBody },
         data: stringData,
         android: androidConfig,
         apns: apnsConfig,
       });
-      results.push({ target: `token:${token.substring(0, 15)}...`, ...tokenResult });
+      results.push({ target: `token:${tok.substring(0, 15)}...`, ...tokenResult });
     }
 
-    // If no tokens found and no explicit topic, broadcast to fallback topics for safety
+    // If no tokens found and no explicit topic: ONLY broadcast if this is an explicit company announcement
+    // Attendance punch alerts must NEVER be broadcast to all_employees!
     if (uniqueTokens.length === 0 && !topic) {
-      // Send to employee-specific topic or all_employees topic
-      const fallbackTopic = employee_id ? `emp_${employee_id}` : "all_employees";
-      const topicFallbackResult = await sendFCMMessage({
-        topic: fallbackTopic,
-        notification: { title, body: messageBody },
-        data: stringData,
-        android: androidConfig,
-        apns: apnsConfig,
-      });
-      results.push({ target: `fallback_topic:${fallbackTopic}`, ...topicFallbackResult });
-
-      // Also send to all_employees if this was a broadcast/announcement
-      if (route === 'announcement' || route === 'broadcast' || !employee_id) {
+      const isBroadcastType = route === "announcement" || route === "broadcast";
+      if (isBroadcastType) {
         const allEmployeesResult = await sendFCMMessage({
           topic: "all_employees",
           notification: { title, body: messageBody },
@@ -284,6 +285,8 @@ serve(async (req) => {
           apns: apnsConfig,
         });
         results.push({ target: "fallback_topic:all_employees", ...allEmployeesResult });
+      } else {
+        console.warn(`[send-push] No active FCM tokens found for target employee ${employee_id || auth_user_id || "unspecified"}. Preserving privacy; not broadcasting.`);
       }
     }
 
@@ -296,12 +299,12 @@ serve(async (req) => {
         total: results.length,
         results,
       }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
     return new Response(
       JSON.stringify({ error: String(e) }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

@@ -195,6 +195,7 @@ export const ExecutiveOverviewView: React.FC<Props> = ({ onNavigate }) => {
         onComparisonChange={setComparisonMode}
         onRefresh={() => loadExecutiveData(true)}
         onExport={handleExportReport}
+        onNavigate={navigate}
       />
 
       {/* 2. 8 Executive Strategic KPIs */}

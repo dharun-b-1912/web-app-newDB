@@ -23,6 +23,7 @@ interface Props {
   onComparisonChange: (comp: string) => void;
   onRefresh: () => void;
   onExport: () => void;
+  onNavigate?: (route: string) => void;
 }
 
 export const ExecutiveContextBar: React.FC<Props> = ({
@@ -36,6 +37,7 @@ export const ExecutiveContextBar: React.FC<Props> = ({
   onComparisonChange,
   onRefresh,
   onExport,
+  onNavigate,
 }) => {
   return (
     <div className="space-y-4">
@@ -43,8 +45,8 @@ export const ExecutiveContextBar: React.FC<Props> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <Breadcrumb
           items={[
-            { label: 'Platform' },
-            { label: 'HR Strategy' },
+            { label: 'Home', onClick: () => onNavigate?.('dashboard') },
+            { label: 'HR Dashboard', onClick: () => onNavigate?.('dashboard') },
             { label: 'Executive HR Overview' },
           ]}
         />

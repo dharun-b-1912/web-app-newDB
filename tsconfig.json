@@ -28,7 +28,8 @@
   },
   "include": [
     "src",
-    "scratch"
+    "scratch",
+    "scripts/verify_production_mis_system.ts"
   ],
   "exclude": [
     "supabase/functions",

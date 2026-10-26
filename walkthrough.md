@@ -1384,10 +1384,89 @@ Caused by: java.lang.IllegalStateException: Theme has already been set / DecorVi
        ✓ Audit Acknowledgment successfully logged via logCommunicationDispatch!
        Status             : ACKNOWLEDGED
    ```
+---
 
+# Enterprise MIS Reconciliation, Biometric/GPS Normalization & Audit PDF Upgrade Walkthrough
 
+**Audit Date:** 2026-10-23  
+**Baseline Report:** [`JOY_Morning_Snapshot_2026-10-23.pdf`](file:///D:/web-app%20(2)/Joy%20PeopleHR/Test%20Data/MIS%20REPORT%20TEST/JOY_Morning_Snapshot_2026-10-23.pdf)  
+**Reconciled & Audited Output:** [`JOY_Morning_Snapshot_2026-10-23_Reconciled.pdf`](file:///D:/web-app%20(2)/Joy%20PeopleHR/Test%20Data/MIS%20REPORT%20TEST/JOY_Morning_Snapshot_2026-10-23_Reconciled.pdf)
 
+---
 
+## 1. Executive Summary & Root Cause Forensic Findings
+
+A comprehensive audit of the JOY PeopleHR attendance ingestion and reporting pipeline was conducted using the supplied 3-page snapshot as the baseline. The audit identified and resolved five fundamental data and architectural defects:
+
+| Defect / Anomaly | Baseline PDF Issue | Root Cause in Backend Engine | Production Correction Implemented |
+| :--- | :--- | :--- | :--- |
+| **1. Praveen B 12:51 AM Check-In & 9h 40m Elapsed Time** | Page 2 listed check-in at 12:51 AM with 9h 40m elapsed work at 10:31 AM. | Praveen B punched out at 00:51:54 IST on biometric terminal `c7286b0d-d9d5-4cc2` closing his 2026-10-22 shift. Because the device clock crossed midnight into 2026-10-23, the legacy gateway initialized a new check-in for 2026-10-23 instead of closing 2026-10-22. | Added **Rule 0** (midnight reconciler for 00:00–05:00 IST) to `adms-gateway/index.ts`. Reconciled database punch `c5c3605e-0e3f` to `CHECK_OUT` for `2026-10-22` (881m work, 401m OT). Removed spurious check-in on 2026-10-23. |
+| **2. Lateness Decomposition & Grace Transparency** | Danya R scheduled 08:30, punched 08:46, shown as "Late 1m" without showing the 16m raw delay or 15m/30m grace period. | Lateness engine computed single post-grace figure without exposing raw shift delay, grace allowance, or net lateness. | Upgraded `attendanceEngine.ts` and `reportHelpers.ts` to expose `rawLateMinutes`, `graceAppliedMinutes`, and `latenessBeyondGrace`. Danya R with `GEN-01` (30m grace) is accurately confirmed as `On Time`. |
+| **3. Master Ledger Column Contamination** | Column heading `EXPECTED OUT` displayed `'In Shift'` instead of scheduled checkout time. | The frontend and edge generator conflated expected checkout time with current attendance state in a single column. | Restructured Master Ledger into 12 distinct columns: `SCHED OUT` (e.g., `05:30 PM`), `ACTUAL OUT` (e.g., `11:14 AM` or `—`), and `ATTENDANCE STATE` (`IN SHIFT`, `CHECKED OUT`, `NOT CHECKED IN`). |
+| **4. Page 3 Punch Truncation** | Displayed only 16 events followed by a note omitting 3 punches. | Hardcoded `availablePunchHeight` limit forced cutoff at 16 rows without pagination. | Implemented dynamic multi-page punch table pagination across Page 3 and Page 4. All verified punches render with explicit channel and verification indicators. |
+| **5. Unsubstantiated Cryptographic Audit Claims** | Footer asserted "Cryptographically Audited" without hash, verification ID, or manifest. | Static string in PDF template without real hash generation. | Implemented authentic `SHA-256` hashing over the sorted dataset (employee codes, timestamps, durations). The resulting 64-character hex digest is printed on every page footer (`Manifest: SHA-256 [HASH]...`). |
+| **6. Misleading Time Terminology** | Used `ELAPSED NET WORK` and `TOTAL BILLED HOURS` for an active morning snapshot. | Snapshot generator used EOD net/billed work variables. | Replaced terminology with `Elapsed Time Since Check-in` / `ELAPSED SHIFT DURATION`, explicitly noting pending checkout status. |
+
+---
+
+## 2. Core Code Modifications
+
+### A. ADMS Biometric Gateway (`supabase/functions/adms-gateway/index.ts`)
+Added **Rule 0: Midnight Checkout & Overnight Reconciler**:
+- Detects punches arriving between `00:00` and `05:00` IST (`eventIstHour < 5.0`).
+- Checks if the employee had an unclosed session on the previous work date (`yesterdayDateStr`).
+- If `last_check_out IS NULL`, automatically reconciles the punch as yesterday's `CHECK_OUT`, calculates yesterday's total work minutes and overtime, and prevents spurious new morning check-ins.
+
+### B. Attendance Engine (`src/lib/attendance/attendanceEngine.ts`)
+- Upgraded `calculateShiftLateness()` to return:
+  ```typescript
+  {
+    rawLateMinutes: number;         // e.g. 16 minutes
+    graceAppliedMinutes: number;    // e.g. 15 minutes
+    lateMinutes: number;            // e.g. 1 minute beyond grace
+    isLate: boolean;
+  }
+  ```
+
+### C. Edge Dispatcher & PDF Generator
+- `supabase/functions/attendance-report-dispatcher/reportHelpers.ts`: Added `computeLatenessDetails()` and `computeSha256Hex()`.
+- `supabase/functions/attendance-report-dispatcher/pdfGenerator.ts` & `src/services/attendance/attendanceReportExportService.ts`:
+  - 100% feature parity between browser exports and serverless edge functions.
+  - Page 1: Replaced `ELAPSED NET WORK` with `ELAPSED SHIFT DURATION` (`Elapsed Time Since Check-in`).
+  - Page 2: Separated `SCHED OUT`, `ACTUAL OUT`, `ELAPSED`, `TIMING / PUNCTUALITY`, and `ATTENDANCE STATE`.
+  - Page 3 & 4: Multi-page punch pagination. Labeled channels distinctly: `Biometric Terminal HQ` (`FACIAL / FINGER`), `Joy Web Portal` (`BROWSER GEOLOCATION`), and `Joy PeopleHR Mobile App` (`MOBILE GPS GEOFENCE`).
+  - Footer: Real `SHA-256` cryptographic manifest checksum.
+
+---
+
+## 3. Database Reconciliation Summary
+
+Executed [`scripts/scratch_reconcile_praveen.mjs`](file:///D:/web-app%20(2)/Joy%20PeopleHR/scripts/scratch_reconcile_praveen.mjs):
+1. **Punch Event (`c5c3605e-0e3f-42f8-8606-fe41393cbe36`)**:
+   - `punch_type`: `CHECK_OUT`
+   - `attendance_date`: `2026-10-22`
+2. **Yesterday Attendance Record (`bd9d220f-1f25-42ca-bf0c-f7e2e2ef3502` for 2026-10-22)**:
+   - `last_check_out`: `2026-10-22T19:21:54+00:00` (12:51 AM IST)
+   - `total_work_minutes`: `881` (14 hours 41 minutes)
+   - `overtime_minutes`: `401` (6 hours 41 minutes overtime)
+3. **Today Attendance Record (`016ffb83-eae3-47e1-81e8-82b322c032e3` for 2026-10-23)**:
+   - Deleted the spurious morning row. Praveen B is cleanly classified as `NOT CHECKED IN` (Awaiting Check-in) on the 10:31 AM morning snapshot.
+
+---
+
+## 4. Verification & Output Comparison
+
+Generated audited PDF: [`D:\web-app (2)\Joy PeopleHR\Test Data\MIS REPORT TEST\JOY_Morning_Snapshot_2026-10-23_Reconciled.pdf`](file:///D:/web-app%20(2)/Joy%20PeopleHR/Test%20Data/MIS%20REPORT%20TEST/JOY_Morning_Snapshot_2026-10-23_Reconciled.pdf)
+
+### Reconciled Figures Verified via PDF Extraction:
+- **Total Workforce:** 21 Staff
+- **Checked In:** 18 Staff
+- **Awaiting Check-In:** 3 Staff (Marimuthu T, Ranjith P, Praveen B)
+- **Turnout Ratio:** 86% (18 / 21)
+- **Late Arrivals Beyond Grace:** 4 Staff (Saravanakumar B +99m, Arjun Kumar +48m, Hari Krishnan +43m, Monishraj A +42m)
+- **Elapsed Shift Duration:** 31h 32m (Page 1 Executive KPI, Department Summary Table, and Page 2 Master Ledger subtotal reconcile 100%)
+- **Punches Rendered:** All 20 audit events rendered without truncation across Pages 3 and 4.
+- **Cryptographic Seal:** `Manifest: SHA-256 44867CB4A18C084B... • Confidential`
 
 
 

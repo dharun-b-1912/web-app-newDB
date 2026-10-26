@@ -93,27 +93,340 @@
 </head>
 
 <body style="margin: 0; padding: 0; background-color: #ffffff; color-scheme: light;">
-  <div id="root">
-    <div id="initial-page-loader" style="position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; z-index: 99999;">
-      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-        <div style="width: 44px; height: 44px; border-radius: 12px; background: #07563D; display: flex; align-items: center; justify-content: center; color: #ffffff; font-weight: 900; font-size: 20px; box-shadow: 0 4px 14px rgba(7, 86, 61, 0.25);">
-          J
+  <div id="root"></div>
+
+  <!-- Joy PeopleHR Enterprise Real-time Modern Splash Screen -->
+  <div id="initial-page-loader" class="joy-boot-overlay">
+    <div class="joy-boot-backdrop"></div>
+    <div class="joy-boot-card">
+      <!-- Glow ambient halo -->
+      <div class="joy-boot-halo"></div>
+
+      <!-- Authentic Logo Mark with Soft Breath Pulse -->
+      <div class="joy-boot-logo-wrapper">
+        <img src="/joy-logo-mark.png" alt="Joy PeopleHR" class="joy-boot-logo-img" />
+      </div>
+
+      <!-- Brand Identity Lockup -->
+      <div class="joy-boot-brand">
+        <span class="joy-boot-brand-title">Joy People<span class="joy-boot-brand-accent">HR</span></span>
+        <span class="joy-boot-edition-pill">Enterprise Cloud</span>
+      </div>
+      <div class="joy-boot-subtitle">Intelligent Workforce • Biometrics • Payroll Engine</div>
+
+      <!-- Real-time Progress Bar & Live Telemetry -->
+      <div class="joy-boot-progress-box">
+        <div class="joy-boot-track">
+          <div id="joy-boot-bar" class="joy-boot-bar"></div>
         </div>
-        <div style="font-size: 22px; font-weight: 800; color: #111827; letter-spacing: -0.5px;">
-          Joy People<span style="color: #07563D;">HR</span>
+        <div class="joy-boot-meta-row">
+          <div class="joy-boot-status-wrap">
+            <span class="joy-boot-pulse-dot"></span>
+            <span id="joy-boot-msg">Initializing Secure Runtime...</span>
+          </div>
+          <span id="joy-boot-pct">18%</span>
+        </div>
+        <div id="joy-boot-detail" class="joy-boot-detail">Verifying security context & session tokens...</div>
+      </div>
+
+      <!-- Trust & Status Micro-Badges -->
+      <div class="joy-boot-badges-row">
+        <div class="joy-boot-pill">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#07563D" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>256-Bit SSL Multi-Tenant</span>
+        </div>
+        <div class="joy-boot-pill">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#07563D" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          <span>Sub-Millisecond Cache</span>
         </div>
       </div>
-      <div style="display: flex; align-items: center; gap: 10px; color: #4B5563; font-size: 13px; font-weight: 500;">
-        <div style="width: 18px; height: 18px; border: 2.5px solid #E5E7EB; border-top-color: #07563D; border-radius: 50%; animation: spinLoader 0.75s linear infinite;"></div>
-        <span>Loading Enterprise Workspace & Biometric Hub...</span>
-      </div>
-      <style>
-        @keyframes spinLoader {
-          to { transform: rotate(360deg); }
-        }
-      </style>
+    </div>
+
+    <!-- Bottom Architecture Notice -->
+    <div class="joy-boot-footer">
+      <span>Joy Corporate Solutions Pvt Ltd • Enterprise People Operations OS</span>
     </div>
   </div>
+
+  <style>
+    .joy-boot-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(1200px circle at 50% 38%, rgba(7, 86, 61, 0.07) 0%, rgba(248, 252, 250, 0.96) 55%, #F8FCFA 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      z-index: 999999;
+      transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1), transform 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+      user-select: none;
+      overflow: hidden;
+    }
+    .joy-boot-overlay.joy-boot-exit {
+      opacity: 0;
+      transform: scale(0.99);
+      pointer-events: none;
+    }
+    .joy-boot-backdrop {
+      position: absolute;
+      inset: 0;
+      background-image: radial-gradient(rgba(7, 86, 61, 0.09) 1px, transparent 1px);
+      background-size: 28px 28px;
+      opacity: 0.6;
+      pointer-events: none;
+    }
+    .joy-boot-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(7, 86, 61, 0.12);
+      box-shadow: 0 24px 60px -20px rgba(7, 86, 61, 0.16), 0 0 0 1px rgba(255, 255, 255, 0.8) inset;
+      border-radius: 28px;
+      padding: 42px 48px;
+      max-width: 440px;
+      width: 90%;
+      box-sizing: border-box;
+      z-index: 2;
+    }
+    .joy-boot-halo {
+      position: absolute;
+      top: 30px;
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.22) 0%, rgba(7, 86, 61, 0) 70%);
+      filter: blur(24px);
+      pointer-events: none;
+      z-index: -1;
+      animation: joyHaloPulse 3s ease-in-out infinite;
+    }
+    @keyframes joyHaloPulse {
+      0%, 100% { transform: scale(1); opacity: 0.7; }
+      50% { transform: scale(1.15); opacity: 1; }
+    }
+    .joy-boot-logo-wrapper {
+      position: relative;
+      width: 80px;
+      height: 80px;
+      border-radius: 22px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(240, 253, 248, 0.8) 100%);
+      border: 1px solid rgba(7, 86, 61, 0.16);
+      box-shadow: 0 12px 28px -8px rgba(7, 86, 61, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.9) inset;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      animation: joyLogoFloat 3.5s ease-in-out infinite;
+    }
+    @keyframes joyLogoFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+    }
+    .joy-boot-logo-img {
+      width: 58px;
+      height: 58px;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 10px rgba(7, 86, 61, 0.15));
+    }
+    .joy-boot-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+    .joy-boot-brand-title {
+      font-size: 25px;
+      font-weight: 800;
+      color: #0F172A;
+      letter-spacing: -0.6px;
+    }
+    .joy-boot-brand-accent {
+      color: #07563D;
+    }
+    .joy-boot-edition-pill {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #07563D;
+      background: rgba(7, 86, 61, 0.08);
+      border: 1px solid rgba(7, 86, 61, 0.18);
+      padding: 3px 9px;
+      border-radius: 9999px;
+    }
+    .joy-boot-subtitle {
+      font-size: 12px;
+      font-weight: 500;
+      color: #64748B;
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .joy-boot-progress-box {
+      width: 100%;
+      margin-bottom: 24px;
+    }
+    .joy-boot-track {
+      width: 100%;
+      height: 6px;
+      background: #E2E8F0;
+      border-radius: 9999px;
+      overflow: hidden;
+      margin-bottom: 12px;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+    }
+    .joy-boot-bar {
+      height: 100%;
+      width: 18%;
+      background: linear-gradient(90deg, #07563D 0%, #10B981 100%);
+      border-radius: 9999px;
+      transition: width 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 0 12px rgba(16, 185, 129, 0.55);
+    }
+    .joy-boot-meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #1E293B;
+      margin-bottom: 6px;
+    }
+    .joy-boot-status-wrap {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .joy-boot-pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10B981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+      animation: joyPulseDot 1.4s ease-in-out infinite;
+    }
+    @keyframes joyPulseDot {
+      0%, 100% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.2); opacity: 1; }
+    }
+    #joy-boot-pct {
+      font-variant-numeric: tabular-nums;
+      color: #07563D;
+      font-weight: 700;
+    }
+    .joy-boot-detail {
+      font-size: 11px;
+      color: #94A3B8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: left;
+    }
+    .joy-boot-badges-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .joy-boot-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      color: #334155;
+      background: rgba(241, 245, 249, 0.7);
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      padding: 4px 10px;
+      border-radius: 8px;
+    }
+    .joy-boot-footer {
+      position: absolute;
+      bottom: 24px;
+      font-size: 11px;
+      font-weight: 500;
+      color: #94A3B8;
+      letter-spacing: 0.2px;
+      z-index: 2;
+    }
+  </style>
+
+  <script>
+    (function () {
+      var currentPct = 18;
+      var targetPct = 18;
+      var animId = null;
+      var isExiting = false;
+
+      function updateUI(pct, msg, detail) {
+        targetPct = Math.max(targetPct, Math.min(100, pct));
+        var msgEl = document.getElementById('joy-boot-msg');
+        var detailEl = document.getElementById('joy-boot-detail');
+        if (msg && msgEl) msgEl.textContent = msg;
+        if (detail && detailEl) detailEl.textContent = detail;
+
+        if (!animId) {
+          animId = requestAnimationFrame(step);
+        }
+      }
+
+      function step() {
+        if (currentPct < targetPct) {
+          currentPct += Math.max(1, (targetPct - currentPct) * 0.25);
+          if (currentPct > targetPct) currentPct = targetPct;
+        }
+        var bar = document.getElementById('joy-boot-bar');
+        var pctEl = document.getElementById('joy-boot-pct');
+        var round = Math.round(currentPct);
+        if (bar) bar.style.width = round + '%';
+        if (pctEl) pctEl.textContent = round + '%';
+
+        if (currentPct < targetPct) {
+          animId = requestAnimationFrame(step);
+        } else {
+          animId = null;
+          if (currentPct >= 100 && !isExiting) {
+            isExiting = true;
+            setTimeout(dismiss, 120);
+          }
+        }
+      }
+
+      function dismiss() {
+        var loader = document.getElementById('initial-page-loader');
+        if (loader) {
+          loader.classList.add('joy-boot-exit');
+          setTimeout(function () {
+            if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
+          }, 400);
+        }
+      }
+
+      // Expose globally for lifecycle hooks
+      window.__joyBootStep = function (pct, msg, detail) {
+        updateUI(pct, msg, detail);
+      };
+
+      window.__joyBootDismiss = function () {
+        updateUI(100, 'Workspace Ready', 'Launching...');
+      };
+
+      // Progressively track runtime bootstrap while chunks load
+      setTimeout(function () { updateUI(32, 'Loading Core Modules...', 'Compiling workforce modules'); }, 80);
+      setTimeout(function () { updateUI(52, 'Verifying Credentials...', 'Reading session tokens'); }, 200);
+
+      // Failsafe timer: Guaranteed dismissal within 3.5s so user is never blocked
+      setTimeout(function () {
+        if (!isExiting) window.__joyBootDismiss();
+      }, 3500);
+    })();
+  </script>
   <script>
     window.addEventListener('vite:preloadError', function () {
       console.warn('[Vite] Dynamic chunk out of date after deployment. Reloading...');

@@ -48,6 +48,48 @@ export interface ResolvedOvertime {
 }
 
 /**
+ * Helper to parse any time representation (ISO timestamp, "HH:MM", "HH:MM:SS", "hh:mm AM/PM")
+ * into total minutes from start of day in IST.
+ */
+export function extractIstMinutesOfDay(val?: string | null): number | null {
+  if (!val || typeof val !== 'string') return null;
+  const str = val.trim();
+  if (!str || str === '—' || str.includes('In Shift')) return null;
+
+  // 1. ISO format with date: e.g. "2026-10-22T12:08:20+00:00"
+  if (str.includes('T') || (str.includes('-') && str.length > 10)) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      const istDate = new Date(d.getTime() + (5 * 60 + 30) * 60 * 1000);
+      return istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
+    }
+  }
+
+  // 2. 12-Hour format with AM/PM: e.g. "05:38 PM"
+  const ampmMatch = str.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)/i);
+  if (ampmMatch) {
+    let h = parseInt(ampmMatch[1], 10);
+    const m = parseInt(ampmMatch[2], 10);
+    const meridiem = ampmMatch[3].toUpperCase();
+    if (meridiem === 'PM' && h < 12) h += 12;
+    if (meridiem === 'AM' && h === 12) h = 0;
+    return h * 60 + m;
+  }
+
+  // 3. 24-Hour format: e.g. "18:00"
+  const parts = str.split(':');
+  if (parts.length >= 2) {
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (!isNaN(h) && !isNaN(m) && h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      return h * 60 + m;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Computes exact overtime minutes and formatted duration string (e.g. "1h 45m", "1 hr 45 mins")
  * Evaluates both record.overtime_minutes and actual checkout time past scheduled shift end.
  */
@@ -61,44 +103,46 @@ export function computeEmployeeOvertime(
       overtimeMinutes: 0,
       hours: 0,
       minutes: 0,
-      formatted: '— (Pending Checkout)',
+      formatted: '—',
       verbose: '0 mins (Shift in progress)',
       hasOvertime: false,
     };
   }
 
-  let ot = rec?.overtime_minutes || 0;
+  // Priority 1: Check if attendance record already has explicit overtime_minutes
+  let ot = typeof rec?.overtime_minutes === 'number' ? rec.overtime_minutes : 0;
 
-  // 1. If not set or 0, evaluate check-out time past scheduled shift end
+  // Priority 2: If not set, evaluate check-out time past scheduled shift end
   if (ot <= 0 && rec?.last_check_out && shift?.end_time) {
-    const parseMins = (str: string) => {
-      const parts = str.trim().split(':');
-      const h = parseInt(parts[0], 10) || 0;
-      const m = parseInt(parts[1], 10) || 0;
-      return h * 60 + m;
-    };
-
-    const outMins = parseMins(rec.last_check_out);
-    const endMins = parseMins(shift.end_time);
-    if (outMins > endMins) {
+    const outMins = extractIstMinutesOfDay(rec.last_check_out);
+    const endMins = extractIstMinutesOfDay(shift.end_time);
+    if (outMins !== null && endMins !== null && outMins > endMins + 15) {
       ot = outMins - endMins;
     }
   }
 
-  // 2. Only if employee has actually checked out, check if net_working_minutes exceeds 8 hours (480 mins)
-  if (ot <= 0 && rec?.last_check_out && rec?.net_working_minutes && rec.net_working_minutes > 480) {
-    ot = rec.net_working_minutes - 480;
+  // Priority 3: Only if employee has actually checked out, check if net working minutes exceeds shift duration
+  const workMins = rec?.total_work_minutes ?? rec?.net_working_minutes ?? 0;
+  const shiftDuration = shift?.scheduled_duration_minutes || 480;
+  if (ot <= 0 && rec?.last_check_out && workMins > shiftDuration + 15) {
+    ot = workMins - shiftDuration;
   }
+
+  // Safety guard: Single shift overtime capped at 360 mins (6 hours)
+  if (ot > 360) {
+    ot = 360;
+  }
+  if (ot < 0) ot = 0;
 
   const hasOvertime = ot > 0;
   const hours = Math.floor(ot / 60);
   const minutes = ot % 60;
   const formatted = hasOvertime
-    ? (hours > 0 ? `${hours}h ${String(minutes).padStart(2, '0')}m` : `${minutes}m`)
+    ? (hours > 0 ? `${hours}h ${minutes > 0 ? `${minutes}m` : ''}`.trim() : `${minutes}m`)
     : '—';
   const verbose = hasOvertime
     ? (hours > 0
-        ? `${hours} hr${hours > 1 ? 's' : ''} ${minutes > 0 ? `${minutes} min${minutes > 1 ? 's' : ''}` : ''}`.trim()
+        ? `${hours} hr${hours > 1 ? 's' : ''}${minutes > 0 ? ` ${minutes} min${minutes > 1 ? 's' : ''}` : ''}`.trim()
         : `${minutes} min${minutes > 1 ? 's' : ''}`)
     : '0 mins';
 
@@ -146,36 +190,40 @@ export function formatDeviationDuration(
 }
 
 export function formatTo12HourTime(val?: string | null): string {
-  if (!val || !val.trim() || val === '—') return '—';
+  if (!val || typeof val !== 'string' || !val.trim() || val === '—') return '—';
   const str = val.trim();
 
-  if (/AM|PM/i.test(str)) {
-    return str.toUpperCase();
+  // If already formatted like "09:49 AM" or "09:49:15 AM", clean and return
+  const ampmMatch = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    const h = ampmMatch[1].padStart(2, '0');
+    const m = ampmMatch[2];
+    const p = ampmMatch[3].toUpperCase();
+    return `${h}:${m} ${p}`;
   }
 
-  if (str.includes('T')) {
+  // If ISO timestamp: e.g. "2026-10-22T04:19:45.426284+00:00"
+  if (str.includes('T') || (str.includes('-') && str.length > 10)) {
     const d = new Date(str);
     if (!isNaN(d.getTime())) {
-      const istTime = new Date(d.getTime() + (5 * 60 + 30) * 60 * 1000);
-      const hours = istTime.getUTCHours();
-      const minutes = istTime.getUTCMinutes();
-      const seconds = istTime.getUTCSeconds();
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      const h12 = hours % 12 || 12;
-      return `${String(h12).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')} ${ampm}`;
+      return d.toLocaleTimeString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
     }
   }
 
+  // If "HH:MM" or "HH:MM:SS" 24-hour time
   const parts = str.split(':');
   if (parts.length >= 2) {
-    const hours = parseInt(parts[0], 10);
-    const minutes = parseInt(parts[1], 10);
-    const secPart = parts[2] ? parseInt(parts[2].substring(0, 2), 10) : 0;
-    if (!isNaN(hours) && !isNaN(minutes)) {
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      const h12 = hours % 12 || 12;
-      const s = String(!isNaN(secPart) ? secPart : 0).padStart(2, '0');
-      return `${String(h12).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${s} ${ampm}`;
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (!isNaN(h) && !isNaN(m) && h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
     }
   }
 
@@ -239,4 +287,67 @@ export function generateMisReportFilename(params: {
 
   const cleanDate = reportDate ? reportDate.replace(/[^0-9-]/g, '') : new Date().toISOString().split('T')[0];
   return `${orgPrefix}_${typeTag}_${cleanDate}.pdf`;
+}
+
+export interface DetailedLateness {
+  scheduledStartStr: string;
+  actualCheckInStr: string;
+  rawDelayMinutes: number;
+  graceAllowedMinutes: number;
+  latenessBeyondGrace: number;
+  isLate: boolean;
+  displayBreakdown: string;
+}
+
+export function computeLatenessDetails(
+  checkInVal?: string | null,
+  shiftStartVal?: string | null,
+  graceMinutes: number = 15
+): DetailedLateness {
+  const inMins = extractIstMinutesOfDay(checkInVal);
+  const startMins = extractIstMinutesOfDay(shiftStartVal) ?? 540;
+
+  if (inMins === null) {
+    return {
+      scheduledStartStr: formatTo12HourTime(shiftStartVal) || '09:00 AM',
+      actualCheckInStr: '—',
+      rawDelayMinutes: 0,
+      graceAllowedMinutes: graceMinutes,
+      latenessBeyondGrace: 0,
+      isLate: false,
+      displayBreakdown: '—',
+    };
+  }
+
+  const rawDelay = Math.max(0, inMins - startMins);
+  const beyondGrace = Math.max(0, rawDelay - graceMinutes);
+  const isLate = beyondGrace > 0;
+
+  return {
+    scheduledStartStr: formatTo12HourTime(shiftStartVal) || '09:00 AM',
+    actualCheckInStr: formatTo12HourTime(checkInVal) || '—',
+    rawDelayMinutes: rawDelay,
+    graceAllowedMinutes: graceMinutes,
+    latenessBeyondGrace: beyondGrace,
+    isLate,
+    displayBreakdown: isLate
+      ? `Late ${beyondGrace}m (Delay ${rawDelay}m, Grace ${graceMinutes}m)`
+      : (rawDelay > 0 ? `On Time (Within ${graceMinutes}m grace)` : 'On Time'),
+  };
+}
+
+export async function computeSha256Hex(content: string | Uint8Array): Promise<string> {
+  let data: Uint8Array;
+  if (typeof content === 'string') {
+    data = new TextEncoder().encode(content);
+  } else {
+    data = content;
+  }
+  const cryptoObj: any = typeof crypto !== 'undefined' ? crypto : (globalThis as any).crypto;
+  if (cryptoObj?.subtle) {
+    const hashBuffer = await cryptoObj.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b: number) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return '0'.repeat(64);
 }

@@ -184,6 +184,85 @@ serve(async (req: Request) => {
       })
       .eq('id', device.id);
 
+    // 8. Dispatch notification to reporting manager if employee is resolved
+    if (employeeId) {
+      try {
+        const { data: emp } = await supabase
+          .from('employees')
+          .select('id, employee_code, first_name, last_name, display_name, phone, organization_id, reporting_manager_id, department_id')
+          .eq('id', employeeId)
+          .maybeSingle();
+
+        if (emp) {
+          let managerId = emp.reporting_manager_id;
+          if (!managerId && emp.department_id) {
+            const { data: dept } = await supabase
+              .from('departments')
+              .select('head_employee_id')
+              .eq('id', emp.department_id)
+              .maybeSingle();
+            if (dept?.head_employee_id && dept.head_employee_id !== emp.id) {
+              managerId = dept.head_employee_id;
+            }
+          }
+
+          if (managerId) {
+            const timeFormatted = punchDate.toLocaleTimeString('en-US', {
+              timeZone: 'Asia/Kolkata',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: true,
+            });
+            const empName = (emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`).trim();
+            const isOut = punch_direction === 'OUT';
+            const title = isOut ? `👋 Employee Check-Out: ${empName}` : `🟢 Biometric Check-In: ${empName}`;
+            const body = isOut
+              ? `${empName} (${emp.employee_code || ''}) checked out at ${timeFormatted} via Biometric Terminal.`
+              : `${empName} (${emp.employee_code || ''}) checked in at ${timeFormatted} via Biometric Terminal.`;
+
+            // Insert in-app notification
+            await supabase.from('notification_events').insert([{
+              organization_id: organizationId,
+              recipient_user_id: managerId,
+              channel: 'IN_APP',
+              title,
+              message: body,
+              action_url: `/attendance?emp=${emp.id}&date=${punchDate.toISOString().split('T')[0]}`,
+              is_read: false,
+              is_sent: true,
+              sent_at: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+            }]);
+
+            // Dispatch push notification
+            await fetch(`${supabaseUrl}/functions/v1/send-push`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                employee_id: managerId,
+                title,
+                body,
+                route: 'attendance',
+                data: {
+                  route: 'attendance',
+                  eventType: isOut ? 'attendance.check_out.accepted' : 'attendance.check_in.accepted',
+                  employeeId: emp.id,
+                  employeeName: empName,
+                  source: 'BIOMETRIC',
+                  timestamp: String(Date.now()),
+                },
+              }),
+            });
+          }
+        }
+      } catch (errNotif) {
+        console.warn('[biometric-punch-ingestion] Manager alert error:', errNotif);
+      }
+    }
+
     return new Response(
       JSON.stringify({
         status: 'SUCCESS',

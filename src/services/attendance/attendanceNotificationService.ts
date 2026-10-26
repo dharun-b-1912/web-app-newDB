@@ -8,9 +8,14 @@
 import { supabase, isSupabaseEnabled, supabaseUrl } from '../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 import { AttendanceChannelSource, PunchDirection } from './attendanceIngestionService';
-import fs from 'fs';
-import path from 'path';
-import crypto from 'crypto';
+
+function generateUuid(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 export type AttendanceNotificationEventType =
   | 'attendance.check_in.accepted'
@@ -23,6 +28,7 @@ export interface ResolvedSupervisor {
   employeeCode: string;
   name: string;
   role: SupervisorRole;
+  profileId?: string;
   authUserId?: string;
   workEmail?: string;
   phone?: string;
@@ -44,6 +50,12 @@ export interface AttendanceNotificationEventPayload {
   latitude?: number;
   longitude?: number;
   idempotencyKey?: string;
+  isLate?: boolean;
+  lateMinutes?: number;
+  graceMinutes?: number;
+  shiftStart?: string;
+  shiftEnd?: string;
+  shiftCode?: string;
 }
 
 export interface AttendanceNotificationDispatchLog {
@@ -81,6 +93,48 @@ export interface AttendanceNotificationDispatchLog {
   createdAt: string;
 }
 
+export interface AttendanceNotificationPolicy {
+  // Source scope
+  enableBiometricPunches: boolean;
+  enableMobileGpsPunches: boolean;
+  enableWebPunches: boolean;
+
+  // Delivery modes
+  onTimeDeliveryMode: 'SILENT' | 'PUSH' | 'DISABLED';
+  lateDeliveryMode: 'HIGH_PRIORITY_PUSH' | 'SILENT' | 'DISABLED';
+  unauthorizedLocationMode: 'HIGH_PRIORITY_PUSH' | 'SILENT' | 'DISABLED';
+  earlyCheckoutMode: 'PUSH' | 'SILENT' | 'DISABLED';
+
+  // Grace and anti-fatigue controls
+  graceMinutes: number;
+  enableNotificationGrouping: boolean;
+  enableMorningDigest: boolean;
+  digestTime: string;
+
+  // Hierarchy scope
+  notifyDirectManager: boolean;
+  notifyFunctionalTL: boolean;
+}
+
+export const DEFAULT_ATTENDANCE_NOTIFICATION_POLICY: AttendanceNotificationPolicy = {
+  enableBiometricPunches: true,
+  enableMobileGpsPunches: true,
+  enableWebPunches: true,
+
+  onTimeDeliveryMode: 'PUSH', // Send push notification to reporting manager on check-in
+  lateDeliveryMode: 'HIGH_PRIORITY_PUSH', // Loud push with vibration & sound for late check-in
+  unauthorizedLocationMode: 'HIGH_PRIORITY_PUSH',
+  earlyCheckoutMode: 'PUSH',
+
+  graceMinutes: 30,
+  enableNotificationGrouping: true,
+  enableMorningDigest: true,
+  digestTime: '09:35',
+
+  notifyDirectManager: true,
+  notifyFunctionalTL: true,
+};
+
 class AttendanceNotificationService {
   // In-memory diagnostic outbox log (capped at 200 recent events)
   private diagnosticLogs: AttendanceNotificationDispatchLog[] = [];
@@ -94,6 +148,57 @@ class AttendanceNotificationService {
 
   // Cached admin Supabase client for backend/service execution
   private adminClient: any = null;
+
+  // Active tenant policy cache (in-memory + localStorage sync)
+  private policyCache: Map<string, AttendanceNotificationPolicy> = new Map();
+
+  /**
+   * Authoritative getter for HR Attendance Notification Policy.
+   * Gracefully loads from in-memory cache or browser localStorage.
+   */
+  public getPolicy(orgId: string = '0c621892-e938-4707-9957-13534ea32c19'): AttendanceNotificationPolicy {
+    if (this.policyCache.has(orgId)) {
+      return this.policyCache.get(orgId)!;
+    }
+
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const raw = localStorage.getItem(`joy_att_notif_policy_${orgId}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const merged = { ...DEFAULT_ATTENDANCE_NOTIFICATION_POLICY, ...parsed };
+          this.policyCache.set(orgId, merged);
+          return merged;
+        }
+      } catch {}
+    }
+
+    const fallback = { ...DEFAULT_ATTENDANCE_NOTIFICATION_POLICY };
+    this.policyCache.set(orgId, fallback);
+    return fallback;
+  }
+
+  /**
+   * Authoritative setter for HR Attendance Notification Policy.
+   * Instantly takes effect across the real-time push engine and browser storage.
+   */
+  public setPolicy(
+    policy: Partial<AttendanceNotificationPolicy>,
+    orgId: string = '0c621892-e938-4707-9957-13534ea32c19'
+  ): AttendanceNotificationPolicy {
+    const current = this.getPolicy(orgId);
+    const updated = { ...current, ...policy };
+    this.policyCache.set(orgId, updated);
+
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        localStorage.setItem(`joy_att_notif_policy_${orgId}`, JSON.stringify(updated));
+      } catch {}
+    }
+
+    console.log(`[AttendanceNotificationService] Policy updated for org ${orgId}:`, updated);
+    return updated;
+  }
 
   /**
    * Return the authoritative Supabase client.
@@ -152,72 +257,13 @@ class AttendanceNotificationService {
     }
   }
 
+  private cachedProjectId: string = 'joy-peoplehr';
+
   /**
    * Retrieve Google OAuth2 Access Token for Firebase Cloud Messaging HTTP v1
    */
   private async getGoogleFcmAccessToken(): Promise<string | null> {
-    if (this.fcmAccessToken && Date.now() < this.fcmTokenExpiry) {
-      return this.fcmAccessToken;
-    }
-
-    try {
-      let sa: any = null;
-
-      if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-        sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-      } else {
-        // Fallback to local service account file if present
-        const possiblePaths = [
-          path.resolve('scratch/firebase-service-account.json'),
-          path.resolve('firebase-service-account.json'),
-        ];
-        for (const p of possiblePaths) {
-          if (fs.existsSync(p)) {
-            sa = JSON.parse(fs.readFileSync(p, 'utf8'));
-            break;
-          }
-        }
-      }
-
-      if (!sa || !sa.client_email || !sa.private_key) {
-        return null;
-      }
-
-      const now = Math.floor(Date.now() / 1000);
-      const expiry = now + 3600;
-
-      const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
-      const claimSet = Buffer.from(
-        JSON.stringify({
-          iss: sa.client_email,
-          scope: 'https://www.googleapis.com/auth/firebase.messaging',
-          aud: 'https://oauth2.googleapis.com/token',
-          exp: expiry,
-          iat: now,
-        })
-      ).toString('base64url');
-
-      const sign = crypto.createSign('RSA-SHA256');
-      sign.update(`${header}.${claimSet}`);
-      const signature = sign.sign(sa.private_key, 'base64url');
-      const jwt = `${header}.${claimSet}.${signature}`;
-
-      const resp = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
-      });
-
-      const tokenData = await resp.json();
-      if (tokenData?.access_token) {
-        this.fcmAccessToken = tokenData.access_token;
-        this.fcmTokenExpiry = Date.now() + (tokenData.expires_in - 60) * 1000;
-        return this.fcmAccessToken;
-      }
-    } catch (err) {
-      console.warn('[AttendanceNotificationService] Failed getting FCM token:', err);
-    }
-
+    // FCM HTTP v1 dispatch is handled securely by Supabase Edge Function `send-push`
     return null;
   }
 
@@ -244,7 +290,7 @@ class AttendanceNotificationService {
 
     try {
       // 1. Fetch punching employee profile
-      const { data: emp, error: empErr } = await this.getDb()
+      let query = this.getDb()
         .from('employees')
         .select(`
           id,
@@ -256,9 +302,17 @@ class AttendanceNotificationService {
           reporting_manager_id,
           employment_status,
           user_id
-        `)
-        .or(`id.eq.${employeeId},employee_code.eq.${employeeId}`)
-        .maybeSingle();
+        `);
+
+      if (typeof query.or === 'function') {
+        query = query.or(`id.eq.${employeeId},employee_code.eq.${employeeId}`);
+      } else if (typeof query.eq === 'function') {
+        query = query.eq('id', employeeId);
+      }
+
+      const { data: emp, error: empErr } = typeof query.maybeSingle === 'function'
+        ? await query.maybeSingle()
+        : { data: null, error: null };
 
       if (empErr || !emp) {
         return {
@@ -340,15 +394,53 @@ class AttendanceNotificationService {
           role = 'TL_SUPERVISOR';
         }
 
+        // Resolve Auth User ID and Profile ID from user_profiles
+        let resolvedAuthUserId = sRec.user_id;
+        let resolvedProfileId = sRec.user_id;
+        try {
+          if (sRec.user_id) {
+            let profQuery = this.getDb().from('user_profiles').select('id, auth_user_id');
+            if (typeof profQuery.or === 'function') {
+              profQuery = profQuery.or(`id.eq.${sRec.user_id},auth_user_id.eq.${sRec.user_id}`);
+            } else if (typeof profQuery.eq === 'function') {
+              profQuery = profQuery.eq('id', sRec.user_id);
+            }
+            const { data: prof } = typeof profQuery.maybeSingle === 'function'
+              ? await profQuery.maybeSingle()
+              : { data: null };
+            if (prof?.auth_user_id) {
+              resolvedAuthUserId = prof.auth_user_id;
+            }
+            if (prof?.id) {
+              resolvedProfileId = prof.id;
+            }
+          }
+
+          // Fallback: Query user_profiles by employee_id if user_id was null or not found
+          if (!resolvedAuthUserId) {
+            let profByEmpQuery = this.getDb().from('user_profiles').select('id, auth_user_id').eq('employee_id', sRec.id);
+            const { data: profByEmp } = typeof profByEmpQuery.maybeSingle === 'function'
+              ? await profByEmpQuery.maybeSingle()
+              : { data: null };
+            if (profByEmp?.auth_user_id) {
+              resolvedAuthUserId = profByEmp.auth_user_id;
+            }
+            if (profByEmp?.id) {
+              resolvedProfileId = profByEmp.id;
+            }
+          }
+        } catch (_) {}
+
         // Query active device tokens for this supervisor
-        const fcmTokens = await this.getDeviceTokensForSupervisor(sRec.id, sRec.user_id);
+        const fcmTokens = await this.getDeviceTokensForSupervisor(sRec.id, resolvedAuthUserId || sRec.user_id);
 
         supervisors.push({
           employeeId: sRec.id,
           employeeCode: sRec.employee_code || '',
           name: sRec.display_name || `${sRec.first_name || ''} ${sRec.last_name || ''}`.trim() || 'Supervisor',
           role,
-          authUserId: sRec.user_id,
+          profileId: resolvedProfileId || sRec.user_id,
+          authUserId: resolvedAuthUserId || sRec.user_id,
           workEmail: sRec.work_email,
           phone: sRec.phone,
           fcmTokens,
@@ -449,6 +541,8 @@ class AttendanceNotificationService {
     body: string,
     extraData: Record<string, string>
   ): Promise<{ success: boolean; messageId?: string; errorMessage?: string }> {
+    let edgeError: string | undefined;
+
     // 1. Try Supabase Edge Function first
     if (isSupabaseEnabled) {
       try {
@@ -480,8 +574,11 @@ class AttendanceNotificationService {
             success: true,
             messageId: sentResult?.messageId || `edge-msg-${Date.now()}`,
           };
+        } else {
+          edgeError = error?.message || (data?.results ? JSON.stringify(data.results) : data?.error);
         }
-      } catch (e) {
+      } catch (e: any) {
+        edgeError = e?.message || String(e);
         console.warn('[AttendanceNotification] Edge function notice, evaluating direct FCM:', e);
       }
     }
@@ -489,7 +586,7 @@ class AttendanceNotificationService {
     // 2. Direct FCM v1 Dispatch Fallback
     const accessToken = await this.getGoogleFcmAccessToken();
     if (accessToken && supervisor.fcmTokens.length > 0) {
-      const projectId = 'joy-peoplehr-mobile-app';
+      const projectId = this.cachedProjectId || 'joy-peoplehr';
       const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
 
       let lastMessageId: string | undefined;
@@ -512,7 +609,7 @@ class AttendanceNotificationService {
                   sound: 'default',
                   default_vibrate_timings: true,
                   notification_priority: 'PRIORITY_MAX',
-                  icon: 'ic_launcher',
+                  icon: 'ic_stat_notify',
                   color: '#1A56DB',
                   visibility: 'PUBLIC',
                 },
@@ -566,7 +663,10 @@ class AttendanceNotificationService {
       };
     }
 
-    return { success: false, errorMessage: 'Push delivery failed: No provider available' };
+    return {
+      success: false,
+      errorMessage: edgeError || 'Push delivery failed: No provider available',
+    };
   }
 
   /**
@@ -582,10 +682,10 @@ class AttendanceNotificationService {
     if (!isSupabaseEnabled) return null;
 
     try {
-      const notifId = crypto.randomUUID();
+      const notifId = generateUuid();
       const nowIso = new Date().toISOString();
 
-      const { data, error } = await this.getDb()
+      const { error } = await this.getDb()
         .from('notification_events')
         .insert([
           {
@@ -601,13 +701,12 @@ class AttendanceNotificationService {
             sent_at: nowIso,
             created_at: nowIso,
           },
-        ])
-        .select('id')
-        .maybeSingle();
+        ]);
 
-      if (!error && data?.id) {
-        return data.id;
+      if (!error) {
+        return notifId;
       }
+      console.warn('[AttendanceNotification] In-app persistence notice:', error);
     } catch (err) {
       console.warn('[AttendanceNotification] In-app persistence notice:', err);
     }
@@ -620,6 +719,7 @@ class AttendanceNotificationService {
   private async logCommunicationDispatch(
     organizationId: string,
     supervisorId: string,
+    supervisorPhone: string | undefined,
     eventType: AttendanceNotificationEventType,
     title: string,
     body: string,
@@ -634,6 +734,7 @@ class AttendanceNotificationService {
         {
           organization_id: organizationId,
           employee_id: supervisorId,
+          recipient_phone: supervisorPhone || 'APP_PUSH',
           channel: 'PUSH',
           provider: 'FCM',
           template_key: eventType,
@@ -667,6 +768,44 @@ class AttendanceNotificationService {
       return this.idempotencyRegistry.get(idempotencyKey)!;
     }
 
+    const policy = this.getPolicy(orgId);
+
+    // Source filtering check
+    if (payload.source === 'BIOMETRIC' && !policy.enableBiometricPunches) {
+      console.log(`[AttendanceNotification] Biometric punches skipped per policy`);
+      return {
+        id: `disp-${Date.now()}`,
+        eventId,
+        eventType: payload.eventType,
+        punchTime: payload.punchTime,
+        source: payload.source,
+        punchingEmployee: { id: payload.employeeId, code: payload.employeeCode || '', name: payload.employeeName || '' },
+        organizationId: orgId,
+        resolvedRecipients: [],
+        deliveries: [],
+        missingHierarchy: false,
+        routingException: 'Biometric push notifications disabled by HR policy',
+        createdAt: new Date().toISOString(),
+      };
+    }
+    if (payload.source === 'MOBILE' && !policy.enableMobileGpsPunches) {
+      console.log(`[AttendanceNotification] Mobile GPS punches skipped per policy`);
+      return {
+        id: `disp-${Date.now()}`,
+        eventId,
+        eventType: payload.eventType,
+        punchTime: payload.punchTime,
+        source: payload.source,
+        punchingEmployee: { id: payload.employeeId, code: payload.employeeCode || '', name: payload.employeeName || '' },
+        organizationId: orgId,
+        resolvedRecipients: [],
+        deliveries: [],
+        missingHierarchy: false,
+        routingException: 'Mobile GPS push notifications disabled by HR policy',
+        createdAt: new Date().toISOString(),
+      };
+    }
+
     const sourceLabel = this.getSourceLabel(payload.source);
     const timeFormatted = this.formatTimeIst(payload.punchTime);
 
@@ -678,16 +817,53 @@ class AttendanceNotificationService {
     if (payload.employeeName) punchingEmployee.name = payload.employeeName;
     if (payload.employeeCode) punchingEmployee.code = payload.employeeCode;
 
-    // 3. Construct Notification Content
+    // 3. Resolve Shift & Punctuality Context (On-Time vs Late)
+    let isLate = payload.isLate;
+    let lateMinutes = payload.lateMinutes || 0;
+    const graceMinutes = payload.graceMinutes ?? policy.graceMinutes ?? 30; // HR policy grace period
+    const shiftStart = payload.shiftStart || '09:00';
+
+    if (payload.punchType === 'CHECK_IN' && isLate === undefined) {
+      try {
+        const punchDt = new Date(payload.punchTime);
+        // Calculate IST time (UTC + 5:30)
+        const istOffsetMs = 5.5 * 60 * 60 * 1000;
+        const istDate = new Date(punchDt.getTime() + istOffsetMs);
+        const punchHours = istDate.getUTCHours();
+        const punchMins = istDate.getUTCMinutes();
+        const totalPunchMins = punchHours * 60 + punchMins;
+
+        const [sHour, sMin] = shiftStart.split(':').map((v) => parseInt(v, 10));
+        const totalShiftStartMins = (sHour || 9) * 60 + (sMin || 0);
+
+        if (totalPunchMins > totalShiftStartMins + graceMinutes) {
+          isLate = true;
+          lateMinutes = totalPunchMins - totalShiftStartMins;
+        } else {
+          isLate = false;
+          lateMinutes = 0;
+        }
+      } catch {
+        isLate = false;
+        lateMinutes = 0;
+      }
+    }
+
+    // 4. Construct Notification Content for Mobile Tray & In-App
     let title: string;
     let body: string;
 
     if (payload.punchType === 'CHECK_IN') {
-      title = 'Employee Check-In';
-      body = `${punchingEmployee.name} (${punchingEmployee.code}) checked in at ${timeFormatted} via ${sourceLabel}.`;
+      if (isLate) {
+        title = `🔴 Late Check-In: ${punchingEmployee.name}`;
+        body = `${punchingEmployee.name} (${punchingEmployee.code}) arrived LATE at ${timeFormatted} (${lateMinutes} mins late) via ${sourceLabel}.`;
+      } else {
+        title = `🟢 On-Time Check-In: ${punchingEmployee.name}`;
+        body = `${punchingEmployee.name} (${punchingEmployee.code}) checked in ON-TIME at ${timeFormatted} via ${sourceLabel}.`;
+      }
     } else {
-      title = 'Employee Check-Out';
-      body = `${punchingEmployee.name} (${punchingEmployee.code}) checked out at ${timeFormatted}.`;
+      title = `👋 Employee Check-Out: ${punchingEmployee.name}`;
+      body = `${punchingEmployee.name} (${punchingEmployee.code}) checked out at ${timeFormatted} via ${sourceLabel}.`;
     }
 
     const actionUrl = `/attendance?emp=${punchingEmployee.id}&date=${payload.punchTime.split('T')[0]}`;
@@ -700,7 +876,13 @@ class AttendanceNotificationService {
       punch_time: payload.punchTime,
       source: payload.source,
       punch_id: payload.punchId || '',
+      is_late: isLate ? 'true' : 'false',
+      late_minutes: String(lateMinutes),
+      grace_minutes: String(graceMinutes),
+      shift_start: shiftStart,
       timestamp: String(Date.now()),
+      tag: policy.enableNotificationGrouping ? 'joy_attendance_manager_alert' : `punch_${eventId}`,
+      group: 'joy_attendance_group',
     };
 
     const dispatchLog: AttendanceNotificationDispatchLog = {
@@ -730,14 +912,19 @@ class AttendanceNotificationService {
       this.recordDiagnosticLog(idempotencyKey, dispatchLog);
       return dispatchLog;
     }
-
     // 4. Dispatch to Each Authorized Supervisor Independently
     for (const supervisor of supervisors) {
       // 4A. In-App Notification (Durable Persistence)
       let inAppId: string | null = null;
       try {
-        const targetUserId = supervisor.authUserId || supervisor.employeeId;
-        inAppId = await this.persistInAppNotification(orgId, targetUserId, title, body, actionUrl);
+        const isSimulation = payload.idempotencyKey?.startsWith('sim-');
+        if (!isSimulation) {
+          const targetUserId = supervisor.profileId || supervisor.authUserId || supervisor.employeeId;
+          inAppId = await this.persistInAppNotification(orgId, targetUserId, title, body, actionUrl);
+        } else {
+          // Simulation tests do not pollute the live employee database
+          inAppId = `sim-inapp-${Date.now()}`;
+        }
 
         dispatchLog.deliveries.push({
           recipientId: supervisor.employeeId,
@@ -752,7 +939,51 @@ class AttendanceNotificationService {
         console.warn(`[AttendanceNotification] In-app failed for ${supervisor.name}:`, inAppErr);
       }
 
-      // 4B. Remote Push Notification
+      // 4B. Remote Push Notification (Guarded by HR Anti-Fatigue Policy for 50-100 teams)
+      let shouldSendPush = true;
+      let policySkipReason: string | null = null;
+
+      if (payload.punchType === 'CHECK_IN') {
+        if (!isLate) {
+          if (policy.onTimeDeliveryMode === 'SILENT') {
+            shouldSendPush = false;
+            policySkipReason = 'On-time punch kept silent in manager inbox per HR anti-fatigue policy (0 phone vibrations)';
+          } else if (policy.onTimeDeliveryMode === 'DISABLED') {
+            shouldSendPush = false;
+            policySkipReason = 'On-time punch push disabled per HR policy';
+          }
+        } else {
+          if (policy.lateDeliveryMode === 'SILENT') {
+            shouldSendPush = false;
+            policySkipReason = 'Late check-in kept in-app silent per HR policy';
+          } else if (policy.lateDeliveryMode === 'DISABLED') {
+            shouldSendPush = false;
+            policySkipReason = 'Late check-in alerts disabled per HR policy';
+          }
+        }
+      } else {
+        if (policy.earlyCheckoutMode === 'SILENT') {
+          shouldSendPush = false;
+          policySkipReason = 'Check-out alert kept silent per HR policy';
+        } else if (policy.earlyCheckoutMode === 'DISABLED') {
+          shouldSendPush = false;
+          policySkipReason = 'Check-out alerts disabled per HR policy';
+        }
+      }
+
+      if (!shouldSendPush) {
+        dispatchLog.deliveries.push({
+          recipientId: supervisor.employeeId,
+          recipientName: supervisor.name,
+          role: supervisor.role,
+          channel: 'PUSH',
+          status: 'SKIPPED_POLICY_SILENT' as any,
+          errorMessage: policySkipReason || 'Silent delivery per HR policy',
+          timestamp: new Date().toISOString(),
+        });
+        continue;
+      }
+
       try {
         if (supervisor.fcmTokens.length === 0) {
           dispatchLog.deliveries.push({
@@ -784,6 +1015,7 @@ class AttendanceNotificationService {
         await this.logCommunicationDispatch(
           orgId,
           supervisor.employeeId,
+          supervisor.phone,
           payload.eventType,
           title,
           body,

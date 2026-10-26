@@ -369,6 +369,7 @@ export const WorkforceOverviewView: React.FC<Props> = ({ onNavigate }) => {
         onExport={handleExportCsv}
         onAddEmployee={() => setIsWizardOpen(true)}
         onViewDirectory={() => navigate('people')}
+        onNavigate={navigate}
       />
 
       {/* 2. Global Multi-Dimensional Filter Bar */}

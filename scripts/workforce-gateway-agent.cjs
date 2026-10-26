@@ -130,13 +130,115 @@ async function refreshEmployeeDirectory() {
   await ensureAuthenticatedSupabase();
   const { data: emps, error } = await supabase
     .from('employees')
-    .select('id, employee_code, first_name, last_name, display_name, phone, organization_id, employment_status')
+    .select('id, employee_code, first_name, last_name, display_name, phone, organization_id, employment_status, reporting_manager_id, department_id')
     .order('employee_code');
   if (emps && emps.length > 0) {
     cachedEmployeeDirectory = emps;
     lastDirectoryFetchTime = now;
   }
   return cachedEmployeeDirectory;
+}
+
+async function notifyReportingManager(emp, punchType, timeFormatted, organizationId) {
+  try {
+    let managerId = emp.reporting_manager_id;
+    if (!managerId && emp.department_id) {
+      const { data: dept } = await supabase
+        .from('departments')
+        .select('head_employee_id')
+        .eq('id', emp.department_id)
+        .maybeSingle();
+      if (dept?.head_employee_id && dept.head_employee_id !== emp.id) {
+        managerId = dept.head_employee_id;
+      }
+    }
+
+    if (!managerId) {
+      console.log(`[AGENT-NOTIF] No reporting manager configured for ${emp.first_name || emp.employee_code}`);
+      return;
+    }
+
+    const { data: mgr } = await supabase
+      .from('employees')
+      .select('id, employee_code, first_name, last_name, display_name, phone, user_id')
+      .eq('id', managerId)
+      .maybeSingle();
+
+    if (!mgr) return;
+
+    let authUserId = mgr.user_id;
+    let profileId = mgr.user_id;
+    const { data: prof } = await supabase
+      .from('user_profiles')
+      .select('id, auth_user_id')
+      .or(`employee_id.eq.${mgr.id},id.eq.${mgr.user_id || 'none'},auth_user_id.eq.${mgr.user_id || 'none'}`)
+      .limit(1)
+      .maybeSingle();
+    if (prof) {
+      if (prof.auth_user_id) authUserId = prof.auth_user_id;
+      if (prof.id) profileId = prof.id;
+    }
+
+    const empName = (emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`).trim();
+    const isOut = punchType === 'CHECK_OUT';
+    const title = isOut ? `👋 Employee Check-Out: ${empName}` : `🟢 Biometric Check-In: ${empName}`;
+    const body = isOut
+      ? `${empName} (${emp.employee_code || ''}) checked out at ${timeFormatted} via Biometric Terminal.`
+      : `${empName} (${emp.employee_code || ''}) checked in at ${timeFormatted} via Biometric Terminal.`;
+
+    const targetUserId = profileId || authUserId || mgr.id;
+    const nowIso = new Date().toISOString();
+
+    // 1. Insert In-App Notification into notification_events for manager
+    try {
+      await supabase.from('notification_events').insert([{
+        organization_id: organizationId,
+        recipient_user_id: targetUserId,
+        channel: 'IN_APP',
+        title,
+        message: body,
+        action_url: `/attendance?emp=${emp.id}&date=${nowIso.split('T')[0]}`,
+        is_read: false,
+        is_sent: true,
+        sent_at: nowIso,
+        created_at: nowIso,
+      }]);
+    } catch (e) {
+      console.warn('[AGENT-NOTIF] In-app notification error:', e.message);
+    }
+
+    // 2. Dispatch FCM Push Notification using send-push edge function
+    try {
+      const sendPushUrl = `${SUPABASE_URL}/functions/v1/send-push`;
+      await fetch(sendPushUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          employee_id: mgr.id,
+          auth_user_id: authUserId,
+          title,
+          body,
+          route: 'attendance',
+          data: {
+            route: 'attendance',
+            eventType: isOut ? 'attendance.check_out.accepted' : 'attendance.check_in.accepted',
+            employeeId: emp.id,
+            employeeName: empName,
+            source: 'BIOMETRIC',
+            timestamp: String(Date.now()),
+          },
+        }),
+      });
+      console.log(`[AGENT-NOTIF] ✓ Biometric alert sent to manager ${mgr.first_name} for ${empName}`);
+    } catch (e) {
+      console.warn('[AGENT-NOTIF] Push notification error:', e.message);
+    }
+  } catch (err) {
+    console.warn('[AGENT-NOTIF] Manager notification notice:', err.message);
+  }
 }
 
 function resolveEmployeeByPin(pin, emps) {
@@ -353,6 +455,9 @@ async function processLivePunchDirectly(punchRecord, pin, timeStr, resolvedPunch
         console.log(`[AIRTEL-AUTO-SMS] 🚀 Check-In SMS Response:`, res?.messageRequestId || res);
         markSmsSentToday(emp.id, todayDate, 'CHECK_IN', { phone: emp.phone, time: timeFormatted });
       }
+
+      // Dispatch instant push & in-app alert to reporting manager
+      notifyReportingManager(emp, 'CHECK_IN', timeFormatted, emp.organization_id).catch(() => {});
       return;
     }
 
@@ -385,6 +490,9 @@ async function processLivePunchDirectly(punchRecord, pin, timeStr, resolvedPunch
         await sendAirtelSmsDirect(emp.phone, msg, DLT_CHECKIN_TEMPLATE_ID);
         markSmsSentToday(emp.id, todayDate, 'CHECK_IN', { phone: emp.phone, time: timeFormatted });
       }
+
+      // Dispatch instant push & in-app alert to reporting manager
+      notifyReportingManager(emp, 'CHECK_IN', timeFormatted, emp.organization_id).catch(() => {});
       return;
     }
 
@@ -458,6 +566,9 @@ async function processLivePunchDirectly(punchRecord, pin, timeStr, resolvedPunch
       console.log(`[AIRTEL-AUTO-SMS] 🚀 Check-Out SMS Response:`, res?.messageRequestId || res);
       markSmsSentToday(emp.id, todayDate, 'CHECK_OUT', { phone: emp.phone, time: timeFormatted, duration: totalDurationFormatted });
     }
+
+    // Dispatch instant push & in-app alert to reporting manager
+    notifyReportingManager(emp, 'CHECK_OUT', timeFormatted, emp.organization_id).catch(() => {});
   } catch (err) {
     console.warn('[DIRECT-INGEST] Processing error:', err.message || err);
   }

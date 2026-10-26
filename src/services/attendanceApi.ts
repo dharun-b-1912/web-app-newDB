@@ -106,7 +106,8 @@ export const attendanceApi = {
         const ctrl = new AbortController();
         const tid = setTimeout(() => ctrl.abort(), 12000);
 
-        let q = supabase
+        const client = supabaseAdmin || supabase;
+        let q = client
           .from('attendance_daily')
           .select('*')
           .eq('organization_id', tenantId)
@@ -117,7 +118,7 @@ export const attendanceApi = {
         // Fetch employee details to enrich daily attendance summaries
         let empMap = new Map<string, any>();
         try {
-          const { data: empList } = await supabase
+          const { data: empList } = await client
             .from('employees')
             .select('id, organization_id, company_id, employee_code, first_name, last_name, display_name, avatar_url, department_id, designation_id, employment_status')
             .eq('organization_id', tenantId)
@@ -137,7 +138,7 @@ export const attendanceApi = {
           organizationId?: string;
         }>();
         try {
-          let pq = supabase
+          let pq = client
             .from('attendance_punches')
             .select('employee_id, organization_id, punch_type, verification_mode, punch_source, device_id, punch_time')
             .eq('organization_id', tenantId)
@@ -164,14 +165,14 @@ export const attendanceApi = {
               const dev = (p.device_id || '').toUpperCase();
 
               let resolved: PunchSource = 'MOBILE';
-              if (mode === 'FACE' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || psource === 'BIOMETRIC' || psource === 'FACE_RECOGNITION') {
+              if (psource === 'MANUAL' || mode === 'MANUAL' || psource.includes('MANUAL')) {
+                resolved = 'MANUAL';
+              } else if (mode === 'FACE' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || psource === 'BIOMETRIC' || psource === 'FACE_RECOGNITION') {
                 resolved = 'BIOMETRIC';
               } else if (mode === 'GPS' || psource === 'WEB_GPS' || psource === 'MOBILE_GPS' || psource.includes('GPS') || psource.includes('MOBILE') || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')) {
                 resolved = 'MOBILE';
               } else if (psource === 'WEB' || dev.includes('BROWSER')) {
                 resolved = 'WEB';
-              } else if (mode === 'MANUAL') {
-                resolved = 'MANUAL';
               }
 
               const empId = p.employee_id;
@@ -232,9 +233,13 @@ export const attendanceApi = {
           const rawFirstIn = d.first_check_in || punchInfo?.firstInIso;
           const rawLastOut = d.last_check_out || punchInfo?.lastOutIso;
 
-          const checkInSource: PunchSource | undefined = punchInfo?.checkInSource || (rawFirstIn ? 'MOBILE' : undefined);
+          const checkInSource: PunchSource | undefined = (d.is_regularized || punchInfo?.checkInSource === 'MANUAL')
+            ? 'MANUAL'
+            : (punchInfo?.checkInSource || (rawFirstIn ? 'MOBILE' : undefined));
           const checkOutSource: PunchSource | undefined = punchInfo?.checkOutSource;
-          const source: PunchSource = punchInfo?.checkInSource || punchInfo?.source || checkInSource || 'MOBILE';
+          const source: PunchSource = (d.is_regularized || punchInfo?.checkInSource === 'MANUAL')
+            ? 'MANUAL'
+            : (punchInfo?.checkInSource || punchInfo?.source || checkInSource || 'MOBILE');
 
           const formattedIn = rawFirstIn ? attendanceTimeService.formatAttendanceTime(rawFirstIn, 'Asia/Kolkata', true) : undefined;
           const formattedOut = rawLastOut ? attendanceTimeService.formatAttendanceTime(rawLastOut, 'Asia/Kolkata', true) : undefined;
@@ -392,14 +397,14 @@ export const attendanceApi = {
             const dev = (p.device_id || '').toUpperCase();
 
             let resolved: PunchSource = 'MOBILE';
-            if (mode === 'FACE' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || psource === 'BIOMETRIC' || psource === 'FACE_RECOGNITION') {
+            if (psource === 'MANUAL' || mode === 'MANUAL' || psource.includes('MANUAL')) {
+              resolved = 'MANUAL';
+            } else if (mode === 'FACE' || mode === 'FINGERPRINT' || mode === 'CARD' || mode === 'BIOMETRIC' || psource === 'BIOMETRIC' || psource === 'FACE_RECOGNITION') {
               resolved = 'BIOMETRIC';
             } else if (mode === 'GPS' || psource === 'WEB_GPS' || psource === 'MOBILE_GPS' || psource.includes('GPS') || psource.includes('MOBILE') || dev.includes('MOBILE') || dev.includes('APP') || dev.includes('FLUTTER')) {
               resolved = 'MOBILE';
             } else if (psource === 'WEB' || dev.includes('BROWSER')) {
               resolved = 'WEB';
-            } else if (mode === 'MANUAL') {
-              resolved = 'MANUAL';
             }
 
             const existing: {

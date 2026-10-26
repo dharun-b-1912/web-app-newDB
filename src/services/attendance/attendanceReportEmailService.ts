@@ -9,6 +9,7 @@ import {
   attendanceReportExportService,
   AttendanceReportRow,
   computeEmployeeOvertime,
+  formatTo12HourTime,
 } from './attendanceReportExportService';
 import { ClassifiedPunchEvent } from './attendanceClassificationEngine';
 import { formatMinutesToHoursStr } from '../../lib/attendance/attendanceEngine';
@@ -72,7 +73,7 @@ export const attendanceReportEmailService = {
       }
     });
 
-    const totalNetMinutes = rows.reduce((acc, r) => acc + (r.record.net_working_minutes || 0), 0);
+    const totalNetMinutes = rows.reduce((acc, r) => acc + (r.record.total_work_minutes || r.record.net_working_minutes || 0), 0);
     const turnoutRatio = Math.round((presentCount / (totalHeadcount || 1)) * 100);
 
     const attachments: EmailAttachment[] = [];
@@ -356,12 +357,13 @@ export const attendanceReportEmailService = {
               const code = emp.employee_code || rec.employee_code || '—';
               const name = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name;
               const shiftCode = shift?.shift_code || r.roster?.shift_code || 'GEN-09';
-              const checkIn = rec.first_check_in || '—';
+              const checkIn = rec.first_check_in ? formatTo12HourTime(rec.first_check_in) : '—';
               const checkInSrc = rec.first_check_in ? (rec.check_in_source || rec.source || 'BIOMETRIC') : '—';
-              const checkOut = rec.last_check_out || '—';
-              const lateMins = rec.late_minutes || 0;
+              const checkOut = rec.last_check_out ? formatTo12HourTime(rec.last_check_out) : '—';
+              const lateMins = rec.late_entry_minutes || rec.late_minutes || 0;
               const ot = computeEmployeeOvertime(rec, shift);
-              const netStr = rec.net_working_minutes > 0 ? formatMinutesToHoursStr(rec.net_working_minutes) : (rec.first_check_in && !rec.last_check_out ? 'In Progress' : '—');
+              const netMins = rec.total_work_minutes || rec.net_working_minutes || 0;
+              const netStr = netMins > 0 ? formatMinutesToHoursStr(netMins) : (rec.first_check_in && !rec.last_check_out ? 'In Progress' : '—');
               const isEven = i % 2 === 0;
 
               let statusStr: string = rec.status || (rec.first_check_in ? 'Present' : 'Not Checked In');

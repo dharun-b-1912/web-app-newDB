@@ -76,9 +76,9 @@ export async function generateExcelWorkbook(
     // -------------------------------------------------------------------------
     const totalHeadcount = rows.length;
     const presentCount = rows.filter(
-      r => r.record.status === 'Present' || r.record.status === 'Checked Out' || !!r.record.first_check_in
+      r => r.record.status === 'Present' || r.record.status === 'Half Day' || r.record.status === 'Checked Out' || !!r.record.first_check_in
     ).length;
-    const lateCount = rows.filter(r => (r.record.late_minutes || 0) > 0 || r.record.status === 'Late').length;
+    const lateCount = rows.filter(r => (r.record.late_minutes || r.record.late_entry_minutes || 0) > 0 || r.record.status === 'Late').length;
     const notCheckedInCount = rows.filter(
       r => (r.record.status === 'Not Checked In' || !r.record.status) && !r.record.first_check_in
     ).length;
@@ -93,7 +93,7 @@ export async function generateExcelWorkbook(
       }
     });
 
-    const totalNetMinutes = rows.reduce((acc, r) => acc + (r.record.net_working_minutes || 0), 0);
+    const totalNetMinutes = rows.reduce((acc, r) => acc + (r.record.total_work_minutes || r.record.net_working_minutes || 0), 0);
     const turnoutRatio = Math.round((presentCount / (totalHeadcount || 1)) * 100);
 
     // -------------------------------------------------------------------------
@@ -356,16 +356,16 @@ export async function generateExcelWorkbook(
       }
       const d = deptMap.get(dept)!;
       d.total += 1;
-      if (r.record.status === 'Present' || r.record.status === 'Checked Out' || !!r.record.first_check_in) {
+      if (r.record.status === 'Present' || r.record.status === 'Half Day' || r.record.status === 'Checked Out' || !!r.record.first_check_in) {
         d.present += 1;
       }
-      if ((r.record.late_minutes || 0) > 0 || r.record.status === 'Late') {
+      if ((r.record.late_minutes || r.record.late_entry_minutes || 0) > 0 || r.record.status === 'Late') {
         d.late += 1;
       }
       if ((r.record.status === 'Not Checked In' || !r.record.status) && !r.record.first_check_in) {
         d.notCheckedIn += 1;
       }
-      d.netMins += r.record.net_working_minutes || 0;
+      d.netMins += (r.record.total_work_minutes || r.record.net_working_minutes || 0);
       const ot = computeEmployeeOvertime(r.record, r.shift, isMorning);
       if (ot.hasOvertime) {
         d.otMins += ot.overtimeMinutes;
@@ -1210,18 +1210,19 @@ export async function generateExcelWorkbook(
         checkOutSrc = '— (Active Shift)';
       }
 
-      const breakMins = rec.total_break_minutes || 0;
+      const breakMins = rec.break_minutes ?? rec.total_break_minutes ?? 0;
+      const workMins = rec.total_work_minutes ?? rec.net_working_minutes ?? 0;
       let netStr = '0h 00m';
-      if (rec.net_working_minutes && rec.net_working_minutes > 0) {
+      if (workMins > 0) {
         netStr = isMorning && !checkOutRaw
-          ? `${formatMinutesToHoursStr(rec.net_working_minutes)} (Elapsed)`
-          : formatMinutesToHoursStr(rec.net_working_minutes);
+          ? `${formatMinutesToHoursStr(workMins)} (Elapsed)`
+          : formatMinutesToHoursStr(workMins);
       } else if (checkInRaw && !checkOutRaw) {
         netStr = 'Active (Live)';
       }
 
-      const lateMins = rec.late_minutes || 0;
-      const earlyMins = rec.early_checkout_minutes || 0;
+      const lateMins = rec.late_entry_minutes ?? rec.late_minutes ?? 0;
+      const earlyMins = rec.early_exit_minutes ?? rec.early_checkout_minutes ?? 0;
       const lateStr = lateMins > 0 ? formatDeviationDuration(lateMins, { showBoth: lateMins >= 60 }) : '0m';
       const earlyStr = earlyMins > 0 ? formatDeviationDuration(earlyMins, { showBoth: earlyMins >= 60 }) : '0m';
 

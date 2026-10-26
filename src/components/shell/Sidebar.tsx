@@ -169,6 +169,7 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'late-early' && (currentNav === 'late-early')) return true;
   if (itemId === 'regularization' && (currentNav === 'regularization')) return true;
   if (itemId === 'exceptions' && (currentNav === 'exceptions')) return true;
+  if (itemId === 'attendance-reports' && (currentNav === 'attendance-reports' || currentNav === 'reports' || currentNav === 'attendance/reports' || currentNav === '/attendance/reports' || currentNav === 'mis' || currentNav === 'attendance/mis')) return true;
   if (itemId === 'shifts' && (currentNav === 'shifts' || currentNav === 'shift-master' || currentNav === '/shifts')) return true;
   if (itemId === 'roster' && (currentNav === 'roster' || currentNav === 'shift-roster' || currentNav === 'shifts/roster' || currentNav === '/shifts/roster')) return true;
   if (itemId === 'shift-calendar' && (currentNav === 'shift-calendar' || currentNav === 'calendar' || currentNav === 'shifts/calendar' || currentNav === '/shifts/calendar')) return true;
@@ -230,7 +231,7 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'lms-dashboard' && (currentNav === 'lms' || currentNav === 'lms-dashboard')) return true;
 
   // Workspace & Modern SaaS mappings
-  if (itemId === 'command-center' && (currentNav === 'command-center' || currentNav === 'executive-overview')) return true;
+  if (itemId === 'command-center' && currentNav === 'command-center') return true;
   if (itemId === 'resources' && currentNav === 'resources') return true;
   if (itemId === 'approvals' && (currentNav === 'approvals' || currentNav === 'requests' || currentNav === 'admin-approvals' || currentNav === 'leave-approval')) return true;
   if (itemId === 'admin-access' && (currentNav === 'admin-access' || currentNav === 'admin-roles' || currentNav === 'admin-users' || currentNav === 'admin-permissions' || currentNav === 'admin' || currentNav === 'rbac' || currentNav === 'roles' || currentNav === 'users')) return true;
@@ -242,7 +243,7 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'admin-permissions' && (currentNav === 'admin-permissions' || currentNav === 'permissions')) return true;
   if (itemId === 'admin-workflows' && (currentNav === 'admin-workflows' || currentNav === 'workflows')) return true;
   if (itemId === 'admin-approvals' && (currentNav === 'admin-approvals' || currentNav === 'approvals')) return true;
-  if (itemId === 'admin-notifications' && (currentNav === 'admin-notifications' || currentNav === 'notifications' || currentNav === 'notification-settings' || currentNav === 'notifications-settings')) return true;
+  if (itemId === 'admin-notifications' && (currentNav === 'admin-notifications' || currentNav === 'notification-settings' || currentNav === 'notifications-settings')) return true;
   if (itemId === 'admin-audit' && (currentNav === 'admin-audit' || currentNav === 'audit-logs')) return true;
   if (itemId === 'admin-security' && (currentNav === 'admin-security' || currentNav === 'security')) return true;
   if (itemId === 'admin-api' && (currentNav === 'admin-api' || currentNav === 'api')) return true;
@@ -250,7 +251,7 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'admin-subscription' && (currentNav === 'admin-subscription' || currentNav === 'subscription')) return true;
   if (itemId === 'admin-billing' && (currentNav === 'admin-billing' || currentNav === 'billing')) return true;
   if (itemId === 'admin-settings' && (currentNav === 'admin-settings' || currentNav === 'settings')) return true;
-  if (itemId === 'notifications' && (currentNav === 'notifications' || currentNav === 'admin-notifications' || currentNav === 'notification-settings' || currentNav === 'notifications-settings')) return true;
+  if (itemId === 'notifications' && currentNav === 'notifications') return true;
 
   // SaaS Platform mappings
   if (itemId === 'platform-dashboard' && (currentNav === 'platform' || currentNav === 'platform-dashboard')) return true;
@@ -583,6 +584,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
         { id: 'regularization', label: 'Regularization Desk', icon: FileText },
         { id: 'exceptions', label: 'Exceptions Queue', icon: ShieldAlert },
+        { id: 'attendance-reports', label: 'Reports & Scope MIS', icon: BarChart3 },
       ],
     },
     {
@@ -757,78 +759,90 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'company-onboarding', label: 'Company Setup Wizard', icon: Sparkles },
         { id: 'trust-legal', label: 'Trust & Legal Center', icon: ShieldCheck },
         { id: 'admin-roles', label: 'Role Management', icon: KeyRound },
-        { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
-        { id: 'admin-notifications', label: 'Notification Settings', icon: SlidersHorizontal },
+        { id: 'admin-notifications', label: 'Notification Rules & Delivery', icon: SlidersHorizontal },
       ],
     },
   ];
 
-  // ─── COMPANY ADMIN & ORGANIZATION OWNER: 7 Core Workspaces + Settings ─
+  // ─── COMPANY ADMIN & ORGANIZATION OWNER: Complete 8-Group Operational Cockpit ─
   const companyAdminGroups: NavGroup[] = [
     {
-      groupName: 'HOME',
+      groupName: 'MY WORK',
       items: [
         { id: 'command-center', label: 'Command Center', icon: LayoutDashboard },
-        { id: 'my-workspace', label: 'My Work', icon: CheckSquare },
+        { id: 'my-workspace', label: 'My Workspace', icon: CheckSquare },
+        { id: 'approvals', label: 'Requests & Approvals', icon: CheckCircle2, badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined },
+        { id: 'notifications', label: 'Notifications', icon: Bell },
       ],
     },
     {
       groupName: 'WORKFORCE',
       items: [
-        { id: 'people', label: 'People', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
-        { id: 'organization', label: 'Organization', icon: Building2 },
-        { id: 'resources', label: 'Resources', icon: Package },
+        { id: 'people', label: 'Employee Directory', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus, badge: onboardingCount > 0 ? onboardingCount : undefined },
+        { id: 'offboarding', label: 'Offboarding & Exit', icon: UserMinus },
+        { id: 'organization', label: 'Organization Structure', icon: Building2 },
+        { id: 'documents', label: 'Documents & E-Sign', icon: FileText },
+        { id: 'assets', label: 'Asset Management', icon: Package },
+        { id: 'storage-admin', label: 'Document Vault', icon: Lock },
       ],
     },
     {
-      groupName: 'VENDOR & CLIENT BILLING',
+      groupName: 'VENDOR & CLIENT OPERATIONS',
       items: [
         { id: 'vendor-portal', label: 'Vendor & Manpower Portal', icon: Building2, badge: 'Unified' },
-        { id: 'client-billing', label: 'Client Wage Billing & Invoicing', icon: Receipt, badge: 'Active' },
-        { id: 'storage-admin', label: 'Document Vault & Storage', icon: Lock, badge: 'Vault' },
-      ],
-    },
-    {
-      groupName: 'VENDOR WORKFORCE & FIELD OPS',
-      items: [
+        { id: 'vendor-directory', label: 'Vendor Master Directory', icon: Building2 },
         { id: 'vendor-workforce', label: 'Workforce Allocation', icon: Users },
-        { id: 'vendor-attendance', label: 'Attendance & Ingestion', icon: Clock },
-        { id: 'vendor-leaderboard', label: 'Performance Analytics', icon: Award },
-        { id: 'vendor-assets', label: 'Asset Allocation', icon: Package },
-        { id: 'vendor-communication', label: 'Communication Desk', icon: MessageSquare },
-        { id: 'vendor-reports', label: 'Reports & Audit', icon: BarChart3 },
+        { id: 'vendor-attendance', label: 'Vendor Attendance & Ingestion', icon: Clock },
+        { id: 'client-billing', label: 'Client Wage Billing & Invoicing', icon: Receipt, badge: 'Active' },
+        { id: 'vendor-compliance', label: 'Statutory Vault & Compliance', icon: FileCheck2 },
+        { id: 'vendor-reports', label: 'Vendor Reports & Audit', icon: BarChart3 },
       ],
     },
     {
-      groupName: 'OPERATIONS',
+      groupName: 'ATTENDANCE & SCHEDULING',
       items: [
-        { id: 'attendance', label: 'Attendance', icon: Clock },
-        { id: 'approvals', label: 'Requests & Approvals', icon: CheckCircle2, badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined },
-        { id: 'automation', label: 'Automation', icon: Workflow },
+        { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
+        { id: 'attendance-employees', label: 'Employee Attendance', icon: Users },
+        { id: 'overtime', label: 'Overtime Engine', icon: TrendingUp },
+        { id: 'leave', label: 'Leave Management', icon: CalendarDays },
+        { id: 'shifts', label: 'Shift Master & Roster', icon: Clock },
+        { id: 'biometric', label: 'Biometric & Clocking Devices', icon: Cpu },
+        { id: 'attendance-reports', label: 'Attendance Reports & MIS', icon: BarChart3 },
       ],
     },
     {
-      groupName: 'PAYROLL',
+      groupName: 'PAYROLL & COMPLIANCE',
       items: [
         { id: 'payroll-dashboard', label: 'Payroll Center', icon: CircleDollarSign },
-        { id: 'payroll-statutory', label: 'Compliance', icon: ShieldCheck },
-        { id: 'payroll-reports', label: 'Reports', icon: FileSpreadsheet },
+        { id: 'payroll-salary', label: 'Salary Structures', icon: Building2 },
+        { id: 'payroll-earnings', label: 'Earnings & Overtime', icon: TrendingUp },
+        { id: 'payroll-deductions', label: 'Deductions & LOP', icon: Minus },
+        { id: 'payroll-claims', label: 'Expense Claims', icon: Receipt },
+        { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
+        { id: 'payroll-statutory', label: 'Statutory & Tax Compliance', icon: ShieldCheck },
+        { id: 'payroll-documents', label: 'Digital Payslips', icon: FileText },
+        { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
       ],
     },
     {
-      groupName: 'INSIGHTS',
+      groupName: 'REPORTS & COMMUNICATIONS',
       items: [
         { id: 'workforce-overview', label: 'Workforce Analytics', icon: LineChart },
         { id: 'analytics-reports', label: 'Executive Reports', icon: BarChart3 },
+        { id: 'analytics-attendance', label: 'Attendance Analytics', icon: Clock },
+        { id: 'other-communication', label: 'HR Communications', icon: Megaphone },
+        { id: 'helpdesk', label: 'Help Desk', icon: HelpCircle },
       ],
     },
     {
       groupName: 'ADMINISTRATION',
       items: [
         { id: 'admin-access', label: 'Access & Roles', icon: KeyRound },
-        { id: 'admin-security', label: 'Security', icon: Lock },
+        { id: 'admin-security', label: 'Security Center', icon: Lock },
         { id: 'admin-integrations', label: 'Integrations', icon: GitFork },
-        { id: 'admin-audit', label: 'Audit & Monitoring', icon: History },
+        { id: 'admin-notifications', label: 'Notification Rules', icon: Bell },
+        { id: 'admin-audit', label: 'Audit & Activity Logs', icon: History },
         { id: 'admin-settings', label: 'System Settings', icon: Settings },
       ],
     },
@@ -871,6 +885,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
         { id: 'regularization', label: 'Regularization Desk', icon: FileText },
         { id: 'exceptions', label: 'Exceptions Queue', icon: ShieldAlert },
+        { id: 'attendance-reports', label: 'Reports & Scope MIS', icon: BarChart3 },
       ],
     },
     {
@@ -1035,8 +1050,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'AUTOMATION & ADMIN',
       items: [
         { id: 'admin-roles', label: 'Role Management', icon: KeyRound },
-        { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
-        { id: 'admin-notifications', label: 'Notification Settings', icon: SlidersHorizontal },
+        { id: 'admin-notifications', label: 'Notification Rules & Delivery', icon: SlidersHorizontal },
       ],
     },
   ];
@@ -1060,6 +1074,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
         { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
         { id: 'regularization', label: 'Regularization Desk', icon: FileText },
         { id: 'exceptions', label: 'Exceptions Queue', icon: ShieldAlert },
+        { id: 'attendance-reports', label: 'Reports & Scope MIS', icon: BarChart3 },
       ],
     },
     {

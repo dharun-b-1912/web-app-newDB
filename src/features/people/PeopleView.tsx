@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Breadcrumb } from '../../components/shell/Breadcrumb';
@@ -7,13 +7,13 @@ import {
   Search,
   UserPlus,
   RotateCcw,
-  Building2,
   Users,
-  Filter,
   FileSpreadsheet,
   Download,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
-import { EmployeeList } from './EmployeeList';
+import { EmployeeList, SortField, SortDir } from './EmployeeList';
 import { EmployeeCreateWizardModal } from './EmployeeCreateWizardModal';
 import { EmployeeProfileDrawer } from './EmployeeProfileDrawer';
 import { BulkEmployeeImportModal } from './bulk/BulkEmployeeImportModal';
@@ -24,6 +24,8 @@ import { useTenant } from '../../hooks/useTenant';
 import { usePermission } from '../../hooks/usePermission';
 import { hrEventBus } from '../../services/hrEventBus';
 import { cn } from '../../lib/utils';
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 export const PeopleView: React.FC = () => {
   const { showToast } = useToast();
@@ -45,6 +47,26 @@ export const PeopleView: React.FC = () => {
   const [employeeToEdit, setEmployeeToEdit] = useState<Employee | null>(null);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Sort state
+  const [sortField, setSortField] = useState<SortField>('none');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<typeof PAGE_SIZE_OPTIONS[number]>(25);
+
+  const handleSort = useCallback((field: SortField) => {
+    setSortField((prev) => {
+      if (prev === field) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        return field;
+      }
+      setSortDir('asc');
+      return field;
+    });
+    setCurrentPage(1);
+  }, []);
 
   const loadData = async () => {
     try {
@@ -161,33 +183,28 @@ export const PeopleView: React.FC = () => {
 
   // Master Filter Engine
   const filteredEmployees = useMemo(() => {
-    return accessibleEmployees.filter((emp) => {
+    const filtered = accessibleEmployees.filter((emp) => {
       const isVendor = isEmployeeVendor(emp);
       const isDirect = !isVendor;
 
-      // 1. Sourcing Model Filter
       if (sourceFilter === 'DIRECT' && !isDirect) return false;
       if (sourceFilter === 'VENDOR' && !isVendor) return false;
 
-      // 2. Department Filter (case-insensitive)
       if (deptFilter !== 'ALL') {
         const empDept = (emp.department_name || (emp as any).department || '').toLowerCase().trim();
         if (empDept !== deptFilter.toLowerCase().trim()) return false;
       }
 
-      // 3. Status Filter (case-insensitive)
       if (statusFilter !== 'ALL') {
         const empStatus = (emp.status || '').toLowerCase().trim();
         if (empStatus !== statusFilter.toLowerCase().trim()) return false;
       }
 
-      // 4. Location Filter
       if (locationFilter !== 'ALL') {
         const empLoc = (emp.employment?.work_location || (emp as any).location || '').toLowerCase().trim();
         if (!empLoc.includes(locationFilter.toLowerCase().trim())) return false;
       }
 
-      // 5. Search Query
       if (search.trim()) {
         const q = search.trim().toLowerCase();
         const fullName = `${emp.first_name || ''} ${emp.last_name || ''} ${emp.display_name || ''}`.toLowerCase();
@@ -197,22 +214,55 @@ export const PeopleView: React.FC = () => {
         const dept = (emp.department_name || (emp as any).department || '').toLowerCase();
         const loc = (emp.employment?.work_location || (emp as any).location || '').toLowerCase();
         const vendor = (emp.vendor_name || emp.company_name || '').toLowerCase();
-
         const matches =
-          fullName.includes(q) ||
-          empCode.includes(q) ||
-          email.includes(q) ||
-          role.includes(q) ||
-          dept.includes(q) ||
-          loc.includes(q) ||
-          vendor.includes(q);
-
+          fullName.includes(q) || empCode.includes(q) || email.includes(q) ||
+          role.includes(q) || dept.includes(q) || loc.includes(q) || vendor.includes(q);
         if (!matches) return false;
       }
 
       return true;
     });
-  }, [accessibleEmployees, search, sourceFilter, deptFilter, statusFilter, locationFilter]);
+
+    // ─── Client-Side Sort ──────────────────────────────────────────
+    if (sortField !== 'none') {
+      filtered.sort((a, b) => {
+        let valA = '';
+        let valB = '';
+        if (sortField === 'name') {
+          valA = `${a.first_name} ${a.last_name}`.toLowerCase();
+          valB = `${b.first_name} ${b.last_name}`.toLowerCase();
+        } else if (sortField === 'code') {
+          valA = (a.employee_code || '').toLowerCase();
+          valB = (b.employee_code || '').toLowerCase();
+        } else if (sortField === 'department') {
+          valA = (a.department_name || '').toLowerCase();
+          valB = (b.department_name || '').toLowerCase();
+        } else if (sortField === 'designation') {
+          valA = (a.designation_title || '').toLowerCase();
+          valB = (b.designation_title || '').toLowerCase();
+        } else if (sortField === 'status') {
+          valA = (a.status || '').toLowerCase();
+          valB = (b.status || '').toLowerCase();
+        }
+        const cmp = valA.localeCompare(valB);
+        return sortDir === 'asc' ? cmp : -cmp;
+      });
+    }
+
+    return filtered;
+  }, [accessibleEmployees, search, sourceFilter, deptFilter, statusFilter, locationFilter, sortField, sortDir]);
+
+  // ─── Pagination ─────────────────────────────────────────────────
+  const totalFiltered = filteredEmployees.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedEmployees = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredEmployees.slice(start, start + pageSize);
+  }, [filteredEmployees, safeCurrentPage, pageSize]);
+
+  // Reset page to 1 when filters change
+  const resetPage = () => setCurrentPage(1);
 
   // Determine active segment pill
   const activePillId = useMemo(() => {
@@ -252,6 +302,7 @@ export const PeopleView: React.FC = () => {
     setDeptFilter('ALL');
     setStatusFilter('ALL');
     setLocationFilter('ALL');
+    setCurrentPage(1);
   };
 
   return (
@@ -433,17 +484,17 @@ export const PeopleView: React.FC = () => {
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); resetPage(); }}
               placeholder="Search by name, code (e.g. J85), role, location, vendor..."
               className="w-full bg-gray-50/80 border border-gray-200 text-xs rounded-xl pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#07563D] font-medium placeholder:text-gray-400"
             />
           </div>
 
           {/* Sourcing Model Dropdown */}
-          <div className="sm:col-span-3">
+          <div className="sm:col-span-2">
             <select
               value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value as any)}
+              onChange={(e) => { setSourceFilter(e.target.value as any); resetPage(); }}
               className="w-full bg-gray-50/80 border border-gray-200 text-xs rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-[#07563D] font-semibold text-gray-800"
             >
               <option value="ALL">All Sourcing Models ({totalCount})</option>
@@ -456,7 +507,7 @@ export const PeopleView: React.FC = () => {
           <div className="sm:col-span-2">
             <select
               value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
+              onChange={(e) => { setDeptFilter(e.target.value); resetPage(); }}
               className="w-full bg-gray-50/80 border border-gray-200 text-xs rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-[#07563D] font-semibold text-gray-800"
             >
               <option value="ALL">All Departments</option>
@@ -472,7 +523,7 @@ export const PeopleView: React.FC = () => {
           <div className="sm:col-span-2">
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => { setStatusFilter(e.target.value); resetPage(); }}
               className="w-full bg-gray-50/80 border border-gray-200 text-xs rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-[#07563D] font-semibold text-gray-800"
             >
               <option value="ALL">All Statuses</option>
@@ -480,6 +531,20 @@ export const PeopleView: React.FC = () => {
               <option value="Probation">Probation ({probationCount})</option>
               <option value="On Leave">On Leave</option>
               <option value="Inactive">Inactive</option>
+            </select>
+          </div>
+
+          {/* Page size selector */}
+          <div className="sm:col-span-1">
+            <select
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value) as any); setCurrentPage(1); }}
+              className="w-full bg-gray-50/80 border border-gray-200 text-xs rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-[#07563D] font-semibold text-gray-800"
+              title="Records per page"
+            >
+              {PAGE_SIZE_OPTIONS.map((n) => (
+                <option key={n} value={n}>{n} / page</option>
+              ))}
             </select>
           </div>
 
@@ -499,7 +564,10 @@ export const PeopleView: React.FC = () => {
 
       {/* Employee List */}
       <EmployeeList
-        employees={filteredEmployees}
+        employees={paginatedEmployees}
+        sortField={sortField}
+        sortDir={sortDir}
+        onSort={handleSort}
         onSelectEmployee={(emp) => {
           setSelectedEmployee(emp);
           setIsDrawerOpen(true);
@@ -514,7 +582,6 @@ export const PeopleView: React.FC = () => {
         }}
         onToggleStatus={async (emp, newStatus) => {
           try {
-            // Immediate optimistic UI update
             setEmployees((prev) =>
               prev.map((e) =>
                 e.id === emp.id
@@ -535,6 +602,65 @@ export const PeopleView: React.FC = () => {
           }
         }}
       />
+
+      {/* ─── Pagination Controls ───────────────────────────────────────── */}
+      {totalFiltered > pageSize && (
+        <div className="flex items-center justify-between pt-1">
+          <span className="text-xs text-gray-500">
+            Showing{' '}
+            <strong className="text-gray-900">
+              {(safeCurrentPage - 1) * pageSize + 1}–{Math.min(safeCurrentPage * pageSize, totalFiltered)}
+            </strong>{' '}
+            of <strong className="text-gray-900">{totalFiltered}</strong> records
+          </span>
+
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={safeCurrentPage === 1}
+              className="h-7 w-7 p-0 disabled:opacity-40"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </Button>
+
+            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+              const page = totalPages <= 7
+                ? i + 1
+                : safeCurrentPage <= 4
+                  ? i + 1
+                  : safeCurrentPage >= totalPages - 3
+                    ? totalPages - 6 + i
+                    : safeCurrentPage - 3 + i;
+              return (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={cn(
+                    'h-7 min-w-[28px] px-2 rounded-lg text-xs font-bold border transition-all cursor-pointer',
+                    page === safeCurrentPage
+                      ? 'bg-[#07563D] text-white border-[#07563D]'
+                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                  )}
+                >
+                  {page}
+                </button>
+              );
+            })}
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safeCurrentPage === totalPages}
+              className="h-7 w-7 p-0 disabled:opacity-40"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Onboard Wizard Modal */}
       <EmployeeCreateWizardModal

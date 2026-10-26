@@ -388,7 +388,7 @@ const BiometricIntegrationViewInner: React.FC<BiometricIntegrationViewProps> = (
     const syncLivePunches = async () => {
       if (destroyed || selectedWorkspaceDeviceRef.current) return;
       try {
-        if (biometricGatewayService.getConnectorStatus() === 'online') {
+        if (biometricGatewayService.isLocalAgentOnline()) {
           await biometricGatewayService.syncRealPunchesFromAgent().catch(() => {});
         }
         await biometricGatewayService.syncPunchesFromSupabase(50).catch(() => {});

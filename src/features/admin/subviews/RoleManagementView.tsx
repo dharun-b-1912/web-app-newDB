@@ -41,8 +41,12 @@ import { Employee } from '../../../types';
 
 export const RoleManagementView: React.FC = () => {
   const { showToast } = useToast();
+  const currentCompany = api.getActiveCompany();
+  const currentUser = api.getCurrentUser();
+  const currentOrgId = currentCompany?.organization_id || currentUser?.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
+
   const [authorizations, setAuthorizations] = useState<EmployeeHrAuthorization[]>(() =>
-    hrAuthorizationService.getAuthorizationsForCompany('comp-joy-01')
+    hrAuthorizationService.getAuthorizationsForCompany(currentCompany?.id, currentOrgId)
   );
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,18 +70,22 @@ export const RoleManagementView: React.FC = () => {
 
   const refreshData = async () => {
     const data = await hrAuthorizationService.syncFromSupabase();
-    setAuthorizations(data.filter(a => a.company_id === 'comp-joy-01' || a.company_id === 'comp-joy-01'));
+    setAuthorizations(data);
   };
 
   useEffect(() => {
     api.getEmployees().then(data => setEmployees(data));
     hrAuthorizationService.syncFromSupabase().then(data => setAuthorizations(data));
-    const handleUpdate = () => {
-      setAuthorizations(hrAuthorizationService.getAuthorizationsForCompany('comp-joy-01'));
+    const handleUpdate = (e: any) => {
+      if (e?.detail) {
+        setAuthorizations(e.detail);
+      } else {
+        setAuthorizations(hrAuthorizationService.getAuthorizationsForCompany(currentCompany?.id, currentOrgId));
+      }
     };
     window.addEventListener('hr-authorizations:updated', handleUpdate);
     return () => window.removeEventListener('hr-authorizations:updated', handleUpdate);
-  }, []);
+  }, [currentCompany?.id, currentOrgId]);
 
   const openCreateModal = () => {
     setEditingAuth(null);
@@ -164,28 +172,33 @@ export const RoleManagementView: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!workEmail.trim() || !employeeName.trim()) {
-      showToast('Please specify a valid employee work email and name');
+      showToast('Please specify a valid employee work email and name', 'error');
       return;
     }
 
-    await hrAuthorizationService.saveAuthorization({
-      tenant_id: 'default-tenant',
-      company_id: 'comp-joy-01',
-      employee_id: selectedEmployeeId || `emp-${Date.now()}`,
-      employee_name: employeeName,
-      employee_code: employeeCode || 'JOY-0100',
-      work_email: workEmail,
-      department,
-      designation,
-      preset_name: selectedPreset,
-      is_active: true,
-      module_permissions: modulePermissions,
-      granted_by: 'Hari Priya (HR Head)',
-    });
+    try {
+      await hrAuthorizationService.saveAuthorization({
+        tenant_id: currentOrgId || '0c621892-e938-4707-9957-13534ea32c19',
+        organization_id: currentOrgId || '0c621892-e938-4707-9957-13534ea32c19',
+        company_id: currentCompany?.id || '',
+        employee_id: selectedEmployeeId || '',
+        employee_name: employeeName,
+        employee_code: employeeCode || '',
+        work_email: workEmail.trim().toLowerCase(),
+        department,
+        designation,
+        preset_name: selectedPreset,
+        is_active: true,
+        module_permissions: modulePermissions,
+        granted_by: currentUser?.name || currentUser?.email || 'Administrator',
+      });
 
-    showToast(`Access permissions authorized for ${workEmail}!`);
-    setIsModalOpen(false);
-    refreshData();
+      showToast(`Access permissions authorized for ${workEmail}!`, 'success');
+      setIsModalOpen(false);
+      await refreshData();
+    } catch (err: any) {
+      showToast(`Failed to authorize: ${err?.message || 'Database error'}`, 'error');
+    }
   };
 
   const filteredAuthorizations = authorizations.filter(auth => {

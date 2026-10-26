@@ -100,6 +100,8 @@ export function processAttendanceStatus(
   grossMinutes: number;
   netMinutes: number;
   lateMinutes: number;
+  rawLateMinutes?: number;
+  graceAppliedMinutes?: number;
   earlyMinutes: number;
   overtimeMinutes: number;
 } {
@@ -109,6 +111,8 @@ export function processAttendanceStatus(
       grossMinutes: 0,
       netMinutes: 0,
       lateMinutes: 0,
+      rawLateMinutes: 0,
+      graceAppliedMinutes: 0,
       earlyMinutes: 0,
       overtimeMinutes: 0,
     };
@@ -147,6 +151,8 @@ export function processAttendanceStatus(
         grossMinutes: 480,
         netMinutes: 480,
         lateMinutes: 0,
+        rawLateMinutes: 0,
+        graceAppliedMinutes: 0,
         earlyMinutes: 0,
         overtimeMinutes: 0,
       };
@@ -164,6 +170,8 @@ export function processAttendanceStatus(
       grossMinutes: 0,
       netMinutes: 0,
       lateMinutes: 0,
+      rawLateMinutes: 0,
+      graceAppliedMinutes: 0,
       earlyMinutes: 0,
       overtimeMinutes: 0,
     };
@@ -196,9 +204,22 @@ export function processAttendanceStatus(
   const halfDayThresholdMinutes = (policy.half_day_hours_threshold || 4) * 60; // 240 minutes (4 hours)
 
   // Late minutes calculation against shift scheduled start + grace
+  let rawLateMinutes = 0;
+  let graceAppliedMinutes = 0;
   let lateMinutes = 0;
+  const configuredGrace = policy.late_grace_minutes || 15;
+
   if (checkInMinutes !== null) {
-    lateMinutes = Math.max(0, checkInMinutes - (expectedInMinutes + (policy.late_grace_minutes || 15)));
+    if (checkInMinutes > expectedInMinutes) {
+      rawLateMinutes = checkInMinutes - expectedInMinutes;
+      if (rawLateMinutes > configuredGrace) {
+        graceAppliedMinutes = configuredGrace;
+        lateMinutes = rawLateMinutes - configuredGrace;
+      } else {
+        graceAppliedMinutes = rawLateMinutes;
+        lateMinutes = 0;
+      }
+    }
   }
 
   // Early departure minutes
@@ -246,6 +267,8 @@ export function processAttendanceStatus(
     grossMinutes: gross,
     netMinutes: net,
     lateMinutes,
+    rawLateMinutes,
+    graceAppliedMinutes,
     earlyMinutes,
     overtimeMinutes,
   };

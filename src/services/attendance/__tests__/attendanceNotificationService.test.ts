@@ -33,6 +33,12 @@ describe('JOY PeopleHR — Attendance Supervisor Push & In-App Notification Engi
 
   describe('2. Check-In Accepted Event Processing', () => {
     it('dispatches check-in notifications to resolved Reporting Manager & TL', async () => {
+      // Set policy with loud push enabled for on-time check-ins to verify full dispatch pipeline
+      attendanceNotificationService.setPolicy({
+        ...attendanceNotificationService.getPolicy('org-joy-corp'),
+        onTimeDeliveryMode: 'PUSH',
+      }, 'org-joy-corp');
+
       // Mock hierarchy resolver
       vi.spyOn(attendanceNotificationService, 'resolveAttendanceSupervisors').mockResolvedValue({
         punchingEmployee: {
@@ -212,6 +218,11 @@ describe('JOY PeopleHR — Attendance Supervisor Push & In-App Notification Engi
 
   describe('5. Unregistered Supervisor Devices', () => {
     it('handles supervisor with no mobile device registered without throwing error', async () => {
+      attendanceNotificationService.setPolicy({
+        ...attendanceNotificationService.getPolicy('org-joy-corp'),
+        onTimeDeliveryMode: 'PUSH',
+      }, 'org-joy-corp');
+
       vi.spyOn(attendanceNotificationService, 'resolveAttendanceSupervisors').mockResolvedValue({
         punchingEmployee: {
           id: 'emp-arjun-099',
@@ -324,6 +335,115 @@ describe('JOY PeopleHR — Attendance Supervisor Push & In-App Notification Engi
 
       // Supervisor notification must NOT be called for the duplicate rejected check-in
       expect(notifySpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('7. Punctuality Classification (On-Time vs Late Push Delivery)', () => {
+    it('generates On-Time notification when employee checks in within 30-minute grace', async () => {
+      vi.spyOn(attendanceNotificationService, 'resolveAttendanceSupervisors').mockResolvedValue({
+        punchingEmployee: { id: 'emp-ontime', code: 'EMP-01', name: 'John Doe' },
+        supervisors: [
+          {
+            employeeId: 'mgr-01',
+            employeeCode: 'MGR-01',
+            name: 'Sarah Smith',
+            role: 'REPORTING_MANAGER',
+            authUserId: 'user-mgr-01',
+            fcmTokens: ['fcm-token-sarah'],
+          },
+        ],
+      });
+
+      const pushSpy = vi.spyOn(attendanceNotificationService, 'dispatchPushToSupervisor').mockResolvedValue({
+        success: true,
+        messageId: 'msg-ontime-1',
+      });
+      const inAppSpy = vi.spyOn(attendanceNotificationService, 'persistInAppNotification').mockResolvedValue('notif-ontime-1');
+
+      // 1. Anti-Fatigue Shield: Default SILENT mode keeps in-app feed, skips loud vibration
+      await attendanceNotificationService.handleAttendanceEventAccepted({
+        organizationId: 'org-test',
+        punchId: 'punch-ot-silent',
+        employeeId: 'emp-ontime',
+        eventType: 'attendance.check_in.accepted',
+        punchType: 'CHECK_IN',
+        source: 'MOBILE',
+        punchTime: '2026-10-22T09:15:00.000+05:30',
+      });
+
+      expect(pushSpy).not.toHaveBeenCalled();
+      expect(inAppSpy).toHaveBeenCalled();
+
+      // 2. Enable LOUD_PUSH mode: push delivery triggers
+      attendanceNotificationService.setPolicy({
+        ...attendanceNotificationService.getPolicy('org-test'),
+        onTimeDeliveryMode: 'PUSH',
+      }, 'org-test');
+
+      await attendanceNotificationService.handleAttendanceEventAccepted({
+        organizationId: 'org-test',
+        punchId: 'punch-ot-1',
+        employeeId: 'emp-ontime',
+        eventType: 'attendance.check_in.accepted',
+        punchType: 'CHECK_IN',
+        source: 'MOBILE',
+        punchTime: '2026-10-22T09:15:00.000+05:30', // 09:15 AM (within 30m grace of 09:00 AM)
+      });
+
+      expect(pushSpy).toHaveBeenCalled();
+      const callArgs = pushSpy.mock.calls[0];
+      const title = callArgs[1];
+      const body = callArgs[2];
+      const extra = callArgs[3];
+
+      expect(title).toContain('On-Time Check-In');
+      expect(body).toContain('ON-TIME');
+      expect(extra.is_late).toBe('false');
+      expect(extra.late_minutes).toBe('0');
+    });
+
+    it('generates Late Check-In alert when employee punches past 30-minute grace', async () => {
+      vi.spyOn(attendanceNotificationService, 'resolveAttendanceSupervisors').mockResolvedValue({
+        punchingEmployee: { id: 'emp-late', code: 'EMP-02', name: 'Bob Latecomer' },
+        supervisors: [
+          {
+            employeeId: 'mgr-01',
+            employeeCode: 'MGR-01',
+            name: 'Sarah Smith',
+            role: 'REPORTING_MANAGER',
+            authUserId: 'user-mgr-01',
+            fcmTokens: ['fcm-token-sarah'],
+          },
+        ],
+      });
+
+      const pushSpy = vi.spyOn(attendanceNotificationService, 'dispatchPushToSupervisor').mockResolvedValue({
+        success: true,
+        messageId: 'msg-late-1',
+      });
+      vi.spyOn(attendanceNotificationService, 'persistInAppNotification').mockResolvedValue('notif-late-1');
+
+      await attendanceNotificationService.handleAttendanceEventAccepted({
+        organizationId: 'org-test',
+        punchId: 'punch-late-1',
+        employeeId: 'emp-late',
+        eventType: 'attendance.check_in.accepted',
+        punchType: 'CHECK_IN',
+        source: 'BIOMETRIC',
+        punchTime: '2026-10-22T09:45:00.000+05:30', // 09:45 AM (45m after 09:00 shift start, past 30m grace)
+      });
+
+      expect(pushSpy).toHaveBeenCalled();
+      const callArgs = pushSpy.mock.calls[0];
+      const title = callArgs[1];
+      const body = callArgs[2];
+      const extra = callArgs[3];
+
+      expect(title).toContain('Late Check-In');
+      expect(body).toContain('LATE');
+      expect(body).toContain('45 mins late');
+      expect(extra.is_late).toBe('true');
+      expect(extra.late_minutes).toBe('45');
     });
   });
 });

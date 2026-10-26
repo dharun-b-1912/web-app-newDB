@@ -47,6 +47,7 @@ export const approvalService = {
 
     if (isSupabaseEnabled) {
       try {
+        // 1. Fetch from approval_instances
         let query = supabase
           .from('approval_instances')
           .select('*')
@@ -57,9 +58,9 @@ export const approvalService = {
           query = query.eq('status', canonicalStatus);
         }
 
-        const { data, error } = await query;
-        if (data && !error && data.length > 0) {
-          list = data.map((d: any) => ({
+        const { data: instData } = await query;
+        if (instData && instData.length > 0) {
+          const instList: ApprovalRequestItem[] = instData.map((d: any) => ({
             id: d.id,
             organization_id: d.organization_id,
             type: d.target_entity_type || 'General',
@@ -77,14 +78,134 @@ export const approvalService = {
             decision_comment: undefined,
             decided_at: d.status !== 'IN_PROGRESS' ? d.updated_at : undefined,
             decided_by_id: undefined,
-            resource_type: d.target_entity_type,
+            resource_type: d.target_entity_type || 'approval_instance',
             resource_id: d.target_entity_id,
             created_at: d.created_at,
             updated_at: d.updated_at,
           }));
+          list.push(...instList);
+        }
+
+        // 2. Fetch live pending leave requests
+        let leaveQuery = supabase
+          .from('leave_requests')
+          .select(`
+            id,
+            organization_id,
+            employee_id,
+            start_date,
+            end_date,
+            total_days,
+            reason,
+            status,
+            created_at,
+            updated_at,
+            employees:employee_id (
+              first_name,
+              last_name,
+              work_email,
+              employee_code,
+              department_id,
+              departments:department_id (name)
+            )
+          `)
+          .order('created_at', { ascending: false });
+
+        if (params?.status && params.status !== 'ALL') {
+          leaveQuery = leaveQuery.eq('status', params.status.toUpperCase());
+        }
+
+        const { data: leaveData } = await leaveQuery;
+        if (leaveData && leaveData.length > 0) {
+          const leaveList: ApprovalRequestItem[] = leaveData.map((l: any) => {
+            const emp = l.employees;
+            const empName = emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : 'Employee';
+            const deptName = emp?.departments?.name || '';
+            const days = l.total_days || 1;
+            return {
+              id: l.id,
+              organization_id: l.organization_id,
+              type: 'leave',
+              title: `Leave Application (${days} day${days > 1 ? 's' : ''})`,
+              details: l.reason || 'Personal leave request',
+              amount_or_duration: `${days} Day(s) • ${l.start_date} to ${l.end_date}`,
+              status: l.status === 'APPROVED' ? 'Approved' : l.status === 'REJECTED' ? 'Rejected' : 'Pending',
+              requested_by_id: l.employee_id,
+              requested_by_name: empName || 'Employee',
+              requested_by_email: emp?.work_email || '',
+              requested_by_avatar: '',
+              department: deptName,
+              decision_comment: undefined,
+              decided_at: l.status !== 'PENDING' ? l.updated_at : undefined,
+              resource_type: 'leave_request',
+              resource_id: l.id,
+              created_at: l.created_at,
+              updated_at: l.updated_at,
+            };
+          });
+          list.push(...leaveList);
+        }
+
+        // 3. Fetch live attendance regularization requests
+        let regQuery = supabase
+          .from('attendance_regularizations')
+          .select(`
+            id,
+            organization_id,
+            employee_id,
+            attendance_date,
+            requested_check_in,
+            requested_check_out,
+            reason,
+            status,
+            created_at,
+            updated_at,
+            employees:employee_id (
+              first_name,
+              last_name,
+              work_email,
+              employee_code,
+              department_id,
+              departments:department_id (name)
+            )
+          `)
+          .order('created_at', { ascending: false });
+
+        if (params?.status && params.status !== 'ALL') {
+          regQuery = regQuery.eq('status', params.status.toUpperCase());
+        }
+
+        const { data: regData } = await regQuery;
+        if (regData && regData.length > 0) {
+          const regList: ApprovalRequestItem[] = regData.map((r: any) => {
+            const emp = r.employees;
+            const empName = emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : 'Employee';
+            const deptName = emp?.departments?.name || '';
+            return {
+              id: r.id,
+              organization_id: r.organization_id,
+              type: 'attendance',
+              title: `Attendance Regularization (${r.attendance_date})`,
+              details: r.reason || 'Punch regularization request',
+              amount_or_duration: `Date: ${r.attendance_date}`,
+              status: r.status === 'APPROVED' ? 'Approved' : r.status === 'REJECTED' ? 'Rejected' : 'Pending',
+              requested_by_id: r.employee_id,
+              requested_by_name: empName || 'Employee',
+              requested_by_email: emp?.work_email || '',
+              requested_by_avatar: '',
+              department: deptName,
+              decision_comment: undefined,
+              decided_at: r.status !== 'PENDING' ? r.updated_at : undefined,
+              resource_type: 'attendance_regularization',
+              resource_id: r.id,
+              created_at: r.created_at,
+              updated_at: r.updated_at,
+            };
+          });
+          list.push(...regList);
         }
       } catch (err) {
-        console.warn('[ApprovalService] Canonical approval query notice:', err);
+        console.warn('[ApprovalService] Live request query notice:', err);
       }
     }
 
@@ -111,28 +232,81 @@ export const approvalService = {
   }): Promise<ApprovalRequestItem> {
     const timestamp = new Date().toISOString();
 
-    // 1. Fetch current approval item
+    // 1. Fetch current approval item from all potential sources
     let currentItem: ApprovalRequestItem | null = null;
     if (isSupabaseEnabled) {
       try {
-        const { data } = await supabase
+        // Check approval_instances
+        const { data: inst } = await supabase
           .from('approval_instances')
           .select('*')
           .eq('id', params.approvalId)
           .maybeSingle();
-        if (data) {
+
+        if (inst) {
           currentItem = {
-            id: data.id,
-            organization_id: data.organization_id,
-            type: data.target_entity_type,
-            title: `Approval for ${data.target_entity_type}`,
-            status: data.status === 'APPROVED' ? 'Approved' : data.status === 'REJECTED' ? 'Rejected' : 'Pending',
-            requested_by_id: data.requester_employee_id,
+            id: inst.id,
+            organization_id: inst.organization_id,
+            type: inst.target_entity_type || 'General',
+            title: `Approval for ${inst.target_entity_type || 'Request'}`,
+            status: inst.status === 'APPROVED' ? 'Approved' : inst.status === 'REJECTED' ? 'Rejected' : 'Pending',
+            requested_by_id: inst.requester_employee_id,
             requested_by_name: 'Employee',
-            requested_by_email: '',
-            created_at: data.created_at,
-            updated_at: data.updated_at,
+            resource_type: inst.target_entity_type || 'approval_instance',
+            resource_id: inst.target_entity_id,
+            created_at: inst.created_at,
+            updated_at: inst.updated_at,
           } as ApprovalRequestItem;
+        }
+
+        // Check leave_requests
+        if (!currentItem) {
+          const { data: lv } = await supabase
+            .from('leave_requests')
+            .select('*')
+            .eq('id', params.approvalId)
+            .maybeSingle();
+
+          if (lv) {
+            currentItem = {
+              id: lv.id,
+              organization_id: lv.organization_id,
+              type: 'leave',
+              title: `Leave Application`,
+              status: lv.status === 'APPROVED' ? 'Approved' : lv.status === 'REJECTED' ? 'Rejected' : 'Pending',
+              requested_by_id: lv.employee_id,
+              requested_by_name: 'Employee',
+              resource_type: 'leave_request',
+              resource_id: lv.id,
+              created_at: lv.created_at,
+              updated_at: lv.updated_at,
+            } as ApprovalRequestItem;
+          }
+        }
+
+        // Check attendance_regularizations
+        if (!currentItem) {
+          const { data: reg } = await supabase
+            .from('attendance_regularizations')
+            .select('*')
+            .eq('id', params.approvalId)
+            .maybeSingle();
+
+          if (reg) {
+            currentItem = {
+              id: reg.id,
+              organization_id: reg.organization_id,
+              type: 'attendance',
+              title: `Attendance Regularization`,
+              status: reg.status === 'APPROVED' ? 'Approved' : reg.status === 'REJECTED' ? 'Rejected' : 'Pending',
+              requested_by_id: reg.employee_id,
+              requested_by_name: 'Employee',
+              resource_type: 'attendance_regularization',
+              resource_id: reg.id,
+              created_at: reg.created_at,
+              updated_at: reg.updated_at,
+            } as ApprovalRequestItem;
+          }
         }
       } catch (err) {
         console.warn('[ApprovalService] Fetch for update notice:', err);
@@ -164,22 +338,42 @@ export const approvalService = {
     if (isSupabaseEnabled) {
       try {
         const canonicalStatus = params.decision === 'Approved' ? 'APPROVED' : 'REJECTED';
-        await supabase
-          .from('approval_instances')
-          .update({
-            status: canonicalStatus,
-            updated_at: timestamp,
-          })
-          .eq('id', params.approvalId);
 
-        if (currentItem.organization_id && isValidUUID(params.approvalId)) {
-          await supabase.from('approval_actions').insert({
-            organization_id: currentItem.organization_id,
-            approval_instance_id: params.approvalId,
-            action: params.decision === 'Approved' ? 'APPROVE' : 'REJECT',
-            comments: updatedRecord.decision_comment,
-            action_at: timestamp,
-          });
+        if (currentItem.resource_type === 'leave_request') {
+          await supabase
+            .from('leave_requests')
+            .update({
+              status: canonicalStatus,
+              updated_at: timestamp,
+            })
+            .eq('id', params.approvalId);
+        } else if (currentItem.resource_type === 'attendance_regularization') {
+          await supabase
+            .from('attendance_regularizations')
+            .update({
+              status: canonicalStatus,
+              rejection_reason: params.decision === 'Rejected' ? (params.comment || 'Rejected by HR') : null,
+              updated_at: timestamp,
+            })
+            .eq('id', params.approvalId);
+        } else {
+          await supabase
+            .from('approval_instances')
+            .update({
+              status: canonicalStatus,
+              updated_at: timestamp,
+            })
+            .eq('id', params.approvalId);
+
+          if (currentItem.organization_id && isValidUUID(params.approvalId)) {
+            await supabase.from('approval_actions').insert({
+              organization_id: currentItem.organization_id,
+              approval_instance_id: params.approvalId,
+              action: params.decision === 'Approved' ? 'APPROVE' : 'REJECT',
+              comments: updatedRecord.decision_comment,
+              action_at: timestamp,
+            });
+          }
         }
       } catch (err) {
         console.warn('[ApprovalService] Supabase approval update notice:', err);

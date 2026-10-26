@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -13,8 +13,6 @@ import { cn } from '../../lib/utils';
 import {
   LayoutGrid,
   List,
-  Mail,
-  Phone,
   MapPin,
   Eye,
   Building2,
@@ -23,7 +21,19 @@ import {
   Pencil,
   Trash2,
   AlertTriangle,
+  MoreHorizontal,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  Clock,
+  LogOut,
+  Shield,
+  UserX,
+  CheckCircle2,
 } from 'lucide-react';
+
+export type SortField = 'name' | 'code' | 'department' | 'designation' | 'status' | 'none';
+export type SortDir = 'asc' | 'desc';
 
 export interface EmployeeListProps {
   employees: Employee[];
@@ -31,6 +41,9 @@ export interface EmployeeListProps {
   onEditEmployee?: (emp: Employee) => void;
   onDeleteEmployee?: (emp: Employee) => void;
   onToggleStatus?: (emp: Employee, newStatus: string) => void;
+  sortField?: SortField;
+  sortDir?: SortDir;
+  onSort?: (field: SortField) => void;
 }
 
 const checkIsVendor = (emp: Employee): boolean => {
@@ -43,12 +56,154 @@ const checkIsVendor = (emp: Employee): boolean => {
   return false;
 };
 
+// ─── Row Action Dropdown ──────────────────────────────────────────────────────
+interface ActionMenuProps {
+  emp: Employee;
+  onView: () => void;
+  onEdit: () => void;
+  onToggleStatus: () => void;
+  onDelete: () => void;
+  isActive: boolean;
+  isToggling: boolean;
+}
+
+const RowActionMenu: React.FC<ActionMenuProps> = ({
+  emp, onView, onEdit, onToggleStatus, onDelete, isActive, isToggling,
+}) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const item = (icon: React.ReactNode, label: string, onClick: () => void, cls = '') => (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setOpen(false);
+        onClick();
+      }}
+      className={cn(
+        'w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs font-semibold rounded-lg transition-colors hover:bg-gray-50 cursor-pointer',
+        cls
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+
+  return (
+    <div ref={ref} className="relative" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((p) => !p); }}
+        className={cn(
+          'h-7 w-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-900 hover:bg-gray-100 hover:border-gray-300 transition-all cursor-pointer',
+          open && 'bg-gray-100 border-gray-300 text-gray-900'
+        )}
+        title="More actions"
+      >
+        <MoreHorizontal className="w-3.5 h-3.5" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-lg z-50 py-1 overflow-hidden">
+          <div className="px-3 py-1.5 border-b border-gray-100 mb-0.5">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">
+              {emp.first_name} {emp.last_name}
+            </p>
+          </div>
+
+          {item(<Eye className="w-3.5 h-3.5 text-emerald-600" />, 'View Profile', onView, 'text-gray-700')}
+          {item(<Pencil className="w-3.5 h-3.5 text-blue-600" />, 'Edit Record', onEdit, 'text-gray-700')}
+
+          <div className="my-1 border-t border-gray-100" />
+
+          {item(
+            <Clock className="w-3.5 h-3.5 text-purple-600" />,
+            'View Attendance',
+            () => {
+              const code = emp.employee_code || '';
+              window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'attendance-employees', query: code } }));
+            },
+            'text-gray-700'
+          )}
+          {item(<Shield className="w-3.5 h-3.5 text-slate-600" />, 'Manage Access', () => {
+            window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'admin-access' } }));
+          }, 'text-gray-700')}
+
+          <div className="my-1 border-t border-gray-100" />
+
+          {item(
+            isActive
+              ? <UserX className="w-3.5 h-3.5 text-amber-600" />
+              : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />,
+            isActive ? (isToggling ? 'Deactivating…' : 'Deactivate') : (isToggling ? 'Activating…' : 'Activate'),
+            onToggleStatus,
+            isActive ? 'text-amber-700' : 'text-emerald-700'
+          )}
+          {item(<LogOut className="w-3.5 h-3.5 text-rose-500" />, 'Initiate Offboarding', () => {
+            window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'offboarding' } }));
+          }, 'text-rose-700')}
+
+          <div className="my-1 border-t border-gray-100" />
+
+          {item(<Trash2 className="w-3.5 h-3.5 text-rose-600" />, 'Delete Record', onDelete, 'text-rose-700 hover:bg-rose-50')}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Sortable Column Header ────────────────────────────────────────────────────
+interface SortableHeadProps {
+  label: string;
+  field: SortField;
+  active: SortField;
+  dir: SortDir;
+  onSort?: (f: SortField) => void;
+}
+const SortableHead: React.FC<SortableHeadProps> = ({ label, field, active, dir, onSort }) => {
+  const isActive = active === field;
+  return (
+    <TableHead
+      className={cn('font-bold cursor-pointer select-none group', onSort && 'hover:bg-gray-100/60 transition-colors')}
+      onClick={() => onSort?.(field)}
+    >
+      <div className="flex items-center gap-1">
+        <span>{label}</span>
+        {onSort && (
+          <span className="ml-0.5 text-gray-400 group-hover:text-gray-600 transition-colors">
+            {isActive ? (
+              dir === 'asc' ? <ChevronUp className="w-3 h-3 text-[#07563D]" /> : <ChevronDown className="w-3 h-3 text-[#07563D]" />
+            ) : (
+              <ChevronsUpDown className="w-3 h-3 opacity-40" />
+            )}
+          </span>
+        )}
+      </div>
+    </TableHead>
+  );
+};
+
+// ─── Main Component ────────────────────────────────────────────────────────────
 export const EmployeeList: React.FC<EmployeeListProps> = ({
   employees,
   onSelectEmployee,
   onEditEmployee,
   onDeleteEmployee,
   onToggleStatus,
+  sortField = 'none',
+  sortDir = 'asc',
+  onSort,
 }) => {
   const { showToast } = useToast();
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -79,7 +234,6 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
   const handleDeleteConfirmed = async () => {
     if (!confirmDeleteEmp) return;
     setIsDeleting(true);
-
     try {
       if (onDeleteEmployee) {
         onDeleteEmployee(confirmDeleteEmp);
@@ -97,9 +251,9 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
 
   if (employees.length === 0) {
     return (
-      <div className="text-center py-12 bg-white rounded-2xl border border-gray-100 p-8 space-y-3">
-        <div className="w-12 h-12 rounded-2xl bg-gray-100 text-gray-400 flex items-center justify-center mx-auto text-lg font-bold">
-          ?
+      <div className="text-center py-16 bg-white rounded-2xl border border-gray-100 space-y-3">
+        <div className="w-14 h-14 rounded-2xl bg-gray-50 border border-gray-200 text-gray-300 flex items-center justify-center mx-auto">
+          <Users className="w-7 h-7" />
         </div>
         <h3 className="text-sm font-bold text-gray-900">No Employees Match Filter Criteria</h3>
         <p className="text-xs text-gray-400 max-w-sm mx-auto">
@@ -142,13 +296,13 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50/80">
-                <TableHead className="font-bold">Employee</TableHead>
-                <TableHead className="font-bold">Code</TableHead>
+                <SortableHead label="Employee" field="name" active={sortField} dir={sortDir} onSort={onSort} />
+                <SortableHead label="Code" field="code" active={sortField} dir={sortDir} onSort={onSort} />
                 <TableHead className="font-bold">Workforce Source</TableHead>
-                <TableHead className="font-bold">Department & Role</TableHead>
+                <SortableHead label="Department & Role" field="department" active={sortField} dir={sortDir} onSort={onSort} />
                 <TableHead className="font-bold">Branch / Campus</TableHead>
                 <TableHead className="font-bold">Reporting Manager</TableHead>
-                <TableHead className="font-bold">Status</TableHead>
+                <SortableHead label="Status" field="status" active={sortField} dir={sortDir} onSort={onSort} />
                 <TableHead className="text-right font-bold">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -164,7 +318,11 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                 const isActive = status.toLowerCase() === 'active';
 
                 return (
-                  <TableRow key={emp.id} className="hover:bg-emerald-50/20 transition-colors">
+                  <TableRow
+                    key={emp.id}
+                    className="hover:bg-emerald-50/20 transition-colors cursor-pointer"
+                    onClick={() => onSelectEmployee(emp)}
+                  >
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar name={`${emp.first_name} ${emp.last_name}`} src={emp.avatar_url} size="sm" />
@@ -217,12 +375,12 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                           {showLocation && (
                             <div
                               className={cn(
-                                "text-[10px] text-gray-400 flex items-center gap-1 font-medium truncate max-w-[190px]",
-                                !hasBranch && "text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 text-[11px] font-bold inline-flex"
+                                'text-[10px] text-gray-400 flex items-center gap-1 font-medium truncate max-w-[190px]',
+                                !hasBranch && 'text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 text-[11px] font-bold inline-flex'
                               )}
                               title={rawLocation}
                             >
-                              <MapPin className={cn("shrink-0", hasBranch ? "w-2.5 h-2.5 text-gray-400" : "w-3 h-3 text-[#07563D]")} />
+                              <MapPin className={cn('shrink-0', hasBranch ? 'w-2.5 h-2.5 text-gray-400' : 'w-3 h-3 text-[#07563D]')} />
                               <span className="truncate">{rawLocation}</span>
                             </div>
                           )}
@@ -237,61 +395,19 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                     </TableCell>
 
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <StatusBadge status={status} />
-                        <button
-                          type="button"
-                          disabled={togglingId === emp.id}
-                          title={isActive ? 'Click to Deactivate' : 'Click to Activate'}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleToggleStatus(emp);
-                          }}
-                          className={cn(
-                            "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-40",
-                            isActive ? "bg-emerald-600" : "bg-gray-300"
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
-                              isActive ? "translate-x-3" : "translate-x-0"
-                            )}
-                          />
-                        </button>
-                      </div>
+                      <StatusBadge status={status} />
                     </TableCell>
 
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => onSelectEmployee(emp)}
-                          className="h-7 w-7 p-0 text-gray-600 hover:text-emerald-700 hover:bg-emerald-50"
-                          title="View Details"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => onEditEmployee ? onEditEmployee(emp) : onSelectEmployee(emp)}
-                          className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                          title="Edit Employee"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setConfirmDeleteEmp(emp)}
-                          className="h-7 w-7 p-0 text-rose-600 hover:text-rose-800 hover:bg-rose-50"
-                          title="Delete Employee"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
+                      <RowActionMenu
+                        emp={emp}
+                        isActive={isActive}
+                        isToggling={togglingId === emp.id}
+                        onView={() => onSelectEmployee(emp)}
+                        onEdit={() => onEditEmployee ? onEditEmployee(emp) : onSelectEmployee(emp)}
+                        onToggleStatus={() => handleToggleStatus(emp)}
+                        onDelete={() => setConfirmDeleteEmp(emp)}
+                      />
                     </TableCell>
                   </TableRow>
                 );
@@ -366,59 +482,16 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                 </div>
 
                 <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <StatusBadge status={status} />
-                    <button
-                      type="button"
-                      disabled={togglingId === emp.id}
-                      title={isActive ? 'Click to Deactivate' : 'Click to Activate'}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleStatus(emp);
-                      }}
-                      className={cn(
-                        "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-40",
-                        isActive ? "bg-emerald-600" : "bg-gray-300"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
-                          isActive ? "translate-x-3" : "translate-x-0"
-                        )}
-                      />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onSelectEmployee(emp)}
-                      className="h-7 w-7 p-0 text-gray-600 hover:text-emerald-700"
-                      title="View Details"
-                    >
-                      <Eye className="w-3 h-3" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onEditEmployee ? onEditEmployee(emp) : onSelectEmployee(emp)}
-                      className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800"
-                      title="Edit"
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setConfirmDeleteEmp(emp)}
-                      className="h-7 w-7 p-0 text-rose-600 hover:text-rose-800"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  </div>
+                  <StatusBadge status={status} />
+                  <RowActionMenu
+                    emp={emp}
+                    isActive={isActive}
+                    isToggling={togglingId === emp.id}
+                    onView={() => onSelectEmployee(emp)}
+                    onEdit={() => onEditEmployee ? onEditEmployee(emp) : onSelectEmployee(emp)}
+                    onToggleStatus={() => handleToggleStatus(emp)}
+                    onDelete={() => setConfirmDeleteEmp(emp)}
+                  />
                 </div>
               </Card>
             );
@@ -437,10 +510,11 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
             <div className="flex items-center gap-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs">
               <AlertTriangle className="w-5 h-5 shrink-0 text-rose-600" />
               <div>
-                <p className="font-bold">Permanent Deletion Warning</p>
-                <p className="text-rose-700 mt-0.5">
-                  Are you sure you want to delete <strong className="text-gray-900">{confirmDeleteEmp.first_name} {confirmDeleteEmp.last_name}</strong> ({confirmDeleteEmp.employee_code})?
-                  This action will revoke corporate portal credentials and purge related operational rosters.
+                <p className="font-bold">Permanent Deletion — Confirm to Proceed</p>
+                <p className="text-rose-700 mt-1">
+                  Deleting <strong className="text-gray-900">{confirmDeleteEmp.first_name} {confirmDeleteEmp.last_name}</strong> ({confirmDeleteEmp.employee_code}) will revoke portal credentials and purge related operational rosters.
+                  <br />
+                  <span className="font-bold">Consider using Deactivate instead to preserve records.</span>
                 </p>
               </div>
             </div>
@@ -452,7 +526,7 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                 onClick={() => setConfirmDeleteEmp(null)}
                 disabled={isDeleting}
               >
-                Cancel
+                Cancel — Keep Employee
               </Button>
               <Button
                 variant="primary"
@@ -461,7 +535,7 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                 disabled={isDeleting}
                 className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
               >
-                {isDeleting ? 'Deleting...' : 'Confirm & Delete'}
+                {isDeleting ? 'Deleting...' : 'Yes, Permanently Delete'}
               </Button>
             </div>
           </div>
@@ -470,4 +544,3 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
     </div>
   );
 };
-

@@ -30,11 +30,13 @@ interface DispatchRequestBody {
   whatsAppRecipients?: string[];
   cc?: string;
   date?: string;
-  mode?: "AUTOMATED_SCHEDULE" | "MANUAL_DISPATCH" | "MANUAL_TEST";
+  mode?: "AUTOMATED_SCHEDULE" | "MANUAL_DISPATCH" | "MANUAL_TEST" | "BOT_SELF_SERVICE";
   customNote?: string;
   attachExcel?: boolean;
   attachCsv?: boolean;
   subject?: string;
+  requesterPhone?: string;
+  requesterName?: string;
 }
 
 // Meta WhatsApp Cloud API credentials
@@ -108,9 +110,17 @@ serve(async (req: Request) => {
 
     // Deduplication Guard: If this is an automated schedule run and already ran today, skip immediately
     if (body.mode === "AUTOMATED_SCHEDULE" && scheduleRow) {
-      const alreadyRan = isMorning
-        ? scheduleRow.last_morning_run_at?.startsWith(todayStr) && scheduleRow.last_morning_status === "SUCCESS"
-        : scheduleRow.last_evening_run_at?.startsWith(todayStr) && scheduleRow.last_evening_status === "SUCCESS";
+      let alreadyRan = false;
+      if (isMorning) {
+        alreadyRan = scheduleRow.last_morning_run_at?.startsWith(todayStr) && scheduleRow.last_morning_status === "SUCCESS";
+      } else {
+        // Evening run only counts if it actually ran in the evening (after 16:30 IST / 11:00 UTC)
+        if (scheduleRow.last_evening_run_at?.startsWith(todayStr) && scheduleRow.last_evening_status === "SUCCESS") {
+          const runDate = new Date(scheduleRow.last_evening_run_at);
+          const runIstHour = new Date(runDate.getTime() + istOffset).getUTCHours();
+          alreadyRan = runIstHour >= 16;
+        }
+      }
       if (alreadyRan) {
         return new Response(
           JSON.stringify({
@@ -184,10 +194,67 @@ serve(async (req: Request) => {
     const empList = employees || [];
     const totalHeadcount = empList.length;
 
-    // 4. Resolve Email Recipients
+    // STRICT EMPTY DATA GUARD: Never dispatch empty / 0-headcount reports to executive leadership
+    if (totalHeadcount === 0) {
+      console.warn(`[EdgeFunction] Guard Triggered: Refusing to dispatch report for ${todayStr} because organization ${orgId} has 0 employee records. Aborting dispatch.`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Zero workforce records found for organization. Dispatch aborted to prevent empty report delivery.",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // 4. Resolve Authoritative Recipients from mis_report_recipients Table
+    const reportTypeKey = isMorning ? "MORNING_CHECKIN" : "EVENING_FINAL";
+
+    const { data: dbRecipients, error: dbRecipientsErr } = await supabase
+      .from("mis_report_recipients")
+      .select("*")
+      .eq("organization_id", orgId)
+      .eq("is_active", true)
+      .eq("is_verified", true);
+
+    if (dbRecipientsErr) {
+      console.warn("[EdgeFunction] Warning reading mis_report_recipients:", dbRecipientsErr.message);
+    }
+
+    const authorizedRecipients = dbRecipients || [];
+
+    // Filter recipients matching slot/reportType
+    const slotMatchingRecipients = authorizedRecipients.filter((r) => {
+      if (body.mode === "AUTOMATED_SCHEDULE") {
+        const matchesSlot = isMorning ? r.scheduled_morning !== false : r.scheduled_evening !== false;
+        const matchesReport = Array.isArray(r.permitted_report_types)
+          ? r.permitted_report_types.includes(reportTypeKey)
+          : true;
+        return matchesSlot && matchesReport;
+      }
+      return true;
+    });
+
+    // 4a. Resolve Email Recipients
     let targetRecipients: string[] = [];
     if (body.recipients && Array.isArray(body.recipients) && body.recipients.length > 0) {
       targetRecipients = body.recipients;
+    } else if (body.mode === "BOT_SELF_SERVICE") {
+      // In BOT self-service mode, send email ONLY to the respective requester if their profile has EMAIL enabled
+      const reqPhoneClean = String(body.requesterPhone || "").replace(/\D/g, "");
+      const reqRec = authorizedRecipients.find((r) => {
+        const p = String(r.phone || "").replace(/\D/g, "");
+        return p === reqPhoneClean || p.endsWith(reqPhoneClean.slice(-10)) || reqPhoneClean.endsWith(p.slice(-10));
+      });
+      if (reqRec && reqRec.email && (Array.isArray(reqRec.delivery_channels) ? reqRec.delivery_channels.includes("EMAIL") : true)) {
+        targetRecipients = [reqRec.email];
+      } else {
+        targetRecipients = []; // Strict: Do NOT broadcast to other recipients!
+      }
+    } else if (slotMatchingRecipients.length > 0) {
+      targetRecipients = slotMatchingRecipients
+        .filter((r) => Array.isArray(r.delivery_channels) ? r.delivery_channels.includes("EMAIL") : true)
+        .map((r) => r.email)
+        .filter(Boolean);
     } else if (scheduleRow && Array.isArray(scheduleRow.recipients) && scheduleRow.recipients.length > 0) {
       targetRecipients = scheduleRow.recipients;
     } else {
@@ -238,15 +305,27 @@ serve(async (req: Request) => {
       if (d.id) desigMap.set(d.id, d.title);
     });
 
-    // 7. Query Attendance Shifts for Shift Details
+    // 7. Query Shifts for Shift Details
     const { data: shiftData } = await supabase
-      .from("attendance_shifts")
-      .select("id, shift_code, shift_name, start_time, end_time, scheduled_duration_minutes, net_working_minutes")
+      .from("shifts")
+      .select("id, code, name, start_time, end_time, grace_entry_minutes, grace_exit_minutes, min_half_day_hours, min_full_day_hours")
       .eq("organization_id", orgId);
 
     const shiftMap = new Map<string, any>();
     (shiftData || []).forEach((s) => {
-      if (s.id) shiftMap.set(s.id, s);
+      if (s.id) {
+        shiftMap.set(s.id, {
+          id: s.id,
+          shift_code: s.code,
+          shift_name: s.name,
+          start_time: s.start_time ? s.start_time.slice(0, 5) : "09:00",
+          end_time: s.end_time ? s.end_time.slice(0, 5) : "18:00",
+          grace_entry_minutes: s.grace_entry_minutes ?? 15,
+          grace_exit_minutes: s.grace_exit_minutes ?? 15,
+          min_half_day_hours: s.min_half_day_hours ?? 4,
+          min_full_day_hours: s.min_full_day_hours ?? 8,
+        });
+      }
     });
 
     // 7. Query Daily Attendance for Today
@@ -281,10 +360,9 @@ serve(async (req: Request) => {
     // 9. Query Biometric Punch Logs for Today
     const { data: punchesData, error: pErr } = await supabase
       .from("attendance_punches")
-      .select("id, employee_id, punch_time, punch_type, punch_source, verification_mode")
+      .select("id, employee_id, punch_time, punch_type, punch_source, verification_mode, attendance_date")
       .eq("organization_id", orgId)
-      .gte("punch_time", `${todayStr}T00:00:00+05:30`)
-      .lte("punch_time", `${todayStr}T23:59:59+05:30`)
+      .or(`attendance_date.eq.${todayStr},and(attendance_date.is.null,punch_time.gte.${todayStr}T00:00:00+05:30,punch_time.lte.${todayStr}T23:59:59+05:30)`)
       .order("punch_time", { ascending: true });
 
     if (pErr) {
@@ -318,47 +396,190 @@ serve(async (req: Request) => {
 
     const classifiedPunches: ClassifiedPunchEvent[] = [];
 
+    const normalizeSource = (src?: string | null) => {
+      if (!src) return "";
+      const upper = String(src).toUpperCase();
+      if (upper.includes("BIO")) return "BIOMETRIC";
+      if (upper.includes("GPS") || upper.includes("MOB") || upper.includes("WEB")) return "MOBILE (GPS)";
+      return "BIOMETRIC";
+    };
+
+    const parseTimeToMinHelper = (val?: string | null) => {
+      if (!val || typeof val !== 'string') return null;
+      const str = val.trim();
+      if (!str || str === '—' || str.includes('In Shift')) return null;
+      if (str.includes('T') || (str.includes('-') && str.length > 10)) {
+        const d = new Date(str);
+        if (!isNaN(d.getTime())) {
+          const istDate = new Date(d.getTime() + (5 * 60 + 30) * 60 * 1000);
+          return istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
+        }
+      }
+      const ampmMatch = str.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)/i);
+      if (ampmMatch) {
+        let h = parseInt(ampmMatch[1], 10);
+        const m = parseInt(ampmMatch[2], 10);
+        if (ampmMatch[3].toUpperCase() === 'PM' && h < 12) h += 12;
+        if (ampmMatch[3].toUpperCase() === 'AM' && h === 12) h = 0;
+        return h * 60 + m;
+      }
+      const parts = str.split(':');
+      if (parts.length >= 2) {
+        const h = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        if (!isNaN(h) && !isNaN(m) && h >= 0 && h <= 23 && m >= 0 && m <= 59) return h * 60 + m;
+      }
+      return null;
+    };
+
     const rows: AttendanceReportRow[] = empList.map((emp) => {
       const rec = dailyMap.get(emp.id) || dailyMap.get(emp.employee_code) || {};
       const empPunches = punchMap.get(emp.id) || punchMap.get(emp.employee_code) || [];
 
-      const firstPunch = empPunches[0];
-      const lastPunch = empPunches.length > 1 ? empPunches[empPunches.length - 1] : undefined;
+      const inPunch = empPunches.find((p) => p.punch_type === "IN" || p.punch_type === "CHECK_IN") || empPunches[0];
+      const outPunch = empPunches
+        .slice()
+        .reverse()
+        .find((p) => p.punch_type === "OUT" || p.punch_type === "CHECK_OUT");
 
       const deptName = (emp.department_id && deptMap.get(emp.department_id)) || "General";
       const desigTitle = (emp.designation_id && desigMap.get(emp.designation_id)) || "Staff";
 
-      const shift = (emp.shift_id && shiftMap.get(emp.shift_id)) || {
+      // 1. Resolve Authentic Shift Assignment from DB
+      const shiftId = rec.shift_id || emp.shift_id;
+      const shift = (shiftId && shiftMap.get(shiftId)) || Array.from(shiftMap.values())[0] || {
         shift_code: "GEN-09",
         shift_name: "General Corporate Shift",
         start_time: "09:00",
         end_time: "18:00",
+        grace_entry_minutes: 15,
+        grace_exit_minutes: 15,
       };
+
+      const rawFirstIn = rec.first_check_in || inPunch?.punch_time || null;
+      const rawLastOut = rec.last_check_out || outPunch?.punch_time || null;
+
+      const formattedFirstIn = rawFirstIn ? formatTo12HourTime(rawFirstIn) : "";
+      const formattedLastOut = rawLastOut ? formatTo12HourTime(rawLastOut) : "";
+
+      const checkInSource = rawFirstIn ? normalizeSource(rec.check_in_source || inPunch?.punch_source) : "—";
+      const checkOutSource = rawLastOut ? normalizeSource(rec.check_out_source || outPunch?.punch_source) : "—";
+
+      // 2. Compute Accurate Late Arrival and Early Departure Deviations
+      const inMins = parseTimeToMinHelper(rawFirstIn);
+      const outMins = parseTimeToMinHelper(rawLastOut);
+      const shiftStartMins = parseTimeToMinHelper(shift.start_time);
+      const shiftEndMins = parseTimeToMinHelper(shift.end_time);
+
+      let calcLateMins = 0;
+      if (inMins !== null && shiftStartMins !== null) {
+        const graceIn = shift.grace_entry_minutes ?? 15;
+        if (inMins > shiftStartMins + graceIn) {
+          calcLateMins = inMins - shiftStartMins;
+        }
+      }
+
+      let calcEarlyMins = 0;
+      if (outMins !== null && shiftEndMins !== null) {
+        const graceOut = shift.grace_exit_minutes ?? 15;
+        if (outMins < shiftEndMins - graceOut) {
+          calcEarlyMins = shiftEndMins - outMins;
+        }
+      }
+
+      let workMins = typeof rec.total_work_minutes === "number" ? rec.total_work_minutes : (typeof rec.net_working_minutes === "number" ? rec.net_working_minutes : 0);
+      const breakMins = typeof rec.break_minutes === "number" ? rec.break_minutes : (typeof rec.total_break_minutes === "number" ? rec.total_break_minutes : 0);
+      const otMins = typeof rec.overtime_minutes === "number" ? rec.overtime_minutes : 0;
+
+      // In a morning snapshot, if employee has checked in but not checked out, calculate elapsed time to snapshot cutoff
+      if (isMorning && rawFirstIn && !rawLastOut) {
+        if (inMins !== null) {
+          const cutoffMins = istTime.getUTCHours() * 60 + istTime.getUTCMinutes();
+          // Guard: If employee punched in today, elapsed time = cutoff - inMins
+          if (cutoffMins >= inMins) {
+            workMins = cutoffMins - inMins;
+          } else {
+            workMins = 0;
+          }
+        }
+      } else if (workMins <= 0 && rawFirstIn && rawLastOut) {
+        // If workMins is 0 or missing, but both first and last punches exist, calculate actual difference
+        try {
+          const tIn = new Date(rawFirstIn).getTime();
+          const tOut = new Date(rawLastOut).getTime();
+          if (!isNaN(tIn) && !isNaN(tOut) && tOut > tIn) {
+            workMins = Math.max(0, Math.round((tOut - tIn) / 60000) - breakMins);
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      // 3. EOD Status Resolution: If not checked in OR not checked out at EOD, mark as Absent
+      let cleanStatus = "Present";
+      if (!rawFirstIn && !rawLastOut) {
+        cleanStatus = "Absent";
+      } else if (!isMorning && (!rawFirstIn || !rawLastOut)) {
+        cleanStatus = "Absent"; // Missing punch at EOD
+      } else if (rec.status === "HALF_DAY") {
+        cleanStatus = "Half Day";
+      } else if (rec.status === "ABSENT" || (!isMorning && workMins < 60)) {
+        cleanStatus = "Absent";
+      } else if (rec.status === "ON_LEAVE") {
+        cleanStatus = "On Leave";
+      } else if (rec.status === "WEEKLY_OFF") {
+        cleanStatus = "Weekly Off";
+      } else if (isMorning && rawFirstIn && !rawLastOut) {
+        cleanStatus = calcLateMins > 0 ? "Late (Working)" : "Present";
+      } else {
+        cleanStatus = "Present";
+      }
 
       const record: any = {
         ...rec,
         employee_id: emp.id,
         employee_code: emp.employee_code,
         employee_name: emp.display_name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim(),
+        raw_first_check_in: rawFirstIn,
+        raw_last_check_out: rawLastOut,
+        first_check_in: formattedFirstIn,
+        last_check_out: formattedLastOut,
+        check_in_source: checkInSource,
+        check_out_source: checkOutSource,
+        total_work_minutes: workMins,
+        net_working_minutes: workMins,
+        break_minutes: breakMins,
+        total_break_minutes: breakMins,
+        late_entry_minutes: calcLateMins,
+        late_minutes: calcLateMins,
+        early_exit_minutes: calcEarlyMins,
+        early_checkout_minutes: calcEarlyMins,
+        overtime_minutes: otMins,
+        status: cleanStatus,
       };
 
-      // Fill punch timestamps if missing in record
-      if (!record.first_check_in && firstPunch?.punch_time) {
-        record.first_check_in = formatTimeHelper(firstPunch.punch_time);
-        record.check_in_source = firstPunch.punch_source || "BIOMETRIC";
-        if (!record.status || record.status === "Not Checked In") {
-          record.status = "Present";
-        }
-      }
-
-      if (!record.last_check_out && lastPunch?.punch_time) {
-        record.last_check_out = formatTimeHelper(lastPunch.punch_time);
-        record.check_out_source = lastPunch.punch_source || "BIOMETRIC";
-      }
-
-      // Collect classified punches
+      // 4. Collect classified punches with accurate mobile vs biometric device & verification
       empPunches.forEach((p, pIdx) => {
-        const isOut = pIdx === empPunches.length - 1 && empPunches.length > 1;
+        const isOut = p.punch_type === "OUT" || p.punch_type === "CHECK_OUT" || (pIdx === empPunches.length - 1 && empPunches.length > 1);
+        const pSourceUpper = String(p.punch_source || "").toUpperCase();
+        const isBio = pSourceUpper.includes("BIO") || p.verification_mode === "FACE" || p.verification_mode === "FINGER";
+        const isWeb = pSourceUpper.includes("WEB");
+        const isMobile = pSourceUpper.includes("MOB") || (!isBio && !isWeb);
+
+        let deviceLabel = "Biometric Terminal HQ";
+        let verifLabel = "FACIAL / FINGER";
+        let reasonLabel = "Verified Biometric Terminal Event";
+
+        if (isWeb) {
+          deviceLabel = "Joy Web Portal";
+          verifLabel = "BROWSER GEOLOCATION";
+          reasonLabel = "Verified Web Browser Geo-Punch";
+        } else if (isMobile) {
+          deviceLabel = "Joy PeopleHR Mobile App";
+          verifLabel = "MOBILE GPS GEOFENCE";
+          reasonLabel = "Verified Mobile Native Geo-Punch";
+        }
+
         classifiedPunches.push({
           employee_id: emp.id,
           employee_code: emp.employee_code,
@@ -368,18 +589,18 @@ serve(async (req: Request) => {
           event_time_str: formatTimeHelper(p.punch_time),
           classification: isOut ? "CHECK_OUT" : "CHECK_IN",
           punch_direction: isOut ? "OUT" : "IN",
-          device_name: "Biometric Terminal HQ",
-          verification_method: p.verification_mode || "BIOMETRIC",
-          classification_reason: "Verified Real-Time Punch Event",
+          device_name: deviceLabel,
+          verification_method: verifLabel,
+          classification_reason: reasonLabel,
         });
       });
 
       return {
         emp: {
           ...emp,
-          department_name: deptName,
-          department: deptName,
-          designation_title: desigTitle,
+            department_name: deptName,
+            department: deptName,
+            designation_title: desigTitle,
           designation: desigTitle,
         },
         record,
@@ -393,7 +614,7 @@ serve(async (req: Request) => {
 
     // 11. Compute Turnout Statistics
     const presentCount = rows.filter(
-      (r) => r.record?.status === "Present" || r.record?.status === "Checked Out" || (r.record?.status as string) === "Working" || !!r.record?.first_check_in
+      (r) => r.record?.status === "Present" || r.record?.status === "Half Day" || r.record?.status === "Checked Out" || (r.record?.status as string) === "Working" || !!r.record?.first_check_in
     ).length;
     const lateCount = rows.filter(
       (r) => (r.record?.late_minutes || 0) > 0 || r.record?.status === "Late"
@@ -537,15 +758,52 @@ serve(async (req: Request) => {
       }
     }
 
+    // 14b. Upload Authoritative PDF Document to Supabase Storage Bucket ('attendance-reports')
+    let publicPdfDocUrl = `https://ysiajemrqakfngasehhi.supabase.co/storage/v1/object/public/attendance-reports/${waPdfFilename}`;
+    try {
+      const { error: uploadErr } = await supabase.storage
+        .from("attendance-reports")
+        .upload(waPdfFilename, pdfRes.buffer, {
+          contentType: "application/pdf",
+          upsert: true,
+        });
+
+      if (!uploadErr) {
+        const { data: pubData } = supabase.storage
+          .from("attendance-reports")
+          .getPublicUrl(waPdfFilename);
+        if (pubData?.publicUrl) {
+          publicPdfDocUrl = pubData.publicUrl;
+        }
+      } else {
+        console.warn("[EdgeFunction] Storage upload notice:", uploadErr.message);
+      }
+    } catch (stErr: any) {
+      console.warn("[EdgeFunction] Storage upload exception:", stErr.message);
+    }
+
     // 15. DISPATCH REAL PDF DOCUMENT TO WHATSAPP VIA META CLOUD API
-    const rawWaRecipients =
-      body.whatsAppRecipients && body.whatsAppRecipients.length > 0
-        ? body.whatsAppRecipients
-        : scheduleRow?.whatsapp_recipients || ["919840209900"];
+    let rawWaRecipients: string[] = [];
+
+    if (body.whatsAppRecipients && body.whatsAppRecipients.length > 0) {
+      // In manual/direct calls, only allow authorized recipients or explicitly provided valid phone numbers
+      rawWaRecipients = body.whatsAppRecipients;
+    } else if (body.mode === "BOT_SELF_SERVICE" && body.requesterPhone) {
+      rawWaRecipients = [body.requesterPhone];
+    } else if (slotMatchingRecipients.length > 0) {
+      rawWaRecipients = slotMatchingRecipients
+        .filter((r) => Array.isArray(r.delivery_channels) ? r.delivery_channels.includes("WHATSAPP") : true)
+        .map((r) => r.phone)
+        .filter(Boolean);
+    } else if (scheduleRow?.whatsapp_recipients && scheduleRow.whatsapp_recipients.length > 0) {
+      rawWaRecipients = scheduleRow.whatsapp_recipients;
+    } else {
+      rawWaRecipients = ["919840209900", "917825906580"];
+    }
 
     const validWaRecipients = Array.from(
       new Set(
-        (Array.isArray(rawWaRecipients) ? rawWaRecipients : [rawWaRecipients])
+        rawWaRecipients
           .map((p) => String(p).replace(/[^0-9]/g, ""))
           .filter((p) => p.length >= 10)
       )
@@ -575,6 +833,7 @@ serve(async (req: Request) => {
         const mediaData = await mediaResp.json();
         if (mediaResp.ok && mediaData?.id) {
           whatsAppUploadMediaId = mediaData.id;
+          console.log(`[EdgeFunction] Pre-uploaded PDF to Meta Media API: ${whatsAppUploadMediaId}`);
         } else {
           console.warn("[EdgeFunction] Meta Media API notice:", mediaData);
         }
@@ -586,7 +845,7 @@ serve(async (req: Request) => {
       const dateParts = todayStr.split("-");
       const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
       const formattedDateForTemplate = `${Number(dateParts[2])} ${months[Number(dateParts[1]) - 1]} ${dateParts[0]}`;
-      const totalNetMins = rows.reduce((acc, r) => acc + (r.record?.net_working_minutes || 0), 0);
+      const totalNetMins = rows.reduce((acc, r) => acc + (r.record?.total_work_minutes || r.record?.net_working_minutes || 0), 0);
       const cumHours = `${Math.floor(totalNetMins / 60)}h ${totalNetMins % 60}m`;
       const shiftStatusStr = isMorning
         ? (totalNetMins > 0 ? cumHours : "Shift In-Progress (Active)")
@@ -617,7 +876,7 @@ serve(async (req: Request) => {
           if (whatsAppUploadMediaId) {
             docPayload.id = whatsAppUploadMediaId;
           } else {
-            docPayload.link = `https://ysiajemrqakfngasehhi.supabase.co/storage/v1/object/public/attendance-reports/${waPdfFilename}`;
+            docPayload.link = publicPdfDocUrl;
           }
 
           const msgUrl = `https://graph.facebook.com/${META_WA_API_VERSION}/${META_WA_PHONE_NUMBER_ID}/messages`;
@@ -772,7 +1031,82 @@ serve(async (req: Request) => {
         .eq("id", scheduleRow.id);
     }
 
-    // 17. Record Audit Log in attendance_report_logs
+    // 17. Record Detailed Channel-Specific Delivery Audit Logs in mis_delivery_audit_logs
+    try {
+      const auditEntries: any[] = [];
+      const runId = `RUN_${todayStr.replace(/-/g, "")}_${slot}_${Date.now().toString(36)}`;
+
+      // 17a. Email delivery audit entries
+      for (const emailTarget of validRecipients) {
+        const recipientRecord = authorizedRecipients.find((r) => r.email?.toLowerCase() === emailTarget.toLowerCase());
+        auditEntries.push({
+          organization_id: orgId,
+          recipient_id: recipientRecord?.id || null,
+          run_id: runId,
+          report_type: reportTypeKey,
+          reporting_date: todayStr,
+          cutoff_time: istTimeFormatted,
+          channel: "EMAIL",
+          recipient_target: emailTarget,
+          recipient_name: recipientRecord?.name || emailTarget.split("@")[0],
+          dispatch_mode: body.mode || "AUTOMATED_SCHEDULE",
+          status: emailDispatchResult.success ? "DELIVERED" : "FAILED",
+          provider: emailDispatchResult.provider || "SMTP_GATEWAY",
+          provider_message_id: emailDispatchResult.id || null,
+          sha256_checksum: pdfRes.sha256Checksum || null,
+          file_name: emailPdfFilename,
+          document_url: publicPdfDocUrl,
+          error_message: emailDispatchResult.error || null,
+          idempotency_key: `${orgId}_${reportTypeKey}_${todayStr}_EMAIL_${emailTarget}`,
+          metadata: {
+            headcount: totalHeadcount,
+            present: presentCount,
+            late: lateCount,
+            absent: absentCount,
+          },
+        });
+      }
+
+      // 17b. WhatsApp delivery audit entries
+      for (const waRes of whatsAppResults) {
+        const recipientRecord = authorizedRecipients.find((r) => String(r.phone).replace(/[^0-9]/g, "") === waRes.phone);
+        auditEntries.push({
+          organization_id: orgId,
+          recipient_id: recipientRecord?.id || null,
+          run_id: runId,
+          report_type: reportTypeKey,
+          reporting_date: todayStr,
+          cutoff_time: istTimeFormatted,
+          channel: "WHATSAPP",
+          recipient_target: waRes.phone,
+          recipient_name: recipientRecord?.name || "Authorized WhatsApp Recipient",
+          dispatch_mode: body.mode || "AUTOMATED_SCHEDULE",
+          status: waRes.success ? "DELIVERED" : "FAILED",
+          provider: "META_WHATSAPP_CLOUD",
+          provider_message_id: waRes.messageId || null,
+          sha256_checksum: pdfRes.sha256Checksum || null,
+          file_name: waPdfFilename,
+          document_url: publicPdfDocUrl,
+          error_message: waRes.error || null,
+          idempotency_key: `${orgId}_${reportTypeKey}_${todayStr}_WHATSAPP_${waRes.phone}`,
+          metadata: {
+            headcount: totalHeadcount,
+            present: presentCount,
+            late: lateCount,
+            absent: absentCount,
+            mediaId: whatsAppUploadMediaId,
+          },
+        });
+      }
+
+      if (auditEntries.length > 0) {
+        await supabase.from("mis_delivery_audit_logs").insert(auditEntries);
+      }
+    } catch (auditErr: any) {
+      console.warn("[EdgeFunction] mis_delivery_audit_logs insert warning:", auditErr.message);
+    }
+
+    // 18. Legacy Summary Log in attendance_report_logs
     try {
       await supabase.from("attendance_report_logs").insert({
         organization_id: orgId,
@@ -806,6 +1140,8 @@ serve(async (req: Request) => {
           pdf: { filename: emailPdfFilename, sizeBytes: pdfRes.buffer.byteLength },
           excel: { filename: emailExcelFilename, sizeBytes: excelRes.buffer.byteLength },
         },
+        pdfBase64: body.mode === "MANUAL_TEST" ? pdfRes.base64 : undefined,
+        excelBase64: body.mode === "MANUAL_TEST" ? excelRes.base64 : undefined,
         email: {
           recipients: validRecipients,
           status: emailDispatchResult.success ? "DELIVERED" : "FAILED",

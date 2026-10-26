@@ -593,6 +593,7 @@ const initialLeavePolicies: LeavePolicy[] = [
 // Helper Functions for Local Storage
 function getStored<T>(key: string, defaultVal: T): T {
   try {
+    if (typeof localStorage === 'undefined') return defaultVal;
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : defaultVal;
   } catch {
@@ -602,6 +603,7 @@ function getStored<T>(key: string, defaultVal: T): T {
 
 function setStored<T>(key: string, val: T): void {
   try {
+    if (typeof localStorage === 'undefined') return;
     localStorage.setItem(key, JSON.stringify(val));
   } catch (e) {
     console.error('LocalStorage error', e);

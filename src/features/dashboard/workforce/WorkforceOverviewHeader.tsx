@@ -25,6 +25,7 @@ interface Props {
   onExport: () => void;
   onAddEmployee: () => void;
   onViewDirectory: () => void;
+  onNavigate?: (route: string) => void;
 }
 
 export const WorkforceOverviewHeader: React.FC<Props> = ({
@@ -38,6 +39,7 @@ export const WorkforceOverviewHeader: React.FC<Props> = ({
   onExport,
   onAddEmployee,
   onViewDirectory,
+  onNavigate,
 }) => {
   return (
     <div className="space-y-4">
@@ -45,8 +47,8 @@ export const WorkforceOverviewHeader: React.FC<Props> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <Breadcrumb
           items={[
-            { label: 'Platform' },
-            { label: 'HR Operations' },
+            { label: 'Home', onClick: () => onNavigate?.('dashboard') },
+            { label: 'HR Dashboard', onClick: () => onNavigate?.('dashboard') },
             { label: 'Workforce Overview' },
           ]}
         />

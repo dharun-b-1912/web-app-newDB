@@ -42,53 +42,7 @@ export interface OrganizationInvitation {
 
 const INVITATION_STORAGE_KEY = 'workforce_platform_auth_invitations';
 
-let inMemoryInvitations: OrganizationInvitation[] = [
-  {
-    id: 'inv-seed-jcs-admin',
-    organization_id: '0944f742-f0e1-4084-8848-894ab0b57da7',
-    organization_name: 'JOY CORPORATE SOLUTIONS PVT LTD',
-    email: 'rameshrajajcs@gmail.com',
-    full_name: 'Ramesh Raja',
-    role: 'Company Admin',
-    department: 'Executive Operations',
-    invitation_token: 'inv_jcs_seed_token',
-    invite_url: `${getAppBaseUrl()}/auth/accept-invite?token=inv_jcs_seed_token&org=0944f742-f0e1-4084-8848-894ab0b57da7&email=rameshrajajcs@gmail.com&role=Company%20Admin`,
-    status: 'pending',
-    invited_by: 'THIRUMALAI R K (Platform Super Admin)',
-    expires_at: '2099-12-31T23:59:59.000Z',
-    created_at: '2026-09-05T05:00:00.000Z',
-  },
-  {
-    id: 'inv-seed-spear-admin',
-    organization_id: '80f6721c-63c0-40ec-852c-57ddae997eee',
-    organization_name: 'Spear Digital',
-    email: 'info.speardigital@gmail.com',
-    full_name: 'Spear Digital Admin',
-    role: 'Company Admin',
-    department: 'Executive Operations',
-    invitation_token: 'inv_spear_seed_token',
-    invite_url: `${getAppBaseUrl()}/auth/accept-invite?token=inv_spear_seed_token&org=80f6721c-63c0-40ec-852c-57ddae997eee&email=info.speardigital@gmail.com&role=Company%20Admin`,
-    status: 'pending',
-    invited_by: 'THIRUMALAI R K (Platform Super Admin)',
-    expires_at: '2099-12-31T23:59:59.000Z',
-    created_at: '2026-09-05T05:49:00.000Z',
-  },
-  {
-    id: 'inv-vguard-admin',
-    organization_id: 'org-vguard',
-    organization_name: 'V-Guard Industries Ltd',
-    email: 'admin@vguard.in',
-    full_name: 'Mithun Chittilappilly',
-    role: 'Company Admin',
-    department: 'Executive Operations',
-    invitation_token: 'inv_vguard_token_2026',
-    invite_url: `${getAppBaseUrl()}/auth/accept-invite?token=inv_vguard_token_2026&org=org-vguard&email=admin@vguard.in&role=Company%20Admin`,
-    status: 'pending',
-    invited_by: 'Platform Super Admin',
-    expires_at: '2099-12-31T23:59:59.000Z',
-    created_at: '2026-09-18T00:00:00.000Z',
-  },
-];
+let inMemoryInvitations: OrganizationInvitation[] = [];
 
 const loadStoredInvitations = (): OrganizationInvitation[] => {
   if (typeof localStorage === 'undefined') {
@@ -97,18 +51,12 @@ const loadStoredInvitations = (): OrganizationInvitation[] => {
   try {
     const raw = localStorage.getItem(INVITATION_STORAGE_KEY);
     if (!raw) {
-      localStorage.setItem(INVITATION_STORAGE_KEY, JSON.stringify(inMemoryInvitations));
-      return inMemoryInvitations;
+      return [];
     }
     const parsed: OrganizationInvitation[] = JSON.parse(raw);
-    for (const seed of inMemoryInvitations) {
-      if (!parsed.some((p) => p.email.toLowerCase() === seed.email.toLowerCase() && p.organization_id === seed.organization_id)) {
-        parsed.push(seed);
-      }
-    }
-    return parsed;
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return inMemoryInvitations;
+    return [];
   }
 };
 
@@ -251,21 +199,24 @@ export const platformAuthInvitationService = {
     // Call Supabase if configured
     if (isSupabaseEnabled) {
       try {
+        const canonicalRoleCode = this.mapRoleToCanonicalCode(params.role);
         await supabase.from('organization_invitations').insert({
-          id: invId,
-          organization_id: params.organizationId,
+          organization_id: orgId,
           email: cleanEmail,
-          full_name: newInvite.full_name,
-          phone: newInvite.phone,
-          role: newInvite.role,
-          department: newInvite.department,
-          invitation_token: token,
-          status: 'pending',
-          invited_by: newInvite.invited_by,
+          full_name: name,
+          role_code: canonicalRoleCode,
+          token: token,
+          status: 'INVITED',
           expires_at: expiresAt,
+          metadata: {
+            display_role: params.role,
+            department: params.department || 'People Operations',
+            phone: params.phone,
+            invited_by_name: inviter,
+          },
         });
       } catch (err) {
-        console.warn('[PlatformAuthInvitationService] Supabase fallback notice:', err);
+        console.warn('[PlatformAuthInvitationService] Supabase insertion notice:', err);
       }
     }
 

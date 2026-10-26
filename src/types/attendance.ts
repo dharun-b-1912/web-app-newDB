@@ -67,11 +67,17 @@ export interface AttendanceDaily {
   last_check_out?: string; // HH:mm
   gross_working_minutes: number;
   total_break_minutes: number;
+  break_minutes?: number;
+  total_work_minutes?: number;
   net_working_minutes: number;
   late_minutes: number;
+  late_entry_minutes?: number;
   early_checkout_minutes: number;
+  early_exit_minutes?: number;
   overtime_minutes: number;
   regularization_status?: RegularizationStatus;
+  is_regularized?: boolean;
+  punch_source?: string;
   source: PunchSource;
   check_in_source?: PunchSource;
   check_out_source?: PunchSource;

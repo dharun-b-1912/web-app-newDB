@@ -13,6 +13,7 @@ import { realtimeChannelManager } from './realtime/realtimeChannelManager';
 import { leaveApi } from './leaveApi';
 import { attendanceRegularizationService } from './attendance/attendanceRegularizationService';
 import { notificationService } from './notification/notificationService';
+import { attendanceNotificationService } from './attendance/attendanceNotificationService';
 
 class RealtimeSyncEngine {
   private isInitialized: boolean = false;
@@ -205,6 +206,31 @@ class RealtimeSyncEngine {
       if (!row) return;
       hrEventBus.publish('attendance.punch_received', row, { actorId: 'supabase-realtime' });
       hrEventBus.publish('attendance.updated', row, { actorId: 'supabase-realtime' });
+
+      // Automatically dispatch supervisor push & in-app notification for new punch events
+      if (payload.eventType === 'INSERT' && payload.new) {
+        const p = payload.new;
+        const rawType = (p.punch_type || 'CHECK_IN').toUpperCase();
+        const punchType = rawType.includes('OUT') ? 'CHECK_OUT' : 'CHECK_IN';
+        const source = p.punch_source?.toUpperCase().includes('BIO')
+          ? 'BIOMETRIC'
+          : p.punch_source?.toUpperCase().includes('WEB')
+          ? 'WEB'
+          : 'MOBILE';
+
+        attendanceNotificationService.handleAttendanceEventAccepted({
+          organizationId: p.organization_id,
+          punchId: p.id,
+          employeeId: p.employee_id,
+          eventType: punchType === 'CHECK_IN' ? 'attendance.check_in.accepted' : 'attendance.check_out.accepted',
+          punchType,
+          source,
+          punchTime: p.punch_time || new Date().toISOString(),
+          latitude: p.latitude,
+          longitude: p.longitude,
+          idempotencyKey: p.idempotency_key || `rt-punch-${p.id}`,
+        }).catch(err => console.warn('[realtimeSyncEngine] Supervisor punch notification notice:', err));
+      }
     });
     this.disposers.push(unsubPunches);
 

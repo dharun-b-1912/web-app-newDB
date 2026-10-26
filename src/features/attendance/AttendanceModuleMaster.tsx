@@ -47,6 +47,7 @@ import {
   ArrowRightLeft,
   ShieldCheck,
   SlidersHorizontal,
+  BarChart3,
 } from 'lucide-react';
 import { syncUrlWithRoute } from '../../lib/router/urlRouter';
 import { navPerfTracker } from '../../services/observability/navigationPerfTracker';
@@ -291,6 +292,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     { id: 'late-early', label: 'Late / Early Tracking', icon: Clock },
     { id: 'regularization', label: 'Regularization Desk', icon: FileCheck },
     { id: 'exceptions', label: 'Exceptions Queue', icon: AlertTriangle },
+    { id: 'attendance-reports', label: 'Reports & Scope MIS', icon: BarChart3 },
     { id: 'overtime', label: 'Overtime Engine', icon: TrendingUp },
     { id: 'calculation-audit', label: 'Live Transactions & Audit', icon: ShieldCheck },
   ];
@@ -319,6 +321,8 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
         setLocalTab('exceptions');
       } else if (urlPath.includes('/attendance/tracking') || urlPath.includes('/live-tracking') || urlPath.includes('/tracking')) {
         setLocalTab('live-tracking');
+      } else if (urlPath.includes('/attendance/reports') || urlPath.includes('/attendance-reports') || urlPath.includes('/attendance/mis')) {
+        setLocalTab('attendance-reports');
       } else if (urlPath.includes('/biometric/rules') || urlPath.includes('/attendance-rules')) {
         setLocalTab('attendance-rules');
       } else if (urlPath.includes('/biometric/gps') || urlPath.includes('/gps')) {
@@ -608,12 +612,15 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
           />
         );
       case 'manual':
-        return <ManualAttendanceView />;
+        return <ManualAttendanceView onBack={() => handleSelectTab('employees')} />;
       case 'holidays':
         return <HolidaysView />;
       case 'approvals':
         return <ApprovalCenterView />;
+      case 'attendance-reports':
+      case 'attendance/reports':
       case 'reports':
+      case 'mis':
         return <AttendanceReportsView />;
       default:
         return (
@@ -627,8 +634,8 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     }
   };
 
-  // Clocking & Devices dedicated full-page workspaces have their own enterprise header & telemetry
-  const isDedicatedClockingView = [
+  // Dedicated full-page workspaces have their own enterprise header & telemetry (no redundant master banner)
+  const isDedicatedStandaloneView = [
     'biometric',
     'biometric-devices',
     'device-enrollment',
@@ -643,9 +650,14 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     'gps',
     'face-attendance',
     'geofences',
+    'attendance-reports',
+    'attendance/reports',
+    'reports',
+    'reports-scope',
+    'mis',
   ].includes(activeTab);
 
-  if (isDedicatedClockingView) {
+  if (isDedicatedStandaloneView) {
     return (
       <div className="space-y-6">
         <Suspense fallback={<AttendanceSubViewSkeleton />}>

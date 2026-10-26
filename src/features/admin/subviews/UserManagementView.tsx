@@ -13,6 +13,9 @@ import { Modal } from '../../../components/ui/Modal';
 import { Users, Mail, Plus, ShieldCheck, Trash2, Send, Search, CheckCircle2, Pencil, AlertTriangle } from 'lucide-react';
 import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
+import { realtimeChannelManager } from '../../../services/realtime/realtimeChannelManager';
+import { api } from '../../../services/api';
+import { supabase } from '../../../lib/supabase';
 
 export const UserManagementView: React.FC = () => {
   const { showToast } = useToast();
@@ -28,7 +31,8 @@ export const UserManagementView: React.FC = () => {
   const [inviteName, setInviteName] = useState<string>('');
   const [invitePhone, setInvitePhone] = useState<string>('');
   const [inviteRole, setInviteRole] = useState<string>('HR Head');
-  const [inviteDept, setInviteDept] = useState<string>('Human Resources');
+  const [inviteDept, setInviteDept] = useState<string>('');
+  const [departments, setDepartments] = useState<Array<{ id: string; name: string; code?: string }>>([]);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Edit User State
@@ -100,11 +104,46 @@ export const UserManagementView: React.FC = () => {
     } catch {
       setUsers(adminApi.getUsers());
     }
-    setInvitations(adminApi.getInvitations());
+    try {
+      const liveInvs = await adminApi.getInvitationsAsync();
+      setInvitations(liveInvs);
+    } catch {
+      setInvitations(adminApi.getInvitations());
+    }
+
+    try {
+      const activeComp = api.getActiveCompany();
+      const currentOrgId = activeComp?.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
+      const liveDepts = await api.getDepartments(activeComp?.id);
+      if (liveDepts && liveDepts.length > 0) {
+        setDepartments(liveDepts.map(d => ({ id: d.id, name: d.name, code: d.code })));
+        if (!inviteDept) setInviteDept(liveDepts[0]?.name || 'Development');
+      } else {
+        const { data: dbDepts } = await supabase
+          .from('departments')
+          .select('id, name, code')
+          .eq('organization_id', currentOrgId)
+          .order('name', { ascending: true });
+        if (dbDepts && dbDepts.length > 0) {
+          setDepartments(dbDepts);
+          if (!inviteDept) setInviteDept(dbDepts[0]?.name || 'Development');
+        }
+      }
+    } catch (err) {
+      console.warn('[UserManagementView] Dynamic departments fetch notice:', err);
+    }
   };
 
   useEffect(() => {
     refreshData();
+    try {
+      realtimeChannelManager.subscribeToTable('user_profiles', () => refreshData());
+      realtimeChannelManager.subscribeToTable('user_roles', () => refreshData());
+      realtimeChannelManager.subscribeToTable('organization_invitations', () => refreshData());
+      realtimeChannelManager.subscribeToTable('departments', () => refreshData());
+    } catch (err) {
+      console.warn('[UserManagementView] Realtime subscription notice:', err);
+    }
   }, []);
 
   const handleCreateOrInviteUser = async (e: React.FormEvent) => {
@@ -155,8 +194,8 @@ export const UserManagementView: React.FC = () => {
     }
   };
 
-  const handleCancelInvitation = (id: string, email: string) => {
-    adminApi.cancelInvitation(id);
+  const handleCancelInvitation = async (id: string, email: string) => {
+    await adminApi.cancelInvitationAsync(id);
     showToast(`Invitation for ${email} cancelled`, 'info');
     refreshData();
   };
@@ -469,11 +508,15 @@ export const UserManagementView: React.FC = () => {
                 onChange={(e) => setInviteDept(e.target.value)}
                 className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white font-medium"
               >
-                <option value="Human Resources">Human Resources</option>
-                <option value="Engineering">Engineering</option>
-                <option value="Finance & Accounts">Finance & Accounts</option>
-                <option value="Operations">Operations</option>
-                <option value="Sales & Marketing">Sales & Marketing</option>
+                {departments.length > 0 ? (
+                  departments.map((dept) => (
+                    <option key={dept.id} value={dept.name}>
+                      {dept.name} {dept.code ? `(${dept.code})` : ''}
+                    </option>
+                  ))
+                ) : (
+                  <option value="Development">Development</option>
+                )}
               </select>
             </div>
           </div>
@@ -558,12 +601,18 @@ export const UserManagementView: React.FC = () => {
                   onChange={(e) => setEditUserDept(e.target.value)}
                   className="w-full text-xs p-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:outline-none bg-white font-medium"
                 >
-                  <option value="Human Resources">Human Resources</option>
-                  <option value="Engineering">Engineering</option>
-                  <option value="Finance & Accounts">Finance & Accounts</option>
-                  <option value="Operations">Operations</option>
-                  <option value="Sales & Marketing">Sales & Marketing</option>
-                  <option value="Administration">Administration</option>
+                  {departments.length > 0 ? (
+                    departments.map((dept) => (
+                      <option key={dept.id} value={dept.name}>
+                        {dept.name} {dept.code ? `(${dept.code})` : ''}
+                      </option>
+                    ))
+                  ) : (
+                    <option value={editUserDept || 'Development'}>{editUserDept || 'Development'}</option>
+                  )}
+                  {editUserDept && !departments.some(d => d.name.toLowerCase() === editUserDept.toLowerCase()) && (
+                    <option value={editUserDept}>{editUserDept}</option>
+                  )}
                 </select>
               </div>
             </div>

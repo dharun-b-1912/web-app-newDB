@@ -189,8 +189,43 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setAuthContext(initialMode);
         }
 
+        // FAST LOCAL CACHE RESOLUTION (0ms): If cachedUser is already stored, activate session immediately
+        if (cachedUser && (cachedUser.id || cachedUser.auth_user_id)) {
+          bindSessionFingerprint(cachedUser.id);
+          if (isMounted) {
+            setUser(cachedUser);
+            setMustChangePassword(Boolean(cachedUser.must_change_password));
+            setIsLoading(false);
+            const elapsed = (performance.now() - authBootStartTime).toFixed(1);
+            console.log(`[BOOT] auth_resolved: Authenticated via Local Cache (${elapsed}ms). User: ${cachedUser.email || cachedUser.id}`);
+            if (typeof window !== 'undefined') {
+              (window as any).__joyBootStep?.(70, 'Identity Authenticated', `User: ${cachedUser.email || cachedUser.id}`);
+            }
+          }
+
+          // Asynchronously verify/heal Supabase session in background without stalling UI
+          if (isSupabaseEnabled) {
+            ensureSupabaseSession()
+              .then((activeSession) => {
+                if (activeSession?.user && isMounted) {
+                  resolveDynamicSessionUser(activeSession.user, cachedUser, initialMode)
+                    .then((updated) => {
+                      if (isMounted && updated && !isSameUser(cachedUser, updated)) {
+                        setUser(updated);
+                      }
+                    })
+                    .catch(() => {});
+                }
+              })
+              .catch((err) => {
+                console.warn('[useAuth] Background Supabase session heal notice:', err);
+              });
+          }
+          return;
+        }
+
         if (isSupabaseEnabled) {
-          // 1. Fast resolve from memory/localStorage via ensureSupabaseSession (0ms)
+          // Cold boot: Fast resolve from memory/localStorage via ensureSupabaseSession
           let activeSession: any = await ensureSupabaseSession();
           if (!activeSession?.user) {
             // Fallback guard getSession with 1500ms timeout
@@ -204,55 +239,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
           if (activeSession?.user) {
             const sbUser = activeSession.user;
-            // Anti-hijack fingerprint verification
-            const integrity = validateSessionIntegrity(sbUser.id);
-            if (!integrity.isValid) {
-              console.warn('[useAuth] Device fingerprint advisory:', integrity.reason);
-            }
-
             bindSessionFingerprint(sbUser.id);
 
-            // FAST UI: If cachedUser matches Supabase session, use cachedUser instantly (0ms)
-            // and do dynamic role resolution in background if needed
-            let finalUser: AuthSessionUser | null = cachedUser;
-            if (!finalUser || finalUser.email?.toLowerCase() !== sbUser.email?.toLowerCase() || !finalUser.organization_id) {
-              finalUser = await Promise.race([
-                resolveDynamicSessionUser(sbUser, cachedUser, initialMode),
-                new Promise<AuthSessionUser | null>((resolve) => setTimeout(() => resolve(cachedUser), 1500))
-              ]);
-            } else {
-              // Non-blocking background sync of roles/profile
-              resolveDynamicSessionUser(sbUser, cachedUser, initialMode).then(updated => {
-                if (isMounted && updated && !isSameUser(cachedUser, updated)) {
-                  setUser(updated);
-                }
-              }).catch(() => {});
-            }
+            const finalUser = await Promise.race([
+              resolveDynamicSessionUser(sbUser, null, initialMode),
+              new Promise<AuthSessionUser | null>((resolve) => setTimeout(() => resolve(null), 1500))
+            ]);
 
-            if (isMounted) {
-              setUser(prev => (isSameUser(prev, finalUser) ? prev : finalUser));
+            if (isMounted && finalUser) {
+              setUser(finalUser);
               setMustChangePassword(Boolean(finalUser?.must_change_password));
+              setIsLoading(false);
               const elapsed = (performance.now() - authBootStartTime).toFixed(1);
               console.log(`[BOOT] auth_resolved: Authenticated via Supabase (${elapsed}ms). User: ${finalUser?.email || finalUser?.id}`);
-            }
-            return;
-          } else if (cachedUser && (cachedUser.id || cachedUser.auth_user_id)) {
-            // Heal missing Supabase JWT session purely in background without blocking the UI thread
-            ensureSupabaseSession().catch(err => {
-              console.warn('[useAuth] Background Supabase session heal notice:', err);
-            });
-            
-            // Retain the authenticated cached user's enterprise profile
-            const integrity = validateSessionIntegrity(cachedUser.id);
-            if (!integrity.isValid) {
-              console.warn('[useAuth] Cached session advisory:', integrity.reason);
-            }
-            bindSessionFingerprint(cachedUser.id);
-            if (isMounted) {
-              setUser(prev => (isSameUser(prev, cachedUser) ? prev : cachedUser));
-              setMustChangePassword(Boolean(cachedUser.must_change_password));
-              const elapsed = (performance.now() - authBootStartTime).toFixed(1);
-              console.log(`[BOOT] auth_resolved: Authenticated via Local Cache (${elapsed}ms). User: ${cachedUser.email || cachedUser.id}`);
             }
             return;
           } else {

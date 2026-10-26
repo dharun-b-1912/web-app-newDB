@@ -17,7 +17,7 @@
   Asset,
   Vendor,
 } from '../types';
-import { supabase, supabaseAdmin, isSupabaseEnabled, ensureSupabaseSession } from '../lib/supabase';
+import { supabase, supabaseAdmin, isSupabaseEnabled, ensureSupabaseSession, isSupabaseCircuitOpen } from '../lib/supabase';
 const dbClient = (supabaseAdmin || supabase);
 import { hrEventBus } from './hrEventBus';
 import { logger } from './diagnostics/loggerService';
@@ -1466,10 +1466,10 @@ export const api = {
     }
 
     const fetchPromise = (async () => {
-      if (isSupabaseEnabled) {
+      if (isSupabaseEnabled && !isSupabaseCircuitOpen()) {
         try {
           await ensureSupabaseSession();
-          let q = supabase.from('employees').select('*');
+          let q = (supabaseAdmin || supabase).from('employees').select('*');
           const targetOrg = typeof window !== 'undefined' ? (localStorage.getItem('workforce_active_org_id') || '0c621892-e938-4707-9957-13534ea32c19') : '0c621892-e938-4707-9957-13534ea32c19';
           if (isValidUUID(targetOrg)) {
             q = q.eq('organization_id', targetOrg);
@@ -2000,28 +2000,26 @@ export const api = {
             return resultList;
           }
           if (error) {
-            // Suppress AbortError noise \u2014 it's expected from React Strict Mode double-invoke in dev
-            const errMsg = String(error?.message || error?.name || error || '');
-            if (!errMsg.toLowerCase().includes('abort')) {
-              console.warn('[API] Supabase getEmployees error:', error.message || error);
+            // Suppress noise if circuit is open or project is paused/restarting
+            if (!isSupabaseCircuitOpen()) {
+              const errMsg = String(error?.message || error?.name || error || '');
+              if (!errMsg.toLowerCase().includes('abort')) {
+                console.warn('[API] Supabase getEmployees error:', error.message || error);
+              }
             }
-            if (!isSupabaseEnabled) {
-              return api.getEmployeesSync(params);
-            }
+            const fallback = api.getEmployeesSync(params);
+            if (fallback && fallback.length > 0) return fallback;
             return [];
           }
         } catch (err: any) {
-          // AbortError is expected in React Strict Mode (dev double-invoke) — suppress noise, return from cache silently
           const isAbort = err?.name === 'AbortError' || (err instanceof DOMException && err.code === DOMException.ABORT_ERR);
-          if (!isAbort) {
+          if (!isAbort && !isSupabaseCircuitOpen()) {
             console.warn('[API] Supabase getEmployees fetch notice:', err);
           }
-          // On abort: serve from cache if available, otherwise empty
           const cached = api._empCache?.data;
           if (cached && cached.length > 0) return cached;
-          if (!isSupabaseEnabled) {
-            return api.getEmployeesSync(params);
-          }
+          const fallback = api.getEmployeesSync(params);
+          if (fallback && fallback.length > 0) return fallback;
           return [];
         }
       }

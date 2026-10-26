@@ -74,6 +74,9 @@ function formatMinutesToHoursAndMins(mins?: number): string {
 function formatPunchSourceLabel(src?: string | null): string {
   if (!src) return 'Biometric';
   const s = String(src).toUpperCase();
+  if (s.includes('MANUAL') || s.includes('REGULAR')) {
+    return 'Manual (HR)';
+  }
   if (s.includes('BIO') || s.includes('FACE') || s.includes('FINGER') || s.includes('CARD') || s === 'DEVICE') {
     return 'Biometric';
   }
@@ -82,9 +85,6 @@ function formatPunchSourceLabel(src?: string | null): string {
   }
   if (s.includes('WEB') || s.includes('BROWSER') || s.includes('PORTAL')) {
     return 'Web Portal';
-  }
-  if (s.includes('MANUAL')) {
-    return 'Manual';
   }
   return src;
 }
@@ -482,7 +482,9 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           lastOut = undefined;
         }
 
-        let inSrc = resolvedRecord?.check_in_source || resolvedRecord?.source || firstPunch?.source || 'BIOMETRIC';
+        let inSrc = (resolvedRecord?.is_regularized || (resolvedRecord as any)?.punch_source === 'MANUAL' || String(firstPunch?.source).toUpperCase().includes('MANUAL'))
+          ? 'MANUAL'
+          : (resolvedRecord?.check_in_source || resolvedRecord?.source || firstPunch?.source || 'BIOMETRIC');
         if (inSrc === 'SYSTEM') inSrc = 'BIOMETRIC';
         let checkOutSrc = resolvedRecord?.check_out_source;
 
@@ -490,7 +492,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         const shiftEndMins = timeStringToMinutes(shift.end_time) || 1110;
         const validOutPunch = sortedPunches.find((p) => {
           const pMins = timeStringToMinutes(p.event_time_str);
-          const isExplicitOut = p.classification === 'CHECK_OUT' || (p as any).punch_direction === 'OUT';
+          const isExplicitOut = p.classification === 'CHECK_OUT' || (p as any).punch_direction === 'OUT' || (p as any).punch_type === 'OUT' || (p as any).punch_type === 'CHECK_OUT';
           const isNearOrAfterShiftEnd = pMins >= shiftEndMins - 15;
           return isExplicitOut || isNearOrAfterShiftEnd;
         });
@@ -498,6 +500,16 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
         if (validOutPunch) {
           lastOut = validOutPunch.event_time_str;
           checkOutSrc = validOutPunch.source || 'BIOMETRIC';
+        } else if (sortedPunches.length > 0) {
+          // If all recorded punches are IN/CHECK_IN, employee is actively working; never mark as checked out
+          const hasOnlyInPunches = sortedPunches.every((p) => {
+            const cls = p.classification || (p as any).punch_type || (p as any).punch_direction;
+            return cls === 'CHECK_IN' || cls === 'IN';
+          });
+          if (hasOnlyInPunches) {
+            lastOut = undefined;
+            checkOutSrc = undefined;
+          }
         }
 
         if (firstIn) {
@@ -880,7 +892,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             leftIcon={<Plus className="w-3.5 h-3.5" />}
             className="text-xs font-bold bg-[#07563D] hover:bg-[#064e37]"
           >
-            + Manual Punch Record
+            Manual Punch Record
           </Button>
         </div>
       </div>
@@ -1219,7 +1231,9 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                     ? attendanceTimeService.formatAttendanceTime(record.last_check_out, 'Asia/Kolkata', true)
                     : null;
 
-                  const checkInSource = record.check_in_source || record.source || 'BIOMETRIC';
+                  const checkInSource = (record.is_regularized || (record as any)?.punch_source === 'MANUAL' || String(record.check_in_source || record.source).toUpperCase().includes('MANUAL'))
+                    ? 'MANUAL'
+                    : (record.check_in_source || record.source || 'BIOMETRIC');
                   const checkOutSource = record.check_out_source || record.source || 'BIOMETRIC';
                   const isWorking = record.first_check_in && !record.last_check_out && record.status !== 'Missing Punch';
 
@@ -1296,10 +1310,16 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                         {checkInTime ? (
                           <div className="flex flex-col">
                             <div className="font-mono font-bold text-gray-900 text-xs flex items-center gap-1 whitespace-nowrap">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 shrink-0" />
+                              <span className={cn(
+                                "w-1.5 h-1.5 rounded-full shrink-0",
+                                String(checkInSource).toUpperCase().includes('MANUAL') ? "bg-amber-500" : "bg-emerald-600"
+                              )} />
                               {checkInTime}
                             </div>
-                            <div className="text-[9.5px] font-semibold text-emerald-700 mt-0.5 flex items-center gap-1 whitespace-nowrap">
+                            <div className={cn(
+                              "text-[9.5px] font-semibold mt-0.5 flex items-center gap-1 whitespace-nowrap",
+                              String(checkInSource).toUpperCase().includes('MANUAL') ? "text-amber-700" : "text-emerald-700"
+                            )}>
                               <span>● {formatPunchSourceLabel(checkInSource)}</span>
                             </div>
                           </div>

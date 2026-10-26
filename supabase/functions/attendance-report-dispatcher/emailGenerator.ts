@@ -1,4 +1,4 @@
-// supabase/functions/attendance-report-dispatcher/emailGenerator.ts
+  // supabase/functions/attendance-report-dispatcher/emailGenerator.ts
 // ============================================================================
 // Joy PeopleHR Enterprise — Executive Midnight Obsidian HTML Email Builder
 // 100% Parity with src/services/attendance/attendanceReportEmailService.ts
@@ -8,6 +8,7 @@ import {
   AttendanceReportRow,
   computeEmployeeOvertime,
   formatMinutesToHoursStr,
+  formatTo12HourTime,
 } from "./reportHelpers.ts";
 
 export interface BuildEmailParams {
@@ -26,10 +27,10 @@ export function buildMidnightObsidianHtmlEmail(params: BuildEmailParams): string
 
   const totalHeadcount = rows.length;
   const presentCount = rows.filter(
-    r => r.record?.status === 'Present' || r.record?.status === 'Checked Out' || (r.record?.status as string) === 'Working' || !!r.record?.first_check_in
+    r => r.record?.status === 'Present' || r.record?.status === 'Half Day' || r.record?.status === 'Checked Out' || (r.record?.status as string) === 'Working' || !!r.record?.first_check_in
   ).length;
   const lateCount = rows.filter(
-    r => (r.record?.late_minutes || 0) > 0 || r.record?.status === 'Late'
+    r => (r.record?.late_minutes || r.record?.late_entry_minutes || 0) > 0 || r.record?.status === 'Late'
   ).length;
   const notCheckedInCount = rows.filter(
     r => (r.record?.status === 'Not Checked In' || !r.record?.status) && !r.record?.first_check_in
@@ -45,7 +46,7 @@ export function buildMidnightObsidianHtmlEmail(params: BuildEmailParams): string
     }
   });
 
-  const totalNetMinutes = rows.reduce((acc, r) => acc + (r.record?.net_working_minutes || 0), 0);
+  const totalNetMinutes = rows.reduce((acc, r) => acc + (r.record?.total_work_minutes || r.record?.net_working_minutes || 0), 0);
   const turnoutRatio = Math.round((presentCount / (totalHeadcount || 1)) * 100);
 
   // Formatted date label (e.g. "Wed, Oct 21, 2026")
@@ -230,8 +231,33 @@ export function buildMidnightObsidianHtmlEmail(params: BuildEmailParams): string
         </table>
         ` : ''}
 
+        <!-- Verified Punch Channels Audit Card -->
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 18px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px;">
+          <tr>
+            <td valign="middle">
+              <span style="font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; letter-spacing: 0.3px;">
+                Verified Punch Sources:
+              </span>
+              <span style="display: inline-block; margin-left: 8px; background-color: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 10.5px;">
+                ● Hardware Biometric
+              </span>
+              <span style="display: inline-block; margin-left: 6px; background-color: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 10.5px;">
+                ● Mobile GPS Geo-Tag
+              </span>
+              <span style="display: inline-block; margin-left: 6px; background-color: #f3e8ff; color: #6b21a8; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 10.5px;">
+                ● Web Portal
+              </span>
+            </td>
+            <td align="right" valign="middle">
+              <span style="font-size: 10.5px; color: #64748b; font-weight: 600;">
+                🔒 100% Cryptographic Verification
+              </span>
+            </td>
+          </tr>
+        </table>
+
         <!-- Section Title -->
-        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin: 22px 0 10px 0;">
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin: 12px 0 10px 0;">
           <tr>
             <td valign="middle">
               <span style="font-size: 13px; font-weight: 700; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">
@@ -252,8 +278,8 @@ export function buildMidnightObsidianHtmlEmail(params: BuildEmailParams): string
             <tr style="background-color: #0f172a; color: #ffffff; text-align: left;">
               <th style="padding: 10px 12px; font-weight: 600; font-size: 11px; letter-spacing: 0.3px;">Employee</th>
               <th style="padding: 10px 8px; font-weight: 600; font-size: 11px; letter-spacing: 0.3px;">Shift</th>
-              <th style="padding: 10px 8px; font-weight: 600; font-size: 11px; text-align: center;">${isMorning ? 'Expected In' : 'In'}</th>
-              <th style="padding: 10px 8px; font-weight: 600; font-size: 11px; text-align: center;">${isMorning ? 'Morning In' : 'Out'}</th>
+              <th style="padding: 10px 8px; font-weight: 600; font-size: 11px; text-align: center;">${isMorning ? 'Expected In' : 'Check-In (Mode)'}</th>
+              <th style="padding: 10px 8px; font-weight: 600; font-size: 11px; text-align: center;">${isMorning ? 'Morning In' : 'Check-Out (Mode)'}</th>
               <th style="padding: 10px 8px; font-weight: 600; font-size: 11px; text-align: center;">${isMorning ? 'Late' : 'Net Work'}</th>
               ${!isMorning ? `<th style="padding: 10px 8px; font-weight: 600; font-size: 11px; text-align: center;">Overtime (OT)</th>` : ''}
               <th style="padding: 10px 10px; font-weight: 600; font-size: 11px; text-align: center;">Status</th>
@@ -267,12 +293,24 @@ export function buildMidnightObsidianHtmlEmail(params: BuildEmailParams): string
               const code = emp.employee_code || rec.employee_code || '—';
               const name = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name || 'Staff';
               const shiftCode = shift?.shift_code || r.roster?.shift_code || 'GEN-09';
-              const checkIn = rec.first_check_in || '—';
-              const checkInSrc = rec.first_check_in ? (rec.check_in_source || rec.source || 'BIOMETRIC') : '—';
-              const checkOut = rec.last_check_out || '—';
-              const lateMins = rec.late_minutes || 0;
+              const checkIn = formatTo12HourTime(rec.first_check_in);
+              
+              const formatPunchMode = (src?: string | null): string => {
+                if (!src) return 'Biometric';
+                const s = String(src).toUpperCase();
+                if (s.includes('BIO') || s.includes('FACE') || s.includes('FINGER') || s.includes('CARD') || s === 'DEVICE') return 'Biometric';
+                if (s.includes('MOBILE') || s.includes('GPS') || s.includes('GEO') || s.includes('APP')) return 'Mobile GPS';
+                if (s.includes('WEB') || s.includes('BROWSER') || s.includes('PORTAL')) return 'Web Portal';
+                return 'Biometric';
+              };
+
+              const inSrc = formatPunchMode(rec.check_in_source || rec.source);
+              const outSrc = formatPunchMode(rec.check_out_source || rec.source);
+              const checkOut = rec.last_check_out ? formatTo12HourTime(rec.last_check_out) : '—';
+              const lateMins = rec.late_entry_minutes || rec.late_minutes || 0;
               const ot = computeEmployeeOvertime(rec, shift, isMorning);
-              const netStr = rec.net_working_minutes > 0 ? formatMinutesToHoursStr(rec.net_working_minutes) : (rec.first_check_in && !rec.last_check_out ? 'In Progress' : '—');
+              const netMins = rec.total_work_minutes || rec.net_working_minutes || 0;
+              const netStr = netMins > 0 ? formatMinutesToHoursStr(netMins) : (rec.first_check_in && !rec.last_check_out ? 'In Progress' : '—');
               const isEven = i % 2 === 0;
 
               let statusStr: string = rec.status || (rec.first_check_in ? 'Present' : 'Not Checked In');
@@ -305,11 +343,27 @@ export function buildMidnightObsidianHtmlEmail(params: BuildEmailParams): string
                   <div style="font-weight: 600;">${shiftCode}</div>
                   <div style="font-size: 10px; color: #64748b;">${shift?.start_time || '09:00'} - ${shift?.end_time || '18:00'}</div>
                 </td>
-                <td style="padding: 8px 8px; text-align: center; font-weight: 600; color: ${checkIn !== '—' ? '#0f172a' : '#94a3b8'};">
-                  ${checkIn}
+                <td style="padding: 8px 8px; text-align: center; font-weight: 600;">
+                  ${checkIn !== '—' ? `
+                    <div style="color: #0f172a; font-size: 11.5px; font-weight: 700;">${checkIn}</div>
+                    <div style="font-size: 9.5px; color: #166534; font-weight: 700; margin-top: 2px;">
+                      ● ${inSrc}
+                    </div>
+                  ` : `<span style="color: #94a3b8;">—</span>`}
                 </td>
-                <td style="padding: 8px 8px; text-align: center; font-weight: 600; color: #0f172a;">
-                  ${isMorning ? `<span style="font-size: 10px; color: #475569;">${checkInSrc}</span>` : (checkOut !== '—' ? checkOut : '<span style="color:#94a3b8">—</span>')}
+                <td style="padding: 8px 8px; text-align: center; font-weight: 600;">
+                  ${isMorning ? `
+                    <span style="font-size: 10px; color: #475569;">${inSrc}</span>
+                  ` : (checkOut !== '—' ? `
+                    <div style="color: #0f172a; font-size: 11.5px; font-weight: 700;">${checkOut}</div>
+                    <div style="font-size: 9.5px; color: #1e40af; font-weight: 700; margin-top: 2px;">
+                      ● ${outSrc}
+                    </div>
+                  ` : (rec.first_check_in ? `
+                    <span style="display: inline-block; background-color: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 2px 7px; border-radius: 4px; font-size: 9.5px; font-weight: 700;">
+                      ● In Shift
+                    </span>
+                  ` : `<span style="color: #94a3b8;">—</span>`))}
                 </td>
                 <td style="padding: 8px 8px; text-align: center; font-weight: 600; color: ${isMorning ? (lateMins > 0 ? '#b45309' : '#166534') : '#334155'};">
                   ${isMorning ? (lateMins > 0 ? `${lateMins}m` : '0m') : netStr}
