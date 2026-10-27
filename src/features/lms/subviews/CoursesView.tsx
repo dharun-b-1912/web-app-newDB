@@ -1910,7 +1910,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                             ) : rec.status === 'FAILED' ? (
                               <Badge variant="rose">Failed</Badge>
                             ) : rec.status === 'IN_PROGRESS' ? (
-                              <Badge variant="sky">Watching</Badge>
+                              <Badge variant="info">Watching</Badge>
                             ) : (
                               <Badge variant="amber">Pending</Badge>
                             )}
