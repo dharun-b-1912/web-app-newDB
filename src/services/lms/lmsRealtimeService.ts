@@ -12,6 +12,7 @@ export interface CourseMetadata {
   videoId: string;
   youtubeUrl: string;
   passingPercentage: number;
+  passingScoreNumber?: number;
   description: string;
   questions: QuizQuestion[];
 }
@@ -31,6 +32,7 @@ export interface LmsCourseItem {
   youtubeUrl?: string;
   thumbnailUrl?: string;
   passingPercentage: number;
+  passingScoreNumber?: number;
   description?: string;
   questions?: QuizQuestion[];
   progress_percentage?: number;
@@ -182,7 +184,12 @@ export const lmsRealtimeService = {
           }
 
           const effectiveVideoId = metadata.videoId || videoId;
-          const effectivePassing = metadata.passingPercentage || passingScore || 80;
+          const questionsList = metadata.questions || [];
+          const totalQ = questionsList.length;
+          const effectivePassing = metadata.passingPercentage || passingScore || (totalQ > 0 ? 80 : 0);
+          const effectivePassingScoreNumber = metadata.passingScoreNumber !== undefined
+            ? metadata.passingScoreNumber
+            : (totalQ > 0 ? Math.max(1, Math.ceil((effectivePassing / 100) * totalQ)) : undefined);
           const userEnr = userEnrollmentMap.get(row.id);
           const progressPercentage = userEnr ? Number(userEnr.progress_percentage) || 0 : 0;
           const enrollmentStatus = userEnr ? userEnr.status : 'ENROLLED';
@@ -201,8 +208,9 @@ export const lmsRealtimeService = {
             youtubeUrl: metadata.youtubeUrl || (effectiveVideoId ? `https://www.youtube.com/watch?v=${effectiveVideoId}` : ''),
             thumbnailUrl: effectiveVideoId ? `https://img.youtube.com/vi/${effectiveVideoId}/hqdefault.jpg` : undefined,
             passingPercentage: effectivePassing,
+            passingScoreNumber: effectivePassingScoreNumber,
             description: metadata.description || '',
-            questions: metadata.questions || [],
+            questions: questionsList,
             progress_percentage: progressPercentage,
             enrollment_status: enrollmentStatus,
           };
@@ -227,6 +235,7 @@ export const lmsRealtimeService = {
     durationMinutes?: number;
     isMandatory?: boolean;
     passingPercentage?: number;
+    passingScoreNumber?: number;
     description?: string;
     questions?: QuizQuestion[];
     orgId?: string;
@@ -237,8 +246,18 @@ export const lmsRealtimeService = {
       throw new Error('Invalid YouTube URL or Video ID provided');
     }
 
-    const hasQuestions = Boolean(input.questions && input.questions.length > 0);
-    const passing = hasQuestions ? (input.passingPercentage || 80) : 0;
+    const questionsList = input.questions || [];
+    const hasQuestions = questionsList.length > 0;
+    const totalQ = questionsList.length;
+    let passingNum: number | undefined = undefined;
+    let passing = 0;
+
+    if (hasQuestions) {
+      passingNum = input.passingScoreNumber !== undefined
+        ? Math.min(totalQ, Math.max(1, input.passingScoreNumber))
+        : Math.max(1, Math.ceil(((input.passingPercentage || 80) / 100) * totalQ));
+      passing = Math.round((passingNum / totalQ) * 100);
+    }
     const code = `YT:${videoId}:${passing}`.slice(0, 50);
     const client = supabaseAdmin || supabase;
 
@@ -267,8 +286,9 @@ export const lmsRealtimeService = {
       videoId,
       youtubeUrl: input.youtubeUrl.trim(),
       passingPercentage: passing,
+      passingScoreNumber: passingNum,
       description: input.description || '',
-      questions: input.questions || [],
+      questions: questionsList,
     };
 
     try {
@@ -327,8 +347,9 @@ export const lmsRealtimeService = {
       youtubeUrl: input.youtubeUrl,
       thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
       passingPercentage: passing,
+      passingScoreNumber: passingNum,
       description: input.description,
-      questions: input.questions,
+      questions: questionsList,
     };
   },
 
@@ -344,6 +365,7 @@ export const lmsRealtimeService = {
       durationMinutes?: number;
       isMandatory?: boolean;
       passingPercentage?: number;
+      passingScoreNumber?: number;
       description?: string;
       questions?: QuizQuestion[];
     }
@@ -353,8 +375,18 @@ export const lmsRealtimeService = {
       throw new Error('Invalid YouTube URL or Video ID provided');
     }
 
-    const hasQuestions = Boolean(input.questions && input.questions.length > 0);
-    const passing = hasQuestions ? (input.passingPercentage || 80) : 0;
+    const questionsList = input.questions || [];
+    const hasQuestions = questionsList.length > 0;
+    const totalQ = questionsList.length;
+    let passingNum: number | undefined = undefined;
+    let passing = 0;
+
+    if (hasQuestions) {
+      passingNum = input.passingScoreNumber !== undefined
+        ? Math.min(totalQ, Math.max(1, input.passingScoreNumber))
+        : Math.max(1, Math.ceil(((input.passingPercentage || 80) / 100) * totalQ));
+      passing = Math.round((passingNum / totalQ) * 100);
+    }
     const code = `YT:${videoId}:${passing}`.slice(0, 50);
     const client = supabaseAdmin || supabase;
 
@@ -381,8 +413,9 @@ export const lmsRealtimeService = {
       videoId,
       youtubeUrl: input.youtubeUrl.trim(),
       passingPercentage: passing,
+      passingScoreNumber: passingNum,
       description: input.description || '',
-      questions: input.questions || [],
+      questions: questionsList,
     };
 
     try {
@@ -414,8 +447,9 @@ export const lmsRealtimeService = {
       youtubeUrl: input.youtubeUrl.trim(),
       thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
       passingPercentage: passing,
+      passingScoreNumber: passingNum,
       description: input.description || '',
-      questions: input.questions || [],
+      questions: questionsList,
     };
   },
 
@@ -687,10 +721,17 @@ export const lmsRealtimeService = {
     employeeId: string,
     scorePercentage: number,
     passingThreshold: number = 80,
-    orgId: string = getActiveOrgId()
+    orgId: string = getActiveOrgId(),
+    options?: {
+      correctAnswers?: number;
+      totalQuestions?: number;
+      passingScoreNumber?: number;
+    }
   ): Promise<{ passed: boolean; score: number }> {
     const client = supabaseAdmin || supabase;
-    const passed = scorePercentage >= passingThreshold;
+    const passed = options?.passingScoreNumber !== undefined && options?.correctAnswers !== undefined
+      ? options.correctAnswers >= options.passingScoreNumber
+      : scorePercentage >= passingThreshold;
     const status = passed ? 'COMPLETED' : 'FAILED';
     const completedAt = passed ? new Date().toISOString() : null;
 

@@ -160,6 +160,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
   const [formMandatory, setFormMandatory] = useState(true);
   const [enableAssessment, setEnableAssessment] = useState(false);
   const [formPassing, setFormPassing] = useState(80);
+  const [formPassingScore, setFormPassingScore] = useState<number>(1);
   const [formDescription, setFormDescription] = useState('');
   const [formQuestions, setFormQuestions] = useState<QuizQuestion[]>([]);
   const [creatingCourse, setCreatingCourse] = useState(false);
@@ -174,6 +175,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
   const [editMandatory, setEditMandatory] = useState(true);
   const [editEnableAssessment, setEditEnableAssessment] = useState(false);
   const [editPassing, setEditPassing] = useState(80);
+  const [editPassingScore, setEditPassingScore] = useState<number>(1);
   const [editDescription, setEditDescription] = useState('');
   const [editQuestions, setEditQuestions] = useState<QuizQuestion[]>([]);
   const [updatingCourse, setUpdatingCourse] = useState(false);
@@ -302,7 +304,8 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
 
     setCreatingCourse(true);
     const questionsToSend = enableAssessment && formQuestions.length > 0 ? formQuestions : [];
-    const passingThreshold = questionsToSend.length > 0 ? formPassing : 0;
+    const passingNum = questionsToSend.length > 0 ? formPassingScore : undefined;
+    const passingThreshold = questionsToSend.length > 0 ? Math.round((formPassingScore / questionsToSend.length) * 100) : 0;
     try {
       const created = await lmsRealtimeService.createCourse({
         title: formTitle,
@@ -311,6 +314,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
         durationMinutes: formDuration,
         isMandatory: formMandatory,
         passingPercentage: passingThreshold,
+        passingScoreNumber: passingNum,
         description: formDescription,
         questions: questionsToSend,
       });
@@ -327,6 +331,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
       setFormDescription('');
       setEnableAssessment(false);
       setFormQuestions([]);
+      setFormPassingScore(1);
       loadCourses();
     } catch (err: any) {
       showToast(`Error: ${err.message || 'Failed to create course'}`);
@@ -345,6 +350,11 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
     setEditPassing(crs.passingPercentage || 80);
     setEditDescription(crs.description || '');
     const hasQuiz = Boolean(crs.questions && crs.questions.length > 0);
+    const totalQ = (crs.questions && crs.questions.length) || 0;
+    const initialPassingScore = crs.passingScoreNumber !== undefined
+      ? crs.passingScoreNumber
+      : (totalQ > 0 ? Math.max(1, Math.ceil(((crs.passingPercentage || 80) / 100) * totalQ)) : 1);
+    setEditPassingScore(initialPassingScore);
     setEditEnableAssessment(hasQuiz);
     setEditQuestions(crs.questions ? JSON.parse(JSON.stringify(crs.questions)) : []);
     setShowEditModal(true);
@@ -365,7 +375,8 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
 
     setUpdatingCourse(true);
     const questionsToSend = editEnableAssessment && editQuestions.length > 0 ? editQuestions : [];
-    const passingThreshold = questionsToSend.length > 0 ? editPassing : 0;
+    const passingNum = questionsToSend.length > 0 ? editPassingScore : undefined;
+    const passingThreshold = questionsToSend.length > 0 ? Math.round((editPassingScore / questionsToSend.length) * 100) : 0;
     try {
       const updated = await lmsRealtimeService.updateCourse(editingCourse.id, {
         title: editTitle,
@@ -374,6 +385,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
         durationMinutes: editDuration,
         isMandatory: editMandatory,
         passingPercentage: passingThreshold,
+        passingScoreNumber: passingNum,
         description: editDescription,
         questions: questionsToSend,
       });
@@ -437,6 +449,9 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
 
     const scorePct = Math.round((correctCount / questions.length) * 100);
     const passThreshold = selectedCourse.passingPercentage || 80;
+    const requiredScoreNumber = selectedCourse.passingScoreNumber !== undefined
+      ? selectedCourse.passingScoreNumber
+      : Math.max(1, Math.ceil((passThreshold / 100) * questions.length));
 
     // Get current user employee id from localStorage if available
     let currentEmpId = '0ce6436c-e9b4-4e0e-9102-93ea238be0df'; // Default to Dharun B
@@ -453,13 +468,20 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
         selectedCourse.id,
         currentEmpId,
         scorePct,
-        passThreshold
+        passThreshold,
+        undefined,
+        {
+          correctAnswers: correctCount,
+          totalQuestions: questions.length,
+          passingScoreNumber: requiredScoreNumber,
+        }
       );
       setQuizResult(res);
       if (res.passed) {
-        showToast(`Congratulations! You passed with ${scorePct}%`);
+        showToast(`Congratulations! You passed with ${correctCount}/${questions.length} correct (${scorePct}%)`);
+        loadCourses();
       } else {
-        showToast(`Assessment failed. You scored ${scorePct}%. Required: ${passThreshold}%`);
+        showToast(`Assessment failed (${correctCount}/${questions.length} correct). Required: at least ${requiredScoreNumber} correct.`);
       }
     } catch (e) {
       showToast('Error recording assessment result');
@@ -593,7 +615,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                     </span>
                     {crs.questions && crs.questions.length > 0 ? (
                       <span className="text-purple-700 bg-purple-50 font-bold px-1.5 py-0.5 rounded text-[10px]">
-                        Quiz ({crs.questions.length} Qs) • {crs.passingPercentage}%
+                        Quiz ({crs.questions.length} Qs) • Need {crs.passingScoreNumber || Math.ceil((crs.passingPercentage / 100) * crs.questions.length)} to pass
                       </span>
                     ) : (
                       <span className="text-emerald-700 bg-emerald-50 font-bold px-1.5 py-0.5 rounded text-[10px]">
@@ -749,23 +771,41 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
 
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Pass Constraint (%)
-                    {!enableAssessment && <span className="text-gray-400 font-normal ml-1">(No Quiz)</span>}
+                    Pass Score (Correct Answers)
+                    {!enableAssessment ? (
+                      <span className="text-gray-400 font-normal ml-1">(No Quiz)</span>
+                    ) : (
+                      <span className="text-[#07563D] font-normal ml-1">
+                        (out of {formQuestions.length} Qs)
+                      </span>
+                    )}
                   </label>
                   <div className="relative">
                     <input
                       type="number"
-                      min="50"
-                      max="100"
+                      min="1"
+                      max={Math.max(1, formQuestions.length)}
                       disabled={!enableAssessment}
-                      value={enableAssessment ? formPassing : 0}
-                      onChange={(e) => setFormPassing(parseInt(e.target.value, 10) || 80)}
-                      className={`w-full px-3.5 py-2.5 rounded-xl border text-xs focus:ring-2 focus:ring-[#07563D] outline-none pr-8 ${
-                        !enableAssessment ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'border-gray-300'
+                      value={enableAssessment ? formPassingScore : 0}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10) || 1;
+                        const capped = Math.min(Math.max(1, formQuestions.length), Math.max(1, val));
+                        setFormPassingScore(capped);
+                        setFormPassing(Math.round((capped / Math.max(1, formQuestions.length)) * 100));
+                      }}
+                      className={`w-full px-3.5 py-2.5 rounded-xl border text-xs focus:ring-2 focus:ring-[#07563D] outline-none pr-12 font-bold ${
+                        !enableAssessment ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'border-gray-300 text-gray-900'
                       }`}
                     />
-                    <Percent className="w-3.5 h-3.5 text-gray-400 absolute right-3 top-3" />
+                    <span className="text-[11px] font-bold text-gray-400 absolute right-3 top-3">
+                      / {enableAssessment ? formQuestions.length : 0}
+                    </span>
                   </div>
+                  {enableAssessment && (
+                    <p className="text-[10px] text-emerald-700 font-medium mt-1">
+                      Must get at least <strong>{formPassingScore} of {formQuestions.length}</strong> correct ({Math.round((formPassingScore / Math.max(1, formQuestions.length)) * 100)}%) to pass.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -797,7 +837,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                       </div>
                       <p className="text-[11px] text-gray-500 mt-0.5">
                         {enableAssessment
-                          ? `Quiz enabled (${formQuestions.length} Questions). Employees must score at least ${formPassing}% to pass.`
+                          ? `Quiz enabled (${formQuestions.length} Questions). Employees must answer at least ${formPassingScore} of ${formQuestions.length} correctly to pass.`
                           : 'No quiz required. Employees complete the course immediately upon watching the video.'}
                       </p>
                     </div>
@@ -818,6 +858,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                             correctIndex: 0,
                           },
                         ]);
+                        setFormPassingScore(1);
                       }
                     }}
                     className="w-4 h-4 rounded text-[#07563D] focus:ring-[#07563D] cursor-pointer"
@@ -835,15 +876,18 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                         size="sm"
                         variant="outline"
                         onClick={() =>
-                          setFormQuestions((prev) => [
-                            ...prev,
-                            {
-                              id: `q${prev.length + 1}`,
-                              question: `Question ${prev.length + 1}`,
-                              options: ['Option A', 'Option B', 'Option C', 'Option D'],
-                              correctIndex: 0,
-                            },
-                          ])
+                          setFormQuestions((prev) => {
+                            const updated = [
+                              ...prev,
+                              {
+                                id: `q${prev.length + 1}`,
+                                question: `Question ${prev.length + 1}`,
+                                options: ['Option A', 'Option B', 'Option C', 'Option D'],
+                                correctIndex: 0,
+                              },
+                            ];
+                            return updated;
+                          })
                         }
                       >
                         + Add Question
@@ -870,7 +914,13 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                             {formQuestions.length > 1 && (
                               <button
                                 type="button"
-                                onClick={() => setFormQuestions((prev) => prev.filter((_, i) => i !== qIdx))}
+                                onClick={() => {
+                                  setFormQuestions((prev) => {
+                                    const updated = prev.filter((_, i) => i !== qIdx);
+                                    setFormPassingScore((curr) => Math.min(Math.max(1, curr), Math.max(1, updated.length)));
+                                    return updated;
+                                  });
+                                }}
                                 className="text-rose-500 hover:text-rose-700"
                               >
                                 <X className="w-4 h-4" />
@@ -1035,23 +1085,41 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
 
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Pass Constraint (%)
-                    {!editEnableAssessment && <span className="text-gray-400 font-normal ml-1">(No Quiz)</span>}
+                    Pass Score (Correct Answers)
+                    {!editEnableAssessment ? (
+                      <span className="text-gray-400 font-normal ml-1">(No Quiz)</span>
+                    ) : (
+                      <span className="text-[#07563D] font-normal ml-1">
+                        (out of {editQuestions.length} Qs)
+                      </span>
+                    )}
                   </label>
                   <div className="relative">
                     <input
                       type="number"
-                      min="50"
-                      max="100"
+                      min="1"
+                      max={Math.max(1, editQuestions.length)}
                       disabled={!editEnableAssessment}
-                      value={editEnableAssessment ? editPassing : 0}
-                      onChange={(e) => setEditPassing(parseInt(e.target.value, 10) || 80)}
-                      className={`w-full px-3.5 py-2.5 rounded-xl border text-xs focus:ring-2 focus:ring-[#07563D] outline-none pr-8 ${
-                        !editEnableAssessment ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'border-gray-300'
+                      value={editEnableAssessment ? editPassingScore : 0}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10) || 1;
+                        const capped = Math.min(Math.max(1, editQuestions.length), Math.max(1, val));
+                        setEditPassingScore(capped);
+                        setEditPassing(Math.round((capped / Math.max(1, editQuestions.length)) * 100));
+                      }}
+                      className={`w-full px-3.5 py-2.5 rounded-xl border text-xs focus:ring-2 focus:ring-[#07563D] outline-none pr-12 font-bold ${
+                        !editEnableAssessment ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'border-gray-300 text-gray-900'
                       }`}
                     />
-                    <Percent className="w-3.5 h-3.5 text-gray-400 absolute right-3 top-3" />
+                    <span className="text-[11px] font-bold text-gray-400 absolute right-3 top-3">
+                      / {editEnableAssessment ? editQuestions.length : 0}
+                    </span>
                   </div>
+                  {editEnableAssessment && (
+                    <p className="text-[10px] text-emerald-700 font-medium mt-1">
+                      Must get at least <strong>{editPassingScore} of {editQuestions.length}</strong> correct ({Math.round((editPassingScore / Math.max(1, editQuestions.length)) * 100)}%) to pass.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1095,7 +1163,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                       </div>
                       <p className="text-[11px] text-gray-500 mt-0.5">
                         {editEnableAssessment
-                          ? `Quiz enabled (${editQuestions.length} Questions). Passing threshold: ${editPassing}%.`
+                          ? `Quiz enabled (${editQuestions.length} Questions). Employees must answer at least ${editPassingScore} of ${editQuestions.length} correctly to pass.`
                           : 'No quiz required. Employees complete the course upon watching video.'}
                       </p>
                     </div>
@@ -1116,6 +1184,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                             correctIndex: 0,
                           },
                         ]);
+                        setEditPassingScore(1);
                       }
                     }}
                     className="w-4 h-4 rounded text-[#07563D] focus:ring-[#07563D] cursor-pointer"
@@ -1133,15 +1202,18 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                         size="sm"
                         variant="outline"
                         onClick={() =>
-                          setEditQuestions((prev) => [
-                            ...prev,
-                            {
-                              id: `q${prev.length + 1}`,
-                              question: `Question ${prev.length + 1}`,
-                              options: ['Option A', 'Option B', 'Option C', 'Option D'],
-                              correctIndex: 0,
-                            },
-                          ])
+                          setEditQuestions((prev) => {
+                            const updated = [
+                              ...prev,
+                              {
+                                id: `q${prev.length + 1}`,
+                                question: `Question ${prev.length + 1}`,
+                                options: ['Option A', 'Option B', 'Option C', 'Option D'],
+                                correctIndex: 0,
+                              },
+                            ];
+                            return updated;
+                          })
                         }
                       >
                         + Add Question
@@ -1168,7 +1240,13 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                             {editQuestions.length > 1 && (
                               <button
                                 type="button"
-                                onClick={() => setEditQuestions((prev) => prev.filter((_, i) => i !== qIdx))}
+                                onClick={() => {
+                                  setEditQuestions((prev) => {
+                                    const updated = prev.filter((_, i) => i !== qIdx);
+                                    setEditPassingScore((curr) => Math.min(Math.max(1, curr), Math.max(1, updated.length)));
+                                    return updated;
+                                  });
+                                }}
                                 className="text-rose-500 hover:text-rose-700 cursor-pointer"
                               >
                                 <X className="w-4 h-4" />
@@ -1442,7 +1520,12 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                 </span>
                 <h3 className="text-lg font-black text-gray-900 mt-1">{selectedCourse.title}</h3>
                 <p className="text-xs text-gray-500">
-                  Passing constraint: At least <strong>{selectedCourse.passingPercentage}%</strong>
+                  Passing constraint: Must answer at least{' '}
+                  <strong>
+                    {selectedCourse.passingScoreNumber || Math.ceil((selectedCourse.passingPercentage / 100) * (selectedCourse.questions?.length || 1))} of{' '}
+                    {selectedCourse.questions?.length || 0}
+                  </strong>{' '}
+                  questions correctly ({selectedCourse.passingPercentage}%)
                 </p>
               </div>
               <button
@@ -1509,11 +1592,16 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                 )}
                 <div>
                   <h4 className="text-sm font-black">
-                    {quizResult.passed ? 'PASSED — CONGRATULATIONS!' : 'FAILED — PASS CONSTRAINT NOT MET'}
+                    {quizResult.passed ? 'PASSED — CONGRATULATIONS!' : 'FAILED — PASS SCORE NOT MET'}
                   </h4>
                   <p className="text-xs mt-0.5">
-                    Your Score: <strong>{quizResult.score}%</strong>. Required Passing Constraint:{' '}
-                    <strong>{selectedCourse.passingPercentage}%</strong>.
+                    Your Score: <strong>{quizResult.score}%</strong>. Required:{' '}
+                    <strong>
+                      {selectedCourse.passingScoreNumber || Math.ceil((selectedCourse.passingPercentage / 100) * (selectedCourse.questions?.length || 1))} of{' '}
+                      {selectedCourse.questions?.length || 0}
+                    </strong>{' '}
+                    correct.
+                    {!quizResult.passed && ' Course remains incomplete until you re-attempt and pass.'}
                   </p>
                 </div>
               </div>
