@@ -803,7 +803,7 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
                     <label className="block font-bold text-gray-700 mb-1">First Name *</label>
                     <input
                       type="text"
-                      placeholder="e.g. Dharun"
+                      placeholder="e.g. Ramesh"
                       value={formData.admin_first_name}
                       onChange={(e) => setFormData({ ...formData, admin_first_name: e.target.value })}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#047857]"
@@ -814,7 +814,7 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
                     <label className="block font-bold text-gray-700 mb-1">Last Name</label>
                     <input
                       type="text"
-                      placeholder="e.g. B"
+                      placeholder="e.g. Kumar"
                       value={formData.admin_last_name}
                       onChange={(e) => setFormData({ ...formData, admin_last_name: e.target.value })}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#047857]"
@@ -840,7 +840,7 @@ export const ProvisionCustomerModal: React.FC<ProvisionCustomerModalProps> = ({
                       <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="email"
-                        placeholder="e.g. dharun@joycorporate.com"
+                        placeholder="e.g. admin@company.com"
                         value={formData.admin_email}
                         onChange={(e) => setFormData({ ...formData, admin_email: e.target.value })}
                         className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#047857] font-mono text-xs"

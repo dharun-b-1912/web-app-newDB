@@ -25,6 +25,36 @@ interface Props {
   editingEmployeeId?: string;
 }
 
+/**
+ * Deterministically generates the next sequential employee code by scanning existing
+ * employee codes, extracting numeric portions, and incrementing without collisions.
+ */
+export function generateNextEmployeeCode(existing: Employee[] = [], prefix = 'JCS'): string {
+  const usedCodes = new Set(
+    existing
+      .map((e) => (e.employee_code || '').trim().toUpperCase())
+      .filter(Boolean)
+  );
+  let maxSeq = 0;
+  for (const emp of existing) {
+    if (!emp.employee_code) continue;
+    const match = emp.employee_code.match(/(\d+)/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > maxSeq) {
+        maxSeq = num;
+      }
+    }
+  }
+  let nextSeq = maxSeq > 0 ? maxSeq + 1 : 101;
+  let candidate = `${prefix}-${String(nextSeq).padStart(4, '0')}`;
+  while (usedCodes.has(candidate.toUpperCase())) {
+    nextSeq++;
+    candidate = `${prefix}-${String(nextSeq).padStart(4, '0')}`;
+  }
+  return candidate;
+}
+
 export const Step1Identity: React.FC<Props> = ({
   formData,
   onChange,
@@ -56,8 +86,7 @@ export const Step1Identity: React.FC<Props> = ({
   }, [formData.work_email, formData.personal_email, formData.email_type]);
 
   const generateNewCode = () => {
-    const randomNum = Math.floor(100 + Math.random() * 900);
-    const newCode = `JCS-0${randomNum}`;
+    const newCode = generateNextEmployeeCode(existingEmployees || []);
     onChange({ employee_code: newCode });
   };
 

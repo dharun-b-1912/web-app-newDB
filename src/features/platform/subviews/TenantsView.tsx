@@ -68,6 +68,7 @@ import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
 import { realtimeChannelManager } from '../../../services/realtime/realtimeChannelManager';
 import { ProvisionCustomerModal } from '../components/ProvisionCustomerModal';
 import { CustomerWorkspaceHeader } from '../components/tenants/CustomerWorkspaceHeader';
+import { formatTenantDisplayId, formatTenantDomain } from '../../../utils/saasMasking';
 import { EditOrganizationModal } from '../components/tenants/EditOrganizationModal';
 import { AccessCustomerModal } from '../components/tenants/AccessCustomerModal';
 import { SupportAccessBanner } from '../components/tenants/SupportAccessBanner';
@@ -84,6 +85,7 @@ import { CustomerIntegrationsTab } from '../components/tenants/CustomerIntegrati
 import { Button } from '../../../components/ui/Button';
 import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
+import { api } from '../../../services/api';
 
 export interface TenantsViewProps {
   initialTenantId?: string;
@@ -219,13 +221,18 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
 
   const handleDeleteOrg = async (orgId: string, orgName: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (window.confirm(`Are you sure you want to permanently delete "${orgName}" (${orgId}) from the platform and Supabase?`)) {
-      await platformTenantService.deleteOrganization(orgId);
-      if (selectedOrgId === orgId) {
-        setSelectedOrgId(null);
+    if (window.confirm(`Are you sure you want to permanently delete "${orgName}" from the platform and Supabase?`)) {
+      try {
+        await platformTenantService.deleteOrganization(orgId);
+        if (selectedOrgId === orgId) {
+          setSelectedOrgId(null);
+        }
+        showToast(`Organization "${orgName}" deleted successfully.`, 'success');
+        await platformTenantService.fetchLiveFromSupabase(true);
+        fetchData();
+      } catch (err: any) {
+        showToast(err.message || 'Unable to delete organization.', 'error');
       }
-      showToast(`Organization "${orgName}" deleted successfully.`, 'success');
-      fetchData();
     }
   };
 
@@ -262,12 +269,13 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
   }) => {
     if (!selectedOrg) return;
     try {
+      const currentUser = api.getCurrentUser();
       const session = await platformSupportAccessService.startSupportSession({
         organizationId: selectedOrg.id,
         organizationName: selectedOrg.legal_name,
-        actorId: 'user-thirumalai',
-        actorName: 'Thirumalai R K',
-        actorRole: 'Platform Admin',
+        actorId: currentUser?.id || 'platform-admin',
+        actorName: currentUser?.name || currentUser?.email || 'Platform Admin',
+        actorRole: currentUser?.roles?.[0]?.name || 'Platform Admin',
         accessMode: params.accessMode,
         durationMinutes: params.durationMinutes,
         reason: params.reason,
@@ -552,18 +560,18 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
       {/* 4. Customer Directory Table */}
       <div className="bg-white rounded-3xl border border-gray-200 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-gray-50/70 border-b border-gray-100 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
               <tr>
-                <th className="py-3 px-5">Organization / Customer</th>
-                <th className="py-3 px-4">Health</th>
-                <th className="py-3 px-4">Plan</th>
-                <th className="py-3 px-4">Users / Seats</th>
-                <th className="py-3 px-4">Usage</th>
-                <th className="py-3 px-4">MRR</th>
-                <th className="py-3 px-4">Billing</th>
-                <th className="py-3 px-4">Last Activity</th>
-                <th className="py-3 px-5 text-right">Actions</th>
+                <th className="py-2.5 px-3">Organization / Customer</th>
+                <th className="py-2.5 px-2">Health</th>
+                <th className="py-2.5 px-2">Plan</th>
+                <th className="py-2.5 px-2.5">Users / Seats</th>
+                <th className="py-2.5 px-2.5">Usage</th>
+                <th className="py-2.5 px-2.5">MRR</th>
+                <th className="py-2.5 px-2">Billing</th>
+                <th className="py-2.5 px-2">Last Activity</th>
+                <th className="py-2.5 px-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
@@ -596,33 +604,33 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
                     onClick={() => setSelectedOrgId(org.id)}
                     className="hover:bg-gray-50/60 transition cursor-pointer"
                   >
-                    <td className="py-4 px-5">
-                      <div className="font-bold text-gray-900 text-sm">{org.legal_name}</div>
-                      <div className="text-[11px] text-gray-400 font-mono flex items-center gap-1.5 mt-0.5">
-                        <span>{org.domain}</span>
+                    <td className="py-2.5 px-3">
+                      <div className="font-bold text-gray-900 text-xs truncate max-w-[200px]">{org.legal_name}</div>
+                      <div className="text-[11px] text-gray-400 font-mono flex items-center gap-1.5 mt-0.5 truncate max-w-[220px]">
+                        <span className="truncate">{formatTenantDomain(org.domain, org.legal_name, org.id)}</span>
                         <span>•</span>
-                        <span className="text-gray-500 font-sans">{org.id}</span>
+                        <span className="text-gray-600 font-mono px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 text-[10px] font-semibold whitespace-nowrap">{formatTenantDisplayId(org.id)}</span>
                       </div>
                     </td>
 
-                    <td className="py-4 px-4">
+                    <td className="py-2.5 px-2 whitespace-nowrap">
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-[#047857] border border-emerald-200">
                         {org.health_grade} ({org.health_score})
                       </span>
                     </td>
 
-                    <td className="py-4 px-4">
+                    <td className="py-2.5 px-2 whitespace-nowrap">
                       <span className="font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full text-[10px]">
                         {org.plan}
                       </span>
                     </td>
 
-                    <td className="py-4 px-4 font-mono font-bold text-gray-900">
+                    <td className="py-2.5 px-2.5 font-mono font-bold text-gray-900 whitespace-nowrap">
                       {org.active_employees} / {org.seat_limit}
                     </td>
 
-                    <td className="py-4 px-4">
-                      <div className="w-20 space-y-1">
+                    <td className="py-2.5 px-2.5 whitespace-nowrap">
+                      <div className="w-16 space-y-1">
                         <div className="text-[10px] font-bold text-gray-600">{org.seat_utilization_pct}%</div>
                         <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
                           <div
@@ -633,11 +641,11 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
                       </div>
                     </td>
 
-                    <td className="py-4 px-4 font-mono font-bold text-gray-900">
+                    <td className="py-2.5 px-2.5 font-mono font-bold text-gray-900 whitespace-nowrap">
                       {org.mrr_formatted}
                     </td>
 
-                    <td className="py-4 px-4">
+                    <td className="py-2.5 px-2 whitespace-nowrap">
                       <span
                         className={cn(
                           'text-[10px] font-bold px-2 py-0.5 rounded-full',
@@ -648,11 +656,11 @@ export const TenantsView: React.FC<TenantsViewProps> = ({
                       </span>
                     </td>
 
-                    <td className="py-4 px-4 text-gray-500 text-[11px]">
+                    <td className="py-2.5 px-2 text-gray-500 text-[11px] whitespace-nowrap">
                       {org.last_activity_time}
                     </td>
 
-                    <td className="py-4 px-5 text-right whitespace-nowrap">
+                    <td className="py-2.5 px-3 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
                         <Button
                           variant="outline"

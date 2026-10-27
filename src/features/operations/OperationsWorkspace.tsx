@@ -42,76 +42,72 @@ export const OperationsWorkspace: React.FC<OperationsWorkspaceProps> = ({
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto p-4 sm:p-6 pb-24">
-      {/* Workspace Header */}
-      <div className="bg-gradient-to-r from-[#064E3B] via-[#07563D] to-[#043629] p-6 sm:p-8 rounded-3xl text-white shadow-lg relative overflow-hidden">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-emerald-200 text-xs font-bold uppercase tracking-wider">
-              <Activity className="w-3.5 h-3.5 text-emerald-300" />
-              <span>Daily Workforce Control</span>
-              <span>•</span>
-              <span>Operations Workspace</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight mt-1">
-              Attendance, Shifts, Leave & Approvals
-            </h1>
-            <p className="text-xs sm:text-sm text-emerald-100/80 mt-1 max-w-2xl">
-              Live operational command for real-time presence radar, shift rostering, leave ledgers, approval escalation chains, and biometric IoT terminals.
-            </p>
+      {/* Compact Executive Operations Header & Navigation */}
+      <div className="bg-white border border-gray-200/80 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-[#07563D] text-xs font-bold uppercase tracking-wider">
+            <Activity className="w-3.5 h-3.5 text-[#07563D]" />
+            <span>Daily Workforce Control</span>
           </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight mt-0.5">
+            Attendance, Shifts, Leave & Approvals
+          </h1>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Unified command for real-time presence radar, shift rostering, leave ledgers, and approval workflows.
+          </p>
         </div>
 
         {/* Primary Workspace Navigation Tabs */}
-        <div className="mt-8 pt-4 border-t border-white/15 flex items-center gap-2 overflow-x-auto scrollbar-none">
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none bg-gray-100/80 p-1.5 rounded-xl border border-gray-200/60">
           <button
             onClick={() => setActiveTab('attendance')}
             className={cn(
-              'px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
+              'px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
               activeTab === 'attendance'
-                ? 'bg-white text-[#064E3B] shadow-md'
-                : 'text-emerald-100/80 hover:text-white hover:bg-white/10'
+                ? 'bg-[#07563D] text-white shadow-xs font-bold'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-white/80'
             )}
           >
-            <Clock className="w-4 h-4" />
+            <Clock className="w-3.5 h-3.5" />
             <span>Attendance & Presence</span>
           </button>
 
           <button
             onClick={() => setActiveTab('shifts')}
             className={cn(
-              'px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
+              'px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
               activeTab === 'shifts'
-                ? 'bg-white text-[#064E3B] shadow-md'
-                : 'text-emerald-100/80 hover:text-white hover:bg-white/10'
+                ? 'bg-[#07563D] text-white shadow-xs font-bold'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-white/80'
             )}
           >
-            <CalendarRange className="w-4 h-4" />
+            <CalendarRange className="w-3.5 h-3.5" />
             <span>Time & Shifts</span>
           </button>
 
           <button
             onClick={() => setActiveTab('leave')}
             className={cn(
-              'px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
+              'px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
               activeTab === 'leave'
-                ? 'bg-white text-[#064E3B] shadow-md'
-                : 'text-emerald-100/80 hover:text-white hover:bg-white/10'
+                ? 'bg-[#07563D] text-white shadow-xs font-bold'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-white/80'
             )}
           >
-            <CalendarDays className="w-4 h-4" />
+            <CalendarDays className="w-3.5 h-3.5" />
             <span>Leave Management</span>
           </button>
 
           <button
             onClick={() => setActiveTab('approvals')}
             className={cn(
-              'px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
+              'px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
               activeTab === 'approvals'
-                ? 'bg-white text-[#064E3B] shadow-md'
-                : 'text-emerald-100/80 hover:text-white hover:bg-white/10'
+                ? 'bg-[#07563D] text-white shadow-xs font-bold'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-white/80'
             )}
           >
-            <CheckSquare className="w-4 h-4" />
+            <CheckSquare className="w-3.5 h-3.5" />
             <span>Requests & Approvals</span>
           </button>
         </div>

@@ -20,6 +20,8 @@ import {
 import { OrganizationRecord } from '../../../../services/platform/platformTenantService';
 import { billingCalculationEngine } from '../../../../services/billing/billingCalculationEngine';
 import { platformSubscriptionService } from '../../../../services/platform/platformSubscriptionService';
+import { razorpayOrderService } from '../../../../services/platform/razorpayOrderService';
+import { saasPricingEngine } from '../../../../services/platform/saasPricingEngine';
 import { Button } from '../../../../components/ui/Button';
 import { useToast } from '../../../../components/ui/Toast';
 import { cn } from '../../../../lib/utils';
@@ -35,25 +37,79 @@ export const CustomerSubscriptionTab: React.FC<CustomerSubscriptionTabProps> = (
 }) => {
   const { showToast } = useToast();
   const [showChangePlanModal, setShowChangePlanModal] = useState(false);
-  const [selectedNewPlan, setSelectedNewPlan] = useState<'Starter' | 'Professional' | 'Business' | 'Enterprise'>('Business');
+  const [selectedNewPlan, setSelectedNewPlan] = useState<string>('Business');
   const [selectedBillingCycle, setSelectedBillingCycle] = useState<'Monthly' | 'Annual'>(
     ((org.billing_cycle === 'Monthly' || org.billing_cycle === 'Annual') ? org.billing_cycle : 'Monthly') as 'Monthly' | 'Annual'
   );
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const planCatalog = [
-    { name: 'Starter', monthly: 18000, annual: 180000, seats: 25, features: 12, desc: 'Essential core HR & attendance.' },
-    { name: 'Professional', monthly: 45000, annual: 450000, seats: 100, features: 22, desc: 'GPS geofenced attendance & shift scheduling.' },
-    { name: 'Business', monthly: 85000, annual: 850000, seats: 250, features: 36, desc: 'Comprehensive payroll, recruitment ATS & WhatsApp.' },
-    { name: 'Enterprise', monthly: 180000, annual: 1800000, seats: 500, features: 48, desc: 'Dedicated VPC, AI Copilot & biometric hardware.' },
-  ];
+  const commercialPlans = useMemo(() => saasPricingEngine.getPlans(), []);
 
-  const currentPlanSpec = planCatalog.find((p) => p.name === org.plan) || planCatalog[1];
-  const targetPlanSpec = planCatalog.find((p) => p.name === selectedNewPlan) || planCatalog[2];
+  const planCatalog = useMemo(() => {
+    if (commercialPlans && commercialPlans.length > 0) {
+      return commercialPlans.map((p) => {
+        const baseMonthly = p.baseMonthlyPrice > 0 ? p.baseMonthlyPrice : (p.volumeBands?.[0]?.pepmPrice || p.additionalEmployeePrice || 65) * (p.includedEmployees || 50);
+        return {
+          name: p.name,
+          code: p.code,
+          monthly: baseMonthly,
+          annual: Math.round(baseMonthly * 12 * 0.9),
+          seats: p.quotas?.maxEmployees || p.includedEmployees || 50,
+          features: p.includedFeatures?.length || (p.code === 'ENTERPRISE' ? 48 : p.code === 'BUSINESS' ? 36 : p.code === 'PROFESSIONAL' ? 24 : 12),
+          modules: p.includedModules?.length || 8,
+          desc: p.tagline || p.description,
+        };
+      });
+    }
+    return [
+      { name: 'Starter', code: 'STARTER', monthly: 18000, annual: 180000, seats: 25, features: 12, modules: 6, desc: 'Essential core HR & attendance.' },
+      { name: 'Professional', code: 'PROFESSIONAL', monthly: 45000, annual: 450000, seats: 100, features: 22, modules: 10, desc: 'GPS geofenced attendance & shift scheduling.' },
+      { name: 'Business', code: 'BUSINESS', monthly: 85000, annual: 850000, seats: 250, features: 36, modules: 14, desc: 'Comprehensive payroll, recruitment ATS & WhatsApp.' },
+      { name: 'Enterprise', code: 'ENTERPRISE', monthly: 180000, annual: 1800000, seats: 500, features: 48, modules: 16, desc: 'Dedicated VPC, AI Copilot & biometric hardware.' },
+    ];
+  }, [commercialPlans]);
+
+  const currentPlanSpec = useMemo(() => {
+    return (
+      planCatalog.find((p) => p.name.toLowerCase() === (org.plan || '').toLowerCase() || p.code.toLowerCase() === (org.plan || '').toLowerCase()) ||
+      planCatalog[1] ||
+      planCatalog[0]
+    );
+  }, [planCatalog, org.plan]);
+
+  const targetPlanSpec = useMemo(() => {
+    return (
+      planCatalog.find((p) => p.name.toLowerCase() === selectedNewPlan.toLowerCase() || p.code.toLowerCase() === selectedNewPlan.toLowerCase()) ||
+      planCatalog[2] ||
+      planCatalog[0]
+    );
+  }, [planCatalog, selectedNewPlan]);
 
   // Price Difference Calculation
   const priceDiffMonthly = targetPlanSpec.monthly - currentPlanSpec.monthly;
   const featuresDiff = targetPlanSpec.features - currentPlanSpec.features;
+
+  const handlePayWithRazorpay = async () => {
+    try {
+      const amount = org.mrr || (org.plan === 'Enterprise' ? 180000 : org.plan === 'Business' ? 85000 : org.plan === 'Professional' ? 45000 : 18000);
+      await razorpayOrderService.openCheckout({
+        amount,
+        currency: 'INR',
+        organizationId: org.id,
+        customerName: org.display_name || org.legal_name,
+        customerEmail: org.primary_admin_email || 'finance@customer.com',
+        description: `Joy PeopleHR Subscription Settlement for ${org.display_name || org.legal_name}`,
+        onSuccess: (res) => {
+          showToast(`Razorpay Settlement Successful! Ref: ${res.razorpay_payment_id}`, 'success');
+        },
+        onError: (err) => {
+          showToast(`Razorpay error: ${err.message || 'Payment not completed'}`, 'error');
+        },
+      });
+    } catch (e: any) {
+      showToast(`Razorpay error: ${e.message}`, 'error');
+    }
+  };
 
   const handleConfirmPlanChange = async () => {
     setIsUpdating(true);
@@ -91,14 +147,24 @@ export const CustomerSubscriptionTab: React.FC<CustomerSubscriptionTabProps> = (
             </div>
           </div>
 
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setShowChangePlanModal(true)}
-            className="bg-[#047857] hover:bg-[#036246] text-white font-bold text-xs shadow-xs"
-          >
-            <Sparkles className="w-3.5 h-3.5 mr-1.5" /> Change Plan
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePayWithRazorpay}
+              className="text-[#047857] border-emerald-300 hover:bg-emerald-50 font-bold text-xs flex items-center gap-1.5"
+            >
+              <CreditCard className="w-3.5 h-3.5" /> Pay via Razorpay
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowChangePlanModal(true)}
+              className="bg-[#047857] hover:bg-[#036246] text-white font-bold text-xs shadow-xs"
+            >
+              <Sparkles className="w-3.5 h-3.5 mr-1.5" /> Change Plan
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">

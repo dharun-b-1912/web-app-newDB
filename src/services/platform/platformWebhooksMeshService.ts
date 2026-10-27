@@ -240,407 +240,13 @@ const standardEventCatalog: EventTypeSchema[] = [
   },
 ];
 
-// In-Memory Storage Cache
+// In-Memory Storage Cache (Pure Supabase Database State, Zero LocalStorage, Zero Seed Mocks)
 let cachedEndpoints: WebhookEndpoint[] = [];
 let cachedDeliveries: WebhookDelivery[] = [];
 let cachedDeadLetters: DeadLetterEvent[] = [];
 let cachedEventRoutes: EventRoute[] = [];
 let cachedEventConsumers: EventConsumer[] = [];
 let cachedLiveActivity: LiveActivityItem[] = [];
-
-// Seed fallback data if empty (Local/Staging development only)
-function seedLocalDataIfEmpty() {
-  if (cachedEndpoints.length === 0) {
-    cachedEndpoints = [
-      {
-        id: 'whk-01',
-        endpoint_key: 'whk_sap_enterprise_prod',
-        organization_id: 'org-acme-01',
-        tenant_name: 'Acme Technologies',
-        name: 'Acme ERP & SAP S/4HANA Connector',
-        description: 'Real-time employee lifecycle, promotion, and salary bands synchronization with SAP S/4HANA',
-        environment: 'Production',
-        url: 'https://api.acme.com/webhooks/workforceos',
-        http_method: 'POST',
-        status: 'Active',
-        health_status: 'Healthy',
-        auth_type: 'HMAC-SHA256',
-        secret_id: 'sec_acme_prod_9918',
-        secret_masked: 'whsec_••••••••••••••••38f2',
-        secret_last_rotated: '2026-07-10T12:00:00Z',
-        timeout_ms: 10000,
-        max_attempts: 8,
-        backoff_strategy: 'exponential',
-        initial_retry_delay_seconds: 10,
-        max_retry_delay_seconds: 1800,
-        retry_status_codes: [408, 429, 500, 502, 503, 504],
-        rate_limit_rps: 120,
-        concurrency_limit: 15,
-        health_score: 98,
-        success_rate: 99.82,
-        failure_rate: 0.18,
-        avg_latency_ms: 284,
-        p95_latency_ms: 612,
-        last_success_at: '12 sec ago',
-        last_failure_at: '6 hours ago',
-        consecutive_failures: 0,
-        events: [
-          'workforce.employee.created',
-          'workforce.employee.updated',
-          'payroll.run.completed',
-        ],
-        ip_allowlist: ['54.210.12.88', '54.210.12.89'],
-        created_by: 'Platform Admin',
-        created_at: '2025-06-12T10:00:00Z',
-        updated_at: '2026-08-14T08:30:00Z',
-        tls_verified: true,
-      },
-      {
-        id: 'whk-02',
-        endpoint_key: 'whk_slack_notifications',
-        organization_id: 'org-tech-02',
-        tenant_name: 'TechCorp Solutions',
-        name: 'TechCorp Slack Announcements Dispatcher',
-        description: 'Slack webhook engine broadcasting daily welcome greetings, birthday milestones, and leave approvals',
-        environment: 'Production',
-        url: 'https://hooks.slack.com/services/T00/B00/XXXXX',
-        http_method: 'POST',
-        status: 'Active',
-        health_status: 'Healthy',
-        auth_type: 'HMAC-SHA256',
-        secret_id: 'sec_tech_prod_4421',
-        secret_masked: 'whsec_••••••••••••••••7a19',
-        secret_last_rotated: '2026-05-20T08:00:00Z',
-        timeout_ms: 5000,
-        max_attempts: 5,
-        backoff_strategy: 'exponential',
-        initial_retry_delay_seconds: 5,
-        max_retry_delay_seconds: 600,
-        retry_status_codes: [429, 500, 503],
-        rate_limit_rps: 50,
-        concurrency_limit: 8,
-        health_score: 100,
-        success_rate: 100.0,
-        failure_rate: 0.0,
-        avg_latency_ms: 142,
-        p95_latency_ms: 220,
-        last_success_at: '45 sec ago',
-        consecutive_failures: 0,
-        events: ['workforce.employee.created', 'leave.request.submitted'],
-        created_by: 'System Automation',
-        created_at: '2025-09-01T14:20:00Z',
-        updated_at: '2026-08-14T09:15:00Z',
-        tls_verified: true,
-      },
-      {
-        id: 'whk-03',
-        endpoint_key: 'whk_biometric_device_sink',
-        organization_id: 'org-zenith-04',
-        tenant_name: 'Zenith Global Dynamics',
-        name: 'Zenith Biometric Kiosk Sync Gateway',
-        description: 'Edge punch synchronizer bridging hardware attendance biometric terminals with the Cloud Attendance ledger',
-        environment: 'Production',
-        url: 'https://gateway.zenithglobal.com/api/v2/punch-sink',
-        http_method: 'POST',
-        status: 'Failing',
-        health_status: 'At Risk',
-        auth_type: 'HMAC-SHA256',
-        secret_id: 'sec_zenith_prod_1189',
-        secret_masked: 'whsec_••••••••••••••••9c84',
-        secret_last_rotated: '2026-08-01T04:00:00Z',
-        timeout_ms: 8000,
-        max_attempts: 5,
-        backoff_strategy: 'exponential',
-        initial_retry_delay_seconds: 15,
-        max_retry_delay_seconds: 900,
-        retry_status_codes: [500, 502, 504],
-        rate_limit_rps: 80,
-        concurrency_limit: 10,
-        health_score: 72,
-        success_rate: 88.45,
-        failure_rate: 11.55,
-        avg_latency_ms: 1840,
-        p95_latency_ms: 4200,
-        last_success_at: '2 min ago',
-        last_failure_at: '17 sec ago',
-        consecutive_failures: 4,
-        events: ['attendance.punch.created'],
-        created_by: 'Infrastructure Lead',
-        created_at: '2025-11-15T09:00:00Z',
-        updated_at: '2026-08-14T09:44:00Z',
-        tls_verified: true,
-      },
-    ];
-  }
-
-  if (cachedDeliveries.length === 0) {
-    cachedDeliveries = [
-      {
-        id: 'delv-9901',
-        event_id: 'evt_01J9X8K4M2P8Q9W1',
-        event_type: 'workforce.employee.created',
-        endpoint_id: 'whk-01',
-        endpoint_name: 'Acme ERP & SAP S/4HANA Connector',
-        tenant_name: 'Acme Technologies',
-        environment: 'Production',
-        status: 'Delivered',
-        attempt_count: 1,
-        max_attempts: 8,
-        http_status: 200,
-        response_time_ms: 240,
-        duration_ms: 240,
-        queued_at: new Date(Date.now() - 12000).toISOString(),
-        delivered_at: new Date(Date.now() - 11760).toISOString(),
-        request_headers: {
-          'Content-Type': 'application/json',
-          'X-Joy PeopleHR-Signature': 'sha256=a8f93...4b1',
-          'X-Joy PeopleHR-Timestamp': String(Math.floor(Date.now() / 1000)),
-          'X-Joy PeopleHR-Event-ID': 'evt_01J9X8K4M2P8Q9W1',
-        },
-        response_headers: {
-          'content-type': 'application/json; charset=utf-8',
-          'x-sap-correlation-id': 'SAP-CORR-9921',
-        },
-        response_body_excerpt: '{"status":"SUCCESS","sap_employee_ref":"SAP_EMP_88192"}',
-        attempts: [
-          {
-            id: 'att-9901-1',
-            delivery_id: 'delv-9901',
-            attempt_number: 1,
-            request_timestamp: new Date(Date.now() - 12000).toISOString(),
-            http_status: 200,
-            response_time_ms: 240,
-            duration_ms: 240,
-            status: 'Delivered',
-            request_headers: { 'Content-Type': 'application/json' },
-            response_headers: { 'content-type': 'application/json' },
-            response_excerpt: '{"status":"SUCCESS"}',
-          },
-        ],
-      },
-      {
-        id: 'delv-9902',
-        event_id: 'evt_01J9X90AA2C8D9E1',
-        event_type: 'attendance.punch.created',
-        endpoint_id: 'whk-03',
-        endpoint_name: 'Zenith Biometric Kiosk Sync Gateway',
-        tenant_name: 'Zenith Global Dynamics',
-        environment: 'Production',
-        status: 'Retrying',
-        attempt_count: 3,
-        max_attempts: 5,
-        http_status: 504,
-        response_time_ms: 8000,
-        duration_ms: 8000,
-        last_error_code: 'GATEWAY_TIMEOUT',
-        last_error_message: 'Target gateway failed to respond within configured 8000ms SLA timeout.',
-        next_retry_at: new Date(Date.now() + 45000).toISOString(),
-        queued_at: new Date(Date.now() - 60000).toISOString(),
-        failed_at: new Date(Date.now() - 17000).toISOString(),
-        request_headers: {
-          'Content-Type': 'application/json',
-          'X-Joy PeopleHR-Signature': 'sha256=fc771...9a2',
-          'X-Joy PeopleHR-Event-ID': 'evt_01J9X90AA2C8D9E1',
-        },
-        response_headers: {
-          'content-type': 'text/html',
-          'server': 'cloudflare',
-        },
-        response_body_excerpt: '<html><head><title>504 Gateway Time-out</title></head></html>',
-        attempts: [
-          {
-            id: 'att-9902-1',
-            delivery_id: 'delv-9902',
-            attempt_number: 1,
-            http_status: 504,
-            response_time_ms: 8000,
-            duration_ms: 8000,
-            status: 'Timeout',
-            error_code: 'GATEWAY_TIMEOUT',
-          },
-          {
-            id: 'att-9902-2',
-            delivery_id: 'delv-9902',
-            attempt_number: 2,
-            http_status: 504,
-            response_time_ms: 8000,
-            duration_ms: 8000,
-            status: 'Timeout',
-            error_code: 'GATEWAY_TIMEOUT',
-          },
-          {
-            id: 'att-9902-3',
-            delivery_id: 'delv-9902',
-            attempt_number: 3,
-            http_status: 504,
-            response_time_ms: 8000,
-            duration_ms: 8000,
-            status: 'Timeout',
-            error_code: 'GATEWAY_TIMEOUT',
-          },
-        ],
-      },
-    ];
-  }
-
-  if (cachedDeadLetters.length === 0) {
-    cachedDeadLetters = [
-      {
-        id: 'dlq-441',
-        event_id: 'evt_01J9W97LL7H8J9K0',
-        event_type: 'attendance.punch.created',
-        endpoint_id: 'whk-03',
-        endpoint_name: 'Zenith Biometric Kiosk Sync Gateway',
-        tenant_name: 'Zenith Global Dynamics',
-        environment: 'Production',
-        attempt_count: 5,
-        max_attempts: 5,
-        last_error: 'HTTP 504 Gateway Timeout after 5 automated backoff attempts',
-        error_code: 'MAX_RETRIES_EXCEEDED',
-        payload: {
-          employee_id: 'EMP-7718',
-          punch_type: 'CHECK_OUT',
-          terminal_id: 'KIOSK-BLR-02',
-        },
-        created_at: new Date(Date.now() - 4 * 3600000).toISOString(),
-        dead_lettered_at: new Date(Date.now() - 2 * 3600000).toISOString(),
-        reason: 'Target endpoint exhausted maximum retry allowance (5/5 attempts).',
-        status: 'Pending Review',
-      },
-    ];
-  }
-
-  if (cachedEventRoutes.length === 0) {
-    cachedEventRoutes = [
-      {
-        id: 'route-01',
-        name: 'SAP HR Sync Route',
-        event_type: 'workforce.employee.*',
-        source_service: 'People & Core HR Service',
-        destination_type: 'webhook_endpoint',
-        destination_name: 'Acme ERP & SAP S/4HANA Connector',
-        endpoint_id: 'whk-01',
-        route_key: 'route.employee.sap',
-        status: 'Active',
-        enabled: true,
-        priority: 100,
-        queue_name: 'queue.webhook.sap',
-        queue_depth: 2,
-        lag_ms: 45,
-        failure_rate_pct: 0.18,
-        last_processed_at: '12 sec ago',
-      },
-      {
-        id: 'route-02',
-        name: 'Slack Alerts Pipeline',
-        event_type: 'leave.request.submitted',
-        source_service: 'Leave Management Service',
-        destination_type: 'webhook_endpoint',
-        destination_name: 'TechCorp Slack Announcements Dispatcher',
-        endpoint_id: 'whk-02',
-        route_key: 'route.leave.slack',
-        status: 'Active',
-        enabled: true,
-        priority: 50,
-        queue_name: 'queue.webhook.slack',
-        queue_depth: 0,
-        lag_ms: 12,
-        failure_rate_pct: 0.0,
-        last_processed_at: '45 sec ago',
-      },
-      {
-        id: 'route-03',
-        name: 'Biometric Ingestion Mesh',
-        event_type: 'attendance.punch.created',
-        source_service: 'Time & Attendance Engine',
-        destination_type: 'webhook_endpoint',
-        destination_name: 'Zenith Biometric Kiosk Sync Gateway',
-        endpoint_id: 'whk-03',
-        route_key: 'route.attendance.biometric',
-        status: 'Degraded',
-        enabled: true,
-        priority: 200,
-        queue_name: 'queue.webhook.biometric',
-        queue_depth: 14,
-        lag_ms: 840,
-        failure_rate_pct: 11.55,
-        last_processed_at: '17 sec ago',
-      },
-    ];
-  }
-
-  if (cachedEventConsumers.length === 0) {
-    cachedEventConsumers = [
-      {
-        id: 'cons-01',
-        name: 'Payroll Engine Event Consumer',
-        service_name: 'payroll-worker-fleet',
-        environment: 'Production',
-        status: 'Healthy',
-        queue_name: 'queue.payroll.events',
-        last_heartbeat_at: 'Just now',
-        queue_depth: 0,
-        processing_rate_per_min: 840,
-        lag_ms: 8,
-        failure_rate_pct: 0.0,
-      },
-      {
-        id: 'cons-02',
-        name: 'Audit Log Archival Mesh Consumer',
-        service_name: 'audit-stream-worker',
-        environment: 'Production',
-        status: 'Healthy',
-        queue_name: 'queue.audit.events',
-        last_heartbeat_at: 'Just now',
-        queue_depth: 1,
-        processing_rate_per_min: 1420,
-        lag_ms: 14,
-        failure_rate_pct: 0.01,
-      },
-    ];
-  }
-
-  if (cachedLiveActivity.length === 0) {
-    cachedLiveActivity = [
-      {
-        id: 'act-1',
-        type: 'success',
-        event_type: 'workforce.employee.created',
-        subscribers_count: 2,
-        tenant_name: 'Acme Technologies',
-        endpoint_name: 'Acme ERP & SAP S/4HANA Connector',
-        time_ago: '12s ago',
-        message: 'Successfully delivered to SAP S/4HANA (HTTP 200 - 240ms)',
-        status_code: 200,
-        duration_ms: 240,
-      },
-      {
-        id: 'act-2',
-        type: 'failure',
-        event_type: 'attendance.punch.created',
-        subscribers_count: 1,
-        tenant_name: 'Zenith Global Dynamics',
-        endpoint_name: 'Zenith Biometric Kiosk Sync Gateway',
-        time_ago: '17s ago',
-        message: 'Delivery attempt 3/5 timed out (HTTP 504 - 8000ms). Next retry scheduled in 45s.',
-        status_code: 504,
-        duration_ms: 8000,
-      },
-      {
-        id: 'act-3',
-        type: 'success',
-        event_type: 'leave.request.submitted',
-        subscribers_count: 1,
-        tenant_name: 'TechCorp Solutions',
-        endpoint_name: 'TechCorp Slack Announcements Dispatcher',
-        time_ago: '45s ago',
-        message: 'Dispatched to Slack Incoming Webhook (HTTP 200 - 142ms)',
-        status_code: 200,
-        duration_ms: 142,
-      },
-    ];
-  }
-}
 
 // -------------------------------------------------------------
 // Service API Export
@@ -901,6 +507,7 @@ export const platformWebhooksMeshService = {
     };
 
     cachedEndpoints.unshift(newEndpoint);
+    
 
     // Audit log
     platformAuditService.logEvent({
@@ -963,6 +570,7 @@ export const platformWebhooksMeshService = {
     ep.secret_masked = `whsec_••••••••••••••••${newSuffix}`;
     ep.secret_last_rotated = new Date().toISOString();
     ep.updated_at = new Date().toISOString();
+    
 
     platformAuditService.logEvent({
       actor_name: actor,
@@ -1002,6 +610,7 @@ export const platformWebhooksMeshService = {
 
     ep.status = newStatus as any;
     ep.updated_at = new Date().toISOString();
+    
 
     platformAuditService.logEvent({
       actor_name: actor,
@@ -1033,6 +642,7 @@ export const platformWebhooksMeshService = {
     if (idx === -1) return { success: false, error: 'Endpoint not found.' };
 
     const deleted = cachedEndpoints.splice(idx, 1)[0];
+    
 
     platformAuditService.logEvent({
       actor_name: actor,

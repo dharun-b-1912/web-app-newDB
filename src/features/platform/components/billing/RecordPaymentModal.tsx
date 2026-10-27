@@ -12,6 +12,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { DetailedInvoice, platformBillingService } from '../../../../services/platform/platformBillingService';
+import { razorpayOrderService } from '../../../../services/platform/razorpayOrderService';
 import { Button } from '../../../../components/ui/Button';
 import { useToast } from '../../../../components/ui/Toast';
 
@@ -30,15 +31,51 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 }) => {
   const { showToast } = useToast();
   const [amount, setAmount] = useState<number>(inv.balance_due || inv.total);
-  const [paymentMethod, setPaymentMethod] = useState<'Razorpay (Sandbox)' | 'Stripe' | 'ICICI NetBanking' | 'Bank Wire (RTGS)' | 'Corporate UPI'>('Corporate UPI');
+  const [paymentMethod, setPaymentMethod] = useState<'Razorpay (Sandbox)' | 'Stripe' | 'ICICI NetBanking' | 'Bank Wire (RTGS)' | 'Corporate UPI'>('Razorpay (Sandbox)');
   const [transactionRef, setTransactionRef] = useState<string>(`UTR-BANK-${Date.now().toString().slice(-6)}`);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isOpeningRazorpay, setIsOpeningRazorpay] = useState<boolean>(false);
 
   if (!isOpen) return null;
+
+  const handlePayWithRazorpay = async () => {
+    if (amount <= 0 || isOpeningRazorpay) return;
+    setIsOpeningRazorpay(true);
+    try {
+      await razorpayOrderService.openCheckout({
+        amount,
+        currency: 'INR',
+        invoiceId: inv.id,
+        invoiceNumber: inv.invoice_number,
+        subscriptionId: (inv as any).subscription_id,
+        organizationId: inv.tenant_id,
+        customerName: inv.tenant_name,
+        customerEmail: 'finance@customer.com',
+        description: `Settlement for Invoice ${inv.invoice_number}`,
+        onSuccess: (res) => {
+          showToast(`Razorpay Payment Successful! Ref: ${res.razorpay_payment_id}`, 'success');
+          onPaymentRecorded();
+          onClose();
+        },
+        onError: (err) => {
+          showToast(`Razorpay error: ${err.message || 'Payment failed'}`, 'error');
+        },
+      });
+    } catch (err: any) {
+      showToast(err.message || 'Could not launch Razorpay checkout', 'error');
+    } finally {
+      setIsOpeningRazorpay(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (amount <= 0 || isSubmitting) return;
+
+    if (paymentMethod === 'Razorpay (Sandbox)') {
+      await handlePayWithRazorpay();
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -115,30 +152,59 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             </select>
           </div>
 
-          <div>
-            <label className="block font-bold text-gray-700 mb-1">UTR / Transaction Reference *</label>
-            <input
-              type="text"
-              required
-              value={transactionRef}
-              onChange={(e) => setTransactionRef(e.target.value)}
-              className="w-full px-3 py-2 border rounded-xl bg-gray-50 font-mono text-xs"
-            />
-          </div>
+          {paymentMethod === 'Razorpay (Sandbox)' ? (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 text-xs text-emerald-900">
+              <div className="flex items-center gap-1.5 font-bold">
+                <CreditCard className="w-4 h-4 text-[#047857]" />
+                <span>Razorpay Live Test Gateway</span>
+              </div>
+              <p className="text-[11px] text-emerald-700">
+                Key ID: <code className="font-mono bg-emerald-100 px-1 py-0.5 rounded text-[10.5px]">rzp_test_TqReUSPk2WMRmD</code>
+              </p>
+              <p className="text-[11px] text-emerald-600">
+                Supports Test UPI (<code>success@razorpay</code>), NetBanking, and Test Cards. Real order ID will be generated.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label className="block font-bold text-gray-700 mb-1">UTR / Transaction Reference *</label>
+              <input
+                type="text"
+                required
+                value={transactionRef}
+                onChange={(e) => setTransactionRef(e.target.value)}
+                className="w-full px-3 py-2 border rounded-xl bg-gray-50 font-mono text-xs"
+              />
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-2 border-t">
-            <Button variant="outline" size="sm" type="button" onClick={onClose} disabled={isSubmitting}>
+            <Button variant="outline" size="sm" type="button" onClick={onClose} disabled={isSubmitting || isOpeningRazorpay}>
               Cancel
             </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              type="submit"
-              disabled={isSubmitting || amount <= 0}
-              className="bg-[#047857] hover:bg-[#036246] text-white font-bold cursor-pointer"
-            >
-              {isSubmitting ? 'Recording...' : 'Confirm Payment Settlement'}
-            </Button>
+            {paymentMethod === 'Razorpay (Sandbox)' ? (
+              <Button
+                variant="primary"
+                size="sm"
+                type="button"
+                onClick={handlePayWithRazorpay}
+                disabled={isOpeningRazorpay || amount <= 0}
+                className="bg-[#047857] hover:bg-[#036246] text-white font-bold cursor-pointer flex items-center gap-1.5"
+              >
+                <CreditCard className="w-4 h-4" />
+                {isOpeningRazorpay ? 'Generating Order & Launching...' : `Pay ₹${amount.toLocaleString('en-IN')} with Razorpay →`}
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                type="submit"
+                disabled={isSubmitting || amount <= 0}
+                className="bg-[#047857] hover:bg-[#036246] text-white font-bold cursor-pointer"
+              >
+                {isSubmitting ? 'Recording...' : 'Confirm Payment Settlement'}
+              </Button>
+            )}
           </div>
         </form>
       </div>

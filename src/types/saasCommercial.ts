@@ -122,6 +122,25 @@ export interface CrmOpportunity {
   updatedAt: string;
 }
 
+export interface CommercialSalesOwner {
+  id: string; // e.g. 'so-01'
+  staffId?: string; // Optional link to platform_staff table
+  name: string;
+  email: string;
+  phone?: string;
+  designation: string; // e.g. 'Commercial Lead & Enterprise Solutions'
+  territory: string; // e.g. 'India (South) & Strategic Accounts'
+  annualQuotaArr: number; // in INR
+  closedWonArr: number; // in INR
+  activeDealsCount: number;
+  totalPipelineValue: number; // in INR
+  winRatePct: number;
+  status: 'Active' | 'Inactive';
+  avatarUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type QuotationOriginType = 'NEW_CUSTOMER' | 'EXISTING_CUSTOMER';
 
 export type QuotationPurpose =
@@ -139,6 +158,7 @@ export interface CommercialClient {
   clientCode: string; // e.g. CLI-00124
   legalName: string;
   tradeName?: string;
+  logoUrl?: string; // Optimized company logo URL or Base64 data URI
   organizationId?: string;
   leadId?: string;
   opportunityId?: string;
@@ -231,6 +251,7 @@ export interface CommercialQuotation {
   leadNumber?: string;
   clientId?: string; // Optional for prospects until converted to Client
   clientName: string; // Company / Prospect Name
+  clientLogoUrl?: string; // Client Company Logo
   clientGstin?: string; // Optional for prospects ("Pending Verification")
   clientEmail: string;
   clientPhone?: string;
@@ -306,6 +327,8 @@ export interface CommercialQuotation {
   };
   status: QuotationStatus;
   validUntil: string;
+  paymentLink?: string;
+  razorpayQrPayload?: string;
   createdAt: string;
   updatedAt: string;
   convertedClientId?: string;

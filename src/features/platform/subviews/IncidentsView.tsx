@@ -901,17 +901,17 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
       {/* Incidents Table */}
       <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-[#E2E8F0] text-[#64748B] font-semibold bg-[#F8FAFC]">
-                <th className="py-3 px-4">Incident & ID</th>
-                <th className="py-3 px-4">Severity</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Customer Impact</th>
-                <th className="py-3 px-4">Affected Services</th>
-                <th className="py-3 px-4">Incident Commander</th>
-                <th className="py-3 px-4">Started & Duration</th>
-                <th className="py-3 px-4 text-right">Action</th>
+                <th className="py-2.5 px-3">Incident & ID</th>
+                <th className="py-2.5 px-2">Severity</th>
+                <th className="py-2.5 px-2">Status</th>
+                <th className="py-2.5 px-2.5">Customer Impact</th>
+                <th className="py-2.5 px-2.5">Affected Services</th>
+                <th className="py-2.5 px-2.5">Incident Commander</th>
+                <th className="py-2.5 px-2.5">Started & Duration</th>
+                <th className="py-2.5 px-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F1F5F9]">
@@ -928,19 +928,19 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                     onClick={() => setSelectedIncidentId(inc.id)}
                     className="hover:bg-[#F8FAFC] transition-colors cursor-pointer"
                   >
-                    <td className="py-3.5 px-4 font-bold text-[#0F172B]">
-                      <div className="hover:text-[#047857] hover:underline font-bold text-sm text-[#0F172B]">
+                    <td className="py-2.5 px-3 font-bold text-[#0F172B]">
+                      <div className="hover:text-[#047857] hover:underline font-bold text-xs text-[#0F172B] truncate max-w-[220px]">
                         {inc.title}
                       </div>
-                      <div className="text-[10px] text-[#64748B] font-mono font-normal mt-0.5">
+                      <div className="text-[10px] text-[#64748B] font-mono font-normal mt-0.5 truncate">
                         {inc.id} • {inc.detection_source}
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-4">
+                    <td className="py-2.5 px-2 whitespace-nowrap">
                       <span
                         className={cn(
-                          'text-[10px] font-bold px-2.5 py-0.5 rounded-full inline-block',
+                          'text-[10px] font-bold px-2 py-0.5 rounded-full inline-block',
                           inc.severity.includes('SEV-1')
                             ? 'bg-[#FEF2F2] text-[#DC2626] border border-[#FCA5A5]'
                             : inc.severity.includes('SEV-2')
@@ -954,10 +954,10 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                       </span>
                     </td>
 
-                    <td className="py-3.5 px-4">
+                    <td className="py-2.5 px-2 whitespace-nowrap">
                       <span
                         className={cn(
-                          'text-[10px] font-bold px-2.5 py-0.5 rounded-full inline-block',
+                          'text-[10px] font-bold px-2 py-0.5 rounded-full inline-block',
                           inc.status === 'Resolved' || inc.status === 'Closed'
                             ? 'bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0]'
                             : inc.status === 'Monitoring'
@@ -969,17 +969,17 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                       </span>
                     </td>
 
-                    <td className="py-3.5 px-4">
-                      <strong className="text-[#0F172B]">{inc.affected_tenants_count} Tenants</strong>
+                    <td className="py-2.5 px-2.5 whitespace-nowrap">
+                      <strong className="text-[#0F172B] text-xs">{inc.affected_tenants_count} Tenants</strong>
                       <div className="text-[10px] text-[#64748B]">+{inc.latency_increase_ms}ms latency</div>
                     </td>
 
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-1 flex-wrap">
+                    <td className="py-2.5 px-2.5">
+                      <div className="flex items-center gap-1 flex-wrap max-w-[160px]">
                         {inc.affected_services.map((srv) => (
                           <span
                             key={srv}
-                            className="text-[10px] px-2 py-0.5 rounded bg-[#F8FAFC] border border-[#E2E8F0] font-mono text-[#475569]"
+                            className="text-[9.5px] px-1.5 py-0.5 rounded bg-[#F8FAFC] border border-[#E2E8F0] font-mono text-[#475569] whitespace-nowrap"
                           >
                             {srv}
                           </span>
@@ -987,16 +987,16 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-4 text-[#0F172B] font-medium">
+                    <td className="py-2.5 px-2.5 text-[#0F172B] font-medium whitespace-nowrap text-xs">
                       {inc.commander_name}
                     </td>
 
-                    <td className="py-3.5 px-4">
-                      <div className="font-mono text-[11px] text-[#0F172B]">{inc.started_at}</div>
-                      <div className="text-[10px] text-[#047857] font-semibold">{inc.duration_formatted} duration</div>
+                    <td className="py-2.5 px-2.5 whitespace-nowrap">
+                      <div className="font-mono text-[10.5px] text-[#0F172B]">{inc.started_at}</div>
+                      <div className="text-[10px] text-[#047857] font-semibold">{inc.duration_formatted}</div>
                     </td>
 
-                    <td className="py-3.5 px-4 text-right">
+                    <td className="py-2.5 px-3 text-right whitespace-nowrap">
                       <Button
                         variant="outline"
                         size="sm"

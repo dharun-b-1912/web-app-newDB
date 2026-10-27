@@ -363,7 +363,7 @@ export const API_KEY_SCOPE_GROUPS: ApiKeyScopeGroup[] = [
   },
 ];
 
-// In-Memory Storage Cache (Clean Realtime State - Zero Mock Data)
+// Persistent State Cache (Zero LocalStorage, Pure Supabase State)
 let cachedSettings: Record<string, any> = {};
 let cachedVersions: PlatformConfigVersion[] = [];
 let cachedApiKeys: PlatformApiKeyItem[] = [];
@@ -383,16 +383,12 @@ let cachedMaintenance: PlatformMaintenanceSchedule = {
   created_at: new Date().toISOString(),
 };
 
-// Initialize baseline definitions
-function initializeDefaultsIfEmpty() {
-  if (Object.keys(cachedSettings).length === 0) {
-    PLATFORM_SETTING_DEFINITIONS.forEach((def) => {
-      cachedSettings[def.key] = def.default_value;
-    });
+// Initialize baseline definitions from definitions
+PLATFORM_SETTING_DEFINITIONS.forEach((def) => {
+  if (cachedSettings[def.key] === undefined) {
+    cachedSettings[def.key] = def.default_value;
   }
-}
-
-initializeDefaultsIfEmpty();
+});
 
 // -------------------------------------------------------------
 // Service Implementation
@@ -412,21 +408,25 @@ export const platformSettingsService = {
 
     if (onStatusChange) onStatusChange('Realtime Connected');
 
-    const u1 = realtimeChannelManager.subscribeToTable('platform_settings', () => {
-      this.syncFromSupabase().then(() => onUpdate());
-    });
-    const u2 = realtimeChannelManager.subscribeToTable('platform_api_keys', () => {
-      this.syncFromSupabase().then(() => onUpdate());
-    });
-    const u3 = realtimeChannelManager.subscribeToTable('platform_maintenance_windows', () => {
-      this.syncFromSupabase().then(() => onUpdate());
-    });
+    try {
+      const u1 = realtimeChannelManager.subscribeToTable('platform_settings', () => {
+        this.syncFromSupabase().then(() => onUpdate());
+      });
+      const u2 = realtimeChannelManager.subscribeToTable('platform_api_keys', () => {
+        this.syncFromSupabase().then(() => onUpdate());
+      });
+      const u3 = realtimeChannelManager.subscribeToTable('platform_maintenance_windows', () => {
+        this.syncFromSupabase().then(() => onUpdate());
+      });
 
-    return () => {
-      u1();
-      u2();
-      u3();
-    };
+      return () => {
+        try { u1(); } catch {}
+        try { u2(); } catch {}
+        try { u3(); } catch {}
+      };
+    } catch {
+      return () => {};
+    }
   },
 
   async syncFromSupabase(): Promise<void> {
@@ -443,6 +443,7 @@ export const platformSettingsService = {
         stRes.data.forEach((row: any) => {
           cachedSettings[row.key] = row.value;
         });
+        
       }
 
       if (keyRes.data && keyRes.data.length > 0) {
@@ -559,6 +560,8 @@ export const platformSettingsService = {
     };
 
     cachedVersions.unshift(newVersion);
+    
+    
 
     // Audit Logging
     platformAuditService.logEvent({
@@ -682,6 +685,7 @@ export const platformSettingsService = {
     };
 
     cachedApiKeys.unshift(newKey);
+    
 
     platformAuditService.logEvent({
       actor_name: actor,
@@ -745,6 +749,7 @@ export const platformSettingsService = {
     // Old key scheduled revocation
     oldKey.revocation_reason = `Key rotated with ${dto.grace_period_hours}h grace period. Replacement: ${replacement.key.key_prefix}`;
     oldKey.updated_at = new Date().toISOString();
+    
 
     platformAuditService.logEvent({
       actor_name: actor,
@@ -776,6 +781,7 @@ export const platformSettingsService = {
     key.revoked_by = actor;
     key.revocation_reason = reason;
     key.updated_at = new Date().toISOString();
+    
 
     platformAuditService.logEvent({
       actor_name: actor,
@@ -879,6 +885,8 @@ export const platformSettingsService = {
       Object.assign(cachedMaintenance, scheduleUpdates);
     }
     cachedSettings['operations.maintenance_mode_active'] = isActive;
+    
+    
 
     platformAuditService.logEvent({
       actor_name: actor,
@@ -940,6 +948,9 @@ export const platformSettingsService = {
       cachedMaintenance.is_active = true;
       actionMessage = 'Platform placed in strict Read-Only mode. All database mutations blocked.';
     }
+
+    
+    
 
     platformAuditService.logEvent({
       actor_name: actor,

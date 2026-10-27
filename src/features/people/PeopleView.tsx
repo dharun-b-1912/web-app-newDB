@@ -8,21 +8,35 @@ import {
   UserPlus,
   RotateCcw,
   Users,
+  UserCheck,
   FileSpreadsheet,
   Download,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Building2,
+  Clock,
+  LogOut,
+  X,
+  Filter,
+  ShieldCheck,
+  ArrowRight,
 } from 'lucide-react';
 import { EmployeeList, SortField, SortDir } from './EmployeeList';
 import { EmployeeCreateWizardModal } from './EmployeeCreateWizardModal';
 import { EmployeeProfileDrawer } from './EmployeeProfileDrawer';
+import { EmployeeAttendanceStatementModal } from '../attendance/components/EmployeeAttendanceStatementModal';
 import { BulkEmployeeImportModal } from './bulk/BulkEmployeeImportModal';
 import { exportEmployeeMasterData, exportOnboardingHeaderTemplate } from './bulk/excelTemplateGenerator';
 import { Employee } from '../../types';
 import { api } from '../../services/api';
+import { onboardingService } from '../../services/onboardingService';
+import { supabase, supabaseAdmin } from '../../lib/supabase';
 import { useTenant } from '../../hooks/useTenant';
 import { usePermission } from '../../hooks/usePermission';
 import { hrEventBus } from '../../services/hrEventBus';
+import { syncUrlWithRoute } from '../../lib/router/urlRouter';
 import { cn } from '../../lib/utils';
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
@@ -34,6 +48,9 @@ export const PeopleView: React.FC = () => {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [onboardingCount, setOnboardingCount] = useState<number>(0);
+  const [exitsCount, setExitsCount] = useState<number>(0);
 
   // Search & Filter State
   const [search, setSearch] = useState('');
@@ -47,6 +64,8 @@ export const PeopleView: React.FC = () => {
   const [employeeToEdit, setEmployeeToEdit] = useState<Employee | null>(null);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [drawerInitialTab, setDrawerInitialTab] = useState<string>('overview');
+  const [attendanceModalEmployeeId, setAttendanceModalEmployeeId] = useState<string | null>(null);
 
   // Sort state
   const [sortField, setSortField] = useState<SortField>('none');
@@ -69,17 +88,49 @@ export const PeopleView: React.FC = () => {
   }, []);
 
   const loadData = async () => {
+    setIsLoading(true);
     try {
       const data = await api.getEmployees(activeCompany?.id ? { companyId: activeCompany.id } : undefined);
       setEmployees(data || []);
+
+      // Authoritative lifecycle counts
+      try {
+        const m = await onboardingService.getMetrics();
+        setOnboardingCount(m?.active_onboardings || 0);
+      } catch {}
+
+      try {
+        const { count } = await (supabaseAdmin || supabase)
+          .from('employee_separations')
+          .select('id', { count: 'exact', head: true })
+          .in('exit_status', ['INITIATED', 'PENDING_APPROVAL', 'CLEARANCE_IN_PROGRESS']);
+        setExitsCount(count || 0);
+      } catch {}
     } catch (err) {
       console.warn('[PeopleView] Failed to load employees:', err);
       setEmployees([]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
     loadData();
+  }, [activeCompany?.id]);
+
+  // Tenant Switching Safety: refresh context & reset stale filters
+  useEffect(() => {
+    const handleTenantSwitch = () => {
+      setSearch('');
+      setSourceFilter('ALL');
+      setDeptFilter('ALL');
+      setStatusFilter('ALL');
+      setLocationFilter('ALL');
+      setCurrentPage(1);
+      loadData();
+    };
+    window.addEventListener('tenant:switched', handleTenantSwitch);
+    return () => window.removeEventListener('tenant:switched', handleTenantSwitch);
   }, [activeCompany?.id]);
 
   useEffect(() => {
@@ -377,102 +428,99 @@ export const PeopleView: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI Summary Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
+      {/* 6 Authoritative Workforce Lifecycle Indicator Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <div
-          onClick={() => handlePillClick('ALL')}
+          onClick={() => { setSourceFilter('ALL'); setStatusFilter('ALL'); resetPage(); }}
           className={cn(
-            "p-4 rounded-2xl border transition-all cursor-pointer space-y-1 shadow-2xs",
-            activePillId === 'ALL' ? "bg-emerald-50/50 border-emerald-300 ring-2 ring-[#07563D]/20" : "bg-white border-gray-200 hover:border-gray-300"
+            "p-3.5 rounded-2xl border transition-all cursor-pointer space-y-1 shadow-2xs group",
+            sourceFilter === 'ALL' && statusFilter === 'ALL' ? "bg-emerald-50/70 border-emerald-300 ring-2 ring-[#07563D]/20" : "bg-white border-gray-200/80 hover:border-emerald-200"
           )}
         >
-          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Workforce</div>
+          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between">
+            <span>Total Headcount</span>
+            <Users className="w-3.5 h-3.5 text-gray-400 group-hover:text-emerald-700" />
+          </div>
           <div className="text-xl font-black text-gray-900">{totalCount}</div>
-          <div className="text-[10px] text-gray-400 font-medium">Headcount in Scope</div>
+          <div className="text-[10px] text-gray-400 font-medium">In Organization Scope</div>
         </div>
 
         <div
-          onClick={() => handlePillClick('DIRECT')}
+          onClick={() => { setSourceFilter('DIRECT'); setStatusFilter('ALL'); resetPage(); }}
           className={cn(
-            "p-4 rounded-2xl border transition-all cursor-pointer space-y-1 shadow-2xs",
-            activePillId === 'DIRECT' ? "bg-emerald-50/50 border-emerald-300 ring-2 ring-[#07563D]/20" : "bg-white border-gray-200 hover:border-gray-300"
+            "p-3.5 rounded-2xl border transition-all cursor-pointer space-y-1 shadow-2xs group",
+            sourceFilter === 'DIRECT' ? "bg-emerald-50/70 border-emerald-300 ring-2 ring-[#07563D]/20" : "bg-white border-gray-200/80 hover:border-emerald-200"
           )}
         >
-          <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Direct Employees</div>
+          <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider flex items-center justify-between">
+            <span>Direct Payroll</span>
+            <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+          </div>
           <div className="text-xl font-black text-[#07563D]">{directCount}</div>
-          <div className="text-[10px] text-emerald-800 font-medium">On Company Payroll</div>
+          <div className="text-[10px] text-emerald-700 font-medium">Company Employees</div>
         </div>
 
         <div
-          onClick={() => handlePillClick('VENDOR')}
+          onClick={() => { setSourceFilter('VENDOR'); setStatusFilter('ALL'); resetPage(); }}
           className={cn(
-            "p-4 rounded-2xl border transition-all cursor-pointer space-y-1 shadow-2xs",
-            activePillId === 'VENDOR' ? "bg-amber-50/50 border-amber-300 ring-2 ring-amber-500/20" : "bg-white border-gray-200 hover:border-gray-300"
+            "p-3.5 rounded-2xl border transition-all cursor-pointer space-y-1 shadow-2xs group",
+            sourceFilter === 'VENDOR' ? "bg-amber-50/70 border-amber-300 ring-2 ring-amber-500/20" : "bg-white border-gray-200/80 hover:border-amber-200"
           )}
         >
-          <div className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Vendor Workforce</div>
+          <div className="text-[10px] font-bold text-amber-800 uppercase tracking-wider flex items-center justify-between">
+            <span>Vendor Workforce</span>
+            <Building2 className="w-3.5 h-3.5 text-amber-600" />
+          </div>
           <div className="text-xl font-black text-amber-700">{vendorCount}</div>
-          <div className="text-[10px] text-amber-800 font-medium">Manpower Contractors</div>
+          <div className="text-[10px] text-amber-700 font-medium">External Contractors</div>
         </div>
 
         <div
-          onClick={() => handlePillClick('ACTIVE')}
+          onClick={() => { setStatusFilter('Probation'); setSourceFilter('ALL'); resetPage(); }}
           className={cn(
-            "p-4 rounded-2xl border transition-all cursor-pointer space-y-1 shadow-2xs",
-            activePillId === 'ACTIVE' ? "bg-blue-50/50 border-blue-300 ring-2 ring-blue-500/20" : "bg-white border-gray-200 hover:border-gray-300"
+            "p-3.5 rounded-2xl border transition-all cursor-pointer space-y-1 shadow-2xs group",
+            statusFilter === 'Probation' ? "bg-purple-50/70 border-purple-300 ring-2 ring-purple-500/20" : "bg-white border-gray-200/80 hover:border-purple-200"
           )}
         >
-          <div className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Active Confirmed</div>
-          <div className="text-xl font-black text-blue-700">{activeCount}</div>
-          <div className="text-[10px] text-blue-800 font-medium">Standard Operations</div>
-        </div>
-
-        <div
-          onClick={() => handlePillClick('PROBATION')}
-          className={cn(
-            "p-4 rounded-2xl border transition-all cursor-pointer space-y-1 shadow-2xs",
-            activePillId === 'PROBATION' ? "bg-purple-50/50 border-purple-300 ring-2 ring-purple-500/20" : "bg-white border-gray-200 hover:border-gray-300"
-          )}
-        >
-          <div className="text-[10px] font-bold text-purple-800 uppercase tracking-wider">On Probation</div>
+          <div className="text-[10px] font-bold text-purple-800 uppercase tracking-wider flex items-center justify-between">
+            <span>On Probation</span>
+            <Clock className="w-3.5 h-3.5 text-purple-600" />
+          </div>
           <div className="text-xl font-black text-purple-700">{probationCount}</div>
-          <div className="text-[10px] text-purple-800 font-medium">Evaluation Period</div>
+          <div className="text-[10px] text-purple-700 font-medium">Evaluation Period</div>
         </div>
-      </div>
 
-      {/* Quick Segment Pills Bar */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {[
-          { id: 'ALL', label: 'All Workforce', count: totalCount },
-          { id: 'DIRECT', label: 'Direct Employees', count: directCount },
-          { id: 'VENDOR', label: 'Vendor Workforce', count: vendorCount },
-          { id: 'ACTIVE', label: 'Active', count: activeCount },
-          { id: 'PROBATION', label: 'On Probation', count: probationCount },
-        ].map((tab) => {
-          const isActive = activePillId === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => handlePillClick(tab.id)}
-              className={cn(
-                "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-2 border",
-                isActive
-                  ? "bg-[#07563D] text-white border-[#07563D] shadow-2xs"
-                  : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-              )}
-            >
-              <span>{tab.label}</span>
-              <span
-                className={cn(
-                  "text-[10px] px-1.5 py-0.5 rounded-full font-black",
-                  isActive ? "bg-emerald-900/60 text-white" : "bg-gray-100 text-gray-700"
-                )}
-              >
-                {tab.count}
-              </span>
-            </button>
-          );
-        })}
+        <div
+          onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'onboarding' } }))}
+          className="p-3.5 rounded-2xl border bg-white border-gray-200/80 hover:border-blue-300 transition-all cursor-pointer space-y-1 shadow-2xs group"
+          title="Click to view Onboarding Engine & Candidate Pipeline"
+        >
+          <div className="text-[10px] font-bold text-blue-800 uppercase tracking-wider flex items-center justify-between">
+            <span>Onboarding Pipeline</span>
+            <UserPlus className="w-3.5 h-3.5 text-blue-600" />
+          </div>
+          <div className="text-xl font-black text-blue-700">{onboardingCount}</div>
+          <div className="text-[10px] text-blue-700 font-medium flex items-center gap-1">
+            <span>Candidates in Process</span>
+            <ArrowRight className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+        </div>
+
+        <div
+          onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'offboarding' } }))}
+          className="p-3.5 rounded-2xl border bg-white border-gray-200/80 hover:border-rose-300 transition-all cursor-pointer space-y-1 shadow-2xs group"
+          title="Click to view Offboarding & Separation Workflows"
+        >
+          <div className="text-[10px] font-bold text-rose-800 uppercase tracking-wider flex items-center justify-between">
+            <span>Separations Active</span>
+            <LogOut className="w-3.5 h-3.5 text-rose-600" />
+          </div>
+          <div className="text-xl font-black text-rose-700">{exitsCount}</div>
+          <div className="text-[10px] text-rose-700 font-medium flex items-center gap-1">
+            <span>Exit Tasks Pending</span>
+            <ArrowRight className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+        </div>
       </div>
 
       {/* Filter Bar */}
@@ -559,6 +607,57 @@ export const PeopleView: React.FC = () => {
               <RotateCcw className="w-3.5 h-3.5" /> Reset
             </Button>
           </div>
+
+          {/* Active Filter Chips */}
+          {(search || sourceFilter !== 'ALL' || deptFilter !== 'ALL' || statusFilter !== 'ALL' || locationFilter !== 'ALL') && (
+            <div className="sm:col-span-12 pt-2 border-t border-gray-100 flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1">
+                <Filter className="w-3 h-3" /> Active Scope:
+              </span>
+
+              {search && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200/80">
+                  Search: "{search}"
+                  <button onClick={() => { setSearch(''); resetPage(); }} className="hover:text-emerald-950 cursor-pointer ml-1">&times;</button>
+                </span>
+              )}
+
+              {sourceFilter !== 'ALL' && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200/80">
+                  Model: {sourceFilter === 'DIRECT' ? 'Direct Employees' : 'Vendor Contractors'}
+                  <button onClick={() => { setSourceFilter('ALL'); resetPage(); }} className="hover:text-emerald-950 cursor-pointer ml-1">&times;</button>
+                </span>
+              )}
+
+              {deptFilter !== 'ALL' && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200/80">
+                  Dept: {deptFilter}
+                  <button onClick={() => { setDeptFilter('ALL'); resetPage(); }} className="hover:text-emerald-950 cursor-pointer ml-1">&times;</button>
+                </span>
+              )}
+
+              {statusFilter !== 'ALL' && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200/80">
+                  Status: {statusFilter}
+                  <button onClick={() => { setStatusFilter('ALL'); resetPage(); }} className="hover:text-emerald-950 cursor-pointer ml-1">&times;</button>
+                </span>
+              )}
+
+              {locationFilter !== 'ALL' && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200/80">
+                  Location: {locationFilter}
+                  <button onClick={() => { setLocationFilter('ALL'); resetPage(); }} className="hover:text-emerald-950 cursor-pointer ml-1">&times;</button>
+                </span>
+              )}
+
+              <button
+                onClick={handleResetFilters}
+                className="text-xs font-bold text-gray-400 hover:text-rose-600 ml-1 underline cursor-pointer"
+              >
+                Clear all filters
+              </button>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -570,15 +669,39 @@ export const PeopleView: React.FC = () => {
         onSort={handleSort}
         onSelectEmployee={(emp) => {
           setSelectedEmployee(emp);
+          setDrawerInitialTab('overview');
           setIsDrawerOpen(true);
         }}
         onEditEmployee={(emp) => {
           setEmployeeToEdit(emp);
           setIsCreateOpen(true);
         }}
-        onDeleteEmployee={async (emp) => {
-          await api.deleteEmployee(emp.id);
-          setEmployees((prev) => prev.filter((e) => e.id !== emp.id));
+        onViewAttendance={(emp) => {
+          setAttendanceModalEmployeeId(emp.id);
+        }}
+        onViewDocuments={(emp) => {
+          syncUrlWithRoute('documents', { employeeId: emp.id, search: emp.employee_code || emp.first_name });
+          window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'documents', employeeId: emp.id, search: emp.employee_code || emp.first_name } }));
+        }}
+        onManageAccess={(emp) => {
+          setSelectedEmployee(emp);
+          setDrawerInitialTab('access');
+          setIsDrawerOpen(true);
+        }}
+        onStartOffboarding={(emp) => {
+          syncUrlWithRoute('offboarding', { employeeId: emp.id, code: emp.employee_code || '' });
+          window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'offboarding', employeeId: emp.id, code: emp.employee_code || '' } }));
+        }}
+        onArchiveEmployee={async (emp, reason) => {
+          try {
+            await api.updateEmployeeStatus(emp.id, 'Archived');
+            setEmployees((prev) =>
+              prev.map((e) => (e.id === emp.id ? { ...e, status: 'Archived' as any } : e))
+            );
+            showToast(`✓ Employee ${emp.first_name} ${emp.last_name} archived. Historical records preserved.`, 'success');
+          } catch (err: any) {
+            showToast('Failed to archive employee: ' + (err?.message || err), 'error');
+          }
         }}
         onToggleStatus={async (emp, newStatus) => {
           try {
@@ -604,23 +727,57 @@ export const PeopleView: React.FC = () => {
       />
 
       {/* ─── Pagination Controls ───────────────────────────────────────── */}
-      {totalFiltered > pageSize && (
-        <div className="flex items-center justify-between pt-1">
-          <span className="text-xs text-gray-500">
-            Showing{' '}
-            <strong className="text-gray-900">
-              {(safeCurrentPage - 1) * pageSize + 1}–{Math.min(safeCurrentPage * pageSize, totalFiltered)}
-            </strong>{' '}
-            of <strong className="text-gray-900">{totalFiltered}</strong> records
-          </span>
+      {totalFiltered > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-gray-100">
+          <div className="flex items-center gap-3 text-xs text-gray-500">
+            <span>
+              Showing{' '}
+              <strong className="text-gray-900">
+                {(safeCurrentPage - 1) * pageSize + 1}–{Math.min(safeCurrentPage * pageSize, totalFiltered)}
+              </strong>{' '}
+              of <strong className="text-gray-900">{totalFiltered}</strong> records
+            </span>
+
+            <span className="text-gray-300">|</span>
+
+            <div className="flex items-center gap-1.5">
+              <span>Rows per page:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value) as any);
+                  setCurrentPage(1);
+                }}
+                className="h-7 px-2 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#07563D] cursor-pointer"
+              >
+                {PAGE_SIZE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
           <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCurrentPage(1)}
+              disabled={safeCurrentPage === 1}
+              className="h-7 w-7 p-0 disabled:opacity-40"
+              title="First Page"
+            >
+              <ChevronsLeft className="w-3.5 h-3.5" />
+            </Button>
+
             <Button
               size="sm"
               variant="outline"
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={safeCurrentPage === 1}
               className="h-7 w-7 p-0 disabled:opacity-40"
+              title="Previous Page"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </Button>
@@ -655,8 +812,20 @@ export const PeopleView: React.FC = () => {
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={safeCurrentPage === totalPages}
               className="h-7 w-7 p-0 disabled:opacity-40"
+              title="Next Page"
             >
               <ChevronRight className="w-3.5 h-3.5" />
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={safeCurrentPage === totalPages}
+              className="h-7 w-7 p-0 disabled:opacity-40"
+              title="Last Page"
+            >
+              <ChevronsRight className="w-3.5 h-3.5" />
             </Button>
           </div>
         </div>
@@ -689,8 +858,20 @@ export const PeopleView: React.FC = () => {
         <EmployeeProfileDrawer
           employee={selectedEmployee}
           isOpen={isDrawerOpen}
-          onClose={() => setIsDrawerOpen(false)}
+          initialTab={drawerInitialTab}
+          onClose={() => {
+            setIsDrawerOpen(false);
+            setDrawerInitialTab('overview');
+          }}
           onUpdated={handleEmployeeUpdated}
+        />
+      )}
+
+      {/* Real-time Employee Attendance Statement Modal */}
+      {attendanceModalEmployeeId && (
+        <EmployeeAttendanceStatementModal
+          employeeId={attendanceModalEmployeeId}
+          onClose={() => setAttendanceModalEmployeeId(null)}
         />
       )}
     </div>

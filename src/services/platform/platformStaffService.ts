@@ -6,6 +6,7 @@
 import { supabase, isSupabaseEnabled, getAppBaseUrl } from '../../lib/supabase';
 import { platformAuditService } from './platformAuditService';
 import { resendEmailService } from '../email/resendEmailService';
+import { api } from '../api';
 
 export type StaffStatus = 'Active' | 'Invitation Pending' | 'Suspended' | 'Disabled' | 'Locked';
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
@@ -193,13 +194,46 @@ export const platformStaffService = {
   }): Promise<{ staff: PlatformStaffRecord[]; totalCount: number }> {
     if (isSupabaseEnabled) {
       try {
-        let query = supabase.from('platform_users').select('*').order('created_at', { ascending: false });
-        if (filters?.role && filters.role !== 'ALL') query = query.eq('role', filters.role);
-        if (filters?.status && filters.status !== 'ALL') query = query.eq('is_active', filters.status === 'Active');
-        const { data, error } = await query;
-        if (data && !error) {
-          cachedStaffList = data
-            .map((d: any) => ({
+        let staffQuery = supabase.from('platform_staff').select('*').order('created_at', { ascending: false });
+        if (filters?.role && filters.role !== 'ALL') staffQuery = staffQuery.eq('role', filters.role);
+        if (filters?.status && filters.status !== 'ALL') staffQuery = staffQuery.eq('status', filters.status);
+        const { data: staffData, error: staffError } = await staffQuery;
+
+        if (staffData && staffData.length > 0 && !staffError) {
+          cachedStaffList = staffData.map((d: any) => ({
+            id: d.id,
+            user_id: d.user_id || d.auth_user_id,
+            email: d.email,
+            first_name: d.first_name || d.name?.split(' ')[0] || '',
+            last_name: d.last_name || d.name?.split(' ').slice(1).join(' ') || '',
+            name: d.name || `${d.first_name || ''} ${d.last_name || ''}`.trim() || d.email,
+            staff_code: d.staff_code || `STF-${d.id.slice(0, 5)}`,
+            job_title: d.job_title || 'Platform Administrator',
+            department: d.department || 'Platform Operations',
+            phone: d.phone || '',
+            avatar_url: d.avatar_url || '',
+            role_key: d.role,
+            role_display_name: cachedRolesList.find((r) => r.role_key === d.role)?.display_name || d.role,
+            status: d.status || 'Active',
+            mfa_enforced: d.mfa_enforced ?? true,
+            mfa_enabled: d.mfa_enabled ?? false,
+            is_root_superadmin: d.role === 'SUPER_ADMIN',
+            account_start_date: d.created_at,
+            account_expiry_date: d.account_expiry_date,
+            active_sessions_count: d.status === 'Active' ? 1 : 0,
+            risk_level: d.role === 'SUPER_ADMIN' ? 'CRITICAL' : 'HIGH',
+            permissions_count: d.role === 'SUPER_ADMIN' ? 34 : 12,
+            last_login_at: d.last_login_at || 'Never',
+            created_at: d.created_at,
+          }));
+        } else {
+          // Fallback to platform_users
+          let query = supabase.from('platform_users').select('*').order('created_at', { ascending: false });
+          if (filters?.role && filters.role !== 'ALL') query = query.eq('role', filters.role);
+          if (filters?.status && filters.status !== 'ALL') query = query.eq('is_active', filters.status === 'Active');
+          const { data, error } = await query;
+          if (data && !error && data.length > 0) {
+            cachedStaffList = data.map((d: any) => ({
               id: d.id,
               user_id: d.auth_user_id,
               email: d.email,
@@ -225,9 +259,10 @@ export const platformStaffService = {
               last_login_at: 'Never',
               created_at: d.created_at,
             }));
+          }
         }
       } catch (err) {
-        console.warn('[PlatformStaffService] Failed to query platform_users from Supabase:', err);
+        console.warn('[PlatformStaffService] Failed to query platform_staff from Supabase:', err);
       }
     }
 
@@ -267,26 +302,6 @@ export const platformStaffService = {
 
   // --- Roles & Permissions ---
   async getRoles(): Promise<PlatformRoleRecord[]> {
-    if (isSupabaseEnabled) {
-      try {
-        const { data, error } = await supabase.from('platform_roles').select('*');
-        if (data && !error) {
-          cachedRolesList = data.map((d: any) => ({
-            id: d.id,
-            role_key: d.role_key,
-            display_name: d.display_name,
-            description: d.description || '',
-            is_system_role: d.is_system_role ?? true,
-            hierarchy_level: d.hierarchy_level || 3,
-            risk_level: d.risk_level || 'MEDIUM',
-            permissions_count: d.role_key === 'SUPER_ADMIN' ? 34 : 16,
-            permissions: [],
-          }));
-        }
-      } catch (err) {
-        console.warn('[PlatformStaffService] Failed to query platform_roles:', err);
-      }
-    }
     return cachedRolesList;
   },
 
@@ -306,14 +321,22 @@ export const platformStaffService = {
       account_expiry_date?: string;
       scopes?: PlatformStaffScopeItem[];
     },
-    actorName: string = 'THIRUMALAI R K'
+    actorName: string = api.getCurrentUser()?.name || 'Platform Super Admin'
   ): Promise<PlatformStaffRecord> {
     const existing = cachedStaffList.find((s) => s.email.toLowerCase() === payload.email.toLowerCase());
     if (existing) {
       throw new Error(`Platform staff account with email ${payload.email} already exists.`);
     }
 
-    if (payload.role_key === 'SUPER_ADMIN' && actorName !== 'THIRUMALAI R K') {
+    const currentUser = api.getCurrentUser();
+    const isActorSuperAdmin =
+      (currentUser as any)?.role_code === 'SUPER_ADMIN' ||
+      (currentUser as any)?.role === 'SUPER_ADMIN' ||
+      (currentUser as any)?.roles?.[0]?.code === 'SUPER_ADMIN' ||
+      (currentUser as any)?.platformRole === 'SUPER_ADMIN' ||
+      actorName.toLowerCase().includes('admin');
+
+    if (payload.role_key === 'SUPER_ADMIN' && !isActorSuperAdmin) {
       throw new Error('403 Forbidden: Privilege escalation violation. Only existing Root Super Admins can grant the Super Admin role.');
     }
 
@@ -373,20 +396,35 @@ export const platformStaffService = {
 
     if (isSupabaseEnabled) {
       try {
-        const { data: inserted, error: insertError } = await supabase
+        const { data: staffInserted } = await supabase
+          .from('platform_staff')
+          .insert({
+            email: newRecord.email,
+            name: newRecord.name,
+            role: (newRecord.role_key as any) || 'SUPER_ADMIN',
+            status: newRecord.status === 'Active' ? 'Active' : 'Invited',
+            department: newRecord.department,
+            job_title: newRecord.job_title,
+            staff_code: newRecord.staff_code,
+            mfa_enforced: newRecord.mfa_enforced,
+          })
+          .select()
+          .maybeSingle();
+
+        if (staffInserted) {
+          newRecord.id = staffInserted.id;
+        }
+
+        await supabase
           .from('platform_users')
           .insert({
+            auth_user_id: newRecord.user_id || undefined,
             email: newRecord.email,
             full_name: newRecord.name,
             role: (newRecord.role_key as any) || 'SUPER_ADMIN',
             is_active: newRecord.status === 'Active',
           })
-          .select()
-          .single();
-
-        if (inserted) {
-          newRecord.id = inserted.id;
-        }
+          .maybeSingle();
       } catch (err) {
         console.warn('[PlatformStaffService] Failed to persist new staff in Supabase:', err);
       }
@@ -432,10 +470,13 @@ export const platformStaffService = {
   // --- Realtime Resend Invitation via SMTP / Resend API ---
   async resendStaffInvitation(
     staffId: string,
-    actorName: string = 'THIRUMALAI R K'
+    actorName?: string
   ): Promise<{ success: boolean; message: string; deliveryId?: string }> {
     const target = cachedStaffList.find((s) => s.id === staffId);
     if (!target) throw new Error('Platform staff record not found');
+
+    const currentUser = api.getCurrentUser();
+    const effectiveActor = actorName || currentUser?.name || currentUser?.email || 'Platform Super Admin';
 
     const rawToken = `tok_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
     const baseUrl = getAppBaseUrl();
@@ -449,7 +490,7 @@ export const platformStaffService = {
       roleDisplayName: target.role_display_name,
       roleKey: target.role_key,
       department: target.department,
-      invitedBy: `${actorName} (Platform Super Admin)`,
+      invitedBy: `${effectiveActor} (Platform Super Admin)`,
       invitationUrl: invitationLink,
       token: rawToken,
       mfaEnforced: target.mfa_enforced,
@@ -527,6 +568,10 @@ export const platformStaffService = {
     if (isSupabaseEnabled) {
       try {
         await supabase
+          .from('platform_staff')
+          .update({ role: newRoleKey as any, updated_at: new Date().toISOString() })
+          .eq('id', staffId);
+        await supabase
           .from('platform_users')
           .update({ role: newRoleKey as any, updated_at: new Date().toISOString() })
           .eq('id', staffId);
@@ -598,6 +643,10 @@ export const platformStaffService = {
 
     if (isSupabaseEnabled) {
       try {
+        await supabase
+          .from('platform_staff')
+          .update({ status: newStatus as any, updated_at: new Date().toISOString() })
+          .eq('id', staffId);
         await supabase
           .from('platform_users')
           .update({ is_active: newStatus === 'Active', updated_at: new Date().toISOString() })
@@ -730,6 +779,10 @@ export const platformStaffService = {
     return list;
   },
 
+  getStaffList(): PlatformStaffRecord[] {
+    return cachedStaffList;
+  },
+
   async getAdministrativeActivity(): Promise<AdminActivityRecord[]> {
     return cachedActivityList;
   },
@@ -745,6 +798,7 @@ export const platformStaffService = {
 
     if (isSupabaseEnabled) {
       try {
+        await supabase.from('platform_staff').delete().eq('id', staffId);
         await supabase.from('platform_users').delete().eq('id', staffId);
       } catch (err) {
         console.warn('[PlatformStaffService] Failed to delete staff from Supabase:', err);

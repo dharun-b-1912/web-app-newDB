@@ -41,8 +41,12 @@ import {
   Tag,
   ChevronRight,
   ExternalLink,
+  QrCode,
+  Copy,
+  CheckCheck,
 } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
+import { api } from '../../../../services/api';
 import {
   CommercialQuotation,
   CommercialClient,
@@ -56,6 +60,8 @@ import { PlanTierCode, BillingCycle } from '../../../../types/saasCatalogue';
 import { saasCommercialService, DEFAULT_ONE_TIME_SERVICES } from '../../../../services/platform/saasCommercialService';
 import { saasPricingEngine } from '../../../../services/platform/saasPricingEngine';
 import { saasCatalogueService } from '../../../../services/platform/saasCatalogueService';
+import { razorpayOrderService } from '../../../../services/platform/razorpayOrderService';
+import { CompanyLogoUpload } from '../../../../components/common/CompanyLogoUpload';
 
 interface SaaSQuotationBuilderWorkspaceProps {
   clients: CommercialClient[];
@@ -108,11 +114,39 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
   const [contactDesignation, setContactDesignation] = useState<string>('');
   const [contactEmail, setContactEmail] = useState<string>('');
   const [contactPhone, setContactPhone] = useState<string>('');
+  const [clientLogoUrl, setClientLogoUrl] = useState<string>(() => {
+    const init = clients.find((c) => c.id === initialClientId);
+    return init?.logoUrl || '';
+  });
 
-  const [salesOwner, setSalesOwner] = useState<string>('Arun K');
-  const [salesTeam, setSalesTeam] = useState<string>('Enterprise Sales');
-  const [startDate, setStartDate] = useState<string>('2026-11-01');
-  const [validUntilDate, setValidUntilDate] = useState<string>('2026-10-31');
+  const salesOwners = useMemo(() => saasCommercialService.getSalesOwners(), []);
+
+  const [salesOwner, setSalesOwner] = useState<string>(() => {
+    const list = saasCommercialService.getSalesOwners();
+    return list[0] ? `${list[0].name} (${list[0].designation})` : (api.getCurrentUser()?.name || 'Platform Administrator');
+  });
+  const [salesTeam, setSalesTeam] = useState<string>('Enterprise Commercial Sales');
+  const [startDate, setStartDate] = useState<string>(() => {
+    return new Date().toISOString().split('T')[0];
+  });
+  const [validityDays, setValidityDays] = useState<number>(15);
+  const [validUntilDate, setValidUntilDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 15);
+    return d.toISOString().split('T')[0];
+  });
+  const [enableRazorpay, setEnableRazorpay] = useState<boolean>(true);
+  const [clientState, setClientState] = useState<string>('Tamil Nadu');
+  const [clientIndustry, setClientIndustry] = useState<string>('Software & Technology');
+
+  const handleValidityDaysChange = (days: number) => {
+    setValidityDays(days);
+    if (days > 0) {
+      const base = new Date(startDate || new Date().toISOString().split('T')[0]);
+      base.setDate(base.getDate() + days);
+      setValidUntilDate(base.toISOString().split('T')[0]);
+    }
+  };
 
   // Business Requirement Checklist (16 items)
   const [requirements, setRequirements] = useState<Record<string, boolean>>({
@@ -191,6 +225,7 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
       setEmployeeCount(c.employeeCount || 850);
       setLocationsCount(c.locationsCount || 12);
       setCompaniesCount(c.companiesCount || 2);
+      setClientLogoUrl(c.logoUrl || '');
     }
   };
 
@@ -337,8 +372,8 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
       : client?.gstin;
 
     const finalClientState = isNewCustomer
-      ? 'Tamil Nadu'
-      : (client?.billingAddress?.state || 'Tamil Nadu');
+      ? (clientState || 'Tamil Nadu')
+      : (client?.billingAddress?.state || clientState || 'Tamil Nadu');
 
     return {
       id: `qt-${Date.now()}`,
@@ -352,6 +387,7 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
       leadNumber: isNewCustomer ? opp?.leadNumber : undefined,
       clientId: !isNewCustomer ? client?.id : undefined,
       clientName: finalClientName,
+      clientLogoUrl: clientLogoUrl || (!isNewCustomer ? client?.logoUrl : undefined),
       clientGstin: finalClientGstin,
       clientEmail: contactEmail || (isNewCustomer ? (opp?.email || 'contact@prospect.com') : client?.email),
       clientPhone: contactPhone || (isNewCustomer ? opp?.phone : client?.phone),
@@ -379,7 +415,7 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
         paymentTerms,
         subscriptionStartDate: startDate,
         renewalTerm: 'Annual Automatic Renewal',
-        quotationValidityDays: 30,
+        quotationValidityDays: validityDays,
         annualEscalationPct: annualPriceEscalation,
         implementationTimelineWeeks: implementationTimeline,
       },
@@ -425,6 +461,8 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
       },
       status,
       validUntil: validUntilDate,
+      paymentLink: enableRazorpay ? razorpayOrderService.generatePaymentLink(quoteNumber, calculatedPricing.totalContractValue) : undefined,
+      razorpayQrPayload: enableRazorpay ? razorpayOrderService.generateUpiQrPayload(quoteNumber, calculatedPricing.totalContractValue, finalClientName) : undefined,
       createdAt: new Date().toISOString().slice(0, 10),
       updatedAt: new Date().toISOString().slice(0, 10),
       versions: [
@@ -478,10 +516,10 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
   );
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in flex flex-col min-h-[750px] relative">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in flex flex-col h-full max-h-full relative">
       
       {/* ── Top Header & Real 7-Stage Progress Bar ──────────────────────────── */}
-      <div className="bg-slate-900 text-white px-6 py-4">
+      <div className="bg-slate-900 text-white px-6 py-4 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black">
@@ -586,7 +624,7 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
       </div>
 
       {/* ── Main Content Area ─────────────────────────────────────────────────── */}
-      <div className="p-6 flex-1 overflow-y-auto bg-slate-50/50">
+      <div className="p-4 sm:p-6 flex-1 overflow-y-auto bg-slate-50/50 min-h-0">
 
         {/* ── STAGE 0: COMPACT SOURCE SELECTION SCREEN ───────────────────────── */}
         {originType === null && (
@@ -766,9 +804,9 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
                   ))}
                 </select>
 
-                {selectedOpp ? (
+                {/* When opportunity is selected, show banner */}
+                {selectedOpp && (
                   <div className="space-y-4 animate-in fade-in duration-200">
-                    {/* Opportunity & Lead Summary Banner */}
                     <div className="p-4 rounded-xl bg-slate-900 text-white grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
                       <div>
                         <span className="text-slate-400 block text-[10px] uppercase font-semibold">Opportunity</span>
@@ -797,134 +835,189 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
                             <span>View Opp</span>
                             <ExternalLink className="h-2.5 w-2.5" />
                           </button>
-                          {selectedOpp.leadId && (
-                            <button
-                              type="button"
-                              onClick={() => setActiveDrawer('LEAD')}
-                              className="text-[10.5px] font-bold text-blue-300 hover:text-blue-200 underline inline-flex items-center gap-0.5"
-                            >
-                              <span>View Lead</span>
-                              <ExternalLink className="h-2.5 w-2.5" />
-                            </button>
-                          )}
                         </div>
                       </div>
                     </div>
-
-                    {/* Customer Profile Metrics Grid */}
-                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-semibold">Tax / Legal</span>
-                        <span className="font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-[11px] inline-block border border-amber-200/60 mt-0.5">
-                          GSTIN Pending
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-semibold">Industry</span>
-                        <span className="font-bold text-slate-800 block mt-0.5">{selectedOpp.industry}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-semibold">Estimated Employees</span>
-                        <span className="font-bold text-emerald-700 block mt-0.5">{employeeCount} Headcount</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-semibold">Locations</span>
-                        <span className="font-bold text-slate-800 block mt-0.5">{locationsCount} Units</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-semibold">Legal Entities</span>
-                        <span className="font-bold text-slate-800 block mt-0.5">{companiesCount} Companies</span>
-                      </div>
-                    </div>
-
-                    {/* Primary Contact Details */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-                      <div>
-                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Company Name</label>
-                        <input
-                          type="text"
-                          value={companyName}
-                          onChange={(e) => setCompanyName(e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Primary Contact</label>
-                        <input
-                          type="text"
-                          value={contactName}
-                          onChange={(e) => setContactName(e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Designation</label>
-                        <input
-                          type="text"
-                          value={contactDesignation}
-                          onChange={(e) => setContactDesignation(e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Email</label>
-                        <input
-                          type="email"
-                          value={contactEmail}
-                          onChange={(e) => setContactEmail(e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Sales Ownership & Validity */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-100">
-                      <div>
-                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Sales Owner</label>
-                        <input
-                          type="text"
-                          value={salesOwner}
-                          onChange={(e) => setSalesOwner(e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Sales Team</label>
-                        <input
-                          type="text"
-                          value={salesTeam}
-                          onChange={(e) => setSalesTeam(e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Expected Start Date</label>
-                        <input
-                          type="date"
-                          value={startDate}
-                          onChange={(e) => setStartDate(e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Quotation Valid Until</label>
-                        <input
-                          type="date"
-                          value={validUntilDate}
-                          onChange={(e) => setValidUntilDate(e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-8 text-center border-2 border-dashed border-slate-200 rounded-xl">
-                    <Sparkles className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                    <p className="text-xs text-slate-500 font-medium">
-                      Select an Opportunity from the dropdown above to load CRM profile, employee headcount, and discovery requirements.
-                    </p>
                   </div>
                 )}
+
+                {/* Primary Prospect & Company Details (Always visible and editable) */}
+                <div className="space-y-4 pt-1">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
+                    <div className="md:col-span-1">
+                      <CompanyLogoUpload
+                        value={clientLogoUrl}
+                        onChange={setClientLogoUrl}
+                        companyName={companyName || 'Prospect'}
+                        label="Client Brand Logo"
+                        compact
+                      />
+                    </div>
+                    <div className="md:col-span-3 space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-slate-700 block text-[11px] font-semibold mb-1">Company / Legal Name *</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Acme Tech Solutions Pvt Ltd"
+                            value={companyName}
+                            onChange={(e) => setCompanyName(e.target.value)}
+                            className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-slate-700 block text-[11px] font-semibold mb-1">Industry Vertical</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Software & Technology"
+                            value={clientIndustry}
+                            onChange={(e) => setClientIndustry(e.target.value)}
+                            className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-slate-700 block text-[11px] font-semibold mb-1">Primary Contact Person *</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Rajesh Kumar"
+                            value={contactName}
+                            onChange={(e) => setContactName(e.target.value)}
+                            className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-slate-700 block text-[11px] font-semibold mb-1">Designation</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Chief HR Officer / Director"
+                            value={contactDesignation}
+                            onChange={(e) => setContactDesignation(e.target.value)}
+                            className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-slate-700 block text-[11px] font-semibold mb-1">Contact Email *</label>
+                          <input
+                            type="email"
+                            placeholder="e.g. hr@acmetech.com"
+                            value={contactEmail}
+                            onChange={(e) => setContactEmail(e.target.value)}
+                            className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-slate-700 block text-[11px] font-semibold mb-1">Phone Number</label>
+                      <input
+                        type="tel"
+                        placeholder="e.g. +91 98400 12345"
+                        value={contactPhone}
+                        onChange={(e) => setContactPhone(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block text-[11px] font-semibold mb-1">Billing State / Place of Supply</label>
+                      <select
+                        value={clientState}
+                        onChange={(e) => setClientState(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium bg-white"
+                      >
+                        <option value="Tamil Nadu">Tamil Nadu (33)</option>
+                        <option value="Karnataka">Karnataka (29)</option>
+                        <option value="Maharashtra">Maharashtra (27)</option>
+                        <option value="Telangana">Telangana (36)</option>
+                        <option value="Delhi">Delhi (07)</option>
+                        <option value="Haryana">Haryana (06)</option>
+                        <option value="Uttar Pradesh">Uttar Pradesh (09)</option>
+                        <option value="Gujarat">Gujarat (24)</option>
+                        <option value="Kerala">Kerala (32)</option>
+                        <option value="West Bengal">West Bengal (19)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-700 block text-[11px] font-semibold mb-1">Initial Workforce Headcount</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={employeeCount}
+                        onChange={(e) => setEmployeeCount(parseInt(e.target.value) || 1)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-bold text-slate-900"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Sales Ownership & Validity */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-100">
+                    <div>
+                      <label className="text-slate-500 block text-[11px] font-semibold mb-1">Sales Owner</label>
+                      <select
+                        value={salesOwner}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSalesOwner(val);
+                          const matched = salesOwners.find((so) => `${so.name} (${so.designation})` === val || so.name === val);
+                          if (matched && matched.territory) {
+                            setSalesTeam(matched.territory);
+                          }
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium bg-white text-slate-800"
+                      >
+                        {salesOwners.map((so) => (
+                          <option key={so.id} value={`${so.name} (${so.designation})`}>
+                            {so.name} — {so.designation}
+                          </option>
+                        ))}
+                        <option value="Direct Inbound Commercial">Direct Inbound Commercial</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-500 block text-[11px] font-semibold mb-1">Sales Team</label>
+                      <input
+                        type="text"
+                        value={salesTeam}
+                        onChange={(e) => setSalesTeam(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-500 block text-[11px] font-semibold mb-1">Subscription Start Date</label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => {
+                          setStartDate(e.target.value);
+                          const base = new Date(e.target.value);
+                          base.setDate(base.getDate() + validityDays);
+                          setValidUntilDate(base.toISOString().split('T')[0]);
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-slate-500 text-[11px] font-semibold">Valid Until</label>
+                        <span className="text-[10px] text-emerald-700 font-bold font-mono">({validityDays}d window)</span>
+                      </div>
+                      <input
+                        type="date"
+                        value={validUntilDate}
+                        onChange={(e) => {
+                          setValidUntilDate(e.target.value);
+                          setValidityDays(0);
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1007,56 +1100,85 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
                       </div>
                     </div>
 
-                    {/* Primary Contact Details */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-                      <div>
-                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Client Legal Name</label>
-                        <input
-                          type="text"
-                          value={companyName}
-                          onChange={(e) => setCompanyName(e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
+                    {/* Primary Contact Details & Brand Logo */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start pt-2">
+                      <div className="md:col-span-1">
+                        <CompanyLogoUpload
+                          value={clientLogoUrl || selectedClient?.logoUrl}
+                          onChange={setClientLogoUrl}
+                          companyName={companyName || selectedClient?.legalName}
+                          label="Client Brand Logo"
+                          compact
                         />
                       </div>
-                      <div>
-                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Primary Contact</label>
-                        <input
-                          type="text"
-                          value={contactName}
-                          onChange={(e) => setContactName(e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Designation</label>
-                        <input
-                          type="text"
-                          value={contactDesignation}
-                          onChange={(e) => setContactDesignation(e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Email</label>
-                        <input
-                          type="email"
-                          value={contactEmail}
-                          onChange={(e) => setContactEmail(e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
-                        />
+                      <div className="md:col-span-3 space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-slate-500 block text-[11px] font-semibold mb-1">Client Legal Name</label>
+                            <input
+                              type="text"
+                              value={companyName}
+                              onChange={(e) => setCompanyName(e.target.value)}
+                              className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-slate-500 block text-[11px] font-semibold mb-1">Primary Contact</label>
+                            <input
+                              type="text"
+                              value={contactName}
+                              onChange={(e) => setContactName(e.target.value)}
+                              className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-slate-500 block text-[11px] font-semibold mb-1">Designation</label>
+                            <input
+                              type="text"
+                              value={contactDesignation}
+                              onChange={(e) => setContactDesignation(e.target.value)}
+                              className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-slate-500 block text-[11px] font-semibold mb-1">Email</label>
+                            <input
+                              type="email"
+                              value={contactEmail}
+                              onChange={(e) => setContactEmail(e.target.value)}
+                              className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
 
                     {/* Sales Ownership & Validity */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-100">
                       <div>
-                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Account Manager</label>
-                        <input
-                          type="text"
+                        <label className="text-slate-500 block text-[11px] font-semibold mb-1">Account Manager / Sales Owner</label>
+                        <select
                           value={salesOwner}
-                          onChange={(e) => setSalesOwner(e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium"
-                        />
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSalesOwner(val);
+                            const matched = salesOwners.find((so) => `${so.name} (${so.designation})` === val || so.name === val);
+                            if (matched && matched.territory) {
+                              setSalesTeam(matched.territory);
+                            }
+                          }}
+                          className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium bg-white text-slate-800"
+                        >
+                          {salesOwners.map((so) => (
+                            <option key={so.id} value={`${so.name} (${so.designation})`}>
+                              {so.name} — {so.designation}
+                            </option>
+                          ))}
+                          <option value="Direct Inbound Commercial">Direct Inbound Commercial</option>
+                        </select>
                       </div>
                       <div>
                         <label className="text-slate-500 block text-[11px] font-semibold mb-1">Sales Team</label>
@@ -1487,26 +1609,48 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
               {allPlans.map((p) => {
                 const isSelected = selectedPlanCode === p.code;
                 const isRec = recommendedPlan.code === p.code;
+                const liveTierMonthly = p.baseMonthlyPrice > 0
+                  ? p.baseMonthlyPrice + Math.max(0, employeeCount - p.includedEmployees) * p.additionalEmployeePrice
+                  : employeeCount * p.additionalEmployeePrice;
+
                 return (
                   <div
                     key={p.code}
                     onClick={() => setSelectedPlanCode(p.code)}
-                    className={`p-4 rounded-2xl border cursor-pointer transition-all relative ${
+                    className={`p-4 rounded-2xl border cursor-pointer transition-all relative flex flex-col justify-between ${
                       isSelected
                         ? 'border-emerald-600 bg-white ring-2 ring-emerald-500/20 shadow-md'
                         : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
-                    {isRec && (
-                      <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[9px] font-bold uppercase tracking-wider">
-                        Recommended
-                      </span>
-                    )}
-                    <h5 className="font-bold text-slate-900 text-sm">{p.name}</h5>
-                    <div className="text-base font-black text-emerald-700 mt-1">₹{p.baseMonthlyPrice.toLocaleString('en-IN')}<span className="text-xs font-normal text-slate-500">/mo</span></div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{p.includedEmployees} employees included</p>
+                    <div>
+                      {isRec && (
+                        <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[9px] font-bold uppercase tracking-wider">
+                          Recommended
+                        </span>
+                      )}
+                      <h5 className="font-bold text-slate-900 text-sm">{p.name}</h5>
+                      <div className="text-base font-black text-emerald-700 mt-1">
+                        {p.baseMonthlyPrice > 0 ? (
+                          <>₹{p.baseMonthlyPrice.toLocaleString('en-IN')}<span className="text-xs font-normal text-slate-500">/mo base</span></>
+                        ) : (
+                          <>₹{p.additionalEmployeePrice}<span className="text-xs font-normal text-slate-500">/emp/mo</span></>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {p.baseMonthlyPrice > 0
+                          ? `Includes ${p.includedEmployees} employees`
+                          : `Pure PEPM (₹${p.additionalEmployeePrice} per seat)`}
+                      </p>
+
+                      <div className="mt-2.5 px-2 py-1.5 rounded-lg bg-emerald-50/80 border border-emerald-100 flex items-center justify-between text-[11px]">
+                        <span className="text-slate-600 font-medium">Est. for {employeeCount} seats:</span>
+                        <strong className="text-emerald-800 font-bold">₹{liveTierMonthly.toLocaleString('en-IN')}/mo</strong>
+                      </div>
+                    </div>
+
                     <div className="mt-3 pt-3 border-t border-slate-100 text-[11px] text-slate-600 space-y-1">
-                      <div>PEPM Overage: <strong>₹{p.additionalEmployeePrice}</strong></div>
+                      <div>PEPM Rate: <strong>₹{p.additionalEmployeePrice}/emp</strong></div>
                       <div>Locations: <strong>{p.quotas.maxLocations}</strong></div>
                       <div>Support: <strong>{p.quotas.supportSla}</strong></div>
                     </div>
@@ -1524,23 +1668,23 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
                 <thead>
                   <tr className="border-b text-slate-500 font-semibold text-[11px]">
                     <th className="p-2.5 pl-4">Functional Capability</th>
-                    <th className="p-2.5 text-center">Starter</th>
-                    <th className="p-2.5 text-center">Professional</th>
-                    <th className="p-2.5 text-center">Business</th>
-                    <th className="p-2.5 text-center bg-emerald-50 text-emerald-900 font-bold">Enterprise (Selected)</th>
+                    <th className={`p-2.5 text-center ${selectedPlanCode === 'STARTER' ? 'bg-emerald-50 text-emerald-900 font-bold' : ''}`}>Starter {selectedPlanCode === 'STARTER' ? '(Selected)' : ''}</th>
+                    <th className={`p-2.5 text-center ${selectedPlanCode === 'PREMIUM' ? 'bg-emerald-50 text-emerald-900 font-bold' : ''}`}>Professional {selectedPlanCode === 'PREMIUM' ? '(Selected)' : ''}</th>
+                    <th className={`p-2.5 text-center ${selectedPlanCode === 'BUSINESS' ? 'bg-emerald-50 text-emerald-900 font-bold' : ''}`}>Business {selectedPlanCode === 'BUSINESS' ? '(Selected)' : ''}</th>
+                    <th className={`p-2.5 text-center ${selectedPlanCode === 'ENTERPRISE' ? 'bg-emerald-50 text-emerald-900 font-bold' : ''}`}>Enterprise {selectedPlanCode === 'ENTERPRISE' ? '(Selected)' : ''}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700 text-[11.5px]">
-                  <tr><td className="p-2 pl-4">Core HR & Lifecycle</td><td className="text-center">✓</td><td className="text-center">✓</td><td className="text-center">✓</td><td className="text-center font-bold text-emerald-700 bg-emerald-50/30">✓</td></tr>
-                  <tr><td className="p-2 pl-4">Employee Self Service</td><td className="text-center">✓</td><td className="text-center">✓</td><td className="text-center">✓</td><td className="text-center font-bold text-emerald-700 bg-emerald-50/30">✓</td></tr>
-                  <tr><td className="p-2 pl-4">Attendance & Shift Rosters</td><td className="text-center">Basic</td><td className="text-center">Advanced</td><td className="text-center">Advanced</td><td className="text-center font-bold text-emerald-700 bg-emerald-50/30">Advanced</td></tr>
-                  <tr><td className="p-2 pl-4">India Statutory Payroll (PF/ESI/TDS)</td><td className="text-center text-slate-300">—</td><td className="text-center">✓</td><td className="text-center">✓</td><td className="text-center font-bold text-emerald-700 bg-emerald-50/30">✓</td></tr>
-                  <tr><td className="p-2 pl-4">Recruitment / Candidate ATS</td><td className="text-center text-slate-300">—</td><td className="text-center text-slate-300">—</td><td className="text-center">✓</td><td className="text-center font-bold text-emerald-700 bg-emerald-50/30">✓</td></tr>
-                  <tr><td className="p-2 pl-4">Performance Appraisals & KRAs</td><td className="text-center text-slate-300">—</td><td className="text-center text-slate-300">—</td><td className="text-center">✓</td><td className="text-center font-bold text-emerald-700 bg-emerald-50/30">✓</td></tr>
-                  <tr><td className="p-2 pl-4">Vendor Workforce Management</td><td className="text-center text-slate-300">—</td><td className="text-center text-slate-300">—</td><td className="text-center text-slate-300">—</td><td className="text-center font-bold text-emerald-700 bg-emerald-50/30">✓</td></tr>
-                  <tr><td className="p-2 pl-4">Procurement Requisitions & POs</td><td className="text-center text-slate-300">—</td><td className="text-center text-slate-300">—</td><td className="text-center text-slate-300">—</td><td className="text-center font-bold text-emerald-700 bg-emerald-50/30">✓</td></tr>
-                  <tr><td className="p-2 pl-4">Invoice & 3-Way Match Settlement</td><td className="text-center text-slate-300">—</td><td className="text-center text-slate-300">—</td><td className="text-center text-slate-300">—</td><td className="text-center font-bold text-emerald-700 bg-emerald-50/30">✓</td></tr>
-                  <tr><td className="p-2 pl-4">Enterprise SSO & Dedicated SLA</td><td className="text-center text-slate-300">—</td><td className="text-center text-slate-300">—</td><td className="text-center text-slate-300">—</td><td className="text-center font-bold text-emerald-700 bg-emerald-50/30">✓</td></tr>
+                  <tr><td className="p-2 pl-4">Core HR & Lifecycle</td><td className={`text-center ${selectedPlanCode === 'STARTER' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td><td className={`text-center ${selectedPlanCode === 'PREMIUM' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td><td className={`text-center ${selectedPlanCode === 'BUSINESS' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td><td className={`text-center ${selectedPlanCode === 'ENTERPRISE' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td></tr>
+                  <tr><td className="p-2 pl-4">Employee Self Service</td><td className={`text-center ${selectedPlanCode === 'STARTER' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td><td className={`text-center ${selectedPlanCode === 'PREMIUM' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td><td className={`text-center ${selectedPlanCode === 'BUSINESS' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td><td className={`text-center ${selectedPlanCode === 'ENTERPRISE' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td></tr>
+                  <tr><td className="p-2 pl-4">Attendance & Shift Rosters</td><td className={`text-center ${selectedPlanCode === 'STARTER' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>Basic</td><td className={`text-center ${selectedPlanCode === 'PREMIUM' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>Advanced</td><td className={`text-center ${selectedPlanCode === 'BUSINESS' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>Advanced</td><td className={`text-center ${selectedPlanCode === 'ENTERPRISE' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>Advanced</td></tr>
+                  <tr><td className="p-2 pl-4">India Statutory Payroll (PF/ESI/TDS)</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'STARTER' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center ${selectedPlanCode === 'PREMIUM' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td><td className={`text-center ${selectedPlanCode === 'BUSINESS' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td><td className={`text-center ${selectedPlanCode === 'ENTERPRISE' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td></tr>
+                  <tr><td className="p-2 pl-4">Recruitment / Candidate ATS</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'STARTER' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'PREMIUM' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center ${selectedPlanCode === 'BUSINESS' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td><td className={`text-center ${selectedPlanCode === 'ENTERPRISE' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td></tr>
+                  <tr><td className="p-2 pl-4">Performance Appraisals & KRAs</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'STARTER' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'PREMIUM' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center ${selectedPlanCode === 'BUSINESS' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td><td className={`text-center ${selectedPlanCode === 'ENTERPRISE' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td></tr>
+                  <tr><td className="p-2 pl-4">Vendor Workforce Management</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'STARTER' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'PREMIUM' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'BUSINESS' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center ${selectedPlanCode === 'ENTERPRISE' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td></tr>
+                  <tr><td className="p-2 pl-4">Procurement Requisitions & POs</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'STARTER' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'PREMIUM' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'BUSINESS' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center ${selectedPlanCode === 'ENTERPRISE' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td></tr>
+                  <tr><td className="p-2 pl-4">Invoice & 3-Way Match Settlement</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'STARTER' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'PREMIUM' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'BUSINESS' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center ${selectedPlanCode === 'ENTERPRISE' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td></tr>
+                  <tr><td className="p-2 pl-4">Enterprise SSO & Dedicated SLA</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'STARTER' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'PREMIUM' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center text-slate-300 ${selectedPlanCode === 'BUSINESS' ? 'bg-emerald-50/30' : ''}`}>—</td><td className={`text-center ${selectedPlanCode === 'ENTERPRISE' ? 'font-bold text-emerald-700 bg-emerald-50/30' : ''}`}>✓</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1586,6 +1730,18 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
                     desc: 'Azure AD, Okta, and Google Workspace federated authentication',
                   },
                   {
+                    key: 'whatsapp_meter_bundle',
+                    name: 'WhatsApp HR Bot & Automated Payslip Delivery (5K Bundle)',
+                    price: 1499,
+                    desc: 'Self-service bot for payslip delivery, leaves, and attendance notifications',
+                  },
+                  {
+                    key: 'ai_copilot_resume_screener',
+                    name: 'AI HR Copilot & Smart Resume Screener',
+                    price: 3500,
+                    desc: 'GPT-powered candidate matching, interview questions, and automated HR policies',
+                  },
+                  {
                     key: 'premium_support_sla',
                     name: 'Dedicated 24/7 SLA & Named Support Engineer',
                     price: 4999,
@@ -1595,7 +1751,7 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
                     key: 'extra_storage_100gb',
                     name: 'Additional 100 GB Document Vault Storage',
                     price: 1000,
-                    desc: 'High-availability S3 encrypted file storage',
+                    desc: 'High-availability S3 encrypted file storage for KYC and records',
                   },
                 ].map((addon) => {
                   const isChecked = selectedAddonKeys.includes(addon.key);
@@ -1608,7 +1764,7 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
                         );
                       }}
                       className={`p-3.5 rounded-xl border cursor-pointer flex items-center justify-between transition-all ${
-                        isChecked ? 'border-emerald-500 bg-emerald-50/50 shadow-2xs' : 'border-slate-200 bg-white'
+                        isChecked ? 'border-emerald-500 bg-emerald-50/50 shadow-2xs' : 'border-slate-200 bg-white hover:border-slate-300'
                       }`}
                     >
                       <div>
@@ -1881,26 +2037,108 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 pt-2 border-t text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t text-xs">
                 <div>
                   <label className="text-slate-500 block font-semibold mb-1">Subscription Start Date</label>
                   <input
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold bg-white"
                   />
                 </div>
                 <div>
-                  <label className="text-slate-500 block font-semibold mb-1">Implementation Timeline</label>
+                  <label className="text-slate-500 block font-semibold mb-1">Proposal Validity Period</label>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[7, 15, 30, 45, 60].map((days) => (
+                      <button
+                        key={days}
+                        type="button"
+                        onClick={() => handleValidityDaysChange(days)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          validityDays === days
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        {days}d {days === 15 ? '★' : ''}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-slate-500 block font-semibold mb-1">Valid Until (Expiry Date)</label>
                   <input
-                    type="text"
-                    value={implementationTimeline}
-                    onChange={(e) => setImplementationTimeline(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold"
+                    type="date"
+                    value={validUntilDate}
+                    onChange={(e) => {
+                      setValidUntilDate(e.target.value);
+                      const diff = Math.max(1, Math.round((new Date(e.target.value).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)));
+                      setValidityDays(diff);
+                    }}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono font-bold bg-white text-emerald-800"
                   />
                 </div>
               </div>
+
+              {/* Implementation timeline */}
+              <div className="pt-2 border-t text-xs">
+                <label className="text-slate-500 block font-semibold mb-1">Implementation Timeline</label>
+                <input
+                  type="text"
+                  value={implementationTimeline}
+                  onChange={(e) => setImplementationTimeline(e.target.value)}
+                  className="w-full sm:w-1/2 px-3 py-2 rounded-xl border border-slate-300 font-bold"
+                />
+              </div>
+            </div>
+
+            {/* Razorpay Online Settlement Configuration Card */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black text-xs shadow-xs">
+                    ₹
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                      Razorpay Online Payment & Instant UPI Checkout
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Generate automated payment link and dynamic UPI QR code for immediate invoice clearance.
+                    </p>
+                  </div>
+                </div>
+
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={enableRazorpay}
+                    onChange={(e) => setEnableRazorpay(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+
+              {enableRazorpay && (
+                <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200 space-y-3 text-xs">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                    <div>
+                      <span className="font-bold text-blue-900 block">Gateway Configuration</span>
+                      <span className="text-[11px] text-blue-700">Test API Key: <code className="font-mono bg-blue-100 px-1.5 py-0.5 rounded">rzp_test_TqReUSPk2WMRmD</code></span>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                      Instant QR & Payment Link Ready
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-600 space-y-1 pt-1 border-t border-blue-200/60">
+                    <div>• Client can pay via <strong>UPI (GPay, PhonePe, Paytm, BHIM)</strong> by scanning QR code directly from proposal document.</div>
+                    <div>• Supports NetBanking (50+ Indian banks), Debit/Credit Cards, and Corporate Credit Cards.</div>
+                    <div>• Automatic transition to <strong>ACCEPTED</strong> state upon successful transaction signature.</div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Discount & Governance Limits */}
@@ -1973,17 +2211,32 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
             {/* Proposal Overview Banner */}
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-                <div>
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">CLIENT ORGANIZATION</span>
-                  <h4 className="text-xl font-bold text-slate-900">{selectedClient?.legalName}</h4>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
-                    <span>{employeeCount} Employees</span>
-                    <span>•</span>
-                    <span>{locationsCount} Operating Locations</span>
-                    <span>•</span>
-                    <span>{companiesCount} Companies</span>
-                    <span>•</span>
-                    <span className="font-mono">GSTIN: {selectedClient?.gstin}</span>
+                <div className="flex items-center gap-4">
+                  {(clientLogoUrl || selectedClient?.logoUrl) ? (
+                    <div className="h-14 w-14 rounded-2xl bg-white border border-slate-200 p-1 flex items-center justify-center shrink-0 shadow-xs overflow-hidden">
+                      <img
+                        src={clientLogoUrl || selectedClient?.logoUrl}
+                        alt={companyName || selectedClient?.legalName}
+                        className="h-full w-full object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <div className="h-14 w-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-black text-xl flex items-center justify-center shrink-0">
+                      {(companyName || selectedClient?.legalName || 'CO').slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">CLIENT ORGANIZATION</span>
+                    <h4 className="text-xl font-bold text-slate-900">{companyName || selectedClient?.legalName}</h4>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
+                      <span>{employeeCount} Employees</span>
+                      <span>•</span>
+                      <span>{locationsCount} Operating Locations</span>
+                      <span>•</span>
+                      <span>{companiesCount} Companies</span>
+                      <span>•</span>
+                      <span className="font-mono">GSTIN: {selectedClient?.gstin || 'Pending Verification'}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -2031,6 +2284,82 @@ export const SaaSQuotationBuilderWorkspace: React.FC<SaaSQuotationBuilderWorkspa
                   <span className="text-emerald-700">₹{calculatedPricing.totalContractValue.toLocaleString('en-IN')}</span>
                 </div>
               </div>
+
+              {/* Proposal Validity & Expiration Notice */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span className="text-slate-600 font-medium">
+                    Proposal Validity: <strong className="text-slate-900">{validityDays} Days</strong> (Expires on <strong className="text-emerald-800 font-mono">{validUntilDate}</strong>)
+                  </span>
+                </div>
+                <span className="text-[11px] text-slate-500 bg-white px-2 py-0.5 rounded border">
+                  SaaS rates guaranteed through expiry date
+                </span>
+              </div>
+
+              {/* Razorpay Online Settlement Preview */}
+              {enableRazorpay && (
+                <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 space-y-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <QrCode className="h-4 w-4 text-blue-700" />
+                      <span className="font-bold text-blue-900 uppercase tracking-wider text-[11px]">
+                        Razorpay Instant Settlement Enabled
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-blue-600 bg-white px-2 py-0.5 rounded border border-blue-200">
+                      Standard Gateway (Test Active)
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-lg border border-blue-100">
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block">Hosted Client Checkout URL</span>
+                      <code className="text-[11px] text-blue-800 font-mono break-all font-semibold">
+                        {razorpayOrderService.generatePaymentLink(`QT-PREVIEW`, calculatedPricing.totalContractValue)}
+                      </code>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const link = razorpayOrderService.generatePaymentLink(`QT-PREVIEW`, calculatedPricing.totalContractValue);
+                          navigator.clipboard.writeText(link);
+                          alert('Payment link copied to clipboard!');
+                        }}
+                        className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50"
+                      >
+                        <Copy className="h-3 w-3 mr-1" />
+                        Copy Link
+                      </Button>
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          razorpayOrderService.openCheckout({
+                            quoteNumber: 'QT-2026-TEST',
+                            amount: calculatedPricing.totalContractValue,
+                            clientName: companyName || 'Client Organization',
+                            clientEmail: contactEmail || 'billing@client.com',
+                            clientPhone: contactPhone || '9876543210',
+                            onSuccess: (paymentId) => {
+                              alert(`Test Payment Successful! Payment ID: ${paymentId}`);
+                            },
+                          });
+                        }}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs"
+                      >
+                        Test Checkout →
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Generation Actions */}
               <div className="pt-3 flex flex-wrap items-center justify-between gap-3">

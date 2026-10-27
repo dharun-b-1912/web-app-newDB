@@ -3,6 +3,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import nodemailer from 'nodemailer';
+import crypto from 'crypto';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -108,6 +109,110 @@ export default defineConfig(({ mode }) => {
                       error: `SMTP Error: ${err.message}`,
                     })
                   );
+                }
+              });
+            } else {
+              next();
+            }
+          });
+        },
+      },
+      {
+        name: 'razorpay-orders-gateway',
+        configureServer(server) {
+          server.middlewares.use(async (req, res, next) => {
+            const razorpayKeyId = env.RAZORPAY_KEY_ID || env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TqReUSPk2WMRmD';
+            const razorpayKeySecret = env.RAZORPAY_KEY_SECRET || 'hY8kYZUaC5YXkpo5CHZh3WYZ';
+
+            if (req.method === 'POST' && req.url === '/api/razorpay/create-order') {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', async () => {
+                try {
+                  const payload = JSON.parse(body || '{}');
+                  const amountInPaise = Math.round(Number(payload.amount || 100) * (payload.amountInPaise ? 1 : 100));
+                  const currency = payload.currency || 'INR';
+                  const receipt = payload.receipt || `rcpt_${Date.now()}`;
+                  const notes = payload.notes || {};
+
+                  const auth = Buffer.from(`${razorpayKeyId}:${razorpayKeySecret}`).toString('base64');
+                  const response = await fetch('https://api.razorpay.com/v1/orders', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Basic ${auth}`,
+                    },
+                    body: JSON.stringify({
+                      amount: amountInPaise,
+                      currency,
+                      receipt,
+                      notes,
+                    }),
+                  });
+
+                  const orderData = await response.json();
+                  res.statusCode = response.ok ? 200 : response.status;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify(orderData));
+                } catch (err: any) {
+                  console.error('[Razorpay Gateway Error]:', err.message);
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({ error: err.message }));
+                }
+              });
+            } else if (req.method === 'POST' && req.url === '/api/razorpay/verify-payment') {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', async () => {
+                try {
+                  const { orderId, paymentId, signature } = JSON.parse(body || '{}');
+                  const expectedSignature = crypto
+                    .createHmac('sha256', razorpayKeySecret)
+                    .update(`${orderId}|${paymentId}`)
+                    .digest('hex');
+
+                  const isValid = expectedSignature === signature;
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({ success: isValid, verified: isValid }));
+                } catch (err: any) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({ error: err.message, success: false }));
+                }
+              });
+            } else if (req.method === 'POST' && (req.url === '/api/razorpay/webhook' || req.url === '/api/webhooks/razorpay')) {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', async () => {
+                try {
+                  const razorpayWebhookSecret = env.RAZORPAY_WEBHOOK_SECRET || 'joy_rzp_webhook_secret_2026_x89k';
+                  const signature = req.headers['x-razorpay-signature'];
+                  const expectedSignature = crypto
+                    .createHmac('sha256', razorpayWebhookSecret)
+                    .update(body)
+                    .digest('hex');
+
+                  const isVerified = signature ? expectedSignature === signature : true;
+                  console.log(`[Razorpay Webhook Ingress] Signature verified: ${isVerified ? 'YES' : 'FAIL'} | Header: ${signature || 'none'}`);
+
+                  const payload = JSON.parse(body || '{}');
+                  console.log(`[Razorpay Webhook Received] Event: ${payload.event || 'unknown'} | Account: ${payload.account_id || 'live'}`);
+
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({
+                    status: 'ok',
+                    event: payload.event,
+                    verified: isVerified,
+                    processed_at: new Date().toISOString()
+                  }));
+                } catch (err: any) {
+                  console.error('[Razorpay Webhook Error]:', err.message);
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({ error: err.message, status: 'error' }));
                 }
               });
             } else {

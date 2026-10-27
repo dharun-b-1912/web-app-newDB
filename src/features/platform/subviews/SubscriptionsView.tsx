@@ -42,6 +42,13 @@ import {
   SubscriptionStatus,
 } from '../../../services/platform/platformSubscriptionService';
 import { platformTenantService } from '../../../services/platform/platformTenantService';
+import { razorpayOrderService } from '../../../services/platform/razorpayOrderService';
+import {
+  formatSubscriptionDisplayId,
+  formatTenantDisplayId,
+  formatInvoiceDisplayId,
+  maskSensitiveToken,
+} from '../../../utils/saasMasking';
 import { Button } from '../../../components/ui/Button';
 import { Switch } from '../../../components/ui/Switch';
 import { cn } from '../../../lib/utils';
@@ -109,6 +116,36 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
       const cancelled = await platformSubscriptionService.cancelSubscription(id, 'Customer cancellation request');
       setSubscriptions(subscriptions.map((s) => (s.id === id ? { ...cancelled } : s)));
       if (selectedSub?.id === id) setSelectedSub({ ...cancelled });
+    }
+  };
+
+  const handlePaySubWithRazorpay = async (sub: SubscriptionContractItem) => {
+    try {
+      await razorpayOrderService.openCheckout({
+        amount: sub.total_amount,
+        currency: sub.currency || 'INR',
+        subscriptionId: sub.id,
+        organizationId: sub.tenant_id,
+        customerName: sub.tenant_name,
+        customerEmail: 'billing@' + sub.tenant_name.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com',
+        description: `Joy PeopleHR ${sub.plan} Subscription for ${sub.tenant_name}`,
+        onSuccess: (res) => {
+          alert(`Razorpay settlement of ₹${sub.total_amount.toLocaleString('en-IN')} succeeded! Ref: ${res.razorpay_payment_id}`);
+          const updated = {
+            ...sub,
+            status: 'Active' as const,
+            last_invoice_status: 'Paid' as const,
+            renewal_date: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+          };
+          setSubscriptions(subscriptions.map((s) => (s.id === sub.id ? updated : s)));
+          if (selectedSub?.id === sub.id) setSelectedSub(updated);
+        },
+        onError: (err) => {
+          console.warn('[SubscriptionsView] Razorpay payment retry:', err?.description || err?.message || err);
+        },
+      });
+    } catch (e: any) {
+      console.error('[SubscriptionsView] Razorpay launch error:', e);
     }
   };
 
@@ -259,31 +296,37 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
       {/* 4. Subscriptions Data Table */}
       <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-[#E2E8F0] text-[#64748B] font-semibold bg-[#F8FAFC]">
-                <th className="py-3 px-4">Organization & ID</th>
-                <th className="py-3 px-4">Current Plan</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Seat Allocation</th>
-                <th className="py-3 px-4">Billing Cycle</th>
-                <th className="py-3 px-4">Renewal Date</th>
-                <th className="py-3 px-4">Auto-Renew</th>
-                <th className="py-3 px-4">Monthly Value</th>
-                <th className="py-3 px-4 text-right">Action</th>
+                <th className="py-2.5 px-3">Organization & ID</th>
+                <th className="py-2.5 px-2.5">Current Plan</th>
+                <th className="py-2.5 px-2">Status</th>
+                <th className="py-2.5 px-2.5">Seat Allocation</th>
+                <th className="py-2.5 px-2">Billing Cycle</th>
+                <th className="py-2.5 px-2">Renewal Date</th>
+                <th className="py-2.5 px-2 text-center">Auto-Renew</th>
+                <th className="py-2.5 px-2.5">Monthly Value</th>
+                <th className="py-2.5 px-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F1F5F9]">
               {filteredSubscriptions.map((sub) => (
                 <tr key={sub.id} className="hover:bg-[#F8FAFC] transition-colors">
-                  <td className="py-3.5 px-4">
-                    <div className="font-bold text-[#0F172B]">{sub.tenant_name}</div>
-                    <div className="text-[10px] text-[#94A3B8] font-mono">
-                      {sub.id} • {sub.tenant_id}
+                  <td className="py-2.5 px-3">
+                    <div className="font-bold text-[#0F172B] truncate max-w-[180px]">{sub.tenant_name}</div>
+                    <div className="text-[10px] font-mono flex items-center gap-1.5 mt-0.5">
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-[#047857] border border-emerald-200 font-semibold" title={`Contract Token: ${sub.id}`}>
+                        {formatSubscriptionDisplayId(sub.id)}
+                      </span>
+                      <span className="text-slate-300">•</span>
+                      <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200" title={`Tenant Account: ${sub.tenant_id}`}>
+                        {formatTenantDisplayId(sub.tenant_id)}
+                      </span>
                     </div>
                   </td>
 
-                  <td className="py-3.5 px-4">
+                  <td className="py-2.5 px-2.5 whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => onNavigateTab?.('platform-plans', { presetFilter: sub.plan })}
@@ -294,7 +337,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                     </button>
                   </td>
 
-                  <td className="py-3.5 px-4">
+                  <td className="py-2.5 px-2 whitespace-nowrap">
                     <span
                       className={cn(
                         'text-[10px] px-2 py-0.5 rounded-full font-bold',
@@ -313,11 +356,11 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                     </span>
                   </td>
 
-                  <td className="py-3.5 px-4 font-mono">
+                  <td className="py-2.5 px-2.5 font-mono whitespace-nowrap">
                     <div className="font-semibold text-[#0F172B]">
                       {sub.used_seats} / {sub.seats} seats
                     </div>
-                    <div className="w-20 h-1.5 bg-[#E2E8F0] rounded-full overflow-hidden mt-1">
+                    <div className="w-16 h-1.5 bg-[#E2E8F0] rounded-full overflow-hidden mt-1">
                       <div
                         className={cn(
                           'h-full rounded-full',
@@ -328,11 +371,11 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                     </div>
                   </td>
 
-                  <td className="py-3.5 px-4 font-medium text-[#334155]">{sub.billing_cycle}</td>
+                  <td className="py-2.5 px-2 font-medium text-[#334155] whitespace-nowrap">{sub.billing_cycle}</td>
 
-                  <td className="py-3.5 px-4 font-mono text-[#334155]">{sub.renewal_date}</td>
+                  <td className="py-2.5 px-2 font-mono text-[#334155] whitespace-nowrap text-[11px]">{sub.renewal_date}</td>
 
-                  <td className="py-3.5 px-4">
+                  <td className="py-2.5 px-2 text-center whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => handleToggleAutoRenew(sub.id)}
@@ -347,22 +390,34 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                     </button>
                   </td>
 
-                  <td className="py-3.5 px-4 font-bold text-[#0F172B]">
+                  <td className="py-2.5 px-2.5 font-bold text-[#0F172B] whitespace-nowrap">
                     ₹{(sub.total_amount / 1000).toFixed(1)}k
                   </td>
 
-                  <td className="py-3.5 px-4 text-right">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedSub(sub);
-                        setManageTab('overview');
-                      }}
-                      className="text-xs text-[#047857] border-[#A7F3D0] hover:bg-[#ECFDF5] font-semibold"
-                    >
-                      Manage
-                    </Button>
+                  <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePaySubWithRazorpay(sub)}
+                        className="text-[11px] py-1 px-2 text-[#047857] border-emerald-300 hover:bg-emerald-50 font-semibold flex items-center gap-1"
+                        title="Pay / Settle via Razorpay"
+                      >
+                        <CreditCard className="w-3 h-3" />
+                        Pay
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedSub(sub);
+                          setManageTab('overview');
+                        }}
+                        className="text-xs text-[#047857] border-[#A7F3D0] hover:bg-[#ECFDF5] font-semibold"
+                      >
+                        Manage
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -382,8 +437,11 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-lg font-bold text-[#0F172B]">{selectedSub.tenant_name}</h3>
-                  <span className="font-mono text-xs px-2 py-0.5 bg-[#E2E8F0] rounded text-[#475569]">
-                    {selectedSub.id}
+                  <span className="font-mono text-xs px-2.5 py-0.5 bg-[#E2E8F0] rounded text-[#475569] font-bold">
+                    {formatSubscriptionDisplayId(selectedSub.id)}
+                  </span>
+                  <span className="font-mono text-xs px-2 py-0.5 bg-slate-100 rounded text-slate-500 border border-slate-200">
+                    {formatTenantDisplayId(selectedSub.tenant_id)}
                   </span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0]">
                     ● {selectedSub.status}
@@ -472,7 +530,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div className="p-3 bg-[#F8FAFC] rounded-xl border">
                       <span className="text-[10px] text-[#64748B] block">Subscription ID</span>
-                      <strong className="text-xs text-[#0F172B] font-mono">{selectedSub.id}</strong>
+                      <strong className="text-xs text-[#0F172B] font-mono">{formatSubscriptionDisplayId(selectedSub.id)}</strong>
                     </div>
                     <div className="p-3 bg-[#F8FAFC] rounded-xl border">
                       <span className="text-[10px] text-[#64748B] block">Billing Cycle</span>
@@ -503,6 +561,29 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                     >
                       {selectedSub.auto_renew ? 'Auto-Renew ON' : 'Auto-Renew OFF'}
                     </button>
+                  </div>
+
+                  <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="font-bold text-xs text-emerald-950 flex items-center gap-1.5">
+                        <CreditCard className="w-4 h-4 text-[#047857]" />
+                        <span>Razorpay Live Test Settlement</span>
+                      </div>
+                      <div className="text-[11px] text-emerald-700 mt-0.5">
+                        Current Contract Value: <strong>₹{selectedSub.total_amount.toLocaleString('en-IN')}</strong> / {selectedSub.billing_cycle.toLowerCase()}
+                      </div>
+                      <div className="text-[10px] text-emerald-600 font-mono mt-0.5">
+                        Gateway Key: {maskSensitiveToken('rzp_test_TqReUSPk2WMRmD')} • Instant Order Generation
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => handlePaySubWithRazorpay(selectedSub)}
+                      className="bg-[#047857] hover:bg-[#036246] text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      Pay via Razorpay →
+                    </Button>
                   </div>
                 </div>
               )}
@@ -540,7 +621,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="font-bold text-xs text-[#0F172B]">Linked Invoices & Payment Ledger</h4>
-                      <p className="text-[10px] text-[#64748B]">All invoices generated under {selectedSub.id}</p>
+                      <p className="text-[10px] text-[#64748B]">All invoices generated under {formatSubscriptionDisplayId(selectedSub.id)}</p>
                     </div>
                     <Button
                       variant="outline"
@@ -557,7 +638,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
 
                   <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-[#E2E8F0] flex items-center justify-between">
                     <div>
-                      <div className="font-mono font-bold text-xs text-[#0F172B]">{selectedSub.last_invoice_id}</div>
+                      <div className="font-mono font-bold text-xs text-[#0F172B]">{formatInvoiceDisplayId(selectedSub.last_invoice_id)}</div>
                       <div className="text-[10px] text-[#64748B]">Last Invoice • ₹{(selectedSub.total_amount / 1000).toFixed(1)}k</div>
                     </div>
                     <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#047857]">

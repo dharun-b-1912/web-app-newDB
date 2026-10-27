@@ -19,6 +19,7 @@ import { FeatureCatalogueView } from './subviews/FeatureCatalogueView';
 import { PricingCalculatorView } from './subviews/PricingCalculatorView';
 import { AddonsCatalogueView } from './subviews/AddonsCatalogueView';
 import { QuotationsView } from './subviews/QuotationsView';
+import { SalesPipelineView } from './subviews/SalesPipelineView';
 import { SaaSInvoicesView } from './subviews/SaaSInvoicesView';
 import { CommercialClientsView } from './subviews/CommercialClientsView';
 import { BillingView } from './subviews/BillingView';
@@ -211,6 +212,10 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
       tab === 'platform-payments' ||
       tab === 'saas-revenue' ||
       tab === 'platform-revenue' ||
+      tab === 'platform-sales' ||
+      tab === 'saas-sales' ||
+      tab === 'sales-pipeline' ||
+      tab === 'sales' ||
       tab === 'platform-usage' ||
       tab === 'platform-clients'
     ) {
@@ -258,6 +263,11 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
       case 'saas-revenue':
       case 'platform-revenue':
         return <SaasBusinessView onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)} />;
+      case 'platform-sales':
+      case 'saas-sales':
+      case 'sales-pipeline':
+      case 'sales':
+        return <SalesPipelineView onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)} />;
       case 'platform-subscriptions':
         return (
           <SubscriptionsView

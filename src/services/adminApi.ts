@@ -124,30 +124,31 @@ export const adminApi = {
           user_code: `USR-${String(idx + 1).padStart(3, '0')}`,
           name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name || emp.email || 'User',
           email: emp.email || emp.work_email || `user${idx + 1}@joypeople.com`,
-          employee_id: emp.employee_id || `JOY-EMP-${String(idx + 1).padStart(3, '0')}`,
+          employee_id: emp.employee_code || emp.employee_id || emp.id || 'N/A',
           department_name: emp.department?.name || emp.department_name || emp.department || 'Operations',
           role_name: isUserActiveAdmin ? 'Company Admin' : (emp.role_name || (emp.department === 'Human Resources' ? 'HR Head' : 'Employee')),
           status: emp.status === 'Active' || emp.status === 'Probation' ? 'Active' : (emp.status || 'Active'),
           mfa_enabled: true,
           last_login: emp.email === currentUser?.email ? 'Active Session' : 'Recent Session',
-          created_at: emp.date_of_joining || emp.created_at || '2026-01-01',
+          created_at: emp.date_of_joining || emp.created_at || new Date().toISOString(),
         };
       });
     }
 
     if (currentUser) {
+      const u = currentUser as any;
       return [{
-        id: currentUser.id,
-        user_code: 'USR-001',
-        name: currentUser.name || currentUser.email || 'Dharun Joy',
-        email: currentUser.email || 'dharun@joypeople.com',
-        employee_id: currentUser.employee_id || 'JOY-EMP-001',
-        department_name: 'Executive Management',
+        id: u.id || 'usr-admin',
+        user_code: u.user_code || 'USR-001',
+        name: u.name || u.email || 'System Administrator',
+        email: u.email || '',
+        employee_id: u.employee_code || u.employee_id || u.id || 'EMP-ADM-001',
+        department_name: u.department_name || 'Executive Management',
         role_name: 'Company Admin',
         status: 'Active',
         mfa_enabled: true,
         last_login: 'Active Session',
-        created_at: '2026-01-01',
+        created_at: u.created_at || new Date().toISOString(),
       }];
     }
 

@@ -41,12 +41,12 @@ export interface PlatformUserPreferences {
 let cachedProfile: PlatformAdminProfile = {
   id: '069e584c-c577-4577-9890-c96c6fbdcb07',
   email: 'superadmin@joypeoplehr.com',
-  first_name: 'Super',
-  last_name: 'Admin',
-  display_name: 'Super Admin',
+  first_name: 'Platform',
+  last_name: 'Administrator',
+  display_name: 'Platform Super Admin',
   job_title: 'Platform Super Administrator',
   department: 'Platform Core & Infrastructure',
-  phone: '+91 9384125278',
+  phone: '',
   avatar_url: '',
   timezone: 'Asia/Kolkata (IST, UTC+05:30)',
   locale: 'en-US',
@@ -135,28 +135,44 @@ async function compressProfileImage(file: File, maxDimension: number = 512, qual
 export const platformProfileService = {
   // --- Profile Retrieval ---
   async getProfile(): Promise<PlatformAdminProfile> {
-    try {
-      const stored = localStorage.getItem('workforce_platform_profile');
-      if (stored) {
-        cachedProfile = { ...cachedProfile, ...JSON.parse(stored) };
-      }
-    } catch {
-      // Ignore localStorage read errors
-    }
-
     if (isSupabaseEnabled) {
       try {
         const { data: authUserData } = await supabase.auth.getUser();
         const activeEmail = authUserData?.user?.email || cachedProfile.email;
         const activeUserId = authUserData?.user?.id;
 
-        const query = supabase
-          .from('platform_users')
-          .select('*');
+        // 1. Query canonical platform_profiles table
+        const profileQuery = supabase.from('platform_profiles').select('*');
+        const { data: profData, error: profError } = activeUserId
+          ? await profileQuery.or(`auth_user_id.eq.${activeUserId},email.eq.${activeEmail}`).maybeSingle()
+          : await profileQuery.eq('email', activeEmail).maybeSingle();
 
+        if (profData && !profError) {
+          cachedProfile = {
+            id: profData.id,
+            auth_user_id: profData.auth_user_id || activeUserId,
+            email: profData.email || activeEmail,
+            first_name: profData.first_name || '',
+            last_name: profData.last_name || '',
+            display_name: profData.display_name || 'Platform Super Admin',
+            job_title: profData.job_title || 'Platform Super Administrator',
+            department: profData.department || 'Platform Core & Infrastructure',
+            phone: profData.phone || '',
+            avatar_url: profData.avatar_url || '',
+            timezone: profData.timezone || 'Asia/Kolkata (IST)',
+            locale: profData.locale || 'en-US',
+            is_primary_email_verified: Boolean(profData.is_primary_email_verified),
+            last_profile_update_at: profData.last_profile_update_at || new Date().toISOString(),
+            created_at: profData.created_at || new Date().toISOString(),
+          };
+          return { ...cachedProfile };
+        }
+
+        // 2. Fallback to platform_users
+        const userQuery = supabase.from('platform_users').select('*');
         const { data, error } = activeUserId
-          ? await query.or(`auth_user_id.eq.${activeUserId},email.eq.${activeEmail}`).maybeSingle()
-          : await query.eq('email', activeEmail).maybeSingle();
+          ? await userQuery.or(`auth_user_id.eq.${activeUserId},email.eq.${activeEmail}`).maybeSingle()
+          : await userQuery.eq('email', activeEmail).maybeSingle();
 
         if (data && !error) {
           cachedProfile = {
@@ -165,9 +181,9 @@ export const platformProfileService = {
             email: data.email || activeEmail,
             first_name: data.full_name?.split(' ')[0] || '',
             last_name: data.full_name?.split(' ').slice(1).join(' ') || '',
-            display_name: data.full_name || 'Super Admin',
-            job_title: 'Platform Administrator',
-            department: 'Platform Operations',
+            display_name: data.full_name || 'Platform Super Admin',
+            job_title: 'Platform Super Administrator',
+            department: 'Platform Core & Infrastructure',
             phone: '',
             avatar_url: '',
             timezone: 'Asia/Kolkata (IST)',
@@ -176,11 +192,19 @@ export const platformProfileService = {
             last_profile_update_at: data.updated_at || new Date().toISOString(),
             created_at: data.created_at || new Date().toISOString(),
           };
-          localStorage.setItem('workforce_platform_profile', JSON.stringify(cachedProfile));
         }
       } catch (err) {
         console.warn('[PlatformProfileService] Supabase profile fetch warning:', err);
       }
+    }
+
+    try {
+      const stored = localStorage.getItem('workforce_platform_profile');
+      if (stored) {
+        cachedProfile = { ...cachedProfile, ...JSON.parse(stored) };
+      }
+    } catch {
+      // Ignore localStorage read errors
     }
 
     return { ...cachedProfile };
@@ -231,10 +255,29 @@ export const platformProfileService = {
           payload.id = updated.id;
         }
 
+        // Upsert canonical platform_profiles
+        await supabase
+          .from('platform_profiles')
+          .upsert(payload, { onConflict: 'email' });
+
+        // Synchronize platform_users
         await supabase
           .from('platform_users')
           .update({
             full_name: updated.display_name,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('email', updated.email);
+
+        // Synchronize platform_staff
+        await supabase
+          .from('platform_staff')
+          .update({
+            name: updated.display_name,
+            phone: updated.phone,
+            avatar_url: updated.avatar_url,
+            job_title: updated.job_title,
+            department: updated.department,
             updated_at: new Date().toISOString(),
           })
           .eq('email', updated.email);

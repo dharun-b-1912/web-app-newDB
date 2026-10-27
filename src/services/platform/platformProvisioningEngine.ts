@@ -12,6 +12,7 @@ import { platformBillingService } from './platformBillingService';
 import { userAuthProvisionerService } from '../auth/userAuthProvisionerService';
 import { enterpriseIdentityService } from '../auth/enterpriseIdentityService';
 import { platformAuthInvitationService } from './platformAuthInvitationService';
+import { api } from '../api';
 
 export interface ProvisioningFormData {
   // Step 1: Organization
@@ -489,10 +490,11 @@ export const platformProvisioningEngine = {
         }
       }
 
+      const currentUser = api.getCurrentUser();
       await platformAuditService.logEvent({
-        actor_id: 'user-superadmin',
-        actor_name: 'WorkForce Super Admin',
-        actor_role: 'Super Admin',
+        actor_id: currentUser?.id || 'superadmin',
+        actor_name: currentUser?.name || currentUser?.email || 'Platform Super Admin',
+        actor_role: currentUser?.roles?.[0]?.name || 'Super Admin',
         organization_id: orgId,
         organization_name: formData.legal_name,
         action: 'ORGANIZATION_PROVISIONED',

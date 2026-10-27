@@ -410,7 +410,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
       approvalId: id,
       decision: 'Approved',
       comment,
-      decidedByName: user?.name || 'Arun Kumar (HR Head)',
+      decidedByName: user?.name || user?.email || 'Administrator',
     });
     // Immediately reload dashboard state
     await loadDashboardData();
@@ -421,7 +421,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
       approvalId: id,
       decision: 'Rejected',
       comment,
-      decidedByName: user?.name || 'Arun Kumar (HR Head)',
+      decidedByName: user?.name || user?.email || 'Administrator',
     });
     await loadDashboardData();
   };

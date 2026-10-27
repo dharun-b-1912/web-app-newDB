@@ -159,8 +159,8 @@ export const PlatformStaffView: React.FC = () => {
         const rootAdmin: PlatformStaffRecord = {
           id: prof.id || 'stf-root-01',
           email: prof.email || 'superadmin@joypeoplehr.com',
-          first_name: prof.first_name || 'Arun',
-          last_name: prof.last_name || 'Kumar',
+          first_name: prof.first_name || prof.display_name?.split(' ')[0] || 'Platform',
+          last_name: prof.last_name || prof.display_name?.split(' ').slice(1).join(' ') || 'Admin',
           name: prof.display_name || 'Platform Super Admin',
           staff_code: 'STF-ROOT01',
           job_title: prof.job_title || 'Chief Platform Architect & Super Admin',
@@ -619,17 +619,17 @@ export const PlatformStaffView: React.FC = () => {
           {!isLoading && staffList.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+                <table className="w-full text-left text-xs border-collapse">
                   <thead className="bg-gray-50/80 border-b border-gray-200 text-gray-600 uppercase font-bold text-[10px] tracking-wider">
                     <tr>
-                      <th className="py-3 px-4">Staff Administrator</th>
-                      <th className="py-3 px-4">Staff ID</th>
-                      <th className="py-3 px-4">Assigned Role</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4">MFA Policy</th>
-                      <th className="py-3 px-4">Active Sessions</th>
-                      <th className="py-3 px-4">Last Login</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
+                      <th className="py-2.5 px-3">Staff Administrator</th>
+                      <th className="py-2.5 px-2.5">Staff ID</th>
+                      <th className="py-2.5 px-2.5">Assigned Role</th>
+                      <th className="py-2.5 px-2">Status</th>
+                      <th className="py-2.5 px-2.5">MFA Policy</th>
+                      <th className="py-2.5 px-2">Active Sessions</th>
+                      <th className="py-2.5 px-2.5">Last Login</th>
+                      <th className="py-2.5 px-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 font-medium">
@@ -643,35 +643,35 @@ export const PlatformStaffView: React.FC = () => {
                         }}
                       >
                         {/* Name & Avatar */}
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#047857] to-emerald-500 text-white font-bold flex items-center justify-center text-xs shadow-xs">
+                        <td className="py-2.5 px-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-tr from-[#047857] to-emerald-500 text-white font-bold flex items-center justify-center text-xs shadow-xs">
                               {staff.name.charAt(0)}
                             </div>
-                            <div>
-                              <div className="font-bold text-gray-900 flex items-center gap-1.5">
-                                {staff.name}
+                            <div className="min-w-0">
+                              <div className="font-bold text-gray-900 flex items-center gap-1.5 truncate">
+                                <span>{staff.name}</span>
                                 {staff.is_root_superadmin && (
-                                  <span className="px-1.5 py-0.5 rounded text-[9px] bg-purple-50 text-purple-700 font-bold border border-purple-200">
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] bg-purple-50 text-purple-700 font-bold border border-purple-200 shrink-0">
                                     ROOT
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[11px] text-gray-500">{staff.email}</span>
+                              <span className="text-[11px] text-gray-500 truncate block max-w-[160px]">{staff.email}</span>
                             </div>
                           </div>
                         </td>
 
                         {/* Staff Code */}
-                        <td className="py-3 px-4 font-mono text-gray-700 font-medium">
+                        <td className="py-2.5 px-2.5 font-mono text-gray-700 font-medium whitespace-nowrap">
                           {staff.staff_code}
                         </td>
 
                         {/* Role & Risk */}
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-2.5 whitespace-nowrap">
                           <span
                             className={cn(
-                              'px-2.5 py-1 rounded-md text-[11px] font-bold border',
+                              'px-2 py-0.5 rounded-md text-[10.5px] font-bold border',
                               staff.role_key === 'SUPER_ADMIN'
                                 ? 'bg-purple-50 text-purple-700 border-purple-200'
                                 : staff.role_key === 'PLATFORM_ADMIN'
@@ -686,10 +686,10 @@ export const PlatformStaffView: React.FC = () => {
                         </td>
 
                         {/* Status */}
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-2 whitespace-nowrap">
                           <span
                             className={cn(
-                              'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold',
+                              'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold',
                               staff.status === 'Active'
                                 ? 'bg-emerald-50 text-[#047857] border border-emerald-200'
                                 : staff.status === 'Invitation Pending'
@@ -701,10 +701,10 @@ export const PlatformStaffView: React.FC = () => {
                               className={cn(
                                 'w-1.5 h-1.5 rounded-full',
                                 staff.status === 'Active'
-                                  ? 'bg-emerald-500'
-                                  : staff.status === 'Invitation Pending'
-                                  ? 'bg-amber-500'
-                                  : 'bg-rose-500'
+                                ? 'bg-emerald-500'
+                                : staff.status === 'Invitation Pending'
+                                ? 'bg-amber-500'
+                                : 'bg-rose-500'
                               )}
                             />
                             {staff.status}
@@ -712,29 +712,29 @@ export const PlatformStaffView: React.FC = () => {
                         </td>
 
                         {/* MFA */}
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-2.5 whitespace-nowrap">
                           <div className="flex items-center gap-1.5">
                             <ShieldCheck
                               className={cn('w-3.5 h-3.5', staff.mfa_enabled ? 'text-[#047857]' : 'text-amber-500')}
                             />
                             <span className="text-[11px] text-gray-700">
-                              {staff.mfa_enabled ? 'Enforced & Active' : 'Enforced (Pending)'}
+                              {staff.mfa_enabled ? 'Enforced' : 'Pending'}
                             </span>
                           </div>
                         </td>
 
                         {/* Active Sessions */}
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-2 whitespace-nowrap">
                           <span className="font-semibold text-gray-800">
                             {staff.active_sessions_count} session{staff.active_sessions_count !== 1 ? 's' : ''}
                           </span>
                         </td>
 
                         {/* Last Login */}
-                        <td className="py-3 px-4 text-gray-500">{staff.last_login_at}</td>
+                        <td className="py-2.5 px-2.5 text-gray-500 whitespace-nowrap text-[11px]">{staff.last_login_at}</td>
 
                         {/* Actions */}
-                        <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                        <td className="py-2.5 px-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => handleOpenChangeRole(staff)}

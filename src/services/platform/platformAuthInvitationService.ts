@@ -8,6 +8,7 @@ import { supabase, isSupabaseEnabled, getAppBaseUrl } from '../../lib/supabase';
 import { platformAuditService } from './platformAuditService';
 import { resendEmailService, EmailDeliveryResponse } from '../email/resendEmailService';
 import { userAuthProvisionerService } from '../auth/userAuthProvisionerService';
+import { api } from '../api';
 
 export type UserRole =
   | 'Organization Owner'
@@ -125,7 +126,9 @@ export const platformAuthInvitationService = {
     const orgName = params.organizationName || params.organization_name || 'Organization';
     const name = (params.fullName || params.full_name || 'Invited User').trim();
     const cleanEmail = (params.email || '').trim().toLowerCase();
-    const inviter = params.invitedBy || params.invited_by || 'THIRUMALAI R K (Platform Super Admin)';
+    const currentUser = api.getCurrentUser();
+    const defaultInviter = currentUser?.name ? `${currentUser.name} (Platform Super Admin)` : 'Platform Super Admin';
+    const inviter = params.invitedBy || params.invited_by || defaultInviter;
     const token = `inv_${Math.random().toString(36).substring(2)}${Date.now().toString(36)}`;
     const inviteUrl = `${getAppBaseUrl()}/auth/accept-invite?token=${token}&org=${encodeURIComponent(orgId)}&email=${encodeURIComponent(cleanEmail)}&role=${encodeURIComponent(params.role)}`;
     const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();

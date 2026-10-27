@@ -66,7 +66,7 @@ export const platformSessionService = {
   // -------------------------------------------------------------
   subscribeToRealtime(onChangeCallback: () => void): () => void {
     if (!isSupabaseEnabled) return () => {};
-    return realtimeChannelManager.subscribeToTable('active_sessions', () => {
+    return realtimeChannelManager.subscribeToTable('platform_sessions', () => {
       onChangeCallback();
     });
   },
@@ -77,6 +77,36 @@ export const platformSessionService = {
   async getSessions(): Promise<AdminSessionItem[]> {
     const currentUser = api.getCurrentUser();
     const { browserName, osName, deviceName } = resolveClientDeviceInfo();
+
+    if (isSupabaseEnabled) {
+      try {
+        const email = currentUser?.email || 'superadmin@joypeoplehr.com';
+        const { data, error } = await supabase
+          .from('platform_sessions')
+          .select('*')
+          .eq('user_email', email)
+          .order('last_activity_at', { ascending: false });
+
+        if (data && data.length > 0 && !error) {
+          return data.map((s) => ({
+            id: s.id,
+            is_current: s.session_status === 'Active' && !revokedSessionIds.has(s.id),
+            device_name: s.device_name || deviceName,
+            browser: s.browser_name || browserName,
+            os: s.os_name || osName,
+            ip_address: s.ip_masked || '127.0.0.1',
+            location: `${s.city || 'Coimbatore'}, ${s.region || 'Tamil Nadu'}, ${s.country || 'India'}`,
+            last_active_at: new Date(s.last_activity_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            created_at: s.created_at,
+            assurance_level: s.mfa_verified ? 'AAL2' : 'AAL1',
+            mfa_verified: Boolean(s.mfa_verified),
+            status: revokedSessionIds.has(s.id) ? 'Revoked' : (s.session_status as any),
+          }));
+        }
+      } catch (err) {
+        console.warn('[PlatformSessionService] Live session fetch notice:', err);
+      }
+    }
 
     if (revokedSessionIds.has('sess-primary-current')) {
       return [];
@@ -90,7 +120,7 @@ export const platformSessionService = {
         browser: browserName,
         os: osName,
         ip_address: '127.0.0.1 (Localhost / Secure Loopback)',
-        location: 'Coimbatore, Tamil Nadu, India',
+        location: 'Tamil Nadu, India',
         last_active_at: 'Just now',
         created_at: new Date().toISOString(),
         assurance_level: 'AAL2',
@@ -101,6 +131,24 @@ export const platformSessionService = {
   },
 
   async revokeOtherSessions(): Promise<{ count: number }> {
+    const currentUser = api.getCurrentUser();
+    if (isSupabaseEnabled && currentUser?.email) {
+      try {
+        await supabase
+          .from('platform_sessions')
+          .update({
+            session_status: 'Revoked',
+            revoked_at: new Date().toISOString(),
+            revoked_by: currentUser.name || currentUser.email,
+            revocation_reason: 'Platform Admin terminated other active device sessions',
+          })
+          .eq('user_email', currentUser.email)
+          .neq('id', 'sess-primary-current');
+      } catch (err) {
+        console.warn('[PlatformSessionService] Revoke other sessions fallback:', err);
+      }
+    }
+
     await platformAuditService.logEvent({
       action: 'sessions.revoked_all_others',
       category: 'Security',
@@ -114,10 +162,22 @@ export const platformSessionService = {
   },
 
   async signOutEverywhere(): Promise<void> {
+    const currentUser = api.getCurrentUser();
     revokedSessionIds.add('sess-primary-current');
 
     if (isSupabaseEnabled) {
       try {
+        if (currentUser?.email) {
+          await supabase
+            .from('platform_sessions')
+            .update({
+              session_status: 'Revoked',
+              revoked_at: new Date().toISOString(),
+              revoked_by: currentUser.name || currentUser.email,
+              revocation_reason: 'Global sign out across all devices',
+            })
+            .eq('user_email', currentUser.email);
+        }
         await supabase.auth.signOut({ scope: 'global' });
       } catch (err) {
         console.warn('[PlatformSessionService] Supabase global sign out warning:', err);
@@ -159,61 +219,90 @@ export const platformSessionService = {
     const currentUser = api.getCurrentUser();
     const { browserName, osName, deviceName } = resolveClientDeviceInfo();
 
-    const currentSessionId = 'sess-primary-current';
-    const isRevoked = revokedSessionIds.has(currentSessionId);
+    let list: PlatformSessionRecord[] = [];
 
-    let list: PlatformSessionRecord[] = isRevoked
-      ? []
-      : [
-          {
-            id: currentSessionId,
-            auth_session_id: `auth-${currentUser?.id || 'superadmin'}`,
-            user_name: currentUser?.name || 'THIRUMALAI R K',
-            user_email: currentUser?.email || 'superadmin@joypeoplehr.com',
-            tenant_id: currentUser?.organization_id || 'org-platform',
-            tenant_name: 'Joy PeopleHR Platform',
-            role_id: 'role-super-admin',
-            role_name: currentUser?.roles?.[0]?.name || 'Super Admin',
-            session_status: 'Active',
-            created_at: new Date().toISOString(),
-            last_activity_at: new Date().toISOString(),
-            last_seen_at: new Date().toISOString(),
-            expires_at: new Date(Date.now() + 86400000).toISOString(),
-            ip_masked: '127.0.0.1',
-            country: 'India',
-            city: 'Coimbatore',
-            device_id: 'dev-primary',
-            device_name: deviceName,
-            device_type: 'Desktop',
-            os_name: osName,
-            browser_name: browserName,
-            auth_method: 'MFA',
-            mfa_verified: true,
-            is_privileged: true,
-            risk_level: 'Low',
-            risk_score: 0,
-            first_seen_device: false,
-            updated_at: new Date().toISOString(),
-          },
-        ];
-
-    if (filters?.search) {
-      const q = filters.search.toLowerCase();
-      list = list.filter(
-        (s) =>
-          s.user_name.toLowerCase().includes(q) ||
-          s.user_email.toLowerCase().includes(q) ||
-          s.tenant_name.toLowerCase().includes(q) ||
-          s.device_name.toLowerCase().includes(q)
-      );
+    if (isSupabaseEnabled) {
+      try {
+        let query = supabase.from('platform_sessions').select('*');
+        if (filters?.search) {
+          const s = filters.search;
+          query = query.or(`user_name.ilike.%${s}%,user_email.ilike.%${s}%,tenant_name.ilike.%${s}%,device_name.ilike.%${s}%`);
+        }
+        if (filters?.risk && filters.risk !== 'ALL') {
+          query = query.eq('risk_level', filters.risk);
+        }
+        if (filters?.status && filters.status !== 'ALL') {
+          query = query.eq('session_status', filters.status);
+        }
+        const { data, error } = await query.order('last_activity_at', { ascending: false });
+        if (data && data.length > 0 && !error) {
+          list = data.map((s) => ({
+            ...s,
+            session_status: revokedSessionIds.has(s.id) ? 'Revoked' : s.session_status,
+          }));
+        }
+      } catch (err) {
+        console.warn('[PlatformSessionService] Database session fetch error:', err);
+      }
     }
 
-    if (filters?.risk && filters.risk !== 'ALL') {
-      list = list.filter((s) => s.risk_level === filters.risk);
-    }
+    if (list.length === 0) {
+      const currentSessionId = 'sess-primary-current';
+      const isRevoked = revokedSessionIds.has(currentSessionId);
 
-    if (filters?.status && filters.status !== 'ALL') {
-      list = list.filter((s) => s.session_status === filters.status);
+      list = isRevoked
+        ? []
+        : [
+            {
+              id: currentSessionId,
+              auth_session_id: `auth-${currentUser?.id || 'superadmin'}`,
+              user_name: currentUser?.name || 'Platform Administrator',
+              user_email: currentUser?.email || 'superadmin@joypeoplehr.com',
+              tenant_id: currentUser?.organization_id || 'org-platform',
+              tenant_name: 'Joy PeopleHR Platform',
+              role_id: 'role-super-admin',
+              role_name: currentUser?.roles?.[0]?.name || 'Super Admin',
+              session_status: 'Active',
+              created_at: new Date().toISOString(),
+              last_activity_at: new Date().toISOString(),
+              last_seen_at: new Date().toISOString(),
+              expires_at: new Date(Date.now() + 86400000).toISOString(),
+              ip_masked: '127.0.0.1',
+              country: 'India',
+              city: 'Coimbatore',
+              device_id: 'dev-primary',
+              device_name: deviceName,
+              device_type: 'Desktop',
+              os_name: osName,
+              browser_name: browserName,
+              auth_method: 'MFA',
+              mfa_verified: true,
+              is_privileged: true,
+              risk_level: 'Low',
+              risk_score: 0,
+              first_seen_device: false,
+              updated_at: new Date().toISOString(),
+            },
+          ];
+
+      if (filters?.search) {
+        const q = filters.search.toLowerCase();
+        list = list.filter(
+          (s) =>
+            s.user_name.toLowerCase().includes(q) ||
+            s.user_email.toLowerCase().includes(q) ||
+            s.tenant_name.toLowerCase().includes(q) ||
+            s.device_name.toLowerCase().includes(q)
+        );
+      }
+
+      if (filters?.risk && filters.risk !== 'ALL') {
+        list = list.filter((s) => s.risk_level === filters.risk);
+      }
+
+      if (filters?.status && filters.status !== 'ALL') {
+        list = list.filter((s) => s.session_status === filters.status);
+      }
     }
 
     return {
@@ -230,7 +319,7 @@ export const platformSessionService = {
         session_id: sessionId || 'sess-primary-current',
         event_type: 'SESSION_AUTHENTICATED',
         user_email: currentUser?.email || 'superadmin@joypeoplehr.com',
-        actor_name: currentUser?.name || 'THIRUMALAI R K',
+        actor_name: currentUser?.name || currentUser?.email || 'Platform Administrator',
         ip_masked: '127.0.0.1',
         created_at: new Date().toISOString(),
         details: { method: 'Password + Root Signature', aal: 'AAL2' },
@@ -277,7 +366,25 @@ export const platformSessionService = {
   },
 
   async revokeAllUserSessions(userEmail: string, reason: string = 'User sessions terminated by admin'): Promise<{ success: boolean; error?: string }> {
+    const currentUser = api.getCurrentUser();
     revokedSessionIds.add('sess-primary-current');
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase
+          .from('platform_sessions')
+          .update({
+            session_status: 'Revoked',
+            revoked_at: new Date().toISOString(),
+            revoked_by: currentUser?.name || currentUser?.email || 'Platform Admin',
+            revocation_reason: reason,
+          })
+          .eq('user_email', userEmail);
+      } catch (err) {
+        console.warn('[PlatformSessionService] Supabase revoke all user sessions error:', err);
+      }
+    }
+
     await platformAuditService.logEvent({
       action: 'session.revoked_user_all',
       category: 'Security',
@@ -290,7 +397,25 @@ export const platformSessionService = {
   },
 
   async revokeAllPrivilegedSessions(reason: string = 'Emergency privileged session revocation'): Promise<{ success: boolean; error?: string }> {
+    const currentUser = api.getCurrentUser();
     revokedSessionIds.add('sess-primary-current');
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase
+          .from('platform_sessions')
+          .update({
+            session_status: 'Revoked',
+            revoked_at: new Date().toISOString(),
+            revoked_by: currentUser?.name || currentUser?.email || 'Platform Admin',
+            revocation_reason: reason,
+          })
+          .eq('is_privileged', true);
+      } catch (err) {
+        console.warn('[PlatformSessionService] Supabase revoke privileged sessions error:', err);
+      }
+    }
+
     await platformAuditService.logEvent({
       action: 'session.revoked_all_privileged',
       category: 'Security',
@@ -303,7 +428,24 @@ export const platformSessionService = {
   },
 
   async revokeSession(sessionId: string, reason: string = 'Administrative Revocation'): Promise<{ success: boolean; error?: string }> {
+    const currentUser = api.getCurrentUser();
     revokedSessionIds.add(sessionId);
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase
+          .from('platform_sessions')
+          .update({
+            session_status: 'Revoked',
+            revoked_at: new Date().toISOString(),
+            revoked_by: currentUser?.name || currentUser?.email || 'Platform Admin',
+            revocation_reason: reason,
+          })
+          .eq('id', sessionId);
+      } catch (err) {
+        console.warn('[PlatformSessionService] Supabase session revoke error:', err);
+      }
+    }
 
     await platformAuditService.logEvent({
       action: 'session.revoked',

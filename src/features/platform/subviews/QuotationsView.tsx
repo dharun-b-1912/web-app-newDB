@@ -4,7 +4,7 @@
 // Single Source of Truth linking Pricing Engine -> Quotation -> Subscription
 // ============================================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   FileText,
   Search,
@@ -35,6 +35,10 @@ import {
   Printer,
   Mail,
   MessageSquare,
+  CreditCard,
+  QrCode,
+  CheckCheck,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import {
@@ -54,6 +58,9 @@ import { saasCatalogueService } from '../../../services/platform/saasCatalogueSe
 import { SaaSQuotationBuilderWorkspace } from '../components/quotations/SaaSQuotationBuilderWorkspace';
 import { SaaSProposalDocumentModal } from '../components/quotations/SaaSProposalDocumentModal';
 import { EditSupplierCompanyModal } from '../components/quotations/EditSupplierCompanyModal';
+import { api } from '../../../services/api';
+import { razorpayOrderService } from '../../../services/platform/razorpayOrderService';
+import { CompanyLogoUpload } from '../../../components/common/CompanyLogoUpload';
 
 interface QuotationsViewProps {
   onNavigateTab?: (tab: string, payload?: any) => void;
@@ -72,6 +79,17 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({ onNavigateTab })
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [planFilter, setPlanFilter] = useState<string>('ALL');
+  const [ownerFilter, setOwnerFilter] = useState<string>('ALL');
+  const salesOwners = useMemo(() => saasCommercialService.getSalesOwners(), []);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setQuotations([...saasCommercialService.getQuotations()]);
+      setClients([...saasCommercialService.getClients()]);
+    };
+    window.addEventListener('commercial:data_updated', handleUpdate);
+    return () => window.removeEventListener('commercial:data_updated', handleUpdate);
+  }, []);
 
   // Preview Drawer & Full 8-Page Document Modal
   const [previewQuote, setPreviewQuote] = useState<CommercialQuotation | null>(null);
@@ -94,8 +112,13 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({ onNavigateTab })
     DEFAULT_ONE_TIME_SERVICES
   );
   const [formNegotiatedDiscount, setFormNegotiatedDiscount] = useState<number>(5);
-  const [formSalesOwner, setFormSalesOwner] = useState('Arun K (Commercial Lead)');
+  const [formSalesOwner, setFormSalesOwner] = useState(() => {
+    const list = saasCommercialService.getSalesOwners();
+    return list[0] ? `${list[0].name} (${list[0].designation})` : 'Commercial Lead';
+  });
   const [copiedQuoteId, setCopiedQuoteId] = useState<string | null>(null);
+  const [razorpayModalQuote, setRazorpayModalQuote] = useState<CommercialQuotation | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const allPlans = useMemo(() => saasPricingEngine.getPlans(), []);
   const allAddons = useMemo(() => saasCatalogueService.getAddons(), []);
@@ -132,6 +155,7 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({ onNavigateTab })
     return quotations.filter((q) => {
       if (statusFilter !== 'ALL' && q.status !== statusFilter) return false;
       if (planFilter !== 'ALL' && q.planCode !== planFilter) return false;
+      if (ownerFilter !== 'ALL' && !q.salesOwner.toLowerCase().includes(ownerFilter.toLowerCase())) return false;
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         return (
@@ -142,7 +166,7 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({ onNavigateTab })
       }
       return true;
     });
-  }, [quotations, statusFilter, planFilter, searchQuery]);
+  }, [quotations, statusFilter, planFilter, ownerFilter, searchQuery]);
 
   const handleCreateQuotation = () => {
     const client = clients.find((c) => c.id === selectedClientId) || clients[0];
@@ -233,6 +257,7 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({ onNavigateTab })
   const [convertingQuote, setConvertingQuote] = useState<CommercialQuotation | null>(null);
   const [conversionLegalName, setConversionLegalName] = useState('');
   const [conversionTradeName, setConversionTradeName] = useState('');
+  const [conversionLogoUrl, setConversionLogoUrl] = useState('');
   const [conversionGstin, setConversionGstin] = useState('');
   const [conversionPan, setConversionPan] = useState('');
   const [conversionCin, setConversionCin] = useState('');
@@ -255,6 +280,7 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({ onNavigateTab })
     setConvertingQuote(quote);
     setConversionLegalName(quote.clientName);
     setConversionTradeName(quote.clientName);
+    setConversionLogoUrl(quote.clientLogoUrl || '');
     const gstinVal = quote.clientGstin && quote.clientGstin !== 'Pending Verification' ? quote.clientGstin : '33AABCA4589E1Z2';
     setConversionGstin(gstinVal);
     setConversionPan(gstinVal.length >= 12 ? gstinVal.slice(2, 12) : 'AABCA4589E');
@@ -273,6 +299,7 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({ onNavigateTab })
       const res = await saasCommercialService.convertAcceptedQuotationToClient(convertingQuote.id, {
         legalName: conversionLegalName,
         tradeName: conversionTradeName,
+        logoUrl: conversionLogoUrl,
         gstin: conversionGstin,
         pan: conversionPan,
         cin: conversionCin,
@@ -310,6 +337,33 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({ onNavigateTab })
     const q = quotations.find((quote) => quote.id === quoteId);
     if (q) {
       openConversionModal(q);
+    }
+  };
+
+  const handlePayConvertedQuoteWithRazorpay = async () => {
+    if (!convertingQuote || !conversionSuccessResult) return;
+    try {
+      await razorpayOrderService.openCheckout({
+        amount: convertingQuote.pricingSnapshot.totalFirstYearValue,
+        currency: 'INR',
+        invoiceNumber: conversionSuccessResult.invoiceNumber,
+        subscriptionId: conversionSuccessResult.subscriptionId,
+        organizationId: conversionSuccessResult.orgId,
+        customerName: convertingQuote.clientName,
+        customerEmail: convertingQuote.clientEmail || 'admin@customer.com',
+        customerPhone: convertingQuote.clientPhone || '+919043022330',
+        description: `Joy PeopleHR Subscription Settlement for ${convertingQuote.clientName} (${conversionSuccessResult.invoiceNumber})`,
+        onSuccess: (res) => {
+          alert(`Payment of ₹${convertingQuote.pricingSnapshot.totalFirstYearValue.toLocaleString('en-IN')} successfully settled via Razorpay! Ref: ${res.razorpay_payment_id}`);
+          setConvertingQuote(null);
+          if (onNavigateTab) onNavigateTab('platform-invoices');
+        },
+        onError: (err) => {
+          console.warn('[QuotationsView] Razorpay payment retry:', err?.description || err?.message || err);
+        },
+      });
+    } catch (e: any) {
+      console.error('[QuotationsView] Razorpay launch error:', e);
     }
   };
 
@@ -558,24 +612,37 @@ ${supplier.email} | ${supplier.phone}`;
             <option value="BUSINESS">Business</option>
             <option value="ENTERPRISE">Enterprise</option>
           </select>
+
+          <select
+            value={ownerFilter}
+            onChange={(e) => setOwnerFilter(e.target.value)}
+            className="px-3 py-2 text-[13px] rounded-lg border border-slate-300 bg-white text-slate-700 font-medium"
+          >
+            <option value="ALL">All Sales Owners</option>
+            {salesOwners.map((so) => (
+              <option key={so.id} value={so.name}>
+                {so.name}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
       {/* ── 4. Quotation Table ──────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse min-w-[960px]">
+          <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="bg-slate-50 text-slate-700 font-semibold uppercase text-[10.5px] border-b border-slate-200">
-                <th className="py-3 px-4 whitespace-nowrap">Quotation No</th>
-                <th className="py-3 px-4">Client</th>
-                <th className="py-3 px-4 whitespace-nowrap">Plan & Term</th>
-                <th className="py-3 px-4 text-center whitespace-nowrap">Workforce</th>
-                <th className="py-3 px-4 text-right whitespace-nowrap">Contract Value</th>
-                <th className="py-3 px-4 whitespace-nowrap">Valid Until</th>
-                <th className="py-3 px-4 text-center whitespace-nowrap">Status</th>
-                <th className="py-3 px-4 whitespace-nowrap">Owner</th>
-                <th className="py-3 px-4 text-right whitespace-nowrap">Actions</th>
+              <tr className="bg-slate-50 text-slate-700 font-semibold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                <th className="py-2.5 px-3 whitespace-nowrap font-bold text-slate-800">Quotation No</th>
+                <th className="py-2.5 px-3">Client</th>
+                <th className="py-2.5 px-2.5 whitespace-nowrap">Plan & Term</th>
+                <th className="py-2.5 px-2 text-center whitespace-nowrap">Workforce</th>
+                <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Contract Value</th>
+                <th className="py-2.5 px-2 whitespace-nowrap">Valid Until</th>
+                <th className="py-2.5 px-2 text-center whitespace-nowrap">Status</th>
+                <th className="py-2.5 px-2.5 whitespace-nowrap">Owner</th>
+                <th className="py-2.5 px-3 text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -604,63 +671,127 @@ ${supplier.email} | ${supplier.phone}`;
               ) : (
                 filteredQuotations.map((q) => (
                   <tr key={q.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
-                      {q.quotationNumber}
-                      <span className="text-[10px] text-slate-400 font-normal ml-1">v{q.version}</span>
+                    <td className="py-2.5 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                      <span
+                        className="text-[#047857] hover:underline cursor-pointer"
+                        onClick={() => setPreviewQuote(q)}
+                        title={`View quote ${q.quotationNumber}`}
+                      >
+                        {q.quotationNumber}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-normal ml-1.5 px-1 py-0.2 rounded bg-slate-100 border border-slate-200">
+                        v{q.version}
+                      </span>
                     </td>
 
-                    <td className="py-3.5 px-4 min-w-[200px]">
-                      <div className="font-bold text-slate-900 text-xs truncate max-w-[220px]" title={q.clientName}>
-                        {q.clientName}
+                    <td className="py-2.5 px-3">
+                      <div className="flex items-center gap-2.5">
+                        {q.clientLogoUrl ? (
+                          <div className="h-7 w-7 rounded-lg bg-white border border-slate-200 p-0.5 flex items-center justify-center shrink-0 shadow-2xs overflow-hidden">
+                            <img src={q.clientLogoUrl} alt={q.clientName} className="h-full w-full object-contain" />
+                          </div>
+                        ) : (
+                          <div className="h-7 w-7 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 font-black text-[10px] flex items-center justify-center shrink-0">
+                            {q.clientName ? q.clientName.slice(0, 2).toUpperCase() : 'CO'}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 text-xs truncate max-w-[140px] lg:max-w-[190px]" title={q.clientName}>
+                            {q.clientName}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5 whitespace-nowrap">{q.clientGstin}</div>
+                        </div>
                       </div>
-                      <div className="text-[10.5px] text-slate-500 font-mono mt-0.5 whitespace-nowrap">{q.clientGstin}</div>
                     </td>
 
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      <div className="font-semibold text-slate-800">{q.planName}</div>
-                      <div className="text-[11px] text-emerald-700 font-medium">{q.billingCycle} Contract</div>
+                    <td className="py-2.5 px-2.5 whitespace-nowrap">
+                      <div className="font-semibold text-slate-800 text-xs">{q.planName}</div>
+                      <div className="text-[10px] text-emerald-700 font-medium">{q.billingCycle}</div>
                     </td>
 
-                    <td className="py-3.5 px-4 text-center font-bold text-slate-800 whitespace-nowrap">
+                    <td className="py-2.5 px-2 text-center font-bold text-slate-800 whitespace-nowrap text-xs">
                       {q.employeeCount} seats
-                      <div className="text-[10.5px] text-slate-500 font-normal">₹{q.pepmRate} PEPM</div>
+                      <div className="text-[10px] text-slate-500 font-normal">₹{q.pepmRate} PEPM</div>
                     </td>
 
-                    <td className="py-3.5 px-4 text-right font-black text-slate-900 text-sm whitespace-nowrap">
+                    <td className="py-2.5 px-2.5 text-right font-bold text-slate-900 text-xs whitespace-nowrap">
                       ₹{q.pricingSnapshot.totalFirstYearValue.toLocaleString('en-IN')}
-                      <div className="text-[10.5px] text-slate-500 font-normal">Incl. GST & Onboarding</div>
                     </td>
 
-                    <td className="py-3.5 px-4 text-slate-700 font-medium whitespace-nowrap font-mono text-[11.5px]">
-                      {q.validUntil}
+                    <td className="py-2.5 px-2 whitespace-nowrap text-xs">
+                      {q.validUntil && q.validUntil < new Date().toISOString().slice(0, 10) ? (
+                        <div>
+                          <div className="flex items-center gap-1">
+                            <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold text-[9px] uppercase tracking-wider">
+                              Expired
+                            </span>
+                            <span className="font-mono text-slate-400 line-through text-[10px]">{q.validUntil}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              saasCommercialService.extendQuotationValidity(q.id, 15);
+                              setQuotations([...saasCommercialService.getQuotations()]);
+                            }}
+                            className="mt-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-1 shadow-2xs"
+                            title="Extend validity by 15 days"
+                          >
+                            <RefreshCw className="h-2.5 w-2.5" />
+                            +15d Extend
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          <span className="text-slate-800 font-medium font-mono text-[11px] block">{q.validUntil}</span>
+                          <span className={`text-[10px] font-semibold ${
+                            Math.ceil((new Date(q.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) <= 5
+                              ? 'text-amber-600'
+                              : 'text-emerald-600'
+                          }`}>
+                            {Math.ceil((new Date(q.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) <= 0
+                              ? 'Expires today'
+                              : `${Math.ceil((new Date(q.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24))}d left`}
+                          </span>
+                        </div>
+                      )}
                     </td>
 
-                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                    <td className="py-2.5 px-2 text-center whitespace-nowrap">
                       {renderStatusBadge(q.status)}
                     </td>
 
-                    <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap">
+                    <td className="py-2.5 px-2.5 text-slate-600 whitespace-nowrap text-xs">
                       {q.salesOwner}
                     </td>
 
-                    <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
-                      <button
-                        onClick={() => setSelectedDocumentQuote(q)}
-                        className="text-xs font-semibold text-slate-700 hover:text-emerald-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded inline-flex items-center gap-1"
-                        title="Open 8-Page Formal Proposal Document (PDF / Print)"
-                      >
-                        <FileText className="h-3 w-3" />
-                        Formal PDF
-                      </button>
+                    <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+                        <button
+                          onClick={() => setSelectedDocumentQuote(q)}
+                          className="text-xs font-semibold text-slate-700 hover:text-emerald-700 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded inline-flex items-center gap-1 transition"
+                          title="Open 8-Page Formal Proposal Document (PDF / Print)"
+                        >
+                          <FileText className="h-3 w-3" />
+                          PDF
+                        </button>
 
-                      <button
-                        onClick={() => handleSendWhatsAppQuote(q)}
-                        className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded inline-flex items-center gap-1 border border-emerald-200"
-                        title="Share Proposal on WhatsApp"
-                      >
-                        <MessageSquare className="h-3 w-3 text-emerald-600" />
-                        WhatsApp
-                      </button>
+                        <button
+                          onClick={() => setRazorpayModalQuote(q)}
+                          className="text-xs font-semibold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded inline-flex items-center gap-1 border border-blue-200 transition"
+                          title="Instant Razorpay Checkout & UPI QR Code"
+                        >
+                          <QrCode className="h-3 w-3 text-blue-600" />
+                          Pay/QR
+                        </button>
+
+                        <button
+                          onClick={() => handleSendWhatsAppQuote(q)}
+                          className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded inline-flex items-center gap-1 border border-emerald-200 transition"
+                          title="Share Proposal on WhatsApp"
+                        >
+                          <MessageSquare className="h-3 w-3 text-emerald-600" />
+                          WA
+                        </button>
 
                       <button
                         onClick={() => handleSendEmailQuote(q)}
@@ -679,15 +810,16 @@ ${supplier.email} | ${supplier.phone}`;
                         Review
                       </button>
 
-                      {q.status === 'ACCEPTED' && (
-                        <button
-                          onClick={() => handleConvertToSubscription(q.id)}
-                          className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1 rounded shadow-xs inline-flex items-center gap-1"
-                        >
-                          <Zap className="h-3 w-3" />
-                          Convert to Sub
-                        </button>
-                      )}
+                        {q.status === 'ACCEPTED' && (
+                          <button
+                            onClick={() => handleConvertToSubscription(q.id)}
+                            className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1 rounded shadow-xs inline-flex items-center gap-1"
+                          >
+                            <Zap className="h-3 w-3" />
+                            Convert to Sub
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -933,8 +1065,8 @@ ${supplier.email} | ${supplier.phone}`;
 
       {/* ── 6. 7-Stage SaaS Quotation Builder Workspace ─────────────────────── */}
       {isWizardOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-          <div className="max-w-5xl w-full my-auto">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-hidden">
+          <div className="max-w-5xl w-full h-[94vh] max-h-[94vh] flex flex-col my-auto">
             <SaaSQuotationBuilderWorkspace
               clients={clients}
               onCancel={() => setIsWizardOpen(false)}
@@ -1058,22 +1190,31 @@ ${supplier.email} | ${supplier.phone}`;
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-center gap-3 pt-3">
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
                     <Button
                       size="sm"
+                      onClick={handlePayConvertedQuoteWithRazorpay}
+                      className="bg-[#047857] hover:bg-[#036246] text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      Pay Invoice via Razorpay (rzp_test) →
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
                       onClick={() => {
                         setConvertingQuote(null);
                         if (onNavigateTab) onNavigateTab('platform-invoices');
                       }}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                      className="text-xs"
                     >
                       View Generated Tax Invoice →
                     </Button>
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
                       onClick={() => setConvertingQuote(null)}
-                      className="text-xs"
+                      className="text-xs text-slate-500 hover:text-slate-700"
                     >
                       Done & Close
                     </Button>
@@ -1092,65 +1233,76 @@ ${supplier.email} | ${supplier.phone}`;
                     <strong>Pre-Conversion Verification:</strong> Confirm legal company identity and GSTIN details. This provisions the client record, assigns the organization tenant, binds entitlements, and generates the first tax invoice.
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="text-slate-600 block font-semibold mb-1">Company Legal Name *</label>
-                      <input
-                        type="text"
-                        required
-                        value={conversionLegalName}
-                        onChange={(e) => setConversionLegalName(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 font-medium text-xs"
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-start">
+                    <div className="sm:col-span-1">
+                      <CompanyLogoUpload
+                        value={conversionLogoUrl}
+                        onChange={setConversionLogoUrl}
+                        companyName={conversionTradeName || conversionLegalName || 'Client'}
+                        label="Company Logo"
+                        compact
                       />
                     </div>
-                    <div>
-                      <label className="text-slate-600 block font-semibold mb-1">Trade / Brand Name</label>
-                      <input
-                        type="text"
-                        value={conversionTradeName}
-                        onChange={(e) => setConversionTradeName(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 font-medium text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-600 block font-semibold mb-1">GSTIN (Verified Tax Identifier) *</label>
-                      <input
-                        type="text"
-                        required
-                        value={conversionGstin}
-                        onChange={(e) => setConversionGstin(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono font-bold text-xs uppercase"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-600 block font-semibold mb-1">Permanent Account Number (PAN) *</label>
-                      <input
-                        type="text"
-                        required
-                        value={conversionPan}
-                        onChange={(e) => setConversionPan(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono font-bold text-xs uppercase"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-600 block font-semibold mb-1">Primary Admin Name *</label>
-                      <input
-                        type="text"
-                        required
-                        value={conversionAdminName}
-                        onChange={(e) => setConversionAdminName(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 font-medium text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-600 block font-semibold mb-1">Primary Admin Email *</label>
-                      <input
-                        type="email"
-                        required
-                        value={conversionAdminEmail}
-                        onChange={(e) => setConversionAdminEmail(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 font-medium text-xs"
-                      />
+                    <div className="sm:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <label className="text-slate-600 block font-semibold mb-1">Company Legal Name *</label>
+                        <input
+                          type="text"
+                          required
+                          value={conversionLegalName}
+                          onChange={(e) => setConversionLegalName(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 font-medium text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-slate-600 block font-semibold mb-1">Trade / Brand Name</label>
+                        <input
+                          type="text"
+                          value={conversionTradeName}
+                          onChange={(e) => setConversionTradeName(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 font-medium text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-slate-600 block font-semibold mb-1">GSTIN (Verified Tax Identifier) *</label>
+                        <input
+                          type="text"
+                          required
+                          value={conversionGstin}
+                          onChange={(e) => setConversionGstin(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono font-bold text-xs uppercase"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-slate-600 block font-semibold mb-1">Permanent Account Number (PAN) *</label>
+                        <input
+                          type="text"
+                          required
+                          value={conversionPan}
+                          onChange={(e) => setConversionPan(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono font-bold text-xs uppercase"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-slate-600 block font-semibold mb-1">Primary Admin Name *</label>
+                        <input
+                          type="text"
+                          required
+                          value={conversionAdminName}
+                          onChange={(e) => setConversionAdminName(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 font-medium text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-slate-600 block font-semibold mb-1">Primary Admin Email *</label>
+                        <input
+                          type="email"
+                          required
+                          value={conversionAdminEmail}
+                          onChange={(e) => setConversionAdminEmail(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 font-medium text-xs"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -1227,6 +1379,200 @@ ${supplier.email} | ${supplier.phone}`;
                   </div>
                 </form>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 8. Razorpay Payment Link & Instant UPI QR Modal ─────────────────── */}
+      {razorpayModalQuote && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 p-5 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-lg shadow-sm">
+                  ₹
+                </div>
+                <div>
+                  <h3 className="font-bold text-base">Razorpay Online Payment</h3>
+                  <p className="text-xs text-blue-200 font-mono">
+                    {razorpayModalQuote.quotationNumber} • {razorpayModalQuote.clientName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setRazorpayModalQuote(null)}
+                className="h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/80 hover:text-white transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-5 text-slate-800 text-xs">
+              {/* Amount Pill */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                    Total Contract Value (incl. 18% GST)
+                  </span>
+                  <div className="text-2xl font-black text-slate-900 mt-0.5">
+                    ₹{razorpayModalQuote.pricingSnapshot.totalFirstYearValue.toLocaleString('en-IN')}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Plan Tier</span>
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs inline-block mt-0.5">
+                    {razorpayModalQuote.planName}
+                  </span>
+                </div>
+              </div>
+
+              {/* UPI QR Code Container */}
+              <div className="p-4 rounded-xl border border-slate-200 bg-white flex flex-col items-center text-center space-y-3">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Instant UPI QR Code (Zero Surcharge)
+                </span>
+
+                <div className="p-3 bg-white border border-slate-300 rounded-xl shadow-xs inline-block">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
+                      razorpayModalQuote.razorpayQrPayload ||
+                        razorpayOrderService.generateUpiQrPayload(
+                          razorpayModalQuote.quotationNumber,
+                          razorpayModalQuote.pricingSnapshot.totalFirstYearValue,
+                          razorpayModalQuote.clientName
+                        )
+                    )}`}
+                    alt="UPI Payment QR Code"
+                    className="h-44 w-44 object-contain"
+                  />
+                </div>
+
+                <div className="space-y-0.5">
+                  <div className="text-[11px] font-semibold text-slate-700">
+                    Scan with any UPI App: GPay, PhonePe, Paytm, BHIM, CRED
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono">
+                    UPI ID: joyhrms@icici • Instant Verification
+                  </div>
+                </div>
+              </div>
+
+              {/* Hosted Payment Link */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
+                  Hosted Payment Link
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={
+                      razorpayModalQuote.paymentLink ||
+                      razorpayOrderService.generatePaymentLink(
+                        razorpayModalQuote.quotationNumber,
+                        razorpayModalQuote.pricingSnapshot.totalFirstYearValue
+                      )
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-slate-50 font-mono text-[11px] text-slate-700 select-all"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const link =
+                        razorpayModalQuote.paymentLink ||
+                        razorpayOrderService.generatePaymentLink(
+                          razorpayModalQuote.quotationNumber,
+                          razorpayModalQuote.pricingSnapshot.totalFirstYearValue
+                        );
+                      navigator.clipboard.writeText(link);
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 2000);
+                    }}
+                    className="shrink-0 text-xs border-slate-300 font-semibold"
+                  >
+                    {copiedLink ? (
+                      <>
+                        <CheckCheck className="h-3.5 w-3.5 mr-1 text-emerald-600" />
+                        Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5 mr-1" />
+                        Copy
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <Button
+                  onClick={async () => {
+                    try {
+                      await razorpayOrderService.openCheckout({
+                        amount: razorpayModalQuote.pricingSnapshot.totalFirstYearValue,
+                        currency: 'INR',
+                        customerName: razorpayModalQuote.clientName,
+                        customerEmail: razorpayModalQuote.clientEmail || 'billing@customer.com',
+                        customerPhone: razorpayModalQuote.clientPhone || '+919876543210',
+                        description: `SaaS Subscription: ${razorpayModalQuote.planName} (${razorpayModalQuote.quotationNumber})`,
+                        onSuccess: (res) => {
+                          alert(
+                            `Payment of ₹${razorpayModalQuote.pricingSnapshot.totalFirstYearValue.toLocaleString(
+                              'en-IN'
+                            )} successfully settled! Payment ID: ${res.razorpay_payment_id}`
+                          );
+                          saasCommercialService.updateQuotationStatus(razorpayModalQuote.id, 'ACCEPTED');
+                          setQuotations([...saasCommercialService.getQuotations()]);
+                          setRazorpayModalQuote(null);
+                        },
+                      });
+                    } catch (err: any) {
+                      console.error('Razorpay checkout error:', err);
+                    }
+                  }}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 text-xs shadow-md flex items-center justify-center gap-2"
+                >
+                  <CreditCard className="h-4 w-4" />
+                  <span>Launch Razorpay Test Checkout →</span>
+                </Button>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      const link =
+                        razorpayModalQuote.paymentLink ||
+                        razorpayOrderService.generatePaymentLink(
+                          razorpayModalQuote.quotationNumber,
+                          razorpayModalQuote.pricingSnapshot.totalFirstYearValue
+                        );
+                      const msg = `Hello ${razorpayModalQuote.clientName},\n\nHere is your commercial proposal payment link for Joy PeopleHR ${razorpayModalQuote.planName} plan (Amount: ₹${razorpayModalQuote.pricingSnapshot.totalFirstYearValue.toLocaleString('en-IN')}):\n${link}\n\nValid until: ${razorpayModalQuote.validUntil}.\n\nThank you,\nJoy PeopleHR Commercial Team`;
+                      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+                    }}
+                    className="flex-1 border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 font-semibold text-xs flex items-center justify-center gap-1.5"
+                  >
+                    <MessageSquare className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>Share on WhatsApp</span>
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setRazorpayModalQuote(null)}
+                    className="border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold px-4"
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { api } from './services/api';
 import { AuthProvider, useAuth } from './hooks/useAuth';
+import { authService, DEFAULT_PLATFORM_SUPER_ADMIN } from './services/auth/authService';
 import { TenantProvider } from './hooks/useTenant';
 import { ToastProvider } from './components/ui/Toast';
 import { AuthPage } from './features/auth/AuthPage';
@@ -63,7 +64,7 @@ const ResetPasswordPage = lazy(() => import('./features/auth/ResetPasswordPage')
 const StorageAdministrationView = lazy(() => import('./features/storage/StorageAdministrationView').then(m => ({ default: m.StorageAdministrationView })));
 
 const AppContent: React.FC = () => {
-  const { user, isLoading, logout } = useAuth();
+  const { user, isLoading, logout, login } = useAuth();
   const [isBootSplashFinished, setIsBootSplashFinished] = useState(true);
 
   // Initialize Realtime Sync Engine for live automatic data replication and purge old legacy mock remnants
@@ -143,6 +144,15 @@ const AppContent: React.FC = () => {
     if (urlState.route === 'accept-invite' || urlState.route === 'reset-password') {
       return urlState.route;
     }
+
+    // Direct platform route requested via URL: ALWAYS respect and preserve it
+    const isPlatformUrl = Boolean(
+      urlState.route && (urlState.route.startsWith('platform') || urlState.route.startsWith('saas-'))
+    );
+    if (isPlatformUrl) {
+      return urlState.route;
+    }
+
     const stored = user || api.getCurrentUser();
     const primaryRole = getPrimaryRole(stored);
     const isPlatformRole = ['Super Admin', 'Assistant Admin', 'Billing Admin', 'Security Officer'].includes(primaryRole);
@@ -155,12 +165,10 @@ const AppContent: React.FC = () => {
       return 'platform-dashboard';
     }
 
-    // 2. If tenant role, ensure they are not on an auth or platform route
+    // 2. If tenant role, ensure they are not on an auth route
     if (urlState.route) {
       const r = urlState.route.toLowerCase();
       if (
-        r.startsWith('platform') ||
-        r.startsWith('saas-') ||
         r.includes('accept-invite') ||
         r.includes('reset-password') ||
         r.includes('login') ||
@@ -288,12 +296,26 @@ const AppContent: React.FC = () => {
         handleNavigate(e.detail.tab);
       }
     };
+    const handleGenericNav = (e: any) => {
+      const targetNav = e.detail?.nav || e.detail?.route || e.detail?.tab;
+      if (targetNav) {
+        const params: Record<string, string> = {};
+        if (e.detail.employeeId) params.employeeId = e.detail.employeeId;
+        if (e.detail.code) params.code = e.detail.code;
+        if (e.detail.query) params.query = e.detail.query;
+        if (e.detail.subTab) params.subTab = e.detail.subTab;
+        if (e.detail.search) params.search = e.detail.search;
+        handleNavigate(targetNav, Object.keys(params).length > 0 ? params : undefined);
+      }
+    };
 
     window.addEventListener('popstate', handlePopState);
     window.addEventListener('platform:navigate', handlePlatformNav);
+    window.addEventListener('navigate', handleGenericNav);
     return () => {
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('platform:navigate', handlePlatformNav);
+      window.removeEventListener('navigate', handleGenericNav);
     };
   }, []);
 
@@ -329,6 +351,20 @@ const AppContent: React.FC = () => {
       }
     } else {
       if (currentRoute.startsWith('platform') || currentRoute.startsWith('saas-')) {
+        const isLocalhost = typeof window !== 'undefined' &&
+          (window.location.hostname === 'localhost' ||
+           window.location.hostname === '127.0.0.1' ||
+           window.location.hostname === '0.0.0.0');
+
+        if (isLocalhost) {
+          const platUser = authService.getCurrentSessionUser('platform') || DEFAULT_PLATFORM_SUPER_ADMIN;
+          if (platUser) {
+            authService.saveActiveSession(platUser, 'platform');
+            login(platUser);
+            return;
+          }
+        }
+
         const prevRoute = currentRoute;
         const defRoute = getDefaultRouteForUser(user);
         setCurrentRoute(defRoute);

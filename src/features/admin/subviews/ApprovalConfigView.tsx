@@ -26,6 +26,8 @@ import { useToast } from '../../../components/ui/Toast';
 import { cn } from '../../../lib/utils';
 import { getActiveOrgId } from '../../../services/attendance/biometricCommandService';
 import { hrEventBus } from '../../../services/hrEventBus';
+import { supabase } from '../../../lib/supabase';
+import { useTenant } from '../../../hooks/useTenant';
 
 export interface ApprovalPolicyItem {
   id: string;
@@ -105,24 +107,66 @@ const DEFAULT_POLICIES: ApprovalPolicyItem[] = [
 
 export const ApprovalConfigView: React.FC = () => {
   const { showToast } = useToast();
+  const { organization, activeCompany } = useTenant();
 
   const getStorageKey = () => `${STORAGE_KEY}_${getActiveOrgId()}`;
 
-  const loadPolicies = (): ApprovalPolicyItem[] => {
-    if (typeof window === 'undefined') return DEFAULT_POLICIES;
-    try {
-      const raw = localStorage.getItem(getStorageKey());
-      if (raw) return JSON.parse(raw);
-      localStorage.setItem(getStorageKey(), JSON.stringify(DEFAULT_POLICIES));
-      return DEFAULT_POLICIES;
-    } catch (_) {
-      return DEFAULT_POLICIES;
-    }
-  };
-
-  const [policies, setPolicies] = useState<ApprovalPolicyItem[]>(loadPolicies);
+  const [policies, setPolicies] = useState<ApprovalPolicyItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedModule, setSelectedModule] = useState('ALL');
+
+  const loadPolicies = React.useCallback(async () => {
+    setIsLoading(true);
+    const activeOrgId = organization?.id || activeCompany?.organization_id;
+    try {
+      if (activeOrgId) {
+        const { data, error } = await supabase
+          .from('approval_workflows')
+          .select('*')
+          .eq('organization_id', activeOrgId)
+          .order('created_at', { ascending: true });
+
+        if (!error && data && data.length > 0) {
+          const mapped: ApprovalPolicyItem[] = data.map((d: any) => ({
+            id: d.id,
+            code: d.code || `POL-${(d.module || 'GEN').substring(0, 3).toUpperCase()}`,
+            name: d.name,
+            module: d.module,
+            description: d.description || '',
+            sequence: Array.isArray(d.sequence) ? d.sequence : (typeof d.sequence === 'string' ? JSON.parse(d.sequence) : ['Reporting Manager', 'HR Admin']),
+            escalationHours: d.escalation_hours || 24,
+            reminderHours: d.reminder_hours || 12,
+            autoEscalate: d.auto_escalate !== false,
+            status: d.is_active ? 'Active' : 'Draft',
+            scope: d.scope || 'Organization Wide',
+            updated_at: d.updated_at || new Date().toISOString(),
+          }));
+          setPolicies(mapped);
+          setIsLoading(false);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('[ApprovalConfigView] Error fetching from Supabase:', err);
+    }
+
+    try {
+      const raw = localStorage.getItem(getStorageKey());
+      if (raw) {
+        setPolicies(JSON.parse(raw));
+      } else {
+        setPolicies(DEFAULT_POLICIES);
+      }
+    } catch {
+      setPolicies(DEFAULT_POLICIES);
+    }
+    setIsLoading(false);
+  }, [organization?.id, activeCompany?.organization_id]);
+
+  useEffect(() => {
+    loadPolicies();
+  }, [loadPolicies]);
 
   // Modal State for Create & Edit
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -192,6 +236,7 @@ export const ApprovalConfigView: React.FC = () => {
       return;
     }
 
+    const activeOrgId = organization?.id || activeCompany?.organization_id;
     if (editingPolicyId) {
       // Update existing
       const updated = policies.map(p => {
@@ -215,6 +260,25 @@ export const ApprovalConfigView: React.FC = () => {
       });
       saveToStorage(updated);
       showToast(`✓ Approval Policy ${formCode} updated successfully.`);
+      if (activeOrgId) {
+        supabase
+          .from('approval_workflows')
+          .update({
+            name: formName,
+            code: formCode,
+            module: formModule,
+            description: formDesc,
+            sequence: formSequence,
+            escalation_hours: formEscalationHours,
+            reminder_hours: formReminderHours,
+            auto_escalate: formAutoEscalate,
+            scope: formScope,
+            is_active: formStatus === 'Active',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', editingPolicyId)
+          .then();
+      }
     } else {
       // Create new
       const newItem: ApprovalPolicyItem = {
@@ -234,6 +298,24 @@ export const ApprovalConfigView: React.FC = () => {
       const updated = [newItem, ...policies];
       saveToStorage(updated);
       showToast(`✓ New Approval Policy ${formCode} created successfully.`);
+      if (activeOrgId) {
+        supabase
+          .from('approval_workflows')
+          .insert({
+            organization_id: activeOrgId,
+            name: formName,
+            code: formCode,
+            module: formModule,
+            description: formDesc,
+            sequence: formSequence,
+            escalation_hours: formEscalationHours,
+            reminder_hours: formReminderHours,
+            auto_escalate: formAutoEscalate,
+            scope: formScope,
+            is_active: formStatus === 'Active',
+          })
+          .then();
+      }
     }
 
     setIsModalOpen(false);
@@ -257,6 +339,14 @@ export const ApprovalConfigView: React.FC = () => {
     const updated = policies.filter(item => item.id !== p.id);
     saveToStorage(updated);
     showToast(`✓ Approval Policy ${p.code} removed.`);
+    const activeOrgId = organization?.id || activeCompany?.organization_id;
+    if (activeOrgId) {
+      supabase
+        .from('approval_workflows')
+        .delete()
+        .eq('id', p.id)
+        .then();
+    }
   };
 
   const handleAddTier = () => {

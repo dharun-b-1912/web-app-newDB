@@ -648,11 +648,22 @@ export const api = {
     const updated = { ...current, ...data, updated_at: new Date().toISOString() };
     if (isSupabaseEnabled) {
       try {
-        const { error } = await supabase.from('organizations').upsert(updated);
-        if (error) throw error;
+        const dbPayload: Record<string, any> = {
+          id: updated.id,
+          name: updated.name,
+          display_name: updated.name,
+          slug: updated.slug,
+          industry: updated.industry,
+          status: updated.status,
+          plan: updated.plan,
+          currency: updated.default_currency || 'INR',
+          timezone: updated.timezone || 'Asia/Kolkata',
+          updated_at: updated.updated_at,
+        };
+        const { error } = await supabase.from('organizations').upsert(dbPayload);
+        if (error) console.warn('[API] Organization update notice:', error);
       } catch (err) {
-        console.error('[API] Failed to update organization on Supabase:', err);
-        throw err;
+        console.warn('[API] Failed to update organization on Supabase:', err);
       }
     }
     setStorage(KEYS.ORG, updated);
@@ -1438,6 +1449,13 @@ export const api = {
   _empInFlight: null as Promise<Employee[]> | null,
   _empCacheMap: new Map<string, { data: Employee[]; timestamp: number }>(),
   _empInFlightMap: new Map<string, Promise<Employee[]>>(),
+
+  clearEmployeeCache(): void {
+    this._empCache = null;
+    this._empInFlight = null;
+    this._empCacheMap.clear();
+    this._empInFlightMap.clear();
+  },
 
   async getEmployees(params?: {
     search?: string;
@@ -4898,6 +4916,16 @@ export const api = {
   getCurrentUser(): User | null {
     if (typeof localStorage !== 'undefined' && localStorage.getItem('workforce_logged_out') === 'true') {
       return null;
+    }
+    const isPlatformRoute = typeof window !== 'undefined' && (
+      window.location.pathname.startsWith('/platform') ||
+      window.location.pathname === '/superadmin' ||
+      window.location.pathname.startsWith('/super-admin') ||
+      window.location.pathname.startsWith('/platform-login')
+    );
+    if (isPlatformRoute) {
+      const plat = getStorage<User | null>('workforce_platform_user', null);
+      if (plat) return plat;
     }
     const u = getStorage<User | null>(KEYS.CURRENT_USER, null);
     if (u) return u;

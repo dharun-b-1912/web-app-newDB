@@ -171,7 +171,7 @@ export const WizardSuccessScreen: React.FC<Props> = ({
     }
   };
 
-  const phone = employee.profile?.phone || '+91 98401 22334';
+  const phone = employee.profile?.phone || employee.phone || employee.primary_mobile || '';
   const email = employee.work_email || (employee.profile as any)?.personal_email || '';
   const loginId = employee.employee_code || employee.id;
   const activationToken = `${loginId.toLowerCase()}-act-${Math.floor(100000 + Math.random() * 900000)}`;
