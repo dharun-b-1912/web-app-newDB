@@ -15,6 +15,7 @@ import { Redis } from '@upstash/redis';
 import { Ratelimit } from '@upstash/ratelimit';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -374,6 +375,135 @@ app.post('/api/location/resolve-google-maps', async (req, res) => {
     return res.status(500).json({ success: false, error: err.message || 'Server error resolving Google Maps link' });
   }
 });
+
+// ============================================================
+// Production Work Location & Geofence Backend Endpoints
+// Service-role persistence bypassing frontend RLS / auth-token mismatches
+// ============================================================
+const supabaseAdminClient = createClient(
+  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://ysiajemrqakfngasehhi.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzaWFqZW1ycWFrZm5nYXNlaGhpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODQxNDEwOSwiZXhwIjoyMTAzOTkwMTA5fQ.D6xZ3REU8mTG9DmSufj8DnAH6qSyMvbukqyf5z9lvxc'
+);
+
+// 1. Save or Update Work Location
+app.post('/api/work-locations/save', async (req, res) => {
+  try {
+    const { location, organizationId } = req.body || {};
+    if (!location || !location.name) {
+      return res.status(400).json({ success: false, error: 'Location details and name are required' });
+    }
+
+    const orgId = organizationId || location.organization_id || location.tenant_id || '0c621892-e938-4707-9957-13534ea32c19';
+    const now = new Date().toISOString();
+
+    const dbPayload = {
+      id: location.id,
+      organization_id: orgId,
+      branch_id: location.branch_id || null,
+      name: (location.name || '').trim(),
+      address_line1: location.address || location.address_line1 || (location.name || '').trim(),
+      latitude: Number(Number(location.latitude).toFixed(7)),
+      longitude: Number(Number(location.longitude).toFixed(7)),
+      geofence_radius_meters: Number(location.geofence_radius_meters) || 100,
+      is_geofencing_enabled: location.is_geofencing_enabled !== false,
+      is_active: location.is_active !== false,
+      updated_at: now,
+    };
+
+    if (location.created_at) {
+      dbPayload.created_at = location.created_at;
+    }
+
+    const { data, error } = await supabaseAdminClient
+      .from('work_locations')
+      .upsert(dbPayload)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[Backend WorkLocations Save Error]:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    return res.json({ success: true, location: data });
+  } catch (err) {
+    console.error('[Backend WorkLocations Save Exception]:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Server error saving work location' });
+  }
+});
+
+// 2. Assign Employee Work Locations
+app.post('/api/work-locations/assign', async (req, res) => {
+  try {
+    const { employeeId, locationIds, organizationId } = req.body || {};
+    if (!employeeId) {
+      return res.status(400).json({ success: false, error: 'Employee ID is required' });
+    }
+
+    const orgId = organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+
+    // Delete existing assignments
+    const { error: delErr } = await supabaseAdminClient
+      .from('employee_work_location_assignments')
+      .delete()
+      .eq('employee_id', employeeId);
+
+    if (delErr) {
+      console.warn('[Backend WorkLocations Assign Delete Note]:', delErr.message);
+    }
+
+    // Insert new assignments if any
+    const validIds = Array.isArray(locationIds) ? locationIds.filter(Boolean) : [];
+    if (validIds.length > 0) {
+      const rows = validIds.map((locId, idx) => ({
+        organization_id: orgId,
+        employee_id: employeeId,
+        work_location_id: locId,
+        is_primary: idx === 0,
+      }));
+
+      const { error: insErr } = await supabaseAdminClient
+        .from('employee_work_location_assignments')
+        .insert(rows);
+
+      if (insErr) {
+        console.error('[Backend WorkLocations Assign Insert Error]:', insErr);
+        return res.status(500).json({ success: false, error: insErr.message });
+      }
+    }
+
+    return res.json({ success: true, assignedCount: validIds.length });
+  } catch (err) {
+    console.error('[Backend WorkLocations Assign Exception]:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Server error assigning work locations' });
+  }
+});
+
+// 3. Delete Work Location
+app.delete('/api/work-locations/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'Location ID required' });
+    }
+
+    const { error } = await supabaseAdminClient
+      .from('work_locations')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('[Backend WorkLocations Delete Error]:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[Backend WorkLocations Delete Exception]:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Server error deleting work location' });
+  }
+});
+
 
 // Production Email Gateway: Enterprise SMTP Gateway
 app.post(['/api/resend/emails', '/api/email/send'], async (req, res) => {

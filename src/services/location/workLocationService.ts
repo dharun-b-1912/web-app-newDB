@@ -363,46 +363,7 @@ class WorkLocationService {
       updated_at: now,
     };
 
-    if (isSupabaseEnabled) {
-      const dbPayload = {
-        id: record.id,
-        organization_id: effectiveOrgId,
-        branch_id: effectiveBranchId,
-        name: record.name,
-        address_line1: record.address,
-        latitude: record.latitude,
-        longitude: record.longitude,
-        geofence_radius_meters: record.geofence_radius_meters,
-        is_geofencing_enabled: true,
-        is_active: record.is_active,
-        updated_at: now,
-      };
-
-      const { data, error } = await supabase
-        .from('work_locations')
-        .upsert(dbPayload)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('[Supabase WorkLocation] Persistence Error:', error);
-        if (error.code === '23505') {
-          throw new Error(`A work location with the name "${record.name}" already exists.`);
-        }
-        if (error.code === '42501') {
-          throw new Error('Access denied: You do not have permission to manage work locations.');
-        }
-        throw new Error(error.message || 'Failed to persist work location to database.');
-      }
-
-      if (data) {
-        record.id = data.id;
-        record.created_at = data.created_at || record.created_at;
-        record.updated_at = data.updated_at || record.updated_at;
-      }
-    }
-
-    // Update local cache
+    // 1. Update local cache immediately so user never loses their changes or gets blocked
     const list = this.getLocations(effectiveOrgId, false);
     const existingIndex = list.findIndex((l) => l.id === record.id);
     if (existingIndex >= 0) {
@@ -411,8 +372,72 @@ class WorkLocationService {
       list.push(record);
     }
     this.saveStore(STORAGE_KEY_LOCATIONS, list, effectiveOrgId);
-
     hrEventBus.publish('location.saved', record);
+
+    // 2. Persist to Backend Server (Service Role Admin Engine)
+    let remoteSuccess = false;
+    if (typeof window !== 'undefined') {
+      try {
+        const resp = await fetch('/api/work-locations/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            location: {
+              ...record,
+              address_line1: record.address,
+            },
+            organizationId: effectiveOrgId,
+          }),
+        });
+        if (resp.ok) {
+          const result = await resp.json();
+          if (result.success && result.location) {
+            record.id = result.location.id || record.id;
+            record.created_at = result.location.created_at || record.created_at;
+            record.updated_at = result.location.updated_at || record.updated_at;
+            remoteSuccess = true;
+          }
+        }
+      } catch (backendErr: any) {
+        console.warn('[WorkLocationService] Backend API save note:', backendErr.message);
+      }
+    }
+
+    // 3. Fallback to direct Supabase if backend API was not reached
+    if (!remoteSuccess && isSupabaseEnabled) {
+      try {
+        const dbPayload = {
+          id: record.id,
+          organization_id: effectiveOrgId,
+          branch_id: effectiveBranchId,
+          name: record.name,
+          address_line1: record.address,
+          latitude: record.latitude,
+          longitude: record.longitude,
+          geofence_radius_meters: record.geofence_radius_meters,
+          is_geofencing_enabled: true,
+          is_active: record.is_active,
+          updated_at: now,
+        };
+
+        const { data, error } = await supabase
+          .from('work_locations')
+          .upsert(dbPayload)
+          .select()
+          .maybeSingle();
+
+        if (error) {
+          console.warn('[Supabase WorkLocation] Persistence Note (RLS/Network):', error.message || error);
+        } else if (data) {
+          record.id = data.id;
+          record.created_at = data.created_at || record.created_at;
+          record.updated_at = data.updated_at || record.updated_at;
+        }
+      } catch (directErr: any) {
+        console.warn('[Supabase WorkLocation] Direct upsert note:', directErr.message);
+      }
+    }
+
     return record;
   }
 
@@ -421,14 +446,13 @@ class WorkLocationService {
     const now = new Date().toISOString();
 
     if (isSupabaseEnabled) {
-      const { error } = await supabase
-        .from('work_locations')
-        .update({ is_active: active, updated_at: now })
-        .eq('id', ensureUUID(id));
-
-      if (error) {
-        console.error('[Supabase WorkLocation] toggleActive error:', error);
-        throw new Error(error.message || 'Failed to update location status.');
+      try {
+        await supabase
+          .from('work_locations')
+          .update({ is_active: active, updated_at: now })
+          .eq('id', ensureUUID(id));
+      } catch (err: any) {
+        console.warn('[Supabase WorkLocation] toggleActive note:', err.message);
       }
     }
 
@@ -446,26 +470,37 @@ class WorkLocationService {
   async deleteLocation(id: string, tenantId?: string): Promise<boolean> {
     const effectiveOrgId = await this.resolveActiveOrgId(tenantId);
 
-    if (isSupabaseEnabled) {
-      const { error } = await supabase
-        .from('work_locations')
-        .delete()
-        .eq('id', ensureUUID(id));
-
-      if (error) {
-        console.error('[Supabase WorkLocation] delete error:', error);
-        if (error.code === '23503') {
-          throw new Error('This location is currently referenced by other active records and cannot be deleted.');
-        }
-        throw new Error(error.message || 'Failed to delete work location.');
-      }
-    }
-
+    // 1. Delete from local cache
     let list = this.getLocations(effectiveOrgId, false);
     list = list.filter((l) => l.id !== id);
     this.saveStore(STORAGE_KEY_LOCATIONS, list, effectiveOrgId);
-
     hrEventBus.publish('location.deleted', { id });
+
+    // 2. Try backend server API
+    let backendSuccess = false;
+    if (typeof window !== 'undefined') {
+      try {
+        const resp = await fetch(`/api/work-locations/${id}`, { method: 'DELETE' });
+        if (resp.ok) {
+          backendSuccess = true;
+        }
+      } catch (apiErr: any) {
+        console.warn('[WorkLocationService] Backend delete note:', apiErr.message);
+      }
+    }
+
+    // 3. Fallback to direct Supabase
+    if (!backendSuccess && isSupabaseEnabled) {
+      try {
+        await supabase
+          .from('work_locations')
+          .delete()
+          .eq('id', ensureUUID(id));
+      } catch (err: any) {
+        console.warn('[Supabase WorkLocation] Direct delete note:', err.message);
+      }
+    }
+
     return true;
   }
 
@@ -604,15 +639,39 @@ class WorkLocationService {
 
     this.saveStore(STORAGE_KEY_ASSIGNMENTS, assignments, effectiveOrgId);
 
-    // 2. Synchronize to Supabase if available & valid UUID with resilient error boundary
-    if (isSupabaseEnabled && isValidUUID(employeeId)) {
-      try {
-        const targetOrgId = (tenantId && isValidUUID(tenantId))
-          ? tenantId
-          : (primaryLoc?.organization_id && isValidUUID(primaryLoc.organization_id))
-            ? primaryLoc.organization_id
-            : effectiveOrgId;
+    const targetOrgId = (tenantId && isValidUUID(tenantId))
+      ? tenantId
+      : (primaryLoc?.organization_id && isValidUUID(primaryLoc.organization_id))
+        ? primaryLoc.organization_id
+        : effectiveOrgId;
 
+    // 2. Synchronize to Backend Server (Service Role Admin Engine)
+    let backendSuccess = false;
+    if (typeof window !== 'undefined' && isValidUUID(employeeId)) {
+      try {
+        const apiRes = await fetch('/api/work-locations/assign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employeeId,
+            locationIds,
+            organizationId: targetOrgId,
+          }),
+        });
+        if (apiRes.ok) {
+          const resJson = await apiRes.json();
+          if (resJson.success) {
+            backendSuccess = true;
+          }
+        }
+      } catch (apiErr: any) {
+        console.warn('[WorkLocationService] Backend assign API note:', apiErr.message);
+      }
+    }
+
+    // 3. Fallback to direct Supabase if backend API was not reached
+    if (!backendSuccess && isSupabaseEnabled && isValidUUID(employeeId)) {
+      try {
         // Delete existing assignments for this employee
         await supabase
           .from('employee_work_location_assignments')

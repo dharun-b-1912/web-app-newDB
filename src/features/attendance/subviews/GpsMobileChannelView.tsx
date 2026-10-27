@@ -142,6 +142,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
   const [googleMapsUrlInput, setGoogleMapsUrlInput] = useState('');
   const [isProcessingGmapsLink, setIsProcessingGmapsLink] = useState(false);
   const [modalMapType, setModalMapType] = useState<'m' | 'k'>('m');
+  const [isSavingLocation, setIsSavingLocation] = useState(false);
 
   // Employee Mapping Modal State
   const [isMappingEmployee, setIsMappingEmployee] = useState(false);
@@ -524,6 +525,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
       return;
     }
 
+    setIsSavingLocation(true);
     try {
       await workLocationService.saveLocation({
         ...selectedLocation,
@@ -538,7 +540,9 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
       setSelectedLocation(null);
       await loadData();
     } catch (err: any) {
-      showToast(err.message || 'Failed to save work location to database.', 'error');
+      showToast(err.message || 'Failed to save work location.', 'error');
+    } finally {
+      setIsSavingLocation(false);
     }
   };
 
@@ -1590,8 +1594,10 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#07563D] hover:bg-[#064e37] text-white font-bold rounded-xl shadow-xs cursor-pointer"
+                  disabled={isSavingLocation}
+                  className="px-5 py-2 bg-[#07563D] hover:bg-[#064e37] disabled:opacity-50 text-white font-bold rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
                 >
+                  {isSavingLocation && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                   Save Location
                 </button>
               </div>
