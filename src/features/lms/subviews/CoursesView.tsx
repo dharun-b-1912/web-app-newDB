@@ -6,6 +6,7 @@ import {
   EmployeeEnrollmentRecord,
   QuizQuestion,
   extractYouTubeVideoId,
+  resolveCurrentEmployeeId,
 } from '../../../services/lms/lmsRealtimeService';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
@@ -102,13 +103,6 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
             latestSeconds = current;
             const pct = dur > 0 ? Math.min(100, Math.floor((current / dur) * 100)) : 0;
             latestPct = pct;
-
-            // Save to localStorage immediately
-            localStorage.setItem(
-              `joy_lms_pos_${selectedCourse.id}`,
-              JSON.stringify({ seconds: current, percentage: pct, duration: dur })
-            );
-
             setWatchProgress((prev) => Math.max(prev, pct));
             if (pct >= 98) {
               setVideoCompleted(true);
@@ -134,15 +128,11 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
 
       // On modal close: persist progress to Supabase
       if (selectedCourse && latestPct > 0) {
-        let empId = '0ce6436c-e9b4-4e0e-9102-93ea238be0df';
-        try {
-          const raw = localStorage.getItem('workforce_active_user') || localStorage.getItem('workforce_current_user');
-          if (raw) {
-            const u = JSON.parse(raw);
-            if (u.employee_id) empId = u.employee_id;
+        resolveCurrentEmployeeId().then((empId) => {
+          if (empId) {
+            lmsRealtimeService.updateWatchProgress(selectedCourse.id, empId, latestPct);
           }
-        } catch (_) {}
-        lmsRealtimeService.updateWatchProgress(selectedCourse.id, empId, latestPct);
+        });
       }
     };
   }, [showPlayerModal, selectedCourse]);
@@ -257,34 +247,15 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
   const handleLaunchPlayer = (course: LmsCourseItem) => {
     setSelectedCourse(course);
 
-    // Retrieve saved playback position
-    let initialSec = 0;
-    let savedPct = 0;
-    try {
-      const saved = localStorage.getItem(`joy_lms_pos_${course.id}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (typeof parsed.seconds === 'number' && parsed.seconds > 0) {
-          initialSec = Math.floor(parsed.seconds);
-          savedPct = parsed.percentage || 0;
-        }
-      }
-    } catch (_) {}
-
-    // Fallback: estimate from progress percentage if saved seconds was 0
+    // Resume position directly from Supabase course progress percentage
     const progress = course.progress_percentage || 0;
-    if (initialSec === 0 && progress > 0 && course.duration_minutes > 0) {
-      initialSec = Math.floor((progress / 100) * (course.duration_minutes * 60));
-    }
-
-    const estimatedPct = course.duration_minutes > 0
-      ? Math.min(100, Math.floor((initialSec / (course.duration_minutes * 60)) * 100))
+    const initialSec = (progress > 0 && course.duration_minutes > 0)
+      ? Math.floor((progress / 100) * (course.duration_minutes * 60))
       : 0;
-    const finalPct = Math.max(progress, savedPct, estimatedPct);
 
     setResumeSeconds(initialSec);
-    setWatchProgress(finalPct);
-    setVideoCompleted(finalPct >= 98);
+    setWatchProgress(progress);
+    setVideoCompleted(progress >= 98);
     setQuizResult(null);
     setUserAnswers({});
     setShowPlayerModal(true);
@@ -453,15 +424,8 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
       ? selectedCourse.passingScoreNumber
       : Math.max(1, Math.ceil((passThreshold / 100) * questions.length));
 
-    // Get current user employee id from localStorage if available
-    let currentEmpId = '0ce6436c-e9b4-4e0e-9102-93ea238be0df'; // Default to Dharun B
-    try {
-      const rawUser = localStorage.getItem('workforce_current_user');
-      if (rawUser) {
-        const u = JSON.parse(rawUser);
-        if (u.employee_id) currentEmpId = u.employee_id;
-      }
-    } catch (_) {}
+    // Get current user employee id directly via Supabase Auth
+    const currentEmpId = (await resolveCurrentEmployeeId()) || '';
 
     try {
       const res = await lmsRealtimeService.submitAssessmentResult(
@@ -1423,7 +1387,6 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                 <button
                   type="button"
                   onClick={() => {
-                    localStorage.removeItem(`joy_lms_pos_${selectedCourse.id}`);
                     setResumeSeconds(0);
                     setWatchProgress(0);
                   }}
@@ -1482,14 +1445,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({ initialSubTab }) => {
                   <Button
                     size="sm"
                     onClick={async () => {
-                      let empId = '0ce6436c-e9b4-4e0e-9102-93ea238be0df';
-                      try {
-                        const raw = localStorage.getItem('workforce_active_user');
-                        if (raw) {
-                          const u = JSON.parse(raw);
-                          if (u.employee_id) empId = u.employee_id;
-                        }
-                      } catch (_) {}
+                      const empId = (await resolveCurrentEmployeeId()) || '';
                       await lmsRealtimeService.markCourseCompleted(selectedCourse.id, empId);
                       showToast('Training completed successfully! (No quiz required)');
                       setShowPlayerModal(false);

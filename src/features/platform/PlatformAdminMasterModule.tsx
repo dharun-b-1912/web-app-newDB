@@ -324,6 +324,7 @@ export const PlatformAdminMasterModule: React.FC<PlatformAdminMasterModuleProps>
       case 'saas-quotations':
         return (
           <QuotationsView
+            initialPayload={navPayload}
             onNavigateTab={(tab, payload) => handleSelectTab(tab, payload)}
           />
         );

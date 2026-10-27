@@ -15,6 +15,7 @@ import {
 
 const STORAGE_KEY_CATALOGUE = 'joy_saas_product_catalogue_v1';
 const STORAGE_KEY_OVERRIDES = 'joy_saas_customer_overrides_v1';
+const STORAGE_KEY_ADDONS = 'joy_saas_commercial_addons_v1';
 
 /**
  * 16 CANONICAL COMMERCIAL MODULES
@@ -3523,14 +3524,16 @@ export const INITIAL_COMMERCIAL_MODULES: CommercialModule[] = [
  * CONFIGURABLE MASTER SAAS ADD-ONS
  */
 export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
+  // ─── 01 PRODUCT ADD-ONS ─────────────────────────────────────────────────────
   {
     id: 'addon-extra-hr-user',
     addonKey: 'extra_hr_user',
     name: 'Additional HR Admin User License',
     description: 'Extra concurrent HR Admin or Payroll Specialist seat with full management access.',
-    category: 'Module Add-on',
+    category: 'Product Add-ons',
     monthlyPrice: 999,
-    billingUnit: 'Per User / Month',
+    billingUnit: 'Per User / Mo',
+    pricingModel: 'FIXED',
     availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
     isActive: true,
     iconName: 'Users',
@@ -3540,9 +3543,10 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     addonKey: 'multi_company_entity',
     name: 'Additional Legal Entity / Subsidiary Slot',
     description: 'Manage an additional distinct company, sister organization, or GSTIN registration.',
-    category: 'Module Add-on',
+    category: 'Product Add-ons',
     monthlyPrice: 1999,
-    billingUnit: 'Per Entity / Month',
+    billingUnit: 'Per Entity / Mo',
+    pricingModel: 'FIXED',
     availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
     isActive: true,
     iconName: 'Building2',
@@ -3553,9 +3557,10 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     name: 'Recruitment & ATS Pipeline',
     moduleKey: 'recruitment',
     description: 'Applicant tracking, resume parser, candidate pipeline Kanban, and offer letter generation.',
-    category: 'Module Add-on',
+    category: 'Product Add-ons',
     monthlyPrice: 2499,
     billingUnit: 'Per Month',
+    pricingModel: 'FIXED',
     availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL'],
     isActive: true,
     iconName: 'UserPlus',
@@ -3566,9 +3571,10 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     name: 'Performance & 360 Appraisals',
     moduleKey: 'performance',
     description: 'Goal setting, KRAs, KPIs, 360-degree review cycles, and bell curve calibration.',
-    category: 'Module Add-on',
+    category: 'Product Add-ons',
     monthlyPrice: 1999,
     billingUnit: 'Per Month',
+    pricingModel: 'FIXED',
     availableForPlans: ['STARTER', 'PROFESSIONAL'],
     isActive: true,
     iconName: 'Target',
@@ -3578,11 +3584,14 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     addonKey: 'learning_management',
     name: 'Learning / LMS & Certifications',
     moduleKey: 'lms',
-    description: 'Course catalogue, SCORM video player, interactive quizzes, and automated completion certificates.',
-    category: 'Module Add-on',
-    monthlyPrice: 1999,
-    billingUnit: 'Per Month',
-    availableForPlans: ['STARTER', 'PROFESSIONAL'],
+    description: 'Course catalogue, interactive video player, assessments & quizzes, and automated completion certification.',
+    category: 'Product Add-ons',
+    monthlyPrice: 30,
+    billingUnit: 'Per Employee / Mo',
+    pricingModel: 'PER_EMPLOYEE',
+    includedQuantity: 0,
+    additionalUsageRate: 30,
+    availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
     isActive: true,
     iconName: 'GraduationCap',
   },
@@ -3592,9 +3601,10 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     name: 'Advanced Analytics & Report Builder',
     moduleKey: 'analytics',
     description: 'Custom report builder, scheduled executive digests, and workforce attrition prediction.',
-    category: 'Module Add-on',
+    category: 'Product Add-ons',
     monthlyPrice: 1499,
     billingUnit: 'Per Month',
+    pricingModel: 'FIXED',
     availableForPlans: ['STARTER', 'PROFESSIONAL'],
     isActive: true,
     iconName: 'BarChart3',
@@ -3605,9 +3615,10 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     name: 'Vendor Workforce Management',
     moduleKey: 'vendor_workforce',
     description: 'Contractor agency master, compliance challans (PF/ESI/CLRA), and rate card tracking.',
-    category: 'Module Add-on',
+    category: 'Product Add-ons',
     monthlyPrice: 4999,
     billingUnit: 'Per Month',
+    pricingModel: 'FIXED',
     availableForPlans: ['PROFESSIONAL', 'BUSINESS'],
     isActive: true,
     iconName: 'Briefcase',
@@ -3618,9 +3629,10 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     name: 'Vendor Self-Service Portal',
     moduleKey: 'vendor_portal',
     description: 'Dedicated contractor login for daily worker attendance review, invoice upload, and UTR tracking.',
-    category: 'Module Add-on',
+    category: 'Product Add-ons',
     monthlyPrice: 2999,
     billingUnit: 'Per Month',
+    pricingModel: 'FIXED',
     availableForPlans: ['PROFESSIONAL', 'BUSINESS'],
     isActive: true,
     iconName: 'Globe',
@@ -3631,9 +3643,10 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     name: 'Procurement & Purchase Orders',
     moduleKey: 'procurement',
     description: 'Purchase requisitions, RFQ quotation comparison, PO generation, and budget overrun limits.',
-    category: 'Module Add-on',
+    category: 'Product Add-ons',
     monthlyPrice: 2499,
     billingUnit: 'Per Month',
+    pricingModel: 'FIXED',
     availableForPlans: ['PROFESSIONAL', 'BUSINESS'],
     isActive: true,
     iconName: 'ShoppingCart',
@@ -3644,9 +3657,10 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     name: 'Invoice & 3-Way Match Settlement',
     moduleKey: 'invoice_settlement_billing',
     description: 'Automated 3-way match (PO -> Attendance -> Invoice), TDS (194C) calculation, and net payable advice.',
-    category: 'Module Add-on',
+    category: 'Product Add-ons',
     monthlyPrice: 3999,
     billingUnit: 'Per Month',
+    pricingModel: 'FIXED',
     availableForPlans: ['PROFESSIONAL', 'BUSINESS'],
     isActive: true,
     iconName: 'CreditCard',
@@ -3657,69 +3671,25 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     name: 'Client Billing & Outbound Invoicing',
     moduleKey: 'invoice_settlement_billing',
     description: 'Attendance-based client billing, service markups, GST tax invoices, and collections dunning.',
-    category: 'Module Add-on',
+    category: 'Product Add-ons',
     monthlyPrice: 2999,
     billingUnit: 'Per Month',
+    pricingModel: 'FIXED',
     availableForPlans: ['PROFESSIONAL', 'BUSINESS'],
     isActive: true,
     iconName: 'DollarSign',
   },
-  {
-    id: 'addon-sso',
-    addonKey: 'sso_saml_auth',
-    name: 'Enterprise SSO & SAML 2.0 (Okta / Azure AD)',
-    description: 'Single Sign-On with Microsoft Entra ID, Google Workspace, and Okta SAML 2.0 federation.',
-    category: 'Infrastructure & API',
-    monthlyPrice: 1999,
-    billingUnit: 'Per Month',
-    availableForPlans: ['PROFESSIONAL', 'BUSINESS'],
-    isActive: true,
-    iconName: 'Lock',
-  },
-  {
-    id: 'addon-api',
-    addonKey: 'premium_api_keys',
-    name: 'Developer REST API & Webhooks Access',
-    description: 'High-rate limit API access, real-time webhooks, and HMAC security keys.',
-    category: 'Infrastructure & API',
-    monthlyPrice: 1999,
-    billingUnit: 'Per Month',
-    availableForPlans: ['STARTER', 'PROFESSIONAL'],
-    isActive: true,
-    iconName: 'Zap',
-  },
-  {
-    id: 'addon-biometric-device',
-    addonKey: 'extra_biometric_device',
-    name: 'Additional Biometric Device Gateway',
-    description: 'Per-device cloud push gateway connection for turnstiles and attendance hardware.',
-    category: 'Infrastructure & API',
-    monthlyPrice: 499,
-    billingUnit: 'Per Device / Mo',
-    availableForPlans: ['STARTER', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
-    isActive: true,
-    iconName: 'Fingerprint',
-  },
-  {
-    id: 'addon-storage',
-    addonKey: 'cloud_storage_100gb',
-    name: 'Extra Cloud Document Storage (100 GB)',
-    description: 'Dedicated high-speed S3 document vault storage for receipts, KYC scans, and legal letters.',
-    category: 'Infrastructure & API',
-    monthlyPrice: 999,
-    billingUnit: 'Per 100 GB / Mo',
-    availableForPlans: ['STARTER', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
-    isActive: true,
-    iconName: 'HardDrive',
-  },
+
+  // ─── 02 COMMUNICATION ─────────────────────────────────────────────────────────
   {
     id: 'addon-whatsapp-usage',
     addonKey: 'whatsapp_meter_bundle',
     name: 'WhatsApp HR Bot & Automation (5K Bundle)',
-    description: 'Interactive employee self-service bot for payslips, leaves, attendance punch & OTPs. (Exclusive: greytHR, EZHRM & Spine do not offer WhatsApp HR bot).',
-    category: 'Communication Meter',
+    description: 'Interactive employee self-service bot for payslips, leaves, attendance punch & OTPs.',
+    category: 'Communication',
     monthlyPrice: 1499,
-    billingUnit: 'Per Month (5K Msgs)',
+    billingUnit: 'Per Month (5,000 Included)',
+    pricingModel: 'METERED',
     includedQuantity: 5000,
     additionalUsageRate: 0.6,
     availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
@@ -3727,24 +3697,116 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     iconName: 'MessageSquare',
   },
   {
+    id: 'addon-sms-bundle',
+    addonKey: 'sms_notification_bundle',
+    name: 'Statutory SMS Notification Bundle (10K OTPs)',
+    description: 'DLT registered sender ID for instant login OTPs, shift reminders, and salary credit notifications.',
+    category: 'Communication',
+    monthlyPrice: 999,
+    billingUnit: 'Per Month (10,000 SMS)',
+    pricingModel: 'METERED',
+    includedQuantity: 10000,
+    additionalUsageRate: 0.15,
+    availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
+    isActive: true,
+    iconName: 'MessageSquare',
+  },
+
+  // ─── 03 INTEGRATIONS ─────────────────────────────────────────────────────────
+  {
+    id: 'addon-api',
+    addonKey: 'premium_api_keys',
+    name: 'Developer REST API & Webhooks Access',
+    description: 'High-rate limit API access, real-time webhooks, HMAC security keys, and developer documentation.',
+    category: 'Integrations',
+    monthlyPrice: 1999,
+    billingUnit: 'Per Month',
+    pricingModel: 'FIXED',
+    availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL'],
+    isActive: true,
+    iconName: 'Zap',
+  },
+  {
+    id: 'addon-biometric-device',
+    addonKey: 'extra_biometric_device',
+    name: 'Biometric Hardware Push Gateway Slot',
+    description: 'Cloud push gateway connection for turnstiles and attendance hardware (eSSL, ZKTeco, Matrix, Realtime).',
+    category: 'Integrations',
+    monthlyPrice: 499,
+    billingUnit: 'Per Device / Mo',
+    pricingModel: 'FIXED',
+    availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
+    isActive: true,
+    iconName: 'Fingerprint',
+  },
+
+  // ─── 04 INFRASTRUCTURE ───────────────────────────────────────────────────────
+  {
+    id: 'addon-sso',
+    addonKey: 'sso_saml_auth',
+    name: 'Enterprise SSO & SAML 2.0 (Okta / Azure AD)',
+    description: 'Single Sign-On with Microsoft Entra ID, Google Workspace, and Okta SAML 2.0 federation.',
+    category: 'Infrastructure',
+    monthlyPrice: 1999,
+    billingUnit: 'Per Month',
+    pricingModel: 'FIXED',
+    availableForPlans: ['PROFESSIONAL', 'BUSINESS'],
+    isActive: true,
+    iconName: 'Lock',
+  },
+  {
+    id: 'addon-storage',
+    addonKey: 'cloud_storage_100gb',
+    name: 'Extra Cloud Document Storage (100 GB)',
+    description: 'Dedicated high-speed S3 document vault storage for receipts, KYC scans, and legal letters.',
+    category: 'Infrastructure',
+    monthlyPrice: 999,
+    billingUnit: 'Per 100 GB / Mo',
+    pricingModel: 'METERED',
+    includedQuantity: 100,
+    additionalUsageRate: 9.99,
+    availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
+    isActive: true,
+    iconName: 'HardDrive',
+  },
+  {
     id: 'addon-field-gps',
     addonKey: 'field_gps_route_tracking',
     name: 'Live Field Force GPS & Route Playback',
-    description: 'Real-time sales & field force tracking, live routes, and visit log capture. (greytHR charges ₹140 PUPM; Joy PeopleHR charges only ₹39).',
-    category: 'Infrastructure & API',
+    description: 'Real-time sales & field force tracking, live routes, geofencing, and visit log capture.',
+    category: 'Infrastructure',
     monthlyPrice: 39,
     billingUnit: 'Per Field User / Mo',
     pricingModel: 'PER_EMPLOYEE',
+    includedQuantity: 0,
+    additionalUsageRate: 39,
     availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
     isActive: true,
     iconName: 'MapPin',
   },
+
+  // ─── 05 SUPPORT ──────────────────────────────────────────────────────────────
+  {
+    id: 'addon-support-sla',
+    addonKey: 'dedicated_support_sla',
+    name: 'Dedicated Technical Account Manager & 15m SLA',
+    description: 'Named senior solutions engineer, 24/7 emergency phone hotline, and 15-minute response SLA.',
+    category: 'Support',
+    monthlyPrice: 4999,
+    billingUnit: 'Per Month',
+    pricingModel: 'FIXED',
+    availableForPlans: ['PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
+    isActive: true,
+    iconName: 'ShieldCheck',
+  },
+
+  // ─── 06 SERVICES ─────────────────────────────────────────────────────────────
   {
     id: 'addon-assisted-migration',
     addonKey: 'assisted_data_migration_concierge',
     name: 'Assisted Data Migration & Onboarding Concierge',
-    description: 'Dedicated white-glove payroll data migration from greytHR / Spine / Excel, biometric terminal mapping, and HR kickoff. (Spine charges ₹50,000 setup; we charge ₹9,999).',
-    category: 'Enterprise Support',
+    description: 'Dedicated white-glove payroll data migration from legacy HRMS/Excel, biometric terminal mapping, and kickoff.',
+    category: 'Services',
     monthlyPrice: 9999,
     billingUnit: 'One-Time Charge',
     pricingModel: 'FIXED',
@@ -3753,25 +3815,14 @@ export const INITIAL_COMMERCIAL_ADDONS: CommercialAddon[] = [
     iconName: 'Sparkles',
   },
   {
-    id: 'addon-support-sla',
-    addonKey: 'dedicated_support_sla',
-    name: 'Dedicated Technical Account Manager & 15m SLA',
-    description: 'Named senior solutions engineer, 24/7 emergency phone hotline, and 15-minute response SLA.',
-    category: 'Enterprise Support',
-    monthlyPrice: 4999,
-    billingUnit: 'Per Month',
-    availableForPlans: ['PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
-    isActive: true,
-    iconName: 'ShieldCheck',
-  },
-  {
     id: 'addon-onsite-training',
     addonKey: 'onsite_implementation_training',
     name: 'Dedicated Onsite Implementation & Training (3 Days)',
     description: 'Onsite setup, biometric hardware commissioning, data migration, and hands-on staff training.',
-    category: 'Enterprise Support',
+    category: 'Services',
     monthlyPrice: 14999,
     billingUnit: 'One-Time Charge',
+    pricingModel: 'FIXED',
     availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
     isActive: true,
     iconName: 'Sparkles',
@@ -3785,7 +3836,7 @@ class SaasCatalogueService {
 
   constructor() {
     this.modules = this.loadModules();
-    this.addons = INITIAL_COMMERCIAL_ADDONS;
+    this.addons = this.loadAddons();
     this.overrides = this.loadOverrides();
   }
 
@@ -3802,6 +3853,23 @@ class SaasCatalogueService {
       // Fallback
     }
     return INITIAL_COMMERCIAL_MODULES;
+  }
+
+  private loadAddons(): CommercialAddon[] {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem(STORAGE_KEY_ADDONS);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length >= 15) {
+            return parsed;
+          }
+        }
+      }
+    } catch {
+      // Fallback
+    }
+    return INITIAL_COMMERCIAL_ADDONS;
   }
 
   private loadOverrides(): CustomerCommercialOverride[] {
@@ -3848,7 +3916,41 @@ class SaasCatalogueService {
   }
 
   public getAddons(): CommercialAddon[] {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem(STORAGE_KEY_ADDONS);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length >= 15) {
+            this.addons = parsed;
+          }
+        }
+      }
+    } catch {}
     return this.addons;
+  }
+
+  public saveAddon(addon: CommercialAddon): void {
+    const existingIndex = this.addons.findIndex(
+      (a) => a.addonKey === addon.addonKey || a.id === addon.id
+    );
+    if (existingIndex >= 0) {
+      this.addons[existingIndex] = { ...this.addons[existingIndex], ...addon };
+    } else {
+      this.addons.unshift(addon);
+    }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_ADDONS, JSON.stringify(this.addons));
+      window.dispatchEvent(new CustomEvent('addons:data_updated', { detail: { addon } }));
+    }
+  }
+
+  public deleteAddon(addonKey: string): void {
+    this.addons = this.addons.filter((a) => a.addonKey !== addonKey && a.id !== addonKey);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_ADDONS, JSON.stringify(this.addons));
+      window.dispatchEvent(new CustomEvent('addons:data_updated', { detail: { addonKey } }));
+    }
   }
 
   public getCustomerOverrides(): CustomerCommercialOverride[] {
@@ -3896,6 +3998,9 @@ class SaasCatalogueService {
     const addon = this.addons.find((a) => a.addonKey === addonKey);
     if (addon) {
       addon.monthlyPrice = newPrice;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_ADDONS, JSON.stringify(this.addons));
+      }
     }
   }
 }

@@ -119,21 +119,21 @@ export const UserMenu: React.FC = () => {
 
   let effectiveRoleBadge = 'Unassigned';
   if (isPlatformAdmin) {
-    effectiveRoleBadge = 'Platform Super Admin';
+    effectiveRoleBadge = 'Platform Admin';
   } else if (isVendorRole) {
-    effectiveRoleBadge = 'Vendor Admin (Partner)';
+    effectiveRoleBadge = 'Vendor Partner';
   } else if (currentRole === 'Company Admin') {
-    effectiveRoleBadge = 'Company Admin (Company)';
+    effectiveRoleBadge = 'Company Admin';
   } else if (currentRole === 'HR Head') {
-    effectiveRoleBadge = 'HR Head (Company)';
+    effectiveRoleBadge = 'HR Head';
   } else if (currentRole === 'HR Admin') {
-    effectiveRoleBadge = 'HR Admin (Company)';
+    effectiveRoleBadge = 'HR Admin';
   } else if (currentRole === 'Manager') {
-    effectiveRoleBadge = 'Manager (Department)';
+    effectiveRoleBadge = 'Manager';
   } else if (currentRole === 'Team Lead') {
-    effectiveRoleBadge = 'Team Lead (Team)';
+    effectiveRoleBadge = 'Team Lead';
   } else if (currentRole === 'Employee') {
-    effectiveRoleBadge = 'Employee (Self)';
+    effectiveRoleBadge = 'Employee';
   } else if (roleTitle && roleTitle !== 'Unassigned') {
     effectiveRoleBadge = roleTitle;
   }
@@ -147,11 +147,11 @@ export const UserMenu: React.FC = () => {
         className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer shrink-0 focus:outline-none focus:ring-2 focus:ring-[#047857]"
       >
         <Avatar src={avatarSrc} name={displayName} size="md" />
-        <div className="hidden lg:block text-left shrink-0">
-          <div className="text-xs font-bold text-gray-900 leading-tight truncate max-w-[140px]">
+        <div className="hidden xl:block text-left shrink-0">
+          <div className="text-xs font-bold text-gray-900 leading-tight truncate max-w-[110px]">
             {displayName}
           </div>
-          <div className="text-[10px] text-gray-500 font-medium truncate max-w-[140px]">
+          <div className="text-[10px] text-gray-500 font-medium truncate max-w-[110px]">
             {effectiveRoleBadge}
           </div>
         </div>

@@ -1500,6 +1500,57 @@ class SaasCommercialService {
     quote.updatedAt = new Date().toISOString().slice(0, 10);
     this.saveQuotation(quote);
 
+    // Auto-sync Tenant Feature Entitlements & Add-ons from Approved Quotation
+    try {
+      if (typeof window !== 'undefined') {
+        const entitlementMap: Record<string, boolean> = {};
+
+        // If specific modules were requested or customized in quotation:
+        if (quote.requirements?.modulesRequested && quote.requirements.modulesRequested.length > 0) {
+          quote.requirements.modulesRequested.forEach((modKey) => {
+            entitlementMap[modKey] = true;
+          });
+        }
+
+        // Addons in quotation
+        const addonKeys: string[] = quote.selectedAddonKeys || [];
+        addonKeys.forEach((addonKey) => {
+          if (addonKey.includes('lms')) entitlementMap['lms'] = true;
+          if (addonKey.includes('biometric')) entitlementMap['biometric'] = true;
+          if (addonKey.includes('vendor')) entitlementMap['vendor_management'] = true;
+          if (addonKey.includes('gps')) entitlementMap['gps'] = true;
+        });
+
+        if (Object.keys(entitlementMap).length > 0) {
+          localStorage.setItem(`workforce_feature_entitlements_${targetOrgId}`, JSON.stringify(entitlementMap));
+        }
+        if (addonKeys.length > 0) {
+          localStorage.setItem(`workforce_tenant_addons_${targetOrgId}`, JSON.stringify(addonKeys));
+        }
+
+        // Also register Customer Commercial Override in saasCatalogueService:
+        saasCatalogueService.saveCustomerOverride({
+          id: `ovr-${targetOrgId}`,
+          tenantId: targetOrgId,
+          tenantName: client.legalName,
+          basePlan: quote.planCode || (quote.planName as any) || 'STARTER',
+          customContractPriceMonthly: quote.pricingSnapshot.recurringPreTax || 0,
+          customEmployeeCount: quote.employeeCount || 50,
+          includedAddons: addonKeys,
+          featureOverrides: entitlementMap,
+          limitOverrides: {},
+          startDate: new Date().toISOString().slice(0, 10),
+          endDate: quote.terms?.subscriptionStartDate ? '2028-12-31' : '2027-12-31',
+          billingFrequency: quote.billingCycle || 'Monthly',
+          notes: `Provisioned from Accepted Quotation #${quote.quotationNumber}`,
+          approvedBy: 'Auto Provisioning Engine (Quotation Accepted)',
+          approvedAt: new Date().toISOString(),
+        });
+      }
+    } catch (syncErr) {
+      console.warn('[saasCommercialService] Failed to auto-sync tenant entitlements from quotation:', syncErr);
+    }
+
     // Generate First Official Tax Invoice from immutable pricing snapshot
     const invoiceNumber = `INV/26-27/000${this.invoices.length + 185}`;
     const isInterState = client.billingAddress.state !== SUPPLIER_COMPANY_DETAILS.state;

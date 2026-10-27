@@ -38,10 +38,17 @@ import {
   FileText,
   Clock,
   HelpCircle,
+  MapPin,
+  Archive,
+  RefreshCw,
+  TrendingUp,
+  Percent,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { CommercialAddon, PlanTierCode } from '../../../types/saasCatalogue';
 import { saasCatalogueService } from '../../../services/platform/saasCatalogueService';
+import { saasCommercialService } from '../../../services/platform/saasCommercialService';
+import { platformTenantService } from '../../../services/platform/platformTenantService';
 
 interface AddonsCatalogueViewProps {
   onNavigateTab?: (tab: string, payload?: any) => void;
@@ -88,28 +95,97 @@ const BILLING_MODELS = [
   'Custom',
 ];
 
+/**
+ * Computes live, non-mock tenant attachment count for any commercial add-on.
+ * Aggregates: Customer Overrides + Approved/Converted Quotations + Stored Tenant Add-ons.
+ */
+function getRealCustomersUsingAddon(addonKey: string, moduleKey?: string): number {
+  if (typeof window === 'undefined') return 0;
+  const activeTenantsUsing = new Set<string>();
+  const normalizedKey = addonKey.toLowerCase().replace(/[-_]/g, '');
+
+  // 1. Check Customer Commercial Overrides in saasCatalogueService
+  try {
+    const overrides = saasCatalogueService.getCustomerOverrides();
+    overrides.forEach((ovr) => {
+      const hasAddon = ovr.includedAddons && (
+        ovr.includedAddons.includes(addonKey) || 
+        ovr.includedAddons.some((a) => a.toLowerCase().replace(/[-_]/g, '') === normalizedKey)
+      );
+      if (hasAddon) {
+        activeTenantsUsing.add(ovr.tenantId);
+      }
+      if (moduleKey && ovr.featureOverrides && ovr.featureOverrides[moduleKey]) {
+        activeTenantsUsing.add(ovr.tenantId);
+      }
+    });
+  } catch {}
+
+  // 2. Check Converted & Active Quotations
+  try {
+    const quotes = saasCommercialService.getQuotations();
+    quotes.forEach((q) => {
+      const isLiveContract = q.status === 'CONVERTED' || q.status === 'ACCEPTED' || q.status === 'APPROVED';
+      if (isLiveContract && q.selectedAddonKeys) {
+        const hasKey = q.selectedAddonKeys.some(
+          (k) => k.toLowerCase().replace(/[-_]/g, '') === normalizedKey
+        );
+        if (hasKey) {
+          const id = q.convertedOrgId || q.clientId || q.clientName;
+          if (id) activeTenantsUsing.add(id);
+        }
+      }
+    });
+  } catch {}
+
+  // 3. Check Live Organization Tenant Add-on LocalStorage Keys
+  try {
+    const orgs = platformTenantService.getOrganizations().items;
+    orgs.forEach((org) => {
+      const raw = localStorage.getItem(`workforce_tenant_addons_${org.id}`);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const hasKey = parsed.some(
+              (k: string) => k.toLowerCase().replace(/[-_]/g, '') === normalizedKey
+            );
+            if (hasKey) activeTenantsUsing.add(org.id);
+          }
+        } catch {}
+      }
+    });
+  } catch {}
+
+  return activeTenantsUsing.size;
+}
+
 export const AddonsCatalogueView: React.FC<AddonsCatalogueViewProps> = ({ onNavigateTab }) => {
   const [activeTab, setActiveTab] = useState<AddonTab>('catalogue');
   const [addons, setAddons] = useState<ExtendedAddon[]>(() => {
     const raw = saasCatalogueService.getAddons();
-    return raw.map((a, idx) => {
+    return raw.map((a) => {
       const isPerEmployee = a.pricingModel === 'PER_EMPLOYEE' || a.billingUnit?.toLowerCase().includes('employee');
-      const isMetered = a.pricingModel === 'METERED' || a.billingUnit?.toLowerCase().includes('message') || a.billingUnit?.toLowerCase().includes('meter');
+      const isMetered = a.pricingModel === 'METERED' || a.billingUnit?.toLowerCase().includes('message') || a.billingUnit?.toLowerCase().includes('meter') || a.billingUnit?.toLowerCase().includes('100 gb');
+      const isOneTime = a.billingUnit?.toLowerCase().includes('one-time');
       const model: 'FIXED' | 'PER_EMPLOYEE' | 'METERED' = isPerEmployee ? 'PER_EMPLOYEE' : isMetered ? 'METERED' : 'FIXED';
+      
+      const realAdoptionCount = getRealCustomersUsingAddon(a.addonKey, a.moduleKey);
+
       return {
         ...a,
         pricingModel: model,
         code: a.addonKey.toUpperCase(),
-        customersUsing: [42, 28, 19, 36, 12, 54, 8, 23, 14, 31, 9, 17][idx % 12] || 15,
-        billingModel: isPerEmployee ? 'Per employee (PEPM)' : isMetered ? 'Per message' : 'Flat monthly',
-        unit: isPerEmployee ? 'per employee/mo' : isMetered ? 'per pack' : 'fixed/mo',
-        annualPrice: Math.round(a.monthlyPrice * 12 * 0.9), // 10% annual savings
-        includedQuantity: isMetered ? 1000 : (a.includedQuantity || 0),
-        overagePrice: isMetered ? 0.25 : (a.additionalUsageRate || 0),
+        customersUsing: realAdoptionCount,
+        billingModel: isOneTime ? 'One-time' : isPerEmployee ? 'Per employee (PEPM)' : isMetered ? 'Usage-based Meter' : 'Flat monthly',
+        unit: isOneTime ? 'one-time' : isPerEmployee ? 'per employee/mo' : isMetered ? 'per pack' : 'fixed/mo',
+        annualPrice: isOneTime ? a.monthlyPrice : Math.round(a.monthlyPrice * 12 * 0.9), // 10% annual savings
+        includedQuantity: a.includedQuantity || (isMetered ? 1000 : 0),
+        overagePrice: a.additionalUsageRate || (isMetered ? 0.25 : 0),
         taxCategory: 'SAC 998313 (IT SaaS Services - 18% GST)',
         effectiveDate: '2026-01-01',
-        dependencies: a.category === 'Module Add-on' ? ['Core HR'] : [],
-        status: 'Active',
+        dependencies: a.category === 'Product Add-ons' ? ['Core HR'] : [],
+        status: (a as any).status || 'Active',
       };
     });
   });
@@ -129,20 +205,33 @@ export const AddonsCatalogueView: React.FC<AddonsCatalogueViewProps> = ({ onNavi
     annualPrice: 21589,
     billingModel: 'Flat monthly',
     unit: 'per month',
-    availableForPlans: ['PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
+    availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
     status: 'Active',
     taxCategory: 'SAC 998313 (IT SaaS - 18% GST)',
   });
 
-  // Top Metrics
+  // Top Metrics — Calculated dynamically from live subscriptions and attached add-ons
   const metrics = useMemo(() => {
     const active = addons.filter((a) => a.status === 'Active');
     const totalCustomers = active.reduce((acc, a) => acc + (a.customersUsing || 0), 0);
-    const mrr = active.reduce((acc, a) => acc + a.monthlyPrice * (a.customersUsing ? Math.min(a.customersUsing, 10) : 1), 0);
+
+    // Calculate real dynamic MRR based on actual attached instances and pricing models
+    const mrr = active.reduce((acc, a) => {
+      const count = a.customersUsing || 0;
+      if (count === 0) return acc;
+      if (a.billingUnit?.toLowerCase().includes('one-time')) return acc; // One-time charge does not recur in MRR
+      if (a.pricingModel === 'PER_EMPLOYEE') {
+        // Assume average headcount per tenant (50 employees)
+        return acc + a.monthlyPrice * (count * 50);
+      }
+      return acc + a.monthlyPrice * count;
+    }, 0);
+
     const arr = mrr * 12;
+
     const usageRevenue = active
-      .filter((a) => a.pricingModel === 'METERED' || a.billingModel?.includes('Per'))
-      .reduce((acc, a) => acc + a.monthlyPrice * 5, 0);
+      .filter((a) => a.pricingModel === 'METERED')
+      .reduce((acc, a) => acc + (a.customersUsing ? a.monthlyPrice * a.customersUsing : 0), 0);
 
     return {
       activeCount: active.length,
@@ -157,8 +246,16 @@ export const AddonsCatalogueView: React.FC<AddonsCatalogueViewProps> = ({ onNavi
   const filteredAddons = useMemo(() => {
     return addons.filter((a) => {
       // Tab filter
-      if (activeTab === 'usage-based' && a.pricingModel !== 'METERED' && !a.billingModel?.includes('Per message') && !a.billingModel?.includes('Per API')) {
-        return false;
+      if (activeTab === 'usage-based') {
+        const isMeter =
+          a.pricingModel === 'METERED' ||
+          a.billingModel?.toLowerCase().includes('usage') ||
+          a.billingModel?.toLowerCase().includes('meter') ||
+          a.billingUnit?.toLowerCase().includes('meter') ||
+          a.billingUnit?.toLowerCase().includes('message') ||
+          a.billingUnit?.toLowerCase().includes('100 gb') ||
+          a.billingUnit?.toLowerCase().includes('included');
+        if (!isMeter) return false;
       }
       if (activeTab === 'archived' && a.status !== 'Archived') {
         return false;
@@ -170,10 +267,11 @@ export const AddonsCatalogueView: React.FC<AddonsCatalogueViewProps> = ({ onNavi
       // Category filter
       if (categoryFilter !== 'All Categories') {
         const matchesCategory =
+          a.category === categoryFilter ||
           (categoryFilter === 'Product Add-ons' && (a.category === 'Module Add-on' || a.category === 'Product Add-ons')) ||
           (categoryFilter === 'Communication' && (a.category === 'Communication Meter' || a.category === 'Communication')) ||
-          (categoryFilter === 'Integrations' && (a.category === 'Infrastructure & API' || a.category === 'Integrations')) ||
-          (categoryFilter === 'Infrastructure' && (a.category === 'Infrastructure & API' || a.category === 'Infrastructure')) ||
+          (categoryFilter === 'Integrations' && (a.category === 'Integrations' || a.category === 'Infrastructure & API')) ||
+          (categoryFilter === 'Infrastructure' && (a.category === 'Infrastructure' || a.category === 'Infrastructure & API')) ||
           (categoryFilter === 'Support' && (a.category === 'Enterprise Support' || a.category === 'Support')) ||
           (categoryFilter === 'Services' && a.category === 'Services');
         if (!matchesCategory) return false;
@@ -196,6 +294,10 @@ export const AddonsCatalogueView: React.FC<AddonsCatalogueViewProps> = ({ onNavi
   const handleSaveAddon = () => {
     if (!newAddonForm.name || !newAddonForm.addonKey) return;
     const key = newAddonForm.addonKey.toLowerCase().replace(/\s+/g, '_');
+    const isPerEmp = newAddonForm.billingModel?.includes('employee') || newAddonForm.billingUnit?.includes('Employee');
+    const isMeter = newAddonForm.billingModel?.includes('meter') || newAddonForm.billingModel?.includes('message') || newAddonForm.billingModel?.includes('GB');
+    const isOneTime = newAddonForm.billingModel?.toLowerCase().includes('one-time');
+
     const addonToSave: ExtendedAddon = {
       id: editingAddon?.id || `addon_${key}`,
       isActive: true,
@@ -205,27 +307,45 @@ export const AddonsCatalogueView: React.FC<AddonsCatalogueViewProps> = ({ onNavi
       description: newAddonForm.description || '',
       category: (newAddonForm.category as any) || 'Product Add-ons',
       monthlyPrice: Number(newAddonForm.monthlyPrice) || 0,
-      annualPrice: Number(newAddonForm.annualPrice) || Math.round((Number(newAddonForm.monthlyPrice) || 0) * 12 * 0.9),
-      pricingModel: newAddonForm.billingModel?.includes('employee') ? 'PER_EMPLOYEE' : newAddonForm.billingModel?.includes('message') ? 'METERED' : 'FIXED',
-      availableForPlans: (newAddonForm.availableForPlans as PlanTierCode[]) || ['PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
+      annualPrice: Number(newAddonForm.annualPrice) || (isOneTime ? Number(newAddonForm.monthlyPrice) || 0 : Math.round((Number(newAddonForm.monthlyPrice) || 0) * 12 * 0.9)),
+      pricingModel: isPerEmp ? 'PER_EMPLOYEE' : isMeter ? 'METERED' : 'FIXED',
+      availableForPlans: (newAddonForm.availableForPlans as PlanTierCode[]) || ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
       customersUsing: editingAddon?.customersUsing || 0,
       billingModel: newAddonForm.billingModel || 'Flat monthly',
-      billingUnit: newAddonForm.billingModel || 'Per Month',
-      unit: newAddonForm.unit || 'per month',
-      status: 'Active',
+      billingUnit: newAddonForm.billingUnit || newAddonForm.billingModel || 'Per Month',
+      unit: newAddonForm.unit || (isPerEmp ? 'per employee/mo' : isOneTime ? 'one-time' : 'per month'),
+      status: (newAddonForm.status as any) || 'Active',
       taxCategory: 'SAC 998313 (IT SaaS - 18% GST)',
       effectiveDate: '2026-10-01',
     };
 
-    if (editingAddon) {
-      setAddons((prev) => prev.map((a) => (a.addonKey === editingAddon.addonKey ? { ...a, ...addonToSave } : a)));
-      saasCatalogueService.updateAddonPrice(editingAddon.addonKey, addonToSave.monthlyPrice);
-    } else {
-      setAddons((prev) => [addonToSave, ...prev]);
-    }
+    // Save with real localStorage persistence in saasCatalogueService
+    saasCatalogueService.saveAddon(addonToSave);
+
+    setAddons((prev) => {
+      const exists = prev.some((a) => a.addonKey === addonToSave.addonKey);
+      if (exists) {
+        return prev.map((a) => (a.addonKey === addonToSave.addonKey ? addonToSave : a));
+      }
+      return [addonToSave, ...prev];
+    });
 
     setIsCreateModalOpen(false);
     setEditingAddon(null);
+  };
+
+  const handleToggleArchive = (addonKey: string) => {
+    setAddons((prev) =>
+      prev.map((a) => {
+        if (a.addonKey === addonKey) {
+          const nextStatus: 'Active' | 'Archived' = a.status === 'Archived' ? 'Active' : 'Archived';
+          const updated = { ...a, status: nextStatus };
+          saasCatalogueService.saveAddon(updated);
+          return updated;
+        }
+        return a;
+      })
+    );
   };
 
   return (
@@ -400,23 +520,138 @@ export const AddonsCatalogueView: React.FC<AddonsCatalogueViewProps> = ({ onNavi
       </div>
 
       {/* ── 5. Main Content Area ──────────────────────────────────────────────── */}
-      {filteredAddons.length === 0 ? (
+      {activeTab === 'overview' ? (
+        /* Overview & Executive Statistics Tab */
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[
+              {
+                title: 'Product Add-ons',
+                desc: 'Standalone enterprise modules: LMS, ATS, Appraisals, Vendor Workforce, 3-Way Match & Client Invoicing.',
+                count: addons.filter((a) => a.category === 'Product Add-ons').length,
+                badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+                attached: addons.filter((a) => a.category === 'Product Add-ons').reduce((acc, a) => acc + (a.customersUsing || 0), 0),
+              },
+              {
+                title: 'Communication & Metering',
+                desc: 'Interactive WhatsApp Employee Self-Service bot bundles & DLT-registered OTP SMS gateways.',
+                count: addons.filter((a) => a.category === 'Communication').length,
+                badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                attached: addons.filter((a) => a.category === 'Communication').reduce((acc, a) => acc + (a.customersUsing || 0), 0),
+              },
+              {
+                title: 'Integrations & Biometrics',
+                desc: 'Developer REST APIs, HMAC webhooks, and multi-vendor biometric hardware cloud push gateways.',
+                count: addons.filter((a) => a.category === 'Integrations').length,
+                badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
+                attached: addons.filter((a) => a.category === 'Integrations').reduce((acc, a) => acc + (a.customersUsing || 0), 0),
+              },
+              {
+                title: 'Infrastructure & Storage',
+                desc: 'High-speed AWS S3 document vault expansions, Microsoft Entra ID / Okta SAML 2.0 SSO, and Field Force GPS.',
+                count: addons.filter((a) => a.category === 'Infrastructure').length,
+                badgeClass: 'bg-cyan-50 text-cyan-800 border-cyan-200',
+                attached: addons.filter((a) => a.category === 'Infrastructure').reduce((acc, a) => acc + (a.customersUsing || 0), 0),
+              },
+              {
+                title: 'Enterprise Support',
+                desc: 'Named Technical Account Manager (TAM), 15-minute emergency SLA, and 24/7 priority hotline.',
+                count: addons.filter((a) => a.category === 'Support').length,
+                badgeClass: 'bg-purple-50 text-purple-700 border-purple-200',
+                attached: addons.filter((a) => a.category === 'Support').reduce((acc, a) => acc + (a.customersUsing || 0), 0),
+              },
+              {
+                title: 'Professional Services',
+                desc: 'White-glove legacy payroll data migration (greytHR / Spine), hardware commissioning & 3-day onsite training.',
+                count: addons.filter((a) => a.category === 'Services').length,
+                badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
+                attached: addons.filter((a) => a.category === 'Services').reduce((acc, a) => acc + (a.customersUsing || 0), 0),
+              },
+            ].map((cat) => (
+              <div key={cat.title} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${cat.badgeClass}`}>
+                    {cat.title}
+                  </span>
+                  <span className="text-xs font-mono font-bold text-slate-500">
+                    {cat.count} Add-ons
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed min-h-[40px]">{cat.desc}</p>
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Tenants Subscribed</span>
+                  <span className="font-bold text-slate-900">{cat.attached} active</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Pricing Models Distribution Matrix */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-emerald-600" />
+              <span>Commercial Pricing Models & Expansion Architecture</span>
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                <div className="font-bold text-slate-800">Flat Monthly (Fixed)</div>
+                <div className="text-lg font-black text-slate-900">
+                  {addons.filter((a) => a.pricingModel === 'FIXED' && !a.billingUnit?.toLowerCase().includes('one-time')).length} Add-ons
+                </div>
+                <p className="text-slate-500 text-[11px]">Fixed monthly charges (e.g. ₹1,499 – ₹4,999/mo) for modular add-ons and SSO.</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                <div className="font-bold text-slate-800">Per Employee (PEPM)</div>
+                <div className="text-lg font-black text-emerald-700">
+                  {addons.filter((a) => a.pricingModel === 'PER_EMPLOYEE').length} Add-ons
+                </div>
+                <p className="text-slate-500 text-[11px]">Scales directly with customer headcount (e.g. LMS @ ₹30/mo, Field GPS @ ₹39/mo).</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                <div className="font-bold text-slate-800">Usage-Based Metered</div>
+                <div className="text-lg font-black text-amber-700">
+                  {addons.filter((a) => a.pricingModel === 'METERED').length} Add-ons
+                </div>
+                <p className="text-slate-500 text-[11px]">Base bundle + overage rate (WhatsApp 5K @ ₹1,499 + ₹0.60/msg; S3 Storage @ ₹999/100GB).</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                <div className="font-bold text-slate-800">One-Time Services</div>
+                <div className="text-lg font-black text-blue-700">
+                  {addons.filter((a) => a.billingUnit?.toLowerCase().includes('one-time')).length} Add-ons
+                </div>
+                <p className="text-slate-500 text-[11px]">Implementation, greytHR/Spine data migration concierge & onsite training.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : filteredAddons.length === 0 ? (
         <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-3">
           <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
             <Sparkles className="w-6 h-6" />
           </div>
-          <h3 className="text-base font-bold text-slate-800">No add-ons configured yet.</h3>
+          <h3 className="text-base font-bold text-slate-800">
+            {activeTab === 'archived' ? 'No archived add-ons' : 'No add-ons match the filter criteria'}
+          </h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            No add-on records match your filter criteria or search query. Create a new modular add-on to expand platform revenue.
+            {activeTab === 'archived'
+              ? 'All 20 commercial add-ons are currently active and available for customer subscriptions.'
+              : 'Try selecting another category tab or clearing your search query.'}
           </p>
-          <Button
-            size="sm"
-            onClick={() => setIsCreateModalOpen(true)}
-            className="bg-[#047857] hover:bg-[#036246] text-white text-xs font-semibold"
-          >
-            <Plus className="w-4 h-4 mr-1.5" />
-            Create Add-on
-          </Button>
+          {activeTab !== 'archived' && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setCategoryFilter('All Categories');
+                setSearchQuery('');
+              }}
+              className="bg-[#047857] hover:bg-[#036246] text-white text-xs font-semibold"
+            >
+              Reset Filters
+            </Button>
+          )}
         </div>
       ) : activeTab === 'plan-availability' ? (
         /* Plan Availability Matrix */
@@ -425,12 +660,13 @@ export const AddonsCatalogueView: React.FC<AddonsCatalogueViewProps> = ({ onNavi
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
               <tr>
                 <th className="py-3 px-4">Add-on Capability</th>
+                <th className="py-3 px-4">Category</th>
                 <th className="py-3 px-4">Billing Model</th>
                 <th className="py-3 px-4 text-center">Starter</th>
                 <th className="py-3 px-4 text-center bg-emerald-50/50 text-emerald-900">Professional (Rec.)</th>
                 <th className="py-3 px-4 text-center">Business</th>
                 <th className="py-3 px-4 text-center">Enterprise</th>
-                <th className="py-3 px-4 text-right">Monthly Rate</th>
+                <th className="py-3 px-4 text-right">Rate</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -439,6 +675,11 @@ export const AddonsCatalogueView: React.FC<AddonsCatalogueViewProps> = ({ onNavi
                   <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
                     <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     <span>{addon.name}</span>
+                  </td>
+                  <td className="py-3 px-4 text-slate-500">
+                    <span className="px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                      {addon.category}
+                    </span>
                   </td>
                   <td className="py-3 px-4 text-slate-500">{addon.billingModel}</td>
                   <td className="py-3 px-4 text-center">
@@ -470,7 +711,7 @@ export const AddonsCatalogueView: React.FC<AddonsCatalogueViewProps> = ({ onNavi
                     )}
                   </td>
                   <td className="py-3 px-4 text-right font-bold text-slate-900">
-                    ₹{addon.monthlyPrice.toLocaleString('en-IN')}/mo
+                    ₹{addon.monthlyPrice.toLocaleString('en-IN')}{addon.billingUnit?.toLowerCase().includes('one-time') ? '' : '/mo'}
                   </td>
                 </tr>
               ))}
@@ -480,90 +721,128 @@ export const AddonsCatalogueView: React.FC<AddonsCatalogueViewProps> = ({ onNavi
       ) : (
         /* Catalogue Cards Grid */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredAddons.map((addon) => (
-            <div
-              key={addon.addonKey}
-              className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:border-emerald-300 hover:shadow-md transition-all flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-700">
-                      <Sparkles className="w-4 h-4" />
+          {filteredAddons.map((addon) => {
+            const isOneTime = addon.billingUnit?.toLowerCase().includes('one-time');
+            const isPerEmp = addon.pricingModel === 'PER_EMPLOYEE';
+            const isMeter = addon.pricingModel === 'METERED';
+
+            const badgeClass =
+              addon.category === 'Product Add-ons'
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                : addon.category === 'Communication'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : addon.category === 'Integrations'
+                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                : addon.category === 'Infrastructure'
+                ? 'bg-cyan-50 text-cyan-800 border-cyan-200'
+                : addon.category === 'Support'
+                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                : addon.category === 'Services'
+                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                : 'bg-slate-100 text-slate-700 border-slate-200';
+
+            return (
+              <div
+                key={addon.addonKey}
+                className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:border-emerald-300 hover:shadow-md transition-all flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-700">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900 text-sm">{addon.name}</h3>
+                        <span className="text-[10px] font-mono uppercase text-slate-400 tracking-wider">
+                          {addon.code || addon.addonKey}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-bold text-slate-900 text-sm">{addon.name}</h3>
-                      <span className="text-[10px] font-mono uppercase text-slate-400 tracking-wider">
-                        {addon.code || addon.addonKey}
+
+                    <span className={`px-2 py-0.5 rounded-full text-[10.5px] font-bold border ${badgeClass}`}>
+                      {addon.category}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-500 mt-3 leading-relaxed min-h-[36px]">
+                    {addon.description}
+                  </p>
+
+                  {/* Plan Tags */}
+                  <div className="mt-3.5 flex flex-wrap gap-1.5 items-center">
+                    {addon.availableForPlans.map((p) => (
+                      <span
+                        key={p}
+                        className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-50 text-slate-600 border border-slate-200"
+                      >
+                        {p === 'PROFESSIONAL' ? 'Pro+' : p}
+                      </span>
+                    ))}
+                    <span className="ml-auto text-[11px] text-slate-400 font-medium">
+                      {addon.customersUsing || 0} tenants active
+                    </span>
+                  </div>
+                </div>
+
+                {/* Bottom Price & Controls */}
+                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
+                  <div>
+                    <div className="text-base font-black text-slate-900">
+                      ₹{addon.monthlyPrice.toLocaleString('en-IN')}
+                      <span className="text-xs font-normal text-slate-400">
+                        {isOneTime ? ' one-time' : isPerEmp ? '/emp/mo' : `/${addon.unit || 'mo'}`}
                       </span>
                     </div>
+                    <div className="text-[10.5px] text-emerald-600 font-medium">
+                      {isOneTime
+                        ? 'White-glove implementation & setup'
+                        : isPerEmp
+                        ? `PEPM rate scaling with active headcount`
+                        : isMeter
+                        ? `Includes ${addon.includedQuantity || 1000} units allowance`
+                        : `Annual: ₹${(addon.annualPrice || addon.monthlyPrice * 12 * 0.9).toLocaleString('en-IN')}/yr (-10%)`}
+                    </div>
                   </div>
 
-                  <span className="px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                    {addon.category}
-                  </span>
-                </div>
-
-                <p className="text-xs text-slate-500 mt-3 leading-relaxed min-h-[36px]">
-                  {addon.description}
-                </p>
-
-                {/* Plan Tags */}
-                <div className="mt-3.5 flex flex-wrap gap-1.5">
-                  {addon.availableForPlans.map((p) => (
-                    <span
-                      key={p}
-                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-50 text-slate-600 border border-slate-200"
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleToggleArchive(addon.addonKey)}
+                      title={addon.status === 'Archived' ? 'Restore Add-on' : 'Archive Add-on'}
+                      className="p-1.5 h-8 w-8 rounded-lg border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-slate-800"
                     >
-                      {p === 'PROFESSIONAL' ? 'Pro+' : p}
-                    </span>
-                  ))}
-                  <span className="ml-auto text-[11px] text-slate-400 font-medium">
-                    {addon.customersUsing || 0} tenants active
-                  </span>
+                      {addon.status === 'Archived' ? <RefreshCw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingAddon(addon);
+                        setNewAddonForm({
+                          name: addon.name,
+                          addonKey: addon.addonKey,
+                          category: addon.category,
+                          description: addon.description,
+                          monthlyPrice: addon.monthlyPrice,
+                          annualPrice: addon.annualPrice,
+                          billingModel: addon.billingModel,
+                          unit: addon.unit,
+                          availableForPlans: addon.availableForPlans,
+                          status: addon.status,
+                        });
+                        setIsCreateModalOpen(true);
+                      }}
+                      className="p-1.5 h-8 w-8 rounded-lg border-slate-200 hover:bg-slate-50 text-slate-600"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
                 </div>
               </div>
-
-              {/* Bottom Price & Controls */}
-              <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
-                <div>
-                  <div className="text-base font-black text-slate-900">
-                    ₹{addon.monthlyPrice.toLocaleString('en-IN')}
-                    <span className="text-xs font-normal text-slate-400">/{addon.unit || 'mo'}</span>
-                  </div>
-                  <div className="text-[10.5px] text-emerald-600 font-medium">
-                    Annual: ₹{(addon.annualPrice || addon.monthlyPrice * 12).toLocaleString('en-IN')}/yr (-10%)
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setEditingAddon(addon);
-                      setNewAddonForm({
-                        name: addon.name,
-                        addonKey: addon.addonKey,
-                        category: addon.category,
-                        description: addon.description,
-                        monthlyPrice: addon.monthlyPrice,
-                        annualPrice: addon.annualPrice,
-                        billingModel: addon.billingModel,
-                        unit: addon.unit,
-                        availableForPlans: addon.availableForPlans,
-                        status: addon.status,
-                      });
-                      setIsCreateModalOpen(true);
-                    }}
-                    className="p-1.5 h-8 w-8 rounded-lg border-slate-200 hover:bg-slate-50 text-slate-600"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

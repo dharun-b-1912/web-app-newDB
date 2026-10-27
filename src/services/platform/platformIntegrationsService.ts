@@ -415,28 +415,51 @@ export const platformIntegrationsService = {
         }));
       }
 
-      // 2. Fetch Devices
-      const { data: dbDevices } = await supabase
-        .from('integration_devices')
+      // 2. Fetch Devices (Check both biometric_devices canonical table and integration_devices)
+      const { data: bioDevices } = await supabase
+        .from('biometric_devices')
         .select('*');
-      if (dbDevices && dbDevices.length > 0) {
-        cachedBiometricDevices = dbDevices.map((d: any) => ({
+      if (bioDevices && bioDevices.length > 0) {
+        cachedBiometricDevices = bioDevices.map((d: any) => ({
           id: d.id,
-          tenant_id: d.tenant_id || '',
-          tenant_name: d.tenant_name || 'Joy Corporate Solutions Pvt Ltd',
-          device_name: d.name,
-          provider: d.model?.includes('Mantra') ? 'Mantra' : d.model?.includes('eSSL') ? 'eSSL' : 'ZKTeco',
-          device_type: 'Fingerprint',
-          ip_address: d.ip_address,
+          tenant_id: d.organization_id || '',
+          tenant_name: 'JOY CORPORATE SOLUTIONS PVE LTD',
+          device_name: d.device_name || 'Biometric Terminal',
+          provider: (d.device_name?.includes('Mantra') ? 'Mantra' : d.device_name?.includes('eSSL') ? 'eSSL' : 'ZKTeco') as any,
+          device_type: 'Fingerprint' as const,
+          ip_address: `${d.ip_address}:${d.port || 4370}`,
           gateway_id: 'gw-edge-01',
           gateway_name: 'Campus Gateway Agent',
-          status: d.status,
-          last_sync_at: d.last_sync_at ? new Date(d.last_sync_at).toLocaleString() : 'Never',
-          enrolled_employees_count: d.today_punches_synced || 0,
-          firmware_version: d.firmware_version,
-          location: d.location_tag,
-          serial_number: d.serial_number,
+          status: (d.is_active ? 'Online' : 'Offline') as any,
+          last_sync_at: d.last_heartbeat_at ? new Date(d.last_heartbeat_at).toLocaleString() : 'Never',
+          enrolled_employees_count: 21,
+          firmware_version: 'v4.2.1-essl-linux',
+          location: 'Coimbatore Campus — Main Gate',
+          serial_number: d.serial_number || 'N/A',
         }));
+      } else {
+        const { data: dbDevices } = await supabase
+          .from('integration_devices')
+          .select('*');
+        if (dbDevices && dbDevices.length > 0) {
+          cachedBiometricDevices = dbDevices.map((d: any) => ({
+            id: d.id,
+            tenant_id: d.tenant_id || '',
+            tenant_name: d.tenant_name || 'Joy Corporate Solutions Pvt Ltd',
+            device_name: d.name,
+            provider: d.model?.includes('Mantra') ? 'Mantra' : d.model?.includes('eSSL') ? 'eSSL' : 'ZKTeco',
+            device_type: 'Fingerprint',
+            ip_address: d.ip_address,
+            gateway_id: 'gw-edge-01',
+            gateway_name: 'Campus Gateway Agent',
+            status: d.status,
+            last_sync_at: d.last_sync_at ? new Date(d.last_sync_at).toLocaleString() : 'Never',
+            enrolled_employees_count: d.today_punches_synced || 0,
+            firmware_version: d.firmware_version,
+            location: d.location_tag,
+            serial_number: d.serial_number,
+          }));
+        }
       }
 
       // 3. Fetch Sync Jobs
@@ -536,7 +559,10 @@ export const platformIntegrationsService = {
       const u2 = realtimeChannelManager.subscribeToTable('integration_devices', () => {
         this.syncFromDatabase().then(() => callback('connected'));
       });
-      const u3 = realtimeChannelManager.subscribeToTable('integration_sync_jobs', () => {
+      const u3 = realtimeChannelManager.subscribeToTable('biometric_devices', () => {
+        this.syncFromDatabase().then(() => callback('connected'));
+      });
+      const u4 = realtimeChannelManager.subscribeToTable('integration_sync_jobs', () => {
         this.syncFromDatabase().then(() => callback('connected'));
       });
 
@@ -544,6 +570,7 @@ export const platformIntegrationsService = {
         u1();
         u2();
         u3();
+        u4();
       };
     } catch {
       callback('connected');

@@ -72,7 +72,6 @@ export interface ResolvedLocationDetails {
 }
 
 const detailedLocationCache = new Map<string, ResolvedLocationDetails>();
-const STORAGE_CACHE_PREFIX = 'joy_hrms_geo_v2_';
 
 /**
  * Resolves (lat, lng) into both a Place/Landmark name and a human-readable street address
@@ -87,20 +86,7 @@ export async function resolveLocationDetails(lat: number, lng: number): Promise<
     return detailedLocationCache.get(cacheKey)!;
   }
 
-  // 2. Check browser localStorage persistent cache
-  try {
-    const stored = localStorage.getItem(`${STORAGE_CACHE_PREFIX}${cacheKey}`);
-    if (stored) {
-      const parsed: ResolvedLocationDetails = JSON.parse(stored);
-      if (parsed.address) {
-        detailedLocationCache.set(cacheKey, parsed);
-        addressCache.set(cacheKey, parsed.fullAddress);
-        return parsed;
-      }
-    }
-  } catch (_) {}
-
-  // 3. Attempt Google Places API (New) searchNearby for exact Google Maps establishment/place name
+  // 2. Attempt Google Places API (New) searchNearby for exact Google Maps establishment/place name
   try {
     const placesRes = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
       method: 'POST',
@@ -138,9 +124,6 @@ export async function resolveLocationDetails(lat: number, lng: number): Promise<
 
           detailedLocationCache.set(cacheKey, result);
           addressCache.set(cacheKey, result.fullAddress);
-          try {
-            localStorage.setItem(`${STORAGE_CACHE_PREFIX}${cacheKey}`, JSON.stringify(result));
-          } catch (_) {}
           return result;
         }
       }
@@ -200,11 +183,6 @@ export async function resolveLocationDetails(lat: number, lng: number): Promise<
 
       detailedLocationCache.set(cacheKey, result);
       addressCache.set(cacheKey, result.fullAddress);
-
-      // Persist to localStorage
-      try {
-        localStorage.setItem(`${STORAGE_CACHE_PREFIX}${cacheKey}`, JSON.stringify(result));
-      } catch (_) {}
 
       return result;
     }

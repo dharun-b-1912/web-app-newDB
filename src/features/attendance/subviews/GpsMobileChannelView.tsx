@@ -148,6 +148,7 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
   const [selectedEmpForMapping, setSelectedEmpForMapping] = useState<any | null>(null);
   const [mappedLocationIds, setMappedLocationIds] = useState<string[]>([]);
   const [primaryLocationId, setPrimaryLocationId] = useState<string>('');
+  const [isSavingMapping, setIsSavingMapping] = useState(false);
 
   // Live Real-Time Hardware GPS State
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
@@ -352,25 +353,34 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
   // Save Employee Location Mapping
   const handleSaveEmployeeMapping = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedEmpForMapping) return;
+    if (!selectedEmpForMapping || isSavingMapping) return;
 
     if (mappedLocationIds.length === 0) {
       showToast('Please select at least one authorized work location.', 'warning');
       return;
     }
 
-    await workLocationService.setEmployeeLocations(
-      selectedEmpForMapping.id,
-      mappedLocationIds,
-      primaryLocationId || mappedLocationIds[0],
-      undefined,
-      selectedEmpForMapping.employee_code
-    );
+    setIsSavingMapping(true);
+    try {
+      const empOrgId = selectedEmpForMapping.organization_id || selectedEmpForMapping.tenant_id;
+      await workLocationService.setEmployeeLocations(
+        selectedEmpForMapping.id,
+        mappedLocationIds,
+        primaryLocationId || mappedLocationIds[0],
+        empOrgId,
+        selectedEmpForMapping.employee_code
+      );
 
-    showToast(`✓ Geofence mapping saved & synced for ${selectedEmpForMapping.display_name || selectedEmpForMapping.name}.`, 'success');
-    setIsMappingEmployee(false);
-    setSelectedEmpForMapping(null);
-    await loadData();
+      showToast(`✓ Geofence mapping saved & synced for ${selectedEmpForMapping.display_name || selectedEmpForMapping.name || 'employee'}.`, 'success');
+      setIsMappingEmployee(false);
+      setSelectedEmpForMapping(null);
+      await loadData();
+    } catch (err: any) {
+      console.error('Failed to map employee locations:', err);
+      showToast(err.message || 'Error saving employee location mapping.', 'error');
+    } finally {
+      setIsSavingMapping(false);
+    }
   };
 
   // Reverse Geocoding Helper (Fetches real structured physical address dynamically)
@@ -1696,13 +1706,14 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl shadow-xs cursor-pointer"
+                  disabled={isSavingMapping}
+                  className="px-5 py-2 bg-blue-700 hover:bg-blue-800 disabled:opacity-50 text-white font-bold rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
                 >
-                  Save Mapping
+                  {isSavingMapping ? 'Saving Mapping...' : 'Save Mapping'}
                 </button>
               </div>
             </form>
-          </div>
+          </div>  
         </div>
       )}
     </div>

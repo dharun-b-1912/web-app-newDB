@@ -14,7 +14,7 @@ export type CommercialType =
   | 'Usage-based'
   | 'Internal Only';
 
-export type PlanTierCode = 'STARTER' | 'PREMIUM' | 'PROFESSIONAL' | 'BUSINESS' | 'ENTERPRISE';
+export type PlanTierCode = 'STARTER' | 'PREMIUM' | 'PROFESSIONAL' | 'BUSINESS' | 'ENTERPRISE' | 'CUSTOM' | 'CUSTOM_MODULAR';
 
 export type BillingCycle = 'Monthly' | 'Annual' | 'Two-Year' | 'Custom';
 

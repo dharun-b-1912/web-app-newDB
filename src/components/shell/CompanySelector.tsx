@@ -1,9 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Building2, ChevronDown, Check, Globe, Shield, Lock } from 'lucide-react';
+import { Building2, ChevronDown, Check, Globe, Shield, Lock, MapPin } from 'lucide-react';
 import { useTenant } from '../../hooks/useTenant';
 import { usePermission } from '../../hooks/usePermission';
 
-export const CompanySelector: React.FC = () => {
+export interface CompanySelectorProps {
+  onOpenLocationEdit?: () => void;
+}
+
+export const CompanySelector: React.FC<CompanySelectorProps> = ({ onOpenLocationEdit }) => {
   const {
     organization,
     organizations,
@@ -37,19 +41,19 @@ export const CompanySelector: React.FC = () => {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl border border-gray-200/80 bg-white hover:bg-gray-50/80 transition-colors text-left cursor-pointer shadow-2xs shrink-0 focus:outline-none focus:ring-2 focus:ring-emerald-600/30"
+        className="flex items-center gap-2.5 px-3 h-10 rounded-xl border border-gray-200/80 bg-white hover:bg-gray-50/80 transition-all text-left cursor-pointer shadow-2xs shrink-0 focus:outline-none focus:ring-2 focus:ring-emerald-600/30"
       >
-        <div className="w-8 h-8 rounded-lg bg-emerald-50 text-[#07563D] flex items-center justify-center shrink-0 border border-emerald-100 font-black text-xs">
+        <div className="w-7 h-7 rounded-lg bg-emerald-50 text-[#07563D] flex items-center justify-center shrink-0 border border-emerald-100 font-black text-xs">
           {activeLegalEntity.legal_name.slice(0, 2).toUpperCase()}
         </div>
         <div className="hidden sm:block shrink-0">
-          <div className="text-xs font-bold text-gray-900 truncate max-w-[160px] whitespace-nowrap">
+          <div className="text-xs font-bold text-gray-900 truncate max-w-[220px] xl:max-w-[270px] whitespace-nowrap">
             {activeLegalEntity.legal_name}
           </div>
-          <div className="text-[10px] text-gray-500 font-medium truncate max-w-[160px] whitespace-nowrap flex items-center gap-1">
-            <span>{activeLegalEntity.city || 'Coimbatore'}, {activeLegalEntity.country || 'India'}</span>
+          <div className="text-[10px] text-gray-500 font-medium truncate max-w-[220px] xl:max-w-[270px] whitespace-nowrap flex items-center gap-1.5">
+            <span>{(activeLegalEntity.city || 'Coimbatore').trim()}, {(activeLegalEntity.country || 'India').trim()}</span>
             <span className="text-gray-300">•</span>
-            <span className="font-bold text-emerald-700">{activeLegalEntity.currency || 'INR'}</span>
+            <span className="font-semibold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded text-[9.5px]">{activeLegalEntity.currency || 'INR'}</span>
           </div>
         </div>
         <ChevronDown className={`w-3.5 h-3.5 text-gray-400 shrink-0 ml-0.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
@@ -151,6 +155,23 @@ export const CompanySelector: React.FC = () => {
               })}
             </div>
           </div>
+
+          {/* Quick GPS Location Configuration */}
+          {onOpenLocationEdit && (
+            <div className="pt-1.5 pb-1 px-2 border-t border-gray-100 mt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  onOpenLocationEdit();
+                }}
+                className="w-full px-2.5 py-1.5 rounded-xl text-left text-xs font-semibold text-emerald-800 hover:bg-emerald-50 flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="truncate">View / Edit Live Company GPS Location</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

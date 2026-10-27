@@ -7,6 +7,7 @@
 import { getActiveOrgId } from '../attendance/biometricCommandService';
 import { saasCatalogueService } from '../platform/saasCatalogueService';
 import { platformTenantService } from '../platform/platformTenantService';
+import { saasPricingEngine } from '../platform/saasPricingEngine';
 
 export type TenantFeatureKey =
   | 'core_hr'
@@ -31,7 +32,7 @@ export type TenantFeatureKey =
   | 'client_billing'
   | 'helpdesk';
 
-export type PlanTier = 'Starter' | 'Professional' | 'Business' | 'Enterprise';
+export type PlanTier = 'Starter' | 'Professional' | 'Business' | 'Enterprise' | 'Custom' | 'Custom_Modular';
 
 /**
  * Standard Commercial Plan Feature Entitlement Baseline
@@ -130,6 +131,52 @@ export const PLAN_FEATURE_MATRIX: Record<PlanTier, Record<TenantFeatureKey, bool
     vendor_management: true,
     client_billing: true,
   },
+  Custom: {
+    core_hr: true,
+    ess: true,
+    attendance: true,
+    leave: true,
+    payroll: true,
+    documents: true,
+    helpdesk: true,
+    shifts: true,
+    gps: true,
+    onboarding: true,
+    offboarding: true,
+    assets: true,
+    recruitment: true,
+    performance: true,
+    lms: true,
+    analytics: true,
+    travel_expense: true,
+    ai_assistant: false,
+    biometric: true,
+    vendor_management: false,
+    client_billing: false,
+  },
+  Custom_Modular: {
+    core_hr: true,
+    ess: true,
+    attendance: false,
+    leave: false,
+    payroll: false,
+    documents: false,
+    helpdesk: false,
+    shifts: false,
+    gps: false,
+    onboarding: false,
+    offboarding: false,
+    assets: false,
+    recruitment: false,
+    performance: false,
+    lms: true,
+    analytics: false,
+    travel_expense: false,
+    ai_assistant: false,
+    biometric: false,
+    vendor_management: false,
+    client_billing: false,
+  },
 };
 
 /**
@@ -196,6 +243,8 @@ export function normalizePlanName(rawPlan?: string | null): PlanTier | null {
   if (p === 'professional' || p === 'pro' || p === 'premium') return 'Professional';
   if (p === 'business') return 'Business';
   if (p === 'enterprise') return 'Enterprise';
+  if (p === 'custom' || p.includes('custom')) return 'Custom';
+  if (p === 'custom_modular' || p === 'modular' || p.includes('modular')) return 'Custom_Modular';
   return null;
 }
 
@@ -345,7 +394,29 @@ export const featureEntitlementService = {
       }
     } catch {}
 
-    // 4. Baseline Plan Entitlement
+    // 4. Dynamic Commercial Plan Modules (from saasPricingEngine)
+    try {
+      const commercialPlans = saasPricingEngine.getPlans();
+      const rawPlan = this.getTenantPlan(orgId);
+      const match = commercialPlans.find(
+        (p) =>
+          p.code.toLowerCase() === rawPlan.toLowerCase() ||
+          p.name.toLowerCase() === rawPlan.toLowerCase() ||
+          p.displayName.toLowerCase() === rawPlan.toLowerCase()
+      );
+      if (match?.includedModules && match.includedModules.length > 0) {
+        const modKey = featureKey === 'travel_expense' ? 'expense' : featureKey;
+        if (
+          match.includedModules.includes(modKey) ||
+          match.includedModules.includes(featureKey) ||
+          (match.includedFeatures && match.includedFeatures.some((fk) => fk.startsWith(`${modKey}.`)))
+        ) {
+          return true;
+        }
+      }
+    } catch {}
+
+    // 5. Baseline Plan Entitlement Fallback
     const plan = this.getTenantPlan(orgId);
     return PLAN_FEATURE_MATRIX[plan]?.[featureKey] ?? false;
   },
@@ -515,6 +586,21 @@ export const featureEntitlementService = {
     }
     if (gUpper.includes('VENDOR') || gUpper.includes('PROCUREMENT')) {
       return this.canUseFeature('vendor_management', explicitOrgId);
+    }
+    if (gUpper.includes('ATTENDANCE') && !gUpper.includes('VENDOR')) {
+      return this.canUseFeature('attendance', explicitOrgId);
+    }
+    if (gUpper.includes('PAYROLL')) {
+      return this.canUseFeature('payroll', explicitOrgId);
+    }
+    if (gUpper.includes('LEAVE')) {
+      return this.canUseFeature('leave', explicitOrgId);
+    }
+    if (gUpper.includes('SHIFT')) {
+      return this.canUseFeature('shifts', explicitOrgId);
+    }
+    if (gUpper.includes('BIOMETRIC')) {
+      return this.canUseFeature('biometric', explicitOrgId);
     }
 
     return true;

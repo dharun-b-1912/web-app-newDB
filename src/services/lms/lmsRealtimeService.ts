@@ -125,6 +125,21 @@ export function parseCourseCode(code: string): { videoId: string; passingScore: 
   return { videoId: '', passingScore: 80 };
 }
 
+export async function resolveCurrentEmployeeId(): Promise<string | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data: emp } = await supabase
+      .from('employees')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    return emp?.id || user.id;
+  } catch {
+    return null;
+  }
+}
+
 export const lmsRealtimeService = {
   /**
    * Fetches all courses with live metadata and assessment questions
@@ -147,23 +162,16 @@ export const lmsRealtimeService = {
       // Fetch active user's enrollment progress if available
       const userEnrollmentMap = new Map<string, any>();
       try {
-        let empId: string | null = null;
-        const raw = typeof window !== 'undefined' ? localStorage.getItem('workforce_active_user') || localStorage.getItem('workforce_current_user') : null;
-        if (raw) {
-          const u = JSON.parse(raw);
-          empId = u.employee_id || null;
-        }
-        if (!empId) {
-          empId = '0ce6436c-e9b4-4e0e-9102-93ea238be0df'; // Dharun B
-        }
+        const empId = await resolveCurrentEmployeeId();
+        if (empId) {
+          const { data: enrs } = await client
+            .from('lms_enrollments')
+            .select('course_id, progress_percentage, status')
+            .eq('employee_id', empId);
 
-        const { data: enrs } = await client
-          .from('lms_enrollments')
-          .select('course_id, progress_percentage, status')
-          .eq('employee_id', empId);
-
-        if (enrs) {
-          enrs.forEach((enr) => userEnrollmentMap.set(enr.course_id, enr));
+          if (enrs) {
+            enrs.forEach((enr) => userEnrollmentMap.set(enr.course_id, enr));
+          }
         }
       } catch (_) {}
 
@@ -877,20 +885,10 @@ export const lmsRealtimeService = {
     // Employee specific metrics
     let empId = currentEmployeeId;
     if (!empId) {
-      try {
-        const raw =
-          typeof window !== 'undefined'
-            ? localStorage.getItem('workforce_active_user') || localStorage.getItem('workforce_current_user')
-            : null;
-        if (raw) {
-          const u = JSON.parse(raw);
-          empId = u.employee_id || null;
-        }
-      } catch (_) {}
+      empId = (await resolveCurrentEmployeeId()) || undefined;
     }
-    if (!empId) empId = '0ce6436c-e9b4-4e0e-9102-93ea238be0df'; // Dharun B
 
-    const myEnrs = enrollments.filter((e) => e.employee_id === empId);
+    const myEnrs = empId ? enrollments.filter((e) => e.employee_id === empId) : [];
     const myCompleted = myEnrs.filter((e) => e.status === 'COMPLETED').length;
     const myInProg = myEnrs.filter((e) => e.status === 'IN_PROGRESS').length;
     const myScored = myEnrs.filter((e) => typeof e.score === 'number' && e.score !== null);

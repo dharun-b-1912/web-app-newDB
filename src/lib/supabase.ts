@@ -68,18 +68,9 @@ export const resetSupabaseCircuitBreaker = (): void => {
 };
 
 const resilientSupabaseFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  // If circuit breaker is active and this is not an explicit probe, return fast 503 without touching network
-  if (Date.now() < _circuitBreakerUntil && !_probeInFlight) {
-    return new Response(JSON.stringify({ error: 'Supabase project paused or unreachable' }), {
-      status: 503,
-      statusText: 'Service Unavailable',
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  // Fast 3000ms timeout controller so Chrome sockets never stall for 30s
+  // Generous 15000ms timeout so real queries and auth handshakes complete reliably without stalling indefinitely
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3000);
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   if (init?.signal) {
     init.signal.addEventListener('abort', () => controller.abort(), { once: true });
@@ -94,9 +85,8 @@ const resilientSupabaseFetch = async (input: RequestInfo | URL, init?: RequestIn
     return res;
   } catch (err: any) {
     clearTimeout(timeoutId);
-    // Connection timed out or fetch failed -> trip circuit breaker
-    tripSupabaseCircuitBreaker(90_000);
-    return new Response(JSON.stringify({ error: 'Supabase connection timed out' }), {
+    console.warn('[Supabase Fetch] Network request failed or aborted:', err?.message || err);
+    return new Response(JSON.stringify({ error: 'Supabase network error' }), {
       status: 504,
       statusText: 'Gateway Timeout',
       headers: { 'Content-Type': 'application/json' },

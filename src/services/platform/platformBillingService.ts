@@ -134,10 +134,6 @@ export interface FinancialLedgerEntry {
   description: string;
 }
 
-const STORAGE_INVOICES_KEY = 'joy_saas_invoices_v3';
-const STORAGE_TRANSACTIONS_KEY = 'joy_saas_transactions_v3';
-const STORAGE_LEDGER_KEY = 'joy_saas_ledger_v3';
-
 let invoiceDb: DetailedInvoice[] = [];
 let transactionDb: PaymentTransactionItem[] = [];
 let dunningDb: DunningAccountItem[] = [];
@@ -145,45 +141,7 @@ let creditNoteDb: CreditNoteItem[] = [];
 let refundDb: RefundItem[] = [];
 let ledgerDb: FinancialLedgerEntry[] = [];
 
-function loadFromStorage() {
-  if (typeof window === 'undefined') return;
-  try {
-    const rawInv = localStorage.getItem(STORAGE_INVOICES_KEY);
-    if (rawInv) {
-      const parsed = JSON.parse(rawInv);
-      if (Array.isArray(parsed)) {
-        invoiceDb = parsed.filter(
-          (i: any) =>
-            i &&
-            !String(i.id || '').startsWith('inv-0') &&
-            !String(i.tenant_name || '').toLowerCase().includes('abc industries') &&
-            !String(i.tenant_name || '').toLowerCase().includes('xyz logistics')
-        );
-      }
-    }
-    const rawTx = localStorage.getItem(STORAGE_TRANSACTIONS_KEY);
-    if (rawTx) transactionDb = JSON.parse(rawTx);
-    const rawLedger = localStorage.getItem(STORAGE_LEDGER_KEY);
-    if (rawLedger) ledgerDb = JSON.parse(rawLedger);
-  } catch (e) {
-    console.warn('[BillingService] Storage read notice:', e);
-  }
-}
-
-function saveToStorage() {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(invoiceDb));
-    localStorage.setItem(STORAGE_TRANSACTIONS_KEY, JSON.stringify(transactionDb));
-    localStorage.setItem(STORAGE_LEDGER_KEY, JSON.stringify(ledgerDb));
-  } catch (e) {
-    console.warn('[BillingService] Storage write notice:', e);
-  }
-}
-
 function ensureSynchronizedFromTenants() {
-  if (invoiceDb.length > 0) return;
-  loadFromStorage();
   if (invoiceDb.length > 0) return;
 
   const orgs = platformTenantService.getOrganizations().items;
@@ -307,8 +265,6 @@ function ensureSynchronizedFromTenants() {
       });
     }
   });
-
-  saveToStorage();
 }
 
 export const platformBillingService = {
@@ -506,7 +462,6 @@ export const platformBillingService = {
       reason: `Generated ${newInvoice.invoice_number} for ₹${newInvoice.total.toLocaleString('en-IN')}`,
     });
 
-    saveToStorage();
     return newInvoice;
   },
 
@@ -593,7 +548,6 @@ export const platformBillingService = {
       reason: `Recorded payment of ₹${paymentAmount.toLocaleString('en-IN')} for ${inv.invoice_number}`,
     });
 
-    saveToStorage();
     return inv;
   },
 
@@ -650,7 +604,6 @@ export const platformBillingService = {
       reason: `Issued ${creditNoteNum} for ₹${params.amount.toLocaleString('en-IN')} against ${inv.invoice_number}`,
     });
 
-    saveToStorage();
     return creditNote;
   },
 
@@ -699,7 +652,6 @@ export const platformBillingService = {
       reason: `Issued refund ${refundNum} of ₹${params.amount.toLocaleString('en-IN')} for ${inv.invoice_number}`,
     });
 
-    saveToStorage();
     return refund;
   },
 
@@ -730,8 +682,6 @@ export const platformBillingService = {
       inv.email_sent_at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
 
-    saveToStorage();
-
     const actor = getActorInfo();
     await platformAuditService.logEvent({
       actor_id: actor.actor_id,
@@ -756,7 +706,6 @@ export const platformBillingService = {
 
     inv.whatsapp_delivery_status = 'DELIVERED';
     inv.whatsapp_sent_at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    saveToStorage();
 
     const actor = getActorInfo();
     await platformAuditService.logEvent({

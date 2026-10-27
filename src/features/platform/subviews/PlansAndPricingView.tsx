@@ -271,6 +271,39 @@ export const PlansAndPricingView: React.FC<PlansAndPricingViewProps> = ({ onNavi
     });
   };
 
+  const handleClearAllModules = () => {
+    if (!editingPlan) return;
+    setEditingPlan({
+      ...editingPlan,
+      includedModules: [],
+      includedFeatures: [],
+    });
+  };
+
+  const handleSelectModularLms = () => {
+    if (!editingPlan) return;
+    const lmsFeatures = allModules
+      .filter((m) => m.moduleKey === 'lms')
+      .flatMap((m) => m.features.map((f) => f.featureKey));
+    setEditingPlan({
+      ...editingPlan,
+      includedModules: ['lms'],
+      includedFeatures: lmsFeatures,
+    });
+  };
+
+  const handleSelectModularAttendance = () => {
+    if (!editingPlan) return;
+    const attFeatures = allModules
+      .filter((m) => ['attendance', 'leave', 'shifts'].includes(m.moduleKey))
+      .flatMap((m) => m.features.map((f) => f.featureKey));
+    setEditingPlan({
+      ...editingPlan,
+      includedModules: ['attendance', 'leave', 'shifts'],
+      includedFeatures: attFeatures,
+    });
+  };
+
   const handleUpdateVolumeBand = (bandIdx: number, field: keyof VolumePricingBand, value: any) => {
     if (!editingPlan || !editingPlan.volumeBands) return;
     const nextBands = [...editingPlan.volumeBands];
@@ -1027,6 +1060,8 @@ export const PlansAndPricingView: React.FC<PlansAndPricingViewProps> = ({ onNavi
                         <option value="PROFESSIONAL">PROFESSIONAL</option>
                         <option value="BUSINESS">BUSINESS</option>
                         <option value="ENTERPRISE">ENTERPRISE</option>
+                        <option value="CUSTOM">CUSTOM (Bespoke Enterprise Tier)</option>
+                        <option value="CUSTOM_MODULAR">CUSTOM MODULAR (Standalone Module / A-la-carte)</option>
                       </select>
                     </div>
                   </div>
@@ -1287,7 +1322,7 @@ export const PlansAndPricingView: React.FC<PlansAndPricingViewProps> = ({ onNavi
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <button
                         type="button"
                         onClick={handleSelectAllModules}
@@ -1301,6 +1336,30 @@ export const PlansAndPricingView: React.FC<PlansAndPricingViewProps> = ({ onNavi
                         className="px-2.5 py-1 rounded-lg border border-slate-300 text-slate-700 hover:bg-white text-[11px] font-semibold"
                       >
                         Core 5 Only
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSelectModularLms}
+                        className="px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 text-[11px] font-semibold"
+                        title="Standalone LMS for clients buying only LMS"
+                      >
+                        🎓 LMS Only
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSelectModularAttendance}
+                        className="px-2.5 py-1 rounded-lg border border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100 text-[11px] font-semibold"
+                        title="Attendance + Leave + Shifts Modular"
+                      >
+                        ⏰ Attendance Only
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClearAllModules}
+                        className="px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-[11px] font-semibold"
+                        title="Clear all modules to configure a bespoke a-la-carte package"
+                      >
+                        Clear (0)
                       </button>
                     </div>
                   </div>

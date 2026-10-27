@@ -418,14 +418,27 @@ class SaasPricingEngine {
   }
 
   public getPlans(): CommercialPlan[] {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem(STORAGE_KEY_PLANS);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            this.plans = parsed;
+          }
+        }
+      }
+    } catch {}
     return this.plans;
   }
 
   public getPlanByCode(code: PlanTierCode | string): CommercialPlan | undefined {
+    // Ensure plans are fresh from storage
+    const currentPlans = this.getPlans();
     if (code === 'PROFESSIONAL') {
-      return this.plans.find((p) => p.code === 'PREMIUM' || p.code === 'PROFESSIONAL') || this.plans[1];
+      return currentPlans.find((p) => p.code === 'PREMIUM' || p.code === 'PROFESSIONAL') || currentPlans[1];
     }
-    return this.plans.find((p) => p.code === code) || this.plans.find((p) => p.name.toUpperCase() === (code || '').toUpperCase()) || this.plans[1];
+    return currentPlans.find((p) => p.code === code) || currentPlans.find((p) => p.name.toUpperCase() === (code || '').toUpperCase()) || currentPlans[1];
   }
 
   public getDiscounts(): CycleDiscountsConfig {
@@ -445,6 +458,9 @@ class SaasPricingEngine {
       this.plans.push(updatedPlan);
     }
     localStorage.setItem(STORAGE_KEY_PLANS, JSON.stringify(this.plans));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('plans:data_updated', { detail: { plan: updatedPlan } }));
+    }
   }
 
   /**
@@ -502,71 +518,59 @@ class SaasPricingEngine {
       steps.push(`One-Time Onboarding & Biometric Training Fee: +₹${appliedSetupFee.toLocaleString('en-IN')}`);
     }
 
-    // 3. Modular Add-ons Calculation
+    // 3. Modular Add-ons Calculation (Real Canonical Add-ons from LocalStorage)
     const allAddons = saasCatalogueService.getAddons();
     const itemizedAddons: PricingCalculationResult['itemizedAddons'] = [];
     let addonsMonthlyTotal = 0;
     let addonsOneTimeTotal = 0;
 
+    const norm = (k: string) => (k || '').toLowerCase().replace(/[-_]/g, '');
+
     for (const addonKey of input.selectedAddonKeys || []) {
-      let addon = allAddons.find((a) => a.addonKey === addonKey);
+      const targetNorm = norm(addonKey);
+      let addon = allAddons.find(
+        (a) => a.addonKey === addonKey || norm(a.addonKey) === targetNorm || norm(a.id) === targetNorm
+      );
+
+      // Intelligent canonical alias resolution
       if (!addon) {
-        // Fallback mapping for recognized add-on extensions
-        if (addonKey === 'biometric_device_gateway') {
-          addon = allAddons.find((a) => a.addonKey === 'extra_biometric_device') || {
-            id: 'addon-biometric-gateway',
-            addonKey: 'biometric_device_gateway',
-            name: 'Biometric Hardware Gateway (5 Devices)',
-            category: 'Infrastructure & API',
-            monthlyPrice: 2500,
-            billingUnit: 'Per Month',
-            availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
-            isActive: true,
-          } as any;
-        } else if (addonKey === 'extra_storage_100gb') {
-          addon = allAddons.find((a) => a.addonKey === 'cloud_storage_100gb') || {
-            id: 'addon-extra-storage',
-            addonKey: 'extra_storage_100gb',
-            name: 'Additional 100 GB Document Vault Storage',
-            category: 'Infrastructure & API',
-            monthlyPrice: 1000,
-            billingUnit: 'Per Month',
-            availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
-            isActive: true,
-          } as any;
-        } else if (addonKey === 'premium_support_sla') {
-          addon = allAddons.find((a) => a.addonKey === 'dedicated_support_sla') || {
-            id: 'addon-support-sla',
-            addonKey: 'premium_support_sla',
-            name: 'Dedicated 24/7 SLA & Named Support Engineer',
-            category: 'Enterprise Support',
-            monthlyPrice: 4999,
-            billingUnit: 'Per Month',
-            availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
-            isActive: true,
-          } as any;
-        } else if (addonKey === 'ai_copilot_resume_screener') {
-          addon = {
-            id: 'addon-ai-copilot',
-            addonKey: 'ai_copilot_resume_screener',
-            name: 'AI HR Copilot & Resume Screening Engine',
-            category: 'AI & Automation',
-            monthlyPrice: 3500,
-            billingUnit: 'Per Month',
-            availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
-            isActive: true,
-          } as any;
+        if (targetNorm.includes('performance') || targetNorm.includes('appraisal')) {
+          addon = allAddons.find((a) => norm(a.addonKey) === norm('performance_appraisal'));
+        } else if (targetNorm.includes('lms') || targetNorm.includes('learning')) {
+          addon = allAddons.find((a) => norm(a.addonKey) === norm('standalone_lms'));
+        } else if (targetNorm.includes('biometric')) {
+          addon = allAddons.find((a) => norm(a.addonKey) === norm('biometric_push_gateway'));
+        } else if (targetNorm.includes('storage') || targetNorm.includes('vault')) {
+          addon = allAddons.find((a) => norm(a.addonKey) === norm('cloud_storage_100gb'));
+        } else if (targetNorm.includes('support') || targetNorm.includes('tam')) {
+          addon = allAddons.find((a) => norm(a.addonKey) === norm('dedicated_tam_sla'));
+        } else if (targetNorm.includes('migration')) {
+          addon = allAddons.find((a) => norm(a.addonKey) === norm('assisted_legacy_migration'));
+        } else if (targetNorm.includes('training') || targetNorm.includes('onsite')) {
+          addon = allAddons.find((a) => norm(a.addonKey) === norm('onsite_implementation_training'));
+        } else if (targetNorm.includes('gps') || targetNorm.includes('tracking')) {
+          addon = allAddons.find((a) => norm(a.addonKey) === norm('field_gps_route_tracking'));
+        } else if (targetNorm.includes('whatsapp')) {
+          addon = allAddons.find((a) => norm(a.addonKey) === norm('whatsapp_meter_bundle'));
         }
       }
 
       if (addon) {
-        const isOneTime = addon.billingUnit === 'One-Time Charge';
+        const isOneTime = addon.billingUnit?.toLowerCase().includes('one-time');
         let addonEffectivePrice = addon.monthlyPrice;
 
-        // Billed per field staff if field GPS route tracking
+        const isPerEmployee =
+          addon.pricingModel === 'PER_EMPLOYEE' ||
+          addon.billingUnit?.toLowerCase().includes('employee') ||
+          addon.addonKey === 'standalone_lms';
+
+        // Billed per field staff or employee if field GPS route tracking
         if (addon.addonKey === 'field_gps_route_tracking') {
           const fieldUsers = Math.max(5, Math.round(employeeCount * 0.25));
-          addonEffectivePrice = fieldUsers * 39;
+          addonEffectivePrice = fieldUsers * (addon.monthlyPrice || 39);
+        } else if (isPerEmployee) {
+          const pepm = addon.monthlyPrice || 30;
+          addonEffectivePrice = employeeCount * pepm;
         }
 
         itemizedAddons.push({
@@ -581,7 +585,17 @@ class SaasPricingEngine {
           steps.push(`One-Time Add-on [${addon.name}]: +₹${addonEffectivePrice.toLocaleString('en-IN')}`);
         } else {
           addonsMonthlyTotal += addonEffectivePrice;
-          steps.push(`Add-on [${addon.name}]: +₹${addonEffectivePrice.toLocaleString('en-IN')}/mo`);
+          if (isPerEmployee) {
+            const pepm = addon.monthlyPrice || 30;
+            if (addon.addonKey === 'field_gps_route_tracking') {
+              const fieldUsers = Math.max(5, Math.round(employeeCount * 0.25));
+              steps.push(`Add-on [${addon.name}]: ${fieldUsers} Field Staff × ₹${pepm}/mo = +₹${addonEffectivePrice.toLocaleString('en-IN')}/mo`);
+            } else {
+              steps.push(`Add-on [${addon.name}]: ${employeeCount} Employees × ₹${pepm}/mo = +₹${addonEffectivePrice.toLocaleString('en-IN')}/mo`);
+            }
+          } else {
+            steps.push(`Add-on [${addon.name}]: +₹${addonEffectivePrice.toLocaleString('en-IN')}/mo`);
+          }
         }
       }
     }
@@ -595,16 +609,16 @@ class SaasPricingEngine {
     }
 
     if (input.extraStorage100GbUnits && input.extraStorage100GbUnits > 0) {
-      const storageCost = input.extraStorage100GbUnits * 799;
+      const storageCost = input.extraStorage100GbUnits * 999;
       usageMetersMonthlyTotal += storageCost;
-      steps.push(`Extra Cloud Storage: ${input.extraStorage100GbUnits} × 100 GB @ ₹799 = +₹${storageCost.toLocaleString('en-IN')}/mo`);
+      steps.push(`Extra Cloud Storage: ${input.extraStorage100GbUnits} × 100 GB @ ₹999 = +₹${storageCost.toLocaleString('en-IN')}/mo`);
     }
 
-    if (input.monthlyWhatsAppMessages && input.monthlyWhatsAppMessages > 3000) {
-      const extraMsgs = input.monthlyWhatsAppMessages - 3000;
-      const waCost = Math.round(extraMsgs * 0.55);
+    if (input.monthlyWhatsAppMessages && input.monthlyWhatsAppMessages > 5000) {
+      const extraMsgs = input.monthlyWhatsAppMessages - 5000;
+      const waCost = Math.round(extraMsgs * 0.60);
       usageMetersMonthlyTotal += waCost;
-      steps.push(`WhatsApp Message Overage: ${extraMsgs.toLocaleString('en-IN')} msgs × ₹0.55 = +₹${waCost.toLocaleString('en-IN')}/mo`);
+      steps.push(`WhatsApp Message Overage: ${extraMsgs.toLocaleString('en-IN')} msgs × ₹0.60 = +₹${waCost.toLocaleString('en-IN')}/mo`);
     }
 
     // Gross Monthly Total

@@ -192,6 +192,52 @@ export const platformBackgroundJobsService = {
   }): Promise<JobExecution[]> {
     if (isSupabaseEnabled) {
       try {
+        // First check canonical background_jobs table
+        const { data: bgData, error: bgError } = await supabase
+          .from('background_jobs')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!bgError && bgData && bgData.length > 0) {
+          cachedJobs = bgData.map((j: any) => {
+            const payload = j.payload || {};
+            const queue = (payload.queue || 'default') as QueueName;
+            const status = (
+              j.status === 'QUEUED' ? 'Queued' :
+              j.status === 'COMPLETED' ? 'Completed' :
+              j.status === 'FAILED' ? 'Failed' :
+              j.status === 'PROCESSING' ? 'Running' : 'Queued'
+            ) as JobStatus;
+            return {
+              id: j.id,
+              job_number: `JOB-${j.id.slice(0, 8).toUpperCase()}`,
+              queue,
+              task_name: j.job_type || 'SYSTEM_JOB',
+              tenant_id: j.organization_id || '',
+              tenant_name: 'JOY CORPORATE SOLUTIONS PVE LTD',
+              environment: 'Production',
+              status,
+              priority: (payload.priority || 'Normal') as any,
+              worker_id: payload.worker_id || 'worker-core-01',
+              worker_name: payload.worker_name || 'Joy Engine Worker 01',
+              attempt_count: j.attempts || 0,
+              max_attempts: j.max_attempts || 3,
+              retry_strategy: (payload.retry_strategy || 'Exponential') as any,
+              duration_sec: j.completed_at && j.started_at ? Math.round((new Date(j.completed_at).getTime() - new Date(j.started_at).getTime()) / 1000) : undefined,
+              created_at: j.created_at,
+              started_at: j.started_at || undefined,
+              completed_at: j.completed_at || undefined,
+              error_message: j.error_message || undefined,
+              is_retryable: true,
+              input_payload: payload,
+              attempts: [],
+              logs: [],
+              trace_id: `tr_${j.id.slice(0, 8)}`,
+            };
+          });
+          return cachedJobs;
+        }
+
         let query = supabase
           .from('platform_background_jobs')
           .select('*, attempts:platform_job_attempts(*), logs:platform_job_logs(*)')
@@ -223,7 +269,7 @@ export const platformBackgroundJobsService = {
               (a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
             ),
           }));
-                    return cachedJobs;
+          return cachedJobs;
         }
       } catch {}
     }
@@ -362,18 +408,24 @@ export const platformBackgroundJobsService = {
 
     if (isSupabaseEnabled) {
       try {
-        await supabase.rpc('fn_enqueue_background_job', {
-          p_task_name: params.task_name,
-          p_queue: params.queue || 'default',
-          p_tenant_id: params.tenant_id || null,
-          p_tenant_name: params.tenant_name || null,
-          p_priority: params.priority || 'Normal',
-          p_max_attempts: params.max_attempts || 3,
-          p_retry_strategy: params.retry_strategy || 'Exponential',
-          p_input_payload: params.input_payload || {},
-          p_linked_support_case_id: params.linked_support_case_id || null,
+        const orgId = params.tenant_id || '0c621892-e938-4707-9957-13534ea32c19';
+        await supabase.from('background_jobs').insert({
+          organization_id: orgId,
+          job_type: params.task_name,
+          payload: {
+            queue: params.queue || 'default',
+            priority: params.priority || 'Normal',
+            max_attempts: params.max_attempts || 3,
+            retry_strategy: params.retry_strategy || 'Exponential',
+            ...(params.input_payload || {}),
+          },
+          status: 'QUEUED',
+          attempts: 0,
+          max_attempts: params.max_attempts || 3,
         });
-      } catch {}
+      } catch (err) {
+        console.warn('[BackgroundJobsService] background_jobs insert notice:', err);
+      }
     }
 
     return { success: true, job_number: jobNum, id: newId };
@@ -391,7 +443,7 @@ export const platformBackgroundJobsService = {
         level: 'INFO',
         message: `Manual retry dispatched by ${actorName}. Reset status to Queued.`,
       });
-            calculateJobMetrics();
+      calculateJobMetrics();
 
       await platformAuditService.logEvent({
         action: `Triggered manual retry for job ${job.job_number}`,
@@ -405,10 +457,10 @@ export const platformBackgroundJobsService = {
 
     if (isSupabaseEnabled) {
       try {
-        await supabase.rpc('fn_retry_background_job', {
-          p_job_id: jobId,
-          p_actor_name: actorName,
-        });
+        await supabase
+          .from('background_jobs')
+          .update({ status: 'QUEUED', attempts: 0 })
+          .eq('id', jobId);
       } catch {}
     }
 
@@ -426,7 +478,7 @@ export const platformBackgroundJobsService = {
         level: 'WARN',
         message: `Job execution cancelled by ${actorName}.`,
       });
-            calculateJobMetrics();
+      calculateJobMetrics();
 
       await platformAuditService.logEvent({
         action: `Cancelled background job ${job.job_number}`,
@@ -440,10 +492,10 @@ export const platformBackgroundJobsService = {
 
     if (isSupabaseEnabled) {
       try {
-        await supabase.rpc('fn_cancel_background_job', {
-          p_job_id: jobId,
-          p_actor_name: actorName,
-        });
+        await supabase
+          .from('background_jobs')
+          .update({ status: 'FAILED', error_message: `Cancelled by ${actorName}` })
+          .eq('id', jobId);
       } catch {}
     }
 

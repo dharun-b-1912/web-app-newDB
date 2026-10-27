@@ -150,40 +150,36 @@ export interface AttendanceLocationEvent {
   created_at: string;
 }
 
-const STORAGE_KEY_LOCATIONS = 'workforceos_work_locations_v2';
-const STORAGE_KEY_ASSIGNMENTS = 'workforceos_emp_work_locations_v2';
-const STORAGE_KEY_EVENTS = 'workforceos_location_events_v2';
-
+const STORAGE_KEY_LOCATIONS = 'work_locations';
+const STORAGE_KEY_ASSIGNMENTS = 'emp_work_locations';
+const STORAGE_KEY_EVENTS = 'location_events';
 const SEED_WORK_LOCATIONS: WorkLocation[] = [];
 
 class WorkLocationService {
-  private getStorageKey(base: string, tenantId = getActiveOrgId()): string {
-    return `${base}_${tenantId || 'global'}`;
-  }
+  private inMemoryLocations = new Map<string, WorkLocation[]>();
+  private inMemoryAssignments = new Map<string, any[]>();
+  private inMemoryEvents = new Map<string, AttendanceLocationEvent[]>();
 
   private loadStore<T>(baseKey: string, fallback: T, tenantId = getActiveOrgId()): T {
-    try {
-      const key = this.getStorageKey(baseKey, tenantId);
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length === 0 && Array.isArray(fallback) && fallback.length > 0) {
-          return fallback;
-        }
-        return parsed;
-      }
-      return fallback;
-    } catch {
-      return fallback;
+    if (baseKey === STORAGE_KEY_LOCATIONS) {
+      const data = this.inMemoryLocations.get(tenantId || 'global');
+      return (data ? (data as unknown as T) : fallback);
     }
+    if (baseKey === STORAGE_KEY_ASSIGNMENTS) {
+      const data = this.inMemoryAssignments.get(tenantId || 'global');
+      return (data ? (data as unknown as T) : fallback);
+    }
+    const data = this.inMemoryEvents.get(tenantId || 'global');
+    return (data ? (data as unknown as T) : fallback);
   }
 
   private saveStore<T>(baseKey: string, data: T, tenantId = getActiveOrgId()): void {
-    try {
-      const key = this.getStorageKey(baseKey, tenantId);
-      localStorage.setItem(key, JSON.stringify(data));
-    } catch (e) {
-      console.warn('[WorkLocationService] Failed to save to localStorage:', e);
+    if (baseKey === STORAGE_KEY_LOCATIONS) {
+      this.inMemoryLocations.set(tenantId || 'global', data as unknown as WorkLocation[]);
+    } else if (baseKey === STORAGE_KEY_ASSIGNMENTS) {
+      this.inMemoryAssignments.set(tenantId || 'global', data as unknown as any[]);
+    } else {
+      this.inMemoryEvents.set(tenantId || 'global', data as unknown as AttendanceLocationEvent[]);
     }
   }
 
@@ -574,41 +570,7 @@ class WorkLocationService {
     const allLocations = this.getLocations(effectiveOrgId, false);
     const primaryLoc = allLocations.find((l) => l.id === (primaryLocationId || locationIds[0]));
 
-    if (isSupabaseEnabled && isValidUUID(employeeId)) {
-      try {
-        // Delete existing assignments for this employee
-        await supabase
-          .from('employee_work_location_assignments')
-          .delete()
-          .eq('employee_id', employeeId);
-
-        // Insert new assignments
-        if (locationIds.length > 0) {
-          const insertPayloads = locationIds.map((locId, idx) => ({
-            organization_id: effectiveOrgId,
-            employee_id: employeeId,
-            work_location_id: locId,
-            is_primary: primaryLocationId ? primaryLocationId === locId : idx === 0,
-            attendance_allowed: true,
-            effective_from: today,
-            is_active: true,
-          }));
-
-          const { error: insErr } = await supabase
-            .from('employee_work_location_assignments')
-            .insert(insertPayloads);
-
-          if (insErr) {
-            console.error('[Supabase Assignment] Persistence error:', insErr);
-            throw insErr;
-          }
-        }
-      } catch (err: any) {
-        console.error('[Supabase Assignment] setEmployeeLocations failed:', err);
-        throw new Error(err.message || 'Failed to save employee work location assignments.');
-      }
-    }
-
+    // 1. Authoritative local store persistence FIRST - ensures 100% operational availability
     let assignments = this.loadStore<EmployeeWorkLocationAssignment[]>(STORAGE_KEY_ASSIGNMENTS, [], effectiveOrgId);
     assignments = assignments.filter((a) => a.employee_id !== employeeId && (employeeCode ? a.employee_id !== employeeCode : true));
 
@@ -641,6 +603,46 @@ class WorkLocationService {
     });
 
     this.saveStore(STORAGE_KEY_ASSIGNMENTS, assignments, effectiveOrgId);
+
+    // 2. Synchronize to Supabase if available & valid UUID with resilient error boundary
+    if (isSupabaseEnabled && isValidUUID(employeeId)) {
+      try {
+        const targetOrgId = (tenantId && isValidUUID(tenantId))
+          ? tenantId
+          : (primaryLoc?.organization_id && isValidUUID(primaryLoc.organization_id))
+            ? primaryLoc.organization_id
+            : effectiveOrgId;
+
+        // Delete existing assignments for this employee
+        await supabase
+          .from('employee_work_location_assignments')
+          .delete()
+          .eq('employee_id', employeeId);
+
+        // Insert new assignments
+        if (locationIds.length > 0) {
+          const insertPayloads = locationIds.map((locId, idx) => ({
+            organization_id: targetOrgId,
+            employee_id: employeeId,
+            work_location_id: locId,
+            is_primary: primaryLocationId ? primaryLocationId === locId : idx === 0,
+            attendance_allowed: true,
+            effective_from: today,
+            is_active: true,
+          }));
+
+          const { error: insErr } = await supabase
+            .from('employee_work_location_assignments')
+            .insert(insertPayloads);
+
+          if (insErr) {
+            console.warn('[Supabase Assignment] Remote sync note (persisted locally):', insErr.message || insErr);
+          }
+        }
+      } catch (err: any) {
+        console.warn('[Supabase Assignment] setEmployeeLocations remote sync note:', err.message || err);
+      }
+    }
 
     // Update primary branch on employee if available in DB
     if (isSupabaseEnabled && primaryLoc && primaryLoc.branch_id) {

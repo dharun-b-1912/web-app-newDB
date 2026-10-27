@@ -179,6 +179,9 @@ const AppContent: React.FC = () => {
       ) {
         return getDefaultRouteForUser();
       }
+      if (r === 'face-attendance' || r.includes('face') || r === 'biometric/face') {
+        return 'biometric';
+      }
       return urlState.route;
     }
 
@@ -196,6 +199,7 @@ const AppContent: React.FC = () => {
           !sr.includes('activate') &&
           !sr.includes('invitation') &&
           !sr.startsWith('auth') &&
+          !sr.includes('face') &&
           !((primaryRole === 'Company Admin' || primaryRole === 'HR Head') && (sr.startsWith('ess') || sr === 'ess-dashboard'))
         ) {
           return savedRoute;

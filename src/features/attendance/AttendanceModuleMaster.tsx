@@ -212,6 +212,21 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     ) {
       return 'biometric';
     }
+    if (
+      subPath === 'face-attendance' ||
+      subPath === 'biometric/face' ||
+      subPath === '/biometric/face' ||
+      subPath === 'face' ||
+      subPath === '/face' ||
+      subPath === 'face-recognition' ||
+      subPath === '/face-recognition' ||
+      subPath === 'face-enrollment' ||
+      subPath === 'face-devices' ||
+      subPath === 'face-logs' ||
+      subPath === 'face-exceptions'
+    ) {
+      return 'biometric';
+    }
     return subPath;
   };
 
@@ -288,7 +303,6 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
     { id: 'attendance-rules', label: 'Attendance Rules', icon: Sliders },
     { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
-    { id: 'face-attendance', label: 'Face Recognition', icon: ScanFace },
     { id: 'late-early', label: 'Late / Early Tracking', icon: Clock },
     { id: 'regularization', label: 'Regularization Desk', icon: FileCheck },
     { id: 'exceptions', label: 'Exceptions Queue', icon: AlertTriangle },
@@ -328,7 +342,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       } else if (urlPath.includes('/biometric/gps') || urlPath.includes('/gps')) {
         setLocalTab('gps');
       } else if (urlPath.includes('/biometric/face') || urlPath.includes('/face')) {
-        setLocalTab('face-attendance');
+        setLocalTab('biometric');
       } else if (urlPath.includes('/biometric/geofences') || urlPath.includes('/geofences')) {
         setLocalTab('geofences');
       } else if (urlPath.startsWith('/biometric')) {
@@ -338,6 +352,18 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Clean URL immediately on mount if accessing obsolete face slugs
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const path = (window.location.pathname || '').toLowerCase();
+      if (path.includes('/face') || path === '/biometric/face') {
+        window.history.replaceState(null, '', '/biometric');
+        setLocalTab('biometric');
+        try { localStorage.setItem('workforce_active_route', 'biometric'); } catch {}
+      }
+    }
   }, []);
 
   // Sync state to URL with canonical route slugs for clean URLs and browser back/forward navigation
@@ -533,10 +559,9 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
       case 'face-logs':
       case 'face-exceptions':
         return (
-          <FaceRecognitionChannelView
-            currentTab={activeTab}
+          <BiometricIntegrationView
+            currentTab="biometric"
             onNavigateSubPath={sub => handleSelectTab(sub)}
-            onOpenEmployeeProfile={id => setSelectedEmployeeProfileId(id)}
           />
         );
       case 'gps':

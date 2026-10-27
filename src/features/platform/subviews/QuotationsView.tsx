@@ -47,7 +47,7 @@ import {
   QuotationStatus,
   OneTimeServiceItem,
 } from '../../../types/saasCommercial';
-import { PlanTierCode, BillingCycle } from '../../../types/saasCatalogue';
+import { PlanTierCode, BillingCycle, CommercialPlan, CommercialAddon } from '../../../types/saasCatalogue';
 import {
   saasCommercialService,
   DEFAULT_ONE_TIME_SERVICES,
@@ -63,10 +63,11 @@ import { razorpayOrderService } from '../../../services/platform/razorpayOrderSe
 import { CompanyLogoUpload } from '../../../components/common/CompanyLogoUpload';
 
 interface QuotationsViewProps {
+  initialPayload?: any;
   onNavigateTab?: (tab: string, payload?: any) => void;
 }
 
-export const QuotationsView: React.FC<QuotationsViewProps> = ({ onNavigateTab }) => {
+export const QuotationsView: React.FC<QuotationsViewProps> = ({ initialPayload, onNavigateTab }) => {
   const [quotations, setQuotations] = useState<CommercialQuotation[]>(() =>
     saasCommercialService.getQuotations()
   );
@@ -82,13 +83,26 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({ onNavigateTab })
   const [ownerFilter, setOwnerFilter] = useState<string>('ALL');
   const salesOwners = useMemo(() => saasCommercialService.getSalesOwners(), []);
 
+  const [allPlans, setAllPlans] = useState<CommercialPlan[]>(() => saasPricingEngine.getPlans());
+  const [allAddons, setAllAddons] = useState<CommercialAddon[]>(() => saasCatalogueService.getAddons());
+
   useEffect(() => {
     const handleUpdate = () => {
       setQuotations([...saasCommercialService.getQuotations()]);
       setClients([...saasCommercialService.getClients()]);
+      setAllPlans([...saasPricingEngine.getPlans()]);
+      setAllAddons([...saasCatalogueService.getAddons()]);
     };
     window.addEventListener('commercial:data_updated', handleUpdate);
-    return () => window.removeEventListener('commercial:data_updated', handleUpdate);
+    window.addEventListener('plans:data_updated', handleUpdate);
+    window.addEventListener('addons:data_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('commercial:data_updated', handleUpdate);
+      window.removeEventListener('plans:data_updated', handleUpdate);
+      window.removeEventListener('addons:data_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, []);
 
   // Preview Drawer & Full 8-Page Document Modal
@@ -106,7 +120,7 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({ onNavigateTab })
   const [formEmployeeCount, setFormEmployeeCount] = useState<number>(350);
   const [formSelectedAddons, setFormSelectedAddons] = useState<string[]>([
     'recruitment_suite',
-    'performance_management',
+    'performance_appraisal',
   ]);
   const [formOneTimeServices, setFormOneTimeServices] = useState<OneTimeServiceItem[]>(
     DEFAULT_ONE_TIME_SERVICES
@@ -120,8 +134,21 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({ onNavigateTab })
   const [razorpayModalQuote, setRazorpayModalQuote] = useState<CommercialQuotation | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const allPlans = useMemo(() => saasPricingEngine.getPlans(), []);
-  const allAddons = useMemo(() => saasCatalogueService.getAddons(), []);
+  // Consume incoming pricing calculator draft payload
+  useEffect(() => {
+    if (initialPayload?.quotationDraft) {
+      const draft = initialPayload.quotationDraft;
+      if (draft.planCode) setFormPlanCode(draft.planCode);
+      if (draft.employeeCount) setFormEmployeeCount(draft.employeeCount);
+      if (draft.billingCycle) setFormBillingCycle(draft.billingCycle);
+      if (draft.selectedAddons) setFormSelectedAddons(draft.selectedAddons);
+      setIsWizardOpen(true);
+      setWizardStep(1);
+    } else if (initialPayload?.presetFilter === 'new') {
+      setIsWizardOpen(true);
+      setWizardStep(1);
+    }
+  }, [initialPayload]);
 
   // Compute Live Quotation Totals inside wizard
   const calculatedQuote = useMemo(() => {
