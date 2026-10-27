@@ -180,13 +180,41 @@ let _cachedActiveSession: any = null;
  * Atomically single-flighted and cached for 60 seconds so parallel calls from
  * multiple components never spam redundant signInWithPassword or getSession calls.
  */
-export const ensureSupabaseSession = async (): Promise<any> => {
+export const resetSupabaseSessionCache = (): void => {
+  _cachedActiveSession = null;
+  _sessionHealPromise = null;
+  _sessionVerifiedTimestamp = 0;
+};
+
+/**
+ * Atomically single-flighted and cached for 60 seconds so parallel calls from
+ * multiple components never spam redundant signInWithPassword or getSession calls.
+ */
+export const ensureSupabaseSession = async (preferredContext?: 'platform' | 'tenant' | 'admin' | 'vendor'): Promise<any> => {
   if (!isSupabaseEnabled) return null;
+
+  // Circuit breaker: If user explicitly logged out, never auto-sign-in
+  if (typeof window !== 'undefined' && localStorage.getItem('workforce_logged_out') === 'true') {
+    return null;
+  }
+
   if (isSupabaseCircuitOpen()) return _cachedActiveSession;
+
+  const isPlatformRoute = typeof window !== 'undefined' && (
+    window.location.pathname.startsWith('/platform') ||
+    window.location.pathname === '/superadmin' ||
+    window.location.pathname.startsWith('/super-admin') ||
+    window.location.pathname.startsWith('/platform-login')
+  );
+  const isPlatformMode = preferredContext === 'platform' || isPlatformRoute || (typeof window !== 'undefined' && localStorage.getItem('workforce_auth_context') === 'platform');
 
   const now = Date.now();
   if (_cachedActiveSession && now - _sessionVerifiedTimestamp < 60_000) {
-    return _cachedActiveSession;
+    const cachedEmail = (_cachedActiveSession.user?.email || '').toLowerCase();
+    const isSuperAdmin = cachedEmail === 'superadmin@joypeoplehr.com';
+    if (!((isPlatformMode && !isSuperAdmin) || (!isPlatformMode && isSuperAdmin))) {
+      return _cachedActiveSession;
+    }
   }
 
   // FAST PATH: Read existing valid session from localStorage in 0.01ms (prevents waiting for GoTrue lock/network)
@@ -199,9 +227,14 @@ export const ensureSupabaseSession = async (): Promise<any> => {
         if (session?.access_token && session?.user) {
           const expSec = session.expires_at || 0;
           if (!expSec || expSec * 1000 > now + 30_000 || isSupabaseCircuitOpen()) {
-            _cachedActiveSession = session;
-            _sessionVerifiedTimestamp = now;
-            return session;
+            const emailLower = (session.user.email || '').toLowerCase();
+            const isSuperAdmin = emailLower === 'superadmin@joypeoplehr.com';
+            // Only return fast cached session if it matches requested context
+            if (!((isPlatformMode && !isSuperAdmin) || (!isPlatformMode && isSuperAdmin))) {
+              _cachedActiveSession = session;
+              _sessionVerifiedTimestamp = now;
+              return session;
+            }
           }
         }
       }
@@ -230,15 +263,20 @@ export const ensureSupabaseSession = async (): Promise<any> => {
       const { data } = await Promise.race([sessionPromise, sessionTimeout]);
 
       if (data?.session?.user) {
-        _cachedActiveSession = data.session;
-        _sessionVerifiedTimestamp = Date.now();
-        return data.session;
+        const emailLower = (data.session.user.email || '').toLowerCase();
+        const isSuperAdmin = emailLower === 'superadmin@joypeoplehr.com';
+        if (!((isPlatformMode && !isSuperAdmin) || (!isPlatformMode && isSuperAdmin))) {
+          _cachedActiveSession = data.session;
+          _sessionVerifiedTimestamp = Date.now();
+          return data.session;
+        }
       }
 
       let targetEmail = '';
       if (typeof window !== 'undefined') {
         try {
-          const rawUser = localStorage.getItem('workforce_current_user');
+          const userKey = isPlatformMode ? 'workforce_platform_user' : 'workforce_tenant_user';
+          const rawUser = localStorage.getItem(userKey) || localStorage.getItem('workforce_current_user');
           if (rawUser) {
             const parsed = JSON.parse(rawUser);
             if (parsed?.email) {
@@ -258,19 +296,33 @@ export const ensureSupabaseSession = async (): Promise<any> => {
         return null;
       }
 
-      const envDevEmail = isLocalhost ? (meta.env?.VITE_DEV_AUTH_EMAIL || 'marimuthu@joycorporatesolutions.com') : '';
-      const envDevPass = isLocalhost ? (meta.env?.VITE_DEV_AUTH_PASSWORD || 'joypeoplehr') : '';
-      const authEmail = (targetEmail && !targetEmail.includes('superadmin') && !targetEmail.includes('vguard'))
-        ? targetEmail
-        : envDevEmail;
+      let envDevEmail = '';
+      let envDevPass = '';
+      if (isLocalhost) {
+        if (isPlatformMode) {
+          envDevEmail = 'superadmin@joypeoplehr.com';
+          envDevPass = 'joypeoplehr';
+        } else {
+          envDevEmail = meta.env?.VITE_DEV_AUTH_EMAIL || 'marimuthu@joycorporatesolutions.com';
+          envDevPass = meta.env?.VITE_DEV_AUTH_PASSWORD || 'joypeoplehr';
+        }
+      }
 
-      if (!authEmail || !envDevPass || isSupabaseCircuitOpen()) {
+      const authEmail = (isPlatformMode && targetEmail && targetEmail !== 'superadmin@joypeoplehr.com')
+        ? 'superadmin@joypeoplehr.com'
+        : (targetEmail || envDevEmail);
+
+      const effectivePass = (authEmail === 'superadmin@joypeoplehr.com')
+        ? 'joypeoplehr'
+        : envDevPass;
+
+      if (!authEmail || !effectivePass || isSupabaseCircuitOpen()) {
         return _cachedActiveSession;
       }
 
       const signInPromise = supabase.auth.signInWithPassword({
         email: authEmail,
-        password: envDevPass,
+        password: effectivePass,
       });
       const signInTimeout = new Promise<{ data: any; error: any }>((resolve) =>
         setTimeout(() => resolve({ data: null, error: new Error('Auth timeout') }), 2500)
@@ -282,7 +334,7 @@ export const ensureSupabaseSession = async (): Promise<any> => {
         try {
           const fallbackPromise = supabase.auth.signInWithPassword({
             email: envDevEmail,
-            password: envDevPass,
+            password: effectivePass,
           });
           const fallbackTimeout = new Promise<{ data: any; error: any }>((resolve) =>
             setTimeout(() => resolve({ data: null, error: new Error('Auth timeout') }), 2500)
@@ -310,5 +362,6 @@ export const ensureSupabaseSession = async (): Promise<any> => {
 
   return _sessionHealPromise;
 };
+
 
 

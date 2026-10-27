@@ -244,8 +244,7 @@ export const INTEGRATION_PROVIDERS_META: IntegrationProviderMeta[] = [
 ];
 
 // -------------------------------------------------------------
-// Realtime In-Memory State & Supabase Storage (Zero Mock Data)
-// -------------------------------------------------------------
+// Realtime In-Memory State & Supabase Storage (Pure Supabase State, Zero LocalStorage)
 let cachedIntegrations: Integration[] = [];
 let cachedApiKeys: IntegrationApiKey[] = [];
 let cachedOAuthApps: OAuthApplication[] = [];
@@ -586,6 +585,7 @@ export const platformIntegrationsService = {
     };
 
     cachedIntegrations.unshift(newInt);
+    
 
     // Persist to Supabase if connected
     if (isSupabaseEnabled) {
@@ -622,6 +622,7 @@ export const platformIntegrationsService = {
     const prev = target.status;
     target.status = newStatus;
     target.updated_at = new Date().toISOString();
+    
 
     if (isSupabaseEnabled) {
       try {
@@ -650,6 +651,7 @@ export const platformIntegrationsService = {
     if (!target) return;
 
     cachedIntegrations = cachedIntegrations.filter((i) => i.id !== id);
+    
 
     if (isSupabaseEnabled) {
       try {
@@ -755,6 +757,7 @@ export const platformIntegrationsService = {
     };
 
     cachedApiKeys.unshift(newKey);
+    
 
     await this.logAudit({
       action: 'API_KEY_CREATED',
@@ -774,6 +777,7 @@ export const platformIntegrationsService = {
     const rawSecret = `wk_${target.environment === 'Production' ? 'live' : 'stg'}_${Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
     target.key_prefix = rawSecret.slice(0, 12);
     target.created_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    
 
     await this.logAudit({
       action: 'API_KEY_ROTATED',
@@ -792,6 +796,7 @@ export const platformIntegrationsService = {
 
     target.status = 'Revoked';
     target.revoked_at = new Date().toISOString();
+    
 
     await this.logAudit({
       action: 'API_KEY_REVOKED',
@@ -855,6 +860,7 @@ export const platformIntegrationsService = {
     dev.status = 'Online';
     dev.last_sync_at = 'Just now';
     dev.error_message = undefined;
+    
 
     if (isSupabaseEnabled) {
       try {

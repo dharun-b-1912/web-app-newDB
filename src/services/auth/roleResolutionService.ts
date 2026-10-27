@@ -232,8 +232,8 @@ export const roleResolutionService = {
           }
         }
 
-        // 4. Query employee record if employee_id exists, OR if matching work_email exists
-        if ((employeeId || emailLower) && rawRoles.length === 0) {
+        // 4. Query employee record if employee_id exists, OR if matching email or auth_user_id exists
+        if (employeeId || emailLower || authUserId) {
           try {
             let empQuery = supabase
               .from('employees')
@@ -248,15 +248,41 @@ export const roleResolutionService = {
             const { data: empRow } = await empQuery.maybeSingle();
 
             if (empRow) {
-              employeeId = empRow.id;
-              if (empRow.display_name || empRow.first_name) {
-                fullName = empRow.display_name || `${empRow.first_name || ''} ${empRow.last_name || ''}`.trim() || fullName;
+              if (!employeeId) employeeId = empRow.id;
+              
+              const empFullName = empRow.display_name || `${empRow.first_name || ''} ${empRow.last_name || ''}`.trim();
+              const isGenericOrPlaceholder =
+                !fullName ||
+                fullName === 'User' ||
+                fullName.toLowerCase().includes('admin') ||
+                fullName.toLowerCase().includes('manpower') ||
+                (emailLower && fullName.toLowerCase() === emailLower.split('@')[0].toLowerCase());
+
+              if (empFullName && (isGenericOrPlaceholder || !profileRow?.full_name)) {
+                fullName = empFullName;
               }
-              if (empRow.role) rawRoles.push(empRow.role);
-              if (empRow.is_hr_head) rawRoles.push('HR_HEAD');
-              if (!empRow.role && !empRow.is_hr_head) rawRoles.push('EMPLOYEE');
+
+              if (rawRoles.length === 0) {
+                if (empRow.role) rawRoles.push(empRow.role);
+                if (empRow.is_hr_head) rawRoles.push('HR_HEAD');
+                if (!empRow.role && !empRow.is_hr_head) rawRoles.push('EMPLOYEE');
+              }
               if (empRow.organization_id && !organizationId) organizationId = empRow.organization_id;
               if (empRow.company_id && !companyId) companyId = empRow.company_id;
+
+              // Auto-heal user_profiles if employee_id or full_name was missing / generic
+              if (profileRow?.id && (!profileRow.employee_id || isGenericOrPlaceholder)) {
+                try {
+                  await supabase
+                    .from('user_profiles')
+                    .update({
+                      employee_id: empRow.id,
+                      full_name: fullName,
+                      updated_at: new Date().toISOString()
+                    })
+                    .eq('id', profileRow.id);
+                } catch (_) {}
+              }
             }
           } catch (_) {}
         }

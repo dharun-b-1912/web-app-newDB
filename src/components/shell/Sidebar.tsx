@@ -258,7 +258,8 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'platform-clients' && (currentNav === 'platform-clients' || currentNav === 'clients' || currentNav === 'saas-clients')) return true;
   if (itemId === 'platform-tenants' && (currentNav === 'platform-tenants' || currentNav === 'platform-organizations' || currentNav === 'platform-provisioning')) return true;
   if (itemId === 'platform-tenant-health' && (currentNav === 'platform-tenant-health' || currentNav === 'platform-health')) return true;
-  if (itemId === 'saas-revenue' && (currentNav === 'saas-revenue' || (currentNav.startsWith('saas-') && currentNav !== 'saas-subscriptions'))) return true;
+  if (itemId === 'saas-revenue' && (currentNav === 'saas-revenue' || (currentNav.startsWith('saas-') && currentNav !== 'saas-subscriptions' && currentNav !== 'saas-sales'))) return true;
+  if (itemId === 'platform-sales' && (currentNav === 'platform-sales' || currentNav === 'sales' || currentNav === 'saas-sales' || currentNav === 'sales-pipeline')) return true;
   if (itemId === 'platform-quotations' && (currentNav === 'platform-quotations' || currentNav === 'quotations' || currentNav === 'saas-quotations')) return true;
   if (itemId === 'platform-subscriptions' && (currentNav === 'platform-subscriptions' || currentNav === 'saas-subscriptions')) return true;
   if ((itemId === 'platform-invoices' || itemId === 'platform-billing') && (currentNav === 'platform-invoices' || currentNav === 'platform-billing' || currentNav === 'invoices' || currentNav === 'saas-invoices')) return true;
@@ -504,6 +505,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'SAAS BUSINESS',
       items: [
         { id: 'saas-revenue', label: 'Revenue & Growth', icon: LineChart },
+        { id: 'platform-sales', label: 'Sales & Pipeline', icon: TrendingUp },
         { id: 'platform-clients', label: 'Clients', icon: Building2 },
         { id: 'platform-quotations', label: 'Quotations', icon: FileText },
         { id: 'platform-subscriptions', label: 'Subscriptions', icon: Package },
@@ -764,51 +766,48 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
     },
   ];
 
-  // ─── COMPANY ADMIN & ORGANIZATION OWNER: Complete 8-Group Operational Cockpit ─
+  // ─── COMPANY ADMIN & ORGANIZATION OWNER: Authoritative 7-Group Operational Hierarchy ─
   const companyAdminGroups: NavGroup[] = [
     {
       groupName: 'MY WORK',
       items: [
-        { id: 'command-center', label: 'Command Center', icon: LayoutDashboard },
-        { id: 'my-workspace', label: 'My Workspace', icon: CheckSquare },
-        { id: 'approvals', label: 'Requests & Approvals', icon: CheckCircle2, badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined },
+        { id: 'my-workspace', label: 'Personal Workspace', icon: CheckSquare },
+        { id: 'approvals', label: 'Tasks & Approvals', icon: CheckCircle2, badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined },
         { id: 'notifications', label: 'Notifications', icon: Bell },
       ],
     },
     {
       groupName: 'WORKFORCE',
       items: [
-        { id: 'people', label: 'Employee Directory', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
-        { id: 'onboarding', label: 'Onboarding Engine', icon: UserPlus, badge: onboardingCount > 0 ? onboardingCount : undefined },
-        { id: 'offboarding', label: 'Offboarding & Exit', icon: UserMinus },
-        { id: 'organization', label: 'Organization Structure', icon: Building2 },
-        { id: 'documents', label: 'Documents & E-Sign', icon: FileText },
-        { id: 'assets', label: 'Asset Management', icon: Package },
-        { id: 'storage-admin', label: 'Document Vault', icon: Lock },
+        { id: 'people', label: 'People & Directory', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'onboarding', label: 'Onboarding', icon: UserPlus, badge: onboardingCount > 0 ? onboardingCount : undefined },
+        { id: 'offboarding', label: 'Offboarding & Exits', icon: UserMinus },
+        { id: 'organization', label: 'Organization & Hierarchy', icon: Building2 },
+        { id: 'departments', label: 'Departments & Designations', icon: Layers },
+        { id: 'locations', label: 'Locations & Geofences', icon: MapPin },
+      ],
+    },
+    {
+      groupName: 'OPERATIONS',
+      items: [
+        { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
+        { id: 'history', label: 'Attendance Ledger', icon: Clock },
+        { id: 'shifts', label: 'Shifts & Rosters', icon: CalendarRange },
+        { id: 'attendance-rules', label: 'Attendance Rules', icon: SlidersHorizontal },
+        { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
+        { id: 'regularization', label: 'Exceptions & Regularization', icon: AlertTriangle },
+        { id: 'overtime', label: 'Overtime Governance', icon: TrendingUp },
       ],
     },
     {
       groupName: 'VENDOR & CLIENT OPERATIONS',
       items: [
         { id: 'vendor-portal', label: 'Vendor & Manpower Portal', icon: Building2, badge: 'Unified' },
-        { id: 'vendor-directory', label: 'Vendor Master Directory', icon: Building2 },
         { id: 'vendor-workforce', label: 'Workforce Allocation', icon: Users },
-        { id: 'vendor-attendance', label: 'Vendor Attendance & Ingestion', icon: Clock },
-        { id: 'client-billing', label: 'Client Wage Billing & Invoicing', icon: Receipt, badge: 'Active' },
+        { id: 'client-billing', label: 'Client Billing & Invoicing', icon: Receipt, badge: 'Active' },
+        { id: 'vendor-attendance', label: 'Vendor Attendance & Recon', icon: Clock },
         { id: 'vendor-compliance', label: 'Statutory Vault & Compliance', icon: FileCheck2 },
         { id: 'vendor-reports', label: 'Vendor Reports & Audit', icon: BarChart3 },
-      ],
-    },
-    {
-      groupName: 'ATTENDANCE & SCHEDULING',
-      items: [
-        { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
-        { id: 'attendance-employees', label: 'Employee Attendance', icon: Users },
-        { id: 'overtime', label: 'Overtime Engine', icon: TrendingUp },
-        { id: 'leave', label: 'Leave Management', icon: CalendarDays },
-        { id: 'shifts', label: 'Shift Master & Roster', icon: Clock },
-        { id: 'biometric', label: 'Biometric & Clocking Devices', icon: Cpu },
-        { id: 'attendance-reports', label: 'Attendance Reports & MIS', icon: BarChart3 },
       ],
     },
     {
@@ -816,34 +815,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'payroll-dashboard', label: 'Payroll Center', icon: CircleDollarSign },
         { id: 'payroll-salary', label: 'Salary Structures', icon: Building2 },
-        { id: 'payroll-earnings', label: 'Earnings & Overtime', icon: TrendingUp },
-        { id: 'payroll-deductions', label: 'Deductions & LOP', icon: Minus },
-        { id: 'payroll-claims', label: 'Expense Claims', icon: Receipt },
-        { id: 'payroll-processing', label: 'Payroll Processing & Runs', icon: Play },
-        { id: 'payroll-statutory', label: 'Statutory & Tax Compliance', icon: ShieldCheck },
         { id: 'payroll-documents', label: 'Digital Payslips', icon: FileText },
+        { id: 'payroll-statutory', label: 'Statutory Compliance', icon: ShieldCheck },
         { id: 'payroll-reports', label: 'Payroll Reports & ECR', icon: FileSpreadsheet },
       ],
     },
     {
       groupName: 'REPORTS & COMMUNICATIONS',
       items: [
-        { id: 'workforce-overview', label: 'Workforce Analytics', icon: LineChart },
-        { id: 'analytics-reports', label: 'Executive Reports', icon: BarChart3 },
-        { id: 'analytics-attendance', label: 'Attendance Analytics', icon: Clock },
-        { id: 'other-communication', label: 'HR Communications', icon: Megaphone },
+        { id: 'attendance-reports', label: 'HR Intelligence MIS', icon: BarChart3 },
+        { id: 'other-communication', label: 'Communication Desk', icon: Megaphone },
         { id: 'helpdesk', label: 'Help Desk', icon: HelpCircle },
       ],
     },
     {
       groupName: 'ADMINISTRATION',
       items: [
-        { id: 'admin-access', label: 'Access & Roles', icon: KeyRound },
-        { id: 'admin-security', label: 'Security Center', icon: Lock },
+        { id: 'admin-roles', label: 'Access & Roles', icon: KeyRound },
+        { id: 'admin-security', label: 'Security', icon: Lock },
         { id: 'admin-integrations', label: 'Integrations', icon: GitFork },
-        { id: 'admin-notifications', label: 'Notification Rules', icon: Bell },
-        { id: 'admin-audit', label: 'Audit & Activity Logs', icon: History },
-        { id: 'admin-settings', label: 'System Settings', icon: Settings },
+        { id: 'admin-audit', label: 'Audit & Monitoring', icon: History },
+        { id: 'admin-settings', label: 'Company Settings', icon: Settings },
       ],
     },
   ];

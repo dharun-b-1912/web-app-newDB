@@ -421,11 +421,11 @@ class SaasPricingEngine {
     return this.plans;
   }
 
-  public getPlanByCode(code: PlanTierCode): CommercialPlan | undefined {
-    if (code === 'PREMIUM' || code === 'PROFESSIONAL' || code === 'BUSINESS') {
+  public getPlanByCode(code: PlanTierCode | string): CommercialPlan | undefined {
+    if (code === 'PROFESSIONAL') {
       return this.plans.find((p) => p.code === 'PREMIUM' || p.code === 'PROFESSIONAL') || this.plans[1];
     }
-    return this.plans.find((p) => p.code === code);
+    return this.plans.find((p) => p.code === code) || this.plans.find((p) => p.name.toUpperCase() === (code || '').toUpperCase()) || this.plans[1];
   }
 
   public getDiscounts(): CycleDiscountsConfig {
@@ -509,7 +509,56 @@ class SaasPricingEngine {
     let addonsOneTimeTotal = 0;
 
     for (const addonKey of input.selectedAddonKeys || []) {
-      const addon = allAddons.find((a) => a.addonKey === addonKey);
+      let addon = allAddons.find((a) => a.addonKey === addonKey);
+      if (!addon) {
+        // Fallback mapping for recognized add-on extensions
+        if (addonKey === 'biometric_device_gateway') {
+          addon = allAddons.find((a) => a.addonKey === 'extra_biometric_device') || {
+            id: 'addon-biometric-gateway',
+            addonKey: 'biometric_device_gateway',
+            name: 'Biometric Hardware Gateway (5 Devices)',
+            category: 'Infrastructure & API',
+            monthlyPrice: 2500,
+            billingUnit: 'Per Month',
+            availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
+            isActive: true,
+          } as any;
+        } else if (addonKey === 'extra_storage_100gb') {
+          addon = allAddons.find((a) => a.addonKey === 'cloud_storage_100gb') || {
+            id: 'addon-extra-storage',
+            addonKey: 'extra_storage_100gb',
+            name: 'Additional 100 GB Document Vault Storage',
+            category: 'Infrastructure & API',
+            monthlyPrice: 1000,
+            billingUnit: 'Per Month',
+            availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
+            isActive: true,
+          } as any;
+        } else if (addonKey === 'premium_support_sla') {
+          addon = allAddons.find((a) => a.addonKey === 'dedicated_support_sla') || {
+            id: 'addon-support-sla',
+            addonKey: 'premium_support_sla',
+            name: 'Dedicated 24/7 SLA & Named Support Engineer',
+            category: 'Enterprise Support',
+            monthlyPrice: 4999,
+            billingUnit: 'Per Month',
+            availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
+            isActive: true,
+          } as any;
+        } else if (addonKey === 'ai_copilot_resume_screener') {
+          addon = {
+            id: 'addon-ai-copilot',
+            addonKey: 'ai_copilot_resume_screener',
+            name: 'AI HR Copilot & Resume Screening Engine',
+            category: 'AI & Automation',
+            monthlyPrice: 3500,
+            billingUnit: 'Per Month',
+            availableForPlans: ['STARTER', 'PREMIUM', 'PROFESSIONAL', 'BUSINESS', 'ENTERPRISE'],
+            isActive: true,
+          } as any;
+        }
+      }
+
       if (addon) {
         const isOneTime = addon.billingUnit === 'One-Time Charge';
         let addonEffectivePrice = addon.monthlyPrice;

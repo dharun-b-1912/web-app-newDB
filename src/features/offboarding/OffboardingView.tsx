@@ -72,10 +72,26 @@ export const OffboardingView: React.FC = () => {
 
   // Modals & Drawer State
   const [isInitiateModalOpen, setIsInitiateModalOpen] = useState<boolean>(false);
+  const [initialEmpId, setInitialEmpId] = useState<string>('');
   const [selectedSeparation, setSelectedSeparation] = useState<EmployeeSeparation | null>(null);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState<boolean>(false);
   const [noticeModalSep, setNoticeModalSep] = useState<EmployeeSeparation | null>(null);
   const [exitModalSep, setExitModalSep] = useState<EmployeeSeparation | null>(null);
+
+  // Read URL params or custom initiation requests
+  useEffect(() => {
+    const checkParams = () => {
+      const params = new URLSearchParams(window.location.search);
+      const empId = params.get('employeeId');
+      if (empId) {
+        setInitialEmpId(empId);
+        setIsInitiateModalOpen(true);
+      }
+    };
+    checkParams();
+    window.addEventListener('popstate', checkParams);
+    return () => window.removeEventListener('popstate', checkParams);
+  }, []);
 
   // Load Data
   const loadData = () => {
@@ -610,8 +626,16 @@ export const OffboardingView: React.FC = () => {
       {/* Modals & Drawer */}
       <InitiateSeparationModal
         isOpen={isInitiateModalOpen}
-        onClose={() => setIsInitiateModalOpen(false)}
-        onSuccess={loadData}
+        initialEmployeeId={initialEmpId}
+        onClose={() => {
+          setIsInitiateModalOpen(false);
+          setInitialEmpId('');
+        }}
+        onSuccess={() => {
+          setIsInitiateModalOpen(false);
+          setInitialEmpId('');
+          loadData();
+        }}
       />
 
       <NoticeModificationModal

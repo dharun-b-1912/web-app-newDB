@@ -24,7 +24,7 @@ import { organizationStructureService } from '../../services/organization/organi
 
 // Wizard Subcomponents
 import { WizardProgressHeader, WIZARD_STEPS } from './wizard/WizardProgressHeader';
-import { Step1Identity, Step1FormData } from './wizard/Step1Identity';
+import { Step1Identity, Step1FormData, generateNextEmployeeCode } from './wizard/Step1Identity';
 import { Step2Contact, Step2FormData } from './wizard/Step2Contact';
 import { Step3Employment, Step3FormData } from './wizard/Step3Employment';
 import { Step4Organization, Step4FormData } from './wizard/Step4Organization';
@@ -77,7 +77,7 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
   const getInitialFormData = () => ({
     // Step 1: Identity
     photo_url: '',
-    employee_code: `JCS-${Math.floor(100 + Math.random() * 900)}`,
+    employee_code: generateNextEmployeeCode(existingEmployees),
     first_name: '',
     middle_name: '',
     last_name: '',
@@ -464,7 +464,16 @@ export const EmployeeCreateWizardModal: React.FC<Props> = ({
       setDesignations(desigs || []);
       setBranches(brs || []);
       setLocations(locs || []);
-      setExistingEmployees(emps || []);
+      const loadedEmps = emps || [];
+      setExistingEmployees(loadedEmps);
+      if (!employeeToEdit) {
+        setFormData((prev) => {
+          if (!prev.employee_code) {
+            return { ...prev, employee_code: generateNextEmployeeCode(loadedEmps) };
+          }
+          return prev;
+        });
+      }
 
       // Clear any legacy local storage draft to prevent fallback overrides
       try {

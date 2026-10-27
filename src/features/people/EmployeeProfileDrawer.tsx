@@ -50,6 +50,7 @@ export interface EmployeeProfileDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdated: (emp: Employee) => void;
+  initialTab?: string;
 }
 
 export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
@@ -57,10 +58,17 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
   isOpen,
   onClose,
   onUpdated,
+  initialTab = 'overview',
 }) => {
   const { showToast } = useToast();
 
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(initialTab || 'overview');
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, employee?.id]);
   const [isEditing, setIsEditing] = useState(false);
   const [isEditWizardOpen, setIsEditWizardOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -113,8 +121,8 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
           ...(employee.profile || {}),
         },
         employment: {
-          doj: employee.employment?.doj || employee.created_at?.split('T')[0] || '2025-01-15',
-          work_location: employee.employment?.work_location || 'Joy Corporate Solutions Private Limited (HQ)',
+          doj: employee.employment?.doj || employee.created_at?.split('T')[0] || '',
+          work_location: employee.employment?.work_location || (employee as any).work_location || (employee as any).location || '',
           reporting_manager_name: employee.employment?.reporting_manager_name || '',
           confirmation_status: employee.employment?.confirmation_status || 'Confirmed',
           probation_period_months: employee.employment?.probation_period_months || 6,
@@ -211,9 +219,9 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
   if (!employee) return null;
 
   const isVendor = employee.employment_source === 'VENDOR' || employee.employment?.employment_source === 'VENDOR';
-  const joinDate = employee.employment?.doj || employee.created_at?.split('T')[0] || '2025-01-15';
+  const joinDate = employee.employment?.doj || employee.created_at?.split('T')[0] || 'Not specified';
   const managerName = employee.employment?.reporting_manager_name || employee.reporting_manager_name || (employee as any).manager_name || 'Not assigned';
-  const workLocation = employee.employment?.work_location || 'Joy Corporate Solutions Private Limited (HQ)';
+  const workLocation = employee.employment?.work_location || (employee as any).work_location || (employee as any).location || 'Not specified';
   const isArchived = employee.status === 'Archived';
 
   const auditLogs = employeeAuthService.getAuthAuditLogs(employee.id, employee.organization_id);
@@ -528,7 +536,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                       </div>
                       <div className="flex items-center gap-2 text-gray-700">
                         <Phone className="w-4 h-4 text-gray-400 shrink-0" />
-                        <span className="font-semibold">{employee.profile?.phone || '+91 98401 22334'}</span>
+                        <span className="font-semibold">{employee.profile?.phone || employee.phone || employee.primary_mobile || 'Not provided'}</span>
                       </div>
                       <div className="flex items-center gap-2 text-gray-700">
                         <MapPin className="w-4 h-4 text-gray-400 shrink-0" />
@@ -679,7 +687,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                             setFormData({
                               ...formData,
                               employment: {
-                                doj: formData.employment?.doj || employee?.employment?.doj || '2025-01-15',
+                                doj: formData.employment?.doj || employee?.employment?.doj || '',
                                 ...(formData.employment || {}),
                                 reporting_manager_name: e.target.value,
                               } as any,
@@ -697,7 +705,7 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
                             setFormData({
                               ...formData,
                               employment: {
-                                doj: formData.employment?.doj || employee?.employment?.doj || '2025-01-15',
+                                doj: formData.employment?.doj || employee?.employment?.doj || '',
                                 ...(formData.employment || {}),
                                 work_location: e.target.value,
                               } as any,

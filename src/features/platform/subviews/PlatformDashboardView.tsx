@@ -57,6 +57,7 @@ import { CommandPaletteModal } from '../components/CommandPaletteModal';
 import { WorkForceCopilotDrawer } from '../components/WorkForceCopilotDrawer';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../lib/utils';
+import { getAppEnvironment } from '../../../utils/environment';
 
 export interface PlatformDashboardViewProps {
   onNavigateTab: (tab: string, payload?: { tenantId?: string; presetFilter?: string; search?: string }) => void;
@@ -65,6 +66,8 @@ export interface PlatformDashboardViewProps {
 export const PlatformDashboardView: React.FC<PlatformDashboardViewProps> = ({
   onNavigateTab,
 }) => {
+  const envInfo = getAppEnvironment();
+
   // Realtime hook with automatic live stream update
   usePlatformRealtime(undefined, () => {
     platformAuditService.getAuditEvents(20).then((res) => setAuditEvents(res));
@@ -239,11 +242,22 @@ export const PlatformDashboardView: React.FC<PlatformDashboardViewProps> = ({
             <h1 className="text-2xl font-bold text-[#0F172B] tracking-tight">Platform Control Center</h1>
 
             <div className="flex items-center gap-1.5 font-sans">
-              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-[0.03em] bg-[#ECFDF5] text-[#047857] border border-[#15845B]/30">
-                ● PRODUCTION
+              <span
+                title={envInfo.serverTooltip}
+                className={cn(
+                  'px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-[0.03em] border flex items-center gap-1.5',
+                  envInfo.isLocalDev
+                    ? 'bg-amber-50 text-amber-800 border-amber-300'
+                    : envInfo.isStaging
+                    ? 'bg-indigo-50 text-indigo-800 border-indigo-300'
+                    : 'bg-[#ECFDF5] text-[#047857] border-[#15845B]/30'
+                )}
+              >
+                <span className={cn('h-1.5 w-1.5 rounded-full animate-pulse', envInfo.dotColorClass)} />
+                {envInfo.envBadgeLabel}
               </span>
               <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1]">
-                ap-south-1 (Mumbai Primary)
+                {envInfo.isLocalDev ? envInfo.serverRegionLabel : 'ap-south-1 (Mumbai Primary)'}
               </span>
               <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0] flex items-center gap-1">
                 <span className="relative flex h-2 w-2">

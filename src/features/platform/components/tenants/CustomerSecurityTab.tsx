@@ -15,6 +15,7 @@ import {
   LogOut,
 } from 'lucide-react';
 import { OrganizationRecord } from '../../../../services/platform/platformTenantService';
+import { platformSupportAccessService } from '../../../../services/platform/platformSupportAccessService';
 import { Button } from '../../../../components/ui/Button';
 import { useToast } from '../../../../components/ui/Toast';
 
@@ -26,9 +27,11 @@ export const CustomerSecurityTab: React.FC<CustomerSecurityTabProps> = ({ organi
   const { showToast } = useToast();
   const [showRevokeModal, setShowRevokeModal] = useState(false);
 
+  const orgSessions = platformSupportAccessService.getSessionHistory(org.id);
+
   const handleRevokeSessions = () => {
     setShowRevokeModal(false);
-    showToast(`All 14 active user sessions revoked for ${org.legal_name}. Staff must re-authenticate.`, 'success');
+    showToast(`All active user sessions revoked for ${org.legal_name}. Staff must re-authenticate.`, 'success');
   };
 
   return (
@@ -45,7 +48,9 @@ export const CustomerSecurityTab: React.FC<CustomerSecurityTabProps> = ({ organi
 
         <div className="p-5 bg-white rounded-3xl border border-gray-200 shadow-xs space-y-1">
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Active Sessions</span>
-          <div className="text-2xl font-bold font-mono text-gray-900">14 Sessions</div>
+          <div className="text-2xl font-bold font-mono text-gray-900">
+            {org.active_employees > 0 ? `${org.active_employees} Staff` : '0 Sessions'}
+          </div>
           <span className="text-[11px] text-gray-500">Across web & mobile apps</span>
         </div>
 
@@ -114,24 +119,36 @@ export const CustomerSecurityTab: React.FC<CustomerSecurityTabProps> = ({ organi
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
-              <tr>
-                <td className="py-3.5 px-5">
-                  <div className="font-bold text-gray-900">Thirumalai R K</div>
-                  <span className="text-[10px] text-gray-400">Platform Admin</span>
-                </td>
-                <td className="py-3.5 px-4">
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-[#047857] border border-emerald-200">
-                    SUPPORT ACCESS
-                  </span>
-                </td>
-                <td className="py-3.5 px-4">
-                  <div className="text-gray-900 font-semibold">Investigating biometric hardware push daemon credentials</div>
-                  <span className="text-[10px] text-purple-700 font-mono">SUP-10482</span>
-                </td>
-                <td className="py-3.5 px-4 font-mono text-gray-600">14 minutes</td>
-                <td className="py-3.5 px-4 text-gray-500">17 Aug 2026 11:42 IST</td>
-                <td className="py-3.5 px-5 text-right font-bold text-emerald-700">Completed</td>
-              </tr>
+              {orgSessions.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-gray-400 font-normal">
+                    No support access sessions recorded yet for {org.legal_name}.
+                  </td>
+                </tr>
+              ) : (
+                orgSessions.map((s) => (
+                  <tr key={s.id}>
+                    <td className="py-3.5 px-5">
+                      <div className="font-bold text-gray-900">{s.platform_actor_name}</div>
+                      <span className="text-[10px] text-gray-400">{s.platform_actor_role}</span>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-[#047857] border border-emerald-200">
+                        {s.access_mode}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="text-gray-900 font-semibold">{s.reason}</div>
+                      {s.support_case_id && (
+                        <span className="text-[10px] text-purple-700 font-mono">{s.support_case_id}</span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono text-gray-600">{s.duration_minutes} minutes</td>
+                    <td className="py-3.5 px-4 text-gray-500">{s.started_at}</td>
+                    <td className="py-3.5 px-5 text-right font-bold text-emerald-700">{s.status}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

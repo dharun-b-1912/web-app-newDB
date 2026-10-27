@@ -5,7 +5,7 @@
 
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { User } from '../types';
-import { authService, AuthSessionUser, AuthResult, AuthContextMode } from '../services/auth/authService';
+import { authService, AuthSessionUser, AuthResult, AuthContextMode, DEFAULT_PLATFORM_SUPER_ADMIN } from '../services/auth/authService';
 import { roleResolutionService } from '../services/auth/roleResolutionService';
 import { supabase, isSupabaseEnabled, ensureSupabaseSession } from '../lib/supabase';
 import {
@@ -132,32 +132,34 @@ const resolveDynamicSessionUser = async (
   return resolutionPromise;
 };
 
+const detectInitialAuthMode = (): AuthContextMode => {
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname;
+    if (path.startsWith('/admin') || path === '/company-admin' || path === '/org-admin' || path === '/company/login') return 'admin';
+    if (path.startsWith('/platform') || path === '/superadmin' || path.startsWith('/super-admin') || path.startsWith('/platform-login')) return 'platform';
+    if (path.startsWith('/vendor') || path === '/vendor-login') return 'vendor';
+    const cached = localStorage.getItem('workforce_auth_context') as AuthContextMode;
+    if (cached) return cached;
+  }
+  return 'tenant';
+};
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const [authContext, setAuthContext] = useState<AuthContextMode>(() => detectInitialAuthMode());
   const [user, setUser] = useState<AuthSessionUser | null>(() => {
     try {
-      return authService.getCurrentSessionUser();
+      return authService.getCurrentSessionUser(detectInitialAuthMode());
     } catch {
       return null;
     }
   });
   const [isLoading, setIsLoading] = useState(() => {
     try {
-      const cached = authService.getCurrentSessionUser();
+      const cached = authService.getCurrentSessionUser(detectInitialAuthMode());
       return !cached;
     } catch {
       return true;
     }
-  });
-  const [authContext, setAuthContext] = useState<AuthContextMode>(() => {
-    if (typeof window !== 'undefined') {
-      const path = window.location.pathname;
-      if (path.startsWith('/admin') || path === '/company-admin' || path === '/org-admin' || path === '/company/login') return 'admin';
-      if (path.startsWith('/platform') || path === '/superadmin') return 'platform';
-      if (path.startsWith('/vendor') || path === '/vendor-login') return 'vendor';
-      const cached = localStorage.getItem('workforce_auth_context') as AuthContextMode;
-      if (cached) return cached;
-    }
-    return 'tenant';
   });
   const [mustChangePassword, setMustChangePassword] = useState(false);
 
@@ -170,20 +172,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const initAuth = async () => {
       try {
-        const cachedUser = authService.getCurrentSessionUser();
-        let initialMode: AuthContextMode = 'tenant';
-        if (typeof window !== 'undefined') {
-          const path = window.location.pathname;
-          if (path.startsWith('/admin') || path === '/company-admin' || path === '/org-admin' || path === '/company/login') {
-            initialMode = 'admin';
-          } else if (path.startsWith('/platform') || path === '/superadmin') {
-            initialMode = 'platform';
-          } else if (path.startsWith('/vendor') || path === '/vendor-login') {
-            initialMode = 'vendor';
-          } else {
-            initialMode = (localStorage.getItem('workforce_auth_context') as AuthContextMode) || 'tenant';
-          }
-        }
+        const initialMode = detectInitialAuthMode();
+        const cachedUser = authService.getCurrentSessionUser(initialMode);
 
         if (isMounted) {
           setAuthContext(initialMode);
@@ -205,9 +195,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
           // Asynchronously verify/heal Supabase session in background without stalling UI
           if (isSupabaseEnabled) {
-            ensureSupabaseSession()
+            ensureSupabaseSession(initialMode)
               .then((activeSession) => {
                 if (activeSession?.user && isMounted) {
+                  // Guard: in platform mode, never clobber platform user with a tenant user
+                  if (initialMode === 'platform' && activeSession.user.email !== 'superadmin@joypeoplehr.com') {
+                    return;
+                  }
                   resolveDynamicSessionUser(activeSession.user, cachedUser, initialMode)
                     .then((updated) => {
                       if (isMounted && updated && !isSameUser(cachedUser, updated)) {
@@ -226,7 +220,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         if (isSupabaseEnabled) {
           // Cold boot: Fast resolve from memory/localStorage via ensureSupabaseSession
-          let activeSession: any = await ensureSupabaseSession();
+          let activeSession: any = await ensureSupabaseSession(initialMode);
           if (!activeSession?.user) {
             // Fallback guard getSession with 1500ms timeout
             const sessionPromise = supabase.auth.getSession();
@@ -238,6 +232,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
 
           if (activeSession?.user) {
+            // Guard: in platform mode, if session belongs to tenant user, resolve platform user
+            if (initialMode === 'platform' && activeSession.user.email !== 'superadmin@joypeoplehr.com') {
+              const platUser = authService.getCurrentSessionUser('platform') || DEFAULT_PLATFORM_SUPER_ADMIN;
+              if (isMounted) {
+                setUser(platUser);
+                setIsLoading(false);
+              }
+              return;
+            }
+
             const sbUser = activeSession.user;
             bindSessionFingerprint(sbUser.id);
 
@@ -255,6 +259,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             }
             return;
           } else {
+            // In localhost on platform routes, fallback to default platform super admin instead of wiping session
+            const isLocalhost = typeof window !== 'undefined' &&
+              (window.location.hostname === 'localhost' ||
+               window.location.hostname === '127.0.0.1' ||
+               window.location.hostname === '0.0.0.0');
+
+            if (isLocalhost && initialMode === 'platform') {
+              setUser(DEFAULT_PLATFORM_SUPER_ADMIN);
+              setIsLoading(false);
+              return;
+            }
+
             // No real Supabase session or valid cached user -> clear local session
             authService.forceClearLocalSession();
 
@@ -329,12 +345,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setMustChangePassword(false);
           }
         } else if (session?.user && isMounted) {
-          const cachedUser = authService.getCurrentSessionUser();
+          const path = typeof window !== 'undefined' ? window.location.pathname : '';
+          const isPlatformPath = path.startsWith('/platform') || path === '/superadmin' || path.startsWith('/super-admin') || path.startsWith('/platform-login') || authContext === 'platform';
+          if (isPlatformPath && session.user.email !== 'superadmin@joypeoplehr.com') {
+            // Guard: Do not allow tenant session events to overwrite platform admin session
+            return;
+          }
+
+          const cachedUser = authService.getCurrentSessionUser(isPlatformPath ? 'platform' : 'tenant');
           if (cachedUser && cachedUser.id === session.user.id && cachedUser.email?.toLowerCase() === session.user.email?.toLowerCase()) {
             // Active session already matches; avoid re-resolving and re-rendering
             return;
           }
-          const finalUser = await resolveDynamicSessionUser(session.user, cachedUser);
+          const finalUser = await resolveDynamicSessionUser(session.user, cachedUser, isPlatformPath ? 'platform' : 'tenant');
           if (isMounted) {
             setUser(prev => (isSameUser(prev, finalUser) ? prev : finalUser));
             setMustChangePassword(Boolean(finalUser?.must_change_password));

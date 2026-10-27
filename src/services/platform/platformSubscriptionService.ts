@@ -21,7 +21,7 @@ export interface SubscriptionContractItem {
   id: string; // e.g. 'sub-joy-01'
   tenant_id: string; // e.g. 'org-joy-01'
   tenant_name: string;
-  plan: 'Starter' | 'Professional' | 'Business' | 'Enterprise';
+  plan: 'Starter' | 'Premium' | 'Professional' | 'Business' | 'Enterprise' | string;
   plan_id: string;
   billing_cycle: 'Monthly' | 'Annual';
   seats: number;
@@ -119,7 +119,10 @@ export const platformSubscriptionService = {
     }
 
     // Fallback: Synthesize contracts from live organizations
-    const orgs = platformTenantService.getOrganizations().items;
+    let orgs = platformTenantService.getOrganizations().items;
+    if (orgs.length === 0) {
+      orgs = await platformTenantService.fetchLiveFromSupabase();
+    }
     initialSubscriptions = orgs.map((org) => {
       const planPricing: Record<string, number> = {
         Starter: 18000,
@@ -350,7 +353,7 @@ export const platformSubscriptionService = {
 
   async changePlan(
     id: string,
-    newPlan: 'Starter' | 'Professional' | 'Business' | 'Enterprise',
+    newPlan: 'Starter' | 'Professional' | 'Business' | 'Enterprise' | string,
     newPlanId: string,
     reason?: string
   ): Promise<SubscriptionContractItem> {
@@ -361,9 +364,9 @@ export const platformSubscriptionService = {
     sub.plan = newPlan;
     sub.plan_id = newPlanId;
 
-    const priceMap = { Starter: 18000, Professional: 45000, Business: 85000, Enterprise: 180000 };
-    sub.total_amount = priceMap[newPlan];
-    sub.price_per_seat = Math.round(sub.total_amount / sub.seats);
+    const priceMap: Record<string, number> = { Starter: 18000, Premium: 35000, Professional: 45000, Business: 85000, Enterprise: 180000 };
+    sub.total_amount = priceMap[newPlan] || 45000;
+    sub.price_per_seat = Math.round(sub.total_amount / (sub.seats || 1));
 
     sub.history.unshift({
       id: `h-${Date.now()}`,
@@ -391,7 +394,7 @@ export const platformSubscriptionService = {
 
   async updateSubscription(
     id: string,
-    newPlan: 'Starter' | 'Professional' | 'Business' | 'Enterprise',
+    newPlan: 'Starter' | 'Professional' | 'Business' | 'Enterprise' | string,
     newSeats?: number,
     billingCycle?: 'Monthly' | 'Annual'
   ): Promise<SubscriptionContractItem> {

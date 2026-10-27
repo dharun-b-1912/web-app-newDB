@@ -315,7 +315,7 @@ export const EditSupplierCompanyModal: React.FC<EditSupplierCompanyModalProps> =
                   value={form.signatoryName || ''}
                   onChange={(e) => handleChange('signatoryName', e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 font-bold"
-                  placeholder="e.g. Arun K / Dharun B"
+                  placeholder="e.g. Authorized Signatory / Managing Director"
                 />
               </div>
 

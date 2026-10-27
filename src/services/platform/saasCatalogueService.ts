@@ -3806,39 +3806,25 @@ class SaasCatalogueService {
 
   private loadOverrides(): CustomerCommercialOverride[] {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_OVERRIDES);
-      if (saved) {
-        return JSON.parse(saved);
+      if (typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem(STORAGE_KEY_OVERRIDES);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            return parsed.filter(
+              (o: any) =>
+                o &&
+                !String(o.id || '').includes('abc-mfg') &&
+                !String(o.tenantName || '').toLowerCase().includes('abc manufacturing') &&
+                !String(o.tenantName || '').toLowerCase().includes('abc industries')
+            );
+          }
+        }
       }
     } catch {
       // Fallback
     }
-    return [
-      {
-        id: 'override-abc-mfg',
-        tenantId: 'tenant-abc-mfg',
-        tenantName: 'ABC Manufacturing Ltd',
-        basePlan: 'PROFESSIONAL',
-        customContractPriceMonthly: 185000,
-        customEmployeeCount: 1500,
-        includedAddons: ['vendor_workforce_mgmt', 'recruitment_suite'],
-        featureOverrides: {
-          'vendor.master': true,
-          'vendor.attendance': true,
-          'recruitment.pipeline_kanban': true,
-        },
-        limitOverrides: {
-          maxEmployees: 1500,
-          apiCallsPerDay: 250000,
-        },
-        startDate: '2026-04-01',
-        endDate: '2028-03-31',
-        billingFrequency: 'Annual',
-        notes: 'Commercial override approved for 2-year enterprise agreement with custom PEPM and vendor workforce included.',
-        approvedBy: 'Platform Super Admin',
-        approvedAt: '2026-04-01T10:00:00Z',
-      },
-    ];
+    return [];
   }
 
   public getModules(): CommercialModule[] {
@@ -3870,13 +3856,24 @@ class SaasCatalogueService {
   }
 
   public saveCustomerOverride(override: CustomerCommercialOverride): void {
-    const existingIndex = this.overrides.findIndex((o) => o.tenantId === override.tenantId);
+    const existingIndex = this.overrides.findIndex(
+      (o) => o.id === override.id || o.tenantId === override.tenantId
+    );
     if (existingIndex >= 0) {
       this.overrides[existingIndex] = override;
     } else {
       this.overrides.push(override);
     }
-    localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(this.overrides));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(this.overrides));
+    }
+  }
+
+  public deleteCustomerOverride(id: string): void {
+    this.overrides = this.overrides.filter((o) => o.id !== id && o.tenantId !== id);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(this.overrides));
+    }
   }
 
   public updateFeatureCommercialStatus(

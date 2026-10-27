@@ -11,6 +11,7 @@ import { useTenant } from '../../hooks/useTenant';
 import { api } from '../../services/api';
 import { useToast } from '../../components/ui/Toast';
 import { Employee } from '../../types';
+import { generateNextEmployeeCode } from './wizard/Step1Identity';
 
 export interface EmployeeCreateModalProps {
   isOpen: boolean;
@@ -33,18 +34,29 @@ export const EmployeeCreateModal: React.FC<EmployeeCreateModalProps> = ({
     handleSubmit,
     formState: { errors, isSubmitting },
     reset,
+    setValue,
   } = useForm<EmployeeCreateInput>({
     resolver: zodResolver(EmployeeCreateSchema),
     defaultValues: {
       company_id: activeCompany?.id || `comp-${activeOrgId.replace('org-', '')}`,
       employment_type: 'Full Time',
       status: 'Active',
-      employee_code: `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
+      employee_code: '',
       doj: new Date().toISOString().split('T')[0],
       department_id: 'dept-eng',
       designation_id: 'desig-staffeng',
     },
   });
+
+  React.useEffect(() => {
+    if (isOpen) {
+      api.getEmployees().then((emps) => {
+        setValue('employee_code', generateNextEmployeeCode(emps || [], 'EMP'));
+      }).catch(() => {
+        setValue('employee_code', `EMP-0101`);
+      });
+    }
+  }, [isOpen, setValue]);
 
   const onSubmit = async (data: EmployeeCreateInput) => {
     try {

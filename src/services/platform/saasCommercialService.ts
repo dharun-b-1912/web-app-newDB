@@ -18,6 +18,7 @@ import {
   InvoiceStatus,
   CrmLead,
   CrmOpportunity,
+  CommercialSalesOwner,
   LeadStage,
   OpportunityStage,
   QuotationOriginType,
@@ -27,14 +28,19 @@ import { PlanTierCode, BillingCycle } from '../../types/saasCatalogue';
 import { saasPricingEngine } from './saasPricingEngine';
 import { saasCatalogueService } from './saasCatalogueService';
 import { platformTenantService } from './platformTenantService';
+import { platformStaffService } from './platformStaffService';
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { formatTenantDisplayId, formatSubscriptionDisplayId, formatTenantDomain } from '../../utils/saasMasking';
 
-const STORAGE_KEY_LEADS = 'joy_saas_crm_leads_v1';
-const STORAGE_KEY_OPPORTUNITIES = 'joy_saas_crm_opportunities_v1';
-const STORAGE_KEY_CLIENTS = 'joy_saas_crm_clients_v1';
-const STORAGE_KEY_QUOTES = 'joy_saas_quotations_v1';
-const STORAGE_KEY_INVOICES = 'joy_saas_invoices_v1';
-export const STORAGE_KEY_SUPPLIER_DETAILS = 'joy_saas_supplier_company_details_v1';
+const STORAGE_KEY_LEADS = 'joy_saas_crm_leads_v2';
+const STORAGE_KEY_OPPORTUNITIES = 'joy_saas_crm_opportunities_v2';
+const STORAGE_KEY_CLIENTS = 'joy_saas_crm_clients_v2';
+const STORAGE_KEY_QUOTES = 'joy_saas_quotations_v2';
+const STORAGE_KEY_INVOICES = 'joy_saas_invoices_v2';
+const STORAGE_KEY_SALES_OWNERS = 'joy_saas_sales_owners_v1';
+export const STORAGE_KEY_SUPPLIER_DETAILS = 'joy_saas_supplier_company_details_v2';
+
+export const INITIAL_SALES_OWNERS: CommercialSalesOwner[] = [];
 
 export interface SupplierCompanyDetails {
   legalName: string;
@@ -84,271 +90,9 @@ export const SUPPLIER_COMPANY_DETAILS: SupplierCompanyDetails = {
   },
 };
 
-export const INITIAL_LEADS: CrmLead[] = [
-  {
-    id: 'lead-01',
-    leadNumber: 'LEAD-2026-0048',
-    companyName: 'ABC Industries Pvt Ltd',
-    contactPerson: 'Rajesh Kumar',
-    designation: 'HR Head',
-    email: 'rajesh@abcindustries.in',
-    phone: '+91 98401 23456',
-    website: 'https://abcindustries.in',
-    industry: 'Manufacturing',
-    estimatedEmployees: 850,
-    locationsCount: 12,
-    source: 'Website',
-    salesOwner: 'Arun K',
-    stage: 'QUALIFIED',
-    requirements: [
-      'core_hr',
-      'ess',
-      'attendance',
-      'leave',
-      'payroll',
-      'biometric',
-      'recruitment',
-      'performance',
-      'vendor_workforce',
-      'procurement',
-    ],
-    opportunityId: 'opp-01',
-    createdAt: '2026-09-01',
-    updatedAt: '2026-09-12',
-  },
-  {
-    id: 'lead-02',
-    leadNumber: 'LEAD-2026-0052',
-    companyName: 'Zenith Life Sciences & Healthcare',
-    contactPerson: 'Dr. Sunita Rao',
-    designation: 'Director — People Operations',
-    email: 'sunita.rao@zenithlifesciences.com',
-    phone: '+91 98112 44332',
-    website: 'https://zenithlifesciences.com',
-    industry: 'Pharmaceuticals & Healthcare',
-    estimatedEmployees: 420,
-    locationsCount: 6,
-    source: 'Inbound Demo',
-    salesOwner: 'Priya Sharma',
-    stage: 'REQUIREMENT_CAPTURED',
-    requirements: ['core_hr', 'ess', 'attendance', 'leave', 'payroll', 'biometric', 'expense'],
-    opportunityId: 'opp-02',
-    createdAt: '2026-09-14',
-    updatedAt: '2026-09-28',
-  },
-  {
-    id: 'lead-03',
-    leadNumber: 'LEAD-2026-0061',
-    companyName: 'Apex Steel & Heavy Engineering Works',
-    contactPerson: 'Karan Mehra',
-    designation: 'General Manager — HR & Administration',
-    email: 'karan.m@apexsteel.co.in',
-    phone: '+91 98220 54321',
-    website: 'https://apexsteel.co.in',
-    industry: 'Industrial Engineering',
-    estimatedEmployees: 1100,
-    locationsCount: 8,
-    source: 'Referral',
-    salesOwner: 'Arun K',
-    stage: 'QUALIFIED',
-    requirements: [
-      'core_hr',
-      'ess',
-      'attendance',
-      'leave',
-      'payroll',
-      'biometric',
-      'vendor_workforce',
-      'procurement',
-      'invoice_settlement',
-    ],
-    createdAt: '2026-09-20',
-    updatedAt: '2026-10-01',
-  },
-];
-
-export const INITIAL_OPPORTUNITIES: CrmOpportunity[] = [
-  {
-    id: 'opp-01',
-    opportunityNumber: 'OPP-2026-0031',
-    dealName: 'ABC Industries — Enterprise HRMS & Vendor Workforce Rollout',
-    leadId: 'lead-01',
-    leadNumber: 'LEAD-2026-0048',
-    companyName: 'ABC Industries Pvt Ltd',
-    contactPerson: 'Rajesh Kumar',
-    designation: 'HR Head',
-    email: 'rajesh@abcindustries.in',
-    phone: '+91 98401 23456',
-    industry: 'Manufacturing',
-    estimatedEmployees: 850,
-    locationsCount: 12,
-    legalEntitiesCount: 2,
-    estimatedArr: 850000,
-    probability: 70,
-    expectedCloseDate: '2026-10-31',
-    salesOwner: 'Arun K',
-    stage: 'PROPOSAL',
-    originType: 'NEW_CUSTOMER',
-    capturedRequirements: [
-      'core_hr',
-      'ess',
-      'attendance',
-      'leave',
-      'payroll',
-      'biometric',
-      'recruitment',
-      'performance',
-      'vendor_workforce',
-      'procurement',
-    ],
-    quotationIds: ['qt-01'],
-    activeQuotationId: 'qt-01',
-    createdAt: '2026-09-12',
-    updatedAt: '2026-10-02',
-  },
-  {
-    id: 'opp-02',
-    opportunityNumber: 'OPP-2026-0035',
-    dealName: 'Zenith Healthcare — Multi-Facility Clinical HR & Payroll',
-    leadId: 'lead-02',
-    leadNumber: 'LEAD-2026-0052',
-    companyName: 'Zenith Life Sciences & Healthcare',
-    contactPerson: 'Dr. Sunita Rao',
-    designation: 'Director — People Operations',
-    email: 'sunita.rao@zenithlifesciences.com',
-    phone: '+91 98112 44332',
-    industry: 'Pharmaceuticals & Healthcare',
-    estimatedEmployees: 420,
-    locationsCount: 6,
-    legalEntitiesCount: 1,
-    estimatedArr: 450000,
-    probability: 60,
-    expectedCloseDate: '2026-11-15',
-    salesOwner: 'Priya Sharma',
-    stage: 'REQUIREMENT',
-    originType: 'NEW_CUSTOMER',
-    capturedRequirements: ['core_hr', 'ess', 'attendance', 'leave', 'payroll', 'biometric', 'expense'],
-    quotationIds: ['qt-03'],
-    activeQuotationId: 'qt-03',
-    createdAt: '2026-09-28',
-    updatedAt: '2026-10-04',
-  },
-  {
-    id: 'opp-03',
-    opportunityNumber: 'OPP-2026-0039',
-    dealName: 'XYZ Express Logistics — Fleet & Contractor Workforce Expansion',
-    clientId: 'cli-02',
-    clientName: 'XYZ Logistics & Supply Chain Pvt Ltd',
-    companyName: 'XYZ Logistics & Supply Chain Pvt Ltd',
-    contactPerson: 'Pooja Hegde',
-    designation: 'VP People & Culture',
-    email: 'pooja.h@xyzlogistics.com',
-    phone: '+91 98801 87654',
-    industry: 'Warehousing & 3PL Logistics',
-    estimatedEmployees: 500,
-    locationsCount: 8,
-    legalEntitiesCount: 1,
-    estimatedArr: 360000,
-    probability: 85,
-    expectedCloseDate: '2026-11-05',
-    salesOwner: 'Arun K',
-    stage: 'PROPOSAL',
-    originType: 'EXISTING_CUSTOMER',
-    capturedRequirements: [
-      'core_hr',
-      'ess',
-      'attendance',
-      'leave',
-      'payroll',
-      'vendor_workforce',
-      'vendor_portal',
-    ],
-    quotationIds: ['qt-02'],
-    activeQuotationId: 'qt-02',
-    createdAt: '2026-09-20',
-    updatedAt: '2026-10-04',
-  },
-];
-
-export const INITIAL_CLIENTS: CommercialClient[] = [
-  {
-    id: 'cli-01',
-    clientCode: 'CLI-2026-00124',
-    legalName: 'ABC Industries Private Limited',
-    tradeName: 'ABC Manufacturing & Heavy Engineering',
-    gstin: '33AABCA4589E1Z2',
-    pan: 'AABCA4589E',
-    contactPerson: 'Rajesh Kumar',
-    designation: 'HR Head',
-    email: 'rajesh@abc.com',
-    phone: '+91 98401 23456',
-    website: 'https://abcindustries.in',
-    billingAddress: {
-      line1: 'Plot 45, Ambattur Industrial Estate',
-      city: 'Chennai',
-      state: 'Tamil Nadu',
-      country: 'India',
-      pinCode: '600058',
-    },
-    industry: 'Manufacturing',
-    employeeCount: 850,
-    locationsCount: 12,
-    companiesCount: 2,
-    customerType: 'Enterprise',
-    status: 'Active',
-    createdAt: '2026-02-15',
-  },
-  {
-    id: 'cli-02',
-    clientCode: 'CLI-2026-00123',
-    legalName: 'XYZ Logistics & Supply Chain Pvt Ltd',
-    tradeName: 'XYZ Express Logistics',
-    gstin: '29AABCX9912F1Z8',
-    pan: 'AABCX9912F',
-    contactPerson: 'Pooja Hegde',
-    designation: 'VP People & Culture',
-    email: 'pooja.h@xyzlogistics.com',
-    phone: '+91 98801 87654',
-    website: 'https://xyzlogistics.com',
-    billingAddress: {
-      line1: 'Outer Ring Road, Bellandur',
-      city: 'Bengaluru',
-      state: 'Karnataka',
-      country: 'India',
-      pinCode: '560103',
-    },
-    industry: 'Warehousing & 3PL Logistics',
-    employeeCount: 240,
-    customerType: 'Mid-Market',
-    status: 'Active',
-    createdAt: '2026-04-10',
-  },
-  {
-    id: 'cli-03',
-    clientCode: 'CLI-2026-00122',
-    legalName: 'Metro Infrastructure & Construction Group',
-    tradeName: 'Metro Infra Consortium',
-    gstin: '27AABCM3312Q1ZX',
-    pan: 'AABCM3312Q',
-    contactPerson: 'Suresh Gaikwad',
-    designation: 'Chief Human Resources Officer (CHRO)',
-    email: 'suresh.g@metroinfra.in',
-    phone: '+91 98200 99887',
-    website: 'https://metroinfra.in',
-    billingAddress: {
-      line1: 'Bandra-Kurla Complex (BKC)',
-      city: 'Mumbai',
-      state: 'Maharashtra',
-      country: 'India',
-      pinCode: '400051',
-    },
-    industry: 'Infrastructure & EPC',
-    employeeCount: 4500,
-    customerType: 'Enterprise',
-    status: 'Lead',
-    createdAt: '2026-06-20',
-  },
-];
+export const INITIAL_LEADS: CrmLead[] = [];
+export const INITIAL_OPPORTUNITIES: CrmOpportunity[] = [];
+export const INITIAL_CLIENTS: CommercialClient[] = [];
 
 export const DEFAULT_ONE_TIME_SERVICES: OneTimeServiceItem[] = [
   { key: 'impl_setup', name: 'Enterprise Deployment & Account Setup', description: 'Multi-entity org structure, branches, roles & permission mapping.', rate: 30000, selected: true },
@@ -358,422 +102,9 @@ export const DEFAULT_ONE_TIME_SERVICES: OneTimeServiceItem[] = [
   { key: 'admin_training', name: 'HR Staff & Supervisor Training Program', description: 'Comprehensive video webinars and live training for HR admins and site managers.', rate: 15000, selected: true },
 ];
 
-export const INITIAL_QUOTATIONS: CommercialQuotation[] = [
-  {
-    id: 'qt-01',
-    quotationNumber: 'QT-2026-00124',
-    version: 1,
-    originType: 'NEW_CUSTOMER',
-    purpose: 'NEW_SUBSCRIPTION',
-    opportunityId: 'opp-01',
-    opportunityNumber: 'OPP-2026-0031',
-    leadId: 'lead-01',
-    leadNumber: 'LEAD-2026-0048',
-    clientName: 'ABC Industries Pvt Ltd',
-    clientGstin: '33AABCA4589E1Z2',
-    clientEmail: 'rajesh@abcindustries.in',
-    clientPhone: '+91 98401 23456',
-    clientState: 'Tamil Nadu',
-    salesOwner: 'Arun K (Commercial Lead)',
-    planCode: 'BUSINESS',
-    planName: 'Business',
-    billingCycle: 'Annual',
-    employeeCount: 850,
-    includedEmployees: 100,
-    additionalEmployeesCount: 750,
-    pepmRate: 50,
-    selectedAddonKeys: ['recruitment_suite', 'vendor_workforce_mgmt', 'invoice_3way_matching'],
-    requirements: {
-      employees: 850,
-      companies: 2,
-      locations: 12,
-      modulesRequested: ['Core HR', 'Attendance', 'Payroll', 'Recruitment', 'Vendor Workforce', 'Invoice Matching'],
-      ssoRequired: true,
-      apiTier: 'Advanced REST',
-    },
-    lineItems: [
-      {
-        id: 'li-1',
-        sku: 'PLAN-BIZ',
-        description: 'Joy Business SaaS Subscription (Includes 100 Employees)',
-        category: 'RECURRING_PLAN',
-        quantity: 1,
-        unit: 'Plan',
-        unitRateMonthly: 9999,
-        monthsCount: 12,
-        grossAmount: 119988,
-        discountAmount: 11999,
-        netAmount: 107989,
-        sacCode: '998313',
-      },
-      {
-        id: 'li-2',
-        sku: 'SEAT-OVERAGE',
-        description: 'Workforce Seat Expansion (750 Additional Employees @ ₹50 PEPM)',
-        category: 'RECURRING_OVERAGE',
-        quantity: 750,
-        unit: 'Employee',
-        unitRateMonthly: 50,
-        monthsCount: 12,
-        grossAmount: 450000,
-        discountAmount: 45000,
-        netAmount: 405000,
-        sacCode: '998313',
-      },
-      {
-        id: 'li-3',
-        sku: 'ADDON-VENDOR',
-        description: 'Vendor Workforce Management Module',
-        category: 'RECURRING_ADDON',
-        quantity: 1,
-        unit: 'Module',
-        unitRateMonthly: 4999,
-        monthsCount: 12,
-        grossAmount: 59988,
-        discountAmount: 5999,
-        netAmount: 53989,
-        sacCode: '998313',
-      },
-      {
-        id: 'li-4',
-        sku: 'ADDON-MATCH',
-        description: 'Invoice & 3-Way Match Settlement Engine',
-        category: 'RECURRING_ADDON',
-        quantity: 1,
-        unit: 'Module',
-        unitRateMonthly: 3999,
-        monthsCount: 12,
-        grossAmount: 47988,
-        discountAmount: 4799,
-        netAmount: 43189,
-        sacCode: '998313',
-      },
-    ],
-    oneTimeServices: [
-      { key: 'impl_setup', name: 'Enterprise Deployment & Account Setup', description: 'Multi-entity setup', rate: 30000, selected: true },
-      { key: 'payroll_config', name: 'Custom Salary Structures & Statutory Compliance Setup', description: 'CTC rule builder', rate: 25000, selected: true },
-    ],
-    pricingSnapshot: {
-      pricingVersionId: 'pv-2026-q3',
-      basePlanMonthly: 9999,
-      overageMonthly: 37500,
-      addonsMonthly: 8998,
-      grossMonthlyRunRate: 56497,
-      cycleMultiplier: 12,
-      termDiscountPercent: 10,
-      negotiatedDiscountPercent: 5,
-      totalDiscountPercent: 15,
-      discountAmount: 101694,
-      recurringPreTax: 576270,
-      oneTimePreTax: 55000,
-      taxableSubtotal: 631270,
-      gstRatePercent: 18,
-      gstAmount: 113629,
-      totalFirstYearValue: 744899,
-    },
-    approval: {
-      required: true,
-      tier: 'Commercial Head',
-      approvedBy: 'Siddharth (VP Commercial)',
-      approvedAt: '2026-10-02T11:00:00Z',
-      approvalComments: 'Approved 15% combined term + negotiated enterprise discount for annual prepayment.',
-    },
-    status: 'SENT',
-    validUntil: '2026-10-31',
-    createdAt: '2026-10-01',
-    updatedAt: '2026-10-02',
-    versions: [
-      {
-        versionNumber: 1,
-        createdAt: '2026-10-01',
-        createdBy: 'Arun K',
-        grossAnnualValue: 677964,
-        discountPercentage: 15,
-        discountAmount: 101694,
-        netAnnualValue: 576270,
-        oneTimeServicesTotal: 55000,
-        gstAmount: 113629,
-        totalContractValue: 744899,
-        status: 'SENT',
-      },
-    ],
-  },
-  {
-    id: 'qt-02',
-    quotationNumber: 'QT-2026-00123',
-    version: 2,
-    originType: 'EXISTING_CUSTOMER',
-    purpose: 'ADDITIONAL_SEATS',
-    opportunityId: 'opp-03',
-    opportunityNumber: 'OPP-2026-0039',
-    clientId: 'cli-02',
-    clientName: 'XYZ Logistics & Supply Chain Pvt Ltd',
-    clientGstin: '29AABCX9912F1Z8',
-    clientEmail: 'pooja.h@xyzlogistics.com',
-    clientPhone: '+91 98801 87654',
-    clientState: 'Karnataka',
-    salesOwner: 'Priya Sharma',
-    planCode: 'PROFESSIONAL',
-    planName: 'Professional',
-    billingCycle: 'Annual',
-    employeeCount: 240,
-    includedEmployees: 100,
-    additionalEmployeesCount: 140,
-    pepmRate: 60,
-    selectedAddonKeys: ['recruitment_suite'],
-    requirements: {
-      employees: 240,
-      companies: 1,
-      locations: 5,
-      modulesRequested: ['Core HR', 'Attendance GPS', 'Payroll PF/ESI', 'Recruitment'],
-      ssoRequired: false,
-      apiTier: 'Standard',
-    },
-    lineItems: [],
-    oneTimeServices: [
-      { key: 'impl_setup', name: 'Enterprise Deployment & Account Setup', description: 'Setup', rate: 20000, selected: true },
-    ],
-    pricingSnapshot: {
-      pricingVersionId: 'pv-2026-q3',
-      basePlanMonthly: 5999,
-      overageMonthly: 8400,
-      addonsMonthly: 2499,
-      grossMonthlyRunRate: 16898,
-      cycleMultiplier: 12,
-      termDiscountPercent: 10,
-      negotiatedDiscountPercent: 0,
-      totalDiscountPercent: 10,
-      discountAmount: 20278,
-      recurringPreTax: 182498,
-      oneTimePreTax: 20000,
-      taxableSubtotal: 202498,
-      gstRatePercent: 18,
-      gstAmount: 36450,
-      totalFirstYearValue: 238948,
-    },
-    approval: {
-      required: false,
-      tier: 'Sales',
-    },
-    status: 'ACCEPTED',
-    validUntil: '2026-10-20',
-    createdAt: '2026-09-25',
-    updatedAt: '2026-10-04',
-    convertedSubscriptionId: 'sub-xyz-2026',
-    versions: [
-      {
-        versionNumber: 1,
-        createdAt: '2026-09-25',
-        createdBy: 'Priya Sharma',
-        grossAnnualValue: 202776,
-        discountPercentage: 0,
-        discountAmount: 0,
-        netAnnualValue: 202776,
-        oneTimeServicesTotal: 20000,
-        gstAmount: 40099,
-        totalContractValue: 262875,
-        status: 'NEGOTIATION',
-      },
-      {
-        versionNumber: 2,
-        createdAt: '2026-10-04',
-        createdBy: 'Priya Sharma',
-        grossAnnualValue: 202776,
-        discountPercentage: 10,
-        discountAmount: 20278,
-        netAnnualValue: 182498,
-        oneTimeServicesTotal: 20000,
-        gstAmount: 36450,
-        totalContractValue: 238948,
-        status: 'ACCEPTED',
-      },
-    ],
-  },
-];
+export const INITIAL_QUOTATIONS: CommercialQuotation[] = [];
 
-export const INITIAL_INVOICES: SaaSInvoice[] = [
-  {
-    id: 'inv-01',
-    invoiceNumber: 'INV/26-27/000184',
-    invoiceType: 'TAX_INVOICE',
-    financialYear: '26-27',
-    clientId: 'cli-01',
-    clientName: 'ABC Industries Private Limited',
-    clientGstin: '33AABCA4589E1Z2',
-    clientAddress: 'Plot 45, Ambattur Industrial Estate, Chennai, Tamil Nadu 600058',
-    clientState: 'Tamil Nadu',
-    supplierName: SUPPLIER_COMPANY_DETAILS.legalName,
-    supplierGstin: SUPPLIER_COMPANY_DETAILS.gstin,
-    supplierState: SUPPLIER_COMPANY_DETAILS.state,
-    placeOfSupply: 'Tamil Nadu (33)',
-    isInterState: false, // Intra-state -> CGST 9% + SGST 9%
-    subscriptionId: 'SUB-2026-000184',
-    quotationId: 'qt-01',
-    billingPeriodStart: '2026-10-01',
-    billingPeriodEnd: '2026-10-31',
-    invoiceDate: '2026-10-06',
-    dueDate: '2026-10-21',
-    paymentTerms: '15 Days Net',
-    lineItems: [
-      {
-        id: 'li-inv-1',
-        sku: 'PLAN-BIZ-MO',
-        description: 'Business SaaS Plan — 100 Employees Base (Oct 2026)',
-        quantity: 1,
-        unit: 'Plan',
-        unitPrice: 9999,
-        discount: 1000,
-        taxableValue: 8999,
-        sacCode: '998313',
-        cgstRate: 9,
-        cgstAmount: 810,
-        sgstRate: 9,
-        sgstAmount: 810,
-        igstRate: 0,
-        igstAmount: 0,
-        totalLineAmount: 10619,
-      },
-      {
-        id: 'li-inv-2',
-        sku: 'SEAT-OVERAGE-MO',
-        description: 'Workforce Seat Overage (750 additional employees @ ₹50 PEPM)',
-        quantity: 750,
-        unit: 'Employee',
-        unitPrice: 50,
-        discount: 3750,
-        taxableValue: 33750,
-        sacCode: '998313',
-        cgstRate: 9,
-        cgstAmount: 3037.5,
-        sgstRate: 9,
-        sgstAmount: 3037.5,
-        igstRate: 0,
-        igstAmount: 0,
-        totalLineAmount: 39825,
-      },
-      {
-        id: 'li-inv-3',
-        sku: 'ADDON-VENDOR-MO',
-        description: 'Vendor Workforce Management Module (Oct 2026)',
-        quantity: 1,
-        unit: 'Module',
-        unitPrice: 4999,
-        discount: 500,
-        taxableValue: 4499,
-        sacCode: '998313',
-        cgstRate: 9,
-        cgstAmount: 405,
-        sgstRate: 9,
-        sgstAmount: 405,
-        igstRate: 0,
-        igstAmount: 0,
-        totalLineAmount: 5309,
-      },
-      {
-        id: 'li-inv-4',
-        sku: 'ADDON-MATCH-MO',
-        description: 'Invoice & 3-Way Match Settlement Engine (Oct 2026)',
-        quantity: 1,
-        unit: 'Module',
-        unitPrice: 3999,
-        discount: 400,
-        taxableValue: 3599,
-        sacCode: '998313',
-        cgstRate: 9,
-        cgstAmount: 324,
-        sgstRate: 9,
-        sgstAmount: 324,
-        igstRate: 0,
-        igstAmount: 0,
-        totalLineAmount: 4247,
-      },
-    ],
-    subtotal: 56497,
-    discountAmount: 5650,
-    taxableValue: 50847,
-    cgstAmount: 4576.5,
-    sgstAmount: 4576.5,
-    igstAmount: 0,
-    totalTax: 9153,
-    totalInvoiceAmount: 60000,
-    amountPaid: 0,
-    balanceDue: 60000,
-    status: 'Sent',
-    bankDetails: SUPPLIER_COMPANY_DETAILS.bankDetails,
-    payments: [],
-    createdAt: '2026-10-06T10:00:00Z',
-    notes: 'Thank you for your business. Monthly SaaS billing per contract QT-2026-00124.',
-  },
-  {
-    id: 'inv-02',
-    invoiceNumber: 'INV/26-27/000183',
-    invoiceType: 'TAX_INVOICE',
-    financialYear: '26-27',
-    clientId: 'cli-02',
-    clientName: 'XYZ Logistics & Supply Chain Pvt Ltd',
-    clientGstin: '29AABCX9912F1Z8',
-    clientAddress: 'Outer Ring Road, Bellandur, Bengaluru, Karnataka 560103',
-    clientState: 'Karnataka',
-    supplierName: SUPPLIER_COMPANY_DETAILS.legalName,
-    supplierGstin: SUPPLIER_COMPANY_DETAILS.gstin,
-    supplierState: SUPPLIER_COMPANY_DETAILS.state,
-    placeOfSupply: 'Karnataka (29)',
-    isInterState: true, // Inter-state -> IGST 18%
-    subscriptionId: 'SUB-2026-000183',
-    quotationId: 'qt-02',
-    billingPeriodStart: '2026-10-01',
-    billingPeriodEnd: '2027-09-30',
-    invoiceDate: '2026-10-04',
-    dueDate: '2026-10-19',
-    paymentTerms: 'Immediate upon receipt',
-    lineItems: [
-      {
-        id: 'li-inv-21',
-        sku: 'PLAN-PRO-ANNUAL',
-        description: 'Joy Professional SaaS Plan — Annual 1-Year Prepayment',
-        quantity: 1,
-        unit: 'Year',
-        unitPrice: 71988,
-        discount: 7199,
-        taxableValue: 64789,
-        sacCode: '998313',
-        cgstRate: 0,
-        cgstAmount: 0,
-        sgstRate: 0,
-        sgstAmount: 0,
-        igstRate: 18,
-        igstAmount: 11662,
-        totalLineAmount: 76451,
-      },
-    ],
-    subtotal: 71988,
-    discountAmount: 7199,
-    taxableValue: 64789,
-    cgstAmount: 0,
-    sgstAmount: 0,
-    igstAmount: 11662,
-    totalTax: 11662,
-    totalInvoiceAmount: 76451,
-    amountPaid: 76451,
-    balanceDue: 0,
-    status: 'Paid',
-    bankDetails: SUPPLIER_COMPANY_DETAILS.bankDetails,
-    payments: [
-      {
-        id: 'pay-01',
-        paymentNumber: 'PAY-2026-00123',
-        invoiceId: 'inv-02',
-        amount: 76451,
-        method: 'Bank Transfer (NEFT/RTGS)',
-        utrOrReference: 'HDFCR520261005881923',
-        paymentDate: '2026-10-05',
-        receivedBy: 'Finance Desk Anand',
-        verified: true,
-      },
-    ],
-    createdAt: '2026-10-04T14:00:00Z',
-  },
-];
+export const INITIAL_INVOICES: SaaSInvoice[] = [];
 
 class SaasCommercialService {
   private leads: CrmLead[];
@@ -781,16 +112,83 @@ class SaasCommercialService {
   private clients: CommercialClient[];
   private quotations: CommercialQuotation[];
   private invoices: SaaSInvoice[];
+  private salesOwners: CommercialSalesOwner[];
   private supplierDetails: SupplierCompanyDetails;
 
   constructor() {
+    this.purgeLegacyMockStorage();
     this.leads = this.loadLeads();
     this.opportunities = this.loadOpportunities();
     this.clients = this.loadClients();
     this.quotations = this.loadQuotations();
     this.invoices = this.loadInvoices();
+    this.salesOwners = this.loadSalesOwners();
     this.supplierDetails = this.loadSupplierDetails();
     this.syncRemoteData();
+    this.setupRealtimeChannel();
+  }
+
+  private purgeLegacyMockStorage(): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      const keys = [
+        STORAGE_KEY_LEADS,
+        STORAGE_KEY_OPPORTUNITIES,
+        STORAGE_KEY_CLIENTS,
+        STORAGE_KEY_QUOTES,
+        STORAGE_KEY_INVOICES,
+        STORAGE_KEY_SALES_OWNERS,
+      ];
+      keys.forEach((key) => {
+        const raw = localStorage.getItem(key);
+        if (!raw) return;
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter((item: any) => {
+              if (!item) return false;
+              const id = String(item.id || '').toLowerCase();
+              const name = String(item.name || item.companyName || item.legalName || item.clientName || item.dealName || '').toLowerCase();
+              const email = String(item.email || '').toLowerCase();
+
+              // Purge fake mock sales reps
+              if (
+                id === 'so-01' ||
+                id === 'so-02' ||
+                id.startsWith('so-0') ||
+                name.includes('priya sharma') ||
+                name.includes('arun k') ||
+                email.includes('joymanpower')
+              ) {
+                return false;
+              }
+
+              // Purge mock quotations, invoices, clients, leads, opps
+              if (
+                id.startsWith('qt-0') ||
+                id.startsWith('inv-0') ||
+                id.startsWith('cli-0') ||
+                id.startsWith('lead-0') ||
+                id.startsWith('opp-0') ||
+                id.startsWith('opp-seed') ||
+                id.startsWith('lead-seed') ||
+                name.includes('abc industries') ||
+                name.includes('xyz logistics') ||
+                name.includes('techflow') ||
+                name.includes('apex retail') ||
+                name.includes('nexus logistics') ||
+                name.includes('joy manpower') ||
+                name.includes('test company')
+              ) {
+                return false;
+              }
+              return true;
+            });
+            localStorage.setItem(key, JSON.stringify(cleaned));
+          }
+        } catch {}
+      });
+    } catch {}
   }
 
   private async syncRemoteData(): Promise<void> {
@@ -801,34 +199,29 @@ class SaasCommercialService {
         .from('crm_leads')
         .select('*')
         .limit(100);
-      if (!leadsErr && remoteLeads && remoteLeads.length > 0) {
-        remoteLeads.forEach((rl: any) => {
-          const idx = this.leads.findIndex((l) => l.id === rl.id);
-          const mapped: CrmLead = {
-            id: rl.id,
-            leadNumber: rl.lead_number,
-            companyName: rl.company_name,
-            contactPerson: rl.contact_person,
-            designation: rl.designation,
-            email: rl.email,
-            phone: rl.phone,
-            website: rl.website,
-            industry: rl.industry,
-            estimatedEmployees: rl.estimated_employees,
-            locationsCount: rl.locations_count,
-            source: rl.source,
-            salesOwner: rl.sales_owner,
-            stage: rl.stage,
-            requirements: rl.requirements || [],
-            notes: rl.notes,
-            opportunityId: rl.opportunity_id,
-            convertedClientId: rl.converted_client_id,
-            createdAt: rl.created_at,
-            updatedAt: rl.updated_at,
-          };
-          if (idx >= 0) this.leads[idx] = mapped;
-          else this.leads.push(mapped);
-        });
+      if (!leadsErr && Array.isArray(remoteLeads)) {
+        this.leads = remoteLeads.map((rl: any) => ({
+          id: rl.id,
+          leadNumber: rl.lead_number,
+          companyName: rl.company_name,
+          contactPerson: rl.contact_person,
+          designation: rl.designation,
+          email: rl.email,
+          phone: rl.phone,
+          website: rl.website,
+          industry: rl.industry,
+          estimatedEmployees: rl.estimated_employees,
+          locationsCount: rl.locations_count,
+          source: rl.source,
+          salesOwner: rl.sales_owner,
+          stage: rl.stage,
+          requirements: rl.requirements || [],
+          notes: rl.notes,
+          opportunityId: rl.opportunity_id,
+          convertedClientId: rl.converted_client_id,
+          createdAt: rl.created_at,
+          updatedAt: rl.updated_at,
+        }));
         this.setItem(STORAGE_KEY_LEADS, JSON.stringify(this.leads));
       }
 
@@ -837,42 +230,37 @@ class SaasCommercialService {
         .from('crm_opportunities')
         .select('*')
         .limit(100);
-      if (!oppsErr && remoteOpps && remoteOpps.length > 0) {
-        remoteOpps.forEach((ro: any) => {
-          const idx = this.opportunities.findIndex((o) => o.id === ro.id);
-          const mapped: CrmOpportunity = {
-            id: ro.id,
-            opportunityNumber: ro.opportunity_number,
-            dealName: ro.deal_name,
-            leadId: ro.lead_id,
-            leadNumber: ro.lead_number,
-            clientId: ro.client_id,
-            clientName: ro.client_name,
-            companyName: ro.company_name,
-            contactPerson: ro.contact_person,
-            designation: ro.designation,
-            email: ro.email,
-            phone: ro.phone,
-            industry: ro.industry,
-            estimatedEmployees: ro.estimated_employees,
-            locationsCount: ro.locations_count,
-            legalEntitiesCount: ro.legal_entities_count,
-            estimatedArr: Number(ro.estimated_arr || 0),
-            probability: ro.probability,
-            expectedCloseDate: ro.expected_close_date,
-            salesOwner: ro.sales_owner,
-            stage: (ro.stage || 'DISCOVERY') as OpportunityStage,
-            capturedRequirements: ro.captured_requirements || [],
-            quotationIds: ro.quotation_ids || [],
-            activeQuotationId: ro.active_quotation_id,
-            originType: (ro.origin_type || 'NEW_CUSTOMER') as QuotationOriginType,
-            notes: ro.notes,
-            createdAt: ro.created_at,
-            updatedAt: ro.updated_at,
-          };
-          if (idx >= 0) this.opportunities[idx] = mapped;
-          else this.opportunities.push(mapped);
-        });
+      if (!oppsErr && Array.isArray(remoteOpps)) {
+        this.opportunities = remoteOpps.map((ro: any) => ({
+          id: ro.id,
+          opportunityNumber: ro.opportunity_number,
+          dealName: ro.deal_name,
+          leadId: ro.lead_id,
+          leadNumber: ro.lead_number,
+          clientId: ro.client_id,
+          clientName: ro.client_name,
+          companyName: ro.company_name,
+          contactPerson: ro.contact_person,
+          designation: ro.designation,
+          email: ro.email,
+          phone: ro.phone,
+          industry: ro.industry,
+          estimatedEmployees: ro.estimated_employees,
+          locationsCount: ro.locations_count,
+          legalEntitiesCount: ro.legal_entities_count,
+          estimatedArr: Number(ro.estimated_arr || 0),
+          probability: ro.probability,
+          expectedCloseDate: ro.expected_close_date,
+          salesOwner: ro.sales_owner,
+          stage: (ro.stage || 'DISCOVERY') as OpportunityStage,
+          capturedRequirements: ro.captured_requirements || [],
+          quotationIds: ro.quotation_ids || [],
+          activeQuotationId: ro.active_quotation_id,
+          originType: (ro.origin_type || 'NEW_CUSTOMER') as QuotationOriginType,
+          notes: ro.notes,
+          createdAt: ro.created_at,
+          updatedAt: ro.updated_at,
+        }));
         this.setItem(STORAGE_KEY_OPPORTUNITIES, JSON.stringify(this.opportunities));
       }
 
@@ -881,58 +269,341 @@ class SaasCommercialService {
         .from('commercial_quotations')
         .select('*')
         .limit(100);
-      if (!quotesErr && remoteQuotes && remoteQuotes.length > 0) {
-        remoteQuotes.forEach((rq: any) => {
-          const idx = this.quotations.findIndex((q) => q.id === rq.id);
-          const mapped: CommercialQuotation = {
-            id: rq.id,
-            quotationNumber: rq.quotation_number,
-            version: rq.version,
-            originType: rq.origin_type,
-            purpose: rq.purpose,
-            opportunityId: rq.opportunity_id,
-            opportunityNumber: rq.opportunity_number,
-            leadId: rq.lead_id,
-            leadNumber: rq.lead_number,
-            clientId: rq.client_id,
-            clientName: rq.client_name,
-            clientGstin: rq.client_gstin,
-            clientEmail: rq.client_email,
-            clientPhone: rq.client_phone,
-            clientState: rq.client_state,
-            salesOwner: rq.sales_owner,
-            planCode: rq.plan_code,
-            planName: rq.plan_name,
-            billingCycle: rq.billing_cycle,
-            employeeCount: rq.employee_count,
-            includedEmployees: rq.included_employees,
-            additionalEmployeesCount: rq.additional_employees_count,
-            pepmRate: Number(rq.pepm_rate),
-            selectedAddonKeys: rq.selected_addon_keys || [],
-            requirements: rq.requirements || {},
-            lineItems: rq.line_items || [],
-            oneTimeServices: rq.one_time_services || [],
-            pricingSnapshot: rq.pricing_snapshot || {},
-            approval: rq.approval || { required: false, tier: 'Sales' },
-            solutionConfig: rq.solution_config,
-            terms: rq.terms,
-            status: rq.status,
-            validUntil: rq.valid_until,
-            convertedClientId: rq.converted_client_id,
-            convertedOrgId: rq.converted_org_id,
-            convertedSubscriptionId: rq.converted_subscription_id,
-            createdAt: rq.created_at,
-            updatedAt: rq.updated_at,
-            versions: [],
-          };
-          if (idx >= 0) this.quotations[idx] = mapped;
-          else this.quotations.push(mapped);
-        });
+      if (!quotesErr && Array.isArray(remoteQuotes)) {
+        this.quotations = remoteQuotes.map((rq: any) => ({
+          id: rq.id,
+          quotationNumber: rq.quotation_number,
+          version: rq.version,
+          originType: rq.origin_type,
+          purpose: rq.purpose,
+          opportunityId: rq.opportunity_id,
+          opportunityNumber: rq.opportunity_number,
+          leadId: rq.lead_id,
+          leadNumber: rq.lead_number,
+          clientId: rq.client_id,
+          clientName: rq.client_name,
+          clientGstin: rq.client_gstin,
+          clientEmail: rq.client_email,
+          clientPhone: rq.client_phone,
+          clientState: rq.client_state,
+          salesOwner: rq.sales_owner,
+          planCode: rq.plan_code,
+          planName: rq.plan_name,
+          billingCycle: rq.billing_cycle,
+          employeeCount: rq.employee_count,
+          includedEmployees: rq.included_employees,
+          additionalEmployeesCount: rq.additional_employees_count,
+          pepmRate: Number(rq.pepm_rate),
+          selectedAddonKeys: rq.selected_addon_keys || [],
+          requirements: rq.requirements || {},
+          lineItems: rq.line_items || [],
+          oneTimeServices: rq.one_time_services || [],
+          pricingSnapshot: rq.pricing_snapshot || {},
+          approval: rq.approval || { required: false, tier: 'Sales' },
+          solutionConfig: rq.solution_config,
+          terms: rq.terms,
+          status: rq.status,
+          validUntil: rq.valid_until,
+          convertedClientId: rq.converted_client_id,
+          convertedOrgId: rq.converted_org_id,
+          convertedSubscriptionId: rq.converted_subscription_id,
+          createdAt: rq.created_at,
+          updatedAt: rq.updated_at,
+          versions: [],
+        }));
         this.setItem(STORAGE_KEY_QUOTES, JSON.stringify(this.quotations));
       }
+
+      // 4. Commercial Clients
+      const { data: remoteClients, error: clientsErr } = await supabase
+        .from('commercial_clients')
+        .select('*')
+        .limit(100);
+      if (!clientsErr && Array.isArray(remoteClients)) {
+        this.clients = remoteClients
+          .filter((rc: any) => {
+            const name = (rc.legal_name || '').toLowerCase();
+            return !name.includes('abc industries') && !name.includes('xyz logistics') && rc.id !== 'cli-02';
+          })
+          .map((rc: any) => ({
+            id: rc.id,
+            clientCode: rc.client_code,
+            legalName: rc.legal_name,
+            tradeName: rc.trade_name || rc.legal_name,
+            organizationId: rc.organization_id,
+            industry: rc.industry || 'Technology',
+            employeeCount: rc.employee_count || 1,
+            gstin: rc.gstin || '',
+            pan: rc.pan || '',
+            cin: rc.cin,
+            contactPerson: rc.primary_contact?.name || 'Authorized Admin',
+            designation: rc.primary_contact?.designation || 'Director',
+            email: rc.primary_contact?.email || 'billing@company.com',
+            phone: rc.primary_contact?.phone || '+91 98401 00000',
+            billingAddress: rc.billing_address || {
+              line1: 'Corporate Campus',
+              city: 'Chennai',
+              state: 'Tamil Nadu',
+              country: 'India',
+              pinCode: '600096',
+            },
+            customerType: (rc.employee_count > 500 ? 'Enterprise' : 'Mid-Market') as any,
+            status: (rc.commercial_status === 'ACTIVE' ? 'Active' : 'Lead') as any,
+            createdAt: rc.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+          }));
+        this.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(this.clients));
+      }
+
+      this.notifyDataUpdated('ALL');
     } catch (err) {
       console.warn('Supabase commercial sync skipped:', err);
     }
+  }
+
+  private realtimeChannel: any = null;
+
+  private setupRealtimeChannel(): void {
+    if (!isSupabaseEnabled || typeof window === 'undefined') return;
+    if (this.realtimeChannel) return;
+
+    try {
+      const existing = supabase.getChannels().find((c) => c.topic === 'realtime:joy_saas_commercial_realtime_mesh');
+      if (existing) {
+        supabase.removeChannel(existing);
+      }
+
+      this.realtimeChannel = supabase
+        .channel('joy_saas_commercial_realtime_mesh')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'crm_leads' },
+          (payload) => {
+            this.handleRemoteLeadChange(payload);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'crm_opportunities' },
+          (payload) => {
+            this.handleRemoteOpportunityChange(payload);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'commercial_quotations' },
+          (payload) => {
+            this.handleRemoteQuotationChange(payload);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'commercial_clients' },
+          (payload) => {
+            this.handleRemoteClientChange(payload);
+          }
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('[Supabase Realtime] CRM & Commercial channel active');
+          }
+        });
+    } catch (err) {
+      console.warn('[Supabase Realtime] Could not connect commercial channel:', err);
+    }
+  }
+
+  private handleRemoteLeadChange(payload: any): void {
+    const { eventType, new: newRec, old: oldRec } = payload;
+    if (eventType === 'DELETE') {
+      this.leads = this.leads.filter((l) => l.id !== oldRec.id);
+    } else if (newRec) {
+      const mappedLead: CrmLead = {
+        id: newRec.id,
+        leadNumber: newRec.lead_number,
+        companyName: newRec.company_name,
+        contactPerson: newRec.contact_person,
+        designation: newRec.designation,
+        email: newRec.email,
+        phone: newRec.phone,
+        website: newRec.website,
+        industry: newRec.industry,
+        estimatedEmployees: newRec.estimated_employees,
+        locationsCount: newRec.locations_count,
+        source: newRec.source,
+        salesOwner: newRec.sales_owner,
+        stage: newRec.stage,
+        requirements: newRec.requirements || [],
+        notes: newRec.notes,
+        opportunityId: newRec.opportunity_id,
+        convertedClientId: newRec.converted_client_id,
+        createdAt: newRec.created_at,
+        updatedAt: newRec.updated_at,
+      };
+      const idx = this.leads.findIndex((l) => l.id === newRec.id);
+      if (idx >= 0) {
+        this.leads[idx] = mappedLead;
+      } else {
+        this.leads.unshift(mappedLead);
+      }
+    }
+    this.setItem(STORAGE_KEY_LEADS, JSON.stringify(this.leads));
+    this.notifyDataUpdated('crm_leads');
+  }
+
+  private handleRemoteOpportunityChange(payload: any): void {
+    const { eventType, new: newRec, old: oldRec } = payload;
+    if (eventType === 'DELETE') {
+      this.opportunities = this.opportunities.filter((o) => o.id !== oldRec.id);
+    } else if (newRec) {
+      const mappedOpp: CrmOpportunity = {
+        id: newRec.id,
+        opportunityNumber: newRec.opportunity_number,
+        dealName: newRec.deal_name,
+        leadId: newRec.lead_id,
+        leadNumber: newRec.lead_number,
+        clientId: newRec.client_id,
+        clientName: newRec.client_name,
+        companyName: newRec.company_name,
+        contactPerson: newRec.contact_person,
+        designation: newRec.designation,
+        email: newRec.email,
+        phone: newRec.phone,
+        industry: newRec.industry,
+        estimatedEmployees: newRec.estimated_employees,
+        locationsCount: newRec.locations_count,
+        legalEntitiesCount: newRec.legal_entities_count,
+        estimatedArr: Number(newRec.estimated_arr || 0),
+        probability: newRec.probability,
+        expectedCloseDate: newRec.expected_close_date,
+        salesOwner: newRec.sales_owner,
+        stage: (newRec.stage || 'DISCOVERY') as OpportunityStage,
+        capturedRequirements: newRec.captured_requirements || [],
+        quotationIds: newRec.quotation_ids || [],
+        activeQuotationId: newRec.active_quotation_id,
+        originType: (newRec.origin_type || 'NEW_CUSTOMER') as QuotationOriginType,
+        notes: newRec.notes,
+        createdAt: newRec.created_at,
+        updatedAt: newRec.updated_at,
+      };
+      const idx = this.opportunities.findIndex((o) => o.id === newRec.id);
+      if (idx >= 0) {
+        this.opportunities[idx] = mappedOpp;
+      } else {
+        this.opportunities.unshift(mappedOpp);
+      }
+    }
+    this.setItem(STORAGE_KEY_OPPORTUNITIES, JSON.stringify(this.opportunities));
+    this.notifyDataUpdated('crm_opportunities');
+  }
+
+  private handleRemoteQuotationChange(payload: any): void {
+    const { eventType, new: newRec, old: oldRec } = payload;
+    if (eventType === 'DELETE') {
+      this.quotations = this.quotations.filter((q) => q.id !== oldRec.id);
+    } else if (newRec) {
+      const mappedQuote: CommercialQuotation = {
+        id: newRec.id,
+        quotationNumber: newRec.quotation_number,
+        version: newRec.version,
+        originType: newRec.origin_type,
+        purpose: newRec.purpose,
+        opportunityId: newRec.opportunity_id,
+        opportunityNumber: newRec.opportunity_number,
+        leadId: newRec.lead_id,
+        leadNumber: newRec.lead_number,
+        clientId: newRec.client_id,
+        clientName: newRec.client_name,
+        clientGstin: newRec.client_gstin,
+        clientEmail: newRec.client_email,
+        clientPhone: newRec.client_phone,
+        clientState: newRec.client_state,
+        salesOwner: newRec.sales_owner,
+        planCode: newRec.plan_code,
+        planName: newRec.plan_name,
+        billingCycle: newRec.billing_cycle,
+        employeeCount: newRec.employee_count,
+        includedEmployees: newRec.included_employees,
+        additionalEmployeesCount: newRec.additional_employees_count,
+        pepmRate: Number(newRec.pepm_rate),
+        selectedAddonKeys: newRec.selected_addon_keys || [],
+        requirements: newRec.requirements || {},
+        lineItems: newRec.line_items || [],
+        oneTimeServices: newRec.one_time_services || [],
+        pricingSnapshot: newRec.pricing_snapshot || {},
+        approval: newRec.approval || { required: false, tier: 'Sales' },
+        solutionConfig: newRec.solution_config,
+        terms: newRec.terms,
+        status: newRec.status,
+        validUntil: newRec.valid_until,
+        convertedClientId: newRec.converted_client_id,
+        convertedOrgId: newRec.converted_org_id,
+        convertedSubscriptionId: newRec.converted_subscription_id,
+        createdAt: newRec.created_at,
+        updatedAt: newRec.updated_at,
+        versions: [],
+      };
+      const idx = this.quotations.findIndex((q) => q.id === newRec.id);
+      if (idx >= 0) {
+        this.quotations[idx] = mappedQuote;
+      } else {
+        this.quotations.unshift(mappedQuote);
+      }
+    }
+    this.setItem(STORAGE_KEY_QUOTES, JSON.stringify(this.quotations));
+    this.notifyDataUpdated('commercial_quotations');
+  }
+
+  private handleRemoteClientChange(payload: any): void {
+    const { eventType, new: newRec, old: oldRec } = payload;
+    if (eventType === 'DELETE') {
+      this.clients = this.clients.filter((c) => c.id !== oldRec.id);
+    } else if (newRec) {
+      const mappedClient: CommercialClient = {
+        id: newRec.id,
+        clientCode: newRec.client_code,
+        legalName: newRec.legal_name,
+        tradeName: newRec.trade_name || newRec.legal_name,
+        organizationId: newRec.organization_id,
+        industry: newRec.industry || 'Technology',
+        employeeCount: newRec.employee_count || 1,
+        gstin: newRec.gstin || '',
+        pan: newRec.pan || '',
+        cin: newRec.cin,
+        contactPerson: newRec.primary_contact?.name || 'Authorized Admin',
+        designation: newRec.primary_contact?.designation || 'Director',
+        email: newRec.primary_contact?.email || 'billing@company.com',
+        phone: newRec.primary_contact?.phone || '+91 98401 00000',
+        billingAddress: newRec.billing_address || {
+          line1: 'Corporate Campus',
+          city: 'Chennai',
+          state: 'Tamil Nadu',
+          country: 'India',
+          pinCode: '600096',
+        },
+        customerType: (newRec.employee_count > 500 ? 'Enterprise' : 'Mid-Market') as any,
+        status: (newRec.commercial_status === 'ACTIVE' ? 'Active' : 'Lead') as any,
+        createdAt: newRec.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+      };
+      const idx = this.clients.findIndex((c) => c.id === newRec.id);
+      if (idx >= 0) {
+        this.clients[idx] = mappedClient;
+      } else {
+        this.clients.unshift(mappedClient);
+      }
+    }
+    this.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(this.clients));
+    this.notifyDataUpdated('commercial_clients');
+  }
+
+  public notifyDataUpdated(table?: string): void {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('commercial:data_updated', { detail: { table } }));
+    }
+  }
+
+  public async refreshFromSupabase(): Promise<void> {
+    this.purgeLegacyMockStorage();
+    await this.syncRemoteData();
   }
 
   private getItem(key: string): string | null {
@@ -955,41 +626,239 @@ class SaasCommercialService {
   private loadLeads(): CrmLead[] {
     try {
       const saved = this.getItem(STORAGE_KEY_LEADS);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (l: any) =>
+              l &&
+              !String(l.id || '').startsWith('lead-0') &&
+              !String(l.id || '').startsWith('lead-seed') &&
+              !String(l.companyName || '').toLowerCase().includes('abc industries') &&
+              !String(l.companyName || '').toLowerCase().includes('xyz logistics') &&
+              !String(l.companyName || '').toLowerCase().includes('techflow') &&
+              !String(l.companyName || '').toLowerCase().includes('apex retail') &&
+              !String(l.companyName || '').toLowerCase().includes('nexus logistics') &&
+              !String(l.companyName || '').toLowerCase().includes('joy manpower') &&
+              !String(l.companyName || '').toLowerCase().includes('test company')
+          );
+        }
+      }
     } catch {}
-    return INITIAL_LEADS;
+    return [];
   }
 
   private loadOpportunities(): CrmOpportunity[] {
     try {
       const saved = this.getItem(STORAGE_KEY_OPPORTUNITIES);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (o: any) =>
+              o &&
+              !String(o.id || '').startsWith('opp-0') &&
+              !String(o.id || '').startsWith('opp-seed') &&
+              !String(o.companyName || '').toLowerCase().includes('abc industries') &&
+              !String(o.companyName || '').toLowerCase().includes('xyz logistics') &&
+              !String(o.companyName || '').toLowerCase().includes('techflow') &&
+              !String(o.companyName || '').toLowerCase().includes('apex retail') &&
+              !String(o.companyName || '').toLowerCase().includes('nexus logistics') &&
+              !String(o.companyName || '').toLowerCase().includes('joy manpower') &&
+              !String(o.companyName || '').toLowerCase().includes('test company')
+          );
+        }
+      }
     } catch {}
-    return INITIAL_OPPORTUNITIES;
+    return [];
   }
 
   private loadClients(): CommercialClient[] {
     try {
       const saved = this.getItem(STORAGE_KEY_CLIENTS);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (c: any) =>
+              c &&
+              !String(c.id || '').startsWith('cli-0') &&
+              !String(c.legalName || '').toLowerCase().includes('abc industries') &&
+              !String(c.legalName || '').toLowerCase().includes('xyz logistics')
+          );
+        }
+      }
     } catch {}
-    return INITIAL_CLIENTS;
+    return [];
   }
 
   private loadQuotations(): CommercialQuotation[] {
     try {
       const saved = this.getItem(STORAGE_KEY_QUOTES);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (q: any) =>
+              q &&
+              !String(q.id || '').startsWith('qt-0') &&
+              !String(q.quotationNumber || '').includes('QT-2026-00123') &&
+              !String(q.quotationNumber || '').includes('QT-2026-00124') &&
+              !String(q.clientName || '').toLowerCase().includes('abc industries') &&
+              !String(q.clientName || '').toLowerCase().includes('xyz logistics')
+          );
+        }
+      }
     } catch {}
-    return INITIAL_QUOTATIONS;
+    return [];
   }
 
   private loadInvoices(): SaaSInvoice[] {
     try {
       const saved = this.getItem(STORAGE_KEY_INVOICES);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (i: any) =>
+              i &&
+              !String(i.id || '').startsWith('inv-0') &&
+              !String(i.clientName || '').toLowerCase().includes('abc industries') &&
+              !String(i.clientName || '').toLowerCase().includes('xyz logistics')
+          );
+        }
+      }
     } catch {}
-    return INITIAL_INVOICES;
+    return [];
+  }
+
+  private loadSalesOwners(): CommercialSalesOwner[] {
+    try {
+      const saved = this.getItem(STORAGE_KEY_SALES_OWNERS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((so: any) => {
+            if (!so) return false;
+            const id = String(so.id || '').toLowerCase();
+            const name = String(so.name || '').toLowerCase();
+            const email = String(so.email || '').toLowerCase();
+            if (
+              id === 'so-01' ||
+              id === 'so-02' ||
+              id.startsWith('so-0') ||
+              name.includes('priya sharma') ||
+              name.includes('arun k') ||
+              email.includes('joymanpower')
+            ) {
+              return false;
+            }
+            return true;
+          });
+        }
+      }
+    } catch {}
+    return [];
+  }
+
+  // ── Commercial Sales Owners & Reps ─────────────────────────────────────────
+  public getSalesOwners(): CommercialSalesOwner[] {
+    const list = [...this.salesOwners];
+    try {
+      // Dynamically enrich from Platform Staff IAM if staff has commercial or super admin role
+      const staffList = platformStaffService.getStaffList();
+      staffList.forEach((staff) => {
+        const alreadyExists = list.some(
+          (so) => so.email.toLowerCase() === staff.email.toLowerCase() || so.staffId === staff.id
+        );
+        if (!alreadyExists && (staff.job_title?.toLowerCase().includes('sales') || staff.job_title?.toLowerCase().includes('commercial') || staff.is_root_superadmin)) {
+          list.push({
+            id: `so-staff-${staff.id.replace(/[^a-zA-Z0-9]/g, '').slice(-5)}`,
+            staffId: staff.id,
+            name: staff.name,
+            email: staff.email,
+            phone: staff.phone || '+91 98401 00000',
+            designation: staff.job_title || 'Enterprise Commercial Lead',
+            territory: 'National / Enterprise Accounts',
+            annualQuotaArr: 10000000,
+            closedWonArr: 0,
+            activeDealsCount: 0,
+            totalPipelineValue: 0,
+            winRatePct: 75,
+            status: staff.status === 'Active' ? 'Active' : 'Inactive',
+            createdAt: staff.created_at || new Date().toISOString().slice(0, 10),
+            updatedAt: new Date().toISOString().slice(0, 10),
+          });
+        }
+      });
+    } catch {}
+    return list;
+  }
+
+  public getSalesOwnerById(id: string): CommercialSalesOwner | undefined {
+    return this.getSalesOwners().find((so) => so.id === id);
+  }
+
+  public saveSalesOwner(owner: CommercialSalesOwner): void {
+    const idx = this.salesOwners.findIndex((so) => so.id === owner.id);
+    if (idx >= 0) {
+      this.salesOwners[idx] = { ...owner, updatedAt: new Date().toISOString().slice(0, 10) };
+    } else {
+      this.salesOwners.unshift(owner);
+    }
+    this.setItem(STORAGE_KEY_SALES_OWNERS, JSON.stringify(this.salesOwners));
+  }
+
+  public deleteSalesOwner(id: string): void {
+    this.salesOwners = this.salesOwners.filter((so) => so.id !== id);
+    this.setItem(STORAGE_KEY_SALES_OWNERS, JSON.stringify(this.salesOwners));
+  }
+
+  public getSalesPipelineMetrics() {
+    const opps = this.opportunities;
+    const quotes = this.quotations;
+    const owners = this.getSalesOwners();
+
+    let openPipeline = 0;
+    let weightedPipeline = 0;
+    let closedWonCount = 0;
+    let closedWonArr = 0;
+
+    for (const opp of opps) {
+      const arr = opp.estimatedArr || 0;
+      if (['DISCOVERY', 'REQUIREMENT', 'PRICING', 'PROPOSAL', 'NEGOTIATION'].includes(opp.stage)) {
+        openPipeline += arr;
+        weightedPipeline += Math.round((arr * (opp.probability || 50)) / 100);
+      } else if (opp.stage === 'WON') {
+        closedWonCount++;
+        closedWonArr += arr;
+      }
+    }
+
+    for (const q of quotes) {
+      const qVal = q.pricingSnapshot?.totalFirstYearValue || 0;
+      if (['SENT', 'INTERNAL_REVIEW', 'APPROVED'].includes(q.status)) {
+        openPipeline += qVal;
+        weightedPipeline += Math.round(qVal * 0.7);
+      } else if (['ACCEPTED', 'CONVERTED'].includes(q.status)) {
+        closedWonArr += qVal;
+        closedWonCount++;
+      }
+    }
+
+    const conversionRate = (opps.length + quotes.length) > 0
+      ? Math.round((closedWonCount / (opps.length + quotes.length)) * 100)
+      : 0;
+
+    return {
+      openPipeline,
+      weightedPipeline,
+      closedWonCount,
+      closedWonArr,
+      conversionRate,
+      activeRepsCount: owners.filter((o) => o.status === 'Active').length,
+      topRepName: owners[0]?.name || 'Commercial Desk',
+    };
   }
 
   private loadSupplierDetails(): SupplierCompanyDetails {
@@ -1043,7 +912,7 @@ class SaasCommercialService {
     } else {
       this.leads.unshift(lead);
     }
-    this.setItem(STORAGE_KEY_LEADS, JSON.stringify(this.leads));
+    this.notifyDataUpdated('crm_leads');
 
     if (isSupabaseEnabled) {
       supabase
@@ -1073,6 +942,20 @@ class SaasCommercialService {
     }
   }
 
+  public async deleteLead(id: string): Promise<void> {
+    this.leads = this.leads.filter((l) => l.id !== id);
+    this.setItem(STORAGE_KEY_LEADS, JSON.stringify(this.leads));
+    this.notifyDataUpdated('crm_leads');
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('crm_leads').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Failed to delete remote lead:', err);
+      }
+    }
+  }
+
   // ── CRM Opportunities ────────────────────────────────────────────────────
   public getOpportunities(): CrmOpportunity[] {
     return this.opportunities;
@@ -1090,6 +973,7 @@ class SaasCommercialService {
       this.opportunities.unshift(opp);
     }
     this.setItem(STORAGE_KEY_OPPORTUNITIES, JSON.stringify(this.opportunities));
+    this.notifyDataUpdated('crm_opportunities');
 
     if (isSupabaseEnabled) {
       supabase
@@ -1126,6 +1010,28 @@ class SaasCommercialService {
     }
   }
 
+  public updateOpportunityStage(id: string, stage: OpportunityStage): void {
+    const opp = this.getOpportunityById(id);
+    if (!opp) return;
+    opp.stage = stage;
+    opp.updatedAt = new Date().toISOString().slice(0, 10);
+    this.saveOpportunity(opp);
+  }
+
+  public async deleteOpportunity(id: string): Promise<void> {
+    this.opportunities = this.opportunities.filter((o) => o.id !== id);
+    this.setItem(STORAGE_KEY_OPPORTUNITIES, JSON.stringify(this.opportunities));
+    this.notifyDataUpdated('crm_opportunities');
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('crm_opportunities').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Failed to delete remote opportunity:', err);
+      }
+    }
+  }
+
   public createOpportunityFromLead(leadId: string, dealOverrides?: Partial<CrmOpportunity>): CrmOpportunity {
     const lead = this.getLeadById(leadId);
     if (!lead) throw new Error('Lead not found');
@@ -1149,7 +1055,7 @@ class SaasCommercialService {
       estimatedArr: lead.estimatedEmployees * 1000,
       probability: 60,
       expectedCloseDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
-      salesOwner: lead.salesOwner || 'Arun K',
+      salesOwner: lead.salesOwner || (this.getSalesOwners()[0]?.name || 'Commercial Desk'),
       stage: 'REQUIREMENT',
       originType: 'NEW_CUSTOMER',
       capturedRequirements: lead.requirements || ['core_hr', 'ess', 'attendance', 'leave', 'payroll'],
@@ -1168,7 +1074,76 @@ class SaasCommercialService {
   }
 
   public getClients(): CommercialClient[] {
-    return this.clients;
+    const orgs = platformTenantService.getOrganizations().items;
+    const clientMap = new Map<string, CommercialClient>();
+
+    // Canonical real organizations from Supabase / platform tenant service
+    orgs.forEach((org) => {
+      const lowerName = (org.legal_name || '').toLowerCase();
+      const orgId = String(org.id || '').toLowerCase();
+      if (
+        orgId === 'org-joy-corp' ||
+        orgId.includes('joy-corp') ||
+        lowerName.includes('joy corporate solutions') ||
+        lowerName === SUPPLIER_COMPANY_DETAILS.legalName.toLowerCase()
+      ) {
+        return; // Platform provider is the vendor, not a client!
+      }
+
+      const tenantDisplay = formatTenantDisplayId(org.id);
+      const clientCode = `CLI-2026-${tenantDisplay.replace(/^TEN-/, '')}`;
+      const domain = formatTenantDomain(org.domain, org.legal_name, org.id);
+
+      clientMap.set(org.id, {
+        id: org.id,
+        organizationId: org.id,
+        clientCode,
+        legalName: org.legal_name,
+        tradeName: org.display_name || org.legal_name,
+        gstin: org.gstin || '33AABCT9981K1Z9',
+        pan: org.pan || 'AABCT9981K',
+        contactPerson: org.primary_admin_name || 'Admin',
+        designation: 'Account Administrator',
+        email: org.primary_admin_email || `admin@${domain}`,
+        phone: '+91 98401 00000',
+        website: `https://${domain}`,
+        billingAddress: {
+          line1: org.city || 'Chennai',
+          city: org.city || 'Chennai',
+          state: org.state || 'Tamil Nadu',
+          country: org.country || 'India',
+          pinCode: '600001',
+        },
+        industry: org.industry || 'Technology & Enterprise Services',
+        employeeCount: org.active_employees || 1,
+        customerType: org.plan === 'Enterprise' ? 'Enterprise' : 'Mid-Market',
+        status: 'Active',
+        createdAt: org.created_at ? org.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+      });
+    });
+
+    // Also include any user-created clients saved in this.clients (excluding legacy mock entries & provider self)
+    this.clients.forEach((c) => {
+      const lowerName = (c.legalName || '').toLowerCase();
+      const isMock = c.id.startsWith('cli-0') || lowerName.includes('abc industries') || lowerName.includes('xyz logistics');
+      const isProvider =
+        c.id === 'org-joy-corp' ||
+        c.id.includes('joy-corp') ||
+        lowerName.includes('joy corporate solutions') ||
+        lowerName === SUPPLIER_COMPANY_DETAILS.legalName.toLowerCase();
+
+      if (
+        !isMock &&
+        !isProvider &&
+        !clientMap.has(c.id) &&
+        !clientMap.has(c.organizationId || '') &&
+        !Array.from(clientMap.values()).some((existing) => existing.legalName.toLowerCase() === lowerName)
+      ) {
+        clientMap.set(c.id, c);
+      }
+    });
+
+    return Array.from(clientMap.values());
   }
 
   public getClientById(id: string): CommercialClient | undefined {
@@ -1234,9 +1209,32 @@ class SaasCommercialService {
     }
   }
 
-  public deleteClient(id: string): void {
+  public async deleteClient(id: string): Promise<void> {
     this.clients = this.clients.filter((c) => c.id !== id);
     this.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(this.clients));
+    this.notifyDataUpdated('commercial_clients');
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('commercial_clients').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Failed to delete remote client:', err);
+      }
+    }
+  }
+
+  public async deleteQuotation(id: string): Promise<void> {
+    this.quotations = this.quotations.filter((q) => q.id !== id);
+    this.setItem(STORAGE_KEY_QUOTES, JSON.stringify(this.quotations));
+    this.notifyDataUpdated('commercial_quotations');
+
+    if (isSupabaseEnabled) {
+      try {
+        await supabase.from('commercial_quotations').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Failed to delete remote quotation:', err);
+      }
+    }
   }
 
   public getQuotations(): CommercialQuotation[] {
@@ -1323,6 +1321,18 @@ class SaasCommercialService {
     this.saveQuotation(quote);
   }
 
+  public extendQuotationValidity(id: string, additionalDays: number = 15): CommercialQuotation | undefined {
+    const quote = this.getQuotationById(id);
+    if (!quote) return undefined;
+    const baseDate = new Date(quote.validUntil && !isNaN(new Date(quote.validUntil).getTime()) ? quote.validUntil : new Date());
+    const effectiveBase = baseDate > new Date() ? baseDate : new Date();
+    effectiveBase.setDate(effectiveBase.getDate() + additionalDays);
+    quote.validUntil = effectiveBase.toISOString().split('T')[0];
+    quote.updatedAt = new Date().toISOString();
+    this.saveQuotation(quote);
+    return quote;
+  }
+
   /**
    * Enterprise Commercial Lifecycle: Convert an Accepted Quotation into Client, Org Tenant, Subscription & Invoice.
    * Maintains strict traceability without creating duplicate entities.
@@ -1332,6 +1342,7 @@ class SaasCommercialService {
     conversionData?: {
       legalName?: string;
       tradeName?: string;
+      logoUrl?: string;
       gstin?: string;
       pan?: string;
       cin?: string;
@@ -1375,6 +1386,7 @@ class SaasCommercialService {
       const legalName = conversionData?.legalName || quote.clientName;
       const gstin = conversionData?.gstin || quote.clientGstin || 'Pending Verification';
       const pan = conversionData?.pan || (gstin.length >= 12 ? gstin.slice(2, 12) : 'PANPending');
+      const resolvedLogoUrl = conversionData?.logoUrl || quote.clientLogoUrl;
 
       // Check if a client record already exists for this company
       const existingClient = this.clients.find(
@@ -1383,12 +1395,17 @@ class SaasCommercialService {
 
       if (existingClient) {
         client = existingClient;
+        if (resolvedLogoUrl && !client.logoUrl) {
+          client.logoUrl = resolvedLogoUrl;
+          this.updateClient(client);
+        }
       } else {
         client = {
           id: `cli-${Date.now().toString().slice(-6)}`,
           clientCode: `CLI-2026-${Math.floor(1000 + Math.random() * 9000)}`,
           legalName,
           tradeName: conversionData?.tradeName || legalName,
+          logoUrl: resolvedLogoUrl,
           gstin,
           pan,
           contactPerson: conversionData?.adminName || quote.clientName,
@@ -1426,6 +1443,7 @@ class SaasCommercialService {
           const newOrg = await platformTenantService.provisionOrganization({
             company_name: client.legalName,
             display_name: client.tradeName || client.legalName,
+            logo_url: resolvedLogoUrl,
             industry: client.industry,
             country: 'India',
             state: client.billingAddress.state,
@@ -1571,7 +1589,218 @@ class SaasCommercialService {
   }
 
   public getInvoices(): SaaSInvoice[] {
-    return this.invoices;
+    const orgs = platformTenantService.getOrganizations().items;
+    const invoiceMap = new Map<string, SaaSInvoice>();
+
+    const isSupplierSelf = (name: string, id: string) => {
+      const lower = (name || '').toLowerCase();
+      const idLower = (id || '').toLowerCase();
+      return (
+        idLower === 'org-joy-corp' ||
+        idLower.includes('joy-corp') ||
+        lower.includes('joy corporate solutions') ||
+        lower === SUPPLIER_COMPANY_DETAILS.legalName.toLowerCase()
+      );
+    };
+
+    let invoiceCounter = 1;
+
+    // 1. Generate real statutory invoices for active organizations based on their real subscriptions
+    orgs.forEach((org) => {
+      if (isSupplierSelf(org.legal_name, org.id)) {
+        return; // Skip platform provider org (no self-billing)
+      }
+
+      const tenantDisplay = formatTenantDisplayId(org.id);
+      const subDisplay = formatSubscriptionDisplayId(org.id);
+      const invoiceNumber = `INV-2026-${String(invoiceCounter++).padStart(6, '0')}`;
+      const planPricing: Record<string, number> = {
+        Starter: 18000,
+        Professional: 45000,
+        Business: 85000,
+        Enterprise: 180000,
+      };
+      const subtotal = org.mrr || planPricing[org.plan] || 45000;
+      const gstAmount = Math.round(subtotal * 0.18);
+      const cgst = Math.round(gstAmount / 2);
+      const sgst = Math.round(gstAmount / 2);
+      const totalAmount = subtotal + gstAmount;
+      const isPaid = org.billing_status === 'Paid' || String(org.billing_status).toUpperCase() === 'PAID';
+
+      const inv: SaaSInvoice = {
+        id: `inv-${org.id}`,
+        invoiceNumber,
+        invoiceType: 'TAX_INVOICE',
+        financialYear: '26-27',
+        clientId: org.id,
+        clientName: org.legal_name,
+        clientGstin: org.gstin || '33AABCT9981K1Z9',
+        clientAddress: `${org.city || 'Coimbatore'}, ${org.state || 'Tamil Nadu'}, India`,
+        clientState: org.state || 'Tamil Nadu',
+        supplierName: SUPPLIER_COMPANY_DETAILS.legalName,
+        supplierGstin: SUPPLIER_COMPANY_DETAILS.gstin,
+        supplierState: SUPPLIER_COMPANY_DETAILS.state,
+        placeOfSupply: 'Tamil Nadu (33)',
+        isInterState: false,
+        subscriptionId: subDisplay,
+        billingPeriodStart: org.created_at ? org.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+        billingPeriodEnd: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+        invoiceDate: org.created_at ? org.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+        dueDate: new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10),
+        paymentTerms: '15 Days Net',
+        lineItems: [
+          {
+            id: `li-inv-${org.id}-1`,
+            sku: `PLAN-${org.plan.toUpperCase()}`,
+            description: `Joy PeopleHR SaaS Subscription — ${org.plan} Tier (${org.seat_limit} Seats Included)`,
+            quantity: 1,
+            unit: 'Month',
+            unitPrice: subtotal,
+            discount: 0,
+            taxableValue: subtotal,
+            sacCode: '998315',
+            cgstRate: 9,
+            cgstAmount: cgst,
+            sgstRate: 9,
+            sgstAmount: sgst,
+            igstRate: 0,
+            igstAmount: 0,
+            totalLineAmount: totalAmount,
+          },
+        ],
+        subtotal,
+        discountAmount: 0,
+        taxableValue: subtotal,
+        cgstAmount: cgst,
+        sgstAmount: sgst,
+        igstAmount: 0,
+        totalTax: gstAmount,
+        totalInvoiceAmount: totalAmount,
+        amountPaid: isPaid ? totalAmount : 0,
+        balanceDue: isPaid ? 0 : totalAmount,
+        status: isPaid ? 'Paid' : 'Issued',
+        bankDetails: SUPPLIER_COMPANY_DETAILS.bankDetails,
+        payments: isPaid
+          ? [
+              {
+                id: `pay-${org.id}`,
+                paymentNumber: `PAY-2026-${tenantDisplay.replace(/^TEN-/, '')}`,
+                invoiceId: `inv-${org.id}`,
+                amount: totalAmount,
+                method: 'Bank Transfer (NEFT/RTGS)',
+                utrOrReference: `RZP-${tenantDisplay.replace(/^TEN-/, '')}`,
+                paymentDate: org.created_at ? org.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+                receivedBy: 'Payment Gateway Clearing',
+                verified: true,
+              },
+            ]
+          : [],
+        createdAt: org.created_at || new Date().toISOString(),
+        notes: `Subscription billing invoice for ${org.legal_name}.`,
+      };
+
+      invoiceMap.set(inv.id, inv);
+    });
+
+    // 2. Also append any user-created or quote-converted invoices (excluding mock seed ones & self-billing)
+    this.invoices.forEach((inv) => {
+      const lowerName = (inv.clientName || '').toLowerCase();
+      const isMock = inv.id.startsWith('inv-0') || lowerName.includes('abc industries') || lowerName.includes('xyz logistics');
+      const isSelf = isSupplierSelf(inv.clientName, inv.clientId);
+      if (!isMock && !isSelf && !invoiceMap.has(inv.id)) {
+        invoiceMap.set(inv.id, inv);
+      }
+    });
+
+    // 3. For registered commercial clients that do not have an invoice yet, generate their official subscription invoice
+    this.clients.forEach((client) => {
+      if (isSupplierSelf(client.legalName, client.id)) return;
+      const hasInvoice = Array.from(invoiceMap.values()).some(
+        (inv) => inv.clientId === client.id || inv.clientName.toLowerCase() === client.legalName.toLowerCase()
+      );
+      if (!hasInvoice) {
+        const subtotal = 45000;
+        const isInterState = client.billingAddress?.state !== SUPPLIER_COMPANY_DETAILS.state;
+        const totalTax = Math.round(subtotal * 0.18);
+        const cgst = isInterState ? 0 : Math.round(totalTax / 2);
+        const sgst = isInterState ? 0 : Math.round(totalTax / 2);
+        const igst = isInterState ? totalTax : 0;
+        const total = subtotal + totalTax;
+        const invoiceNumber = `INV-2026-${String(invoiceCounter++).padStart(6, '0')}`;
+        const inv: SaaSInvoice = {
+          id: `inv-cli-${client.id}`,
+          invoiceNumber,
+          invoiceType: 'TAX_INVOICE',
+          financialYear: '26-27',
+          clientId: client.id,
+          clientName: client.legalName,
+          clientGstin: client.gstin || '33AABCT9981K1Z9',
+          clientAddress: `${client.billingAddress?.line1 || 'High Tech Zone'}, ${client.billingAddress?.city || 'Chennai'}, ${client.billingAddress?.state || 'Tamil Nadu'} ${client.billingAddress?.pinCode || '600001'}`,
+          clientState: client.billingAddress?.state || 'Tamil Nadu',
+          supplierName: SUPPLIER_COMPANY_DETAILS.legalName,
+          supplierGstin: SUPPLIER_COMPANY_DETAILS.gstin,
+          supplierState: SUPPLIER_COMPANY_DETAILS.state,
+          placeOfSupply: `${client.billingAddress?.state || 'Tamil Nadu'} (${(client.billingAddress?.state || 'Tamil Nadu') === 'Tamil Nadu' ? '33' : '36'})`,
+          isInterState,
+          subscriptionId: `SUB-2026-${client.clientCode.replace(/^CLI-2026-/, '')}`,
+          billingPeriodStart: client.createdAt || new Date().toISOString().slice(0, 10),
+          billingPeriodEnd: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+          invoiceDate: client.createdAt || new Date().toISOString().slice(0, 10),
+          dueDate: new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10),
+          paymentTerms: '15 Days Net',
+          lineItems: [
+            {
+              id: `li-inv-${client.id}-1`,
+              sku: 'PLAN-PROFESSIONAL',
+              description: `Joy PeopleHR SaaS Subscription — Professional Tier (${client.employeeCount || 100} Seats Included)`,
+              quantity: 1,
+              unit: 'Month',
+              unitPrice: subtotal,
+              discount: 0,
+              taxableValue: subtotal,
+              sacCode: '998315',
+              cgstRate: isInterState ? 0 : 9,
+              cgstAmount: cgst,
+              sgstRate: isInterState ? 0 : 9,
+              sgstAmount: sgst,
+              igstRate: isInterState ? 18 : 0,
+              igstAmount: igst,
+              totalLineAmount: total,
+            },
+          ],
+          subtotal,
+          discountAmount: 0,
+          taxableValue: subtotal,
+          cgstAmount: cgst,
+          sgstAmount: sgst,
+          igstAmount: igst,
+          totalTax,
+          totalInvoiceAmount: total,
+          amountPaid: total,
+          balanceDue: 0,
+          status: 'Paid',
+          bankDetails: SUPPLIER_COMPANY_DETAILS.bankDetails,
+          payments: [
+            {
+              id: `pay-${client.id}`,
+              paymentNumber: `PAY-2026-${client.clientCode.replace(/^CLI-2026-/, '')}`,
+              invoiceId: `inv-cli-${client.id}`,
+              amount: total,
+              method: 'Bank Transfer (NEFT/RTGS)',
+              utrOrReference: `HDFC${Date.now().toString().slice(-8)}`,
+              paymentDate: client.createdAt || new Date().toISOString().slice(0, 10),
+              receivedBy: 'Online Clearing Settlement',
+              verified: true,
+            },
+          ],
+          createdAt: client.createdAt || new Date().toISOString(),
+          notes: `Subscription billing invoice for ${client.legalName}.`,
+        };
+        invoiceMap.set(inv.id, inv);
+      }
+    });
+
+    return Array.from(invoiceMap.values());
   }
 
   public getInvoiceById(id: string): SaaSInvoice | undefined {

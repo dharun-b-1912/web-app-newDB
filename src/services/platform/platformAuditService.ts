@@ -25,13 +25,49 @@ let cachedSummary: AuditSummaryKPIs = {
 
 let cachedEvents: AuditEventRecord[] = [];
 
+function mapAuditLogRow(row: any): AuditEventRecord {
+  const nv = (typeof row.new_values === 'object' && row.new_values) ? row.new_values : {};
+  const isEmployee = row.entity_type === 'EMPLOYEE';
+  const category = nv.category || (isEmployee || row.entity_type === 'HR' ? 'HR' : (row.entity_type === 'AUTH' ? 'Authentication' : 'Administrative'));
+  return {
+    id: row.id,
+    event_id: nv.event_id || `EVT-${(row.id || '').slice(0, 8).toUpperCase()}`,
+    event_type: row.action || 'AUDIT_LOG',
+    category: category as any,
+    action: nv.action || row.action || 'ACTION',
+    result: nv.result || 'Success',
+    risk_level: nv.risk_level || 'Low',
+    risk_score: nv.risk_score || 10,
+    actor_user_id: row.user_id || nv.actor_id,
+    actor_name: nv.actor_name || nv.email || 'Platform Admin',
+    actor_email: nv.actor_email || nv.email || undefined,
+    actor_role: nv.actor_role || 'Platform Staff',
+    actor_type: nv.actor_type || 'User',
+    tenant_id: row.organization_id || '0c621892-e938-4707-9957-13534ea32c19',
+    tenant_name: nv.tenant_name || 'Joy Corporate Solutions Pvt Ltd',
+    resource_type: nv.resource_type || row.entity_type || 'SYSTEM',
+    resource_id: nv.resource_id || row.entity_id,
+    resource_name: nv.resource_name || row.entity_id,
+    request_id: nv.request_id || `REQ-${(row.id || '').slice(0, 8).toUpperCase()}`,
+    ip_masked: row.ip_address || '127.0.0.1',
+    country: 'India',
+    city: 'Coimbatore',
+    source: nv.source || 'WorkForceOS Core',
+    service: nv.service || 'AuditService',
+    metadata: nv,
+    created_at: row.created_at,
+    occurred_at: row.created_at,
+    timestamp: row.created_at,
+  };
+}
+
 export const platformAuditService = {
   // -------------------------------------------------------------
   // Realtime Supabase Database Listener
   // -------------------------------------------------------------
   subscribeToRealtime(onChangeCallback: () => void) {
     if (!isSupabaseEnabled) return () => {};
-    return realtimeChannelManager.subscribeToTable('audit_events', () => {
+    return realtimeChannelManager.subscribeToTable('audit_logs', () => {
       onChangeCallback();
     });
   },
@@ -48,10 +84,10 @@ export const platformAuditService = {
           return cachedSummary;
         }
 
-        // Direct fallback aggregation
+        // Direct fallback aggregation from audit_logs
         const { data: rows, error: qErr } = await supabase
-          .from('audit_events')
-          .select('category, result, risk_level, created_at');
+          .from('audit_logs')
+          .select('entity_type, action, new_values, created_at');
 
         if (!qErr && rows) {
           const midnight = new Date();
@@ -59,15 +95,15 @@ export const platformAuditService = {
 
           const todayEvents = rows.filter((r) => new Date(r.created_at) >= midnight);
           const adminEvents = rows.filter((r) =>
-            ['Administrative', 'Configuration', 'Plan', 'Feature', 'Tenant'].includes(r.category)
+            ['Administrative', 'Configuration', 'Plan', 'Feature', 'Tenant'].includes(r.new_values?.category || r.entity_type)
           );
           const securityEvents = rows.filter((r) =>
-            ['Security', 'Authentication', 'Authorization', 'Session'].includes(r.category)
+            ['Security', 'Authentication', 'Authorization', 'Session'].includes(r.new_values?.category || r.entity_type)
           );
-          const failedEvents = rows.filter((r) => ['Failed', 'Denied', 'Blocked'].includes(r.result));
-          const highRiskEvents = rows.filter((r) => ['High', 'Critical'].includes(r.risk_level));
-          const authEvents = rows.filter((r) => r.category === 'Authentication');
-          const tenantEvents = rows.filter((r) => r.category === 'Tenant');
+          const failedEvents = rows.filter((r) => ['Failed', 'Denied', 'Blocked'].includes(r.new_values?.result));
+          const highRiskEvents = rows.filter((r) => ['High', 'Critical'].includes(r.new_values?.risk_level));
+          const authEvents = rows.filter((r) => (r.new_values?.category || r.entity_type) === 'Authentication' || r.entity_type === 'AUTH');
+          const tenantEvents = rows.filter((r) => (r.new_values?.category || r.entity_type) === 'Tenant' || r.entity_type === 'ORGANIZATION');
 
           cachedSummary = {
             events_today_count: todayEvents.length,
@@ -105,34 +141,10 @@ export const platformAuditService = {
 
     if (isSupabaseEnabled) {
       try {
-        let query = supabase.from('audit_events').select('*', { count: 'exact' });
+        let query = supabase.from('audit_logs').select('*', { count: 'exact' });
 
-        if (filters?.category && filters.category !== 'All') {
-          query = query.eq('category', filters.category);
-        }
-        if (filters?.result && filters.result !== 'All') {
-          query = query.eq('result', filters.result);
-        }
-        if (filters?.risk && filters.risk !== 'All') {
-          query = query.eq('risk_level', filters.risk);
-        }
-        if (filters?.actorType && filters.actorType !== 'All') {
-          query = query.eq('actor_type', filters.actorType);
-        }
         if (filters?.tenantId && filters.tenantId !== 'All') {
-          query = query.eq('tenant_id', filters.tenantId);
-        }
-        if (filters?.requestId) {
-          query = query.ilike('request_id', `%${filters.requestId}%`);
-        }
-        if (filters?.correlationId) {
-          query = query.ilike('correlation_id', `%${filters.correlationId}%`);
-        }
-        if (filters?.sessionId) {
-          query = query.ilike('session_id', `%${filters.sessionId}%`);
-        }
-        if (filters?.resourceId) {
-          query = query.ilike('resource_id', `%${filters.resourceId}%`);
+          query = query.eq('organization_id', filters.tenantId);
         }
 
         // Date Range
@@ -154,18 +166,16 @@ export const platformAuditService = {
         // Search Query
         if (filters?.search) {
           const q = filters.search.trim();
-          query = query.or(
-            `event_id.ilike.%${q}%,actor_name.ilike.%${q}%,actor_email.ilike.%${q}%,action.ilike.%${q}%,resource_name.ilike.%${q}%,tenant_name.ilike.%${q}%,request_id.ilike.%${q}%`
-          );
+          query = query.or(`action.ilike.%${q}%,entity_type.ilike.%${q}%`);
         }
 
-        const sortBy = filters?.sortBy || 'created_at';
+        const sortBy = filters?.sortBy === 'action' ? 'action' : 'created_at';
         const ascending = filters?.sortDirection === 'asc';
         query = query.order(sortBy, { ascending }).range(from, to);
 
         const { data, count, error } = await query;
         if (!error && data) {
-          cachedEvents = data as AuditEventRecord[];
+          cachedEvents = data.map(mapAuditLogRow);
           return {
             events: cachedEvents,
             total: count || cachedEvents.length,
@@ -174,7 +184,7 @@ export const platformAuditService = {
           };
         }
       } catch (err) {
-        console.warn('Failed to query audit events from Supabase:', err);
+        console.warn('Failed to query audit logs from Supabase:', err);
       }
     }
 
@@ -198,24 +208,22 @@ export const platformAuditService = {
     if (!isSupabaseEnabled) return [];
 
     try {
-      let query = supabase.from('audit_events').select('*').neq('id', record.id).limit(10);
+      let query = supabase.from('audit_logs').select('*').neq('id', record.id).limit(10);
 
-      if (record.correlation_id) {
-        query = query.eq('correlation_id', record.correlation_id);
-      } else if (record.request_id) {
-        query = query.eq('request_id', record.request_id);
-      } else if (record.resource_id) {
-        query = query.eq('resource_id', record.resource_id);
+      if (record.resource_id) {
+        query = query.eq('entity_id', record.resource_id);
+      } else if (record.tenant_id) {
+        query = query.eq('organization_id', record.tenant_id);
       } else {
         return [];
       }
 
       const { data, error } = await query.order('created_at', { ascending: false });
       if (!error && data) {
-        return data as AuditEventRecord[];
+        return data.map(mapAuditLogRow);
       }
     } catch (err) {
-      console.warn('Failed to fetch related audit events:', err);
+      console.warn('Failed to fetch related audit logs:', err);
     }
     return [];
   },

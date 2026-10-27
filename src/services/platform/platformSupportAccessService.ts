@@ -5,6 +5,7 @@
 
 import { platformAuditService } from './platformAuditService';
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { api } from '../api';
 
 export type SupportAccessMode = 'VIEW ONLY' | 'SUPPORT ACCESS' | 'FULL SUPPORT ACCESS';
 export type SupportSessionStatus = 'ACTIVE' | 'EXPIRED' | 'ENDED' | 'REVOKED';
@@ -49,14 +50,15 @@ export const platformSupportAccessService = {
     const startedAt = new Date();
     const expiresAt = new Date(startedAt.getTime() + params.durationMinutes * 60000);
     const sessionId = `sess-${Date.now()}`;
+    const currentUser = api.getCurrentUser();
 
     const session: SupportAccessSession = {
       id: sessionId,
       organization_id: params.organizationId,
       organization_name: params.organizationName,
-      platform_actor_id: params.actorId || 'user-thirumalai',
-      platform_actor_name: params.actorName || 'Thirumalai R K',
-      platform_actor_role: params.actorRole || 'Platform Admin',
+      platform_actor_id: params.actorId || currentUser?.id || 'platform-admin',
+      platform_actor_name: params.actorName || currentUser?.name || currentUser?.email || 'Platform Admin',
+      platform_actor_role: params.actorRole || currentUser?.roles?.[0]?.name || 'Platform Admin',
       access_mode: params.accessMode,
       reason: params.reason,
       support_case_id: params.supportCaseId || undefined,
@@ -133,7 +135,10 @@ export const platformSupportAccessService = {
   /**
    * Retrieve support access history for the customer security tab.
    */
-  getSessionHistory(organizationId: string): SupportAccessSession[] {
-    return sessionHistory.filter((s) => s.organization_id === organizationId);
+  getSessionHistory(organizationId?: string): SupportAccessSession[] {
+    if (organizationId) {
+      return sessionHistory.filter((s) => s.organization_id === organizationId);
+    }
+    return [...sessionHistory];
   },
 };

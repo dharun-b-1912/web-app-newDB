@@ -95,6 +95,33 @@ export const FeatureCatalogueView: React.FC<FeatureCatalogueViewProps> = ({ onNa
 
   // Selected Feature for Detail Drawer
   const [inspectedFeature, setInspectedFeature] = useState<CommercialFeature | null>(null);
+  const [editCommercialType, setEditCommercialType] = useState<CommercialType>('Included');
+  const [editMinPlan, setEditMinPlan] = useState<PlanTierCode>('STARTER');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const handleOpenInspect = (f: CommercialFeature) => {
+    setInspectedFeature(f);
+    setEditCommercialType(f.commercialType);
+    setEditMinPlan(f.minPlan);
+    setSaveSuccess(false);
+  };
+
+  const handleSaveFeaturePackaging = () => {
+    if (!inspectedFeature) return;
+    saasCatalogueService.updateFeatureCommercialStatus(
+      inspectedFeature.featureKey,
+      editCommercialType,
+      editMinPlan
+    );
+    setModules([...saasCatalogueService.getModules()]);
+    setInspectedFeature({
+      ...inspectedFeature,
+      commercialType: editCommercialType,
+      minPlan: editMinPlan,
+    });
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2500);
+  };
 
   const toggleModule = (moduleKey: string) => {
     setExpandedModules((prev) => ({
@@ -545,10 +572,10 @@ export const FeatureCatalogueView: React.FC<FeatureCatalogueViewProps> = ({ onNa
                           {/* Actions */}
                           <td className="py-3 px-3 align-top text-right">
                             <button
-                              onClick={() => setInspectedFeature(feature)}
-                              className="text-xs font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded transition-colors"
+                              onClick={() => handleOpenInspect(feature)}
+                              className="text-xs font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded transition-colors cursor-pointer"
                             >
-                              Inspect
+                              Inspect & Configure
                             </button>
                           </td>
                         </tr>
@@ -728,11 +755,51 @@ export const FeatureCatalogueView: React.FC<FeatureCatalogueViewProps> = ({ onNa
                 </div>
               </div>
 
-              <div>
-                <label className="font-semibold text-slate-500 block mb-1">Commercial Packaging</label>
-                <div className="flex items-center gap-2">
-                  {renderCommercialTypeBadge(inspectedFeature.commercialType)}
-                  {renderMinPlanBadge(inspectedFeature.minPlan)}
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">Commercial Packaging & Tier Rule</span>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Commercial Type</label>
+                    <select
+                      value={editCommercialType}
+                      onChange={(e) => setEditCommercialType(e.target.value as any)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-medium text-xs text-slate-800"
+                    >
+                      <option value="Included">Included (Core)</option>
+                      <option value="Add-on">Sellable Add-on</option>
+                      <option value="Quota-Based">Quota Metered</option>
+                      <option value="Not Available">Not Available</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Minimum Plan</label>
+                    <select
+                      value={editMinPlan}
+                      onChange={(e) => setEditMinPlan(e.target.value as any)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-medium text-xs text-slate-800"
+                    >
+                      <option value="STARTER">Starter Plan+</option>
+                      <option value="PROFESSIONAL">Professional Plan+</option>
+                      <option value="BUSINESS">Business Plan+</option>
+                      <option value="ENTERPRISE">Enterprise Only</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <div className="flex items-center gap-1.5">
+                    {renderCommercialTypeBadge(editCommercialType)}
+                    {renderMinPlanBadge(editMinPlan)}
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveFeaturePackaging}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
+                  >
+                    {saveSuccess ? 'Saved ✓' : 'Save Changes'}
+                  </Button>
                 </div>
               </div>
 

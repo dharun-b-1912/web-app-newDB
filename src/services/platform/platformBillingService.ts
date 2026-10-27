@@ -9,6 +9,20 @@ import { platformTenantService } from './platformTenantService';
 import { resendEmailService } from '../email/resendEmailService';
 import { billingCalculationEngine, TaxCalculationResult } from '../billing/billingCalculationEngine';
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { api } from '../api';
+
+function getActorInfo(authorizedBy?: string) {
+  const user = api.getCurrentUser();
+  const name = user?.name || user?.email || 'Platform Admin';
+  const id = user?.id || 'platform-admin';
+  const role = user?.roles?.[0]?.name || 'Platform Admin';
+  return {
+    actor_id: id,
+    actor_name: name,
+    actor_role: role,
+    authorized_by: authorizedBy || `${name} (Platform Admin)`,
+  };
+}
 
 export type InvoiceStatus = 'Draft' | 'Issued' | 'Sent' | 'Partially Paid' | 'Paid' | 'Overdue' | 'Void' | 'Cancelled';
 export type PaymentStatus = 'Settled' | 'Processing' | 'Failed' | 'Refunded';
@@ -135,7 +149,18 @@ function loadFromStorage() {
   if (typeof window === 'undefined') return;
   try {
     const rawInv = localStorage.getItem(STORAGE_INVOICES_KEY);
-    if (rawInv) invoiceDb = JSON.parse(rawInv);
+    if (rawInv) {
+      const parsed = JSON.parse(rawInv);
+      if (Array.isArray(parsed)) {
+        invoiceDb = parsed.filter(
+          (i: any) =>
+            i &&
+            !String(i.id || '').startsWith('inv-0') &&
+            !String(i.tenant_name || '').toLowerCase().includes('abc industries') &&
+            !String(i.tenant_name || '').toLowerCase().includes('xyz logistics')
+        );
+      }
+    }
     const rawTx = localStorage.getItem(STORAGE_TRANSACTIONS_KEY);
     if (rawTx) transactionDb = JSON.parse(rawTx);
     const rawLedger = localStorage.getItem(STORAGE_LEDGER_KEY);
@@ -166,6 +191,15 @@ function ensureSynchronizedFromTenants() {
 
   // Initialize canonical invoices for registered live organizations
   orgs.forEach((org, idx) => {
+    const orgLegal = (org.legal_name || '').toLowerCase();
+    if (
+      org.id === 'org-joy-corp' ||
+      org.id.includes('joy-corp') ||
+      orgLegal.includes('joy corporate solutions')
+    ) {
+      return; // Skip platform provider org (no self-billing)
+    }
+
     const planPricing: Record<string, number> = {
       Starter: 18000,
       Professional: 45000,
@@ -458,10 +492,11 @@ export const platformBillingService = {
     });
 
     // Forensic audit entry
+    const actor = getActorInfo();
     await platformAuditService.logEvent({
-      actor_id: 'user-thirumalai',
-      actor_name: 'Thirumalai R K',
-      actor_role: 'Platform Admin',
+      actor_id: actor.actor_id,
+      actor_name: actor.actor_name,
+      actor_role: actor.actor_role,
       organization_id: params.tenantId,
       organization_name: params.tenantName,
       action: 'INVOICE_CREATED',
@@ -544,10 +579,11 @@ export const platformBillingService = {
       description: `Applied against ${inv.invoice_number}`,
     });
 
+    const paymentActor = getActorInfo();
     await platformAuditService.logEvent({
-      actor_id: 'user-thirumalai',
-      actor_name: 'Thirumalai R K',
-      actor_role: 'Platform Admin',
+      actor_id: paymentActor.actor_id,
+      actor_name: paymentActor.actor_name,
+      actor_role: paymentActor.actor_role,
       organization_id: inv.tenant_id,
       organization_name: inv.tenant_name,
       action: 'PAYMENT_RECORDED',
@@ -576,6 +612,7 @@ export const platformBillingService = {
     const creditNoteNum = `CN-2026-${String(creditNoteDb.length + 1).padStart(5, '0')}`;
     const taxAdj = Math.round((params.amount * 0.18) / 1.18);
     const baseCredit = params.amount - taxAdj;
+    const actor = getActorInfo(params.authorizedBy);
 
     const creditNote: CreditNoteItem = {
       id: `cn-${Date.now()}`,
@@ -589,7 +626,7 @@ export const platformBillingService = {
       issued_date: new Date().toISOString().split('T')[0],
       reason: params.reason,
       status: 'Applied to Next Bill',
-      authorized_by: params.authorizedBy || 'Thirumalai R K (Platform Admin)',
+      authorized_by: actor.authorized_by,
     };
 
     creditNoteDb.unshift(creditNote);
@@ -601,9 +638,9 @@ export const platformBillingService = {
     }
 
     await platformAuditService.logEvent({
-      actor_id: 'user-thirumalai',
-      actor_name: 'Thirumalai R K',
-      actor_role: 'Platform Admin',
+      actor_id: actor.actor_id,
+      actor_name: actor.actor_name,
+      actor_role: actor.actor_role,
       organization_id: inv.tenant_id,
       organization_name: inv.tenant_name,
       action: 'CREDIT_NOTE_ISSUED',
@@ -630,6 +667,7 @@ export const platformBillingService = {
     if (!inv) throw new Error('Invoice not found');
 
     const refundNum = `REF-2026-${String(refundDb.length + 1).padStart(5, '0')}`;
+    const actor = getActorInfo(params.authorizedBy);
     const refund: RefundItem = {
       id: `ref-${Date.now()}`,
       refund_number: refundNum,
@@ -640,7 +678,7 @@ export const platformBillingService = {
       reason: params.reason,
       status: 'Completed',
       created_at: new Date().toLocaleString(),
-      authorized_by: params.authorizedBy || 'Thirumalai R K (Platform Admin)',
+      authorized_by: actor.authorized_by,
     };
 
     refundDb.unshift(refund);
@@ -649,9 +687,9 @@ export const platformBillingService = {
     inv.status = 'Partially Paid';
 
     await platformAuditService.logEvent({
-      actor_id: 'user-thirumalai',
-      actor_name: 'Thirumalai R K',
-      actor_role: 'Platform Admin',
+      actor_id: actor.actor_id,
+      actor_name: actor.actor_name,
+      actor_role: actor.actor_role,
       organization_id: inv.tenant_id,
       organization_name: inv.tenant_name,
       action: 'REFUND_ISSUED',
@@ -694,10 +732,11 @@ export const platformBillingService = {
 
     saveToStorage();
 
+    const actor = getActorInfo();
     await platformAuditService.logEvent({
-      actor_id: 'user-thirumalai',
-      actor_name: 'Thirumalai R K',
-      actor_role: 'Platform Admin',
+      actor_id: actor.actor_id,
+      actor_name: actor.actor_name,
+      actor_role: actor.actor_role,
       organization_id: inv.tenant_id,
       organization_name: inv.tenant_name,
       action: 'INVOICE_SENT_EMAIL',
@@ -719,10 +758,11 @@ export const platformBillingService = {
     inv.whatsapp_sent_at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     saveToStorage();
 
+    const actor = getActorInfo();
     await platformAuditService.logEvent({
-      actor_id: 'user-thirumalai',
-      actor_name: 'Thirumalai R K',
-      actor_role: 'Platform Admin',
+      actor_id: actor.actor_id,
+      actor_name: actor.actor_name,
+      actor_role: actor.actor_role,
       organization_id: inv.tenant_id,
       organization_name: inv.tenant_name,
       action: 'INVOICE_SENT_WHATSAPP',

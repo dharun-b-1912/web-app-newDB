@@ -8,14 +8,18 @@ import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Lock, Clock, UserCheck, AlertTriangle, KeyRound, CheckCircle2, XCircle } from 'lucide-react';
 import { JITSupportAccessService, JITAccessGrant, JITScope } from '../../../services/observability/jitSupportAccessService';
 import { Button } from '../../../components/ui/Button';
+import { api } from '../../../services/api';
 
 export const JITSupportAccessView: React.FC = () => {
   const [grants, setGrants] = useState<JITAccessGrant[]>([]);
   const [showRequestModal, setShowRequestModal] = useState(false);
 
   // Form State
-  const [devEmail, setDevEmail] = useState('developer@joypeoplehr.com');
-  const [devName, setDevName] = useState('Arun V. (Backend Lead)');
+  const currentUser = api.getCurrentUser();
+  const [devEmail, setDevEmail] = useState(currentUser?.email || 'developer@joypeoplehr.com');
+  const [devName, setDevName] = useState(
+    currentUser?.name ? `${currentUser.name} (Engineer)` : 'Platform Staff'
+  );
   const [targetCompany, setTargetCompany] = useState('ABC Facility Services');
   const [targetTenantId, setTargetTenantId] = useState('tenant_abc_services');
   const [scope, setScope] = useState<JITScope>('READ_ONLY_PAYROLL_LOGS');

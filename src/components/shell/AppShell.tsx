@@ -51,8 +51,8 @@ export const AppShell: React.FC<AppShellProps> = ({
         />
 
         {/* Dynamic Main Workspace Canvas */}
-        <main id="joy-main-scroll-container" data-testid="joy-main-scroll-container" className="flex-1 overflow-y-auto overscroll-y-contain p-4 sm:p-6 lg:p-8">
-          <div className="max-w-7xl mx-auto space-y-6">{children}</div>
+        <main id="joy-main-scroll-container" data-testid="joy-main-scroll-container" className="flex-1 overflow-y-auto overscroll-y-contain p-4 sm:p-5 lg:px-6 lg:py-6">
+          <div className="max-w-[1440px] mx-auto space-y-6">{children}</div>
         </main>
       </div>
 

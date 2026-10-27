@@ -71,76 +71,72 @@ export const WorkforceWorkspace: React.FC<WorkforceWorkspaceProps> = ({
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto p-4 sm:p-6 pb-24">
-      {/* Workspace Header */}
-      <div className="bg-gradient-to-r from-[#064E3B] via-[#07563D] to-[#043629] p-6 sm:p-8 rounded-3xl text-white shadow-lg relative overflow-hidden">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-emerald-200 text-xs font-bold uppercase tracking-wider">
-              <Users className="w-3.5 h-3.5 text-emerald-300" />
-              <span>Enterprise Workforce OS</span>
-              <span>•</span>
-              <span>Workforce Workspace</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight mt-1">
-              Workforce, Organization & Resources
-            </h1>
-            <p className="text-xs sm:text-sm text-emerald-100/80 mt-1 max-w-2xl">
-              Unified control center for employee directory, multi-company legal entities, department structures, designation grades, geofences, and enterprise assets.
-            </p>
+      {/* Compact Executive Header & Navigation */}
+      <div className="bg-white border border-gray-200/80 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-[#07563D] text-xs font-bold uppercase tracking-wider">
+            <Users className="w-3.5 h-3.5 text-[#07563D]" />
+            <span>Enterprise Workforce Hub</span>
           </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight mt-0.5">
+            Workforce, Organization & Resources
+          </h1>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Unified directory across legal entities, department hierarchies, designation grades, geofences, and assets.
+          </p>
         </div>
 
         {/* Primary Workspace Navigation Tabs */}
-        <div className="mt-8 pt-4 border-t border-white/15 flex items-center gap-2 overflow-x-auto scrollbar-none">
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none bg-gray-100/80 p-1.5 rounded-xl border border-gray-200/60">
           <button
             onClick={() => setActiveTab('people')}
             className={cn(
-              'px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
+              'px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
               activeTab === 'people'
-                ? 'bg-white text-[#064E3B] shadow-md'
-                : 'text-emerald-100/80 hover:text-white hover:bg-white/10'
+                ? 'bg-[#07563D] text-white shadow-xs font-bold'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-white/80'
             )}
           >
-            <Users className="w-4 h-4" />
+            <Users className="w-3.5 h-3.5" />
             <span>People & Directory</span>
           </button>
 
           <button
             onClick={() => setActiveTab('organization')}
             className={cn(
-              'px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
+              'px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
               activeTab === 'organization'
-                ? 'bg-white text-[#064E3B] shadow-md'
-                : 'text-emerald-100/80 hover:text-white hover:bg-white/10'
+                ? 'bg-[#07563D] text-white shadow-xs font-bold'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-white/80'
             )}
           >
-            <Building2 className="w-4 h-4" />
+            <Building2 className="w-3.5 h-3.5" />
             <span>Organization & Hierarchy</span>
           </button>
 
           <button
             onClick={() => setActiveTab('locations')}
             className={cn(
-              'px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
+              'px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
               activeTab === 'locations'
-                ? 'bg-white text-[#064E3B] shadow-md'
-                : 'text-emerald-100/80 hover:text-white hover:bg-white/10'
+                ? 'bg-[#07563D] text-white shadow-xs font-bold'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-white/80'
             )}
           >
-            <MapPin className="w-4 h-4" />
+            <MapPin className="w-3.5 h-3.5" />
             <span>Locations & Geofences</span>
           </button>
 
           <button
             onClick={() => setActiveTab('resources')}
             className={cn(
-              'px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
+              'px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap',
               activeTab === 'resources'
-                ? 'bg-white text-[#064E3B] shadow-md'
-                : 'text-emerald-100/80 hover:text-white hover:bg-white/10'
+                ? 'bg-[#07563D] text-white shadow-xs font-bold'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-white/80'
             )}
           >
-            <Package className="w-4 h-4" />
+            <Package className="w-3.5 h-3.5" />
             <span>Resources & Assets</span>
           </button>
         </div>

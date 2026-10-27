@@ -54,6 +54,10 @@ class PlatformRealtimeEngine {
         'platform_incidents',
         'background_jobs',
         'platform_audit_log',
+        'crm_leads',
+        'crm_opportunities',
+        'commercial_quotations',
+        'commercial_clients',
       ];
       tables.forEach((tbl) => {
         realtimeChannelManager.subscribeToTable(tbl, (payload) => {

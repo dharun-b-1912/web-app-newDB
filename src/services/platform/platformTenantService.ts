@@ -6,6 +6,15 @@
 import { platformAuditService } from './platformAuditService';
 import { HealthGrade } from './platformCustomerHealthService';
 import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { api } from '../api';
+
+function getPlatformActor() {
+  const user = api.getCurrentUser();
+  const name = user?.name || user?.email || 'Platform Admin';
+  const id = user?.id || 'platform-admin';
+  const role = user?.roles?.[0]?.name || 'Platform Admin';
+  return { id, name, role };
+}
 
 export type OrgLifecycleState =
   | 'Onboarding'
@@ -287,10 +296,14 @@ export const platformTenantService = {
       // Dynamically fetch live employee counts across organizations
       let employeeRows: any[] = [];
       try {
-        const { data: emps } = await supabase
+        const { data: emps, error: empErr } = await supabase
           .from('employees')
-          .select('id, status, employment_status, organization_id, company_id');
-        if (emps) employeeRows = emps;
+          .select('id, employment_status, organization_id, company_id');
+        if (empErr) {
+          console.warn('[PlatformTenantService] Failed to load employees for counts:', empErr);
+        } else if (emps) {
+          employeeRows = emps;
+        }
       } catch {
         // Table might not have entries yet
       }
@@ -304,25 +317,29 @@ export const platformTenantService = {
         };
 
         const liveList: OrganizationRecord[] = orgRows
-          .filter((row: any) => row.id !== 'org-joy-corp' && row.tenant_id !== 'org-joy-corp')
+          .filter((row: any) => {
+            const id = String(row.id || row.tenant_id || '').toLowerCase();
+            if (id === 'platform-root' || id === 'org-platform-root') return false;
+            return true;
+          })
           .map((row: any) => {
             const existing = organizationDb.find((o) => o.id === row.id || o.tenant_id === row.id);
 
             const legalName = row.legal_name || row.name || 'Organization';
-            const displayName = row.display_name || row.name || 'Organization';
-            const tenantSlug = String(row.tenant_id || row.id || 'org').toLowerCase().replace(/^org-/, '');
+            const displayName = row.display_name || row.name || legalName;
+            const tenantSlug = String(row.tenant_id || row.slug || row.id || 'org').toLowerCase().replace(/^org-/, '');
             const domain = row.domain || `${tenantSlug}.joypeoplehr.com`;
-            const planTier: PlanTier = (row.plan as any) || 'Professional';
+            const planTier: PlanTier = (row.plan as any) || 'Enterprise';
 
-            // Dynamically calculate from real employee rows (using employment_status and status)
+            // Dynamically calculate from real employee rows (using employment_status)
             const orgEmps = employeeRows.filter((e) => e.organization_id === row.id || e.company_id === row.id || e.tenant_id === row.id);
             const activeEmps = orgEmps.length > 0
               ? orgEmps.filter((e) => {
-                  const s = String(e.employment_status || e.status || '').toUpperCase();
+                  const s = String(e.employment_status || '').toUpperCase();
                   return s === 'ACTIVE' || s === 'CONFIRMED' || s === 'PROBATION' || s === '';
                 }).length
-              : 1;
-            const totalEmps = orgEmps.length > 0 ? orgEmps.length : 1;
+              : 0;
+            const totalEmps = orgEmps.length;
 
             const seatLimit = Number(row.seat_limit) || Number(row.seats) || (planTier === 'Enterprise' ? 500 : planTier === 'Business' ? 250 : planTier === 'Professional' ? 100 : 25);
             const seatUtilization = seatLimit > 0 ? Math.min(100, Math.round((activeEmps / seatLimit) * 100)) : 0;
@@ -479,26 +496,69 @@ export const platformTenantService = {
     // Update in Supabase tables
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('organizations').update(updates).eq('id', id);
+        const VALID_ORGANIZATION_DB_COLUMNS = new Set([
+          'legal_name',
+          'display_name',
+          'slug',
+          'organization_code',
+          'industry',
+          'country',
+          'currency',
+          'timezone',
+          'logo_url',
+          'website_url',
+          'status',
+          'updated_at',
+          'name',
+          'domain',
+          'gstin',
+          'pan',
+          'cin',
+          'registered_address',
+          'primary_admin_name',
+          'primary_admin_email',
+          'primary_admin_phone',
+          'plan',
+          'mrr',
+          'billing_cycle',
+          'seat_limit'
+        ]);
+
+        const dbUpdates: Record<string, any> = {};
+        for (const [k, v] of Object.entries(updates)) {
+          if (VALID_ORGANIZATION_DB_COLUMNS.has(k) && v !== undefined) {
+            dbUpdates[k] = v;
+          }
+        }
+
+        if (Object.keys(dbUpdates).length > 0) {
+          dbUpdates.updated_at = new Date().toISOString();
+          const { error: updErr } = await supabase.from('organizations').update(dbUpdates).eq('id', id);
+          if (updErr) {
+            console.warn('[PlatformTenantService] Supabase update notice:', updErr);
+          }
+        }
       } catch (err) {
         console.warn('[PlatformTenantService] Supabase update fallback:', err);
       }
     }
 
+    const currentActor = getPlatformActor();
+
     // Append to organization activity log
     organizationDb[idx].activity_log.unshift({
       id: `act-${Date.now()}`,
       event: customReason || `Platform Admin updated company profile details`,
-      actor: 'Thirumalai R K (Platform Admin)',
+      actor: `${currentActor.name} (${currentActor.role})`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       category: 'Administration',
       source: 'Platform Operations',
     });
 
     await platformAuditService.logEvent({
-      actor_id: 'user-thirumalai',
-      actor_name: 'Thirumalai R K',
-      actor_role: 'Platform Admin',
+      actor_id: currentActor.id,
+      actor_name: currentActor.name,
+      actor_role: currentActor.role,
       organization_id: id,
       organization_name: organizationDb[idx].legal_name,
       action: 'ORGANIZATION_UPDATED',
@@ -523,26 +583,27 @@ export const platformTenantService = {
       try {
         await supabase
           .from('organizations')
-          .update({ status: 'Suspended', lifecycle_state: 'Suspended' })
+          .update({ status: 'SUSPENDED', updated_at: new Date().toISOString() })
           .eq('id', id);
       } catch (err) {
         console.warn('[PlatformTenantService] Supabase suspend fallback:', err);
       }
     }
 
+    const currentActor = getPlatformActor();
     org.activity_log.unshift({
       id: `act-${Date.now()}`,
       event: `Platform Admin suspended customer access: ${suspensionReason}`,
-      actor: 'Thirumalai R K (Platform Admin)',
+      actor: `${currentActor.name} (${currentActor.role})`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       category: 'Security',
       source: 'Lifecycle Controller',
     });
 
     await platformAuditService.logEvent({
-      actor_id: 'user-thirumalai',
-      actor_name: 'Thirumalai R K',
-      actor_role: 'Platform Admin',
+      actor_id: currentActor.id,
+      actor_name: currentActor.name,
+      actor_role: currentActor.role,
       organization_id: id,
       organization_name: org.legal_name,
       action: 'ORGANIZATION_SUSPENDED',
@@ -567,26 +628,27 @@ export const platformTenantService = {
       try {
         await supabase
           .from('organizations')
-          .update({ status: 'Active', lifecycle_state: 'Active' })
+          .update({ status: 'ACTIVE', updated_at: new Date().toISOString() })
           .eq('id', id);
       } catch (err) {
         console.warn('[PlatformTenantService] Supabase reactivate fallback:', err);
       }
     }
 
+    const currentActor = getPlatformActor();
     org.activity_log.unshift({
       id: `act-${Date.now()}`,
       event: `Platform Admin reactivated customer account: ${reactivateNote}`,
-      actor: 'Thirumalai R K (Platform Admin)',
+      actor: `${currentActor.name} (${currentActor.role})`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       category: 'Administration',
       source: 'Lifecycle Controller',
     });
 
     await platformAuditService.logEvent({
-      actor_id: 'user-thirumalai',
-      actor_name: 'Thirumalai R K',
-      actor_role: 'Platform Admin',
+      actor_id: currentActor.id,
+      actor_name: currentActor.name,
+      actor_role: currentActor.role,
       organization_id: id,
       organization_name: org.legal_name,
       action: 'ORGANIZATION_REACTIVATED',
@@ -601,9 +663,10 @@ export const platformTenantService = {
 
   async addInternalNote(id: string, text: string, author?: string): Promise<OrgInternalNote> {
     const org = this.getOrganizationById(id);
+    const currentActor = getPlatformActor();
     const newNote: OrgInternalNote = {
       id: `note-${Date.now()}`,
-      author: author || 'WorkForce Super Admin',
+      author: author || currentActor.name,
       created_at: new Date().toISOString().split('T')[0],
       text,
     };
@@ -705,26 +768,32 @@ export const platformTenantService = {
     const target = organizationDb.find((o) => o.id === id || o.tenant_id === id);
     if (!target) return false;
 
-    // Remove from in-memory / local list
+    // Remove from in-memory / local list and reset cache
     organizationDb = organizationDb.filter((o) => o.id !== id && o.tenant_id !== id);
+    lastOrgFetchTime = 0;
 
-    // Remove from Supabase tables if enabled
+    // Remove from Supabase tables with proper foreign-key cascade order
     if (isSupabaseEnabled) {
       try {
-        await supabase.from('organizations').delete().eq('id', id);
+        await supabase.from('saas_subscriptions').delete().eq('organization_id', id);
+        await supabase.from('roles').delete().eq('organization_id', id);
+        await supabase.from('companies').delete().eq('organization_id', id);
         await supabase.from('customer_profiles').delete().eq('organization_id', id);
-        await supabase.from('subscriptions').delete().eq('tenant_id', id);
-        await supabase.from('invoices').delete().eq('tenant_id', id);
         await supabase.from('organization_invitations').delete().eq('organization_id', id);
+        const { error: orgDelErr } = await supabase.from('organizations').delete().eq('id', id);
+        if (orgDelErr) {
+          console.warn('[PlatformTenantService] Supabase delete warning:', orgDelErr);
+        }
       } catch (err) {
         console.warn('[PlatformTenantService] Supabase delete fallback:', err);
       }
     }
 
+    const currentActor = getPlatformActor();
     await platformAuditService.logEvent({
-      actor_id: 'user-thirumalai',
-      actor_name: 'Thirumalai R K',
-      actor_role: 'Platform Admin',
+      actor_id: currentActor.id,
+      actor_name: currentActor.name,
+      actor_role: currentActor.role,
       organization_id: id,
       organization_name: target.legal_name,
       action: 'ORGANIZATION_DELETED',

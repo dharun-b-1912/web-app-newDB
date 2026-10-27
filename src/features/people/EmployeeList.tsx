@@ -28,8 +28,11 @@ import {
   Clock,
   LogOut,
   Shield,
+  ShieldCheck,
   UserX,
   CheckCircle2,
+  FileText,
+  Archive,
 } from 'lucide-react';
 
 export type SortField = 'name' | 'code' | 'department' | 'designation' | 'status' | 'none';
@@ -40,7 +43,12 @@ export interface EmployeeListProps {
   onSelectEmployee: (emp: Employee) => void;
   onEditEmployee?: (emp: Employee) => void;
   onDeleteEmployee?: (emp: Employee) => void;
+  onArchiveEmployee?: (emp: Employee, reason?: string) => Promise<void> | void;
   onToggleStatus?: (emp: Employee, newStatus: string) => void;
+  onViewAttendance?: (emp: Employee) => void;
+  onViewDocuments?: (emp: Employee) => void;
+  onManageAccess?: (emp: Employee) => void;
+  onStartOffboarding?: (emp: Employee) => void;
   sortField?: SortField;
   sortDir?: SortDir;
   onSort?: (field: SortField) => void;
@@ -62,13 +70,27 @@ interface ActionMenuProps {
   onView: () => void;
   onEdit: () => void;
   onToggleStatus: () => void;
-  onDelete: () => void;
+  onArchive: () => void;
+  onViewAttendance?: () => void;
+  onViewDocuments?: () => void;
+  onManageAccess?: () => void;
+  onStartOffboarding?: () => void;
   isActive: boolean;
   isToggling: boolean;
 }
 
 const RowActionMenu: React.FC<ActionMenuProps> = ({
-  emp, onView, onEdit, onToggleStatus, onDelete, isActive, isToggling,
+  emp,
+  onView,
+  onEdit,
+  onToggleStatus,
+  onArchive,
+  onViewAttendance,
+  onViewDocuments,
+  onManageAccess,
+  onStartOffboarding,
+  isActive,
+  isToggling,
 }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -109,36 +131,61 @@ const RowActionMenu: React.FC<ActionMenuProps> = ({
           'h-7 w-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-900 hover:bg-gray-100 hover:border-gray-300 transition-all cursor-pointer',
           open && 'bg-gray-100 border-gray-300 text-gray-900'
         )}
-        title="More actions"
+        title="More administrative actions"
       >
         <MoreHorizontal className="w-3.5 h-3.5" />
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-lg z-50 py-1 overflow-hidden">
-          <div className="px-3 py-1.5 border-b border-gray-100 mb-0.5">
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">
-              {emp.first_name} {emp.last_name}
+        <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+          <div className="px-3 py-1.5 border-b border-gray-100 mb-0.5 bg-gray-50/70">
+            <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider truncate">
+              {emp.first_name} {emp.last_name} ({emp.employee_code || 'No Code'})
             </p>
           </div>
 
-          {item(<Eye className="w-3.5 h-3.5 text-emerald-600" />, 'View Profile', onView, 'text-gray-700')}
-          {item(<Pencil className="w-3.5 h-3.5 text-blue-600" />, 'Edit Record', onEdit, 'text-gray-700')}
+          {item(<Eye className="w-3.5 h-3.5 text-emerald-600" />, 'View Profile & 360°', onView, 'text-gray-700')}
+          {item(<Pencil className="w-3.5 h-3.5 text-blue-600" />, 'Edit Master Record', onEdit, 'text-gray-700')}
 
           <div className="my-1 border-t border-gray-100" />
 
           {item(
             <Clock className="w-3.5 h-3.5 text-purple-600" />,
-            'View Attendance',
+            'View Attendance & Logs',
             () => {
-              const code = emp.employee_code || '';
-              window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'attendance-employees', query: code } }));
+              if (onViewAttendance) {
+                onViewAttendance();
+              } else {
+                const code = emp.employee_code || '';
+                window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'attendance-employees', query: code, employeeId: emp.id } }));
+              }
             },
             'text-gray-700'
           )}
-          {item(<Shield className="w-3.5 h-3.5 text-slate-600" />, 'Manage Access', () => {
-            window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'admin-access' } }));
-          }, 'text-gray-700')}
+          {item(
+            <FileText className="w-3.5 h-3.5 text-indigo-600" />,
+            'Employment Documents',
+            () => {
+              if (onViewDocuments) {
+                onViewDocuments();
+              } else {
+                window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'documents', employeeId: emp.id, search: emp.employee_code || emp.first_name } }));
+              }
+            },
+            'text-gray-700'
+          )}
+          {item(
+            <Shield className="w-3.5 h-3.5 text-slate-600" />,
+            'Manage Access & IAM',
+            () => {
+              if (onManageAccess) {
+                onManageAccess();
+              } else {
+                window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'admin-roles', employeeId: emp.id } }));
+              }
+            },
+            'text-gray-700'
+          )}
 
           <div className="my-1 border-t border-gray-100" />
 
@@ -146,17 +193,31 @@ const RowActionMenu: React.FC<ActionMenuProps> = ({
             isActive
               ? <UserX className="w-3.5 h-3.5 text-amber-600" />
               : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />,
-            isActive ? (isToggling ? 'Deactivating…' : 'Deactivate') : (isToggling ? 'Activating…' : 'Activate'),
+            isActive ? (isToggling ? 'Deactivating…' : 'Deactivate from Roster') : (isToggling ? 'Activating…' : 'Activate to Roster'),
             onToggleStatus,
             isActive ? 'text-amber-700' : 'text-emerald-700'
           )}
-          {item(<LogOut className="w-3.5 h-3.5 text-rose-500" />, 'Initiate Offboarding', () => {
-            window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'offboarding' } }));
-          }, 'text-rose-700')}
+          {item(
+            <LogOut className="w-3.5 h-3.5 text-rose-500" />,
+            'Start Offboarding & Exit',
+            () => {
+              if (onStartOffboarding) {
+                onStartOffboarding();
+              } else {
+                window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'offboarding', employeeId: emp.id, code: emp.employee_code } }));
+              }
+            },
+            'text-rose-700'
+          )}
 
           <div className="my-1 border-t border-gray-100" />
 
-          {item(<Trash2 className="w-3.5 h-3.5 text-rose-600" />, 'Delete Record', onDelete, 'text-rose-700 hover:bg-rose-50')}
+          {item(
+            <Archive className="w-3.5 h-3.5 text-slate-600" />,
+            'Archive Record (Safe)',
+            onArchive,
+            'text-slate-700 hover:bg-slate-50'
+          )}
         </div>
       )}
     </div>
@@ -200,15 +261,21 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
   onSelectEmployee,
   onEditEmployee,
   onDeleteEmployee,
+  onArchiveEmployee,
   onToggleStatus,
+  onViewAttendance,
+  onViewDocuments,
+  onManageAccess,
+  onStartOffboarding,
   sortField = 'none',
   sortDir = 'asc',
   onSort,
 }) => {
   const { showToast } = useToast();
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
-  const [confirmDeleteEmp, setConfirmDeleteEmp] = useState<Employee | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmArchiveEmp, setConfirmArchiveEmp] = useState<Employee | null>(null);
+  const [archiveReason, setArchiveReason] = useState('Standard separation & exit completed');
+  const [isArchiving, setIsArchiving] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const handleToggleStatus = async (emp: Employee) => {
@@ -231,21 +298,23 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
     }
   };
 
-  const handleDeleteConfirmed = async () => {
-    if (!confirmDeleteEmp) return;
-    setIsDeleting(true);
+  const handleArchiveConfirmed = async () => {
+    if (!confirmArchiveEmp) return;
+    setIsArchiving(true);
     try {
-      if (onDeleteEmployee) {
-        onDeleteEmployee(confirmDeleteEmp);
+      if (onArchiveEmployee) {
+        await onArchiveEmployee(confirmArchiveEmp, archiveReason);
+      } else if (onDeleteEmployee) {
+        onDeleteEmployee(confirmArchiveEmp);
       } else {
-        await api.deleteEmployee(confirmDeleteEmp.id);
-        showToast(`Employee ${confirmDeleteEmp.first_name} ${confirmDeleteEmp.last_name} removed`, 'success');
+        await api.updateEmployeeStatus(confirmArchiveEmp.id, 'Archived');
+        showToast(`✓ ${confirmArchiveEmp.first_name} ${confirmArchiveEmp.last_name} archived. Historical records preserved.`, 'success');
       }
-      setConfirmDeleteEmp(null);
-    } catch {
-      showToast('Failed to delete employee record', 'error');
+      setConfirmArchiveEmp(null);
+    } catch (err: any) {
+      showToast('Failed to archive employee record', 'error');
     } finally {
-      setIsDeleting(false);
+      setIsArchiving(false);
     }
   };
 
@@ -406,7 +475,11 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                         onView={() => onSelectEmployee(emp)}
                         onEdit={() => onEditEmployee ? onEditEmployee(emp) : onSelectEmployee(emp)}
                         onToggleStatus={() => handleToggleStatus(emp)}
-                        onDelete={() => setConfirmDeleteEmp(emp)}
+                        onArchive={() => setConfirmArchiveEmp(emp)}
+                        onViewAttendance={onViewAttendance ? () => onViewAttendance(emp) : undefined}
+                        onViewDocuments={onViewDocuments ? () => onViewDocuments(emp) : undefined}
+                        onManageAccess={onManageAccess ? () => onManageAccess(emp) : undefined}
+                        onStartOffboarding={onStartOffboarding ? () => onStartOffboarding(emp) : undefined}
                       />
                     </TableCell>
                   </TableRow>
@@ -490,7 +563,11 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                     onView={() => onSelectEmployee(emp)}
                     onEdit={() => onEditEmployee ? onEditEmployee(emp) : onSelectEmployee(emp)}
                     onToggleStatus={() => handleToggleStatus(emp)}
-                    onDelete={() => setConfirmDeleteEmp(emp)}
+                    onArchive={() => setConfirmArchiveEmp(emp)}
+                    onViewAttendance={onViewAttendance ? () => onViewAttendance(emp) : undefined}
+                    onViewDocuments={onViewDocuments ? () => onViewDocuments(emp) : undefined}
+                    onManageAccess={onManageAccess ? () => onManageAccess(emp) : undefined}
+                    onStartOffboarding={onStartOffboarding ? () => onStartOffboarding(emp) : undefined}
                   />
                 </div>
               </Card>
@@ -499,43 +576,62 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {confirmDeleteEmp && (
+      {/* Archive / Deactivate Confirmation Modal */}
+      {confirmArchiveEmp && (
         <Modal
-          isOpen={Boolean(confirmDeleteEmp)}
-          onClose={() => setConfirmDeleteEmp(null)}
-          title="Delete Employee Record"
+          isOpen={Boolean(confirmArchiveEmp)}
+          onClose={() => setConfirmArchiveEmp(null)}
+          title="Archive Employee Record (Enterprise Safe)"
         >
           <div className="space-y-4 p-2">
-            <div className="flex items-center gap-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs">
-              <AlertTriangle className="w-5 h-5 shrink-0 text-rose-600" />
-              <div>
-                <p className="font-bold">Permanent Deletion — Confirm to Proceed</p>
-                <p className="text-rose-700 mt-1">
-                  Deleting <strong className="text-gray-900">{confirmDeleteEmp.first_name} {confirmDeleteEmp.last_name}</strong> ({confirmDeleteEmp.employee_code}) will revoke portal credentials and purge related operational rosters.
-                  <br />
-                  <span className="font-bold">Consider using Deactivate instead to preserve records.</span>
+            <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs">
+              <ShieldCheck className="w-5 h-5 shrink-0 text-amber-700 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold">Historical Record Protection & Safe Separation</p>
+                <p className="text-amber-800 leading-relaxed">
+                  Archiving <strong className="text-gray-900">{confirmArchiveEmp.first_name} {confirmArchiveEmp.last_name}</strong> ({confirmArchiveEmp.employee_code}) preserves all historical attendance logs, biometric clockings, digital payslips, and statutory tax calculations for compliance.
+                </p>
+                <p className="text-amber-800 text-[11px]">
+                  • Portal access sessions will be terminated.<br />
+                  • Employee will be excluded from daily biometric rosters.<br />
+                  • Historical payroll records remain permanently accessible for audits.
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">
+                Reason for Archival / Separation
+              </label>
+              <select
+                value={archiveReason}
+                onChange={(e) => setArchiveReason(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 text-xs rounded-xl p-2.5 font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#07563D]"
+              >
+                <option value="Standard separation & exit completed">Standard separation & exit completed</option>
+                <option value="Resignation Accepted">Resignation Accepted</option>
+                <option value="Contract Expired / Vendor Rolled Off">Contract Expired / Vendor Rolled Off</option>
+                <option value="Administrative Separation">Administrative Separation</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setConfirmDeleteEmp(null)}
-                disabled={isDeleting}
+                onClick={() => setConfirmArchiveEmp(null)}
+                disabled={isArchiving}
               >
-                Cancel — Keep Employee
+                Cancel — Keep Active
               </Button>
               <Button
                 variant="primary"
                 size="sm"
-                onClick={handleDeleteConfirmed}
-                disabled={isDeleting}
-                className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
+                onClick={handleArchiveConfirmed}
+                disabled={isArchiving}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
               >
-                {isDeleting ? 'Deleting...' : 'Yes, Permanently Delete'}
+                {isArchiving ? 'Archiving…' : 'Confirm & Archive Record'}
               </Button>
             </div>
           </div>

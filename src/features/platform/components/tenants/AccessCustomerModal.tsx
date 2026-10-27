@@ -19,6 +19,7 @@ import { OrganizationRecord } from '../../../../services/platform/platformTenant
 import { SupportAccessMode } from '../../../../services/platform/platformSupportAccessService';
 import { Button } from '../../../../components/ui/Button';
 import { cn } from '../../../../lib/utils';
+import { api } from '../../../../services/api';
 
 export interface AccessCustomerModalProps {
   isOpen: boolean;
@@ -98,7 +99,9 @@ export const AccessCustomerModal: React.FC<AccessCustomerModalProps> = ({
           <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-2 text-xs">
             <div className="flex justify-between">
               <span className="text-gray-500">Your Identity:</span>
-              <strong className="text-gray-900 font-bold">Thirumalai R K (Platform Admin)</strong>
+              <strong className="text-gray-900 font-bold">
+                {api.getCurrentUser()?.name ? `${api.getCurrentUser()?.name} (${api.getCurrentUser()?.roles?.[0]?.name || 'Platform Admin'})` : 'Platform Administrator'}
+              </strong>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">Target Organization:</span>

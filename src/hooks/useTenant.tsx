@@ -176,6 +176,17 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
       setActiveLegalEntity(newCtx.activeLegalEntity);
       setRoleTitle(newCtx.roleTitle);
       api.setActiveCompany(newCtx.activeLegalEntity);
+      api.clearEmployeeCache();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('tenant:switched', {
+            detail: {
+              organizationId: newCtx.activeOrganization?.id,
+              legalEntityId: newCtx.activeLegalEntity?.id,
+            },
+          })
+        );
+      }
     } finally {
       setIsLoading(false);
     }
@@ -189,6 +200,17 @@ export const TenantProvider = ({ children }: { children: ReactNode }) => {
       setActiveLegalEntity(newCtx.activeLegalEntity);
       setLegalEntities(newCtx.authorizedLegalEntities);
       api.setActiveCompany(newCtx.activeLegalEntity);
+      api.clearEmployeeCache();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('tenant:switched', {
+            detail: {
+              organizationId: organization?.id,
+              legalEntityId: newCtx.activeLegalEntity?.id,
+            },
+          })
+        );
+      }
     } finally {
       setIsLoading(false);
     }

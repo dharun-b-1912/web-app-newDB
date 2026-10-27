@@ -173,8 +173,10 @@
     display: none !important;
   }
 
-  /* Vendor Invoice & Breakup Modal Print Isolation */
-  .vendor-invoice-modal-backdrop {
+  /* SaaS Tax Invoice & Breakup Drawer Print Isolation */
+  .invoice-drawer-backdrop,
+  .vendor-invoice-modal-backdrop,
+  .proposal-modal-backdrop {
     position: static !important;
     background: transparent !important;
     padding: 0 !important;
@@ -186,17 +188,32 @@
     display: block !important;
   }
 
-  .vendor-invoice-modal-card {
+  .invoice-drawer-card,
+  .vendor-invoice-modal-card,
+  .proposal-modal-card {
     position: static !important;
     max-width: 100% !important;
     width: 100% !important;
     max-height: none !important;
+    height: auto !important;
     padding: 0 !important;
     margin: 0 !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
     overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  #tax-invoice-printable {
+    width: 100% !important;
+    max-width: 195mm !important;
+    margin: 0 auto !important;
+    padding: 6mm 8mm !important;
+    border: 1.5px solid #334155 !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+    page-break-inside: avoid !important;
     background: #ffffff !important;
   }
 
@@ -223,6 +240,24 @@
     line-height: 1.4 !important;
   }
 
+  /* Multi-page Proposal Document Pages */
+  .proposal-page {
+    page-break-after: always !important;
+    break-after: page !important;
+    min-height: 275mm !important;
+    height: auto !important;
+    overflow: visible !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 10mm 12mm !important;
+    background: #ffffff !important;
+  }
+
+  .proposal-page:last-child {
+    page-break-after: auto !important;
+    break-after: auto !important;
+  }
+
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -239,4 +274,3 @@
   0%, 100% { transform: scale(1); opacity: 0.55; }
   50% { transform: scale(1.35); opacity: 0.25; }
 }
-
