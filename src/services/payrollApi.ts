@@ -92,6 +92,24 @@ export function isValidUUID(val: any): boolean {
   return typeof val === 'string' && UUID_REGEX.test(val);
 }
 
+export function resolveOrgUUID(val?: any): string {
+  if (isValidUUID(val)) return val;
+  const active = getActiveOrgId();
+  if (isValidUUID(active)) return active;
+  return '0c621892-e938-4707-9957-13534ea32c19';
+}
+
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 function getTenantStorageKey(baseKey: string, tenantId = getActiveOrgId()): string {
   return `${baseKey}_${tenantId}`;
 }
@@ -372,13 +390,19 @@ class PayrollApi {
     return initial;
   }
 
-  saveComponent(component: SalaryComponent, tenantId = getActiveOrgId()): SalaryComponent {
-    const list = this.getComponents(tenantId);
-    const idx = list.findIndex(c => c.id === component.id);
+  async saveComponentAsync(component: SalaryComponent, tenantId = getActiveOrgId()): Promise<SalaryComponent> {
+    const orgId = resolveOrgUUID(tenantId);
+    const compId = isValidUUID(component.id) ? component.id : generateUUID();
+
+    const list = this.getComponents(orgId);
+    const idx = list.findIndex(c => c.id === compId || c.id === component.id || c.code.toUpperCase() === component.code.toUpperCase());
     let saved: SalaryComponent;
     if (idx >= 0) {
       saved = {
+        ...list[idx],
         ...component,
+        id: list[idx].id || compId,
+        tenant_id: orgId,
         version: (list[idx].version || 1) + 1,
         effective_from: component.effective_from || new Date().toISOString().split('T')[0],
       };
@@ -386,8 +410,8 @@ class PayrollApi {
     } else {
       saved = {
         ...component,
-        id: component.id || `cmp-${Date.now()}`,
-        tenant_id: tenantId,
+        id: compId,
+        tenant_id: orgId,
         version: 1,
         status: component.status || 'Active',
         is_active: component.is_active !== undefined ? component.is_active : true,
@@ -395,45 +419,53 @@ class PayrollApi {
       };
       list.push(saved);
     }
-    setStore(STORAGE_KEYS.COMPONENTS, list, tenantId);
+    setStore(STORAGE_KEYS.COMPONENTS, list, orgId);
     if (_componentsCache) {
       const cIdx = _componentsCache.data.findIndex(c => c.id === saved.id);
       if (cIdx >= 0) _componentsCache.data[cIdx] = saved;
       else _componentsCache.data.push(saved);
     }
 
-    if (isSupabaseEnabled) {
-      const canonicalType = saved.type === 'Earning'
-        ? 'EARNING'
-        : saved.type === 'Deduction'
-        ? 'DEDUCTION'
-        : saved.type === 'Reimbursement'
-        ? 'REIMBURSEMENT'
-        : 'STATUTORY_EMPLOYER';
+    if (isSupabaseEnabled && isValidUUID(saved.id)) {
+      try {
+        const canonicalType = saved.type === 'Earning'
+          ? 'EARNING'
+          : saved.type === 'Deduction'
+          ? 'DEDUCTION'
+          : saved.type === 'Reimbursement'
+          ? 'REIMBURSEMENT'
+          : 'STATUTORY_EMPLOYER';
 
-      const canonicalCalcType = (saved.calculation_type === 'PercentageOfBasic' || saved.calculation_type === 'PercentageOfGross' || saved.calculation_type === 'PercentageOfCTC')
-        ? 'PERCENTAGE'
-        : saved.calculation_type === 'Formula'
-        ? 'FORMULA'
-        : 'FLAT';
+        const canonicalCalcType = (saved.calculation_type === 'PercentageOfBasic' || saved.calculation_type === 'PercentageOfGross' || saved.calculation_type === 'PercentageOfCTC')
+          ? 'PERCENTAGE'
+          : saved.calculation_type === 'Formula'
+          ? 'FORMULA'
+          : 'FLAT';
 
-      Promise.resolve(
-        supabase.from('salary_components').upsert({
+        await dbClient.from('salary_components').upsert({
           id: saved.id,
-          organization_id: tenantId,
-          code: saved.code,
-          name: saved.name,
+          organization_id: orgId,
+          code: saved.code.toUpperCase().trim(),
+          name: saved.name.trim(),
           type: canonicalType,
           calculation_type: canonicalCalcType,
           is_taxable: saved.is_taxable ?? true,
           is_statutory: (saved as any).is_statutory ?? (saved.type === 'Statutory' || saved.is_pf_applicable || saved.is_esi_applicable || saved.is_pt_applicable || false),
           is_active: saved.is_active ?? true,
           updated_at: new Date().toISOString(),
-        })
-      ).catch((e: any) => console.warn('[Supabase Payroll] upsert component notice:', e));
+        });
+      } catch (e: any) {
+        console.warn('[Supabase Payroll] upsert component notice:', e);
+      }
     }
 
+    hrEventBus.emit('salary.component.saved', saved);
     return saved;
+  }
+
+  saveComponent(component: SalaryComponent, tenantId = getActiveOrgId()): SalaryComponent {
+    this.saveComponentAsync(component, tenantId).catch(e => console.warn(e));
+    return component;
   }
 
   duplicateComponent(componentId: string, newCode: string, newName: string, tenantId = getActiveOrgId()): SalaryComponent {
@@ -443,7 +475,7 @@ class PayrollApi {
 
     const duplicated: SalaryComponent = {
       ...original,
-      id: `cmp-${Date.now()}`,
+      id: generateUUID(),
       code: newCode.toUpperCase(),
       name: newName,
       version: 1,
@@ -453,8 +485,7 @@ class PayrollApi {
       effective_from: new Date().toISOString().split('T')[0],
     };
 
-    list.push(duplicated);
-    setStore(STORAGE_KEYS.COMPONENTS, list, tenantId);
+    this.saveComponentAsync(duplicated, tenantId).catch(e => console.warn(e));
     return duplicated;
   }
 
@@ -466,6 +497,9 @@ class PayrollApi {
     comp.status = 'Archived';
     comp.is_active = false;
     setStore(STORAGE_KEYS.COMPONENTS, list, tenantId);
+    if (isSupabaseEnabled && isValidUUID(componentId)) {
+      Promise.resolve(dbClient.from('salary_components').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', componentId)).catch(() => {});
+    }
     return comp;
   }
 
@@ -477,13 +511,33 @@ class PayrollApi {
     comp.status = 'Active';
     comp.is_active = true;
     setStore(STORAGE_KEYS.COMPONENTS, list, tenantId);
+    if (isSupabaseEnabled && isValidUUID(componentId)) {
+      Promise.resolve(dbClient.from('salary_components').update({ is_active: true, updated_at: new Date().toISOString() }).eq('id', componentId)).catch(() => {});
+    }
     return comp;
   }
 
-  deleteComponent(componentId: string, tenantId = getActiveOrgId()): boolean {
+  async deleteComponentAsync(componentId: string, tenantId = getActiveOrgId()): Promise<boolean> {
     const list = this.getComponents(tenantId);
     const filtered = list.filter(c => c.id !== componentId);
     setStore(STORAGE_KEYS.COMPONENTS, filtered, tenantId);
+    if (_componentsCache) {
+      _componentsCache.data = _componentsCache.data.filter(c => c.id !== componentId);
+    }
+    if (isSupabaseEnabled && isValidUUID(componentId)) {
+      try {
+        await dbClient.from('salary_structure_components').delete().eq('salary_component_id', componentId);
+        await dbClient.from('salary_components').delete().eq('id', componentId);
+      } catch (err) {
+        console.warn('[payrollApi] deleteComponentAsync error:', err);
+      }
+    }
+    hrEventBus.emit('salary.component.deleted', componentId);
+    return true;
+  }
+
+  deleteComponent(componentId: string, tenantId = getActiveOrgId()): boolean {
+    this.deleteComponentAsync(componentId, tenantId).catch(e => console.warn(e));
     return true;
   }
 
@@ -775,12 +829,20 @@ class PayrollApi {
   }
 
   async saveSalaryStructureAsync(structure: SalaryStructure, tenantId = getActiveOrgId()): Promise<SalaryStructure> {
-    const list = this.getSalaryStructures(tenantId);
-    const idx = list.findIndex(s => s.id === structure.id);
+    const orgId = resolveOrgUUID(tenantId || structure.tenant_id);
+    const structId = isValidUUID(structure.id) ? structure.id : generateUUID();
+    const companyId = structure.company_id || '2030277f-a6a1-427f-beaf-4fc677a3bae2';
+
+    const list = this.getSalaryStructures(orgId);
+    const idx = list.findIndex(s => s.id === structId || s.id === structure.id || s.code.toUpperCase() === structure.code.toUpperCase());
     let saved: SalaryStructure;
     if (idx >= 0) {
       saved = {
+        ...list[idx],
         ...structure,
+        id: list[idx].id || structId,
+        tenant_id: orgId,
+        company_id: companyId,
         version: (list[idx].version || 1) + 1,
         updated_at: new Date().toISOString(),
       };
@@ -788,8 +850,9 @@ class PayrollApi {
     } else {
       saved = {
         ...structure,
-        id: structure.id || `str-${Date.now()}`,
-        tenant_id: tenantId,
+        id: structId,
+        tenant_id: orgId,
+        company_id: companyId,
         version: 1,
         status: structure.status || 'Active',
         effective_from: structure.effective_from || new Date().toISOString().split('T')[0],
@@ -798,16 +861,17 @@ class PayrollApi {
       };
       list.push(saved);
     }
-    setStore(STORAGE_KEYS.STRUCTURES, list, tenantId);
+    setStore(STORAGE_KEYS.STRUCTURES, list, orgId);
     if (_structuresCache) {
       const sIdx = _structuresCache.data.findIndex(s => s.id === saved.id);
       if (sIdx >= 0) _structuresCache.data[sIdx] = saved;
       else _structuresCache.data.push(saved);
     }
 
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && isValidUUID(saved.id)) {
       try {
         const metaObj = {
+          company_id: companyId,
           ctc: saved.base_annual_ctc,
           grade: saved.applicable_grade,
           basis: saved.compensation_basis || 'CTC_INCLUSIVE',
@@ -818,29 +882,41 @@ class PayrollApi {
         const fullDesc = `${baseDesc} || META:${JSON.stringify(metaObj)}`;
 
         // 1. Authoritative upsert into salary_structures SQL table
-        await dbClient.from('salary_structures').upsert({
+        const { error: sErr } = await dbClient.from('salary_structures').upsert({
           id: saved.id,
-          organization_id: tenantId,
-          code: saved.code,
-          name: saved.name,
+          organization_id: orgId,
+          code: saved.code.toUpperCase().trim(),
+          name: saved.name.trim(),
           description: fullDesc,
           is_active: saved.status === 'Active',
           updated_at: new Date().toISOString(),
         });
+        if (sErr) {
+          console.error('[payrollApi] salary_structures upsert error:', sErr);
+        }
 
         // 2. Resolve component IDs from salary_components SQL table
-        const { data: dbComps } = await dbClient.from('salary_components').select('id, code');
+        const { data: dbComps } = await dbClient.from('salary_components').select('id, code, name');
         const codeToIdMap = new Map<string, string>();
+        const nameToIdMap = new Map<string, string>();
         if (dbComps) {
-          dbComps.forEach((c: any) => codeToIdMap.set(c.code.toUpperCase(), c.id));
+          dbComps.forEach((c: any) => {
+            if (c.code) codeToIdMap.set(c.code.toUpperCase().trim(), c.id);
+            if (c.name) nameToIdMap.set(c.name.toUpperCase().trim(), c.id);
+          });
         }
 
         // 3. Sync all components in salary_structure_components SQL table
         if (saved.components && saved.components.length > 0) {
           await dbClient.from('salary_structure_components').delete().eq('salary_structure_id', saved.id);
 
-          const rowsToInsert = saved.components.map((c, i) => {
-            const rawCode = (c.component_code || (c as any).code || '').toUpperCase();
+          const seenCompIds = new Set<string>();
+          const rowsToInsert: any[] = [];
+
+          for (let i = 0; i < saved.components.length; i++) {
+            const c = saved.components[i];
+            const rawCode = (c.component_code || (c as any).code || '').toUpperCase().trim();
+            const rawName = (c.component_name || (c as any).name || '').toUpperCase().trim();
             const resolvedCode =
               rawCode === 'SPL_ALLOW' || rawCode === 'SPECIAL_ALLOWANCE' ? 'SA' :
               rawCode === 'ER_PF' ? 'PF_ER' :
@@ -848,25 +924,59 @@ class PayrollApi {
               rawCode === 'LWF' ? 'LWF_EMP' :
               rawCode;
 
-            const compId = codeToIdMap.get(resolvedCode) || codeToIdMap.get(rawCode) || c.component_id;
-            const fExpr = c.formula_expression || (
-              c.calculation_type === 'PercentageOfBasic' ? `${(c.value / 100).toFixed(2)} * BASIC` :
-              c.calculation_type === 'PercentageOfGross' ? `${(c.value / 100).toFixed(2)} * GROSS` :
-              c.calculation_type === 'PercentageOfCTC' ? `${(c.value / 100).toFixed(2)} * CTC` :
-              `${c.value}`
-            );
+            let compId = codeToIdMap.get(resolvedCode) || codeToIdMap.get(rawCode) || nameToIdMap.get(rawName);
 
-            return {
-              organization_id: tenantId,
-              salary_structure_id: saved.id,
-              salary_component_id: compId,
-              value: c.value,
-              formula_expression: fExpr,
-              display_order: c.display_order || i + 1,
-            };
-          });
+            if (!compId && isValidUUID(c.component_id)) {
+              compId = c.component_id;
+            }
 
-          await dbClient.from('salary_structure_components').insert(rowsToInsert);
+            // If component not in SQL database yet, auto-create it with valid UUID
+            if (!compId || !isValidUUID(compId)) {
+              const newCompUuid = generateUUID();
+              const canonicalCode = resolvedCode || `COMP_${Date.now().toString().slice(-4)}_${i + 1}`;
+              const canonicalName = c.component_name || canonicalCode;
+              await dbClient.from('salary_components').upsert({
+                id: newCompUuid,
+                organization_id: orgId,
+                code: canonicalCode,
+                name: canonicalName,
+                type: c.type === 'Earning' ? 'EARNING' : c.type === 'Deduction' ? 'DEDUCTION' : 'STATUTORY_EMPLOYER',
+                calculation_type: 'FLAT',
+                is_taxable: c.is_taxable ?? true,
+                is_statutory: c.type === 'Statutory',
+                is_active: true,
+                updated_at: new Date().toISOString()
+              });
+              compId = newCompUuid;
+              codeToIdMap.set(canonicalCode, compId);
+            }
+
+            if (compId && isValidUUID(compId) && !seenCompIds.has(compId)) {
+              seenCompIds.add(compId);
+              const fExpr = c.formula_expression || (
+                c.calculation_type === 'PercentageOfBasic' ? `${(c.value / 100).toFixed(2)} * BASIC` :
+                c.calculation_type === 'PercentageOfGross' ? `${(c.value / 100).toFixed(2)} * GROSS` :
+                c.calculation_type === 'PercentageOfCTC' ? `${(c.value / 100).toFixed(2)} * CTC` :
+                `${c.value}`
+              );
+
+              rowsToInsert.push({
+                organization_id: orgId,
+                salary_structure_id: saved.id,
+                salary_component_id: compId,
+                value: c.value,
+                formula_expression: fExpr,
+                display_order: c.display_order || i + 1,
+              });
+            }
+          }
+
+          if (rowsToInsert.length > 0) {
+            const { error: scErr } = await dbClient.from('salary_structure_components').insert(rowsToInsert);
+            if (scErr) {
+              console.error('[payrollApi] salary_structure_components insert error:', scErr);
+            }
+          }
         }
 
         // 4. Authoritatively sync employee_salary_assignments in SQL for assigned employees
@@ -894,16 +1004,16 @@ class PayrollApi {
     return structure;
   }
 
-  duplicateSalaryStructure(structureId: string, newCode: string, newName: string, tenantId = getActiveOrgId()): SalaryStructure {
-    const list = this.getSalaryStructures(tenantId);
+  async duplicateSalaryStructureAsync(structureId: string, newCode: string, newName: string, tenantId = getActiveOrgId()): Promise<SalaryStructure> {
+    const list = await this.getSalaryStructuresAsync(tenantId);
     const original = list.find(s => s.id === structureId);
     if (!original) throw new Error('Structure not found');
 
     const duplicated: SalaryStructure = {
       ...original,
-      id: `str-${Date.now()}`,
-      code: newCode.toUpperCase(),
-      name: newName,
+      id: generateUUID(),
+      code: newCode.toUpperCase().trim(),
+      name: newName.trim(),
       version: 1,
       status: 'Draft',
       description: `Duplicated from ${original.code} (${original.name})`,
@@ -912,8 +1022,28 @@ class PayrollApi {
       updated_at: new Date().toISOString(),
     };
 
-    list.push(duplicated);
-    setStore(STORAGE_KEYS.STRUCTURES, list, tenantId);
+    return await this.saveSalaryStructureAsync(duplicated, tenantId);
+  }
+
+  duplicateSalaryStructure(structureId: string, newCode: string, newName: string, tenantId = getActiveOrgId()): SalaryStructure {
+    const list = this.getSalaryStructures(tenantId);
+    const original = list.find(s => s.id === structureId);
+    if (!original) throw new Error('Structure not found');
+
+    const duplicated: SalaryStructure = {
+      ...original,
+      id: generateUUID(),
+      code: newCode.toUpperCase().trim(),
+      name: newName.trim(),
+      version: 1,
+      status: 'Draft',
+      description: `Duplicated from ${original.code} (${original.name})`,
+      effective_from: new Date().toISOString().split('T')[0],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    this.saveSalaryStructureAsync(duplicated, tenantId).catch(e => console.warn(e));
     return duplicated;
   }
 
@@ -924,13 +1054,33 @@ class PayrollApi {
 
     str.status = 'Archived';
     setStore(STORAGE_KEYS.STRUCTURES, list, tenantId);
+    if (isSupabaseEnabled && isValidUUID(structureId)) {
+      Promise.resolve(dbClient.from('salary_structures').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', structureId)).catch(() => {});
+    }
     return str;
   }
 
-  deleteSalaryStructure(structureId: string, tenantId = getActiveOrgId()): boolean {
+  async deleteSalaryStructureAsync(structureId: string, tenantId = getActiveOrgId()): Promise<boolean> {
     const list = this.getSalaryStructures(tenantId);
     const filtered = list.filter(s => s.id !== structureId);
     setStore(STORAGE_KEYS.STRUCTURES, filtered, tenantId);
+    if (_structuresCache) {
+      _structuresCache.data = _structuresCache.data.filter(s => s.id !== structureId);
+    }
+    if (isSupabaseEnabled && isValidUUID(structureId)) {
+      try {
+        await dbClient.from('salary_structure_components').delete().eq('salary_structure_id', structureId);
+        await dbClient.from('salary_structures').delete().eq('id', structureId);
+      } catch (err) {
+        console.warn('[payrollApi] deleteSalaryStructureAsync error:', err);
+      }
+    }
+    hrEventBus.emit('salary.structure.deleted', structureId);
+    return true;
+  }
+
+  deleteSalaryStructure(structureId: string, tenantId = getActiveOrgId()): boolean {
+    this.deleteSalaryStructureAsync(structureId, tenantId).catch(e => console.warn(e));
     return true;
   }
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { payrollApi } from '../../../services/payrollApi';
+import { payrollApi, isValidUUID, resolveOrgUUID, generateUUID } from '../../../services/payrollApi';
+import { useTenant } from '../../../hooks/useTenant';
 import {
   SalaryComponent,
   SalaryStructure,
@@ -52,6 +53,10 @@ interface SalaryManagementViewProps {
 
 export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ initialSubTab, onOpenPayslip, onNavigateTab }) => {
   const { showToast } = useToast();
+  const { organization, activeCompany } = useTenant();
+  const orgId = resolveOrgUUID(organization?.id);
+  const companyId = activeCompany?.id || '2030277f-a6a1-427f-beaf-4fc677a3bae2';
+
   const [subTab, setSubTab] = useState<string>(initialSubTab || 'structures');
   const [structures, setStructures] = useState<SalaryStructure[]>([]);
   const [components, setComponents] = useState<SalaryComponent[]>([]);
@@ -119,15 +124,15 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
   const [simResult, setSimResult] = useState<any>(null);
 
   const loadData = async () => {
-    const rawStructures = await payrollApi.getSalaryStructuresAsync();
+    const rawStructures = await payrollApi.getSalaryStructuresAsync(orgId);
     const cleanStructures = rawStructures.filter(
       s => s.id !== 'str-daily-wage-plant' && s.code !== 'STR-DAILY-PLANT'
     );
     setStructures(cleanStructures);
-    const rawComps = await payrollApi.getComponentsAsync();
+    const rawComps = await payrollApi.getComponentsAsync(orgId);
     setComponents(rawComps);
-    setTagRules(payrollApi.getOrgTagRuleAssignments());
-    const rawSalaries = await payrollApi.getEmployeeSalaries();
+    setTagRules(payrollApi.getOrgTagRuleAssignments(orgId));
+    const rawSalaries = await payrollApi.getEmployeeSalaries(orgId);
     const cleanSalaries = rawSalaries.filter(
       s => !s.id.startsWith('sal-ce') && !s.employee_code?.toUpperCase().startsWith('CE0') && s.salary_structure_id !== 'str-daily-wage-plant'
     );
@@ -145,7 +150,7 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
       unsub1();
       unsub2();
     };
-  }, []);
+  }, [orgId]);
 
   // 1. COMPONENT BUILDER
   const handleOpenComponentModal = (comp?: SalaryComponent) => {
@@ -191,15 +196,19 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
     setIsComponentModalOpen(true);
   };
 
-  const handleSaveComponent = () => {
+  const handleSaveComponent = async () => {
     if (!compCode.trim() || !compName.trim()) {
       showToast('Component code and name are required', 'error');
       return;
     }
 
+    const compId = (selectedComponent?.id && isValidUUID(selectedComponent.id))
+      ? selectedComponent.id
+      : generateUUID();
+
     const payload: SalaryComponent = {
-      id: selectedComponent?.id || `cmp-${Date.now()}`,
-      tenant_id: 'org-joy-01',
+      id: compId,
+      tenant_id: orgId,
       code: compCode.toUpperCase().trim(),
       name: compName.trim(),
       type: compType,
@@ -224,21 +233,30 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
       effective_from: new Date().toISOString().split('T')[0],
     };
 
-    payrollApi.saveComponent(payload);
-    loadData();
+    await payrollApi.saveComponentAsync(payload, orgId);
+    await loadData();
     setIsComponentModalOpen(false);
     showToast(`✓ Salary Component ${payload.code} (${payload.name}) saved successfully.`);
   };
 
-  const handleDuplicateComponent = (comp: SalaryComponent) => {
-    const duplicated = payrollApi.duplicateComponent(comp.id, `${comp.code}_COPY`, `${comp.name} (Copy)`);
-    loadData();
+  const handleDuplicateComponent = async (comp: SalaryComponent) => {
+    const duplicated = await payrollApi.saveComponentAsync({
+      ...comp,
+      id: generateUUID(),
+      code: `${comp.code}_COPY`.toUpperCase(),
+      name: `${comp.name} (Copy)`,
+      version: 1,
+      status: 'Draft',
+      is_active: true,
+      tenant_id: orgId,
+    }, orgId);
+    await loadData();
     showToast(`✓ Duplicated ${comp.code} into ${duplicated.code}`);
   };
 
-  const handleArchiveComponent = (compId: string) => {
-    payrollApi.archiveComponent(compId);
-    loadData();
+  const handleArchiveComponent = async (compId: string) => {
+    payrollApi.archiveComponent(compId, orgId);
+    await loadData();
     showToast(`✓ Component archived. Historical payroll records remain intact.`);
   };
 
@@ -264,7 +282,7 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
     setIsStructureModalOpen(true);
   };
 
-  const handleSaveStructure = () => {
+  const handleSaveStructure = async () => {
     if (!strCode.trim() || !strName.trim()) {
       showToast('Structure Code and Name are required', 'error');
       return;
@@ -289,13 +307,17 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
       is_taxable: c.is_taxable,
     }));
 
+    const structId = (selectedStructure?.id && isValidUUID(selectedStructure.id))
+      ? selectedStructure.id
+      : generateUUID();
+
     const newStr: SalaryStructure = {
-      id: selectedStructure?.id || `str-${Date.now()}`,
-      tenant_id: 'org-joy-01',
+      id: structId,
+      tenant_id: orgId,
       code: strCode.toUpperCase().trim(),
       name: strName.trim(),
       description: 'Configurable formula-based CTC package',
-      company_id: 'comp-01',
+      company_id: companyId,
       applicable_grade: strGrade || 'All Grades',
       base_annual_ctc: strCtc,
       components: structureComponents,
@@ -306,15 +328,15 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
       updated_at: new Date().toISOString(),
     };
 
-    payrollApi.saveSalaryStructure(newStr);
-    loadData();
+    await payrollApi.saveSalaryStructureAsync(newStr, orgId);
+    await loadData();
     setIsStructureModalOpen(false);
     showToast(`✓ Salary Structure ${newStr.code} published successfully.`);
   };
 
-  const handleDuplicateStructure = (str: SalaryStructure) => {
-    const duplicated = payrollApi.duplicateSalaryStructure(str.id, `${str.code}_2026`, `${str.name} (Revised)`);
-    loadData();
+  const handleDuplicateStructure = async (str: SalaryStructure) => {
+    const duplicated = await payrollApi.duplicateSalaryStructureAsync(str.id, `${str.code}_2026`, `${str.name} (Revised)`, orgId);
+    await loadData();
     showToast(`✓ Duplicated structure ${str.code} to ${duplicated.code}`);
   };
 
@@ -347,21 +369,21 @@ export const SalaryManagementView: React.FC<SalaryManagementViewProps> = ({ init
     setIsDeleteModalOpen(true);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
 
     if (deleteTarget.type === 'structure') {
-      payrollApi.deleteSalaryStructure(deleteTarget.id);
+      await payrollApi.deleteSalaryStructureAsync(deleteTarget.id, orgId);
       showToast(`✓ Salary Structure "${deleteTarget.name}" (${deleteTarget.code || ''}) deleted successfully.`);
     } else if (deleteTarget.type === 'component') {
-      payrollApi.deleteComponent(deleteTarget.id);
+      await payrollApi.deleteComponentAsync(deleteTarget.id, orgId);
       showToast(`✓ Salary Component "${deleteTarget.name}" (${deleteTarget.code || ''}) deleted successfully.`);
     } else if (deleteTarget.type === 'rule') {
       payrollApi.deleteOrgTagRuleAssignment(deleteTarget.id);
       showToast(`✓ Tag Rule "${deleteTarget.name}" deleted successfully.`);
     }
 
-    loadData();
+    await loadData();
     setIsDeleteModalOpen(false);
     setDeleteTarget(null);
   };
