@@ -77,10 +77,10 @@ function getActiveOrgId(): string {
     const raw = localStorage.getItem('workforce_active_organization');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.id) return parsed.id;
+      if (parsed && (parsed.id || parsed.organization_id)) return parsed.id || parsed.organization_id;
     }
   } catch { }
-  return 'org-joy-01';
+  return '0c621892-e938-4707-9957-13534ea32c19';
 }
 
 // Purge legacy mock data from browser localStorage once
@@ -612,9 +612,11 @@ function setStored<T>(key: string, val: T): void {
 
 let _leaveTypesCache: { data: LeaveType[]; timestamp: number } | null = null;
 let _leaveRequestsCache: { data: LeaveRequest[]; timestamp: number } | null = null;
+let _entitlementsCache: { data: LeaveEntitlement[]; timestamp: number } | null = null;
 let _ledgerCache: { data: LeaveLedgerTransaction[]; timestamp: number } | null = null;
 let _reqInFlight: Promise<LeaveRequest[]> | null = null;
 let _typesInFlight: Promise<LeaveType[]> | null = null;
+let _entInFlight: Promise<LeaveEntitlement[]> | null = null;
 
 function persistLedgerTransactionToSupabase(entry: LeaveLedgerTransaction, companyId: string = 'comp-01') {
   if (isSupabaseEnabled) {
@@ -1133,44 +1135,82 @@ export const leaveApi = {
       try {
         const { data, error } = await supabase
           .from('leave_requests')
-          .select('*')
+          .select(`
+            *,
+            employees:employee_id (
+              id,
+              first_name,
+              last_name,
+              employee_code,
+              department_id,
+              departments:department_id (id, name),
+              designations:designation_id (id, title)
+            ),
+            leave_types:leave_type_id (
+              id,
+              name,
+              code,
+              annual_quota,
+              is_carry_forward_allowed,
+              max_carry_forward_days,
+              is_encashable,
+              is_paid
+            )
+          `)
           .order('created_at', { ascending: false });
+
         if (!error && Array.isArray(data) && data.length > 0) {
-          const mapped: LeaveRequest[] = data.map((r: any) => ({
-            id: r.id,
-            request_code: r.request_code || `LR-${r.id.slice(0, 6)}`,
-            employee_id: r.employee_id,
-            employee_name: r.employee_name || 'Employee',
-            department_name: r.department_name || 'Engineering',
-            company_id: r.company_id || 'comp-01',
-            leave_type_id: r.leave_type_id,
-            leave_type_name: r.leave_type_name || 'Leave',
-            leave_type_code: r.leave_type_code || 'LV',
-            leave_category: r.leave_category || 'Paid',
-            from_date: r.from_date || r.start_date,
-            to_date: r.to_date || r.end_date,
-            total_calendar_days: r.total_calendar_days || Number(r.total_days) || 1,
-            working_days: r.working_days || Number(r.total_days) || 1,
-            holiday_days: r.holiday_days || 0,
-            weekly_off_days: r.weekly_off_days || 0,
-            leave_days_deducted: r.leave_days_deducted || Number(r.total_days) || 1,
-            is_half_day: Boolean(r.is_half_day),
-            half_day_session: r.half_day_session,
-            is_hourly: Boolean(r.is_hourly),
-            is_lop: Boolean(r.is_lop),
-            reason: r.reason || '',
-            attachment_url: r.attachment_url,
-            manager_id: r.manager_id,
-            manager_name: r.manager_name || 'Approver',
-            status: (r.status || '').toUpperCase() === 'APPROVED' ? 'Approved' : (r.status || '').toUpperCase() === 'REJECTED' ? 'Rejected' : (r.status || '').toUpperCase() === 'CANCELLED' ? 'Cancelled' : 'Pending',
-            submitted_at: r.submitted_at || r.created_at,
-            created_at: r.created_at,
-            daily_breakdown: r.daily_breakdown || [],
-            approved_at: r.approved_at,
-            approved_by_name: r.approved_by_name,
-            current_approver_name: r.current_approver_name || r.manager_name,
-            comments: r.comments,
-          }));
+          const mapped: LeaveRequest[] = data.map((r: any) => {
+            const emp = r.employees;
+            const lt = r.leave_types;
+            const empName = emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : (r.employee_name || 'Staff');
+            const empCode = emp?.employee_code || r.employee_code || 'EMP';
+            const deptName = emp?.departments?.name || r.department_name || 'General';
+            const desigName = emp?.designations?.title || r.designation || 'Staff';
+            const typeName = lt?.name || r.leave_type_name || 'Casual Leave';
+            const typeCode = lt?.code || r.leave_type_code || 'CL';
+            const totalDays = Number(r.total_days || r.total_calendar_days || 1);
+            const statusUpper = (r.status || '').toUpperCase();
+            const status = statusUpper === 'APPROVED' ? 'Approved' : statusUpper === 'REJECTED' ? 'Rejected' : statusUpper === 'CANCELLED' ? 'Cancelled' : 'Pending';
+
+            return {
+              id: r.id,
+              request_code: r.request_code || (empCode ? `LR-${empCode}-${r.id.slice(0, 4).toUpperCase()}` : `LR-${r.id.slice(0, 6).toUpperCase()}`),
+              employee_id: r.employee_id,
+              employee_code: empCode,
+              employee_name: empName,
+              department_name: deptName,
+              designation: desigName,
+              company_id: r.organization_id || r.company_id || 'comp-01',
+              leave_type_id: r.leave_type_id,
+              leave_type_name: typeName,
+              leave_type_code: typeCode,
+              leave_category: lt?.is_paid !== false ? 'Paid' : 'Unpaid',
+              from_date: r.start_date || r.from_date,
+              to_date: r.end_date || r.to_date,
+              total_calendar_days: totalDays,
+              working_days: totalDays,
+              holiday_days: r.holiday_days || 0,
+              weekly_off_days: r.weekly_off_days || 0,
+              leave_days_deducted: totalDays,
+              is_half_day: Boolean(r.is_half_day),
+              half_day_session: r.half_day_session,
+              is_hourly: Boolean(r.is_hourly),
+              is_lop: Boolean(r.is_lop),
+              reason: r.reason || '',
+              attachment_url: r.attachment_url,
+              manager_id: r.manager_id,
+              manager_name: r.approved_by_name || r.manager_name || (r.approved_by ? 'HR Manager' : 'Pending Review'),
+              status: status,
+              submitted_at: r.created_at || r.submitted_at,
+              created_at: r.created_at,
+              daily_breakdown: r.daily_breakdown || [],
+              approved_at: r.approved_at,
+              approved_by_name: r.approved_by ? 'HR Manager' : (r.approved_by_name || null),
+              current_approver_name: status === 'Approved' ? 'Approved' : status === 'Rejected' ? 'Rejected' : 'HR Management',
+              comments: r.comments,
+            };
+          });
           setStored(STORAGE_KEYS.REQUESTS, mapped);
           _leaveRequestsCache = { data: mapped, timestamp: Date.now() };
           return mapped;
@@ -1660,50 +1700,109 @@ export const leaveApi = {
   },
 
   // --- Entitlements & Ledger ---
-  getEntitlements: (): LeaveEntitlement[] => {
-    let list = getStored<LeaveEntitlement[]>(STORAGE_KEYS.ENTITLEMENTS, initialEntitlements);
-    if (!list || list.length === 0) {
-      const employees = api.getEmployeesSync ? api.getEmployeesSync() : [];
-      if (employees && employees.length > 0) {
-        const leaveTypes = leaveApi.getLeaveTypes();
-        const generated: LeaveEntitlement[] = [];
-        for (const emp of employees) {
-          const empName = emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee';
-          const deptName = emp.department_name || (emp as any).department_id || 'Engineering';
+  async getEntitlementsAsync(): Promise<LeaveEntitlement[]> {
+    if (isSupabaseEnabled) {
+      try {
+        const [{ data: emps, error: empErr }, { data: types, error: typeErr }, { data: reqs }, { data: balances }] = await Promise.all([
+          supabase.from('employees').select('id, first_name, last_name, employee_code, department_id, departments:department_id(name), designations:designation_id(title)').order('employee_code'),
+          supabase.from('leave_types').select('*').order('name'),
+          supabase.from('leave_requests').select('*'),
+          supabase.from('leave_balances').select('*')
+        ]);
 
-          for (const lt of leaveTypes) {
-            if (!lt.is_active) continue;
-            const quota = (lt as any).default_annual_quota || (lt as any).days_allowed || 12;
-            generated.push({
-              id: `ent-${emp.id}-${lt.id}`,
-              employee_id: emp.id,
-              employee_name: empName,
-              department_name: deptName,
-              leave_type_id: lt.id,
-              leave_type_name: lt.name,
-              policy_id: 'pol-std-01',
-              policy_name: 'Standard Leave Policy',
-              period: '2026',
-              opening_balance: quota,
-              granted: quota,
-              accrued: 0,
-              carried_forward: 0,
-              adjustments: 0,
-              used: 0,
-              pending: 0,
-              encashed: 0,
-              expired: 0,
-              closing_balance: quota,
-              available_balance: quota,
-              updated_at: new Date().toISOString(),
-            });
+        if (!empErr && Array.isArray(emps) && emps.length > 0 && !typeErr && Array.isArray(types) && types.length > 0) {
+          const entitlements: LeaveEntitlement[] = [];
+
+          for (const emp of emps as any[]) {
+            const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee';
+            const deptName = emp.departments?.name || (Array.isArray(emp.departments) ? emp.departments[0]?.name : undefined) || 'General Operations';
+            const desigTitle = emp.designations?.title || (Array.isArray(emp.designations) ? emp.designations[0]?.title : undefined) || 'Staff';
+
+            for (const lt of types) {
+              if (lt.is_active === false) continue;
+
+              const explicitBal = (balances || []).find((b: any) => b.employee_id === emp.id && b.leave_type_id === lt.id);
+
+              const empRequests = (reqs || []).filter((r: any) => r.employee_id === emp.id && r.leave_type_id === lt.id);
+              const consumedFromReqs = empRequests
+                .filter((r: any) => (r.status || '').toUpperCase() === 'APPROVED')
+                .reduce((sum: number, r: any) => sum + Number(r.total_days || 0), 0);
+              const pendingFromReqs = empRequests
+                .filter((r: any) => (r.status || '').toUpperCase() === 'PENDING')
+                .reduce((sum: number, r: any) => sum + Number(r.total_days || 0), 0);
+
+              const quota = Number(lt.annual_quota || 12);
+              const opening = explicitBal ? Number(explicitBal.opening_balance) : quota;
+              const accrued = explicitBal ? Number(explicitBal.accrued) : quota;
+              const consumed = explicitBal ? Number(explicitBal.consumed) : consumedFromReqs;
+              const pending = pendingFromReqs;
+              const closing = explicitBal ? Number(explicitBal.closing_balance) : (opening - consumed);
+              const available = closing - pending;
+
+              const isCarryForward = Boolean(lt.is_carry_forward_allowed);
+              const maxCarryForward = Number(lt.max_carry_forward_days || 0);
+              const carryForwardEligible = isCarryForward ? Math.min(Math.max(0, available), maxCarryForward) : 0;
+              const lapsedDays = isCarryForward ? Math.max(0, available - maxCarryForward) : Math.max(0, available);
+
+              entitlements.push({
+                id: explicitBal?.id || `ent-${emp.id}-${lt.id}`,
+                employee_id: emp.id,
+                employee_code: emp.employee_code,
+                employee_name: empName,
+                department_name: deptName,
+                designation: desigTitle,
+                leave_type_id: lt.id,
+                leave_type_name: lt.name,
+                leave_type_code: lt.code,
+                policy_id: 'pol-std-01',
+                policy_name: 'Joy Corporate Solutions Standard Policy',
+                period: '2026',
+                opening_balance: opening,
+                granted: quota,
+                accrued: accrued,
+                carried_forward: 0,
+                adjustments: 0,
+                used: consumed,
+                pending: pending,
+                encashed: 0,
+                expired: lapsedDays,
+                closing_balance: closing,
+                available_balance: available,
+                is_carry_forward_allowed: isCarryForward,
+                max_carry_forward_days: maxCarryForward,
+                carry_forward_eligible: carryForwardEligible,
+                lapsed_days: lapsedDays,
+                is_encashable: Boolean(lt.is_encashable),
+                updated_at: explicitBal?.updated_at || new Date().toISOString(),
+              });
+            }
+          }
+
+          if (entitlements.length > 0) {
+            setStored(STORAGE_KEYS.ENTITLEMENTS, entitlements);
+            _entitlementsCache = { data: entitlements, timestamp: Date.now() };
+            return entitlements;
           }
         }
-        if (generated.length > 0) {
-          list = generated;
-          setStored(STORAGE_KEYS.ENTITLEMENTS, list);
-        }
+      } catch (err) {
+        console.warn('[leaveApi] getEntitlementsAsync notice:', err);
       }
+    }
+    return this.getEntitlements();
+  },
+
+  getEntitlements: (): LeaveEntitlement[] => {
+    if (_entitlementsCache?.data && _entitlementsCache.data.length > 0) {
+      return [..._entitlementsCache.data];
+    }
+    const list = getStored<LeaveEntitlement[]>(STORAGE_KEYS.ENTITLEMENTS, []);
+    if (list.length > 0) {
+      _entitlementsCache = { data: list, timestamp: Date.now() };
+    }
+    if (isSupabaseEnabled && !_entInFlight) {
+      _entInFlight = leaveApi.getEntitlementsAsync().finally(() => {
+        _entInFlight = null;
+      });
     }
     return list;
   },
@@ -2169,44 +2268,12 @@ export const leaveApi = {
   syncWithSupabase: async (): Promise<void> => {
     if (!isSupabaseEnabled) return;
     try {
-      // 1. Fetch Leave Requests
-      const { data: remoteRequests, error: reqErr } = await supabase
-        .from('leave_requests')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!reqErr && Array.isArray(remoteRequests)) {
-        setStored(STORAGE_KEYS.REQUESTS, remoteRequests);
-      }
-
-      // 2. Fetch Leave Balances
-      const { data: remoteEntitlements, error: entErr } = await supabase
-        .from('leave_balances')
-        .select('*');
-
-      if (!entErr && Array.isArray(remoteEntitlements) && remoteEntitlements.length > 0) {
-        setStored(STORAGE_KEYS.ENTITLEMENTS, remoteEntitlements);
-      }
-
-      // 3. Fetch Leave Types
-      const { data: remoteTypes, error: typeErr } = await supabase
-        .from('leave_types')
-        .select('*')
-        .order('name');
-
-      if (!typeErr && Array.isArray(remoteTypes) && remoteTypes.length > 0) {
-        setStored(STORAGE_KEYS.LEAVE_TYPES, remoteTypes);
-      }
-
-      // 4. Fetch Ledger
-      const { data: remoteLedger, error: ledErr } = await supabase
-        .from('leave_ledger_entries')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!ledErr && Array.isArray(remoteLedger) && remoteLedger.length > 0) {
-        setStored(STORAGE_KEYS.LEDGER, remoteLedger);
-      }
+      await Promise.all([
+        leaveApi.getLeaveTypesAsync(),
+        leaveApi.getLeaveRequestsAsync(),
+        leaveApi.getEntitlementsAsync(),
+        leaveApi.getLedgerAsync(),
+      ]);
     } catch (e) {
       console.warn('[leaveApi] syncWithSupabase notice:', e);
     }

@@ -687,12 +687,21 @@ const AppContent: React.FC = () => {
       case 'attendance/late-early':
       case 'shifts':
       case 'shifts/master':
+      case 'adaptive-shifts':
+      case 'shifts/adaptive':
+      case 'adaptive':
+      case 'shift-detection':
       case 'roster':
       case 'shifts/roster':
       case 'shift-calendar':
       case 'shifts/calendar':
       case 'policies':
       case 'shifts/policies':
+      case 'permission-governance':
+      case 'permissions':
+      case 'attendance-permissions':
+      case 'shifts/permissions':
+      case 'permission-ledger':
       case 'biometric':
       case 'biometric/devices':
       case 'biometric-devices':

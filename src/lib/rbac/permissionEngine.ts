@@ -69,9 +69,11 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   'late-early',
   // Shift & Scheduling
   'shifts',
+  'adaptive-shifts',
   'roster',
   'shift-calendar',
   'policies',
+  'permission-governance',
   // Clocking & Devices (Biometric Channel)
   'biometric',
   'biometric-devices',
@@ -335,7 +337,7 @@ const MANAGER_MODULE_IDS: ModuleId[] = [
   'dashboard', 'my-workspace',
   // Attendance (department)
   'attendance', 'attendance-dashboard', 'attendance-employees', 'employee-attendance', 'employees', 'history', 'attendance-history', 'ledger', 'regularization', 'exceptions', 'late-early',
-  'shifts', 'roster', 'shift-calendar', 'policies',
+  'shifts', 'adaptive-shifts', 'roster', 'shift-calendar', 'policies', 'permission-governance',
   'biometric', 'biometric-devices', 'attendance-rules', 'biometric-rules', 'rules-engine', 'device-enrollment', 'device-sync', 'punch-mapping', 'device-logs',
   'face-attendance', 'face-enrollment', 'face-devices', 'face-logs', 'face-exceptions',
   'gps', 'gps-attendance', 'geofences', 'staff-mapping', 'mobile-clocking', 'location-logs', 'location-exceptions',
@@ -679,7 +681,16 @@ export function canViewModule(user: User | null, module: ModuleId | string): boo
     module.startsWith('attendance') ||
     module.startsWith('biometric') ||
     module.startsWith('shift') ||
-    module.startsWith('roster') ||
+    module.startsWith('adaptive') ||
+    module.startsWith('permission') ||
+    module === 'adaptive-shifts' ||
+    module === 'shifts/adaptive' ||
+    module === 'shift-detection' ||
+    module === 'permission-governance' ||
+    module === 'permissions' ||
+    module === 'attendance-permissions' ||
+    module === 'shifts/permissions' ||
+    module === 'roster' ||
     module.startsWith('gps') ||
     module.startsWith('geofence') ||
     module.startsWith('face-') ||
@@ -690,7 +701,7 @@ export function canViewModule(user: User | null, module: ModuleId | string): boo
     module === 'history' ||
     module === 'policies'
   ) {
-    if (profile.hierarchyLevel <= 2 || profile.allowedModules.includes('attendance' as ModuleId) || profile.allowedModules.includes('biometric' as ModuleId)) {
+    if (profile.hierarchyLevel <= 2 || profile.allowedModules.includes('attendance' as ModuleId) || profile.allowedModules.includes('biometric' as ModuleId) || profile.allowedModules.includes('shifts' as ModuleId)) {
       return true;
     }
   }

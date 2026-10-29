@@ -687,33 +687,59 @@ class AttendanceClassificationEngine {
         JoyRedis.invalidateLedgerCache(orgId).catch(() => {});
       } catch (_) {}
 
-      // Also persist to Supabase if connected
+      // Also persist directly to Supabase canonical table attendance_daily
       if (isSupabaseEnabled && calc.employee_id && calc.employee_id.length === 36) {
         const dbFirstInUtc = calc.first_in?.event_timestamp || (existing?.first_check_in ? attendanceTimeService.normalizeDeviceTimestamp(existing.first_check_in, 'Asia/Kolkata').eventTimestampUtc : null);
         const dbLastOutUtc = calc.last_out?.event_timestamp || (lastOutTimeStr ? attendanceTimeService.normalizeDeviceTimestamp(lastOutTimeStr, 'Asia/Kolkata').eventTimestampUtc : null);
+        const totalWorkMins = dailyRecord.net_working_minutes || dailyRecord.gross_working_minutes || 0;
+        const rawStatus = (lastOutTimeStr ? (calc.status || 'PRESENT') : (calc.status || 'ABSENT')).toUpperCase();
+        let dbStatus: 'PRESENT' | 'HALF_DAY' | 'ABSENT' | 'HOLIDAY' = 'PRESENT';
+        let payableStatus = 1.0;
+
+        if (rawStatus.includes('HALF')) {
+          dbStatus = 'HALF_DAY';
+          payableStatus = 0.5;
+        } else if (rawStatus.includes('ABSENT') || rawStatus.includes('LOP') || rawStatus.includes('MISSING')) {
+          dbStatus = 'ABSENT';
+          payableStatus = 0.0;
+        } else if (rawStatus.includes('HOLIDAY')) {
+          dbStatus = 'HOLIDAY';
+          payableStatus = 1.0;
+        } else if (totalWorkMins > 0 && totalWorkMins < 240) {
+          dbStatus = totalWorkMins < 120 ? 'ABSENT' : 'HALF_DAY';
+          payableStatus = totalWorkMins < 120 ? 0.0 : 0.5;
+        } else {
+          dbStatus = 'PRESENT';
+          payableStatus = 1.0;
+        }
+
+        const supabaseDailyPayload = {
+          organization_id: orgId,
+          employee_id: calc.employee_id,
+          attendance_date: calc.attendance_date,
+          shift_id: (calc.effective_shift?.shift_id && calc.effective_shift.shift_id.length === 36) ? calc.effective_shift.shift_id : null,
+          first_check_in: dbFirstInUtc,
+          last_check_out: dbLastOutUtc,
+          total_work_minutes: totalWorkMins,
+          break_minutes: dailyRecord.total_break_minutes || 0,
+          late_entry_minutes: dailyRecord.late_minutes || 0,
+          early_exit_minutes: dailyRecord.early_checkout_minutes || 0,
+          overtime_minutes: dailyRecord.overtime_minutes || 0,
+          status: dbStatus,
+          payable_status: payableStatus,
+          is_regularized: Boolean(existing?.is_regularized),
+          overtime_eligible: (dailyRecord.overtime_minutes || 0) > 0,
+          updated_at: new Date().toISOString(),
+        };
 
         Promise.resolve(
           supabase.from('attendance_daily').upsert(
-            {
-              organization_id: orgId,
-              employee_id: calc.employee_id,
-              attendance_date: calc.attendance_date,
-              shift_id: calc.effective_shift.shift_id,
-              first_check_in: dbFirstInUtc,
-              last_check_out: dbLastOutUtc,
-              gross_working_minutes: dailyRecord.gross_working_minutes,
-              net_working_minutes: dailyRecord.net_working_minutes,
-              total_break_minutes: dailyRecord.total_break_minutes,
-              late_minutes: dailyRecord.late_minutes,
-              early_checkout_minutes: dailyRecord.early_checkout_minutes,
-              overtime_minutes: dailyRecord.overtime_minutes,
-              status: lastOutTimeStr ? 'PRESENT' : calc.status,
-              source: overallSource,
-              updated_at: new Date().toISOString(),
-            },
+            supabaseDailyPayload,
             { onConflict: 'employee_id,attendance_date' }
           )
-        ).catch((err: any) => console.warn('[Supabase Attendance] Daily sync notice:', err));
+        ).then(({ error }) => {
+          if (error) console.warn('[Supabase Attendance] Daily sync error:', error.message);
+        }).catch((err: any) => console.warn('[Supabase Attendance] Daily sync notice:', err));
       }
     } catch (err) {
       console.warn('[AttendanceClassificationEngine] saveDailyAttendanceRecord error:', err);

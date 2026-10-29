@@ -438,14 +438,55 @@ async function processLivePunchDirectly(punchRecord, pin, timeStr, resolvedPunch
         console.warn('[DIRECT-INGEST] attendance_punches notice:', pErr.message);
       }
 
+      // Smart Adaptive Shift & Permission Governance (120m Quota Calculation)
+      let initialStatus = 'PRESENT';
+      let initialPayable = 1.0;
+      let lateEntryMinutes = 0;
+
+      // Default Corporate Shift: GEN-10 (09:30 AM start, 15m grace = 09:45 AM / 9.75 decimal hours)
+      if (eventIstHour > 9.75) {
+        lateEntryMinutes = Math.round((eventIstHour - 9.5) * 60);
+        const excessLateMins = Math.max(0, lateEntryMinutes - 15);
+
+        // Fetch Month's Prior Cumulative Usage
+        const monthPrefix = todayDate.substring(0, 7);
+        const { data: monthRows } = await supabase
+          .from('attendance_daily')
+          .select('late_entry_minutes, permission_minutes')
+          .eq('employee_id', emp.id)
+          .gte('attendance_date', `${monthPrefix}-01`)
+          .lte('attendance_date', `${monthPrefix}-31`);
+
+        let priorCumulativeMinutes = 0;
+        if (monthRows) {
+          for (const r of monthRows) {
+            const pM = Number(r.permission_minutes || 0);
+            const lateM = Number(r.late_entry_minutes || 0);
+            const excess = Math.max(0, lateM - 15);
+            priorCumulativeMinutes += (pM + excess);
+          }
+        }
+
+        const newCumulative = priorCumulativeMinutes + excessLateMins;
+        if (priorCumulativeMinutes <= 120 && newCumulative > 120) {
+          initialStatus = 'Half Day';
+          initialPayable = 0.5;
+          console.log(`[PERM-GOVERNANCE] ⚠️ ${emp.first_name} crossed 120m monthly allowance (Cumulative: ${newCumulative}m). Marked Half-Day.`);
+        } else {
+          initialStatus = 'LATE';
+          initialPayable = 1.0;
+        }
+      }
+
       await supabase.from('attendance_daily').upsert({
         employee_id: emp.id,
         organization_id: emp.organization_id,
         attendance_date: todayDate,
         first_check_in: eventUtcIso,
         last_check_out: null,
-        status: 'PRESENT',
-        payable_status: 1.0,
+        status: initialStatus,
+        payable_status: initialPayable,
+        late_entry_minutes: lateEntryMinutes,
       }, { onConflict: 'employee_id,attendance_date' });
 
       if (emp.phone && !hasSentSmsToday(emp.id, todayDate, 'CHECK_IN')) {

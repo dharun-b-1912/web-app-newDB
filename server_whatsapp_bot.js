@@ -1791,17 +1791,44 @@ async function handleBotMisReportDispatch(session, slot = 'MORNING') {
     console.log('[WhatsApp Bot] Edge dispatcher response:', result);
 
     if (resp.ok && result?.success) {
-      const altSlot = slot === 'MORNING' ? 'EVENING' : 'MORNING';
-      const altTitle = slot === 'MORNING' ? '🌙 Evening Final' : '🌅 Morning Turnout';
+      const turnoutPct = result.turnout?.turnoutPct ?? result.summary?.turnoutPct ?? 'N/A';
+      const presentCount = result.turnout?.present ?? result.summary?.presentCount ?? 0;
+      const headcount = result.headcount ?? result.summary?.headcount ?? 0;
+      const lateCount = result.turnout?.late ?? result.summary?.lateCount ?? 0;
+
+      let statsSummary = `• *Turnout:* ${turnoutPct}% (${presentCount} Present / ${headcount} Total)\n• *Late Arrivals:* ${lateCount} Staff\n`;
+      let altSlot = 'EVENING';
+      let altTitle = '🌙 Evening Final';
+
+      if (slot === 'WEEKLY') {
+        const avgTurnout = result.weeklyMetrics?.avgTurnoutPct ?? turnoutPct;
+        const totalOt = result.weeklyMetrics?.totalOtHours ?? 0;
+        const repLate = result.weeklyMetrics?.repeatedLateCount ?? 0;
+        statsSummary = `• *7-Day Avg Turnout:* ${avgTurnout}%\n• *Total Workforce:* ${headcount} Staff\n• *Weekly OT Hours:* ${totalOt}h\n• *Repeated Late Arrivals:* ${repLate} Staff\n`;
+        altSlot = 'MONTHLY';
+        altTitle = '📊 Monthly MIS';
+      } else if (slot === 'MONTHLY') {
+        const attPct = result.monthlyMetrics?.attendancePct ?? turnoutPct;
+        const otHours = result.monthlyMetrics?.overtime?.recordedOtHours ?? 0;
+        statsSummary = `• *Monthly Attendance:* ${attPct}%\n• *Active Workforce:* ${headcount} Staff\n• *Cumulative OT:* ${otHours}h / 20h Statutory Limit\n`;
+        altSlot = 'DAILY';
+        altTitle = '📅 Daily MIS';
+      } else if (slot === 'DAILY' || slot === 'EVENING') {
+        altSlot = 'WEEKLY';
+        altTitle = '📈 Weekly MIS';
+      } else if (slot === 'MORNING') {
+        altSlot = 'EVENING';
+        altTitle = '🌙 Evening Final';
+      }
+
       return sendMetaInteractive(cleanPhone, {
         type: 'button',
         header: { type: 'text', text: 'MIS Report Dispatched' },
         body: {
           text:
             `✅ *${slotLabel} Dispatched Successfully*\n\n` +
-            `• *Turnout:* ${result.summary?.turnoutPct ?? 'N/A'}% (${result.summary?.presentCount ?? 0} Present / ${result.summary?.headcount ?? 0} Total)\n` +
-            `• *Audit Log ID:* ${result.auditLogIds?.[0] ? result.auditLogIds[0].slice(0, 8) : 'RECORDED'}\n` +
-            `• *Document Status:* PDF audit ledger sent above\n\n` +
+            `${statsSummary}` +
+            `• *Document Status:* Executive PDF audit ledger sent above\n\n` +
             `Please review the attached PDF document and tap *Acknowledge Audit* to record your review.`,
         },
         footer: { text: 'Joy PeopleHR Cryptographic Time Engine' },

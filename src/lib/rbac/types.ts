@@ -94,9 +94,11 @@ export type ModuleId =
   | 'late-early'
   // Shift & Scheduling
   | 'shifts'
+  | 'adaptive-shifts'
   | 'roster'
   | 'shift-calendar'
   | 'policies'
+  | 'permission-governance'
   // Clocking & Devices (Biometric Channel)
   | 'biometric'
   | 'biometric-devices'

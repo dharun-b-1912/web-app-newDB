@@ -173,10 +173,13 @@ export interface PolicyAssignment {
 export interface LeaveEntitlement {
   id: string;
   employee_id: string;
+  employee_code?: string;
   employee_name: string;
   department_name: string;
+  designation?: string;
   leave_type_id: string;
   leave_type_name: string;
+  leave_type_code?: string;
   policy_id: string;
   policy_name: string;
   period: string; // e.g., "2026-2027" or "2026"
@@ -192,6 +195,11 @@ export interface LeaveEntitlement {
   expired: number;
   closing_balance: number;
   available_balance: number;
+  is_carry_forward_allowed?: boolean;
+  max_carry_forward_days?: number;
+  carry_forward_eligible?: number;
+  lapsed_days?: number;
+  is_encashable?: boolean;
   updated_at: string;
 }
 
@@ -231,6 +239,7 @@ export interface LeaveRequest {
   employee_code?: string;
   employee_name: string;
   department_name: string;
+  designation?: string;
   company_id: string;
   avatar_url?: string;
   leave_type_id: string;

@@ -171,9 +171,11 @@ const isItemActive = (itemId: string, currentNav: string): boolean => {
   if (itemId === 'exceptions' && (currentNav === 'exceptions')) return true;
   if (itemId === 'attendance-reports' && (currentNav === 'attendance-reports' || currentNav === 'reports' || currentNav === 'attendance/reports' || currentNav === '/attendance/reports' || currentNav === 'mis' || currentNav === 'attendance/mis')) return true;
   if (itemId === 'shifts' && (currentNav === 'shifts' || currentNav === 'shift-master' || currentNav === '/shifts')) return true;
+  if (itemId === 'adaptive-shifts' && (currentNav === 'adaptive-shifts' || currentNav === 'shifts/adaptive' || currentNav === '/adaptive-shifts' || currentNav === '/shifts/adaptive' || currentNav === 'adaptive' || currentNav === 'shift-detection')) return true;
   if (itemId === 'roster' && (currentNav === 'roster' || currentNav === 'shift-roster' || currentNav === 'shifts/roster' || currentNav === '/shifts/roster')) return true;
   if (itemId === 'shift-calendar' && (currentNav === 'shift-calendar' || currentNav === 'calendar' || currentNav === 'shifts/calendar' || currentNav === '/shifts/calendar')) return true;
   if (itemId === 'policies' && (currentNav === 'policies' || currentNav === 'attendance-policies' || currentNav === 'shifts/policies' || currentNav === '/policies' || currentNav === '/shifts/policies')) return true;
+  if (itemId === 'permission-governance' && (currentNav === 'permission-governance' || currentNav === 'permissions' || currentNav === 'shifts/permissions' || currentNav === 'attendance-permissions' || currentNav === '/permission-governance' || currentNav === '/permissions' || currentNav === 'permission-ledger')) return true;
   // Clocking & Devices mappings with strict mutual exclusivity
   if (itemId === 'biometric') {
     if (
@@ -646,9 +648,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'SHIFT & SCHEDULING',
       items: [
         { id: 'shifts', label: 'Shift Master', icon: Clock },
+        { id: 'adaptive-shifts', label: 'Adaptive Shifts', icon: Sparkles, badge: 'Smart' },
         { id: 'roster', label: 'Shift Roster & Matrix', icon: CalendarRange },
         { id: 'shift-calendar', label: 'Shift Calendar', icon: Calendar },
         { id: 'policies', label: 'Attendance Policies', icon: SlidersHorizontal },
+        { id: 'permission-governance', label: 'Permission Governance', icon: ShieldCheck, badge: '120m' },
       ],
     },
     {
@@ -928,9 +932,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'SHIFT & SCHEDULING',
       items: [
         { id: 'shifts', label: 'Shift Master', icon: Clock },
+        { id: 'adaptive-shifts', label: 'Adaptive Shifts', icon: Sparkles, badge: 'Smart' },
         { id: 'roster', label: 'Shift Roster & Matrix', icon: CalendarRange },
         { id: 'shift-calendar', label: 'Shift Calendar', icon: Calendar },
         { id: 'policies', label: 'Attendance Policies', icon: SlidersHorizontal },
+        { id: 'permission-governance', label: 'Permission Governance', icon: ShieldCheck, badge: '120m' },
       ],
     },
     {
@@ -1085,9 +1091,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       groupName: 'SHIFT & SCHEDULING',
       items: [
         { id: 'shifts', label: 'Shift Master', icon: Clock },
+        { id: 'adaptive-shifts', label: 'Adaptive Shifts', icon: Sparkles, badge: 'Smart' },
         { id: 'roster', label: 'Shift Roster & Matrix', icon: CalendarRange },
         { id: 'shift-calendar', label: 'Shift Calendar', icon: Calendar },
         { id: 'policies', label: 'Attendance Policies', icon: SlidersHorizontal },
+        { id: 'permission-governance', label: 'Permission Governance', icon: ShieldCheck, badge: '120m' },
       ],
     },
     {

@@ -36,16 +36,35 @@ export const LeaveDashboardView: React.FC<LeaveDashboardViewProps> = ({
   const [entitlements, setEntitlements] = useState<LeaveEntitlement[]>([]);
   const [exceptions, setExceptions] = useState<LeaveException[]>([]);
 
-  const loadData = () => {
-    setRequests(leaveApi.getLeaveRequests());
-    setCalendars(leaveApi.getHolidayCalendars());
-    setEntitlements(leaveApi.getEntitlements());
-    setExceptions(leaveApi.getExceptions());
+  const [loading, setLoading] = useState(true);
+
+  const loadData = async () => {
+    try {
+      const [reqs, ents] = await Promise.all([
+        leaveApi.getLeaveRequestsAsync(),
+        leaveApi.getEntitlementsAsync(),
+      ]);
+      setRequests(reqs);
+      setEntitlements(ents);
+      setCalendars(leaveApi.getHolidayCalendars());
+      setExceptions(leaveApi.getExceptions());
+    } catch (err) {
+      console.warn('[LeaveDashboard] loadData error:', err);
+      // Fallback to synchronous cached getters
+      setRequests(leaveApi.getLeaveRequests());
+      setCalendars(leaveApi.getHolidayCalendars());
+      setEntitlements(leaveApi.getEntitlements());
+      setExceptions(leaveApi.getExceptions());
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     loadData();
-    const unsub = hrEventBus.subscribe('leave.*', () => loadData());
+    const unsub = hrEventBus.subscribe('leave.*', () => {
+      loadData();
+    });
     return () => unsub();
   }, []);
 
@@ -117,18 +136,20 @@ export const LeaveDashboardView: React.FC<LeaveDashboardViewProps> = ({
     },
   ];
 
-  const handleQuickApprove = (reqId: string, e: React.MouseEvent) => {
+  const handleQuickApprove = async (reqId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    leaveApi.approveLeaveRequest(reqId, 'HR Admin (Quick Action)', 'Approved from Dashboard');
-    setRequests(leaveApi.getLeaveRequests());
+    await leaveApi.approveLeaveRequest(reqId, 'HR Admin (Quick Action)', 'Approved from Dashboard');
+    const updated = await leaveApi.getLeaveRequestsAsync();
+    setRequests(updated);
   };
 
-  const handleQuickReject = (reqId: string, e: React.MouseEvent) => {
+  const handleQuickReject = async (reqId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const reason = prompt('Please provide reason for rejection:');
     if (reason) {
-      leaveApi.rejectLeaveRequest(reqId, 'HR Admin (Quick Action)', reason);
-      setRequests(leaveApi.getLeaveRequests());
+      await leaveApi.rejectLeaveRequest(reqId, 'HR Admin (Quick Action)', reason);
+      const updated = await leaveApi.getLeaveRequestsAsync();
+      setRequests(updated);
     }
   };
 

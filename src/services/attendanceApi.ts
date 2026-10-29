@@ -1153,13 +1153,23 @@ export const attendanceApi = {
     if (isSupabaseEnabled) {
       const orgId = getActiveOrgId();
       if (orgId && req.employee_id && req.employee_id.length === 36) {
+        const attDate = (newReq as any).date || (newReq as any).attendance_date || new Date().toISOString().split('T')[0];
+        const toTimestamptz = (val?: string) => {
+          if (!val) return null;
+          if (val.includes('T')) return val;
+          const [hh, mm] = val.split(':');
+          const d = new Date(`${attDate}T12:00:00Z`);
+          if (!isNaN(Number(hh))) d.setUTCHours(Number(hh) - 5, Number(mm || 0) - 30);
+          return d.toISOString();
+        };
+
         Promise.resolve(
           supabase.from('attendance_regularizations').insert({
             organization_id: orgId,
             employee_id: newReq.employee_id,
-            attendance_date: (newReq as any).date || (newReq as any).attendance_date || new Date().toISOString().split('T')[0],
-            requested_check_in: newReq.requested_check_in,
-            requested_check_out: newReq.requested_check_out,
+            attendance_date: attDate,
+            requested_check_in: toTimestamptz(newReq.requested_check_in),
+            requested_check_out: toTimestamptz(newReq.requested_check_out),
             reason: newReq.reason,
             status: 'PENDING',
           })
@@ -1224,6 +1234,7 @@ export const attendanceApi = {
                 first_check_in: item.requested_check_in,
                 last_check_out: item.requested_check_out,
                 status: 'PRESENT',
+                payable_status: 1.0,
                 is_regularized: true,
                 updated_at: new Date().toISOString(),
               })

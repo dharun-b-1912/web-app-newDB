@@ -34,7 +34,7 @@ export interface SendAttendanceReportEmailParams {
   attachExcel?: boolean;
   attachPdf?: boolean;
   attachCsv?: boolean;
-  reportType?: 'MORNING_CHECKIN' | 'EVENING_FINAL' | 'FULL_CONSOLIDATED';
+  reportType?: 'MORNING_CHECKIN' | 'EVENING_FINAL' | 'FULL_CONSOLIDATED' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | string;
   preGeneratedPdf?: PreGeneratedPdfArtifact;
 }
 
@@ -144,10 +144,17 @@ export const attendanceReportEmailService = {
       };
     }
 
+    const isWeekly = (params.reportType || '').toUpperCase() === 'WEEKLY';
+    const isMonthly = (params.reportType || '').toUpperCase() === 'MONTHLY';
+
     // Default subject
     const subject =
       params.subject ||
-      (isMorning
+      (isWeekly
+        ? `[Joy PeopleHR] Weekly Executive Attendance & Overtime Audit Report — ${dateStr} (${company})`
+        : isMonthly
+        ? `[Joy PeopleHR] Monthly Statutory Attendance & Overtime Governance Report — ${dateStr} (${company})`
+        : isMorning
         ? `[Joy PeopleHR] Morning Check-In & Turnout Status Report — ${dateStr} (${company})`
         : `[Joy PeopleHR] End-of-Day Final Attendance & Working Hours Report — ${dateStr} (${company})`);
 
@@ -201,15 +208,15 @@ export const attendanceReportEmailService = {
                 JOY PEOPLEHR &bull; WORKFORCE AUDIT
               </div>
               <h1 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.3px; color: #ffffff; line-height: 1.3;">
-                ${isMorning ? 'Morning Shift Check-In &amp; Turnout Report' : 'Daily Attendance &amp; Shift Audit Report'}
+                ${isWeekly ? 'Weekly Executive Attendance &amp; Overtime Audit' : isMonthly ? 'Monthly Workforce Attendance &amp; Statutory Governance' : isMorning ? 'Morning Shift Check-In &amp; Turnout Report' : 'Daily Attendance &amp; Shift Audit Report'}
               </h1>
               <div style="font-size: 12.5px; color: #cbd5e1; margin-top: 5px; font-weight: 400;">
-                ${company} &bull; <strong style="color: #ffffff;">${formattedDateLabel}</strong> &bull; <span style="color: #94a3b8;">${isMorning ? 'Morning Slot 1' : 'Evening Slot 2'}</span>
+                ${company} &bull; <strong style="color: #ffffff;">${formattedDateLabel}</strong> &bull; <span style="color: #94a3b8;">${isWeekly ? 'Weekly Executive Audit' : isMonthly ? 'Monthly Executive Audit' : isMorning ? 'Morning Slot 1' : 'Evening Slot 2'}</span>
               </div>
             </td>
             <td align="right" valign="top" style="padding-left: 12px;">
-              <span style="display: inline-block; background-color: #1e293b; border: 1px solid #475569; border-radius: 6px; padding: 4px 10px; font-size: 10px; font-weight: 700; color: #e2e8f0; text-transform: uppercase; letter-spacing: 0.5px;">
-                ${isMorning ? 'MORNING CHECK-IN' : 'AUDITED'}
+              <span style="display: inline-block; background-color: ${isWeekly ? '#059669' : isMonthly ? '#7c3aed' : '#1e293b'}; border: 1px solid #475569; border-radius: 6px; padding: 4px 10px; font-size: 10px; font-weight: 700; color: #ffffff; text-transform: uppercase; letter-spacing: 0.5px;">
+                ${isWeekly ? 'WEEKLY MIS' : isMonthly ? 'MONTHLY GOVERNANCE' : isMorning ? 'MORNING CHECK-IN' : 'AUDITED'}
               </span>
             </td>
           </tr>

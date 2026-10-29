@@ -494,9 +494,12 @@ export const featureEntitlementService = {
     // Shifts & Roster Scheduling
     if (
       r === 'shifts' ||
+      r === 'adaptive-shifts' ||
+      r === 'shifts/adaptive' ||
       r === 'roster' ||
       r === 'shift-calendar' ||
       r === 'policies' ||
+      r === 'permission-governance' ||
       r === 'overtime' ||
       r === 'overtime-requests' ||
       r === 'wfh' ||

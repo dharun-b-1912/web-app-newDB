@@ -23,6 +23,8 @@ import { GpsMobileChannelView } from './subviews/GpsMobileChannelView';
 import { ClockingDevicesChannelView } from './subviews/ClockingDevicesChannelView';
 import { PayrollInputsView } from './subviews/PayrollInputsView';
 import { AuditControlView } from './subviews/AuditControlView';
+import { AdaptiveShiftManagementView } from './subviews/AdaptiveShiftManagementView';
+import { PermissionGovernanceView } from './subviews/PermissionGovernanceView';
 import { EmployeeAttendanceProfileDrawer } from './components/EmployeeAttendanceProfileDrawer';
 
 const WorkOvertimeMasterModule = lazy(() => import('../work/WorkOvertimeMasterModule').then(m => ({ default: m.WorkOvertimeMasterModule })));
@@ -48,6 +50,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   BarChart3,
+  Sparkles,
 } from 'lucide-react';
 import { syncUrlWithRoute } from '../../lib/router/urlRouter';
 import { navPerfTracker } from '../../services/observability/navigationPerfTracker';
@@ -156,6 +159,9 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     if (subPath === 'shifts' || subPath === 'shifts/master' || subPath === '/shifts' || subPath === '/shifts/master' || subPath === 'shift-master') {
       return 'shifts';
     }
+    if (subPath === 'adaptive-shifts' || subPath === 'shifts/adaptive' || subPath === '/adaptive-shifts' || subPath === 'adaptive' || subPath === 'shift-detection') {
+      return 'adaptive-shifts';
+    }
     if (subPath === 'roster' || subPath === 'shifts/roster' || subPath === '/shifts/roster' || subPath === 'shift-roster') {
       return 'roster';
     }
@@ -164,6 +170,9 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     }
     if (subPath === 'policies' || subPath === 'shifts/policies' || subPath === '/policies' || subPath === '/shifts/policies' || subPath === 'attendance-policies') {
       return 'policies';
+    }
+    if (subPath === 'permission-governance' || subPath === 'permissions' || subPath === '/permission-governance' || subPath === 'permission-ledger' || subPath === 'attendance-permissions') {
+      return 'permission-governance';
     }
     if (subPath === 'calculation-audit' || subPath === 'audit/ledger' || subPath === '/audit/ledger') {
       return 'calculation-audit';
@@ -298,8 +307,10 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     { id: 'attendance-employees', label: 'Employee Attendance', icon: Users },
     { id: 'history', label: 'Attendance History', icon: Clock },
     { id: 'shifts', label: 'Shift Master', icon: Clock },
+    { id: 'adaptive-shifts', label: 'Adaptive Shifts', icon: Sparkles },
     { id: 'roster', label: 'Shift Roster', icon: CalendarDays },
     { id: 'policies', label: 'Attendance Policies', icon: SlidersHorizontal },
+    { id: 'permission-governance', label: 'Permission Governance', icon: ShieldCheck },
     { id: 'biometric', label: 'Biometric Devices', icon: Cpu },
     { id: 'attendance-rules', label: 'Attendance Rules', icon: Sliders },
     { id: 'gps', label: 'GPS & Mobile Channel', icon: MapPin },
@@ -337,6 +348,18 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
         setLocalTab('live-tracking');
       } else if (urlPath.includes('/attendance/reports') || urlPath.includes('/attendance-reports') || urlPath.includes('/attendance/mis')) {
         setLocalTab('attendance-reports');
+      } else if (urlPath.includes('/shifts/adaptive') || urlPath.includes('/adaptive-shifts') || urlPath.includes('/shift-detection')) {
+        setLocalTab('adaptive-shifts');
+      } else if (urlPath.includes('/permission-governance') || urlPath.includes('/permissions') || urlPath.includes('/attendance-permissions') || urlPath.includes('/permission-ledger')) {
+        setLocalTab('permission-governance');
+      } else if (urlPath.includes('/shifts/roster') || urlPath === '/roster') {
+        setLocalTab('roster');
+      } else if (urlPath.includes('/shifts/calendar')) {
+        setLocalTab('shift-calendar');
+      } else if (urlPath.includes('/policies') || urlPath.includes('/attendance-policies') || urlPath.includes('/shifts/policies')) {
+        setLocalTab('policies');
+      } else if (urlPath === '/shifts' || urlPath === '/shifts/master') {
+        setLocalTab('shifts');
       } else if (urlPath.includes('/biometric/rules') || urlPath.includes('/attendance-rules')) {
         setLocalTab('attendance-rules');
       } else if (urlPath.includes('/biometric/gps') || urlPath.includes('/gps')) {
@@ -517,12 +540,27 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
             onOpenEmployeeProfile={id => setSelectedEmployeeProfileId(id)}
           />
         );
+      case 'adaptive-shifts':
+      case 'shifts/adaptive':
+        return (
+          <ErrorBoundary>
+            <AdaptiveShiftManagementView />
+          </ErrorBoundary>
+        );
       case 'policies':
       case 'shifts/policies':
       case 'attendance-policies':
         return (
           <ErrorBoundary>
             <AttendancePolicyConfigView />
+          </ErrorBoundary>
+        );
+      case 'permission-governance':
+      case 'permissions':
+      case 'attendance-permissions':
+        return (
+          <ErrorBoundary>
+            <PermissionGovernanceView />
           </ErrorBoundary>
         );
       case 'attendance-rules':
@@ -675,6 +713,12 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
     'gps',
     'face-attendance',
     'geofences',
+    'adaptive-shifts',
+    'permission-governance',
+    'policies',
+    'shifts/policies',
+    'attendance-policies',
+    '/policies',
     'attendance-reports',
     'attendance/reports',
     'reports',

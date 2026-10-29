@@ -53,18 +53,33 @@ export const LeaveRequestsView: React.FC<LeaveRequestsViewProps> = ({
   });
   const [typeFilter, setTypeFilter] = useState<string>('All');
 
-  const loadData = () => {
-    setRequests(leaveApi.getLeaveRequests());
-    const activeTypes = leaveApi.getLeaveTypes().filter(t => t.is_active);
-    setLeaveTypes(activeTypes);
-    if (activeTypes.length > 0 && !selectedTypeId) {
-      setSelectedTypeId(activeTypes[0].id);
+  const loadData = async () => {
+    try {
+      const [reqs, types] = await Promise.all([
+        leaveApi.getLeaveRequestsAsync(),
+        leaveApi.getLeaveTypesAsync(),
+      ]);
+      setRequests(reqs);
+      const activeTypes = types.filter(t => t.is_active);
+      setLeaveTypes(activeTypes);
+      if (activeTypes.length > 0 && !selectedTypeId) {
+        setSelectedTypeId(activeTypes[0].id);
+      }
+    } catch {
+      setRequests(leaveApi.getLeaveRequests());
+      const activeTypes = leaveApi.getLeaveTypes().filter(t => t.is_active);
+      setLeaveTypes(activeTypes);
+      if (activeTypes.length > 0 && !selectedTypeId) {
+        setSelectedTypeId(activeTypes[0].id);
+      }
     }
   };
 
   useEffect(() => {
     loadData();
-    const unsub = hrEventBus.subscribe('leave.*', () => loadData());
+    const unsub = hrEventBus.subscribe('leave.*', () => {
+      loadData();
+    });
     return () => unsub();
   }, []);
 

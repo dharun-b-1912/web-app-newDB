@@ -29,14 +29,25 @@ export const LeaveBalanceView: React.FC = () => {
   const [deptFilter, setDeptFilter] = useState<string>('All');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
 
-  const loadData = () => {
-    setEntitlements(leaveApi.getEntitlements());
-    setLedger(leaveApi.getLedger());
+  const loadData = async () => {
+    try {
+      const [ents, led] = await Promise.all([
+        leaveApi.getEntitlementsAsync(),
+        leaveApi.getLedgerAsync(),
+      ]);
+      setEntitlements(ents);
+      setLedger(led);
+    } catch {
+      setEntitlements(leaveApi.getEntitlements());
+      setLedger(leaveApi.getLedger());
+    }
   };
 
   useEffect(() => {
     loadData();
-    const unsub = hrEventBus.subscribe('leave.*', () => loadData());
+    const unsub = hrEventBus.subscribe('leave.*', () => {
+      loadData();
+    });
     return () => unsub();
   }, []);
 
@@ -62,6 +73,7 @@ export const LeaveBalanceView: React.FC = () => {
 
   const handleExportCsv = () => {
     const headers = [
+      'Employee Code',
       'Employee Name',
       'Department',
       'Leave Type',
@@ -69,27 +81,37 @@ export const LeaveBalanceView: React.FC = () => {
       'Accrued',
       'Adjusted',
       'Used',
-      'Encashed',
-      'Expired',
+      'Pending',
       'Available Closing Balance',
+      'Eligible Carry-Forward',
+      'Lapsed Days',
       'Period',
     ];
-    const rows = filteredEntitlements.map(e => [
-      `"${e.employee_name}"`,
-      `"${e.department_name}"`,
-      `"${e.leave_type_name}"`,
-      e.opening_balance,
-      e.accrued,
-      e.adjusted || 0,
-      e.used,
-      e.encashed || 0,
-      e.expired || 0,
-      e.available_balance,
-      `"${e.period}"`,
-    ]);
+    const rows = filteredEntitlements.map(e => {
+      const isCf = e.is_carry_forward_allowed !== false;
+      const maxCf = e.max_carry_forward_days || 0;
+      const eligibleCf = e.carry_forward_eligible ?? (isCf ? Math.min(e.available_balance, maxCf) : 0);
+      const lapsed = e.lapsed_days ?? (isCf ? Math.max(0, e.available_balance - maxCf) : e.available_balance);
+
+      return [
+        `"${e.employee_code || ''}"`,
+        `"${e.employee_name}"`,
+        `"${e.department_name}"`,
+        `"${e.leave_type_name} (${e.leave_type_code || ''})"`,
+        e.opening_balance,
+        e.accrued,
+        e.adjusted || 0,
+        e.used,
+        e.pending,
+        e.available_balance,
+        eligibleCf,
+        lapsed,
+        `"${e.period}"`,
+      ];
+    });
 
     const csvContent =
-      'data:text/csv;charset=utf-8,' +
+      'data:text/csv;charset=utf-8,\uFEFF' +
       [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
@@ -211,7 +233,9 @@ export const LeaveBalanceView: React.FC = () => {
                   <tr key={ent.id} className="hover:bg-gray-50/60 transition-colors">
                     <td className="p-4">
                       <strong className="text-gray-900 font-extrabold block">{ent.employee_name}</strong>
-                      <span className="text-[11px] text-gray-400 font-normal">{ent.department_name}</span>
+                      <span className="text-[11px] text-gray-500 font-mono">
+                        {ent.employee_code ? `[${ent.employee_code}] ` : ''}{ent.department_name}
+                      </span>
                     </td>
                     <td className="p-4 font-bold text-gray-800">
                       {ent.leave_type_name}

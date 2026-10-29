@@ -184,7 +184,202 @@ serve(async (req: Request) => {
       })
       .eq('id', device.id);
 
-    // 8. Dispatch notification to reporting manager if employee is resolved
+    // 8. Smart Adaptive Shift & Attendance Policy Engine (120m Permission/Late Quota)
+    let dailyAttendanceOutcome: any = null;
+    if (employeeId) {
+      try {
+        // A. Determine IST Attendance Date (early morning < 06:00 overnight check belongs to previous day)
+        const punchDateObj = new Date(punch_time);
+        const istHoursDecimal = (punchDateObj.getUTCHours() + 5.5 + punchDateObj.getUTCMinutes() / 60) % 24;
+        let attendanceDateStr = punchDateObj.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD
+        if (istHoursDecimal < 6.0) {
+          const prevDay = new Date(punchDateObj.getTime() - 24 * 60 * 60 * 1000);
+          attendanceDateStr = prevDay.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        }
+
+        // B. Resolve Adaptive Shift (Contract assignment -> Roster -> Adaptive Candidate Inference)
+        let resolvedShiftCode = 'GEN-10';
+        let resolvedShiftName = 'General Day Shift (Corporate)';
+        let shiftStartMinutes = 570; // 09:30
+        let shiftEndMinutes = 1110;  // 18:30
+        let shiftGraceMinutes = 15;
+        let shiftResolutionSource = 'ADAPTIVE_PUNCH_INFERENCE';
+        let shiftConfidence = 85;
+
+        // Check Tier 1 & 2: Shift roster or contract assignment
+        const { data: rosterRows } = await supabase
+          .from('shift_rosters')
+          .select('shift_code, shift_name, start_time, end_time, is_override')
+          .eq('employee_id', employeeId)
+          .eq('roster_date', attendanceDateStr)
+          .limit(1);
+
+        if (rosterRows && rosterRows.length > 0) {
+          const r = rosterRows[0];
+          resolvedShiftCode = r.shift_code || 'GEN-10';
+          resolvedShiftName = r.shift_name || 'Assigned Roster Shift';
+          shiftResolutionSource = r.is_override ? 'EMERGENCY_REASSIGNMENT' : 'APPROVED_ROSTER_ROTATION';
+          shiftConfidence = 100;
+        } else {
+          // Candidate Shifts: GEN-10 (09:30), GEN-01 (08:30), GEN-09 (09:00), NGT-01 (20:00)
+          const punchMinutesFromMidnight = Math.round(istHoursDecimal * 60);
+          const candidates = [
+            { code: 'GEN-10', name: 'General Day Shift (Corporate)', start: 570, end: 1110 },
+            { code: 'GEN-01', name: 'Morning Operations Shift', start: 510, end: 1050 },
+            { code: 'GEN-09', name: 'Technical Support Shift', start: 540, end: 1080 },
+            { code: 'NGT-01', name: 'Overnight Production Shift', start: 1200, end: 300 },
+          ];
+
+          let bestCand = candidates[0];
+          let minDiff = 9999;
+          for (const cand of candidates) {
+            let diff = Math.abs(punchMinutesFromMidnight - cand.start);
+            if (diff > 720) diff = 1440 - diff;
+            if (diff < minDiff) {
+              minDiff = diff;
+              bestCand = cand;
+            }
+          }
+          resolvedShiftCode = bestCand.code;
+          resolvedShiftName = bestCand.name;
+          shiftStartMinutes = bestCand.start;
+          shiftEndMinutes = bestCand.end;
+          shiftConfidence = Math.max(70, 100 - minDiff);
+        }
+
+        // C. Fetch existing attendance_daily row for this date
+        const { data: existingDailyRows } = await supabase
+          .from('attendance_daily')
+          .select('*')
+          .eq('employee_id', employeeId)
+          .eq('attendance_date', attendanceDateStr)
+          .limit(1);
+
+        const existingDaily = existingDailyRows && existingDailyRows.length > 0 ? existingDailyRows[0] : null;
+        const isCheckoutPunch = punch_direction === 'OUT' || (existingDaily && existingDaily.first_check_in && istHoursDecimal >= 13.0);
+
+        if (!existingDaily || !existingDaily.first_check_in) {
+          // =================================================================
+          // FIRST ARRIVAL (CHECK-IN)
+          // =================================================================
+          const punchMinutesFromMidnight = Math.round(istHoursDecimal * 60);
+          const rawLateMinutes = punchMinutesFromMidnight > (shiftStartMinutes + shiftGraceMinutes)
+            ? punchMinutesFromMidnight - shiftStartMinutes
+            : 0;
+
+          // Company Policy: Excess late arrival beyond 15m shift grace auto-consumes from 120m monthly allowance
+          const excessLateArrivalMins = Math.max(0, rawLateMinutes - shiftGraceMinutes);
+
+          // Calculate Month's Prior Cumulative Permissions and Late Minutes
+          const monthPrefix = attendanceDateStr.substring(0, 7); // YYYY-MM
+          const { data: monthRows } = await supabase
+            .from('attendance_daily')
+            .select('late_entry_minutes, permission_minutes')
+            .eq('employee_id', employeeId)
+            .gte('attendance_date', `${monthPrefix}-01`)
+            .lte('attendance_date', `${monthPrefix}-31`);
+
+          let priorCumulativeMinutes = 0;
+          if (monthRows) {
+            for (const r of monthRows) {
+              const pM = Number(r.permission_minutes || 0);
+              const lateM = Number(r.late_entry_minutes || 0);
+              const excess = Math.max(0, lateM - shiftGraceMinutes);
+              priorCumulativeMinutes += (pM + excess);
+            }
+          }
+
+          const newCumulativeMinutes = priorCumulativeMinutes + excessLateArrivalMins;
+          const monthlyAllowance = 120; // 2 Hours default quota
+          const isThresholdCrossedToday = priorCumulativeMinutes <= monthlyAllowance && newCumulativeMinutes > monthlyAllowance;
+
+          let status = 'PRESENT';
+          let payableStatus = 1.0;
+
+          if (isThresholdCrossedToday) {
+            // Policy A: Threshold-crossing day marked as Half-Day
+            status = 'Half Day';
+            payableStatus = 0.5;
+          } else if (rawLateMinutes > 0) {
+            status = 'LATE';
+            payableStatus = 1.0;
+          }
+
+          const dailyPayload: any = {
+            employee_id: employeeId,
+            organization_id: organizationId,
+            attendance_date: attendanceDateStr,
+            first_check_in: punchDate.toISOString(),
+            last_check_out: null,
+            status,
+            payable_status: payableStatus,
+            late_entry_minutes: rawLateMinutes,
+            shift_code: resolvedShiftCode,
+            total_work_minutes: 0,
+            overtime_minutes: 0,
+          };
+
+          await supabase.from('attendance_daily').upsert(dailyPayload, { onConflict: 'employee_id,attendance_date' });
+          dailyAttendanceOutcome = {
+            attendanceDate: attendanceDateStr,
+            status,
+            payableStatus,
+            lateMinutes: rawLateMinutes,
+            excessLateConsumed: excessLateArrivalMins,
+            priorCumulativeMinutes,
+            newCumulativeMinutes,
+            isThresholdCrossedToday,
+            shiftCode: resolvedShiftCode,
+            shiftResolutionSource,
+          };
+        } else if (isCheckoutPunch) {
+          // =================================================================
+          // DEPARTURE (CHECK-OUT)
+          // =================================================================
+          const inMs = new Date(existingDaily.first_check_in).getTime();
+          const outMs = punchDate.getTime();
+          const totalWorkMinutes = Math.max(0, Math.floor((outMs - inMs) / 60000));
+          const overtimeMinutes = Math.max(0, totalWorkMinutes - 480);
+
+          let finalStatus = existingDaily.status || 'PRESENT';
+          let payableStatus = existingDaily.payable_status ?? 1.0;
+
+          // If not already classified as Half-Day due to 120m permission threshold
+          if (finalStatus !== 'Half Day') {
+            if (totalWorkMinutes < 120) {
+              finalStatus = 'Absent';
+              payableStatus = 0.0;
+            } else if (totalWorkMinutes < 240) {
+              finalStatus = 'Half Day';
+              payableStatus = 0.5;
+            } else {
+              finalStatus = 'PRESENT';
+              payableStatus = 1.0;
+            }
+          }
+
+          await supabase.from('attendance_daily').update({
+            last_check_out: punchDate.toISOString(),
+            total_work_minutes: totalWorkMinutes,
+            overtime_minutes: overtimeMinutes,
+            status: finalStatus,
+            payable_status: payableStatus,
+          }).eq('id', existingDaily.id);
+
+          dailyAttendanceOutcome = {
+            attendanceDate: attendanceDateStr,
+            status: finalStatus,
+            totalWorkMinutes,
+            overtimeMinutes,
+            payableStatus,
+          };
+        }
+      } catch (errEngine) {
+        console.warn('[biometric-punch-ingestion] Policy engine notice:', errEngine);
+      }
+    }
+
+    // 9. Dispatch notification to reporting manager if employee is resolved
     if (employeeId) {
       try {
         const { data: emp } = await supabase
@@ -270,6 +465,7 @@ serve(async (req: Request) => {
         employee_id: employeeId,
         organization_id: organizationId,
         punch_time: punchDate.toISOString(),
+        daily_outcome: dailyAttendanceOutcome,
       }),
       { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

@@ -23,6 +23,7 @@ export type PolicyStatus =
   | 'REVIEW'
   | 'SCHEDULED'
   | 'ACTIVE'
+  | 'SUSPENDED'
   | 'EXPIRED'
   | 'ARCHIVED';
 
@@ -206,6 +207,59 @@ export interface AttendancePolicy {
   created_by?: string;
   created_at: string;
   updated_at: string;
+
+  // Enterprise Rule Engine Extensions
+  industry_template?: 'CORPORATE' | 'MANUFACTURING' | 'ROTATING' | 'BRANCH_RETAIL';
+  covered_employees_count?: number;
+
+  work_calendar?: {
+    working_days: number[]; // 1=Mon, 2=Tue, ..., 7=Sun
+    weekly_off: number[];   // 7=Sun or [6, 7]
+    alternate_saturdays?: boolean;
+    holidays_enabled?: boolean;
+  };
+
+  shift_resolution?: {
+    mode: 'FIXED' | 'ROSTER' | 'ADAPTIVE' | 'FLEXIBLE';
+    default_shift_id?: string;
+    allow_adaptive_inference?: boolean;
+    emergency_override_precedence?: boolean;
+    confidence_threshold?: number;
+  };
+
+  permission_governance?: {
+    enabled: boolean;
+    monthly_allowance_minutes: number;
+    threshold_policy: 'POLICY_A_THRESHOLD_CROSSING_DAY' | 'POLICY_B_EXCESS_PERMISSION_DAY' | 'POLICY_C_HR_REVIEW';
+    excess_handling: 'MARK_EVERY_EXCESS_HALF_DAY' | 'LOG_EXCESS_ONLY' | 'DEDUCT_PAYROLL_HOURS';
+    auto_consume_late_arrivals: boolean;
+  };
+
+  biometric_rules?: {
+    device_ids?: string[];
+    deduplication_window_minutes?: number;
+    missing_checkout_action?: 'REGULARIZATION_REQUIRED' | 'MARK_HALF_DAY' | 'MARK_ABSENT' | 'HR_REVIEW';
+  };
+
+  section_enablement?: {
+    work_calendar: boolean;
+    shift_rules: boolean;
+    biometric_punch: boolean;
+    grace_late: boolean;
+    breaks_hours: boolean;
+    permissions: boolean;
+    half_day_absence: boolean;
+    overtime: boolean;
+    exceptions_reg: boolean;
+    payroll_notifications: boolean;
+  };
+
+  payroll_integration?: {
+    enabled: boolean;
+    auto_freeze_days: number;
+    lop_conversion_rate: number;
+    payable_on_regularization: boolean;
+  };
 }
 
 export interface NormalizedPunch {

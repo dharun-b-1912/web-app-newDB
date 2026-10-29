@@ -2,6 +2,8 @@ import { PayrollPeriod } from '../payroll/payrollPeriodService';
 import { attendanceRosterService } from './attendanceRosterService';
 import { AttendanceTimeService } from './attendanceTimeService';
 import { timeStringToMinutes } from '../../lib/attendance/attendanceEngine';
+import { smartShiftResolutionService, DEFAULT_SHIFTS } from './smartShiftResolutionService';
+import { permissionGovernanceService } from './permissionGovernanceService';
 
 export interface DailyAttendanceRow {
   id: string;
@@ -32,6 +34,24 @@ export interface DailyAttendanceRow {
   overtimeStr?: string;
   
   source: 'BIOMETRIC' | 'MOBILE' | 'WEB' | 'POLICY' | 'MANUAL' | 'REGULARIZATION' | 'MOBILE_GPS';
+
+  // Smart Adaptive Shift Resolution Metadata
+  resolvedShift?: {
+    shiftCode: string;
+    shiftName: string;
+    scheduledStart: string;
+    scheduledEnd: string;
+    source: string;
+    confidenceScore: number;
+    isAmbiguous: boolean;
+    requiresReview: boolean;
+  };
+
+  // Monthly 2-Hour Permission Governance Metadata
+  permissionMinutes?: number;
+  monthlyPermissionCumulative?: number;
+  isPermissionHalfDay?: boolean;
+  permissionReason?: string;
   
   // Auditable Calculation Trace
   calculationTrace: {
@@ -50,6 +70,11 @@ export interface DailyAttendanceRow {
     calculationVersion: string;
     isMissingPunch?: boolean;
     isRegularized?: boolean;
+    isPermissionHalfDay?: boolean;
+    permissionMinutes?: number;
+    monthlyPermissionCumulative?: number;
+    shiftResolutionSource?: string;
+    shiftConfidenceScore?: number;
   };
 }
 
@@ -83,6 +108,14 @@ export interface PeriodAttendanceMetrics {
   
   lopDays: number;
   payableDays: number;
+
+  // Smart Shift & Permission Metrics
+  totalPermissionMinutes: number;
+  monthlyPermissionAllowance: number;
+  permissionExcessMinutes: number;
+  permissionHalfDaysCount: number;
+  adaptiveShiftsResolvedCount: number;
+  unresolvedShiftsCount: number;
 }
 
 export interface CalculatedPeriodAttendanceResult {
@@ -147,6 +180,17 @@ class AttendanceCalculationService {
     let totalOvertimeMinutes = 0;
     let approvedOvertimeMinutes = 0;
 
+    // Monthly Permission Governance Tracker (Dynamic Policy Engine)
+    const permPolicy = permissionGovernanceService.loadPolicyConfig();
+    const monthlyPermissionAllowance = permPolicy.monthlyAllowanceMinutes || 120;
+    const includeLateArrivalsBeyondGrace = permPolicy.includeLateArrivalsBeyondGrace ?? true;
+    const subsequentExcessHandling = permPolicy.subsequentExcessHandling || 'LOG_EXCESS_ONLY';
+    let cumulativePermissionMinutes = 0;
+    let thresholdCrossingDate: string | null = null;
+    let permissionHalfDaysCount = 0;
+    let adaptiveShiftsResolvedCount = 0;
+    let unresolvedShiftsCount = 0;
+
     // Iterate through every single calendar day in the period
     for (let i = 0; i < numDays; i++) {
       const curDate = new Date(startDate);
@@ -173,19 +217,6 @@ class AttendanceCalculationService {
 
       if (isPast || isToday) elapsedDays++;
 
-      // Resolve Assigned Shift from Roster
-      const roster = attendanceRosterService.getRosterForEmployeeOnDate(employee?.id || '', dateStr);
-      const shiftMaster = roster?.shift_id ? attendanceRosterService.getShiftById(roster.shift_id) : null;
-      const shiftName = roster?.shift_name || shiftMaster?.shift_name || 'General Day Shift (Corporate)';
-      const scheduledStart = shiftMaster?.start_time || '09:00';
-      const scheduledEnd = shiftMaster?.end_time || '18:00';
-      const scheduledTime = `${scheduledStart} – ${scheduledEnd}`;
-      const shiftStartMins = timeStringToMinutes(scheduledStart) || 540;
-      const shiftEndMins = timeStringToMinutes(scheduledEnd) || 1080;
-      const shiftGrace = 15;
-      const shiftEndBufferMins = shiftEndMins + shiftGrace;
-      const isShiftEnded = isPast || (isToday && currentMins >= shiftEndBufferMins);
-
       // Check if employee has raw attendance record from ledger or biometric sync
       const rawRec = rawAttendanceList.find(
         (r) =>
@@ -195,6 +226,78 @@ class AttendanceCalculationService {
             r.employee_id === employee?.employee_code ||
             (employee?.display_name && r.employee_name && r.employee_name.trim().toLowerCase() === employee.display_name.trim().toLowerCase()))
       );
+
+      let rawFirstIn: string | null = rawRec ? (rawRec.first_check_in || rawRec.first_in || null) : null;
+      let rawLastOut: string | null = rawRec ? (rawRec.last_check_out || rawRec.last_out || null) : null;
+
+      // ======================================================================
+      // SMART ADAPTIVE SHIFT RESOLUTION (6-Tier Hierarchy)
+      // ======================================================================
+      const roster = attendanceRosterService.getRosterForEmployeeOnDate(employee?.id || '', dateStr);
+      let shiftMaster = roster?.shift_id ? attendanceRosterService.getShiftById(roster.shift_id) : null;
+      let shiftResolutionSource = 'DEFAULT_REVIEW_QUEUE';
+      let shiftConfidenceScore = 50;
+      let isAmbiguousShift = false;
+      let requiresShiftReview = false;
+
+      if (employee?.assigned_shift_id || employee?.shift_id) {
+        // Tier 1: Approved Employee Assignment
+        const empShift = attendanceRosterService.getShiftById(employee.assigned_shift_id || employee.shift_id);
+        if (empShift) {
+          shiftMaster = empShift;
+          shiftResolutionSource = 'APPROVED_EMPLOYEE_ASSIGNMENT';
+          shiftConfidenceScore = 100;
+        }
+      } else if (roster?.shift_id && shiftMaster) {
+        // Tier 2: Approved Shift Roster / Override
+        shiftResolutionSource = roster.is_override ? 'EMERGENCY_REASSIGNMENT' : 'APPROVED_ROSTER_ROTATION';
+        shiftConfidenceScore = 100;
+      } else if (rawFirstIn) {
+        // Tier 5: Adaptive Punch Inference
+        // Match punch against candidate shifts (GEN-10: 09:30, GEN-01: 08:30, GEN-09: 09:00, GEN-03: 09:00)
+        const punchMin = AttendanceTimeService.getMinutesFromMidnight(rawFirstIn, 'Asia/Kolkata');
+        const activeShifts = DEFAULT_SHIFTS;
+
+        let bestShift: any = activeShifts[0];
+        let minDiff = 9999;
+        let secondDiff = 9999;
+
+        for (const cand of activeShifts) {
+          const sMin = timeStringToMinutes(cand.start_time.substring(0, 5)) || 540;
+          let diff = Math.abs(punchMin - sMin);
+          if (diff > 720) diff = 1440 - diff;
+          if (diff < minDiff) {
+            secondDiff = minDiff;
+            minDiff = diff;
+            bestShift = cand;
+          } else if (diff < secondDiff) {
+            secondDiff = diff;
+          }
+        }
+
+        if (Math.abs(minDiff - secondDiff) <= 5 && minDiff < 60) {
+          isAmbiguousShift = true;
+          requiresShiftReview = true;
+          shiftResolutionSource = 'DEFAULT_REVIEW_QUEUE';
+          unresolvedShiftsCount++;
+        } else if (minDiff <= 60) {
+          shiftMaster = bestShift as any;
+          shiftResolutionSource = 'ADAPTIVE_PUNCH_INFERENCE';
+          shiftConfidenceScore = Math.max(70, 100 - minDiff);
+          adaptiveShiftsResolvedCount++;
+        }
+      }
+
+      const shiftCode = shiftMaster?.shift_code || (shiftMaster as any)?.code || roster?.shift_code || 'GEN-10';
+      const shiftName = shiftMaster?.shift_name || (shiftMaster as any)?.name || roster?.shift_name || 'General Day Shift (Corporate)';
+      const scheduledStart = (shiftMaster?.start_time || '09:30').substring(0, 5);
+      const scheduledEnd = (shiftMaster?.end_time || '18:30').substring(0, 5);
+      const scheduledTime = `${scheduledStart} – ${scheduledEnd}`;
+      const shiftStartMins = timeStringToMinutes(scheduledStart) || 570;
+      const shiftEndMins = timeStringToMinutes(scheduledEnd) || 1110;
+      const shiftGrace = (shiftMaster as any)?.grace_entry_minutes || (shiftMaster as any)?.grace_in_minutes || 15;
+      const shiftEndBufferMins = shiftEndMins + ((shiftMaster as any)?.grace_exit_minutes || (shiftMaster as any)?.grace_out_minutes || 15);
+      const isShiftEnded = isPast || (isToday && currentMins >= shiftEndBufferMins);
 
       // Check for approved overtime requests
       const otReq = overtimeRequests.find(
@@ -209,8 +312,6 @@ class AttendanceCalculationService {
       let statusBadgeVariant: DailyAttendanceRow['statusBadgeVariant'] = 'default';
       let firstIn: string | null = null;
       let lastOut: string | null = null;
-      let rawFirstIn: string | null = rawRec ? (rawRec.first_check_in || rawRec.first_in || null) : null;
-      let rawLastOut: string | null = rawRec ? (rawRec.last_check_out || rawRec.last_out || null) : null;
       let workedMinutes = 0;
       let workedDurationStr = '–';
       let lateMinutes = 0;
@@ -228,7 +329,7 @@ class AttendanceCalculationService {
       );
       const isRegApproved = regForDate && (regForDate.status === 'Approved' || regForDate.status === 'APPROVED');
       if (isRegApproved && !rawLastOut) {
-        rawLastOut = regForDate.requested_check_out || regForDate.requested_out_time || '18:00';
+        rawLastOut = regForDate.requested_check_out || regForDate.requested_out_time || '18:30';
       }
 
       const hasRealPunch = Boolean(rawFirstIn || rawLastOut);
@@ -239,6 +340,13 @@ class AttendanceCalculationService {
           ? roster.is_weekly_off
           : (rawRec?.status === 'Weekly Off' || rawRec?.status === 'WEEKLY_OFF') || isSunday || (isSaturday && (rawRec?.status === 'Weekly Off' || !roster))
       );
+
+      // ======================================================================
+      // MONTHLY 2-HOUR PERMISSION GOVERNANCE (Policy A: Threshold Crossing Day)
+      // ======================================================================
+      const dailyPermissionMins = Number(rawRec?.permission_minutes || rawRec?.approved_permission_minutes || 0);
+      let isPermissionHalfDay = false;
+      let permissionReason: string | undefined = undefined;
 
       if (isPreJoining) {
         // Pre-Joining days prior to DOJ are non-punitive and not scheduled working days
@@ -265,9 +373,38 @@ class AttendanceCalculationService {
         lastOut = rawLastOut ? AttendanceTimeService.formatAttendanceTime(rawLastOut, 'Asia/Kolkata', false) : null;
         workedMinutes = rawRec?.net_working_minutes || rawRec?.gross_working_minutes || 0;
         lateMinutes = rawRec?.late_entry_minutes ?? rawRec?.late_minutes ?? 0;
+        if (lateMinutes === 0 && rawFirstIn) {
+          const punchMin = AttendanceTimeService.getMinutesFromMidnight(rawFirstIn, 'Asia/Kolkata');
+          if (punchMin > (shiftStartMins + shiftGrace)) {
+            lateMinutes = punchMin - shiftStartMins;
+          }
+        }
         earlyMinutes = rawRec?.early_exit_minutes ?? rawRec?.early_checkout_minutes ?? 0;
         otMinutes = rawRec?.overtime_minutes || otMinutes;
         source = (rawRec?.source as any) || (firstIn ? 'MOBILE_GPS' : 'POLICY');
+
+        // Combined Company Policy: Late arrivals beyond shift grace auto-consume from monthly permission quota
+        const excessLateMins = includeLateArrivalsBeyondGrace ? Math.max(0, lateMinutes - shiftGrace) : 0;
+        const dayCombinedMins = dailyPermissionMins + excessLateMins;
+
+        if (dayCombinedMins > 0) {
+          const prevCumulative = cumulativePermissionMinutes;
+          cumulativePermissionMinutes += dayCombinedMins;
+
+          // Case 1: Threshold-crossing day (first day cumulative exceeds allowance)
+          if (prevCumulative <= monthlyPermissionAllowance && cumulativePermissionMinutes > monthlyPermissionAllowance) {
+            isPermissionHalfDay = true;
+            thresholdCrossingDate = dateStr;
+            permissionHalfDaysCount++;
+            permissionReason = `Monthly permission allowance (${monthlyPermissionAllowance}m) exceeded by combined permission and late arrivals (${cumulativePermissionMinutes}m / ${monthlyPermissionAllowance}m; threshold crossed on ${dateStr})`;
+          }
+          // Case 2: Subsequent Excess Handling: If quota is ALREADY exceeded, and company policy is configured to MARK_EVERY_EXCESS_HALF_DAY
+          else if (prevCumulative > monthlyPermissionAllowance && subsequentExcessHandling === 'MARK_EVERY_EXCESS_HALF_DAY') {
+            isPermissionHalfDay = true;
+            permissionHalfDaysCount++;
+            permissionReason = `Monthly permission allowance exhausted (${monthlyPermissionAllowance}m). Subsequent day with ${dayCombinedMins}m excess classified as Half-Day per company policy (Cumulative: ${cumulativePermissionMinutes}m)`;
+          }
+        }
 
         if (isRegApproved) {
           status = 'Regularized';
@@ -323,8 +460,8 @@ class AttendanceCalculationService {
             // Less than 2 hours: Does not qualify for Half Day -> Marked Absent
             status = 'Absent';
             statusBadgeVariant = 'error';
-          } else if (effectiveWorked < 240 || rawRec?.status === 'Half Day') {
-            // Between 2h and 4h (or flagged Half Day): Half Day
+          } else if (isPermissionHalfDay || effectiveWorked < 240 || rawRec?.status === 'Half Day') {
+            // Marked Half Day due to Monthly Permission Threshold exceeded or duration
             status = 'Half Day';
             statusBadgeVariant = 'warning';
           } else if (rawRec?.status === 'Late' || lateMinutes > 0) {
@@ -334,7 +471,7 @@ class AttendanceCalculationService {
             status = 'Present';
             statusBadgeVariant = 'success';
           }
-        } else if (rawRec?.status === 'Half Day') {
+        } else if (isPermissionHalfDay || rawRec?.status === 'Half Day') {
           status = 'Half Day';
           statusBadgeVariant = 'warning';
         } else if (isShiftEnded) {
@@ -425,9 +562,23 @@ class AttendanceCalculationService {
         overtimeMinutes: otMinutes,
         overtimeStr: otMinutes > 0 ? `+${Math.floor(otMinutes / 60)}h ${otMinutes % 60}m` : undefined,
         source,
+        resolvedShift: {
+          shiftCode,
+          shiftName,
+          scheduledStart,
+          scheduledEnd,
+          source: shiftResolutionSource,
+          confidenceScore: shiftConfidenceScore,
+          isAmbiguous: isAmbiguousShift,
+          requiresReview: requiresShiftReview,
+        },
+        permissionMinutes: dailyPermissionMins > 0 ? dailyPermissionMins : undefined,
+        monthlyPermissionCumulative: cumulativePermissionMinutes,
+        isPermissionHalfDay,
+        permissionReason,
         calculationTrace: {
-          shiftCode: roster?.shift_code || 'GEN-09',
-          gracePeriodMinutes: 15,
+          shiftCode,
+          gracePeriodMinutes: shiftGrace,
           unpaidBreakMinutes: 45,
           halfDayThresholdMinutes: 240,
           fullDayThresholdMinutes: 480,
@@ -441,6 +592,11 @@ class AttendanceCalculationService {
           calculationVersion: period.policy_version || 'v3.2',
           isMissingPunch: status === 'Missing Punch',
           isRegularized: status === 'Regularized',
+          isPermissionHalfDay,
+          permissionMinutes: dailyPermissionMins,
+          monthlyPermissionCumulative: cumulativePermissionMinutes,
+          shiftResolutionSource,
+          shiftConfidenceScore,
         },
       });
     }
@@ -480,6 +636,12 @@ class AttendanceCalculationService {
       approvedOvertimeMinutes,
       lopDays,
       payableDays,
+      totalPermissionMinutes: cumulativePermissionMinutes,
+      monthlyPermissionAllowance,
+      permissionExcessMinutes: Math.max(0, cumulativePermissionMinutes - monthlyPermissionAllowance),
+      permissionHalfDaysCount,
+      adaptiveShiftsResolvedCount,
+      unresolvedShiftsCount,
     };
 
     return { dailyRows, metrics };

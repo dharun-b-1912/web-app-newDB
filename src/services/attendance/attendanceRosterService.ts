@@ -256,6 +256,46 @@ const DEFAULT_POLICIES: AttendancePolicy[] = [
       reminder_hours: 12,
     },
     applies_to: { type: 'ORGANIZATION', ids: [] },
+    industry_template: 'CORPORATE',
+    covered_employees_count: 21,
+    work_calendar: {
+      working_days: [1, 2, 3, 4, 5],
+      weekly_off: [6, 7],
+      alternate_saturdays: false,
+      holidays_enabled: true,
+    },
+    shift_resolution: {
+      mode: 'FIXED',
+      default_shift_id: 'shift-gen-09',
+      allow_adaptive_inference: true,
+      emergency_override_precedence: true,
+      confidence_threshold: 80,
+    },
+    permission_governance: {
+      enabled: true,
+      monthly_allowance_minutes: 120,
+      threshold_policy: 'POLICY_A_THRESHOLD_CROSSING_DAY',
+      excess_handling: 'MARK_EVERY_EXCESS_HALF_DAY',
+      auto_consume_late_arrivals: true,
+    },
+    section_enablement: {
+      work_calendar: true,
+      shift_rules: true,
+      biometric_punch: true,
+      grace_late: true,
+      breaks_hours: true,
+      permissions: true,
+      half_day_absence: true,
+      overtime: true,
+      exceptions_reg: true,
+      payroll_notifications: true,
+    },
+    payroll_integration: {
+      enabled: true,
+      auto_freeze_days: 28,
+      lop_conversion_rate: 1.0,
+      payable_on_regularization: true,
+    },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
@@ -326,6 +366,262 @@ const DEFAULT_POLICIES: AttendancePolicy[] = [
       reminder_hours: 8,
     },
     applies_to: { type: 'DEPARTMENTS', ids: ['Production', 'Manufacturing', 'Assembly'] },
+    industry_template: 'MANUFACTURING',
+    covered_employees_count: 14,
+    work_calendar: {
+      working_days: [1, 2, 3, 4, 5, 6],
+      weekly_off: [7],
+      alternate_saturdays: false,
+      holidays_enabled: true,
+    },
+    shift_resolution: {
+      mode: 'ROSTER',
+      allow_adaptive_inference: true,
+      emergency_override_precedence: true,
+      confidence_threshold: 85,
+    },
+    permission_governance: {
+      enabled: true,
+      monthly_allowance_minutes: 120,
+      threshold_policy: 'POLICY_A_THRESHOLD_CROSSING_DAY',
+      excess_handling: 'MARK_EVERY_EXCESS_HALF_DAY',
+      auto_consume_late_arrivals: true,
+    },
+    section_enablement: {
+      work_calendar: true,
+      shift_rules: true,
+      biometric_punch: true,
+      grace_late: true,
+      breaks_hours: true,
+      permissions: true,
+      half_day_absence: true,
+      overtime: true,
+      exceptions_reg: true,
+      payroll_notifications: true,
+    },
+    payroll_integration: {
+      enabled: true,
+      auto_freeze_days: 28,
+      lop_conversion_rate: 1.0,
+      payable_on_regularization: true,
+    },
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'pol-rota-001',
+    tenant_id: '',
+    policy_code: 'ATT-ROTA-001',
+    policy_name: 'Rotating Workforce 24/7 Operations Policy',
+    description: 'Continuous 3-shift rotation rules with shift handover window and night differentials.',
+    version: 1,
+    status: 'DRAFT',
+    effective_from: '2026-10-01',
+    general_rules: {
+      full_day_hours: 8,
+      half_day_hours: 4,
+      absent_threshold_hours: 4,
+    },
+    check_in_rules: {
+      grace_minutes: 10,
+      late_threshold_minutes: 25,
+      action_after_grace: 'LATE',
+      early_check_in_allowed_minutes: 45,
+    },
+    check_out_rules: {
+      early_checkout_grace_minutes: 15,
+      action_before_allowed: 'EARLY_OUT',
+    },
+    break_rules: {
+      mode: 'FIXED',
+      default_break_minutes: 45,
+      auto_deduct: true,
+      max_breaks_allowed: 2,
+    },
+    overtime_rules: {
+      enabled: true,
+      min_threshold_minutes: 30,
+      weekday_rate: 1.5,
+      weekly_off_rate: 2.0,
+      holiday_rate: 2.0,
+      max_daily_minutes: 240,
+      requires_approval: true,
+    },
+    late_deduction_rules: {
+      late_count_trigger: 3,
+      deduction_amount_days: 0.5,
+      reset_period: 'MONTHLY',
+    },
+    missing_punch_rules: {
+      auto_exception: true,
+      default_penalty: 'REGULARIZATION_REQUIRED',
+    },
+    night_shift_rules: {
+      cutoff_hour: 6,
+    },
+    regularization_rules: {
+      allowed_within_days: 3,
+      max_backdated_days: 20,
+      requires_reason: true,
+      requires_attachment: false,
+      approver_role: 'Shift Supervisor',
+    },
+    approval_workflow: {
+      levels: [
+        { stage: 'Stage 1: Shift Supervisor', role: 'Shift Supervisor', sla_hours: 12 },
+        { stage: 'Stage 2: Operations Head', role: 'Operations Head', sla_hours: 24 },
+      ],
+      auto_escalate: true,
+      reminder_hours: 6,
+    },
+    applies_to: { type: 'EMPLOYEE_GROUPS', ids: ['Shift Line A', 'Shift Line B', 'Shift Line C'] },
+    industry_template: 'ROTATING',
+    covered_employees_count: 8,
+    work_calendar: {
+      working_days: [1, 2, 3, 4, 5, 6],
+      weekly_off: [7],
+      alternate_saturdays: false,
+      holidays_enabled: true,
+    },
+    shift_resolution: {
+      mode: 'ADAPTIVE',
+      allow_adaptive_inference: true,
+      emergency_override_precedence: true,
+      confidence_threshold: 80,
+    },
+    permission_governance: {
+      enabled: true,
+      monthly_allowance_minutes: 120,
+      threshold_policy: 'POLICY_A_THRESHOLD_CROSSING_DAY',
+      excess_handling: 'LOG_EXCESS_ONLY',
+      auto_consume_late_arrivals: true,
+    },
+    section_enablement: {
+      work_calendar: true,
+      shift_rules: true,
+      biometric_punch: true,
+      grace_late: true,
+      breaks_hours: true,
+      permissions: true,
+      half_day_absence: true,
+      overtime: true,
+      exceptions_reg: true,
+      payroll_notifications: true,
+    },
+    payroll_integration: {
+      enabled: true,
+      auto_freeze_days: 28,
+      lop_conversion_rate: 1.0,
+      payable_on_regularization: true,
+    },
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'pol-branch-001',
+    tenant_id: '',
+    policy_code: 'ATT-RETAIL-001',
+    policy_name: 'Multi-Branch Retail & Field Operations Policy',
+    description: 'Flexible punch window with GPS geofencing and branch-specific holiday calendar.',
+    version: 1,
+    status: 'SCHEDULED',
+    effective_from: '2026-11-01',
+    general_rules: {
+      full_day_hours: 8,
+      half_day_hours: 4,
+      absent_threshold_hours: 4,
+    },
+    check_in_rules: {
+      grace_minutes: 20,
+      late_threshold_minutes: 40,
+      action_after_grace: 'LATE',
+      early_check_in_allowed_minutes: 60,
+    },
+    check_out_rules: {
+      early_checkout_grace_minutes: 15,
+      action_before_allowed: 'EARLY_OUT',
+    },
+    break_rules: {
+      mode: 'FLEXIBLE',
+      default_break_minutes: 60,
+      auto_deduct: true,
+      max_breaks_allowed: 2,
+    },
+    overtime_rules: {
+      enabled: false,
+      min_threshold_minutes: 30,
+      weekday_rate: 1.0,
+      weekly_off_rate: 1.5,
+      holiday_rate: 2.0,
+      max_daily_minutes: 120,
+      requires_approval: true,
+    },
+    late_deduction_rules: {
+      late_count_trigger: 4,
+      deduction_amount_days: 0.5,
+      reset_period: 'MONTHLY',
+    },
+    missing_punch_rules: {
+      auto_exception: true,
+      default_penalty: 'REGULARIZATION_REQUIRED',
+    },
+    night_shift_rules: {
+      cutoff_hour: 6,
+    },
+    regularization_rules: {
+      allowed_within_days: 5,
+      max_backdated_days: 30,
+      requires_reason: true,
+      requires_attachment: false,
+      approver_role: 'Branch Manager',
+    },
+    approval_workflow: {
+      levels: [
+        { stage: 'Stage 1: Branch Manager', role: 'Branch Manager', sla_hours: 24 },
+      ],
+      auto_escalate: false,
+      reminder_hours: 24,
+    },
+    applies_to: { type: 'LOCATIONS', ids: ['Coimbatore Retail Hub', 'Chennai Field Office'] },
+    industry_template: 'BRANCH_RETAIL',
+    covered_employees_count: 5,
+    work_calendar: {
+      working_days: [1, 2, 3, 4, 5, 6],
+      weekly_off: [7],
+      alternate_saturdays: false,
+      holidays_enabled: true,
+    },
+    shift_resolution: {
+      mode: 'FLEXIBLE',
+      allow_adaptive_inference: true,
+      emergency_override_precedence: true,
+      confidence_threshold: 75,
+    },
+    permission_governance: {
+      enabled: true,
+      monthly_allowance_minutes: 120,
+      threshold_policy: 'POLICY_A_THRESHOLD_CROSSING_DAY',
+      excess_handling: 'DEDUCT_PAYROLL_HOURS',
+      auto_consume_late_arrivals: true,
+    },
+    section_enablement: {
+      work_calendar: true,
+      shift_rules: true,
+      biometric_punch: true,
+      grace_late: true,
+      breaks_hours: true,
+      permissions: true,
+      half_day_absence: true,
+      overtime: false,
+      exceptions_reg: true,
+      payroll_notifications: true,
+    },
+    payroll_integration: {
+      enabled: true,
+      auto_freeze_days: 28,
+      lop_conversion_rate: 1.0,
+      payable_on_regularization: true,
+    },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
@@ -1312,6 +1608,28 @@ class AttendanceRosterService {
       setStore(STORAGE_KEYS.POLICIES, tenantPolicies, tenantId);
       return tenantPolicies;
     }
+    let modified = false;
+    DEFAULT_POLICIES.forEach(dp => {
+      const existing = list.find(p => p.policy_code === dp.policy_code);
+      if (!existing) {
+        list.push({ ...dp, tenant_id: tenantId });
+        modified = true;
+      } else if (!existing.industry_template || !existing.permission_governance) {
+        Object.assign(existing, {
+          industry_template: dp.industry_template,
+          covered_employees_count: dp.covered_employees_count,
+          work_calendar: existing.work_calendar || dp.work_calendar,
+          shift_resolution: existing.shift_resolution || dp.shift_resolution,
+          permission_governance: existing.permission_governance || dp.permission_governance,
+          section_enablement: existing.section_enablement || dp.section_enablement,
+          payroll_integration: existing.payroll_integration || dp.payroll_integration,
+        });
+        modified = true;
+      }
+    });
+    if (modified) {
+      setStore(STORAGE_KEYS.POLICIES, list, tenantId);
+    }
     return list;
   }
 
@@ -1428,6 +1746,34 @@ class AttendanceRosterService {
     return pol;
   }
 
+  suspendPolicy(policyId: string, actorName = 'HR Administrator'): AttendancePolicy {
+    const tenantId = getActiveOrgId();
+    const policies = this.getPolicies(tenantId);
+    const pol = policies.find(p => p.id === policyId);
+    if (!pol) throw new Error('Policy not found');
+
+    pol.status = 'SUSPENDED';
+    pol.updated_at = new Date().toISOString();
+    setStore(STORAGE_KEYS.POLICIES, policies, tenantId);
+
+    this.logAudit({
+      tenant_id: tenantId,
+      actor_name: actorName,
+      actor_role: 'HR Admin',
+      entity_type: 'POLICY',
+      entity_id: pol.id,
+      entity_name: pol.policy_name,
+      change_summary: `Suspended policy ${pol.policy_code} (Version ${pol.version}). New daily attendance will fall back to organization baseline.`,
+      previous_value: { ...pol, status: 'ACTIVE' },
+      new_value: pol,
+      reason: 'Policy Suspension',
+      timestamp: new Date().toISOString(),
+    });
+
+    hrEventBus.emit('attendance.policy_updated', { policy: pol });
+    return pol;
+  }
+
   archivePolicy(policyId: string, actorName = 'HR Administrator'): AttendancePolicy {
     const tenantId = getActiveOrgId();
     const policies = this.getPolicies(tenantId);
@@ -1490,18 +1836,45 @@ class AttendanceRosterService {
       scheduled_out: string; // "18:00"
       actual_in: string;     // "09:24"
       actual_out: string;    // "17:42"
+      employee_id?: string;
+      employee_name?: string;
+      date?: string;
+      approved_permission_minutes?: number;
+      prior_monthly_consumed_minutes?: number;
+      is_weekly_off_or_holiday?: boolean;
     }
   ): {
     check_in_status: string;
     late_minutes: number;
     early_minutes: number;
     grace_applied_minutes: number;
+    worked_net_minutes: number;
+    worked_net_hours: number;
+    attendance_status: 'PRESENT' | 'HALF_DAY' | 'ABSENT' | 'REGULARIZATION_REQUIRED';
+    status_reason: string;
+    permission_quota: {
+      prior_consumed: number;
+      event_consumed: number;
+      new_consumed: number;
+      remaining: number;
+      excess: number;
+      is_threshold_crossed: boolean;
+      classification_effect: string;
+    };
+    overtime: {
+      raw_minutes: number;
+      eligible_minutes: number;
+      rate_multiplier: number;
+      payable_minutes: number;
+      requires_approval: boolean;
+    };
     regularization_required: boolean;
     approver_chain: string[];
     payroll_consequence: string;
+    execution_trace: Array<{ step: string; result: string; details: string; status: 'SUCCESS' | 'WARNING' | 'NEUTRAL' }>;
   } {
     const toMins = (t: string) => {
-      const [h, m] = t.split(':').map(Number);
+      const [h, m] = (t || '00:00').split(':').map(Number);
       return (h || 0) * 60 + (m || 0);
     };
 
@@ -1510,45 +1883,351 @@ class AttendanceRosterService {
     const actInMins = toMins(scenario.actual_in);
     const actOutMins = toMins(scenario.actual_out);
 
-    const diffIn = actInMins - schedInMins;
-    const graceIn = policy.check_in_rules.grace_minutes || 0;
+    const trace: Array<{ step: string; result: string; details: string; status: 'SUCCESS' | 'WARNING' | 'NEUTRAL' }> = [];
 
+    // Step 1: Policy Scope & Verification
+    trace.push({
+      step: '1. Policy Scope & Precedence',
+      result: `${policy.policy_code} (v${policy.version}) Applied`,
+      details: `Matched scope ${policy.applies_to?.type || 'ORGANIZATION'} with deterministic precedence.`,
+      status: 'SUCCESS',
+    });
+
+    // Step 2: Shift Resolution
+    trace.push({
+      step: '2. Shift Resolution',
+      result: `${scenario.scheduled_in} – ${scenario.scheduled_out}`,
+      details: `Resolved timetable against Tier 1/2/5 rules (Contract / Roster / Adaptive Punch Inferred).`,
+      status: 'SUCCESS',
+    });
+
+    // Step 3: Check-In Grace & Lateness
+    const diffIn = actInMins - schedInMins;
+    const graceIn = policy.check_in_rules?.grace_minutes ?? 15;
     let lateMinutes = 0;
     let checkInStatus = 'On-Time';
 
-    if (diffIn > 0) {
+    const isGraceLateEnabled = policy.section_enablement?.grace_late !== false;
+
+    if (!isGraceLateEnabled) {
+      checkInStatus = 'On-Time (Grace/Late Rule Disabled)';
+      trace.push({
+        step: '3. Check-In & Grace',
+        result: 'Rule Disabled',
+        details: 'Grace & lateness penalty disabled by policy switch. Punch logged without penalties.',
+        status: 'NEUTRAL',
+      });
+    } else if (diffIn > 0) {
       if (diffIn <= graceIn) {
-        checkInStatus = `Within Grace (${diffIn}m elapsed, ≤ ${graceIn}m grace)`;
+        checkInStatus = `Within Grace (${diffIn}m elapsed ≤ ${graceIn}m grace)`;
+        trace.push({
+          step: '3. Check-In & Grace',
+          result: `Within Grace (+${diffIn}m)`,
+          details: `Punch at ${scenario.actual_in} is within the ${graceIn}m grace allowance. No late deduction.`,
+          status: 'SUCCESS',
+        });
       } else {
         lateMinutes = diffIn - graceIn;
         checkInStatus = `Late by ${lateMinutes}m (${diffIn}m delay - ${graceIn}m grace)`;
+        trace.push({
+          step: '3. Check-In & Grace',
+          result: `Late by ${lateMinutes}m`,
+          details: `Arrival at ${scenario.actual_in} exceeded ${graceIn}m grace by ${lateMinutes} minutes.`,
+          status: 'WARNING',
+        });
       }
+    } else {
+      checkInStatus = `Early Check-In (${Math.abs(diffIn)}m before shift)`;
+      trace.push({
+        step: '3. Check-In & Grace',
+        result: 'On-Time / Early',
+        details: `Punch at ${scenario.actual_in} preceded shift start. Recorded on-time.`,
+        status: 'SUCCESS',
+      });
     }
 
+    // Step 4: Early Check-Out & Grace
     const diffOut = schedOutMins - actOutMins;
-    const graceOut = policy.check_out_rules.early_checkout_grace_minutes || 0;
+    const graceOut = policy.check_out_rules?.early_checkout_grace_minutes ?? 10;
     let earlyMinutes = 0;
 
     if (diffOut > 0) {
       if (diffOut > graceOut) {
         earlyMinutes = diffOut - graceOut;
+        trace.push({
+          step: '4. Check-Out & Departure',
+          result: `Early Departure by ${earlyMinutes}m`,
+          details: `Departure at ${scenario.actual_out} is ${diffOut}m before scheduled end (exceeds ${graceOut}m tolerance).`,
+          status: 'WARNING',
+        });
+      } else {
+        trace.push({
+          step: '4. Check-Out & Departure',
+          result: `Within Early Tolerance (${diffOut}m)`,
+          details: `Checkout at ${scenario.actual_out} is within permitted ${graceOut}m early window.`,
+          status: 'SUCCESS',
+        });
       }
+    } else {
+      trace.push({
+        step: '4. Check-Out & Departure',
+        result: 'Full Shift Completed',
+        details: `Checkout at ${scenario.actual_out} met or exceeded scheduled shift end (${scenario.scheduled_out}).`,
+        status: 'SUCCESS',
+      });
     }
 
-    const regularizationRequired = lateMinutes > 0 || earlyMinutes > 0;
-    const approvers = policy.approval_workflow?.levels.map(l => l.role) || ['Reporting Manager', 'HR Admin'];
-    const payrollConsequence = lateMinutes > (policy.check_in_rules.late_threshold_minutes || 30)
-      ? `${policy.late_deduction_rules.deduction_amount_days || 0.5} Day deduction if triggered ${policy.late_deduction_rules.late_count_trigger || 3} times/mo`
-      : 'No financial penalty';
+    // Step 5: Net Working Hours & Breaks
+    const rawSpanMins = Math.max(0, actOutMins - actInMins);
+    const breakMode = policy.break_rules?.mode || 'FIXED';
+    const breakDeductMins = policy.break_rules?.auto_deduct ? (policy.break_rules?.default_break_minutes ?? 60) : 0;
+    const workedNetMinutes = Math.max(0, rawSpanMins - breakDeductMins);
+    const workedNetHours = Number((workedNetMinutes / 60).toFixed(2));
+
+    trace.push({
+      step: '5. Working Hours & Breaks',
+      result: `${workedNetHours}h Net Worked (${workedNetMinutes}m)`,
+      details: `Raw duration: ${rawSpanMins}m, Break deduction: ${breakDeductMins}m (${breakMode} break mode).`,
+      status: workedNetHours >= (policy.general_rules?.full_day_hours ?? 8) ? 'SUCCESS' : 'WARNING',
+    });
+
+    // Step 6: 120-Minute Monthly Permission Governance & Policy A
+    const isPermEnabled = policy.permission_governance?.enabled !== false && policy.section_enablement?.permissions !== false;
+    const monthlyAllowance = policy.permission_governance?.monthly_allowance_minutes ?? 120;
+    const priorConsumed = scenario.prior_monthly_consumed_minutes ?? 105;
+    const approvedPermMinutes = scenario.approved_permission_minutes ?? 0;
+    const autoConsumeLate = policy.permission_governance?.auto_consume_late_arrivals ?? true;
+    const lateContribution = autoConsumeLate ? lateMinutes : 0;
+    const eventConsumed = approvedPermMinutes + lateContribution;
+    const newConsumed = priorConsumed + eventConsumed;
+    const isThresholdCrossed = priorConsumed <= monthlyAllowance && newConsumed > monthlyAllowance;
+    const remainingQuota = Math.max(0, monthlyAllowance - newConsumed);
+    const excessMinutes = Math.max(0, newConsumed - monthlyAllowance);
+
+    let permEffect = 'Within Allowance';
+    if (!isPermEnabled) {
+      permEffect = 'Permission Governance Disabled';
+      trace.push({
+        step: '6. Monthly Permission Allowance',
+        result: 'Rule Disabled',
+        details: 'Permission quota tracking disabled by policy switch. Allowance is not deducted.',
+        status: 'NEUTRAL',
+      });
+    } else if (isThresholdCrossed) {
+      permEffect = 'Policy A Threshold Crossed (Half-Day Triggered)';
+      trace.push({
+        step: '6. Monthly Permission Allowance',
+        result: `Threshold Crossed: ${newConsumed}m / ${monthlyAllowance}m`,
+        details: `Event consumed +${eventConsumed}m (${approvedPermMinutes}m permission + ${lateContribution}m late). Crosses 120m threshold by ${excessMinutes}m. Classified as Half-Day.`,
+        status: 'WARNING',
+      });
+    } else if (newConsumed > monthlyAllowance) {
+      const subsequentMode = policy.permission_governance?.excess_handling || 'LOG_EXCESS_ONLY';
+      permEffect = subsequentMode === 'MARK_EVERY_EXCESS_HALF_DAY'
+        ? 'Subsequent Excess Day (Company Strict: Half-Day)'
+        : 'Subsequent Excess Day (Logged in Ledger)';
+      trace.push({
+        step: '6. Monthly Permission Allowance',
+        result: `Cumulative Excess: +${excessMinutes}m`,
+        details: `Quota previously exhausted. Subsequent excess handled via ${subsequentMode}.`,
+        status: subsequentMode === 'MARK_EVERY_EXCESS_HALF_DAY' ? 'WARNING' : 'NEUTRAL',
+      });
+    } else {
+      permEffect = `Compliant (${remainingQuota}m remaining)`;
+      trace.push({
+        step: '6. Monthly Permission Allowance',
+        result: `Compliant: ${newConsumed}m / ${monthlyAllowance}m`,
+        details: `Consumed ${eventConsumed}m this event. Total used: ${newConsumed}m. Remaining allowance: ${remainingQuota}m.`,
+        status: 'SUCCESS',
+      });
+    }
+
+    // Step 7: Attendance Status Classification
+    const fullDayHours = policy.general_rules?.full_day_hours ?? 8;
+    const halfDayHours = policy.general_rules?.half_day_hours ?? 4;
+    let attendanceStatus: 'PRESENT' | 'HALF_DAY' | 'ABSENT' | 'REGULARIZATION_REQUIRED' = 'PRESENT';
+    let statusReason = 'Full day hours met with on-time performance.';
+
+    if (workedNetHours < halfDayHours) {
+      attendanceStatus = 'ABSENT';
+      statusReason = `Insufficient work duration (${workedNetHours}h < ${halfDayHours}h minimum half-day threshold).`;
+    } else if (workedNetHours < fullDayHours) {
+      attendanceStatus = 'HALF_DAY';
+      statusReason = `Net duration (${workedNetHours}h) met half-day threshold (${halfDayHours}h) but fell short of full-day (${fullDayHours}h).`;
+    } else if (isPermEnabled && isThresholdCrossed) {
+      attendanceStatus = 'HALF_DAY';
+      statusReason = `Policy A Enforcement: Exact threshold-crossing day (${newConsumed}m > ${monthlyAllowance}m quota) classified as Half-Day.`;
+    } else if (isPermEnabled && priorConsumed > monthlyAllowance && eventConsumed > 0 && policy.permission_governance?.excess_handling === 'MARK_EVERY_EXCESS_HALF_DAY') {
+      attendanceStatus = 'HALF_DAY';
+      statusReason = `Company Strict Subsequent Excess Rule: Late arrival/permission beyond 120m quota regulated as Half-Day.`;
+    } else if (lateMinutes > (policy.check_in_rules?.late_threshold_minutes ?? 30)) {
+      attendanceStatus = 'REGULARIZATION_REQUIRED';
+      statusReason = `Late arrival of ${lateMinutes}m exceeds maximum tolerance of ${policy.check_in_rules?.late_threshold_minutes ?? 30}m.`;
+    }
+
+    trace.push({
+      step: '7. Attendance Status Classification',
+      result: `${attendanceStatus}`,
+      details: statusReason,
+      status: attendanceStatus === 'PRESENT' ? 'SUCCESS' : 'WARNING',
+    });
+
+    // Step 8: Overtime Calculation
+    const isOtEnabled = policy.overtime_rules?.enabled !== false && policy.section_enablement?.overtime !== false;
+    let rawOtMinutes = 0;
+    let eligibleOtMinutes = 0;
+    let payableOtMinutes = 0;
+    const otMultiplier = scenario.is_weekly_off_or_holiday
+      ? (policy.overtime_rules?.weekly_off_rate ?? 1.5)
+      : (policy.overtime_rules?.weekday_rate ?? 1.0);
+
+    if (isOtEnabled && actOutMins > schedOutMins) {
+      rawOtMinutes = actOutMins - schedOutMins;
+      const minOtThreshold = policy.overtime_rules?.min_threshold_minutes ?? 30;
+      const maxDailyOt = policy.overtime_rules?.max_daily_minutes ?? 240;
+
+      if (rawOtMinutes >= minOtThreshold) {
+        eligibleOtMinutes = Math.min(rawOtMinutes, maxDailyOt);
+        payableOtMinutes = Math.round(eligibleOtMinutes * otMultiplier);
+        trace.push({
+          step: '8. Overtime Calculation',
+          result: `${eligibleOtMinutes}m Eligible OT (${payableOtMinutes}m Payable @ ${otMultiplier}x)`,
+          details: `Extended work after shift end: ${rawOtMinutes}m. Passed ${minOtThreshold}m threshold. Multiplier ${otMultiplier}x applied.`,
+          status: 'SUCCESS',
+        });
+      } else {
+        trace.push({
+          step: '8. Overtime Calculation',
+          result: 'Below Overtime Threshold',
+          details: `Extended work of ${rawOtMinutes}m is below minimum eligibility window (${minOtThreshold}m).`,
+          status: 'NEUTRAL',
+        });
+      }
+    } else {
+      trace.push({
+        step: '8. Overtime Calculation',
+        result: isOtEnabled ? 'No Overtime Incurred' : 'Overtime Rule Disabled',
+        details: isOtEnabled ? 'Checkout did not exceed scheduled shift end.' : 'Overtime calculation disabled in policy.',
+        status: 'NEUTRAL',
+      });
+    }
+
+    // Step 9: Downstream Payroll Consequence
+    const regularizationRequired = attendanceStatus === 'REGULARIZATION_REQUIRED' || lateMinutes > 0 || earlyMinutes > 0;
+    const approvers = policy.approval_workflow?.levels?.map(l => l.role) || ['Reporting Manager', 'Plant Lead'];
+    let payrollConsequence = '1.0 Full Day Payable';
+
+    if (attendanceStatus === 'ABSENT') {
+      payrollConsequence = '1.0 Day Loss of Pay (LOP)';
+    } else if (attendanceStatus === 'HALF_DAY') {
+      payrollConsequence = '0.5 Day Payable • 0.5 Day LOP Deducted';
+    } else if (lateMinutes > (policy.check_in_rules?.late_threshold_minutes ?? 30)) {
+      payrollConsequence = `${policy.late_deduction_rules?.deduction_amount_days ?? 0.5} Day LOP if unregularized within ${policy.regularization_rules?.allowed_within_days ?? 3} days`;
+    }
+
+    if (payableOtMinutes > 0) {
+      payrollConsequence += ` + ${(payableOtMinutes / 60).toFixed(1)}h Overtime Wages`;
+    }
+
+    trace.push({
+      step: '9. Downstream Payroll Consequence',
+      result: payrollConsequence,
+      details: `Payable status locked upon HR finalization. Approvers: ${approvers.join(' → ')}.`,
+      status: attendanceStatus === 'PRESENT' ? 'SUCCESS' : 'WARNING',
+    });
 
     return {
       check_in_status: checkInStatus,
       late_minutes: lateMinutes,
       early_minutes: earlyMinutes,
       grace_applied_minutes: Math.min(diffIn > 0 ? diffIn : 0, graceIn),
+      worked_net_minutes: workedNetMinutes,
+      worked_net_hours: workedNetHours,
+      attendance_status: attendanceStatus,
+      status_reason: statusReason,
+      permission_quota: {
+        prior_consumed: priorConsumed,
+        event_consumed: eventConsumed,
+        new_consumed: newConsumed,
+        remaining: remainingQuota,
+        excess: excessMinutes,
+        is_threshold_crossed: isThresholdCrossed,
+        classification_effect: permEffect,
+      },
+      overtime: {
+        raw_minutes: rawOtMinutes,
+        eligible_minutes: eligibleOtMinutes,
+        rate_multiplier: otMultiplier,
+        payable_minutes: payableOtMinutes,
+        requires_approval: policy.overtime_rules?.requires_approval ?? true,
+      },
       regularization_required: regularizationRequired,
       approver_chain: approvers,
       payroll_consequence: payrollConsequence,
+      execution_trace: trace,
+    };
+  }
+
+  simulateWorkforceBatch(
+    policy: AttendancePolicy,
+    sampleSize = 21
+  ): {
+    total_evaluated: number;
+    compliant_count: number;
+    half_day_count: number;
+    absent_count: number;
+    overtime_eligible_count: number;
+    regularization_required_count: number;
+    projected_lop_days: number;
+  } {
+    let compliant = 0;
+    let halfDay = 0;
+    let absent = 0;
+    let otCount = 0;
+    let regCount = 0;
+    let totalLop = 0;
+
+    for (let i = 0; i < sampleSize; i++) {
+      // Synthetic representative variations
+      const inOffset = (i % 5) * 8; // 0, 8, 16, 24, 32 mins delay
+      const outOffset = (i % 4) * 20; // 0, 20, 40, 60 mins extra
+      const priorQuota = (i % 6) * 25; // 0, 25, 50, 75, 100, 125 mins prior
+
+      const schedInH = 9;
+      const schedOutH = 18;
+      const actInMin = inOffset;
+      const actInStr = `09:${actInMin.toString().padStart(2, '0')}`;
+      const actOutStr = outOffset > 0 ? `18:${outOffset.toString().padStart(2, '0')}` : '18:00';
+
+      const res = this.simulatePolicyCalculation(policy, {
+        scheduled_in: '09:00',
+        scheduled_out: '18:00',
+        actual_in: actInStr,
+        actual_out: actOutStr,
+        prior_monthly_consumed_minutes: priorQuota,
+      });
+
+      if (res.attendance_status === 'PRESENT') compliant++;
+      if (res.attendance_status === 'HALF_DAY') {
+        halfDay++;
+        totalLop += 0.5;
+      }
+      if (res.attendance_status === 'ABSENT') {
+        absent++;
+        totalLop += 1.0;
+      }
+      if (res.overtime.payable_minutes > 0) otCount++;
+      if (res.regularization_required) regCount++;
+    }
+
+    return {
+      total_evaluated: sampleSize,
+      compliant_count: compliant,
+      half_day_count: halfDay,
+      absent_count: absent,
+      overtime_eligible_count: otCount,
+      regularization_required_count: regCount,
+      projected_lop_days: totalLop,
     };
   }
 
@@ -2124,41 +2803,41 @@ class AttendanceRosterService {
   private async syncLedgerRecordToDb(record: AttendanceLedgerRecord): Promise<void> {
     if (!isSupabaseEnabled || !supabase) return;
     try {
-      await supabase.from('attendance_daily_ledger').upsert({
-        id: record.id,
-        organization_id: record.tenant_id,
+      const orgId = isValidUUID(record.tenant_id) ? record.tenant_id : getActiveOrgId();
+      if (!isValidUUID(record.employee_id)) return;
+
+      const rawStatus = (record.status || 'PRESENT').toUpperCase();
+      let dbStatus: 'PRESENT' | 'HALF_DAY' | 'ABSENT' | 'HOLIDAY' = 'PRESENT';
+      let payableStatus = 1.0;
+      if (rawStatus.includes('HALF')) {
+        dbStatus = 'HALF_DAY';
+        payableStatus = 0.5;
+      } else if (rawStatus.includes('ABSENT') || rawStatus.includes('LOP') || rawStatus.includes('MISSING')) {
+        dbStatus = 'ABSENT';
+        payableStatus = 0.0;
+      } else if (rawStatus.includes('HOLIDAY')) {
+        dbStatus = 'HOLIDAY';
+        payableStatus = 1.0;
+      }
+
+      await supabase.from('attendance_daily').upsert({
+        organization_id: orgId,
         employee_id: record.employee_id,
-        employee_code: record.employee_code,
-        employee_name: record.employee_name,
-        department: record.department,
-        location: record.location,
         attendance_date: record.attendance_date,
-        roster_id: record.roster_id,
-        shift_id: record.shift_id,
-        shift_code: record.shift_code,
-        shift_name: record.shift_name,
-        policy_id: record.policy_id,
-        policy_code: record.policy_code,
-        policy_version: record.policy_version,
-        lifecycle_status: record.lifecycle_status,
-        status: record.status,
-        exception_type: record.exception_type,
-        exception_reason: record.exception_reason,
-        first_in: record.first_in,
-        last_out: record.last_out,
-        gross_minutes: record.gross_minutes,
-        net_minutes: record.net_minutes,
-        break_minutes: record.break_minutes,
-        late_minutes: record.late_minutes,
-        early_minutes: record.early_minutes,
-        overtime_minutes: record.overtime_minutes,
-        regularization_id: record.regularization_id,
-        regularization_reason: record.regularization_reason,
-        calculation_explanation: record.calculation_explanation,
-        audit_trail: record.audit_trail,
-        calculated_at: record.calculated_at,
+        shift_id: (record.shift_id && record.shift_id.length === 36) ? record.shift_id : null,
+        first_check_in: record.first_in ? (record.first_in.includes('T') ? record.first_in : new Date(`${record.attendance_date}T${record.first_in}Z`).toISOString()) : null,
+        last_check_out: record.last_out ? (record.last_out.includes('T') ? record.last_out : new Date(`${record.attendance_date}T${record.last_out}Z`).toISOString()) : null,
+        total_work_minutes: record.net_minutes || record.gross_minutes || 0,
+        break_minutes: record.break_minutes || 0,
+        late_entry_minutes: record.late_minutes || 0,
+        early_exit_minutes: record.early_minutes || 0,
+        overtime_minutes: record.overtime_minutes || 0,
+        status: dbStatus,
+        payable_status: payableStatus,
+        is_regularized: Boolean(record.regularization_id),
+        overtime_eligible: (record.overtime_minutes || 0) > 0,
         updated_at: new Date().toISOString(),
-      });
+      }, { onConflict: 'employee_id,attendance_date' });
     } catch (e) {
       console.warn('[attendanceRosterService] syncLedgerRecordToDb fallback:', e);
     }

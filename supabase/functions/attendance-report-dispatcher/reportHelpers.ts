@@ -16,9 +16,85 @@ export interface AttendanceExportOptions {
   reportDate: string;
   generatedBy?: string;
   includePunches?: boolean;
-  reportType?: 'MORNING_CHECKIN' | 'EVENING_FINAL' | 'FULL_CONSOLIDATED';
+  reportType?: 'MORNING_CHECKIN' | 'EVENING_FINAL' | 'FULL_CONSOLIDATED' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
   cutoffTime?: string;
   yesterdayRows?: any[];
+  weeklyTrend?: Array<{
+    date: string;
+    dayName: string;
+    total: number;
+    present: number;
+    absent: number;
+    late: number;
+    turnoutPct: number;
+    otHours: number;
+  }>;
+  weeklyRepeatedLate?: Array<{
+    name: string;
+    employeeCode: string;
+    department: string;
+    lateDays: number;
+    totalLateMinutes: number;
+  }>;
+  weeklyRepeatedAbsent?: Array<{
+    name: string;
+    employeeCode: string;
+    department: string;
+    absentDays: number;
+  }>;
+  weeklyAvgTurnout?: number;
+  weeklyAvgAbsenteeism?: number;
+  weeklyTotalOtHours?: number;
+  monthlyHeadcount?: {
+    opening: number;
+    closing: number;
+    joiners: number;
+    exits: number;
+    net: number;
+  };
+  monthlyMetrics?: {
+    attendancePct: number;
+    absenteeismPct: number;
+    scheduledDays: number;
+    presentDays: number;
+    absentDays: number;
+    totalLateArrivals: number;
+  };
+  overtimeGovernance?: {
+    recordedOtHours: number;
+    approvedOtHours: number;
+    periodAllocationHours: number;
+    utilizationPct: number;
+    remainingHours: number;
+    exceededCount: number;
+    approachingCount: number;
+  };
+  weeklyEmployeeLedger?: EmployeePeriodSummary[];
+  monthlyEmployeeLedger?: EmployeePeriodSummary[];
+  payrollCycle?: {
+    periodName: string;
+    startDate: string;
+    endDate: string;
+    payDate?: string;
+  };
+}
+
+export interface EmployeePeriodSummary {
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  department: string;
+  designation: string;
+  shift: string;
+  scheduledDays: number;
+  presentDays: number;
+  halfDays: number;
+  absentDays: number;
+  lateDays: number;
+  totalWorkMinutes: number;
+  totalOtMinutes: number;
+  attendancePct: number;
+  dayWiseOt?: number[];
 }
 
 export interface ClassifiedPunchEvent {
@@ -277,6 +353,10 @@ export function generateMisReportFilename(params: {
   const typeUpper = (reportType || '').toUpperCase();
   if (typeUpper === 'MORNING_CHECKIN' || typeUpper.includes('MORNING') || typeUpper.includes('SNAPSHOT')) {
     typeTag = 'Morning_Snapshot';
+  } else if (typeUpper.includes('WEEKLY')) {
+    typeTag = 'Weekly_MIS';
+  } else if (typeUpper.includes('MONTHLY')) {
+    typeTag = 'Monthly_MIS';
   } else if (typeUpper === 'EVENING_FINAL' || typeUpper.includes('DAILY') || typeUpper.includes('FINAL')) {
     typeTag = 'Attendance_MIS';
   } else if (typeUpper.includes('AUDIT')) {

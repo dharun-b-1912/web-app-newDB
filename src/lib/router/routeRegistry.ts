@@ -99,9 +99,11 @@ export const APP_ROUTES = {
   },
   shifts: {
     master: '/shifts',
+    adaptive: '/shifts/adaptive',
     roster: '/shifts/roster',
     calendar: '/shifts/calendar',
     policies: '/policies',
+    permissions: '/permission-governance',
   },
   devices: {
     biometric: '/biometric',
@@ -313,9 +315,11 @@ export const ROUTE_MANIFEST: RouteDefinition[] = [
 
   // ── SHIFT & SCHEDULING ──
   { id: 'shifts', label: 'Shift Master', canonicalPath: '/shifts', section: 'SHIFT & SCHEDULING', aliases: ['/shift-master', '/shifts/master'], exact: true },
+  { id: 'adaptive-shifts', label: 'Adaptive Shift Inference', canonicalPath: '/shifts/adaptive', section: 'SHIFT & SCHEDULING', aliases: ['/adaptive-shifts', '/shifts/adaptive', '/shift-detection', '/adaptive'] },
   { id: 'roster', label: 'Shift Roster & Matrix', canonicalPath: '/shifts/roster', section: 'SHIFT & SCHEDULING', aliases: ['/roster', '/shift-roster'] },
   { id: 'shift-calendar', label: 'Shift Calendar', canonicalPath: '/shifts/calendar', section: 'SHIFT & SCHEDULING', aliases: ['/shift-calendar'] },
   { id: 'policies', label: 'Attendance Policies', canonicalPath: '/policies', section: 'SHIFT & SCHEDULING', aliases: ['/attendance-policies', '/shifts/policies'] },
+  { id: 'permission-governance', label: 'Permission Governance & Quotas', canonicalPath: '/permission-governance', section: 'SHIFT & SCHEDULING', aliases: ['/permissions', '/attendance-permissions', '/shifts/permissions', '/permission-ledger'] },
 
   // ── CLOCKING & DEVICES ──
   { id: 'biometric', label: 'Biometric Devices', canonicalPath: '/biometric', section: 'CLOCKING & DEVICES', aliases: ['/biometric/devices', '/biometric-devices'], exact: true },

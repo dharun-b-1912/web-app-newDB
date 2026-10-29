@@ -164,6 +164,10 @@ export const ROUTE_ALIASES: Record<string, string> = {
   '/shifts': 'shifts',
   '/shift-master': 'shifts',
   '/shifts/master': 'shifts',
+  '/adaptive-shifts': 'adaptive-shifts',
+  '/shifts/adaptive': 'adaptive-shifts',
+  '/shift-detection': 'adaptive-shifts',
+  '/adaptive': 'adaptive-shifts',
   '/shifts/roster': 'roster',
   '/roster': 'roster',
   '/shift-roster': 'roster',
@@ -172,6 +176,11 @@ export const ROUTE_ALIASES: Record<string, string> = {
   '/policies': 'policies',
   '/attendance-policies': 'policies',
   '/shifts/policies': 'policies',
+  '/permission-governance': 'permission-governance',
+  '/permissions': 'permission-governance',
+  '/attendance-permissions': 'permission-governance',
+  '/shifts/permissions': 'permission-governance',
+  '/permission-ledger': 'permission-governance',
 
   // Core HRMS Slugs — Clocking & Devices
   '/biometric': 'biometric',
@@ -484,11 +493,18 @@ export const ROUTE_TO_PATH: Record<string, string> = {
   // Shifts & Scheduling
   'shifts': '/shifts',
   'shift-master': '/shifts',
+  'adaptive-shifts': '/shifts/adaptive',
+  'shifts/adaptive': '/shifts/adaptive',
+  'adaptive': '/shifts/adaptive',
   'roster': '/shifts/roster',
   'shift-roster': '/shifts/roster',
   'shift-calendar': '/shifts/calendar',
   'policies': '/policies',
   'attendance-policies': '/policies',
+  'permission-governance': '/permission-governance',
+  'permissions': '/permission-governance',
+  'attendance-permissions': '/permission-governance',
+  'shifts/permissions': '/permission-governance',
 
   // Clocking & Devices
   'biometric': '/biometric',
