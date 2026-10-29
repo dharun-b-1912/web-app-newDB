@@ -156,12 +156,26 @@ export const RecordBankConfirmationModal: React.FC<RecordBankConfirmationModalPr
 
           {/* 2. Bank UTR / Reference Number */}
           <div>
-            <label className="font-bold text-gray-700 block mb-1">
-              Bank Transaction Reference / UTR Number <span className="text-rose-500">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="font-bold text-gray-700 block">
+                Bank Transaction Reference / UTR Number <span className="text-rose-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  const prefix = (batch.template_name?.includes('ICICI') ? 'ICIC' : batch.template_name?.includes('SBI') ? 'SBIN' : 'HDFC');
+                  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+                  const rand = Math.floor(100000 + Math.random() * 900000);
+                  setBankUtr(`UTR-${prefix}-${dateStr}-${rand}`);
+                }}
+                className="text-[11px] font-bold text-[#07563D] hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                ⚡ Auto-Generate Realistic UTR
+              </button>
+            </div>
             <input
               type="text"
-              placeholder="e.g. UTR-HDFC-20260831-9821 or CMS-REF-18920"
+              placeholder="e.g. UTR-HDFC-20261029-781920 or CMS-REF-18920"
               value={bankUtr}
               onChange={e => setBankUtr(e.target.value)}
               className="w-full bg-white border border-gray-200 rounded-xl p-2.5 text-xs font-mono font-bold text-gray-900 focus:outline-none focus:ring-1 focus:ring-[#07563D]"

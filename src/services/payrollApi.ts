@@ -4015,6 +4015,75 @@ generateBankFile(batchId: string, templateId?: string, tenantId = getActiveOrgId
   };
 }
 
+downloadBankFormatFile(batchId: string, templateId?: string, tenantId = getActiveOrgId()): { fileName: string; size: number } {
+  const result = this.generateBankFile(batchId, templateId, tenantId);
+  if (typeof window !== 'undefined') {
+    const blob = new Blob([result.content], { type: result.mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = result.fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+  return { fileName: result.fileName, size: result.content.length };
+}
+
+exportDisbursementRegisterCSV(batches: BankDisbursementBatch[]): void {
+  if (typeof window === 'undefined' || !batches.length) return;
+  const headers = ['Batch ID', 'Pay Period', 'Total Employees', 'Net Amount (INR)', 'Bank Gateway', 'Source Account', 'Payment Mode', 'Status', 'UTR Reference', 'Created At'];
+  const rows = batches.map(b => [
+    b.batch_number,
+    `"${b.pay_period}"`,
+    b.total_transactions,
+    b.total_amount,
+    `"${b.template_name || b.source_bank_name || 'HDFC Bank'}"`,
+    `"${b.bank_account_source || ''}"`,
+    b.payment_mode || 'NEFT',
+    b.status,
+    `"${b.bank_utr_master || b.bank_reference_id || ''}"`,
+    `"${b.created_at || ''}"`
+  ]);
+  const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Bank_Disbursement_Register_${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+cancelDisbursementBatch(batchId: string, reason: string, actorName = 'HR Administrator', tenantId = getActiveOrgId()): BankDisbursementBatch {
+  const list = this.getDisbursementBatches(tenantId);
+  const batch = list.find(b => b.id === batchId);
+  if (!batch) throw new Error('Batch not found');
+  batch.status = 'Cancelled';
+  batch.rejection_reason = reason;
+  setStore(STORAGE_KEYS.DISBURSEMENTS, list, tenantId);
+  this.logAudit({
+    tenant_id: tenantId,
+    actor_name: actorName,
+    actor_role: 'HR Admin',
+    action_type: 'DELETED',
+    entity_id: batch.id,
+    summary: `Cancelled disbursement batch ${batch.batch_number}: ${reason}`,
+    timestamp: new Date().toISOString(),
+  });
+  return batch;
+}
+
+deleteDisbursementBatch(batchId: string, tenantId = getActiveOrgId()): boolean {
+  const list = this.getDisbursementBatches(tenantId);
+  const filtered = list.filter(b => b.id !== batchId);
+  setStore(STORAGE_KEYS.DISBURSEMENTS, filtered, tenantId);
+  return true;
+}
+
 // Organization Tag Rules Assignment API
 getOrgTagRuleAssignments(tenantId = getActiveOrgId()): OrgTagRuleAssignment[] {
   const fallback: OrgTagRuleAssignment[] = [
