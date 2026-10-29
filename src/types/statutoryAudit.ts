@@ -89,10 +89,15 @@ export interface EmployeeStatutoryCalculationTrace {
   designation: string;
   work_location: string;
   payable_days: number;
+  worked_days?: number;
   lop_days: number;
   ncp_days: number;
   daily_attendance?: string[];
   rate_per_day?: number;
+  approved_ot_hours?: number;
+  hourly_ot_rate?: number;
+  ot_dates?: string;
+  advance_recovery?: number;
   
   // Wages
   gross_wage: number;

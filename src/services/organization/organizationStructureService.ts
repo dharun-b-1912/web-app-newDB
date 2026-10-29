@@ -440,6 +440,137 @@ class OrganizationStructureService {
   }
 
   /**
+   * Updates an existing Branch in SQL database.
+   */
+  async updateBranch(id: string, updates: Partial<Branch>): Promise<Branch> {
+    let updatedBranch: Branch | null = null;
+
+    if (isSupabaseEnabled && supabase && isValidUUID(id)) {
+      try {
+        const dbUpdates: any = {
+          updated_at: new Date().toISOString(),
+        };
+        if (updates.name !== undefined) dbUpdates.name = updates.name;
+        if (updates.code !== undefined) dbUpdates.branch_code = updates.code;
+        if (updates.city !== undefined) dbUpdates.city = updates.city;
+        if (updates.state !== undefined) dbUpdates.state = updates.state;
+        if (updates.country !== undefined) dbUpdates.country = updates.country;
+        if (updates.contact_phone !== undefined) dbUpdates.phone = updates.contact_phone || null;
+        if (updates.contact_email !== undefined) dbUpdates.email = updates.contact_email || null;
+        if (updates.status !== undefined) dbUpdates.is_active = updates.status !== 'Inactive';
+        if (updates.company_id && isValidUUID(updates.company_id)) dbUpdates.company_id = updates.company_id;
+
+        const { data, error } = await supabase
+          .from('branches')
+          .update(dbUpdates)
+          .eq('id', id)
+          .select()
+          .maybeSingle();
+
+        if (!error && data) {
+          appLogger.dbOperation('branches', 'UPDATE', dbUpdates);
+          updatedBranch = {
+            id: data.id,
+            company_id: data.company_id,
+            name: data.name,
+            code: data.branch_code || updates.code || 'BR01',
+            branch_type: updates.branch_type || 'OFFICE',
+            country: data.country || 'India',
+            city: data.city || 'Coimbatore',
+            state: data.state || 'Tamil Nadu',
+            address: updates.address || '',
+            postal_code: updates.postal_code || '',
+            timezone: data.timezone || 'Asia/Kolkata',
+            status: data.is_active === false ? 'Inactive' : 'Active',
+            contact_phone: data.phone || '',
+            contact_email: data.email || '',
+            created_at: data.created_at || new Date().toISOString(),
+          };
+        } else if (error) {
+          console.warn('[OrganizationStructureService] updateBranch SQL error:', error);
+        }
+      } catch (err) {
+        console.warn('[OrganizationStructureService] updateBranch exception:', err);
+      }
+    }
+
+    if (!updatedBranch) {
+      const current = getLocalStore<Branch[]>(BRANCH_STORAGE_KEY, []);
+      const index = current.findIndex(b => b.id === id);
+      const existing = index >= 0 ? current[index] : ({ id } as Branch);
+      updatedBranch = { ...existing, ...updates };
+    }
+
+    const current = getLocalStore<Branch[]>(BRANCH_STORAGE_KEY, []);
+    setLocalStore(BRANCH_STORAGE_KEY, current.map(b => b.id === id ? updatedBranch! : b));
+    hrEventBus.emit('organization.branch_updated', { branch: updatedBranch });
+    return updatedBranch;
+  }
+
+  /**
+   * Safely archives a Branch (soft delete) preserving historical employee & attendance records.
+   */
+  async archiveBranch(id: string): Promise<boolean> {
+    if (isSupabaseEnabled && supabase && isValidUUID(id)) {
+      try {
+        const { error } = await supabase
+          .from('branches')
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq('id', id);
+
+        if (!error) {
+          hrEventBus.emit('organization.branch_updated', { branchId: id, action: 'archived' });
+          return true;
+        }
+      } catch (err) {
+        console.warn('[OrganizationStructureService] archiveBranch error:', err);
+      }
+    }
+
+    const current = getLocalStore<Branch[]>(BRANCH_STORAGE_KEY, []);
+    setLocalStore(BRANCH_STORAGE_KEY, current.map(b => b.id === id ? { ...b, status: 'Inactive' } : b));
+    hrEventBus.emit('organization.branch_updated', { branchId: id, action: 'archived' });
+    return true;
+  }
+
+  /**
+   * Checks dependencies before branch deletion (employees assigned, active records).
+   */
+  async checkBranchDependencies(branchId: string): Promise<{ employeeCount: number; employees: any[]; canHardDelete: boolean }> {
+    if (isSupabaseEnabled && supabase && isValidUUID(branchId)) {
+      try {
+        const { data: emps, error } = await supabase
+          .from('employees')
+          .select('id, employee_code, display_name, first_name, last_name, designation_title, work_email, avatar_url, status')
+          .eq('branch_id', branchId);
+
+        if (!error && emps) {
+          return {
+            employeeCount: emps.length,
+            employees: emps,
+            canHardDelete: emps.length === 0,
+          };
+        }
+      } catch (err) {
+        console.warn('[OrganizationStructureService] checkBranchDependencies error:', err);
+      }
+    }
+
+    // Fallback: check employees through API
+    try {
+      const allEmps = await api.getEmployees();
+      const matching = allEmps.filter((e: any) => e.branch_id === branchId);
+      return {
+        employeeCount: matching.length,
+        employees: matching,
+        canHardDelete: matching.length === 0,
+      };
+    } catch (_) {
+      return { employeeCount: 0, employees: [], canHardDelete: true };
+    }
+  }
+
+  /**
    * Deletes a Branch from SQL database.
    */
   async deleteBranch(id: string): Promise<boolean> {

@@ -143,6 +143,9 @@ export class StatutoryAuditEngine {
       pf_applicable?: boolean;
       esi_applicable?: boolean;
       pt_applicable?: boolean;
+      worked_days?: number;
+      approved_ot_hours?: number;
+      ot_dates?: string;
     },
     run?: PayrollRun | null,
     tenantId = getActiveOrgId()

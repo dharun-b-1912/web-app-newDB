@@ -138,47 +138,68 @@ export const OrgChart: React.FC<OrgChartProps> = ({
     return () => unsub();
   }, [organizationId]);
 
+  const [matchCount, setMatchCount] = useState(0);
+
   // Search and ancestor path handler
   useEffect(() => {
     if (!searchQuery.trim()) {
       setHighlightedPath([]);
+      setMatchCount(0);
       return;
     }
     const query = searchQuery.toLowerCase().trim();
-    // Search within tree
-    let foundEmpId: string | null = null;
-    const findMatch = (node: OrgChartNode) => {
-      if (
+    const matchedIds: string[] = [];
+    const allAncestors = new Set<string>();
+
+    const findMatches = (node: OrgChartNode) => {
+      const matches =
         node.name.toLowerCase().includes(query) ||
         node.employee_code.toLowerCase().includes(query) ||
-        node.designation.toLowerCase().includes(query)
-      ) {
-        foundEmpId = node.id;
-        return;
+        node.designation.toLowerCase().includes(query) ||
+        node.department_name.toLowerCase().includes(query);
+
+      if (matches) {
+        matchedIds.push(node.id);
+        const path = orgChartService.findAncestorPath(rootNodes, node.id);
+        if (path) {
+          path.forEach(id => allAncestors.add(id));
+        }
       }
       if (node.subordinates) {
-        node.subordinates.forEach(findMatch);
+        node.subordinates.forEach(findMatches);
       }
     };
-    rootNodes.forEach(findMatch);
+    rootNodes.forEach(findMatches);
 
-    if (foundEmpId) {
-      const path = orgChartService.findAncestorPath(rootNodes, foundEmpId);
-      if (path) {
-        setHighlightedPath(path);
-        // Automatically expand all ancestor nodes
-        setExpandedNodes(prev => {
-          const next = { ...prev };
-          path.forEach(id => {
-            next[id] = true;
-          });
-          return next;
+    setMatchCount(matchedIds.length);
+    if (matchedIds.length > 0) {
+      setHighlightedPath(Array.from(allAncestors));
+      setExpandedNodes(prev => {
+        const next = { ...prev };
+        allAncestors.forEach(id => {
+          next[id] = true;
         });
-      }
+        return next;
+      });
     } else {
       setHighlightedPath([]);
     }
   }, [searchQuery, rootNodes]);
+
+  const fitToScreen = () => {
+    if (!containerRef.current) return;
+    const containerWidth = containerRef.current.clientWidth - 48;
+    const treeEl = containerRef.current.querySelector('.tree-content-wrapper') as HTMLElement | null;
+    if (treeEl) {
+      const scrollWidth = treeEl.scrollWidth || 1200;
+      if (scrollWidth > containerWidth) {
+        const ratio = Math.floor((containerWidth / scrollWidth) * 100);
+        setZoomLevel(Math.max(50, Math.min(100, ratio)));
+        return;
+      }
+    }
+    setZoomLevel(100);
+  };
 
   const handleNavigateToPeople = () => {
     if (onNavigateTab) {
@@ -245,7 +266,7 @@ export const OrgChart: React.FC<OrgChartProps> = ({
     }
   };
 
-  // Render individual tree node recursively
+  // Render individual tree node recursively with mathematically aligned connectors
   const renderNode = (node: OrgChartNode) => {
     const hasChildren = node.subordinates && node.subordinates.length > 0;
     const isExpanded = Boolean(expandedNodes[node.id]);
@@ -253,7 +274,9 @@ export const OrgChart: React.FC<OrgChartProps> = ({
     const isExactMatch =
       searchQuery &&
       (node.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        node.employee_code.toLowerCase().includes(searchQuery.toLowerCase()));
+        node.employee_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        node.designation.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        node.department_name.toLowerCase().includes(searchQuery.toLowerCase()));
 
     return (
       <div key={node.id} className="flex flex-col items-center relative transition-all duration-200">
@@ -261,38 +284,45 @@ export const OrgChart: React.FC<OrgChartProps> = ({
         <div
           onClick={() => handleOpenInspector(node)}
           className={cn(
-            'group relative w-64 bg-white rounded-2xl border p-4 shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer select-none text-left z-10',
+            'group relative w-64 bg-white rounded-2xl border p-4 shadow-2xs hover:shadow-md transition-all duration-200 cursor-pointer select-none text-left z-10',
             isExactMatch
-              ? 'border-emerald-600 ring-2 ring-emerald-500/30 bg-emerald-50/20'
+              ? 'border-emerald-600 ring-2 ring-emerald-500/40 bg-emerald-50/30'
               : isHighlighted
-                ? 'border-emerald-400 bg-emerald-50/10'
-                : 'border-gray-200/90 hover:border-[#07563D]'
+                ? 'border-emerald-400 bg-emerald-50/15'
+                : 'border-gray-200/90 hover:border-[#14532D]'
           )}
         >
           <div className="flex items-start gap-3">
             <Avatar name={node.name} src={node.avatar_url} size="md" className="shrink-0 font-bold border border-gray-100" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-1">
-                <span className="text-xs font-bold text-gray-900 truncate block group-hover:text-[#07563D] transition-colors">
+                <span
+                  title={node.name}
+                  className="text-xs font-bold text-gray-900 truncate block group-hover:text-[#14532D] transition-colors"
+                >
                   {node.name}
                 </span>
                 <Badge
                   variant={node.status === 'Active' ? 'emerald' : 'gray'}
-                  className="text-[9px] px-1.5 py-0 uppercase font-mono font-bold"
+                  className="text-[9px] px-1.5 py-0 uppercase font-mono font-bold shrink-0"
                 >
                   {node.status}
                 </Badge>
               </div>
-              <div className="text-[11px] font-medium text-gray-600 truncate">{node.designation}</div>
-              <div className="text-[10px] text-gray-400 truncate mt-0.5">{node.department_name}</div>
+              <div title={node.designation} className="text-[11px] font-medium text-gray-600 truncate mt-0.5">
+                {node.designation}
+              </div>
+              <div title={node.department_name} className="text-[10px] text-gray-400 truncate mt-0.5">
+                {node.department_name}
+              </div>
             </div>
           </div>
 
-          {/* Node Footer: Direct Reports Count & Badges */}
+          {/* Node Footer: Employee Code & Direct Reports */}
           <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-500">
             <span className="font-mono text-gray-400 font-bold">{node.employee_code}</span>
             {hasChildren && (
-              <span className="inline-flex items-center gap-1 font-bold text-[#07563D] bg-emerald-50 px-2 py-0.5 rounded-full">
+              <span className="inline-flex items-center gap-1 font-bold text-[#14532D] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
                 <Users className="w-3 h-3" />
                 {node.direct_reports_count} Reports {node.total_team_count > node.direct_reports_count && `(${node.total_team_count} total)`}
               </span>
@@ -302,12 +332,13 @@ export const OrgChart: React.FC<OrgChartProps> = ({
           {/* Expand / Collapse Button */}
           {hasChildren && (
             <button
+              type="button"
               onClick={e => {
                 e.stopPropagation();
                 toggleNode(node.id);
               }}
               className={cn(
-                'absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-white border border-gray-300 shadow-xs flex items-center justify-center text-gray-600 hover:bg-emerald-50 hover:text-[#07563D] hover:border-emerald-500 transition-all z-20 cursor-pointer'
+                'absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-white border border-gray-300 shadow-xs flex items-center justify-center text-gray-600 hover:bg-emerald-50 hover:text-[#14532D] hover:border-emerald-500 transition-all z-20 cursor-pointer'
               )}
               title={isExpanded ? 'Collapse team' : 'Expand team'}
             >
@@ -316,32 +347,40 @@ export const OrgChart: React.FC<OrgChartProps> = ({
           )}
         </div>
 
-        {/* Children Connector Lines and Container */}
+        {/* Children Connector Lines and Subordinate Nodes */}
         {hasChildren && isExpanded && (
           <div className="relative pt-6 flex flex-col items-center">
-            {/* Vertical stem from parent */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-gray-200" />
+            {/* Vertical stem from parent down to the horizontal bus bar */}
+            <div className="w-0.5 h-6 bg-gray-300 -mt-1" />
 
-            {/* Horizontal branch bar */}
-            {node.subordinates!.length > 1 && (
-              <div
-                className="absolute top-6 h-0.5 bg-gray-200"
-                style={{
-                  left: `${(100 / node.subordinates!.length) / 2}%`,
-                  right: `${(100 / node.subordinates!.length) / 2}%`,
-                }}
-              />
-            )}
+            {/* Subordinate Nodes Flex Row */}
+            <div className="flex items-start relative">
+              {node.subordinates!.map((sub, idx) => {
+                const totalSubs = node.subordinates!.length;
+                const isFirst = idx === 0;
+                const isLast = idx === totalSubs - 1;
+                const isOnly = totalSubs === 1;
 
-            {/* Subordinate Nodes Grid */}
-            <div className="flex items-start gap-8 relative pt-0">
-              {node.subordinates!.map(sub => (
-                <div key={sub.id} className="relative flex flex-col items-center">
-                  {/* Vertical connector down to each child */}
-                  <div className="w-0.5 h-6 bg-gray-200 mb-0" />
-                  {renderNode(sub)}
-                </div>
-              ))}
+                return (
+                  <div key={sub.id} className="relative flex flex-col items-center px-4">
+                    {/* Top horizontal branch bar connecting siblings */}
+                    {!isOnly && (
+                      <div
+                        className={cn(
+                          'absolute top-0 h-0.5 bg-gray-300',
+                          isFirst && 'left-1/2 right-0',
+                          isLast && 'left-0 right-1/2',
+                          !isFirst && !isLast && 'left-0 right-0'
+                        )}
+                      />
+                    )}
+
+                    {/* Vertical connector down to each child card */}
+                    <div className="w-0.5 h-6 bg-gray-300" />
+                    {renderNode(sub)}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -350,7 +389,7 @@ export const OrgChart: React.FC<OrgChartProps> = ({
   };
 
   return (
-    <div className={cn('space-y-4', isFullscreen && 'fixed inset-0 z-50 bg-gray-50 p-6 overflow-auto')}>
+    <div className={cn('space-y-4', isFullscreen && 'fixed inset-0 z-50 bg-[#F6F7F9] p-6 overflow-auto')}>
       {/* 1. Org Chart Interactive Toolbar */}
       <div className="bg-white p-4 rounded-2xl border border-gray-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3">
         {/* Left: Search & Filter Trigger */}
@@ -362,15 +401,30 @@ export const OrgChart: React.FC<OrgChartProps> = ({
               placeholder="Search by name, employee code, or title..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#07563D] bg-gray-50/50"
+              className="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#14532D] bg-gray-50/50"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-bold"
+              >
+                ✕
+              </button>
+            )}
           </div>
+
+          {searchQuery && (
+            <Badge variant="emerald" className="text-[10px] whitespace-nowrap">
+              {matchCount} {matchCount === 1 ? 'match' : 'matches'}
+            </Badge>
+          )}
 
           <Button
             variant="outline"
             size="sm"
             onClick={() => setShowFilters(!showFilters)}
-            className={cn('text-xs gap-1.5 h-9 rounded-xl', showFilters && 'bg-emerald-50 border-emerald-300 text-[#07563D]')}
+            className={cn('text-xs gap-1.5 h-9 rounded-xl', showFilters && 'bg-emerald-50 border-emerald-300 text-[#14532D]')}
           >
             <Filter className="w-3.5 h-3.5" />
             Filters
@@ -382,7 +436,7 @@ export const OrgChart: React.FC<OrgChartProps> = ({
         </div>
 
         {/* Right: Zoom & Layout Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center bg-gray-100/80 p-1 rounded-xl border border-gray-200 text-xs">
             <button
               onClick={() => setZoomLevel(prev => Math.max(50, prev - 10))}
@@ -391,7 +445,7 @@ export const OrgChart: React.FC<OrgChartProps> = ({
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-            <span className="px-2 font-mono font-bold text-gray-700 text-[11px]">{zoomLevel}%</span>
+            <span className="px-2 font-mono font-bold text-gray-700 text-[11px] min-w-[42px] text-center">{zoomLevel}%</span>
             <button
               onClick={() => setZoomLevel(prev => Math.min(150, prev + 10))}
               className="p-1.5 hover:bg-white rounded-lg transition text-gray-600 cursor-pointer"
@@ -402,12 +456,15 @@ export const OrgChart: React.FC<OrgChartProps> = ({
             <button
               onClick={() => setZoomLevel(100)}
               className="p-1.5 hover:bg-white rounded-lg transition text-gray-600 cursor-pointer ml-1"
-              title="Reset Zoom"
+              title="Reset Zoom (100%)"
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
           </div>
 
+          <Button variant="outline" size="sm" onClick={fitToScreen} className="text-xs h-9 rounded-xl" title="Fit to screen width">
+            Fit
+          </Button>
           <Button variant="outline" size="sm" onClick={expandAll} className="text-xs h-9 rounded-xl">
             Expand All
           </Button>
@@ -496,51 +553,53 @@ export const OrgChart: React.FC<OrgChartProps> = ({
       {/* 2. Interactive Organization Graph Canvas */}
       <div
         ref={containerRef}
-        className="bg-gray-50/80 rounded-3xl border border-gray-200/90 p-8 min-h-[600px] overflow-auto relative flex justify-center items-start shadow-inner"
+        className="bg-[#F6F7F9] rounded-3xl border border-gray-200/90 min-h-[580px] max-h-[820px] overflow-auto relative shadow-inner p-6"
       >
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center h-96 gap-3">
-            <RefreshCw className="w-8 h-8 text-[#07563D] animate-spin" />
-            <span className="text-xs font-bold text-gray-500">Constructing realtime organization hierarchy...</span>
-          </div>
-        ) : rootNodes.length === 0 ? (
-          /* Empty State */
-          <div className="flex flex-col items-center justify-center h-96 text-center max-w-md my-auto">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#07563D] mb-4">
-              <Building2 className="w-8 h-8" />
+        <div className="min-w-fit w-full flex justify-center items-start pt-2 pb-12">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center h-96 gap-3">
+              <RefreshCw className="w-8 h-8 text-[#14532D] animate-spin" />
+              <span className="text-xs font-bold text-gray-500">Constructing realtime organization hierarchy...</span>
             </div>
-            <h3 className="text-base font-extrabold text-gray-900">Your organization chart is empty</h3>
-            <p className="text-xs text-gray-500 mt-1 mb-6 leading-relaxed">
-              No employee reporting hierarchy records are registered for this organization scope yet. Add your executives and team reporting lines to visualize your structure.
-            </p>
-            <div className="flex flex-col sm:flex-row items-center gap-2.5">
-              <Button
-                variant="primary"
-                className="bg-[#07563D] hover:bg-[#0b7a57] text-white text-xs gap-2 rounded-xl"
-                onClick={handleNavigateToPeople}
-              >
-                <UserIcon className="w-4 h-4" />
-                Manage & Add Employees
-              </Button>
-              <Button
-                variant="outline"
-                className="text-xs gap-1.5 rounded-xl border-emerald-300 text-[#07563D] bg-emerald-50/50 hover:bg-emerald-100/60"
-                onClick={() => setIsCreateModalOpen(true)}
-              >
-                <Plus className="w-4 h-4" />
-                Quick Add Employee
-              </Button>
+          ) : rootNodes.length === 0 ? (
+            /* Empty State */
+            <div className="flex flex-col items-center justify-center h-96 text-center max-w-md my-auto">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#14532D] mb-4">
+                <Building2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-base font-extrabold text-gray-900">Your organization chart is empty</h3>
+              <p className="text-xs text-gray-500 mt-1 mb-6 leading-relaxed">
+                No employee reporting hierarchy records are registered for this organization scope yet. Add your executives and team reporting lines to visualize your structure.
+              </p>
+              <div className="flex flex-col sm:flex-row items-center gap-2.5">
+                <Button
+                  variant="primary"
+                  className="bg-[#14532D] hover:bg-[#07563D] text-white text-xs gap-2 rounded-xl"
+                  onClick={handleNavigateToPeople}
+                >
+                  <UserIcon className="w-4 h-4" />
+                  Manage & Add Employees
+                </Button>
+                <Button
+                  variant="outline"
+                  className="text-xs gap-1.5 rounded-xl border-emerald-300 text-[#14532D] bg-emerald-50/50 hover:bg-emerald-100/60"
+                  onClick={() => setIsCreateModalOpen(true)}
+                >
+                  <Plus className="w-4 h-4" />
+                  Quick Add Employee
+                </Button>
+              </div>
             </div>
-          </div>
-        ) : (
-          /* Hierarchy Tree Render */
-          <div
-            className="flex items-start gap-12 pt-4 transition-transform duration-200"
-            style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
-          >
-            {rootNodes.map(root => renderNode(root))}
-          </div>
-        )}
+          ) : (
+            /* Hierarchy Tree Render */
+            <div
+              className="tree-content-wrapper flex items-start gap-12 transition-transform duration-200 origin-top"
+              style={{ transform: `scale(${zoomLevel / 100})` }}
+            >
+              {rootNodes.map(root => renderNode(root))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 3. Node Inspector Drawer */}
