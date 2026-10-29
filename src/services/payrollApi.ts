@@ -1506,7 +1506,7 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
       // Handle Daily Wage Plant Structure (₹420 Basic + ₹180 HRA daily rate, ₹75/hr OT)
       const isDailyPlant = sal.salary_structure_id === 'str-daily-wage-plant' ||
                            sal.salary_structure_name?.toLowerCase().includes('daily') ||
-                           empCode?.startsWith('CE');
+                           (periodName === 'August 2026' && empCode?.startsWith('CE'));
 
       // Filter approved leaves for this employee
       const empLeaveRequests = allLeaveRequests.filter(l => {
@@ -1663,9 +1663,14 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
       let presentDays = recordedPresent;
 
       if (isDailyPlant) {
-        payableDays = payableDays > 0 ? Math.min(25, payableDays) : 25;
-        presentDays = payableDays;
-        lopDays = Math.max(0, 25 - payableDays);
+        if (periodName === 'August 2026') {
+          payableDays = payableDays > 0 ? Math.min(25, payableDays) : 25;
+          presentDays = payableDays;
+          lopDays = Math.max(0, 25 - payableDays);
+        } else {
+          payableDays = Math.max(0, totalDaysInMonth - lopDays);
+          presentDays = recordedPresent;
+        }
       } else if (payableDays === 0 && lopDays === 0) {
         payableDays = effectiveEligibleDays;
         presentDays = payableDays;
@@ -1713,7 +1718,7 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
           employee_name: empName,
           department: sal.department_name,
           designation: sal.designation,
-          total_working_days: 25,
+          total_working_days: periodName === 'August 2026' ? 25 : totalDaysInMonth,
           payable_days: payableDays,
           present_days: presentDays,
           paid_leave_days: 0,
