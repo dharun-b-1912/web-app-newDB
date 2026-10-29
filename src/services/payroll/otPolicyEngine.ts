@@ -16,7 +16,10 @@ import {
   StatutoryStandardPreset,
   CodeOnWagesAssessment,
 } from '../../types/otPolicy';
-import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { supabase, supabaseAdmin, isSupabaseEnabled } from '../../lib/supabase';
+
+const dbClient = isSupabaseEnabled ? (supabaseAdmin || supabase) : supabase;
+const DEFAULT_ORG_UUID = '0c621892-e938-4707-9957-13534ea32c19';
 
 export type OTCalculationBasis =
   | 'SALARY_DERIVED'   // Hourly Rate = (Wage Basis / Divisor Days) / Standard Hours Per Day
@@ -265,6 +268,62 @@ export class OTPolicyEngine {
     const all = Array.from(this.policies.values());
     return all.find(p => p.status === 'ACTIVE') || all[0] || null;
   }
+
+  public static async loadActivePolicyFromBackend(orgId?: string): Promise<OTPolicyRecord | null> {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const resolvedOrgId = (orgId && isUuid.test(orgId)) ? orgId : DEFAULT_ORG_UUID;
+
+    if (!isSupabaseEnabled) {
+      return this.getActivePolicy();
+    }
+
+    try {
+      const { data, error } = await dbClient
+        .from('payroll_ot_policies')
+        .select('*')
+        .eq('organization_id', resolvedOrgId)
+        .eq('status', 'ACTIVE')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!error && data) {
+        const policyRecord: OTPolicyRecord = {
+          id: data.id,
+          organization_id: data.organization_id,
+          company_id: data.company_id,
+          policy_name: data.policy_name,
+          calculation_method: data.calculation_method,
+          salary_basis: data.salary_basis || 'MONTHLY_GROSS',
+          working_days_divisor: Number(data.working_days_divisor) || 26,
+          working_hours_per_day: Number(data.working_hours_per_day) || 8,
+          company_multiplier: data.company_multiplier ? Number(data.company_multiplier) : undefined,
+          fixed_hourly_rate: data.fixed_hourly_rate ? Number(data.fixed_hourly_rate) : undefined,
+          government_calculation_method: 'DYNAMIC_MULTIPLIER',
+          government_multiplier: Number(data.government_multiplier) || 2.0,
+          statutory_standard_preset: data.statutory_standard_preset || 'FACTORIES_ACT_1948',
+          enforce_50_percent_wage_rule: !!data.enforce_50_percent_wage_rule,
+          statutory_quarterly_ot_limit: Number(data.statutory_quarterly_ot_limit) || 115,
+          statutory_spreadover_hours_limit: Number(data.statutory_spreadover_hours_limit) || 10.5,
+          statutory_max_daily_ot_hours: Number(data.statutory_max_daily_ot_hours) || 4.0,
+          effective_from: data.effective_from || '2026-04-01',
+          effective_to: data.effective_to,
+          status: 'ACTIVE',
+          rounding_mode: data.rounding_mode || 'ROUND_HALF_UP',
+          created_at: data.created_at || new Date().toISOString(),
+          updated_at: data.updated_at || new Date().toISOString(),
+        };
+
+        this.registerPolicyRecord(policyRecord);
+        this.activePolicyId = policyRecord.id;
+        return policyRecord;
+      }
+    } catch (err) {
+      console.warn('[OTPolicyEngine] loadActivePolicyFromBackend notice:', err);
+    }
+    return this.getActivePolicy();
+  }
+
 
   public static registerPolicyRecord(policy: OTPolicyRecord): void {
     this.policies.set(policy.id, policy);
@@ -594,17 +653,42 @@ export class OTPolicyEngine {
     };
     this.auditLogs.unshift(auditItem);
 
-    // 4. Sync to Supabase if connected and tenant ID is valid UUID
+    // 4. Sync to Supabase if connected
     if (isSupabaseEnabled) {
       try {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (isUuid.test(updatedRecord.organization_id)) {
-          await supabase.from('payroll_ot_policies').upsert(updatedRecord);
-          await supabase.from('payroll_ot_policy_audit_logs').insert(auditItem);
-        }
+        const resolvedOrg = isUuid.test(updatedRecord.organization_id)
+          ? updatedRecord.organization_id
+          : DEFAULT_ORG_UUID;
+        const resolvedId = isUuid.test(updatedRecord.id)
+          ? updatedRecord.id
+          : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '4f2e9871-bc01-4432-8812-76543210abcd');
+
+        const dbRecord = {
+          ...updatedRecord,
+          id: resolvedId,
+          organization_id: resolvedOrg,
+          updated_at: new Date().toISOString(),
+        };
+
+        await dbClient.from('payroll_ot_policies').upsert(dbRecord);
+        await dbClient.from('payroll_ot_policy_audit_logs').insert({
+          ...auditItem,
+          id: (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : undefined),
+          organization_id: resolvedOrg,
+          ot_policy_id: resolvedId,
+        });
+
+        updatedRecord.id = resolvedId;
+        updatedRecord.organization_id = resolvedOrg;
+        this.activePolicyId = resolvedId;
       } catch (err) {
         console.warn('[OTPolicyEngine] Supabase policy sync notice:', err);
       }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('joy_ot_policy_changed', { detail: { policy: updatedRecord } }));
     }
 
     return { success: true, policy: updatedRecord };

@@ -158,3 +158,5 @@ verify_jwt = false
 [functions.attendance-report-dispatcher]
 verify_jwt = false
 
+[functions.overtime-engine]
+verify_jwt = false

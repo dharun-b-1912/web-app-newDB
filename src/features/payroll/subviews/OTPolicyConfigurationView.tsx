@@ -6,6 +6,7 @@ import { OTPolicyEngine } from '../../../services/payroll/otPolicyEngine';
 import { OTPolicyRecord, OTCalculationMethod, StatutoryStandardPreset } from '../../../types/otPolicy';
 import { AttendanceMasterService } from '../../../services/vendor/attendanceMasterService';
 import { useAuth } from '../../../hooks/useAuth';
+import { useTenant } from '../../../hooks/useTenant';
 import {
   Clock,
   Sliders,
@@ -27,14 +28,16 @@ import {
 export const OTPolicyConfigurationView: React.FC = () => {
   const { showToast } = useToast();
   const { user } = useAuth();
-  const activeOrgId = user?.organization_id || 'default';
+  const { organization, activeCompany } = useTenant();
+  const activeOrgId = organization?.id || user?.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
+  const activeCompId = activeCompany?.id || '2030277f-a6a1-427f-beaf-4fc677a3bae2';
 
   // Active Policy Configuration State
   const [policyName, setPolicyName] = useState('Standard Company Overtime Policy');
   const [calculationMethod, setCalculationMethod] = useState<OTCalculationMethod>('DYNAMIC_MULTIPLIER');
   const [workingDaysDivisor, setWorkingDaysDivisor] = useState<number>(26);
   const [workingHoursPerDay, setWorkingHoursPerDay] = useState<number>(8);
-  const [companyMultiplier, setCompanyMultiplier] = useState<number>(1.50);
+  const [companyMultiplier, setCompanyMultiplier] = useState<number>(2.00);
   const [fixedHourlyRate, setFixedHourlyRate] = useState<number>(70.00);
   
   // Government / Statutory Context State
@@ -44,10 +47,37 @@ export const OTPolicyConfigurationView: React.FC = () => {
   const [statutoryQuarterlyOtLimit, setStatutoryQuarterlyOtLimit] = useState<number>(115);
   const [statutorySpreadoverLimit, setStatutorySpreadoverLimit] = useState<number>(10.5);
 
-  const [effectiveFrom, setEffectiveFrom] = useState('2026-08-01');
+  const [effectiveFrom, setEffectiveFrom] = useState('2026-04-01');
   const [effectiveTo, setEffectiveTo] = useState('');
   const [changeReason, setChangeReason] = useState('Operational contract policy standardization');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Hydrate active policy from Supabase backend on mount
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPolicy = async () => {
+      try {
+        const pol = await OTPolicyEngine.loadActivePolicyFromBackend(activeOrgId);
+        if (pol && isMounted) {
+          if (pol.policy_name) setPolicyName(pol.policy_name);
+          if (pol.calculation_method) setCalculationMethod(pol.calculation_method);
+          if (pol.working_days_divisor) setWorkingDaysDivisor(pol.working_days_divisor);
+          if (pol.working_hours_per_day) setWorkingHoursPerDay(pol.working_hours_per_day);
+          if (pol.company_multiplier) setCompanyMultiplier(pol.company_multiplier);
+          if (pol.fixed_hourly_rate) setFixedHourlyRate(pol.fixed_hourly_rate);
+          if (pol.government_multiplier) setGovernmentMultiplier(pol.government_multiplier);
+          if (pol.statutory_standard_preset) setStatutoryPreset(pol.statutory_standard_preset);
+          if (pol.enforce_50_percent_wage_rule !== undefined) setEnforce50PercentWageRule(pol.enforce_50_percent_wage_rule);
+          if (pol.effective_from) setEffectiveFrom(pol.effective_from);
+          if (pol.effective_to) setEffectiveTo(pol.effective_to);
+        }
+      } catch (_) {}
+    };
+    fetchPolicy();
+    return () => {
+      isMounted = false;
+    };
+  }, [activeOrgId]);
 
   // Live Interactive Preview Input State
   const [previewSalary, setPreviewSalary] = useState<number>(17000);
@@ -136,7 +166,7 @@ export const OTPolicyConfigurationView: React.FC = () => {
     try {
       const payload = {
         organization_id: activeOrgId,
-        company_id: 'default',
+        company_id: activeCompId,
         policy_name: policyName,
         calculation_method: calculationMethod,
         salary_basis: 'MONTHLY_GROSS' as const,
