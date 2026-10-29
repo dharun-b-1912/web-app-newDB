@@ -165,6 +165,8 @@ export interface EmployeeSalaryAssignment {
   employee_code: string;
   employee_name: string;
   department_name: string;
+  branch_name?: string;
+  location_name?: string;
   designation: string;
   salary_structure_id: string;
   salary_structure_name: string;
@@ -848,16 +850,20 @@ export interface OrgTagRuleAssignment {
   id: string;
   tenant_id: string;
   rule_name: string;
-  location_tag: string; // e.g. "Hosur Plant", "Chennai Office"
-  department_tag: string; // e.g. "Production", "IT"
-  grade_tag: string; // e.g. "Grade A", "Staff"
+  location_tag: string; // e.g. "Joy Office", "All Locations"
+  department_tag: string; // e.g. "Operations", "Engineering", "All Departments"
+  grade_tag: string; // e.g. "Executive", "Staff", "All Grades"
   salary_structure_id: string;
+  salary_structure_name?: string;
   ot_rule: 'Standard-1.5x' | 'Double-2.0x' | 'Fixed-Rate-150' | 'No-OT';
   lop_rule: 'Calendar-30' | 'Working-Days-26' | 'Actual-Month-Days';
   pt_jurisdiction_id: string;
   pay_cycle: 'Monthly' | 'BiWeekly';
   maker_role: string;
   checker_role: string;
+  is_active?: boolean;
+  priority?: number;
+  description?: string;
 }
 
 export interface PayrollAuditEvent {

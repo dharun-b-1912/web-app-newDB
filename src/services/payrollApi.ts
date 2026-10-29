@@ -1160,31 +1160,94 @@ class PayrollApi {
     return { assignedCount: employeeIds.length };
   }
 
-  testRuleSimulation(employeeId: string, tenantId = getActiveOrgId()): {
+  testRuleSimulation(
+    employeeId: string,
+    tenantId = getActiveOrgId(),
+    providedSalaries?: EmployeeSalaryAssignment[]
+  ): {
     employee_name: string;
-    evaluated_rules: Array<{ rule_name: string; priority: number; matched: boolean; match_reason: string }>;
+    employee_code?: string;
+    department?: string;
+    branch?: string;
+    designation?: string;
+    current_structure?: string;
+    evaluated_rules: Array<{
+      rule_name: string;
+      priority: number;
+      matched: boolean;
+      match_reason: string;
+      location_match: boolean;
+      dept_match: boolean;
+      grade_match: boolean;
+    }>;
     winning_rule: OrgTagRuleAssignment | null;
   } {
-    const rules = this.getOrgTagRuleAssignments(tenantId);
-    const salaries = getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
+    const rules = this.getOrgTagRuleAssignments(tenantId).filter(r => r.is_active !== false);
+    const salaries = providedSalaries && providedSalaries.length > 0
+      ? providedSalaries
+      : getStore<EmployeeSalaryAssignment[]>(STORAGE_KEYS.SALARIES, [], tenantId);
     const sal = salaries.find(s => s.employee_id === employeeId || s.employee_code === employeeId);
 
+    const empDept = (sal?.department_name || '').trim().toLowerCase();
+    const empBranch = (sal?.branch_name || sal?.location_name || 'Joy Office').trim().toLowerCase();
+    const empDesig = (sal?.designation || '').trim().toLowerCase();
+
     const evaluated = rules.map(r => {
-      // Check department & grade match
-      const deptMatch = !r.department_tag || (sal?.department_name || '').toLowerCase().includes(r.department_tag.toLowerCase());
+      const ruleLoc = (r.location_tag || '').trim().toLowerCase();
+      const ruleDept = (r.department_tag || '').trim().toLowerCase();
+      const ruleGrade = (r.grade_tag || '').trim().toLowerCase();
+
+      // 1. Location match
+      const locMatch = !ruleLoc || ruleLoc === 'all locations' || empBranch.includes(ruleLoc) || ruleLoc.includes(empBranch);
+
+      // 2. Department match
+      const deptMatch = !ruleDept || ruleDept === 'all departments' || empDept.includes(ruleDept) || ruleDept.includes(empDept);
+
+      // 3. Grade / Designation match
+      const gradeMatch = !ruleGrade || ruleGrade === 'all grades' || empDesig.includes(ruleGrade) || ruleGrade.includes(empDesig);
+
+      const allMatched = locMatch && deptMatch && gradeMatch;
+
+      // Priority Scoring: Specificity gives higher priority
+      let score = 0;
+      if (locMatch) score += (!ruleLoc || ruleLoc === 'all locations') ? 50 : 300;
+      if (deptMatch) score += (!ruleDept || ruleDept === 'all departments') ? 50 : 400;
+      if (gradeMatch) score += (!ruleGrade || ruleGrade === 'all grades') ? 25 : 200;
+
+      const reasons: string[] = [];
+      if (locMatch && ruleLoc && ruleLoc !== 'all locations') reasons.push(`Branch: ${r.location_tag}`);
+      if (deptMatch && ruleDept && ruleDept !== 'all departments') reasons.push(`Dept: ${r.department_tag}`);
+      if (gradeMatch && ruleGrade && ruleGrade !== 'all grades') reasons.push(`Grade: ${r.grade_tag}`);
+      if (reasons.length === 0 && allMatched) reasons.push('Matched Company Default Policy');
+
+      if (!locMatch) reasons.push(`Location mismatch (${sal?.branch_name || 'Joy Office'} != ${r.location_tag})`);
+      if (!deptMatch) reasons.push(`Dept mismatch (${sal?.department_name || 'N/A'} != ${r.department_tag})`);
+      if (!gradeMatch) reasons.push(`Grade mismatch (${sal?.designation || 'N/A'} != ${r.grade_tag})`);
+
       return {
         rule_name: r.rule_name,
-        priority: r.department_tag.toLowerCase().includes('production') ? 800 : 400,
-        matched: deptMatch,
-        match_reason: deptMatch ? `Matches department: ${r.department_tag}` : `Department mismatch (${sal?.department_name} != ${r.department_tag})`,
+        priority: score,
+        matched: allMatched,
+        match_reason: reasons.join(' • '),
+        location_match: locMatch,
+        dept_match: deptMatch,
+        grade_match: gradeMatch,
+        raw_rule: r,
       };
     });
 
-    const winningRule = rules[0] || null;
+    // Sort matching rules by priority descending
+    const matchedRules = evaluated.filter(e => e.matched).sort((a, b) => b.priority - a.priority);
+    const winningRule = matchedRules.length > 0 ? (matchedRules[0] as any).raw_rule : (rules[0] || null);
 
     return {
       employee_name: sal?.employee_name || 'Selected Employee',
-      evaluated_rules: evaluated,
+      employee_code: sal?.employee_code || '',
+      department: sal?.department_name || 'General',
+      branch: sal?.branch_name || sal?.location_name || 'Joy Office',
+      designation: sal?.designation || 'Staff',
+      current_structure: sal?.salary_structure_name || 'Default Structure',
+      evaluated_rules: evaluated.map(({ raw_rule, ...rest }) => rest),
       winning_rule: winningRule,
     };
   }
@@ -4086,51 +4149,101 @@ deleteDisbursementBatch(batchId: string, tenantId = getActiveOrgId()): boolean {
 
 // Organization Tag Rules Assignment API
 getOrgTagRuleAssignments(tenantId = getActiveOrgId()): OrgTagRuleAssignment[] {
+  const orgUuid = resolveOrgUUID(tenantId);
   const fallback: OrgTagRuleAssignment[] = [
     {
-      id: 'rule-hosur-prod',
-      tenant_id: tenantId,
-      rule_name: 'Hosur Plant — Production Staff',
-      location_tag: 'Hosur Plant',
-      department_tag: 'Production',
-      grade_tag: 'Grade A',
-      salary_structure_id: 'str-01',
+      id: 'e1000000-0000-4000-a000-000000000001',
+      tenant_id: orgUuid,
+      rule_name: 'Joy Corporate HQ — All Operations & Staff',
+      location_tag: 'Joy Office',
+      department_tag: 'All Departments',
+      grade_tag: 'All Grades',
+      salary_structure_id: '560388d4-15f4-46c5-8156-7cc02e64136d', // Joy Standard Regular Structure
+      salary_structure_name: 'Joy Standard Regular Structure',
       ot_rule: 'Standard-1.5x',
       lop_rule: 'Calendar-30',
-      pt_jurisdiction_id: 'hosur-corp',
+      pt_jurisdiction_id: 'tamil-nadu-cbe',
       pay_cycle: 'Monthly',
       maker_role: 'HR Officer',
-      checker_role: 'Plant Finance Head',
+      checker_role: 'Operations Finance Head',
+      is_active: true,
+      priority: 100,
+      description: 'Default payroll policy for Joy Corporate Solutions staff at Joy Office.',
     },
     {
-      id: 'rule-chennai-it',
-      tenant_id: tenantId,
-      rule_name: 'Chennai Office — IT & Engineering',
-      location_tag: 'Chennai HQ',
+      id: 'e1000000-0000-4000-a000-000000000002',
+      tenant_id: orgUuid,
+      rule_name: 'Joy Tech & Engineering Team',
+      location_tag: 'Joy Office',
       department_tag: 'Engineering',
-      grade_tag: 'Senior',
-      salary_structure_id: 'str-02',
+      grade_tag: 'All Grades',
+      salary_structure_id: '23b92bbd-4b58-4186-83d4-70f5dd019c16', // Executive Leadership Structure
+      salary_structure_name: 'Executive Leadership Structure',
       ot_rule: 'No-OT',
       lop_rule: 'Working-Days-26',
-      pt_jurisdiction_id: 'chennai-corp',
+      pt_jurisdiction_id: 'tamil-nadu-cbe',
       pay_cycle: 'Monthly',
       maker_role: 'HR Lead',
-      checker_role: 'Corporate Finance Director',
+      checker_role: 'CTO / Director',
+      is_active: true,
+      priority: 300,
+      description: 'Specialized tech & engineering compensation matrix with monthly cycle.',
+    },
+    {
+      id: 'e1000000-0000-4000-a000-000000000003',
+      tenant_id: orgUuid,
+      rule_name: 'Joy Operations & Field Support',
+      location_tag: 'Joy Office',
+      department_tag: 'Operations',
+      grade_tag: 'Staff',
+      salary_structure_id: 'b96fd046-39dd-48ae-bf0f-910525d045a5', // Operations & Field Staff Structure
+      salary_structure_name: 'Operations & Field Staff Structure',
+      ot_rule: 'Double-2.0x',
+      lop_rule: 'Actual-Month-Days',
+      pt_jurisdiction_id: 'tamil-nadu-cbe',
+      pay_cycle: 'Monthly',
+      maker_role: 'Plant HR Manager',
+      checker_role: 'Plant Finance Head',
+      is_active: true,
+      priority: 400,
+      description: 'Operational team overtime rule (2.0x) with actual days per month LOP.',
     },
   ];
-  return getStore<OrgTagRuleAssignment[]>(STORAGE_KEYS.ORG_TAG_RULES, fallback, tenantId);
+
+  let stored = getStore<OrgTagRuleAssignment[]>(STORAGE_KEYS.ORG_TAG_RULES, [], tenantId);
+
+  // If empty or has obsolete "Hosur Plant" legacy rule, replace with clean Joy Corporate rules
+  const hasLegacyHosur = stored.some(r => r.rule_name?.includes('Hosur') || r.location_tag?.includes('Hosur'));
+  if (stored.length === 0 || hasLegacyHosur) {
+    stored = fallback;
+    setStore(STORAGE_KEYS.ORG_TAG_RULES, stored, tenantId);
+  }
+
+  return stored;
 }
 
 saveOrgTagRuleAssignment(rule: OrgTagRuleAssignment, tenantId = getActiveOrgId()): OrgTagRuleAssignment {
+  const orgUuid = resolveOrgUUID(tenantId);
   const list = this.getOrgTagRuleAssignments(tenantId);
-  const idx = list.findIndex(r => r.id === rule.id);
+  const cleanId = (rule.id && isValidUUID(rule.id)) 
+    ? rule.id 
+    : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'rule-' + Date.now());
+
+  const cleanRule: OrgTagRuleAssignment = {
+    ...rule,
+    id: cleanId,
+    tenant_id: orgUuid,
+    is_active: rule.is_active !== false,
+  };
+
+  const idx = list.findIndex(r => r.id === cleanRule.id);
   if (idx >= 0) {
-    list[idx] = rule;
+    list[idx] = cleanRule;
   } else {
-    list.push(rule);
+    list.push(cleanRule);
   }
   setStore(STORAGE_KEYS.ORG_TAG_RULES, list, tenantId);
-  return rule;
+  return cleanRule;
 }
 
 deleteOrgTagRuleAssignment(ruleId: string, tenantId = getActiveOrgId()): boolean {
