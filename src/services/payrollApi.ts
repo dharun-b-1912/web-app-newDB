@@ -2771,28 +2771,227 @@ saveStatutoryConfig(config: StatutoryConfig, tenantId = getActiveOrgId()): Statu
 // ==========================================================================
 
 getLoans(tenantId = getActiveOrgId()): LoanRecord[] {
-  return getStore<LoanRecord[]>(STORAGE_KEYS.LOANS, [], tenantId);
+  const orgId = resolveOrgUUID(tenantId);
+  // Async background hydration from Supabase
+  if (isSupabaseEnabled) {
+    dbClient.from('employee_loans').select('*').eq('organization_id', orgId).then(({ data, error }) => {
+      if (data && !error && data.length > 0) {
+        const mapped: LoanRecord[] = data.map((d: any) => ({
+          id: d.id,
+          tenant_id: d.organization_id,
+          employee_id: d.employee_id,
+          employee_name: d.employee_name,
+          loan_type: d.loan_type as any,
+          principal_amount: Number(d.principal_amount) || 0,
+          interest_rate: Number(d.annual_interest_rate) || 0,
+          tenure_months: Number(d.tenure_months) || 1,
+          monthly_emi: Number(d.monthly_emi) || 0,
+          total_repayable: Number(d.total_repayable) || 0,
+          amount_recovered: Number(d.amount_recovered) || 0,
+          balance_amount: Number(d.balance_amount) || 0,
+          start_period: d.emi_start_period,
+          end_period: d.emi_end_period,
+          disbursement_date: d.disbursement_date,
+          status: (d.status === 'ACTIVE' ? 'Active' : d.status === 'SETTLED' ? 'Settled' : 'Active') as any,
+          approved_by: d.approved_by || 'HR & Finance Signoff',
+          created_at: d.created_at,
+        }));
+        setStore(STORAGE_KEYS.LOANS, mapped, orgId);
+      }
+    });
+  }
+  return getStore<LoanRecord[]>(STORAGE_KEYS.LOANS, [], orgId);
+}
+
+async getLoansAsync(tenantId = getActiveOrgId()): Promise<LoanRecord[]> {
+  const orgId = resolveOrgUUID(tenantId);
+  if (isSupabaseEnabled) {
+    try {
+      const { data, error } = await dbClient.from('employee_loans').select('*').eq('organization_id', orgId);
+      if (data && !error && data.length > 0) {
+        const mapped: LoanRecord[] = data.map((d: any) => ({
+          id: d.id,
+          tenant_id: d.organization_id,
+          employee_id: d.employee_id,
+          employee_name: d.employee_name,
+          loan_type: d.loan_type as any,
+          principal_amount: Number(d.principal_amount) || 0,
+          interest_rate: Number(d.annual_interest_rate) || 0,
+          tenure_months: Number(d.tenure_months) || 1,
+          monthly_emi: Number(d.monthly_emi) || 0,
+          total_repayable: Number(d.total_repayable) || 0,
+          amount_recovered: Number(d.amount_recovered) || 0,
+          balance_amount: Number(d.balance_amount) || 0,
+          start_period: d.emi_start_period,
+          end_period: d.emi_end_period,
+          disbursement_date: d.disbursement_date,
+          status: (d.status === 'ACTIVE' ? 'Active' : d.status === 'SETTLED' ? 'Settled' : 'Active') as any,
+          approved_by: d.approved_by || 'HR & Finance Signoff',
+          created_at: d.created_at,
+        }));
+        setStore(STORAGE_KEYS.LOANS, mapped, orgId);
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('[payrollApi] getLoansAsync error:', err);
+    }
+  }
+  return this.getLoans(orgId);
 }
 
 createLoan(loan: Omit<LoanRecord, 'id' | 'created_at'>, tenantId = getActiveOrgId()): LoanRecord {
-  const list = this.getLoans(tenantId);
+  const orgId = resolveOrgUUID(tenantId || loan.tenant_id);
+  const loanId = isValidUUID((loan as any).id) ? (loan as any).id : generateUUID();
+  const list = this.getLoans(orgId);
   const item: LoanRecord = {
     ...loan,
-    id: `loan-${Date.now()}`,
+    id: loanId,
+    tenant_id: orgId,
     created_at: new Date().toISOString(),
   };
   list.unshift(item);
-  setStore(STORAGE_KEYS.LOANS, list, tenantId);
+  setStore(STORAGE_KEYS.LOANS, list, orgId);
+
+  // Sync to Supabase in background
+  if (isSupabaseEnabled) {
+    dbClient.from('employee_loans').insert({
+      id: item.id,
+      organization_id: orgId,
+      company_id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+      employee_id: isValidUUID(item.employee_id) ? item.employee_id : '50a1df27-14e4-4536-a67b-1cb81c002236',
+      employee_name: item.employee_name,
+      employee_code: (item as any).employee_code || 'JCS-001',
+      loan_code: `LN-${new Date().getFullYear()}-${String(list.length).padStart(3, '0')}`,
+      loan_type: item.loan_type,
+      principal_amount: item.principal_amount,
+      annual_interest_rate: item.interest_rate || 0,
+      interest_method: (item.interest_rate && item.interest_rate > 0) ? 'REDUCING_BALANCE' : 'INTEREST_FREE',
+      tenure_months: item.tenure_months,
+      monthly_emi: item.monthly_emi,
+      total_interest: item.total_repayable - item.principal_amount,
+      total_repayable: item.total_repayable,
+      amount_recovered: item.amount_recovered || 0,
+      balance_amount: item.balance_amount || item.total_repayable,
+      disbursement_date: item.disbursement_date || new Date().toISOString().split('T')[0],
+      disbursement_status: 'DISBURSED',
+      emi_start_period: item.start_period || '2026-10',
+      emi_end_period: item.end_period || '2027-09',
+      status: 'ACTIVE',
+      approval_status: 'APPROVED',
+      approved_by: item.approved_by || 'HR & Finance Signoff',
+      created_at: item.created_at,
+      updated_at: item.created_at,
+    }).then(({ error }) => {
+      if (error) console.error('[payrollApi] employee_loans insert error:', error);
+    });
+  }
+
   return item;
 }
 
 getSalaryAdvances(tenantId = getActiveOrgId()): SalaryAdvanceRecord[] {
-  return getStore<SalaryAdvanceRecord[]>(STORAGE_KEYS.ADVANCES, [], tenantId);
+  const orgId = resolveOrgUUID(tenantId);
+  if (isSupabaseEnabled) {
+    dbClient.from('salary_advance_requests').select('*').eq('organization_id', orgId).then(({ data, error }) => {
+      if (data && !error && data.length > 0) {
+        const mapped: SalaryAdvanceRecord[] = data.map((d: any) => ({
+          id: d.id,
+          tenant_id: d.organization_id,
+          employee_id: d.employee_id,
+          employee_code: d.employee_code,
+          employee_name: d.employee_name,
+          advance_amount: Number(d.advance_amount) || 0,
+          recovered_amount: Number(d.amount_recovered) || 0,
+          balance_amount: Number(d.balance_amount) || 0,
+          deduction_period: d.recovery_period,
+          reason: d.reason || 'Salary advance',
+          status: (d.status === 'ACTIVE' ? 'Active' : d.status === 'SETTLED' ? 'Deducted' : 'Pending') as any,
+          created_at: d.created_at,
+        }));
+        setStore(STORAGE_KEYS.ADVANCES, mapped, orgId);
+      }
+    });
+  }
+  return getStore<SalaryAdvanceRecord[]>(STORAGE_KEYS.ADVANCES, [], orgId);
+}
+
+async getSalaryAdvancesAsync(tenantId = getActiveOrgId()): Promise<SalaryAdvanceRecord[]> {
+  const orgId = resolveOrgUUID(tenantId);
+  if (isSupabaseEnabled) {
+    try {
+      const { data, error } = await dbClient.from('salary_advance_requests').select('*').eq('organization_id', orgId);
+      if (data && !error && data.length > 0) {
+        const mapped: SalaryAdvanceRecord[] = data.map((d: any) => ({
+          id: d.id,
+          tenant_id: d.organization_id,
+          employee_id: d.employee_id,
+          employee_code: d.employee_code,
+          employee_name: d.employee_name,
+          advance_amount: Number(d.advance_amount) || 0,
+          recovered_amount: Number(d.amount_recovered) || 0,
+          balance_amount: Number(d.balance_amount) || 0,
+          deduction_period: d.recovery_period,
+          reason: d.reason || 'Salary advance',
+          status: (d.status === 'ACTIVE' ? 'Active' : d.status === 'SETTLED' ? 'Deducted' : 'Pending') as any,
+          created_at: d.created_at,
+        }));
+        setStore(STORAGE_KEYS.ADVANCES, mapped, orgId);
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('[payrollApi] getSalaryAdvancesAsync error:', err);
+    }
+  }
+  return this.getSalaryAdvances(orgId);
+}
+
+createSalaryAdvance(adv: Omit<SalaryAdvanceRecord, 'id' | 'created_at'>, tenantId = getActiveOrgId()): SalaryAdvanceRecord {
+  const orgId = resolveOrgUUID(tenantId || adv.tenant_id);
+  const advId = isValidUUID((adv as any).id) ? (adv as any).id : generateUUID();
+  const list = this.getSalaryAdvances(orgId);
+  const item: SalaryAdvanceRecord = {
+    ...adv,
+    id: advId,
+    tenant_id: orgId,
+    created_at: new Date().toISOString(),
+  };
+  list.unshift(item);
+  setStore(STORAGE_KEYS.ADVANCES, list, orgId);
+
+  if (isSupabaseEnabled) {
+    dbClient.from('salary_advance_requests').insert({
+      id: item.id,
+      organization_id: orgId,
+      company_id: '2030277f-a6a1-427f-beaf-4fc677a3bae2',
+      employee_id: isValidUUID(item.employee_id) ? item.employee_id : '50a1df27-14e4-4536-a67b-1cb81c002236',
+      employee_name: item.employee_name,
+      employee_code: item.employee_code || 'JCS-001',
+      advance_code: `ADV-${new Date().getFullYear()}-${String(list.length).padStart(3, '0')}`,
+      advance_amount: item.advance_amount,
+      recovery_period: item.deduction_period || '2026-10',
+      recovery_installments_count: 1,
+      monthly_recovery_amount: item.advance_amount,
+      amount_recovered: item.recovered_amount || 0,
+      balance_amount: item.balance_amount || item.advance_amount,
+      status: 'ACTIVE',
+      disbursement_status: 'DISBURSED',
+      disbursement_date: new Date().toISOString().split('T')[0],
+      approved_by: 'HR & Finance Signoff',
+      reason: item.reason,
+      created_at: item.created_at,
+      updated_at: item.created_at,
+    }).then(({ error }) => {
+      if (error) console.error('[payrollApi] salary_advance_requests insert error:', error);
+    });
+  }
+
+  return item;
 }
 
 getReimbursements(tenantId = getActiveOrgId()): ReimbursementClaim[] {
   return getStore<ReimbursementClaim[]>(STORAGE_KEYS.REIMBURSEMENTS, [], tenantId);
 }
+
 
 // ==========================================================================
 // 7. BANK DISBURSEMENT BATCHES & PAYMENT ENGINE

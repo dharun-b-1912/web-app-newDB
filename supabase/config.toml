@@ -160,3 +160,7 @@ verify_jwt = false
 
 [functions.overtime-engine]
 verify_jwt = false
+
+[functions.deduction-engine]
+verify_jwt = false
+
