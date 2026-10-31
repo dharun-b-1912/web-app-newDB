@@ -1,8 +1,8 @@
 ============================================================
-JOY PeopleHR — Production Release (v1.1.8+26)
+JOY PeopleHR — Production Release (v1.1.8+28)
 ============================================================
 Version     : 1.1.8
-Build Code  : 26
+Build Code  : 28
 Release Date: 2026-10-31
 
 GOOGLE PLAY RELEASE NOTES:
@@ -12,6 +12,6 @@ GOOGLE PLAY RELEASE NOTES:
 • Overall performance improvements and bug fixes for a smoother experience.
 
 BUILD ARTIFACT:
-• File: app-release.aab (JOY_PeopleHR_v1.1.8_build26.aab)
+• File: app-release.aab (JOY_PeopleHR_v1.1.8_build28.aab)
 • Path: flutter_app/build/app/outputs/bundle/release/app-release.aab
 ============================================================
