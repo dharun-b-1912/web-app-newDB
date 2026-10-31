@@ -200,10 +200,30 @@ export const PeopleView: React.FC = () => {
 
   // KPI Calculations
   const totalCount = accessibleEmployees.length;
-  const directCount = accessibleEmployees.filter((e) => !isEmployeeVendor(e)).length;
+  const activeCount = accessibleEmployees.filter((e) => {
+    const s = String(e.status || (e as any).employment_status || 'Active').toUpperCase();
+    return s === 'ACTIVE' || s === 'CONFIRMED';
+  }).length;
+  const probationCount = accessibleEmployees.filter((e) => {
+    const s = String(e.status || (e as any).employment_status || '').toUpperCase();
+    return s === 'PROBATION';
+  }).length;
+  const resignedCount = accessibleEmployees.filter((e) => {
+    const s = String(e.status || (e as any).employment_status || '').toUpperCase();
+    return s === 'RESIGNED' || s === 'EXITED';
+  }).length;
+  const noticeCount = accessibleEmployees.filter((e) => {
+    const s = String(e.status || (e as any).employment_status || '').toUpperCase();
+    return s === 'NOTICE_PERIOD';
+  }).length;
+  const directActiveCount = accessibleEmployees.filter((e) => {
+    if (isEmployeeVendor(e)) return false;
+    const s = String(e.status || (e as any).employment_status || 'Active').toUpperCase();
+    return s === 'ACTIVE' || s === 'CONFIRMED' || s === 'PROBATION';
+  }).length;
+  const directTotalCount = accessibleEmployees.filter((e) => !isEmployeeVendor(e)).length;
   const vendorCount = accessibleEmployees.filter((e) => isEmployeeVendor(e)).length;
-  const activeCount = accessibleEmployees.filter((e) => (e.status || 'Active').toLowerCase() === 'active').length;
-  const probationCount = accessibleEmployees.filter((e) => (e.status || '').toLowerCase() === 'probation').length;
+  const activeExitsCount = Math.max(exitsCount, resignedCount + noticeCount);
 
   // Extract unique dynamic departments from loaded employees
   const uniqueDepartments = useMemo(() => {
@@ -247,8 +267,19 @@ export const PeopleView: React.FC = () => {
       }
 
       if (statusFilter !== 'ALL') {
-        const empStatus = (emp.status || '').toLowerCase().trim();
-        if (empStatus !== statusFilter.toLowerCase().trim()) return false;
+        const empStatus = String(emp.status || (emp as any).employment_status || '').toLowerCase().trim();
+        const target = statusFilter.toLowerCase().trim();
+        if (target === 'resigned') {
+          if (!empStatus.includes('resign') && !empStatus.includes('exit')) return false;
+        } else if (target === 'active') {
+          if (empStatus !== 'active' && empStatus !== 'confirmed') return false;
+        } else if (target === 'notice period') {
+          if (!empStatus.includes('notice')) return false;
+        } else if (target === 'inactive') {
+          if (empStatus !== 'inactive' && empStatus !== 'suspended' && empStatus !== 'disabled') return false;
+        } else if (empStatus !== target) {
+          return false;
+        }
       }
 
       if (locationFilter !== 'ALL') {
@@ -317,10 +348,12 @@ export const PeopleView: React.FC = () => {
 
   // Determine active segment pill
   const activePillId = useMemo(() => {
+    if (sourceFilter === 'DIRECT' && statusFilter === 'Active') return 'DIRECT_ACTIVE';
     if (sourceFilter === 'DIRECT' && statusFilter === 'ALL') return 'DIRECT';
     if (sourceFilter === 'VENDOR' && statusFilter === 'ALL') return 'VENDOR';
     if (statusFilter === 'Active' && sourceFilter === 'ALL') return 'ACTIVE';
     if (statusFilter === 'Probation' && sourceFilter === 'ALL') return 'PROBATION';
+    if (statusFilter === 'Resigned' && sourceFilter === 'ALL') return 'RESIGNED';
     if (sourceFilter === 'ALL' && statusFilter === 'ALL' && deptFilter === 'ALL' && locationFilter === 'ALL' && !search) return 'ALL';
     return 'CUSTOM';
   }, [sourceFilter, statusFilter, deptFilter, locationFilter, search]);
@@ -343,6 +376,9 @@ export const PeopleView: React.FC = () => {
       setSourceFilter('ALL');
     } else if (id === 'PROBATION') {
       setStatusFilter('Probation');
+      setSourceFilter('ALL');
+    } else if (id === 'RESIGNED') {
+      setStatusFilter('Resigned');
       setSourceFilter('ALL');
     }
   };
@@ -442,22 +478,26 @@ export const PeopleView: React.FC = () => {
             <Users className="w-3.5 h-3.5 text-gray-400 group-hover:text-emerald-700" />
           </div>
           <div className="text-xl font-black text-gray-900">{totalCount}</div>
-          <div className="text-[10px] text-gray-400 font-medium">In Organization Scope</div>
+          <div className="text-[10px] text-gray-500 font-medium">
+            {activeCount} Active {resignedCount > 0 ? `• ${resignedCount} Resigned` : ''}
+          </div>
         </div>
 
         <div
-          onClick={() => { setSourceFilter('DIRECT'); setStatusFilter('ALL'); resetPage(); }}
+          onClick={() => { setSourceFilter('DIRECT'); setStatusFilter('Active'); resetPage(); }}
           className={cn(
             "p-3.5 rounded-2xl border transition-all cursor-pointer space-y-1 shadow-2xs group",
-            sourceFilter === 'DIRECT' ? "bg-emerald-50/70 border-emerald-300 ring-2 ring-[#07563D]/20" : "bg-white border-gray-200/80 hover:border-emerald-200"
+            sourceFilter === 'DIRECT' && statusFilter === 'Active' ? "bg-emerald-50/70 border-emerald-300 ring-2 ring-[#07563D]/20" : "bg-white border-gray-200/80 hover:border-emerald-200"
           )}
         >
           <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider flex items-center justify-between">
             <span>Direct Payroll</span>
             <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
           </div>
-          <div className="text-xl font-black text-[#07563D]">{directCount}</div>
-          <div className="text-[10px] text-emerald-700 font-medium">Company Employees</div>
+          <div className="text-xl font-black text-[#07563D]">{directActiveCount}</div>
+          <div className="text-[10px] text-emerald-700 font-medium">
+            Active Company Employees {resignedCount > 0 && `(${resignedCount} Exited)`}
+          </div>
         </div>
 
         <div
@@ -507,17 +547,20 @@ export const PeopleView: React.FC = () => {
         </div>
 
         <div
-          onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'offboarding' } }))}
-          className="p-3.5 rounded-2xl border bg-white border-gray-200/80 hover:border-rose-300 transition-all cursor-pointer space-y-1 shadow-2xs group"
-          title="Click to view Offboarding & Separation Workflows"
+          onClick={() => { setStatusFilter('Resigned'); setSourceFilter('ALL'); resetPage(); }}
+          className={cn(
+            "p-3.5 rounded-2xl border transition-all cursor-pointer space-y-1 shadow-2xs group",
+            statusFilter === 'Resigned' ? "bg-rose-50/70 border-rose-300 ring-2 ring-rose-500/20" : "bg-white border-gray-200/80 hover:border-rose-300"
+          )}
+          title="Click to view Resigned & Separated Employees"
         >
           <div className="text-[10px] font-bold text-rose-800 uppercase tracking-wider flex items-center justify-between">
             <span>Separations Active</span>
             <LogOut className="w-3.5 h-3.5 text-rose-600" />
           </div>
-          <div className="text-xl font-black text-rose-700">{exitsCount}</div>
+          <div className="text-xl font-black text-rose-700">{activeExitsCount}</div>
           <div className="text-[10px] text-rose-700 font-medium flex items-center gap-1">
-            <span>Exit Tasks Pending</span>
+            <span>{resignedCount > 0 ? `${resignedCount} Resigned / Exit` : 'Exit Tasks Pending'}</span>
             <ArrowRight className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
         </div>
@@ -546,7 +589,7 @@ export const PeopleView: React.FC = () => {
               className="w-full bg-gray-50/80 border border-gray-200 text-xs rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-[#07563D] font-semibold text-gray-800"
             >
               <option value="ALL">All Sourcing Models ({totalCount})</option>
-              <option value="DIRECT">Direct Corporate Employees ({directCount})</option>
+              <option value="DIRECT">Direct Corporate Employees ({directActiveCount} Active)</option>
               <option value="VENDOR">Manpower Provider / Vendor ({vendorCount})</option>
             </select>
           </div>
@@ -574,11 +617,13 @@ export const PeopleView: React.FC = () => {
               onChange={(e) => { setStatusFilter(e.target.value); resetPage(); }}
               className="w-full bg-gray-50/80 border border-gray-200 text-xs rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-[#07563D] font-semibold text-gray-800"
             >
-              <option value="ALL">All Statuses</option>
+              <option value="ALL">All Statuses ({totalCount})</option>
               <option value="Active">Active ({activeCount})</option>
-              <option value="Probation">Probation ({probationCount})</option>
+              {probationCount > 0 && <option value="Probation">Probation ({probationCount})</option>}
+              <option value="Resigned">Resigned / Exited ({resignedCount})</option>
+              {noticeCount > 0 && <option value="Notice Period">Notice Period ({noticeCount})</option>}
               <option value="On Leave">On Leave</option>
-              <option value="Inactive">Inactive</option>
+              <option value="Inactive">Inactive / Suspended</option>
             </select>
           </div>
 
