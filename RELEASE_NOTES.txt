@@ -1,32 +1,23 @@
 ============================================================
-JOY PeopleHR — PROD Build (v1.0.4+9)
+JOY PeopleHR — PRODUCTION Build (v1.1.8+26)
 ============================================================
-Environment : PROD
-Channel     : INTERNAL
-Build Number: 9
-Version     : 1.0.4
-Commit SHA  : c2ee99d (main)
-Release Date: 2026-09-16
+Environment : PRODUCTION
+Channel     : GOOGLE_PLAY_RELEASE
+Build Number: 26
+Version     : 1.1.8
+Target SDK  : 36 (Android 15 / 16 Ready)
+Release Date: 2026-10-31
 
-HIGHLIGHTS & KEY DELIVERABLES:
-- Unified Multi-Mode Attendance Engine: One employee = One attendance record per day.
-- Attendance Source Locking: Biometric first locks to BIOMETRIC, Mobile first locks to MOBILE.
-- Dynamic Working Timer: Computes duration dynamically from server first_check_in.
-- eSSL AI-FACE MAGNUM Integration: Sub-second real-time ingestion via port 11108.
-- Privacy-Hardened Crashlytics: Zero-PII sanitization for tokens, passwords, biometric templates.
+GOOGLE PLAY CONSOLE RELEASE NOTES:
+• Night Shift Cross-Midnight Cutoff: Seamless check-out support across midnight with smart next-day 12:00 PM cutoff lock and automatic date reset.
+• Dynamic Shift Schedule Display: Real-time visibility into assigned shift start and end times directly on the home screen.
+• Enhanced Attendance Stability: Isolated check-in state guards preventing duplicate punches and state discrepancies across mobile and biometric devices.
+• Prominent Location Disclosure: Transparent in-app location disclosure compliant with Google Play Data Safety & background location guidelines.
+• Performance & Bug Fixes: General reliability enhancements, battery-optimized foreground tracking, and Android 15/16 compatibility.
 
-LATEST COMMIT:
-fix(realtime): add 30s grace-period pooling to channels to prevent websocket teardown on navigation
-
-TARGET TEST FOCUS:
-• Unified Multi-Mode Attendance Engine (Biometric + Mobile GPS)
-• Attendance Source Locking Invariant (Single session per day)
-• Dynamic Live Working Timer from hardware timestamp
-• eSSL AI-FACE MAGNUM ADMS Realtime push integration
-
-KNOWN ISSUES / WORKAROUNDS:
-• None
-
-DISTRIBUTION:
-• Managed by Firebase App Distribution (Group: joy-prod)
+ARTIFACT DETAILS:
+• File: app-release.aab / JOY_PeopleHR_v1.1.8_build26.aab
+• Size: 66.9 MB
+• Path: flutter_app/build/app/outputs/bundle/release/app-release.aab
+• Copy: artifacts/android-bundles/JOY_PeopleHR_v1.1.8_build26.aab
 ============================================================
