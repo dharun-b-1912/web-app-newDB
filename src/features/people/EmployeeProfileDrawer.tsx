@@ -32,7 +32,9 @@ import {
   Camera,
   Loader2,
   Send,
+  LogOut,
 } from 'lucide-react';
+import { cn } from '../../lib/utils';
 import { api } from '../../services/api';
 import { useToast } from '../../components/ui/Toast';
 import { biometricGatewayService } from '../../services/attendance/biometricGatewayService';
@@ -507,6 +509,45 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
               )}
             </div>
           </div>
+
+          {/* Quick Resignation / Separation Lifecycle Banner */}
+          {employee.status === 'Resigned' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <div>
+                  <p className="text-xs font-bold text-amber-950">
+                    Employee is currently Resigned / Separated from active roster.
+                  </p>
+                  <p className="text-[11px] text-amber-700">
+                    All historical attendance logs, leave balances, and payroll records remain preserved.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  size="xs"
+                  variant="primary"
+                  disabled={isUpdatingStatus}
+                  onClick={() => handleStatusChange('Active')}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer shadow-xs"
+                >
+                  <RotateCcw className="w-3 h-3 mr-1" /> Re-activate / Onboard
+                </Button>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => {
+                    onClose();
+                    window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'offboarding', employeeId: employee.id, code: employee.employee_code } }));
+                  }}
+                  className="bg-white text-amber-800 border-amber-300 hover:bg-amber-100 text-xs font-semibold cursor-pointer"
+                >
+                  <LogOut className="w-3 h-3 mr-1" /> View Offboarding
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Navigation Tabs */}
           <Tabs
@@ -1390,16 +1431,20 @@ export const EmployeeProfileDrawer: React.FC<EmployeeProfileDrawerProps> = ({
               <Card className="p-4 space-y-3">
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Manage Employment Status</h3>
                 <div className="flex flex-wrap gap-2">
-                  {(['Active', 'Probation', 'Confirmed', 'Notice Period', 'On Leave'] as EmployeeStatus[]).map((st) => (
+                  {(['Active', 'Probation', 'Confirmed', 'Notice Period', 'Resigned', 'Suspended', 'On Leave'] as EmployeeStatus[]).map((st) => (
                     <Button
                       key={st}
                       size="sm"
                       variant={employee.status === st ? 'primary' : 'outline'}
                       disabled={isUpdatingStatus}
                       onClick={() => handleStatusChange(st)}
-                      className="text-xs font-bold"
+                      className={cn(
+                        'text-xs font-bold',
+                        st === 'Resigned' && employee.status === st && 'bg-amber-600 hover:bg-amber-700 text-white border-amber-600',
+                        st === 'Active' && employee.status === st && 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'
+                      )}
                     >
-                      Set {st}
+                      {employee.status === st ? `✓ ${st}` : `Set ${st}`}
                     </Button>
                   ))}
                 </div>

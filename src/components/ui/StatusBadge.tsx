@@ -25,6 +25,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
       normalized.includes('healthy') ||
       normalized.includes('operational') ||
       normalized.includes('active') ||
+      normalized.includes('confirmed') ||
       normalized.includes('resolved') ||
       normalized.includes('matched') ||
       normalized.includes('paid') ||
@@ -33,6 +34,13 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
     ) {
       resolvedVariant = 'healthy';
     } else if (
+      normalized.includes('resigned') ||
+      normalized.includes('exited') ||
+      normalized.includes('separated')
+    ) {
+      resolvedVariant = 'resigned' as any;
+    } else if (
+      normalized.includes('notice') ||
       normalized.includes('at risk') ||
       normalized.includes('trial') ||
       normalized.includes('monitoring') ||
@@ -51,7 +59,10 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
       normalized.includes('payment pending') ||
       normalized.includes('outage') ||
       normalized.includes('expired') ||
-      normalized.includes('refunded')
+      normalized.includes('refunded') ||
+      normalized.includes('terminated') ||
+      normalized.includes('suspended') ||
+      normalized.includes('disabled')
     ) {
       resolvedVariant = 'critical';
     } else if (
@@ -66,10 +77,14 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
     }
   }
 
-  const styles = {
+  const styles: Record<string, { wrapper: string; dot: string }> = {
     healthy: {
       wrapper: 'bg-[#ECFDF5] text-[#15845B] border border-[#15845B]/30',
       dot: 'bg-[#15845B]',
+    },
+    resigned: {
+      wrapper: 'bg-[#FFFBEB] text-[#B45309] border border-[#F59E0B]/40 font-bold',
+      dot: 'bg-[#D97706]',
     },
     warning: {
       wrapper: 'bg-[#FEF3C7] text-[#CE9100] border border-[#D89A16]/30',
@@ -87,7 +102,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
       wrapper: 'bg-[#F9FAFB] text-[#62748E] border border-[#E7EAF0]',
       dot: 'bg-[#90A1B9]',
     },
-  }[resolvedVariant];
+  };
+  const activeStyle = styles[resolvedVariant] || styles.neutral;
 
   const sizeStyles = {
     xs: 'text-[11px] px-2 py-0.5 gap-1.5',
@@ -99,22 +115,22 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
     <span
       className={cn(
         'inline-flex items-center font-sans font-semibold rounded-full select-none leading-none tracking-tight whitespace-nowrap',
-        styles.wrapper,
+        activeStyle.wrapper,
         sizeStyles,
         className
       )}
     >
-      {styles.dot !== 'hidden' && (
+      {activeStyle.dot !== 'hidden' && (
         <span className="relative flex h-1.5 w-1.5 items-center justify-center">
           {pulse && (
             <span
               className={cn(
                 'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',
-                styles.dot
+                activeStyle.dot
               )}
             />
           )}
-          <span className={cn('relative inline-flex h-1.5 w-1.5 rounded-full', styles.dot)} />
+          <span className={cn('relative inline-flex h-1.5 w-1.5 rounded-full', activeStyle.dot)} />
         </span>
       )}
       <span>{safeStatus}</span>

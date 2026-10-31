@@ -3912,17 +3912,19 @@ export const api = {
               rows: 1,
             });
 
-            // Keep user_profiles synced if email or name updated
-            if (targetWorkEmail) {
-              try {
-                await supabase.from('user_profiles').update({
-                  email: targetWorkEmail,
-                  full_name: displayName,
-                  phone: targetPhone || undefined,
-                  updated_at: new Date().toISOString(),
-                }).eq('employee_id', id);
-              } catch (_) {}
-            }
+            // Keep user_profiles synced if email, name, or employment status updated
+            try {
+              const profilePatch: any = {
+                updated_at: new Date().toISOString(),
+              };
+              if (targetWorkEmail) profilePatch.email = targetWorkEmail;
+              if (displayName) profilePatch.full_name = displayName;
+              if (targetPhone) profilePatch.phone = targetPhone;
+              if (resolvedEmploymentStatus) {
+                profilePatch.status = (resolvedEmploymentStatus === 'ACTIVE' || resolvedEmploymentStatus === 'PROBATION') ? 'ACTIVE' : 'INACTIVE';
+              }
+              await supabase.from('user_profiles').update(profilePatch).eq('employee_id', id);
+            } catch (_) {}
           }
         }
 

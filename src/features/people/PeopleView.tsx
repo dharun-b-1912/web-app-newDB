@@ -705,13 +705,20 @@ export const PeopleView: React.FC = () => {
         }}
         onToggleStatus={async (emp, newStatus) => {
           try {
+            const mappedEmpStatus =
+              newStatus === 'Active' ? 'ACTIVE' :
+              newStatus === 'Probation' ? 'PROBATION' :
+              newStatus === 'Notice Period' ? 'NOTICE_PERIOD' :
+              newStatus === 'Resigned' ? 'RESIGNED' :
+              newStatus === 'Terminated' ? 'TERMINATED' : 'SUSPENDED';
+
             setEmployees((prev) =>
               prev.map((e) =>
                 e.id === emp.id
                   ? {
                       ...e,
                       status: newStatus as any,
-                      employment_status: (newStatus === 'Active' ? 'ACTIVE' : 'SUSPENDED') as any,
+                      employment_status: mappedEmpStatus as any,
                     }
                   : e
               )

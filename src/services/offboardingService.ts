@@ -268,6 +268,39 @@ class OffboardingService {
 
     const todayStr = new Date().toISOString().split('T')[0];
 
+    // Auto-include any existing resigned employees from master roster who don't have a separation record
+    employees.forEach(emp => {
+      const rawStat = String(emp.status || (emp as any).employment_status || '').toUpperCase();
+      if ((rawStat === 'RESIGNED' || rawStat === 'EXITED') && !separations.some(s => s.employee_id === emp.id)) {
+        separations.push({
+          id: `sep-${emp.id}`,
+          organization_id: emp.organization_id || 'org-joy-01',
+          employee_id: emp.id,
+          employee: emp,
+          employment_source: emp.employment_source === 'VENDOR' ? 'VENDOR' : 'DIRECT',
+          separation_type: 'RESIGNATION',
+          reason_code: 'CAREER_GROWTH',
+          reason_text: 'Voluntary Resignation & Career Transition',
+          notice_period_days: 30,
+          notice_start_date: (emp as any).last_working_day || emp.updated_at?.split('T')[0] || todayStr,
+          resignation_date: (emp as any).last_working_day || emp.updated_at?.split('T')[0] || todayStr,
+          expected_last_working_date: (emp as any).last_working_day || emp.updated_at?.split('T')[0] || todayStr,
+          approved_last_working_date: (emp as any).last_working_day || emp.updated_at?.split('T')[0] || todayStr,
+          actual_last_working_date: (emp as any).last_working_day || emp.updated_at?.split('T')[0] || todayStr,
+          status: 'COMPLETED',
+          initiated_by: 'HR Admin',
+          initiated_role: 'HR_HEAD',
+          retention_status: 'NOT_APPLICABLE',
+          rehire_eligibility: 'ELIGIBLE',
+          is_early_release: false,
+          notice_waiver_days: 0,
+          notice_buyout_days: 0,
+          created_at: emp.updated_at || new Date().toISOString(),
+          updated_at: emp.updated_at || new Date().toISOString(),
+        });
+      }
+    });
+
     // Hydrate & aggregate
     const hydrated = separations.map(s => {
       const emp = empMap.get(s.employee_id) || s.employee;
@@ -1138,7 +1171,18 @@ class OffboardingService {
 
     this.setStore(SEPARATIONS_KEY, separations);
 
+    // Restore employee master status back to Active
+    try {
+      await api.updateEmployee(sep.employee_id, {
+        status: 'Active',
+      });
+    } catch (e) {
+      console.warn('[Offboarding] Failed restoring employee on resignation withdrawal:', e);
+    }
+
     this.logAudit(separationId, 'RESIGNATION_WITHDRAWN', sep.employee_id, oldVal, separations[idx], reason);
+
+    hrEventBus.publish('employee.updated', { employeeId: sep.employee_id });
 
     return this.getSeparationById(separationId)!;
   }

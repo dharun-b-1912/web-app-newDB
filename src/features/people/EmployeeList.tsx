@@ -33,6 +33,7 @@ import {
   CheckCircle2,
   FileText,
   Archive,
+  RotateCcw,
 } from 'lucide-react';
 
 export type SortField = 'name' | 'code' | 'department' | 'designation' | 'status' | 'none';
@@ -189,26 +190,110 @@ const RowActionMenu: React.FC<ActionMenuProps> = ({
 
           <div className="my-1 border-t border-gray-100" />
 
-          {item(
-            isActive
-              ? <UserX className="w-3.5 h-3.5 text-amber-600" />
-              : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />,
-            isActive ? (isToggling ? 'Deactivating…' : 'Deactivate from Roster') : (isToggling ? 'Activating…' : 'Activate to Roster'),
-            onToggleStatus,
-            isActive ? 'text-amber-700' : 'text-emerald-700'
-          )}
-          {item(
-            <LogOut className="w-3.5 h-3.5 text-rose-500" />,
-            'Start Offboarding & Exit',
-            () => {
-              if (onStartOffboarding) {
-                onStartOffboarding();
-              } else {
-                window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'offboarding', employeeId: emp.id, code: emp.employee_code } }));
-              }
-            },
-            'text-rose-700'
-          )}
+          {(() => {
+            const rawStat = String(emp.status || (emp as any).employment_status || 'Active').toUpperCase();
+            const isResigned = rawStat === 'RESIGNED' || rawStat === 'EXITED';
+            const isNotice = rawStat === 'NOTICE_PERIOD';
+            const isSuspended = rawStat === 'SUSPENDED' || rawStat === 'INACTIVE' || rawStat === 'DISABLED';
+
+            if (isResigned) {
+              return (
+                <>
+                  {item(
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" />,
+                    isToggling ? 'Re-activating…' : 'Re-activate / Onboard to Roster',
+                    onToggleStatus,
+                    'text-emerald-700 font-bold bg-emerald-50/60 hover:bg-emerald-100/60'
+                  )}
+                  {item(
+                    <LogOut className="w-3.5 h-3.5 text-amber-600" />,
+                    'View Offboarding & Settlement',
+                    () => {
+                      if (onStartOffboarding) {
+                        onStartOffboarding();
+                      } else {
+                        window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'offboarding', employeeId: emp.id, code: emp.employee_code } }));
+                      }
+                    },
+                    'text-amber-800'
+                  )}
+                </>
+              );
+            }
+
+            if (isNotice) {
+              return (
+                <>
+                  {item(
+                    <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />,
+                    isToggling ? 'Retaining…' : 'Cancel Resignation & Retain',
+                    onToggleStatus,
+                    'text-emerald-700 font-bold'
+                  )}
+                  {item(
+                    <LogOut className="w-3.5 h-3.5 text-amber-600" />,
+                    'Manage Notice & Clearances',
+                    () => {
+                      if (onStartOffboarding) {
+                        onStartOffboarding();
+                      } else {
+                        window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'offboarding', employeeId: emp.id, code: emp.employee_code } }));
+                      }
+                    },
+                    'text-amber-800'
+                  )}
+                </>
+              );
+            }
+
+            if (isSuspended) {
+              return (
+                <>
+                  {item(
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />,
+                    isToggling ? 'Activating…' : 'Activate to Roster',
+                    onToggleStatus,
+                    'text-emerald-700 font-bold'
+                  )}
+                  {item(
+                    <LogOut className="w-3.5 h-3.5 text-rose-500" />,
+                    'Start Offboarding & Exit',
+                    () => {
+                      if (onStartOffboarding) {
+                        onStartOffboarding();
+                      } else {
+                        window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'offboarding', employeeId: emp.id, code: emp.employee_code } }));
+                      }
+                    },
+                    'text-rose-700'
+                  )}
+                </>
+              );
+            }
+
+            return (
+              <>
+                {item(
+                  <UserX className="w-3.5 h-3.5 text-amber-600" />,
+                  isToggling ? 'Deactivating…' : 'Deactivate / Disable Employee',
+                  onToggleStatus,
+                  'text-amber-700 font-medium'
+                )}
+                {item(
+                  <LogOut className="w-3.5 h-3.5 text-rose-500" />,
+                  'Start Offboarding & Exit',
+                  () => {
+                    if (onStartOffboarding) {
+                      onStartOffboarding();
+                    } else {
+                      window.dispatchEvent(new CustomEvent('navigate', { detail: { nav: 'offboarding', employeeId: emp.id, code: emp.employee_code } }));
+                    }
+                  },
+                  'text-rose-700'
+                )}
+              </>
+            );
+          })()}
 
           <div className="my-1 border-t border-gray-100" />
 
@@ -280,8 +365,9 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
 
   const handleToggleStatus = async (emp: Employee) => {
     if (togglingId) return;
-    const currentStatus = (emp.status || (emp as any).employment_status || 'Active').toLowerCase();
-    const newStatus = (currentStatus === 'active' || currentStatus === 'probation') ? 'Inactive' : 'Active';
+    const currentStatus = String(emp.status || (emp as any).employment_status || 'Active').toUpperCase();
+    const isCurrentlyActive = currentStatus === 'ACTIVE' || currentStatus === 'PROBATION' || currentStatus === 'CONFIRMED';
+    const newStatus = isCurrentlyActive ? 'Inactive' : 'Active';
 
     setTogglingId(emp.id);
     try {
@@ -384,7 +470,8 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                 const hasBranch = Boolean(rawBranch);
                 const showLocation = Boolean(rawLocation && rawLocation.toLowerCase() !== rawBranch.toLowerCase());
                 const status = emp.status || (emp as any).employment_status || 'Active';
-                const isActive = status.toLowerCase() === 'active';
+                const rawStat = String(status).toUpperCase();
+                const isActive = rawStat === 'ACTIVE' || rawStat === 'PROBATION' || rawStat === 'CONFIRMED';
 
                 return (
                   <TableRow
@@ -494,7 +581,8 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
           {employees.map((emp) => {
             const isVendor = checkIsVendor(emp);
             const status = emp.status || (emp as any).employment_status || 'Active';
-            const isActive = status.toLowerCase() === 'active';
+            const rawStat = String(status).toUpperCase();
+            const isActive = rawStat === 'ACTIVE' || rawStat === 'PROBATION' || rawStat === 'CONFIRMED';
             const rawLocation = (emp.employment?.work_location || emp.work_location || emp.location || '').trim();
             const rawBranch = (emp.branch_name || (emp.employment as any)?.branch_name || '').trim();
             const hasBranch = Boolean(rawBranch);

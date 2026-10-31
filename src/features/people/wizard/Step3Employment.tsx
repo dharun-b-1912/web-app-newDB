@@ -784,6 +784,10 @@ export const Step3Employment: React.FC<Props> = ({
               <option value="Probation">Probationary Period</option>
               <option value="Onboarding">Onboarding (New Hire)</option>
               <option value="Invited">Invited (Pre-Joining)</option>
+              <option value="Notice Period">Notice Period (Pending Separation)</option>
+              <option value="Resigned">Resigned / Exited</option>
+              <option value="Suspended">Suspended / Inactive</option>
+              <option value="Terminated">Terminated</option>
             </select>
           </div>
         </div>
