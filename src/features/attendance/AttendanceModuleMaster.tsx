@@ -130,6 +130,7 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
   console.log('[DEBUG_FLOW] AttendanceModuleMaster rendering with currentSubPath:', currentSubPath);
   const [selectedEmployeeProfileId, setSelectedEmployeeProfileId] = useState<string | null>(null);
   const [selectedProfileDate, setSelectedProfileDate] = useState<string | undefined>(undefined);
+  const [manualTarget, setManualTarget] = useState<{ empId?: string; date?: string }>({});
 
   const resolveTab = (subPath?: string): string => {
     if (!subPath || subPath === 'attendance' || subPath === 'dashboard' || subPath === 'attendance-dashboard' || subPath === 'attendance/dashboard') {
@@ -512,7 +513,10 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
               setSelectedEmployeeProfileId(id);
               setSelectedProfileDate(date || activeFilters.date);
             }}
-            onOpenManualModal={() => handleSelectTab('manual')}
+            onOpenManualModal={(empId, date) => {
+              setManualTarget({ empId, date: date || activeFilters.date });
+              handleSelectTab('manual');
+            }}
             onBackToDashboard={handleBackToDashboard}
           />
         );
@@ -675,7 +679,13 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
           />
         );
       case 'manual':
-        return <ManualAttendanceView onBack={() => handleSelectTab('employees')} />;
+        return (
+          <ManualAttendanceView
+            initialEmployeeId={manualTarget.empId}
+            initialDate={manualTarget.date}
+            onBack={() => handleSelectTab('employees')}
+          />
+        );
       case 'holidays':
         return <HolidaysView />;
       case 'approvals':

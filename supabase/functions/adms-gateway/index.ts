@@ -172,6 +172,41 @@ async function notifyReportingManager(
   }
 }
 
+// --------------------------------------------------------------------------
+// UPSTASH SERVERLESS REDIS CLIENT HELPERS (Command Queue & Synchronization)
+// --------------------------------------------------------------------------
+const UPSTASH_URL = Deno.env.get('UPSTASH_REDIS_REST_URL') || 'https://powerful-marmot-162532.upstash.io';
+const UPSTASH_TOKEN = Deno.env.get('UPSTASH_REDIS_REST_TOKEN') || 'gQAAAAAAAnrkAAIgcDI0NjFkYzJlOWE5YWQ0ODVhOWYwYWNmYzFkNWJmM2FjZQ';
+
+async function redisGet(key: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${UPSTASH_URL}/get/${encodeURIComponent(key)}`, {
+      headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+    });
+    const json = await res.json();
+    return json.result || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function redisSet(key: string, value: string, exSeconds?: number): Promise<void> {
+  try {
+    const url = exSeconds
+      ? `${UPSTASH_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}?EX=${exSeconds}`
+      : `${UPSTASH_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`;
+    await fetch(url, { headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` } });
+  } catch (_) {}
+}
+
+async function redisDel(key: string): Promise<void> {
+  try {
+    await fetch(`${UPSTASH_URL}/del/${encodeURIComponent(key)}`, {
+      headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+    });
+  } catch (_) {}
+}
+
 serve(async (req: Request) => {
   const url = new URL(req.url);
   const pathname = url.pathname;
@@ -181,6 +216,28 @@ serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SECRET_KEY') || '';
   const supabase = createClient(supabaseUrl, supabaseKey);
+
+  // --------------------------------------------------------------------------
+  // 0. ADMIN / MANUAL SYNC TRIGGER
+  // e.g. GET /functions/v1/adms-gateway?sync=1&sn=TDBD253600550
+  // --------------------------------------------------------------------------
+  if (url.searchParams.get('sync') === '1' || url.searchParams.get('action') === 'sync' || url.searchParams.get('cmd')) {
+    const targetSn = (url.searchParams.get('sn') || sn || 'TDBD253600550').trim();
+    const commandText = url.searchParams.get('raw_cmd') || `C:1001:CHECK\nC:1002:DATA QUERY ATTLOG`;
+    await redisSet(`adms_cmd_queue:${targetSn}`, commandText, 300);
+    // Also clear auto lock so periodic sync can proceed later
+    await redisDel(`adms_auto_lock:${targetSn}`);
+    console.log(`[ADMS-EDGE] 📥 Manual command queued for terminal ${targetSn}:\n${commandText}`);
+    return new Response(JSON.stringify({
+      success: true,
+      sn: targetSn,
+      message: `Sync command successfully queued for biometric terminal ${targetSn}. It will be picked up on its next poll (<= 10 seconds).`,
+      command: commandText,
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
   // --------------------------------------------------------------------------
   // 1. TERMINAL INITIAL HANDSHAKE (GET /iclock/cdata.aspx?SN=...)
@@ -242,44 +299,47 @@ serve(async (req: Request) => {
       return new Response('OK: 0\n', { status: 200, headers: { 'Content-Type': 'text/plain' } });
     }
 
-    // A. Multi-Tenant Device Resolution: Query device by Serial Number
+    // A. Multi-Tenant Device Resolution: Query ALL device registrations matching this Serial Number
     const { data: devices, error: devErr } = await supabase
       .from('biometric_devices')
       .select('id, organization_id, branch_id, device_name, is_active')
-      .eq('serial_number', sn)
-      .limit(1);
+      .eq('serial_number', sn);
 
     if (devErr || !devices || devices.length === 0) {
       console.warn(`[ADMS-EDGE] Unregistered device tried to connect: SN ${sn}`);
       return new Response('OK: 0\n', { status: 200, headers: { 'Content-Type': 'text/plain' } });
     }
 
-    const device = devices[0];
-    const organizationId = device.organization_id;
+    // Collect all authorized tenant organizations bound to this hardware serial number
+    const authorizedOrgIds = Array.from(new Set(devices.map((d: any) => d.organization_id).filter(Boolean)));
+    const deviceMapByOrg = new Map<string, any>(devices.map((d: any) => [d.organization_id, d]));
+    const defaultDevice = devices[0];
 
-    // Update heartbeat
+    // Update heartbeat across all tenant device registrations for this hardware
+    const deviceIds = devices.map((d: any) => d.id);
     await supabase
       .from('biometric_devices')
       .update({
         last_heartbeat_at: new Date().toISOString(),
-        status: 'Online',
+        is_active: true,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', device.id);
+      .in('id', deviceIds);
 
     let parsedCount = 0;
 
     // Process Attendance Punches
     if (table === 'ATTLOG' && bodyText.trim()) {
       const lines = bodyText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const currentIstToday = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-      // Load all employees belonging to THIS SPECIFIC TENANT (Multi-Tenant Isolation)
+      // Load all employees across the authorized tenants sharing this hardware terminal
       const { data: emps } = await supabase
         .from('employees')
         .select('id, employee_code, first_name, last_name, display_name, phone, organization_id, reporting_manager_id, department_id')
-        .eq('organization_id', organizationId);
+        .in('organization_id', authorizedOrgIds);
 
-      const tenantEmployees = emps || [];
+      const candidateEmployees = emps || [];
 
       for (const line of lines) {
         const parts = line.split('\t');
@@ -290,18 +350,22 @@ serve(async (req: Request) => {
         const vCode = parts[2] || '15';
         const sCode = parts[3] || '0';
 
-        // Match PIN to employee within this organization
+        // Dynamically resolve employee across authorized organizations by PIN / employee_code
         const numericPin = pin.replace(/\D/g, '');
-        const emp = tenantEmployees.find(e => {
+        const emp = candidateEmployees.find((e: any) => {
           const codeNum = String(e.employee_code || '').replace(/\D/g, '');
           return codeNum === numericPin || parseInt(codeNum, 10) === parseInt(numericPin, 10);
         });
 
         if (!emp) {
-          console.log(`[ADMS-EDGE] PIN #${pin} not matched to employee in organization ${organizationId}`);
+          console.log(`[ADMS-EDGE] PIN #${pin} not matched across authorized tenants: ${authorizedOrgIds.join(', ')}`);
           parsedCount++;
           continue;
         }
+
+        // Dynamically bind to the employee's true tenant organization & matching device instance
+        const organizationId = emp.organization_id;
+        const device = deviceMapByOrg.get(organizationId) || defaultDevice;
 
         // Convert IST device timestamp to canonical UTC ISO
         let eventUtcIso = new Date().toISOString();
@@ -323,6 +387,15 @@ serve(async (req: Request) => {
         }
 
         const todayDate = punchDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD
+
+        // STRICT PRODUCTION ISOLATION:
+        // Only process punches for TODAY (current calendar date in Asia/Kolkata).
+        // Historical buffer dumps from terminal flash memory (e.g. 08-10-2026) MUST NEVER send SMS or alter past records!
+        if (todayDate !== currentIstToday) {
+          parsedCount++;
+          continue;
+        }
+
         const timeFormatted = punchDate.toLocaleTimeString('en-US', {
           timeZone: 'Asia/Kolkata',
           hour: '2-digit',
@@ -353,11 +426,12 @@ serve(async (req: Request) => {
         const checkOutKey = `${emp.id}_${todayDate}_CHECK_OUT`;
 
         // =====================================================================
-        // RULE 0: MIDNIGHT SHIFT / EXTENDED OVERTIME RECONCILER (00:00 to 05:00 IST)
-        // If employee punches after midnight and yesterday has an unclosed check-in,
-        // this is an extended checkout for yesterday, NOT a check-in for today!
+        // RULE 0: NIGHT SHIFT & MIDNIGHT EXTENDED CHECKOUT RECONCILER (00:00 to 11:00 IST)
+        // Shift: 7:30 PM (19:30) to next day 7:30 AM (07:30).
+        // If employee punches in the morning and yesterday has an unclosed evening check-in,
+        // this is the completed CHECK-OUT of yesterday's night shift, NOT a new check-in!
         // =====================================================================
-        if (eventIstHour < 5.0) {
+        if (eventIstHour < 11.0) {
           const yDateObj = new Date(punchDate.getTime() - 24 * 60 * 60 * 1000);
           const yesterdayDate = yDateObj.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
@@ -371,32 +445,54 @@ serve(async (req: Request) => {
           const yDaily = yDailyRows && yDailyRows.length > 0 ? yDailyRows[0] : null;
           if (yDaily && yDaily.first_check_in && !yDaily.last_check_out) {
             const yInMs = new Date(yDaily.first_check_in).getTime();
-            const yTotalMins = Math.max(0, Math.floor((currentPunchMs - yInMs) / 60000));
-            const yOvertimeMins = Math.max(0, yTotalMins - 480);
+            const yInIstHour = (new Date(yDaily.first_check_in).getUTCHours() + 5.5 + new Date(yDaily.first_check_in).getUTCMinutes() / 60) % 24;
+            
+            // Check if check-in was in the afternoon/evening (>= 15:00 IST) or overnight shift
+            if (yInIstHour >= 15.0 || eventIstHour < 5.0) {
+              const yTotalMins = Math.max(0, Math.floor((currentPunchMs - yInMs) / 60000));
+              const yOvertimeMins = Math.max(0, yTotalMins - 480);
+              const yHours = Math.floor(yTotalMins / 60);
+              const yMins = yTotalMins % 60;
+              const yCheckOutKey = `${emp.id}_${yesterdayDate}_CHECK_OUT`;
 
-            await supabase
-              .from('attendance_daily')
-              .update({
-                last_check_out: eventUtcIso,
-                total_work_minutes: yTotalMins,
-                overtime_minutes: yOvertimeMins,
-              })
-              .eq('id', yDaily.id);
+              await supabase
+                .from('attendance_daily')
+                .update({
+                  last_check_out: eventUtcIso,
+                  total_work_minutes: yTotalMins,
+                  overtime_minutes: yOvertimeMins,
+                  status: 'PRESENT',
+                  payable_status: 1.0,
+                })
+                .eq('id', yDaily.id);
 
-            await supabase.from('attendance_punches').insert({
-              employee_id: emp.id,
-              organization_id: organizationId,
-              device_id: device.id,
-              punch_time: eventUtcIso,
-              punch_type: 'CHECK_OUT',
-              punch_source: 'BIOMETRIC',
-              verification_mode: 'FACE',
-              attendance_date: yesterdayDate,
-            });
+              await supabase.from('attendance_punches').insert({
+                employee_id: emp.id,
+                organization_id: organizationId,
+                device_id: device.id,
+                punch_time: eventUtcIso,
+                punch_type: 'CHECK_OUT',
+                punch_source: 'BIOMETRIC',
+                verification_mode: 'FACE',
+                attendance_date: yesterdayDate,
+              });
 
-            console.log(`[ADMS-EDGE] 🌙 Midnight checkout reconciled for ${emp.first_name} on shift ${yesterdayDate} at ${timeFormatted} (${Math.floor(yTotalMins / 60)}h ${yTotalMins % 60}m worked, ${Math.floor(yOvertimeMins / 60)}h ${yOvertimeMins % 60}m OT).`);
-            parsedCount++;
-            continue;
+              // Dispatch Airtel DLT Checkout SMS for night shift
+              if (emp.phone && !smsSentTodayCache.has(yCheckOutKey) && yTotalMins >= 180) {
+                const totalDurationFormatted = `${yHours} hrs ${yMins} mins`;
+                const msg = `Dear ${emp.first_name}, your check-out has been recorded at ${timeFormatted} today. Your total logged time is ${totalDurationFormatted}. Status: Present. - Joy PeopleHR.`;
+                console.log(`[ADMS-EDGE] 🌙 Dispatching Airtel checkout SMS for night shift to ${emp.first_name} (${emp.phone})`);
+                await sendAirtelSms(emp.phone, msg, DLT_CHECKOUT_TEMPLATE_ID);
+                smsSentTodayCache.add(yCheckOutKey);
+              }
+
+              // Dispatch instant push & in-app alert to reporting manager
+              await notifyReportingManager(supabase, emp, 'CHECK_OUT', timeFormatted, organizationId);
+
+              console.log(`[ADMS-EDGE] 🌙 Night Shift checkout reconciled for ${emp.first_name} on shift ${yesterdayDate} at ${timeFormatted} (${yHours}h ${yMins}m worked, ${Math.floor(yOvertimeMins / 60)}h ${yOvertimeMins % 60}m OT).`);
+              parsedCount++;
+              continue;
+            }
           }
         }
 
@@ -515,10 +611,38 @@ serve(async (req: Request) => {
         const hours = Math.floor(totalMins / 60);
         const mins = totalMins % 60;
         const overtimeMins = Math.max(0, totalMins - 480);
+        const alreadyHadCheckout = Boolean(existingDaily && existingDaily.last_check_out);
 
-        // 30-minute departure debounce: multiple face scans on exit update time silently
-        if (existingDaily.last_check_out) {
+        // Check against existing checkout time to avoid reverting to an earlier punch
+        if (alreadyHadCheckout) {
           const prevOutMs = new Date(existingDaily.last_check_out).getTime();
+          if (outMs <= prevOutMs) {
+            // Machine has an earlier punch than current checkout (e.g. employee scanned face at 6:45 PM but did GPS out at 6:50 PM)
+            // Log raw punch idempotently, but preserve the latest checkout
+            const { data: existingPunch } = await supabase
+              .from('attendance_punches')
+              .select('id')
+              .eq('employee_id', emp.id)
+              .eq('punch_time', eventUtcIso)
+              .limit(1);
+
+            if (!existingPunch || existingPunch.length === 0) {
+              await supabase.from('attendance_punches').insert({
+                employee_id: emp.id,
+                organization_id: organizationId,
+                device_id: device.id,
+                punch_time: eventUtcIso,
+                punch_type: 'CHECK_OUT',
+                punch_source: 'BIOMETRIC',
+                verification_mode: 'FACE',
+                attendance_date: todayDate,
+              });
+            }
+            parsedCount++;
+            continue;
+          }
+
+          // 30-minute departure debounce: multiple face scans on exit update time silently
           const outDiffMins = (outMs - prevOutMs) / 60000;
           if (outDiffMins < 30 && smsSentTodayCache.has(checkOutKey)) {
             await supabase
@@ -535,17 +659,28 @@ serve(async (req: Request) => {
           }
         }
 
-        await supabase.from('attendance_punches').insert({
-          employee_id: emp.id,
-          organization_id: organizationId,
-          device_id: device.id,
-          punch_time: eventUtcIso,
-          punch_type: 'CHECK_OUT',
-          punch_source: 'BIOMETRIC',
-          verification_mode: 'FACE',
-          attendance_date: todayDate,
-        });
+        // Idempotently insert punch into attendance_punches
+        const { data: existingPunch } = await supabase
+          .from('attendance_punches')
+          .select('id')
+          .eq('employee_id', emp.id)
+          .eq('punch_time', eventUtcIso)
+          .limit(1);
 
+        if (!existingPunch || existingPunch.length === 0) {
+          await supabase.from('attendance_punches').insert({
+            employee_id: emp.id,
+            organization_id: organizationId,
+            device_id: device.id,
+            punch_time: eventUtcIso,
+            punch_type: 'CHECK_OUT',
+            punch_source: 'BIOMETRIC',
+            verification_mode: 'FACE',
+            attendance_date: todayDate,
+          });
+        }
+
+        // Authoritative update to attendance_daily
         await supabase.from('attendance_daily').upsert({
           employee_id: emp.id,
           organization_id: organizationId,
@@ -558,21 +693,26 @@ serve(async (req: Request) => {
           payable_status: 1.0,
         }, { onConflict: 'employee_id,attendance_date' });
 
-        if (emp.phone && !smsSentTodayCache.has(checkOutKey) && totalMins >= 180) {
+        // Dispatch Airtel DLT Checkout SMS
+        if (emp.phone && !alreadyHadCheckout && !smsSentTodayCache.has(checkOutKey) && totalMins >= 180) {
           const totalDurationFormatted = `${hours} hrs ${mins} mins`;
           const msg = `Dear ${emp.first_name}, your check-out has been recorded at ${timeFormatted} today. Your total logged time is ${totalDurationFormatted}. Status: Present. - Joy PeopleHR.`;
-          await sendAirtelSms(emp.phone, msg, DLT_CHECKOUT_TEMPLATE_ID);
+          console.log(`[ADMS-EDGE] 📤 Dispatching Airtel checkout SMS to ${emp.first_name} (${emp.phone})`);
+          const smsRes = await sendAirtelSms(emp.phone, msg, DLT_CHECKOUT_TEMPLATE_ID);
+          console.log(`[ADMS-EDGE] Airtel SMS API response:`, smsRes);
           smsSentTodayCache.add(checkOutKey);
         }
 
         // Dispatch instant push & in-app alert to reporting manager
-        await notifyReportingManager(supabase, emp, 'CHECK_OUT', timeFormatted, organizationId);
+        if (!alreadyHadCheckout) {
+          await notifyReportingManager(supabase, emp, 'CHECK_OUT', timeFormatted, organizationId);
+        }
 
         parsedCount++;
       }
     }
 
-    return new Response(`OK: ${parsedCount || 1}\n`, {
+    return new Response('OK\n', {
       status: 200,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
@@ -591,6 +731,32 @@ serve(async (req: Request) => {
           updated_at: new Date().toISOString(),
         })
         .eq('serial_number', sn);
+    }
+
+    // A. Check if explicit command is queued in Upstash Redis
+    const queueKey = `adms_cmd_queue:${sn}`;
+    const queuedCmd = sn ? await redisGet(queueKey) : null;
+
+    if (queuedCmd) {
+      await redisDel(queueKey);
+      console.log(`[ADMS-EDGE] 🚀 Dispatching queued command to terminal ${sn}:\n${queuedCmd}`);
+      return new Response(`${queuedCmd}\n`, {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    }
+
+    // B. Check automatic periodic log sync lock (every 30 mins)
+    const lockKey = `adms_auto_lock:${sn}`;
+    const lock = sn ? await redisGet(lockKey) : '1';
+    if (!lock) {
+      await redisSet(lockKey, '1', 1800); // 30-min cooldown
+      const autoCmd = `C:1001:CHECK\nC:1002:DATA QUERY ATTLOG`;
+      console.log(`[ADMS-EDGE] 🔄 Periodic automatic punch sync triggered for terminal ${sn}`);
+      return new Response(`${autoCmd}\n`, {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
     }
 
     return new Response('OK\n', {
@@ -613,6 +779,8 @@ serve(async (req: Request) => {
   // 5. DEVICE COMMAND ACKNOWLEDGEMENT (POST /iclock/devicecmd.aspx)
   // --------------------------------------------------------------------------
   if (pathname.includes('devicecmd') || pathname.endsWith('/devicecmd.aspx')) {
+    const ackBody = await req.text();
+    console.log(`[ADMS-EDGE] 📋 Device ${sn} command ack received:\n${ackBody}`);
     return new Response('OK\n', {
       status: 200,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },

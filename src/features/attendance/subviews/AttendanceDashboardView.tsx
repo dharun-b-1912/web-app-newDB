@@ -296,6 +296,11 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
       );
 
       if (record) {
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const isPastDate = selectedDate < todayStr;
+        const isMissing = record.status === 'Missing Punch' || (Boolean(record.first_check_in) && !record.last_check_out && isPastDate);
+
         if (record.status === 'On Leave') {
           onLeave++;
         } else if (record.status === 'WFH') {
@@ -306,7 +311,7 @@ export const AttendanceDashboardView: React.FC<AttendanceDashboardViewProps> = (
           if (record.late_minutes > 0 || record.status === 'Late') late++;
           if (record.early_checkout_minutes > 0 || record.status === 'Early Checkout') earlyOut++;
           if (record.status === 'Half Day') halfDay++;
-          if (record.status === 'Missing Punch') missingPunch++;
+          if (isMissing) missingPunch++;
           if (record.overtime_minutes > 0 || record.status === 'Overtime') overtime++;
         } else if (record.status === 'Absent') {
           absent++;

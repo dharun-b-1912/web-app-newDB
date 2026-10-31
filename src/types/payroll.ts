@@ -814,7 +814,27 @@ export interface BankPaymentTemplate {
   has_header_row: boolean;
   date_format: 'DD-MM-YYYY' | 'YYYY-MM-DD' | 'DD/MM/YYYY';
   narration_template: string;
-  column_mappings: BankPaymentColumnMapping[];
+  column_mappings?: Array<{ internal_field: string; bank_column_header: string; required?: boolean; default_value?: string; [key: string]: any }>;
+}
+
+export interface CorporateBankAccount {
+  id: string;
+  tenant_id: string;
+  organization_id?: string;
+  company_id?: string;
+  bank_name: string;
+  account_holder_name: string;
+  account_number: string;
+  account_number_masked?: string;
+  ifsc_code: string;
+  branch_name: string;
+  account_type: 'PRIMARY_PAYOUT' | 'ESCROW_TAX' | 'OPERATING' | 'RESERVE';
+  is_primary: boolean;
+  status: 'ACTIVE' | 'INACTIVE';
+  payment_mode_supported: ('NEFT' | 'RTGS' | 'IMPS' | 'ACH' | 'INTERNAL')[];
+  currency?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface BankDisbursementItem {

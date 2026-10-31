@@ -233,20 +233,42 @@ export function computeEmployeeOvertime(
   // Priority 1: Check if attendance record already has explicit overtime_minutes
   let ot = typeof rec.overtime_minutes === 'number' ? rec.overtime_minutes : 0;
 
-  // Priority 2: If not set, evaluate check-out time past scheduled shift end
+  // Calculate shift duration accurately (accounting for cross-midnight shifts)
+  let shiftDuration = shift?.scheduled_duration_minutes;
+  if (!shiftDuration && shift?.start_time && shift?.end_time) {
+    const sMins = extractIstMinutesOfDay(shift.start_time);
+    const eMins = extractIstMinutesOfDay(shift.end_time);
+    if (sMins !== null && eMins !== null) {
+      shiftDuration = eMins < sMins ? (1440 - sMins + eMins) : (eMins - sMins);
+    }
+  }
+  if (!shiftDuration || shiftDuration <= 0) {
+    shiftDuration = 480; // fallback to 8 hours only if shift undefined
+  }
+
+  // Priority 2: If not set, evaluate check-out time past scheduled shift end (+ 30m minimum OT threshold)
   if (ot <= 0 && rec.last_check_out && shift?.end_time) {
     const outMins = extractIstMinutesOfDay(rec.last_check_out);
     const endMins = extractIstMinutesOfDay(shift.end_time);
-    if (outMins !== null && endMins !== null && outMins > endMins + 15) {
-      ot = outMins - endMins;
+    if (outMins !== null && endMins !== null) {
+      const isNight = (shift.cross_midnight || (shift.start_time && extractIstMinutesOfDay(shift.start_time)! > endMins));
+      if (!isNight && outMins >= endMins + 30) {
+        ot = outMins - endMins;
+      } else if (isNight && outMins >= endMins + 30 && outMins < 840) { // checkout past 08:00 AM on a 07:30 shift
+        ot = outMins - endMins;
+      }
     }
   }
 
-  // Priority 3: Only if employee has actually checked out, check if net working minutes exceeds shift duration
+  // Priority 3: Only if employee has actually checked out past shift end, and net working minutes exceeds shift duration + 30m OT threshold
   const workMins = rec?.total_work_minutes ?? rec?.net_working_minutes ?? 0;
-  const shiftDuration = shift?.scheduled_duration_minutes || 480;
-  if (ot <= 0 && rec.last_check_out && workMins > shiftDuration + 15) {
-    ot = workMins - shiftDuration;
+  if (ot <= 0 && rec.last_check_out && shift?.end_time && workMins >= shiftDuration + 30) {
+    const outMins = extractIstMinutesOfDay(rec.last_check_out);
+    const endMins = extractIstMinutesOfDay(shift.end_time);
+    // Employee must actually stay past shift end to qualify for overtime (early arrival before shift start is not OT)
+    if (outMins !== null && endMins !== null && outMins >= endMins + 30) {
+      ot = workMins - shiftDuration;
+    }
   }
 
   // Safety guard: Single shift overtime capped at 360 mins (6 hours)

@@ -109,10 +109,13 @@ export const attendanceApi = {
         const client = supabaseAdmin || supabase;
         let q = client
           .from('attendance_daily')
-          .select('*')
+          .select('*, shifts:shift_id(id, code, name, start_time, end_time, is_overnight)')
           .eq('organization_id', tenantId)
           .abortSignal(ctrl.signal);
-        if (date) q = q.eq('attendance_date', date);
+        
+        if (date) {
+          q = q.eq('attendance_date', date);
+        }
         const { data } = await q;
 
         // Fetch employee details to enrich daily attendance summaries
@@ -140,7 +143,7 @@ export const attendanceApi = {
         try {
           let pq = client
             .from('attendance_punches')
-            .select('employee_id, organization_id, punch_type, verification_mode, punch_source, device_id, punch_time')
+            .select('employee_id, organization_id, punch_type, verification_mode, punch_source, device_id, punch_time, attendance_date')
             .eq('organization_id', tenantId)
             .order('punch_time', { ascending: true })
             .limit(500)
@@ -157,7 +160,7 @@ export const attendanceApi = {
           if (punches) {
             for (const p of punches) {
               if (date) {
-                const punchDate = new Date(p.punch_time).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+                const punchDate = (p as any).attendance_date || new Date(p.punch_time).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
                 if (punchDate !== date) continue;
               }
               const mode = (p.verification_mode || '').toUpperCase();
@@ -204,7 +207,7 @@ export const attendanceApi = {
 
         // Synthesize daily row for any employee who has punches in attendance_punches today but no attendance_daily row yet
         for (const [empId, pInfo] of punchMap.entries()) {
-          if (!dailyEmpIds.has(empId) && (pInfo.firstInIso || pInfo.lastOutIso)) {
+          if (!dailyEmpIds.has(empId) && pInfo.firstInIso) {
             dailyRows.push({
               id: `att-punch-${empId}-${targetDateStr}`,
               employee_id: empId,
@@ -233,27 +236,44 @@ export const attendanceApi = {
           const rawFirstIn = d.first_check_in || punchInfo?.firstInIso;
           const rawLastOut = d.last_check_out || punchInfo?.lastOutIso;
 
-          const checkInSource: PunchSource | undefined = (d.is_regularized || punchInfo?.checkInSource === 'MANUAL')
-            ? 'MANUAL'
-            : (punchInfo?.checkInSource || (rawFirstIn ? 'MOBILE' : undefined));
-          const checkOutSource: PunchSource | undefined = punchInfo?.checkOutSource;
-          const source: PunchSource = (d.is_regularized || punchInfo?.checkInSource === 'MANUAL')
-            ? 'MANUAL'
-            : (punchInfo?.checkInSource || punchInfo?.source || checkInSource || 'MOBILE');
+          const checkInSource: PunchSource | undefined = punchInfo?.checkInSource
+            || d.check_in_source
+            || (punchInfo?.source && punchInfo.source !== 'MANUAL' ? punchInfo.source : undefined)
+            || (rawFirstIn ? 'MOBILE' : undefined);
+          const checkOutSource: PunchSource | undefined = punchInfo?.checkOutSource
+            || d.check_out_source
+            || (d.is_regularized ? 'MANUAL' : (rawLastOut ? 'BIOMETRIC' : undefined));
+          const source: PunchSource = checkInSource || checkOutSource || 'MOBILE';
 
           const formattedIn = rawFirstIn ? attendanceTimeService.formatAttendanceTime(rawFirstIn, 'Asia/Kolkata', true) : undefined;
           const formattedOut = rawLastOut ? attendanceTimeService.formatAttendanceTime(rawLastOut, 'Asia/Kolkata', true) : undefined;
 
-          // Compute late minutes and working minutes accurately
+          // Compute late minutes and working minutes accurately based on shift if available
           const inMins = formattedIn ? timeStringToMinutes(formattedIn) : null;
           const outMins = formattedOut ? timeStringToMinutes(formattedOut) : null;
-          const calc = processAttendanceStatus(inMins, outMins, 540, 1080, DEFAULT_ATTENDANCE_POLICY, false, false, false, d.attendance_date);
+          const shiftObj = d.shifts || (d.shift_id === '5f36464f-1920-45b4-b692-0d49294a76fa' ? { id: '5f36464f-1920-45b4-b692-0d49294a76fa', code: 'NS-01', name: 'Night Shift (7:30 PM - 7:30 AM)', start_time: '19:30:00', end_time: '07:30:00', is_overnight: true } : null);
+          const shiftStartMins = shiftObj?.start_time ? timeStringToMinutes(shiftObj.start_time) : null;
+          const shiftEndMins = shiftObj?.end_time ? timeStringToMinutes(shiftObj.end_time) : null;
+          const isCrossMidnightTiming = Boolean(shiftStartMins !== null && shiftEndMins !== null && shiftEndMins < shiftStartMins);
+          const isOvernightRow = Boolean(d.is_overnight || shiftObj?.is_overnight || isCrossMidnightTiming || (shiftObj?.code && (shiftObj.code.includes('NS') || shiftObj.code.includes('NGT'))));
+          const shiftCodeResolved = shiftObj?.code || d.shift_code || (isOvernightRow ? 'NS-01' : 'GEN-09');
+          const shiftNameResolved = shiftObj?.name || (isOvernightRow ? 'Night Shift (7:30 PM - 7:30 AM)' : 'General Shift');
+          const expInMins = shiftStartMins ?? (isOvernightRow ? 1170 : 540);
+          const expOutMins = shiftEndMins ?? (isOvernightRow ? 450 : 1080);
+          const calc = processAttendanceStatus(inMins, outMins, expInMins, expOutMins, DEFAULT_ATTENDANCE_POLICY, false, false, false, d.attendance_date);
+
+          const expectedCheckInFormatted = shiftStartMins !== null ? minutesToTimeString(shiftStartMins) : (isOvernightRow ? '07:30 PM' : '09:00 AM');
+          const expectedCheckOutFormatted = shiftEndMins !== null ? minutesToTimeString(shiftEndMins) : (isOvernightRow ? '07:30 AM' : '06:00 PM');
 
           let grossMins = d.total_work_minutes || calc.grossMinutes || 0;
           if (!rawLastOut && rawFirstIn) {
             const startMs = new Date(rawFirstIn).getTime();
             if (!isNaN(startMs)) {
-              grossMins = Math.max(0, Math.floor((Date.now() - startMs) / 60000));
+              const rawElapsed = Math.max(0, Math.floor((Date.now() - startMs) / 60000));
+              // For completed scheduled intervals where employee forgot to check out,
+              // cap the unverified elapsed time at the scheduled shift duration (e.g. 720m for 12h, 540m for 9h)
+              const scheduledMins = isOvernightRow ? ((1440 - expInMins) + expOutMins) : Math.max(0, expOutMins - expInMins);
+              grossMins = Math.min(rawElapsed, scheduledMins > 0 ? scheduledMins : 540);
             }
           }
           const breakMins = d.break_minutes || 0;
@@ -271,11 +291,15 @@ export const attendanceApi = {
             organization_id: d.organization_id,
             company_id: emp?.company_id || 'cmp-01',
             date: d.attendance_date,
-            shift_id: d.shift_id || 'shift-gen',
-            shift_name: 'General Shift',
-            expected_check_in: '09:00 AM',
-            expected_check_out: '06:00 PM',
-            status: calc.status,
+            shift_id: d.shift_id || (isOvernightRow ? '5f36464f-1920-45b4-b692-0d49294a76fa' : 'shift-gen'),
+            shift_name: shiftNameResolved,
+            shift_code: shiftCodeResolved,
+            is_overnight: isOvernightRow,
+            is_overnight_active: d.is_overnight_active,
+            overnight_work_date: d.overnight_work_date,
+            expected_check_in: expectedCheckInFormatted,
+            expected_check_out: expectedCheckOutFormatted,
+            status: d.status ? (d.status === 'PRESENT' ? 'Present' : d.status) : calc.status,
             first_check_in: formattedIn,
             last_check_out: formattedOut,
             gross_working_minutes: grossMins,
@@ -310,7 +334,23 @@ export const attendanceApi = {
         } catch {
           // ignore storage errors
         }
-        return this.getDailyAttendance(date, department, status, search);
+        let resultList = mapped;
+        if (department && department !== 'ALL') {
+          resultList = resultList.filter(item => item.department.toLowerCase() === department.toLowerCase());
+        }
+        if (status && status !== 'ALL') {
+          resultList = resultList.filter(item => item.status === status);
+        }
+        if (search && search.trim()) {
+          const q = search.toLowerCase();
+          resultList = resultList.filter(
+            item =>
+              item.employee_name.toLowerCase().includes(q) ||
+              item.employee_code.toLowerCase().includes(q) ||
+              item.department.toLowerCase().includes(q)
+          );
+        }
+        return resultList;
       } catch (err) {
         console.warn('[attendanceApi] getDailyAttendanceAsync notice:', err);
       }
@@ -327,7 +367,7 @@ export const attendanceApi = {
         const client = supabaseAdmin || supabase;
         let q = client
           .from('attendance_daily')
-          .select('*')
+          .select('*, shifts:shift_id(id, code, name, start_time, end_time, is_overnight)')
           .gte('attendance_date', startDate)
           .lte('attendance_date', endDate);
 
@@ -362,7 +402,7 @@ export const attendanceApi = {
 
         let pq = client
           .from('attendance_punches')
-          .select('employee_id, organization_id, punch_type, verification_mode, punch_source, device_id, punch_time')
+          .select('employee_id, organization_id, punch_type, verification_mode, punch_source, device_id, punch_time, attendance_date')
           .eq('organization_id', tenantId)
           .gte('punch_time', startRange.toISOString())
           .lte('punch_time', endRange.toISOString())
@@ -388,7 +428,7 @@ export const attendanceApi = {
         }>();
         if (punches) {
           for (const p of punches) {
-            const punchDate = new Date(p.punch_time).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+            const punchDate = (p as any).attendance_date || new Date(p.punch_time).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
             if (punchDate < startDate || punchDate > endDate) continue;
             const key = `${p.employee_id}_${punchDate}`;
 
@@ -441,9 +481,9 @@ export const attendanceApi = {
         const dailyRows: any[] = [...(data || [])];
         const existingKeys = new Set(dailyRows.map((d: any) => `${d.employee_id}_${d.attendance_date}`));
 
-        // Synthesize daily row from actual punch if attendance_daily row does not exist yet
+        // Synthesize daily row from actual punch if attendance_daily row does not exist yet (must have a valid check-in)
         for (const [key, pInfo] of punchMap.entries()) {
-          if (!existingKeys.has(key) && (pInfo.firstInIso || pInfo.lastOutIso)) {
+          if (!existingKeys.has(key) && pInfo.firstInIso) {
             dailyRows.push({
               id: `att-punch-${pInfo.employeeId}-${pInfo.punchDate}`,
               employee_id: pInfo.employeeId,
@@ -473,9 +513,14 @@ export const attendanceApi = {
           const rawFirstIn = d.first_check_in || punchInfo?.firstInIso;
           const rawLastOut = d.last_check_out || punchInfo?.lastOutIso;
 
-          const checkInSource: PunchSource | undefined = punchInfo?.checkInSource || (rawFirstIn ? 'MOBILE' : undefined);
-          const checkOutSource: PunchSource | undefined = punchInfo?.checkOutSource;
-          const source: PunchSource = punchInfo?.checkInSource || punchInfo?.source || checkInSource || 'MOBILE';
+          const checkInSource: PunchSource | undefined = punchInfo?.checkInSource
+            || d.check_in_source
+            || (punchInfo?.source && punchInfo.source !== 'MANUAL' ? punchInfo.source : undefined)
+            || (rawFirstIn ? 'MOBILE' : undefined);
+          const checkOutSource: PunchSource | undefined = punchInfo?.checkOutSource
+            || d.check_out_source
+            || (d.is_regularized ? 'MANUAL' : (rawLastOut ? 'BIOMETRIC' : undefined));
+          const source: PunchSource = checkInSource || checkOutSource || 'MOBILE';
 
           const formattedIn = rawFirstIn ? attendanceTimeService.formatAttendanceTime(rawFirstIn, 'Asia/Kolkata', true) : undefined;
           const formattedOut = rawLastOut ? attendanceTimeService.formatAttendanceTime(rawLastOut, 'Asia/Kolkata', true) : undefined;
@@ -484,13 +529,29 @@ export const attendanceApi = {
           const outMins = formattedOut ? timeStringToMinutes(formattedOut) : null;
           const isLeaveStatus = d.status === 'ON_LEAVE' || d.status === 'Leave' || d.status === 'On Leave';
           const isHolidayStatus = d.status === 'HOLIDAY' || d.status === 'Holiday';
-          const calc = processAttendanceStatus(inMins, outMins, 540, 1080, DEFAULT_ATTENDANCE_POLICY, isLeaveStatus, false, isHolidayStatus, d.attendance_date);
+
+          const shiftObj = d.shifts || (d.shift_id === '5f36464f-1920-45b4-b692-0d49294a76fa' ? { id: '5f36464f-1920-45b4-b692-0d49294a76fa', code: 'NS-01', name: 'Night Shift (7:30 PM - 7:30 AM)', start_time: '19:30:00', end_time: '07:30:00', is_overnight: true } : null);
+          const shiftStartMins = shiftObj?.start_time ? timeStringToMinutes(shiftObj.start_time) : null;
+          const shiftEndMins = shiftObj?.end_time ? timeStringToMinutes(shiftObj.end_time) : null;
+          const isCrossMidnightTiming = Boolean(shiftStartMins !== null && shiftEndMins !== null && shiftEndMins < shiftStartMins);
+          const isOvernightRow = Boolean(d.is_overnight || shiftObj?.is_overnight || isCrossMidnightTiming || (shiftObj?.code && (shiftObj.code.includes('NS') || shiftObj.code.includes('NGT'))));
+          const shiftCodeResolved = shiftObj?.code || d.shift_code || (isOvernightRow ? 'NS-01' : 'GEN-09');
+          const shiftNameResolved = shiftObj?.name || (isOvernightRow ? 'Night Shift (7:30 PM - 7:30 AM)' : 'General Shift');
+          const expInMins = shiftStartMins ?? (isOvernightRow ? 1170 : 540);
+          const expOutMins = shiftEndMins ?? (isOvernightRow ? 450 : 1080);
+
+          const expectedCheckInFormatted = shiftStartMins !== null ? minutesToTimeString(shiftStartMins) : (isOvernightRow ? '07:30 PM' : '09:00 AM');
+          const expectedCheckOutFormatted = shiftEndMins !== null ? minutesToTimeString(shiftEndMins) : (isOvernightRow ? '07:30 AM' : '06:00 PM');
+
+          const calc = processAttendanceStatus(inMins, outMins, expInMins, expOutMins, DEFAULT_ATTENDANCE_POLICY, isLeaveStatus, false, isHolidayStatus, d.attendance_date);
 
           let grossMins = d.total_work_minutes || calc.grossMinutes || 0;
           if (!rawLastOut && rawFirstIn) {
             const startMs = new Date(rawFirstIn).getTime();
             if (!isNaN(startMs)) {
-              grossMins = Math.max(0, Math.floor((Date.now() - startMs) / 60000));
+              const rawElapsed = Math.max(0, Math.floor((Date.now() - startMs) / 60000));
+              const scheduledMins = isOvernightRow ? ((1440 - expInMins) + expOutMins) : Math.max(0, expOutMins - expInMins);
+              grossMins = Math.min(rawElapsed, scheduledMins > 0 ? scheduledMins : 540);
             }
           }
           const breakMins = d.break_minutes || 0;
@@ -525,10 +586,12 @@ export const attendanceApi = {
             organization_id: d.organization_id,
             company_id: 'cmp-01',
             date: d.attendance_date,
-            shift_id: d.shift_id || 'shift-gen',
-            shift_name: 'General Shift',
-            expected_check_in: '09:00 AM',
-            expected_check_out: '06:00 PM',
+            shift_id: d.shift_id || (isOvernightRow ? '5f36464f-1920-45b4-b692-0d49294a76fa' : 'shift-gen'),
+            shift_name: shiftNameResolved,
+            shift_code: shiftCodeResolved,
+            is_overnight: isOvernightRow,
+            expected_check_in: expectedCheckInFormatted,
+            expected_check_out: expectedCheckOutFormatted,
             status: resolvedStatus,
             first_check_in: formattedIn,
             last_check_out: formattedOut,
@@ -899,8 +962,18 @@ export const attendanceApi = {
     const today = attendanceTimeService.getOrganizationBusinessDate();
     const nowIso = new Date().toISOString();
 
-    const idx = list.findIndex(e => e.employee_id === employeeId && e.date === today);
-    if (idx < 0) return null;
+    let idx = list.findIndex(e => e.employee_id === employeeId && e.date === today && e.first_check_in && !e.last_check_out);
+    if (idx < 0) {
+      // Check if employee has an active open night shift from yesterday
+      const yesterdayObj = new Date();
+      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+      const yesterday = attendanceTimeService.getOrganizationBusinessDate(yesterdayObj);
+      idx = list.findIndex(e => e.employee_id === employeeId && e.date === yesterday && e.first_check_in && !e.last_check_out);
+      if (idx < 0) {
+        idx = list.findIndex(e => e.employee_id === employeeId && e.date === today);
+        if (idx < 0) return null;
+      }
+    }
 
     const record = list[idx];
     const calculation = attendanceTimeService.calculateWorkingMinutes(record.first_check_in, nowIso);

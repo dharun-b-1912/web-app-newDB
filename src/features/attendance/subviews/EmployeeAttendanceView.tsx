@@ -89,13 +89,62 @@ function formatPunchSourceLabel(src?: string | null): string {
   return src;
 }
 
+function normalizeDateStr(d?: string): string {
+  if (!d) return '';
+  const s = String(d).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const parts = s.split(/[-/]/);
+  if (parts.length === 3) {
+    if (parts[0].length <= 2 && parts[2].length === 4) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+  }
+  return s;
+}
+
+function checkIsShiftEnded(
+  shiftStartTime: string,
+  shiftEndTime: string,
+  isCrossMidnight: boolean,
+  recordDate: string
+): boolean {
+  const now = new Date();
+  let todayStr = '';
+  try {
+    todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+  } catch {
+    todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+  const normRecordDate = normalizeDateStr(recordDate);
+
+  if (normRecordDate < todayStr) {
+    if (!isCrossMidnight) return true;
+    const [endH, endM] = (shiftEndTime || '07:30').split(':').map(Number);
+    const endMinutes = (endH || 0) * 60 + (endM || 0);
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    return currentMinutes >= (endMinutes + 15);
+  }
+
+  if (normRecordDate === todayStr) {
+    if (isCrossMidnight) {
+      return false;
+    }
+    const [endH, endM] = (shiftEndTime || '18:00').split(':').map(Number);
+    const endMinutes = (endH || 0) * 60 + (endM || 0);
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    return currentMinutes >= (endMinutes + 15);
+  }
+
+  return false;
+}
+
 interface EmployeeAttendanceViewProps {
   filterState?: GlobalAttendanceFilterState;
   onFilterChange?: (filters: GlobalAttendanceFilterState) => void;
   onClearFilters?: () => void;
   openAttendanceDrilldown?: (filters: Partial<GlobalAttendanceFilterState>, targetTab?: string) => void;
   onOpenEmployeeProfile?: (employeeId: string, date?: string) => void;
-  onOpenManualModal?: () => void;
+  onOpenManualModal?: (empId?: string, date?: string) => void;
   onBackToDashboard?: () => void;
 }
 
@@ -170,7 +219,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     if (checkIsVendor(emp)) {
       return emp.vendor_name || emp.employment?.vendor_name || 'Vendor Workforce';
     }
-    return 'Direct Employee';
+    return 'Direct Payroll';
   };
 
   const isLoadingRef = useRef<boolean>(false);
@@ -202,12 +251,23 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           ])
         ) as string[];
         setVendors(uniqueVendors);
-      }
-      if (deptRes.status === 'fulfilled' && deptRes.value && deptRes.value.length > 0) {
-        setDepartments(deptRes.value.map(d => d.name));
+
+        const empDepts = realEmps.map(e => e.department_name || e.department).filter(Boolean);
+        const dbDepts = (deptRes.status === 'fulfilled' && deptRes.value) ? deptRes.value.map(d => d.name) : [];
+        const allDepts = Array.from(new Set([...dbDepts, ...empDepts]));
+        if (allDepts.length > 0) {
+          setDepartments(allDepts);
+        }
       }
       if (shiftRes.status === 'fulfilled' && shiftRes.value) {
-        setShifts(shiftRes.value);
+        let loaded = shiftRes.value;
+        if (!loaded.some(s => s.shift_code === 'NS-01')) {
+          const defaultNS = attendanceRosterService.getShifts().find(s => s.shift_code === 'NS-01');
+          if (defaultNS) loaded = [...loaded, defaultNS];
+        }
+        setShifts(loaded);
+      } else {
+        setShifts(attendanceRosterService.getShifts());
       }
       if (dailyRes.status === 'fulfilled' && dailyRes.value) {
         setDailyRecords(dailyRes.value);
@@ -313,102 +373,56 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
            (e as any).employment_status !== 'SUSPENDED'
     );
 
-    return combinedEmployees.filter(emp => {
-      const empDept = emp.department_name || emp.department || 'People & HR';
-      const empLoc = emp.branch_name || emp.location || 'Coimbatore HQ';
-      const empVendor = getVendorName(emp);
+    const normSelectedDate = normalizeDateStr(selectedDate);
+    const now = new Date();
+    let todayStr = '';
+    try {
+      todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+    } catch {
+      todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
+    const isPastDate = normSelectedDate < todayStr;
 
-      const matchDept = deptFilter === 'ALL' || empDept.toLowerCase() === deptFilter.toLowerCase();
-      const matchLoc = locationFilter === 'ALL' || empLoc.toLowerCase() === locationFilter.toLowerCase();
-      const matchVendor = vendorFilter === 'ALL' || empVendor.toLowerCase() === vendorFilter.toLowerCase();
-
+    // STEP 1: Fully resolve attendance calculation, shift, and live punches for every scoped employee
+    const allResolvedRows = combinedEmployees.map(emp => {
       const record = dailyRecords.find(r => {
-        const rDate = r.date || (r as any).attendance_date;
-        if (rDate && rDate !== selectedDate) return false;
         const rEmpId = (r.employee_id || '').toLowerCase();
         const rEmpCode = (r.employee_code || '').toLowerCase();
         const eId = (emp.id || '').toLowerCase();
         const eCode = (emp.employee_code || '').toLowerCase();
-        return (rEmpId && (rEmpId === eId || rEmpId === eCode)) ||
+        const matchesEmp = (rEmpId && (rEmpId === eId || rEmpId === eCode)) ||
           (rEmpCode && (rEmpCode === eCode || rEmpCode === eId));
-      });
-      const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate, undefined, emp);
-      const targetShiftId = emp.shift_id || emp.employment?.shift_id || roster.shift_id;
-      const shiftForFilter = attendanceRosterService.getShiftById(targetShiftId);
-      const expInMins = timeStringToMinutes(shiftForFilter?.start_time || '09:00') || 540;
-      const expOutMins = timeStringToMinutes(shiftForFilter?.end_time || '18:00') || 1080;
-      const defaultStatusCalc = processAttendanceStatus(null, null, expInMins, expOutMins, DEFAULT_ATTENDANCE_POLICY, false, false, false, selectedDate);
+        if (!matchesEmp) return false;
 
-      const resolvedStatus = record?.status || (roster.is_weekly_off ? 'Weekly Off' : defaultStatusCalc.status);
-      const resolvedShiftCode = roster.shift_code || 'GEN-09';
-      const resolvedSource = record?.source || 'SYSTEM';
-
-      const matchShift = shiftFilter === 'ALL' || resolvedShiftCode.toLowerCase() === shiftFilter.toLowerCase();
-
-      let matchStatus = true;
-      if (statusFilter !== 'ALL') {
-        if (statusFilter === 'Late') {
-          matchStatus = (record?.late_minutes || 0) > 0 || resolvedStatus === 'Late';
-        } else if (statusFilter === 'Early Checkout') {
-          matchStatus = (record?.early_checkout_minutes || 0) > 0 || resolvedStatus === 'Early Checkout';
-        } else if (statusFilter === 'Overtime') {
-          matchStatus = (record?.overtime_minutes || 0) > 0 || resolvedStatus === 'Overtime';
-        } else if (statusFilter === 'Half Day') {
-          matchStatus = resolvedStatus === 'Half Day';
-        } else if (statusFilter === 'Missing Punch') {
-          matchStatus = resolvedStatus === 'Missing Punch';
-        } else if (statusFilter === 'Present') {
-          matchStatus = resolvedStatus === 'Present' || resolvedStatus === 'Checked Out';
-        } else if (statusFilter === 'Absent') {
-          matchStatus = resolvedStatus === 'Absent';
-        } else if (statusFilter === 'Not Checked In') {
-          matchStatus = resolvedStatus === 'Not Checked In';
-        } else {
-          matchStatus = resolvedStatus.toLowerCase() === statusFilter.toLowerCase();
+        const rDate = r.date || (r as any).attendance_date;
+        const normRDate = normalizeDateStr(rDate);
+        if (normRDate === normSelectedDate) return true;
+        // Also accept active overnight session carrying over into selectedDate
+        if ((r as any).is_overnight_active || (r as any).is_overnight) {
+          return true;
         }
-      }
-
-      const matchSource = sourceFilter === 'ALL' ||
-        (sourceFilter === 'GPS' || sourceFilter === 'MOBILE'
-          ? (resolvedSource.toUpperCase().includes('MOBILE') || resolvedSource.toUpperCase().includes('GPS'))
-          : sourceFilter === 'BIOMETRIC'
-          ? (resolvedSource.toUpperCase().includes('BIO') || resolvedSource.toUpperCase().includes('DEVICE') || resolvedSource.toUpperCase().includes('FACE'))
-          : resolvedSource.toLowerCase() === sourceFilter.toLowerCase());
-
-      const q = searchQuery.toLowerCase().trim();
-      const matchQuery = !q ||
-        (`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name || '').toLowerCase().includes(q) ||
-        (emp.employee_code || '').toLowerCase().includes(q) ||
-        empDept.toLowerCase().includes(q);
-
-      return matchDept && matchLoc && matchVendor && matchShift && matchStatus && matchSource && matchQuery;
-    }).map(emp => {
-      const record = dailyRecords.find(r => {
-        const rDate = r.date || (r as any).attendance_date;
-        if (rDate && rDate !== selectedDate) return false;
-        const rEmpId = (r.employee_id || '').toLowerCase();
-        const rEmpCode = (r.employee_code || '').toLowerCase();
-        const eId = (emp.id || '').toLowerCase();
-        const eCode = (emp.employee_code || '').toLowerCase();
-        return (rEmpId && (rEmpId === eId || rEmpId === eCode)) ||
-          (rEmpCode && (rEmpCode === eCode || rEmpCode === eId));
+        return false;
       });
+
       const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate, undefined, emp);
-      const targetShiftId = emp.shift_id || emp.employment?.shift_id || roster.shift_id;
-      const shift = attendanceRosterService.getShiftById(targetShiftId) || {
-        shift_name: roster.shift_name,
-        shift_code: roster.shift_code || 'GEN-09',
-        start_time: '09:00',
-        end_time: '18:00',
-        scheduled_duration_minutes: 540,
-        cross_midnight: roster.shift_code.includes('NGT'),
-      };
+      const targetShiftId = (record as any)?.shift_id || emp.shift_id || emp.employment?.shift_id || roster.shift_id;
+      let shift = attendanceRosterService.getShiftById(targetShiftId);
+      if (!shift) {
+        const isNS01 = (record as any)?.shift_code === 'NS-01' || roster.shift_code === 'NS-01' || targetShiftId === '5f36464f-1920-45b4-b692-0d49294a76fa';
+        shift = {
+          shift_name: isNS01 ? 'Night Shift (7:30 PM - 7:30 AM)' : roster.shift_name,
+          shift_code: isNS01 ? 'NS-01' : (roster.shift_code || 'GEN-09'),
+          start_time: isNS01 ? '19:30' : '09:00',
+          end_time: isNS01 ? '07:30' : '18:00',
+          scheduled_duration_minutes: isNS01 ? 720 : 540,
+          cross_midnight: isNS01 || roster.shift_code.includes('NGT') || roster.shift_code.includes('NS'),
+        } as any;
+      }
 
       const isOff = roster.is_weekly_off;
       let resolvedRecord = record;
 
-      // When Supabase is enabled, rely strictly on authoritative Supabase dailyRecords
-      // so employees who have not logged in / checked in never inherit localStorage simulation punches.
+      // Extract raw punches for employee
       const rawClassificationPunches: ClassifiedPunchEvent[] = [
         ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.id, selectedDate),
         ...attendanceClassificationEngine.getRawPunchesForEmployeeOnDate(emp.employee_code, selectedDate),
@@ -416,48 +430,48 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
       const gatewayPunches: ClassifiedPunchEvent[] = (biometricGatewayService.getRawPunches(500) || [])
         .filter((p) => {
-              const pTime = p.punch_time || '';
-              const pDate = pTime ? attendanceTimeService.getAttendanceDate(pTime, 'Asia/Kolkata') : '';
-              if (pDate !== selectedDate) return false;
-              const eId = (emp.id || '').toLowerCase();
-              const eCode = (emp.employee_code || '').toLowerCase();
-              const eDigits = eCode.replace(/\D/g, '') || eId.replace(/\D/g, '');
-              const pEmpId = (p.employee_id || '').toLowerCase();
-              const pPin = (p.biometric_pin || '').toLowerCase();
-              const pDigits = pPin.replace(/\D/g, '');
-              return (
-                pEmpId === eId ||
-                pEmpId === eCode ||
-                pPin === eId ||
-                pPin === eCode ||
-                (eDigits.length > 0 && pDigits.length > 0 && eDigits === pDigits)
-              );
-            })
-            .map((p) => {
-              const timeStr = attendanceTimeService.formatAttendanceTime(
-                (p as any).raw_payload?.device_timestamp_raw || p.punch_time,
-                'Asia/Kolkata',
-                true
-              );
-              return {
-                id: p.id,
-                organization_id: '',
-                employee_id: emp.id,
-                employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name,
-                employee_code: emp.employee_code,
-                device_id: p.device_id,
-                device_name: p.device_name || 'Biometric Terminal',
-                device_user_id: p.biometric_pin,
-                event_timestamp: p.punch_time,
-                event_time_str: timeStr,
-                source: 'BIOMETRIC' as PunchSource,
-                verification_method: (p.verification_mode?.toUpperCase() || 'FINGERPRINT') as any,
-                classification: (p.punch_direction === 'OUT' ? 'CHECK_OUT' : 'CHECK_IN') as any,
-                classification_reason: 'Live Biometric Gateway Event',
-                is_duplicate: false,
-                created_at: p.created_at || p.punch_time,
-              } as ClassifiedPunchEvent;
-            });
+          const pTime = p.punch_time || '';
+          const pDate = pTime ? attendanceTimeService.getAttendanceDate(pTime, 'Asia/Kolkata') : '';
+          if (normalizeDateStr(pDate) !== normSelectedDate) return false;
+          const eId = (emp.id || '').toLowerCase();
+          const eCode = (emp.employee_code || '').toLowerCase();
+          const eDigits = eCode.replace(/\D/g, '') || eId.replace(/\D/g, '');
+          const pEmpId = (p.employee_id || '').toLowerCase();
+          const pPin = (p.biometric_pin || '').toLowerCase();
+          const pDigits = pPin.replace(/\D/g, '');
+          return (
+            pEmpId === eId ||
+            pEmpId === eCode ||
+            pPin === eId ||
+            pPin === eCode ||
+            (eDigits.length > 0 && pDigits.length > 0 && eDigits === pDigits)
+          );
+        })
+        .map((p) => {
+          const timeStr = attendanceTimeService.formatAttendanceTime(
+            (p as any).raw_payload?.device_timestamp_raw || p.punch_time,
+            'Asia/Kolkata',
+            true
+          );
+          return {
+            id: p.id,
+            organization_id: '',
+            employee_id: emp.id,
+            employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name,
+            employee_code: emp.employee_code,
+            device_id: p.device_id,
+            device_name: p.device_name || 'Biometric Terminal',
+            device_user_id: p.biometric_pin,
+            event_timestamp: p.punch_time,
+            event_time_str: timeStr,
+            source: 'BIOMETRIC' as PunchSource,
+            verification_method: (p.verification_mode?.toUpperCase() || 'FINGERPRINT') as any,
+            classification: (p.punch_direction === 'OUT' ? 'CHECK_OUT' : 'CHECK_IN') as any,
+            classification_reason: 'Live Biometric Gateway Event',
+            is_duplicate: false,
+            created_at: p.created_at || p.punch_time,
+          } as ClassifiedPunchEvent;
+        });
 
       const allMatchingPunchesMap = new Map<string, ClassifiedPunchEvent>();
       for (const p of [...rawClassificationPunches, ...gatewayPunches]) {
@@ -465,30 +479,35 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       }
       const matchingPunches = Array.from(allMatchingPunchesMap.values());
 
+      let firstIn = resolvedRecord?.first_check_in;
+      let lastOut = resolvedRecord?.last_check_out;
+      let inSrc: any = resolvedRecord?.check_in_source || (resolvedRecord?.source && resolvedRecord.source !== 'SYSTEM' ? resolvedRecord.source : undefined);
+      let checkOutSrc: any = resolvedRecord?.check_out_source || (resolvedRecord?.is_regularized ? 'MANUAL' : undefined);
+
       if (matchingPunches.length > 0 || (resolvedRecord && resolvedRecord.first_check_in)) {
         const sortedPunches = [...matchingPunches].sort(
           (a, b) => new Date(a.event_timestamp).getTime() - new Date(b.event_timestamp).getTime()
         );
-        const firstPunch = sortedPunches[0];
-        const lastPunch = sortedPunches[sortedPunches.length - 1];
+        const inPunches = sortedPunches.filter(p => p.classification === 'CHECK_IN' || (p as any).punch_direction === 'IN' || (p as any).punch_type === 'IN' || (p as any).punch_type === 'CHECK_IN');
+        const firstInPunch = inPunches[0];
 
-        let firstIn = resolvedRecord?.first_check_in || firstPunch?.event_time_str;
-        if (firstIn && (firstIn.includes('03:02') || firstIn.includes('3:02')) && firstPunch?.event_time_str && !firstPunch.event_time_str.includes('03:02')) {
-          firstIn = firstPunch.event_time_str;
+        if (!firstIn) {
+          firstIn = firstInPunch?.event_time_str;
         }
-        let lastOut = resolvedRecord?.last_check_out;
+        if (firstIn && (firstIn.includes('03:02') || firstIn.includes('3:02')) && firstInPunch?.event_time_str && !firstInPunch.event_time_str.includes('03:02')) {
+          firstIn = firstInPunch.event_time_str;
+        }
         if (lastOut && (lastOut.includes('03:02') || lastOut.includes('3:02') || lastOut.includes('12:37'))) {
-          // Void false midday checkout
           lastOut = undefined;
         }
 
-        let inSrc = (resolvedRecord?.is_regularized || (resolvedRecord as any)?.punch_source === 'MANUAL' || String(firstPunch?.source).toUpperCase().includes('MANUAL'))
-          ? 'MANUAL'
-          : (resolvedRecord?.check_in_source || resolvedRecord?.source || firstPunch?.source || 'BIOMETRIC');
-        if (inSrc === 'SYSTEM') inSrc = 'BIOMETRIC';
-        let checkOutSrc = resolvedRecord?.check_out_source;
+        if (!inSrc) {
+          inSrc = firstInPunch?.source ||
+            (resolvedRecord?.source && resolvedRecord.source !== 'MANUAL' ? resolvedRecord.source : undefined) ||
+            (String((resolvedRecord as any)?.check_in_source || (resolvedRecord as any)?.punch_source).toUpperCase().includes('MANUAL') ? 'MANUAL' : 'MOBILE');
+        }
+        if (inSrc === 'SYSTEM') inSrc = 'MOBILE';
 
-        // Check for legitimate checkout punches (explicit OUT action OR at/after scheduled shift end)
         const shiftEndMins = timeStringToMinutes(shift.end_time) || 1110;
         const validOutPunch = sortedPunches.find((p) => {
           const pMins = timeStringToMinutes(p.event_time_str);
@@ -497,11 +516,10 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           return isExplicitOut || isNearOrAfterShiftEnd;
         });
 
-        if (validOutPunch) {
+        if (validOutPunch && firstIn) {
           lastOut = validOutPunch.event_time_str;
           checkOutSrc = validOutPunch.source || 'BIOMETRIC';
         } else if (sortedPunches.length > 0) {
-          // If all recorded punches are IN/CHECK_IN, employee is actively working; never mark as checked out
           const hasOnlyInPunches = sortedPunches.every((p) => {
             const cls = p.classification || (p as any).punch_type || (p as any).punch_direction;
             return cls === 'CHECK_IN' || cls === 'IN';
@@ -511,134 +529,255 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             checkOutSrc = undefined;
           }
         }
-
-        if (firstIn) {
-          const inMins = timeStringToMinutes(firstIn);
-          const outMins = timeStringToMinutes(lastOut);
-          const expIn = timeStringToMinutes(shift.start_time) || 570;
-          const expOut = timeStringToMinutes(shift.end_time) || 1110;
-          const calc = processAttendanceStatus(inMins, outMins, expIn, expOut, DEFAULT_ATTENDANCE_POLICY, false, false, false, selectedDate);
-
-          const outSrc = checkOutSrc || (lastOut ? 'BIOMETRIC' : undefined);
-          const overallSrc: PunchSource = (inSrc || 'BIOMETRIC') as PunchSource;
-
-          const liveGrossMins = lastOut
-            ? calc.grossMinutes
-            : (resolvedRecord?.gross_working_minutes && resolvedRecord.gross_working_minutes > 0
-                ? resolvedRecord.gross_working_minutes
-                : calc.grossMinutes);
-          const liveNetMins = lastOut
-            ? calc.netMinutes
-            : (resolvedRecord?.net_working_minutes && resolvedRecord.net_working_minutes > 0
-                ? resolvedRecord.net_working_minutes
-                : calc.netMinutes);
-
-          resolvedRecord = {
-            id: resolvedRecord?.id || `att-dyn-${emp.id}-${selectedDate}`,
-            employee_id: emp.id,
-            employee_code: emp.employee_code || `WF-${emp.id}`,
-            employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name,
-            department: emp.department_name || emp.department || 'General',
-            designation: emp.designation_title || emp.designation || 'Staff',
-            organization_id: emp.organization_id || '',
-            company_id: emp.company_id || '',
-            date: selectedDate,
-            shift_id: roster.shift_id,
-            shift_name: roster.shift_name,
-            expected_check_in: shift.start_time,
-            expected_check_out: shift.end_time,
-            first_check_in: firstIn,
-            last_check_out: lastOut,
-            gross_working_minutes: liveGrossMins,
-            net_working_minutes: liveNetMins,
-            total_break_minutes: resolvedRecord?.total_break_minutes || 0,
-            late_minutes: calc.lateMinutes,
-            early_checkout_minutes: lastOut ? calc.earlyMinutes : 0,
-            overtime_minutes: lastOut ? calc.overtimeMinutes : 0,
-            status: calc.status,
-            source: overallSrc,
-            check_in_source: inSrc as PunchSource,
-            check_out_source: outSrc as PunchSource,
-            created_at: resolvedRecord?.created_at || new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-        }
-      } else if (resolvedRecord && resolvedRecord.first_check_in && (!resolvedRecord.net_working_minutes || resolvedRecord.net_working_minutes === 0 || resolvedRecord.last_check_out)) {
-        const inMins = timeStringToMinutes(resolvedRecord.first_check_in);
-        const outMins = timeStringToMinutes(resolvedRecord.last_check_out);
-        const expIn = timeStringToMinutes(shift.start_time) || 540;
-        const expOut = timeStringToMinutes(shift.end_time) || 1080;
-        const calc = processAttendanceStatus(inMins, outMins, expIn, expOut, DEFAULT_ATTENDANCE_POLICY, false, false, false, selectedDate);
-        resolvedRecord = {
-          ...resolvedRecord,
-          shift_id: roster.shift_id,
-          shift_name: roster.shift_name,
-          expected_check_in: shift.start_time,
-          expected_check_out: shift.end_time,
-          gross_working_minutes: calc.grossMinutes,
-          net_working_minutes: calc.netMinutes,
-          late_minutes: calc.lateMinutes,
-          early_checkout_minutes: calc.earlyMinutes,
-          overtime_minutes: calc.overtimeMinutes,
-          status: calc.status,
-        };
       }
 
-      const expInDefault = timeStringToMinutes(shift.start_time) || 540;
-      const expOutDefault = timeStringToMinutes(shift.end_time) || 1080;
-      const emptyCalc = processAttendanceStatus(null, null, expInDefault, expOutDefault, DEFAULT_ATTENDANCE_POLICY, false, false, false, selectedDate);
-      const status = resolvedRecord?.status || (isOff ? 'Weekly Off' : emptyCalc.status);
+      const inMins = timeStringToMinutes(firstIn);
+      const outMins = timeStringToMinutes(lastOut);
+      const expIn = timeStringToMinutes(shift.start_time) || 540;
+      const expOut = timeStringToMinutes(shift.end_time) || 1080;
+      const isShiftCrossMidnight = Boolean(shift.cross_midnight || expOut < expIn);
+
+      const calc = processAttendanceStatus(
+        inMins,
+        outMins,
+        expIn,
+        expOut,
+        DEFAULT_ATTENDANCE_POLICY,
+        false,
+        false,
+        false,
+        selectedDate
+      );
+
+      const isShiftEnded = checkIsShiftEnded(shift.start_time, shift.end_time, isShiftCrossMidnight, selectedDate);
+      const isMissingPunch = Boolean(
+        calc.status === 'Missing Punch' ||
+        resolvedRecord?.status === 'Missing Punch' ||
+        (firstIn && !lastOut && (isPastDate || isShiftEnded)) ||
+        (!firstIn && lastOut)
+      );
+
+      const isWorking = Boolean(firstIn && !lastOut && !isMissingPunch);
+
+      let effectiveStatus = calc.status;
+      if (isMissingPunch) {
+        effectiveStatus = 'Missing Punch';
+      } else if (isWorking) {
+        effectiveStatus = 'Present';
+      } else if (isOff && !firstIn && !lastOut) {
+        effectiveStatus = 'Weekly Off';
+      }
+
+      const outSrc = checkOutSrc || (lastOut ? 'BIOMETRIC' : undefined);
+      const overallSrc: PunchSource = (inSrc || resolvedRecord?.source || 'SYSTEM') as PunchSource;
+
+      const liveGrossMins = lastOut
+        ? calc.grossMinutes
+        : (resolvedRecord?.gross_working_minutes && resolvedRecord.gross_working_minutes > 0
+            ? resolvedRecord.gross_working_minutes
+            : calc.grossMinutes);
+      const liveNetMins = lastOut
+        ? calc.netMinutes
+        : (resolvedRecord?.net_working_minutes && resolvedRecord.net_working_minutes > 0
+            ? resolvedRecord.net_working_minutes
+            : calc.netMinutes);
+
+      const finalRecord: AttendanceDaily = {
+        id: resolvedRecord?.id || `att-dyn-${emp.id}-${selectedDate}`,
+        employee_id: emp.id,
+        employee_code: emp.employee_code || `WF-${emp.id}`,
+        employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name,
+        department: emp.department_name || emp.department || 'General',
+        designation: emp.designation_title || emp.designation || 'Staff',
+        organization_id: emp.organization_id || '',
+        company_id: emp.company_id || '',
+        date: selectedDate,
+        shift_id: roster.shift_id,
+        shift_name: roster.shift_name,
+        expected_check_in: shift.start_time,
+        expected_check_out: shift.end_time,
+        first_check_in: firstIn,
+        last_check_out: lastOut,
+        gross_working_minutes: liveGrossMins,
+        net_working_minutes: liveNetMins,
+        total_break_minutes: resolvedRecord?.total_break_minutes || 0,
+        late_minutes: calc.lateMinutes,
+        early_checkout_minutes: lastOut ? calc.earlyMinutes : 0,
+        overtime_minutes: lastOut ? calc.overtimeMinutes : 0,
+        status: effectiveStatus,
+        source: overallSrc,
+        check_in_source: inSrc as PunchSource,
+        check_out_source: outSrc as PunchSource,
+        created_at: resolvedRecord?.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
 
       return {
         emp,
-        record: (resolvedRecord || {
-          id: `att-dyn-${emp.id}-${selectedDate}`,
-          employee_id: emp.id,
-          employee_code: emp.employee_code || `WF-${emp.id}`,
-          employee_name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name,
-          department: emp.department_name || emp.department || 'General',
-          designation: emp.designation_title || emp.designation || 'Staff',
-          organization_id: emp.organization_id || '',
-          company_id: emp.company_id || '',
-          date: selectedDate,
-          shift_id: roster.shift_id,
-          shift_name: roster.shift_name,
-          expected_check_in: shift.start_time,
-          expected_check_out: shift.end_time,
-          first_check_in: undefined,
-          last_check_out: undefined,
-          gross_working_minutes: 0,
-          net_working_minutes: 0,
-          total_break_minutes: 0,
-          late_minutes: 0,
-          early_checkout_minutes: 0,
-          overtime_minutes: 0,
-          status,
-          source: (isOff ? 'SYSTEM' : 'SYSTEM') as PunchSource,
-          check_in_source: undefined,
-          check_out_source: undefined,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }) as AttendanceDaily,
+        record: finalRecord,
         roster,
         shift,
+        isMissingPunch,
+        isWorking,
+        inSrc,
+        checkOutSrc,
       };
     });
-  }, [employees, dailyRecords, selectedDate, deptFilter, locationFilter, vendorFilter, shiftFilter, statusFilter, sourceFilter, searchQuery, rosterSyncVersion]);
+
+    // STEP 2: Filter resolved rows
+    return allResolvedRows.filter(row => {
+      const { emp, record, roster, shift, isMissingPunch, isWorking, inSrc, checkOutSrc } = row;
+      const empDept = emp.department_name || emp.department || 'People & HR';
+      const empLoc = emp.branch_name || emp.location || 'Coimbatore HQ';
+      const empVendor = getVendorName(emp);
+      const isVendor = checkIsVendor(emp);
+
+      // 1. Department Filter
+      const matchDept = deptFilter === 'ALL' || empDept.toLowerCase() === deptFilter.toLowerCase();
+
+      // 2. Location Filter
+      const matchLoc = locationFilter === 'ALL' || empLoc.toLowerCase() === locationFilter.toLowerCase();
+
+      // 3. Workforce Vendor Filter (handles 'Direct Payroll', 'Direct Employee', 'DIRECT', and 3rd party vendors)
+      const isDirectFilter = vendorFilter.toLowerCase().includes('direct');
+      const matchVendor = vendorFilter === 'ALL' ||
+        (isDirectFilter ? !isVendor : (isVendor && empVendor.toLowerCase() === vendorFilter.toLowerCase()));
+
+      // 4. Shift Filter
+      const targetShiftFilter = shiftFilter.toLowerCase();
+      const matchShift = shiftFilter === 'ALL' || [
+        shift.shift_code,
+        (shift as any).code,
+        shift.id,
+        roster.shift_code,
+        roster.shift_id,
+        (record as any).shift_code,
+        (record as any).shift_id,
+      ].some(val => val && String(val).toLowerCase() === targetShiftFilter);
+
+      // 5. Status Filter
+      let matchStatus = true;
+      if (statusFilter !== 'ALL') {
+        if (statusFilter === 'Missing Punch') {
+          matchStatus = isMissingPunch || record.status === 'Missing Punch';
+        } else if (statusFilter === 'Present') {
+          matchStatus = record.status === 'Present' || record.status === 'Checked Out' || isWorking;
+        } else if (statusFilter === 'Checked Out') {
+          matchStatus = record.status === 'Checked Out' || (Boolean(record.first_check_in) && Boolean(record.last_check_out));
+        } else if (statusFilter === 'Late') {
+          matchStatus = (record.late_minutes || 0) > 0 || record.status === 'Late';
+        } else if (statusFilter === 'Early Checkout') {
+          matchStatus = (record.early_checkout_minutes || 0) > 0 || record.status === 'Early Checkout';
+        } else if (statusFilter === 'Half Day') {
+          matchStatus = record.status === 'Half Day';
+        } else if (statusFilter === 'Overtime') {
+          matchStatus = (record.overtime_minutes || 0) > 0 || record.status === 'Overtime';
+        } else if (statusFilter === 'Absent') {
+          matchStatus = record.status === 'Absent';
+        } else if (statusFilter === 'On Leave') {
+          matchStatus = record.status === 'On Leave';
+        } else if (statusFilter === 'WFH') {
+          matchStatus = record.status === 'WFH';
+        } else if (statusFilter === 'Weekly Off') {
+          matchStatus = record.status === 'Weekly Off' || roster.is_weekly_off;
+        } else if (statusFilter === 'Not Checked In') {
+          matchStatus = (!record.first_check_in && !isWorking && record.status !== 'Absent' && record.status !== 'On Leave' && record.status !== 'Weekly Off') || record.status === 'Not Checked In';
+        } else {
+          matchStatus = record.status.toLowerCase() === statusFilter.toLowerCase();
+        }
+      }
+
+      // 6. Source Filter
+      const rowSources = [
+        record.source,
+        record.check_in_source,
+        record.check_out_source,
+        inSrc,
+        checkOutSrc,
+      ].filter(Boolean).map(s => String(s).toUpperCase());
+
+      let matchSource = true;
+      if (sourceFilter !== 'ALL') {
+        if (sourceFilter === 'GPS' || sourceFilter === 'MOBILE') {
+          matchSource = rowSources.some(s => s.includes('GPS') || s.includes('MOBILE'));
+        } else if (sourceFilter === 'BIOMETRIC') {
+          matchSource = rowSources.some(s => s.includes('BIO') || s.includes('DEVICE') || s.includes('FACE') || s.includes('FINGER') || s.includes('CARD'));
+        } else if (sourceFilter === 'WEB') {
+          matchSource = rowSources.some(s => s.includes('WEB') || s.includes('BROWSER') || s.includes('PORTAL'));
+        } else if (sourceFilter === 'MANUAL') {
+          matchSource = rowSources.some(s => s.includes('MANUAL')) || Boolean(record.is_regularized);
+        } else if (sourceFilter === 'SYSTEM') {
+          matchSource = rowSources.some(s => s.includes('SYSTEM'));
+        } else {
+          matchSource = rowSources.some(s => s.toLowerCase() === sourceFilter.toLowerCase());
+        }
+      }
+
+      // 7. Search Query Filter
+      const q = searchQuery.toLowerCase().trim();
+      const matchQuery = !q ||
+        (`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name || '').toLowerCase().includes(q) ||
+        (emp.employee_code || '').toLowerCase().includes(q) ||
+        empDept.toLowerCase().includes(q) ||
+        (emp.designation_title || emp.designation || '').toLowerCase().includes(q) ||
+        (shift.shift_code || '').toLowerCase().includes(q) ||
+        (shift.shift_name || '').toLowerCase().includes(q) ||
+        empVendor.toLowerCase().includes(q);
+
+      // 8. Semantic Dashboard Tile Drilldown
+      let matchTile = true;
+      if (drilldownTileKey) {
+        if (drilldownTileKey === 'total_headcount') {
+          matchTile = true;
+        } else if (drilldownTileKey === 'expected_today') {
+          matchTile = !roster.is_weekly_off && record.status !== 'On Leave';
+        } else if (drilldownTileKey === 'present') {
+          matchTile = record.status === 'Present' || record.status === 'Checked Out' || isWorking;
+        } else if (drilldownTileKey === 'absent') {
+          matchTile = record.status === 'Absent';
+        } else if (drilldownTileKey === 'on_leave') {
+          matchTile = record.status === 'On Leave';
+        } else if (drilldownTileKey === 'wfh_remote') {
+          matchTile = record.status === 'WFH';
+        } else if (drilldownTileKey === 'late_check_in') {
+          matchTile = (record.late_minutes || 0) > 0 || record.status === 'Late';
+        } else if (drilldownTileKey === 'early_checkout') {
+          matchTile = (record.early_checkout_minutes || 0) > 0 || record.status === 'Early Checkout';
+        } else if (drilldownTileKey === 'half_day') {
+          matchTile = record.status === 'Half Day';
+        } else if (drilldownTileKey === 'missing_punch') {
+          matchTile = isMissingPunch || record.status === 'Missing Punch';
+        } else if (drilldownTileKey === 'overtime') {
+          matchTile = (record.overtime_minutes || 0) > 0 || record.status === 'Overtime';
+        } else if (drilldownTileKey === 'not_checked_in') {
+          matchTile = (!record.first_check_in && !isWorking && record.status !== 'Absent' && record.status !== 'On Leave' && record.status !== 'Weekly Off') || record.status === 'Not Checked In';
+        } else if (drilldownTileKey.startsWith('dept_')) {
+          const targetDept = drilldownTileKey.replace('dept_', '').toLowerCase();
+          matchTile = empDept.toLowerCase() === targetDept;
+        } else if (drilldownTileKey.startsWith('vendor_')) {
+          const targetVendor = drilldownTileKey.replace('vendor_', '').toLowerCase();
+          matchTile = empVendor.toLowerCase() === targetVendor || (targetVendor.includes('direct') && !isVendor);
+        }
+      }
+
+      return matchDept && matchLoc && matchVendor && matchShift && matchStatus && matchSource && matchQuery && matchTile;
+    });
+  }, [employees, dailyRecords, selectedDate, deptFilter, locationFilter, vendorFilter, shiftFilter, statusFilter, sourceFilter, searchQuery, drilldownTileKey, rosterSyncVersion]);
 
   // Aggregate stats for the active filtered set
   const totalInFilter = filteredData.length;
+  const isRowWorking = (d: any) => d.isWorking ?? (d.record.first_check_in && !d.record.last_check_out && !d.isMissingPunch && d.record.status !== 'Missing Punch');
   const presentCount = filteredData.filter(
-    d => d.record.status === 'Present' || d.record.status === 'Checked Out' || (!!d.record.first_check_in && d.record.status !== 'Half Day' && d.record.status !== 'Missing Punch' && d.record.status !== 'Absent')
+    d => d.record.status === 'Present' || d.record.status === 'Checked Out' || isRowWorking(d)
   ).length;
   const notCheckedInCount = filteredData.filter(
-    d => d.record.status === 'Not Checked In' && !d.record.first_check_in
+    d => (d.record.status === 'Not Checked In' || !d.record.first_check_in) && !isRowWorking(d) && d.record.status !== 'Absent' && d.record.status !== 'Weekly Off' && d.record.status !== 'On Leave'
   ).length;
-  const lateCount = filteredData.filter(d => d.record.late_minutes > 0 || d.record.status === 'Late').length;
+  const lateCount = filteredData.filter(d => (d.record.late_minutes > 0 || d.record.status === 'Late') && !isRowWorking(d)).length;
   const halfDayCount = filteredData.filter(d => d.record.status === 'Half Day').length;
   const absentCount = filteredData.filter(d => d.record.status === 'Absent').length;
   const onLeaveCount = filteredData.filter(d => d.record.status === 'On Leave').length;
-  const missingPunchCount = filteredData.filter(d => d.record.status === 'Missing Punch').length;
+  const missingPunchCount = filteredData.filter(d => d.isMissingPunch || d.record.status === 'Missing Punch').length;
 
   const hasActiveFilters =
     deptFilter !== 'ALL' ||
@@ -888,7 +1027,10 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
           <Button
             size="sm"
-            onClick={onOpenManualModal}
+            onClick={() => {
+              const singleEmpId = filteredData.length === 1 ? filteredData[0].emp.id : undefined;
+              onOpenManualModal?.(singleEmpId, selectedDate);
+            }}
             leftIcon={<Plus className="w-3.5 h-3.5" />}
             className="text-xs font-bold bg-[#07563D] hover:bg-[#064e37]"
           >
@@ -947,6 +1089,13 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                 <span className="inline-flex items-center gap-1 bg-white border border-emerald-300 text-emerald-900 px-2 py-0.5 rounded-md font-bold">
                   Shift: {shiftFilter}
                   <X className="w-3 h-3 cursor-pointer hover:text-rose-600" onClick={() => onFilterChange?.({ ...filterState!, shift: 'ALL' })} />
+                </span>
+              )}
+
+              {sourceFilter !== 'ALL' && (
+                <span className="inline-flex items-center gap-1 bg-white border border-emerald-300 text-emerald-900 px-2 py-0.5 rounded-md font-bold">
+                  Source: {sourceFilter}
+                  <X className="w-3 h-3 cursor-pointer hover:text-rose-600" onClick={() => onFilterChange?.({ ...filterState!, source: 'ALL' })} />
                 </span>
               )}
 
@@ -1191,7 +1340,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredData.map(({ emp, record, roster, shift }) => {
+                filteredData.map(({ emp, record, roster, shift, isWorking: rowIsWorking, isMissingPunch: rowIsMissingPunch }) => {
                   const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name || 'Employee';
                   const empCode = emp.employee_code || `WF-${emp.id}`;
                   const dept = formatTitleCase(emp.department_name || emp.department || 'General');
@@ -1231,11 +1380,13 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                     ? attendanceTimeService.formatAttendanceTime(record.last_check_out, 'Asia/Kolkata', true)
                     : null;
 
-                  const checkInSource = (record.is_regularized || (record as any)?.punch_source === 'MANUAL' || String(record.check_in_source || record.source).toUpperCase().includes('MANUAL'))
-                    ? 'MANUAL'
-                    : (record.check_in_source || record.source || 'BIOMETRIC');
-                  const checkOutSource = record.check_out_source || record.source || 'BIOMETRIC';
-                  const isWorking = record.first_check_in && !record.last_check_out && record.status !== 'Missing Punch';
+                  const checkInSource = record.check_in_source
+                    || (record.source && record.source !== 'MANUAL' ? record.source : undefined)
+                    || (String((record as any)?.check_in_source || (record as any)?.punch_source).toUpperCase().includes('MANUAL') ? 'MANUAL' : 'MOBILE');
+                  const checkOutSource = record.check_out_source
+                    || (record.is_regularized ? 'MANUAL' : (record.last_check_out ? 'BIOMETRIC' : undefined));
+                  const isWorking = rowIsWorking ?? (record.first_check_in && !record.last_check_out && record.status !== 'Missing Punch');
+                  const isMissingPunch = rowIsMissingPunch || record.status === 'Missing Punch';
 
                   return (
                     <tr
@@ -1299,6 +1450,11 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                               NGT
                             </span>
                           )}
+                          {(record as any)?.overnight_work_date && (record as any).overnight_work_date !== selectedDate && (
+                            <span className="text-[9px] bg-amber-50 text-amber-700 px-1 py-0.2 rounded font-semibold border border-amber-200 shrink-0">
+                              Session: {(record as any).overnight_work_date}
+                            </span>
+                          )}
                         </div>
                         <div className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap truncate max-w-full" title={cleanShiftName}>
                           {cleanShiftName}
@@ -1345,8 +1501,12 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                             In Shift
                           </span>
-                        ) : record.status === 'Missing Punch' ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 whitespace-nowrap">
+                        ) : isMissingPunch ? (
+                          <span
+                            onClick={() => onOpenManualModal?.(emp.id, selectedDate)}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 whitespace-nowrap cursor-pointer hover:bg-rose-100 hover:border-rose-300 transition-colors"
+                            title="Click to resolve missing punch via Manual Punch"
+                          >
                             Missing Out
                           </span>
                         ) : (
@@ -1441,7 +1601,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                           <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs whitespace-nowrap">
                             Half Day
                           </span>
-                        ) : record.status === 'Missing Punch' ? (
+                        ) : isMissingPunch || record.status === 'Missing Punch' ? (
                           <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs whitespace-nowrap">
                             Missing Punch
                           </span>

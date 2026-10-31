@@ -35,6 +35,7 @@ child.stdout.on('data', (data) => {
               params: {
                 domain,
                 archivePath,
+                nodeVersion: 22,
                 removeArchive: false
               }
             }

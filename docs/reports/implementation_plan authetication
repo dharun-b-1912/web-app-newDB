@@ -1,0 +1,203 @@
+# Joy PeopleHR Multi-Tenant HRMS SaaS — Core Architecture & End-to-End Workflow Plan
+
+## Executive Architecture Summary
+
+Joy PeopleHR is structured into four clearly decoupled, highly scalable tiers:
+1. **SaaS Platform Plane (Super Admin)**: Global tenant management, subscription licensing, organization provisioning, and customer lifecycle governance.
+2. **Tenant Control Plane (Company Admin)**: Tenant-isolated company configuration, dynamic department/designation trees, custom role & permission builder (PBAC), policy governance, and HR delegation.
+3. **Operational HR & People Engine (HR & Managers)**: Employee onboarding, workforce directory, biometric/GPS attendance, shift rosters, statutory payroll, leave ledgers, and document vaults.
+4. **Unified Workforce Identity & Self-Service (Employees)**: Single unified identity across Web and Mobile apps, personal attendance clocking, leave requests, payslips, e-Sign, and hierarchical approvals.
+
+---
+
+```mermaid
+flowchart TD
+    subgraph S1["1. Platform Level (Super Admin)"]
+        SA[Platform Super Admin] -->|Provisions Tenant| ORG[Company Tenant & Database Scope]
+        SA -->|Assigns Plan & Licenses| SUB[Subscription & Commercial Contract]
+        SA -->|Initializes Primary Owner| CA_ACC[Company Admin Account & Credentials]
+    end
+
+    subgraph S2["2. Tenant Setup & Governance (Company Admin)"]
+        CA_ACC -->|First Login & Password Reset| CA[Company Admin]
+        CA -->|Configures| ORG_TREE[Departments & Designations Tree]
+        CA -->|Defines| RBAC[Custom Roles & Granular Permissions]
+        CA -->|Provisions| HR_ACC[HR Accounts with Scoped Permissions]
+    end
+
+    subgraph S3["3. Workforce Operations (HR Engine)"]
+        HR_ACC --> HR[HR Manager / HR Executive]
+        HR -->|Creates & Onboards| EMP[Employee Master Record]
+        HR -->|Assigns Hierarchy| HIERARCHY[Reporting Manager & Team Lead]
+        HR -->|Assigns Policies| POLICIES[Shift, Leave Policy, Salary Structure]
+    end
+
+    subgraph S4["4. Employee Unified Identity (Web & Mobile)"]
+        EMP -->|Single Auth Identity| AUTH[Unified Auth System]
+        AUTH --> WEB[Web Portal (ESS)]
+        AUTH --> MOBILE[Mobile App (iOS / Android)]
+    end
+
+    subgraph S5["5. Hierarchical Approval Matrix"]
+        WEB & MOBILE -->|Submits Request (Leave / Regularization / Expense)| REQ[Request]
+        REQ --> TL[1. Team Lead Operational Check]
+        TL --> MGR[2. Reporting Manager Approval]
+        MGR --> HR_APP[3. HR Final Processing / Payroll Action]
+    end
+```
+
+---
+
+## 1. Core Identity & Authorization Distinction
+
+To avoid architectural dead-ends and rigid code branches (`if (user.role === 'HR')`), we separate five fundamental concepts across the entire system:
+
+| Dimension | Concept | Purpose | Example |
+| :--- | :--- | :--- | :--- |
+| **1. Job Title** | Designation | What the person does in the company organizational chart | *Senior Software Engineer, VP Operations, HR Executive* |
+| **2. System Role** | Named Role | A bundle of permissions assigned to a user within their tenant | *Company Admin, HR Manager, Team Lead, Attendance Officer* |
+| **3. Permissions** | Atomic Capabilities | Granular action privileges granted by assigned roles | `employee.create`, `leave.approve`, `payroll.process` |
+| **4. Operational Manager** | Team Lead (TL) | Day-to-day work supervisor for rosters, shift attendance, and L1 approvals | *Team Lead - Mobile Eng* |
+| **5. Administrative Manager** | Reporting Manager | Line manager responsible for appraisals, L2 approvals, and team escalations | *Engineering Manager / Director* |
+
+---
+
+## 2. Multi-Tenant Database Schema & Entity Relationships
+
+```mermaid
+erDiagram
+    ORGANIZATIONS ||--o{ CUSTOMER_PROFILES : has
+    ORGANIZATIONS ||--o{ SUBSCRIPTIONS : billed_under
+    ORGANIZATIONS ||--o{ DEPARTMENTS : owns
+    ORGANIZATIONS ||--o{ DESIGNATIONS : owns
+    ORGANIZATIONS ||--o{ ROLES : defines
+    ORGANIZATIONS ||--o{ USERS : contains
+    ORGANIZATIONS ||--o{ EMPLOYEES : employs
+    
+    USERS ||--o{ USER_ROLES : assigned
+    ROLES ||--o{ ROLE_PERMISSIONS : grants
+    PERMISSIONS ||--o{ ROLE_PERMISSIONS : contains
+    
+    EMPLOYEES ||--o| USERS : binds_identity
+    EMPLOYEES ||--o{ EMPLOYEES : reports_to_manager
+    EMPLOYEES ||--o{ EMPLOYEES : reports_to_team_lead
+    
+    EMPLOYEES ||--o{ ATTENDANCE_RECORDS : logs
+    EMPLOYEES ||--o{ LEAVE_REQUESTS : requests
+    EMPLOYEES ||--o{ PAYROLL_SLIPS : receives
+```
+
+### Table Definitions & Foreign Key Isolation
+
+1. **`organizations`** (`tenant_id` PK): Legal entity, domain, plan tier, status, RLS tenant isolation root.
+2. **`users`** (`id`, `tenant_id`, `email`, `password_hash`, `status`, `employee_id`): Authentication identity (shared across Web & Mobile).
+3. **`roles`** (`id`, `tenant_id`, `name`, `description`, `is_system`, `created_at`): System and custom roles defined per tenant.
+4. **`permissions`** (`code`, `module`, `action`, `description`): Global permission catalog (e.g. `attendance.approve`, `payroll.process`).
+5. **`role_permissions`** (`id`, `role_id`, `permission_code`, `scope_level`): Mapping of roles to granular capabilities and data scopes.
+6. **`user_roles`** (`id`, `user_id`, `role_id`, `tenant_id`): Multi-role assignment per user.
+7. **`employees`** (`id`, `tenant_id`, `employee_code`, `department_id`, `designation_id`, `reporting_manager_id`, `team_lead_id`, `shift_id`, `status`): Physical workforce profile.
+8. **`approval_workflows`** (`id`, `tenant_id`, `module`, `levels_json`): Dynamic multi-tier approval paths (TL -> Manager -> HR).
+
+---
+
+## 3. Detailed End-to-End Workflow Stages
+
+### Stage 1: SaaS Super Admin Provisioning
+- Super Admin opens **Platform Control Plane -> Organizations**.
+- Clicks **Add Customer** and enters Organization Name, Domain, Plan Tier, Seat Limit, and Primary Admin Contact.
+- **Uniqueness Validation**: Validates `tenant_id`, `legal_name`, `domain`, and `admin_email` are 100% unique.
+- **Atomic Creation**:
+  - Inserts row into `organizations` table.
+  - Provisions `customer_profiles`, default `subscriptions`, and active billing invoice.
+  - Creates the **Initial Company Admin** account (`user_id`) in `users` with temporary password / secure activation token.
+  - Generates audit ledger event.
+
+### Stage 2: Company Admin Onboarding & Initialization
+- Company Admin receives automated Welcome & Activation Email.
+- First login triggers **Forced Password Reset** + optional MFA setup.
+- Initial Setup Wizard guides Admin to:
+  1. Verify Company Profile & Statutory Details (GSTIN, PAN, PF, ESI, Branch Locations).
+  2. Setup Organization Structure (Departments, Designations, Shift Policies).
+  3. Review Default Roles & configure Custom Roles.
+  4. Create / Invite initial HR team members.
+
+### Stage 3: Dynamic Role & Permission Builder (Company Admin)
+- Admin can customize default roles or create specialized roles:
+  - *HR Manager*: Full access to People, Leave, Attendance, Documents. Read-only on Payroll.
+  - *Payroll Officer*: Full access to Payroll inputs, Processing, Bank Advice, Tax calculations.
+  - *Attendance Officer*: Access to Biometric syncing, GPS geofences, Shift Rostering, Regularizations.
+  - *Team Lead*: Scoped access to their team's live punches, roster shifts, L1 leave/overtime approvals.
+- **Permission Check Matrix Engine**:
+  - `hasPermission(user, 'leave.approve')` evaluates user's assigned roles -> permission codes -> data scope (Self / Team / Department / Organization).
+
+### Stage 4: HR Delegation & Employee Lifecycle Management
+- HR Manager logs into the Company Portal.
+- Backend automatically restricts all queries to `current_tenant_id` (zero tenant leakage).
+- HR creates employees via:
+  - **Single Employee Onboarding Wizard** (Personal, Statutory, Department, Designation, Reporting Manager, Team Lead, Shift, Salary Structure).
+  - **Bulk Excel Import** with schema validation.
+  - **ATS Candidate Conversion** (auto-transition from Offer Letter to Active Employee).
+- On creation, backend generates **Unified Authentication Account** (`users` record linked to `employee_id`).
+
+### Stage 5: Unified Employee Identity (Web & Mobile Self-Service)
+- Employee receives login credentials / magic link.
+- Logs into either **Web ESS Portal** or **Mobile App (iOS/Android)** with the same unified account.
+- Capabilities based on permissions:
+  - Clock attendance via Web / Mobile Geofenced GPS / Biometric Face.
+  - View Shift Roster & request shift swaps.
+  - Apply for Leave / Attendance Regularization / Expense Claims.
+  - Access Payslips, Tax Form 16, and sign digital company documents.
+
+### Stage 6: Hierarchical Approval Matrix & Workflow Engine
+- When an employee submits a request (e.g., Leave or Regularization):
+  1. **Level 1 (Operational)**: Notification routed to **Team Lead** for shift/capacity validation.
+  2. **Level 2 (Administrative)**: Routed to **Reporting Manager** for formal approval.
+  3. **Level 3 (HR Final)**: Routed to **HR Desk** for statutory recording and automated payroll ledger deduction.
+- Each tenant can toggle whether Level 1, Level 2, or Level 3 is required per leave type / policy.
+
+---
+
+## 4. Task-by-Task Implementation Roadmap
+
+```
+Phase 1: Multi-Tenant Architecture & Super Admin Provisioning Engine [Completed / Hardened]
+  ├── Task 1.1: Multi-Tenant Schema & Isolation Hardening (PostgreSQL RLS)
+  ├── Task 1.2: Super Admin Provisioning Wizard & Duplicate Validations
+  └── Task 1.3: Automated Company Admin Account & Welcome Token Generation
+
+Phase 2: Company Admin Workspace & Organization Hierarchy Builder
+  ├── Task 2.1: Initial Company Admin Setup Wizard (Password Reset & Profile Init)
+  ├── Task 2.2: Department & Designation Hierarchy Tree Manager
+  ├── Task 2.3: Dynamic RBAC/PBAC Custom Role & Permission Matrix Builder
+  └── Task 2.4: HR Staff Account Creation & Scope Delegation Desk
+
+Phase 3: HR Operational Engine & Workforce Management
+  ├── Task 3.1: Employee Master Record Engine with Dual Hierarchy (Reporting Mgr + Team Lead)
+  ├── Task 3.2: Automated Unified Auth Provisioning (One Identity for Web & Mobile)
+  ├── Task 3.3: Shift Scheduling & Team Lead Roster Assignment
+  └── Task 3.4: Attendance, Biometric Sync & Geofenced Clocking Desks
+
+Phase 4: Employee Self-Service (ESS) & Multi-Channel Experience
+  ├── Task 4.1: Unified ESS Portal with Responsive Web & Mobile Layouts
+  ├── Task 4.2: Self-Service Punching, Regularization & Leave Application Flow
+  └── Task 4.3: Digital Document Vault & Automated WhatsApp/Email Payslips
+
+Phase 5: Multi-Level Approval Engine & Audit Trail
+  ├── Task 5.1: Configurable Approval Workflow State Machine (TL -> Manager -> HR)
+  ├── Task 5.2: Realtime In-App, Email & Push Approval Notifications
+  └── Task 5.3: 7-Year Immutable SOC 2 Compliant Audit Trail
+```
+
+---
+
+## 5. Verification Plan
+
+### Automated Verification
+- Run TypeScript linting and build validation across all platform and tenant services.
+- Execute unit and integration tests for permission resolution engine (`hasPermission`, `getDataScope`).
+
+### Manual Verification
+1. **Super Admin Flow**: Provision a new company ("Joy Global India"), ensure no duplicates can be made with same name/slug/domain.
+2. **Company Admin Flow**: Log in as company admin, customize a new role ("Factory Attendance HR"), assign permissions, and invite an HR staff.
+3. **HR Flow**: HR creates an employee with designated Team Lead and Reporting Manager.
+4. **Employee Flow**: Log in as employee, submit a leave request, and verify the sequential notification & approval routing to Team Lead -> Manager -> HR.

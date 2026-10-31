@@ -21,7 +21,7 @@ import {
 } from '../../types/shiftRoster';
 import { hrEventBus } from '../hrEventBus';
 import { api, isValidUUID, ensureUUID } from '../api';
-import { supabase, isSupabaseEnabled } from '../../lib/supabase';
+import { supabase, supabaseAdmin, isSupabaseEnabled } from '../../lib/supabase';
 import { getActiveOrgId } from './biometricCommandService';
 import { notificationService } from '../notification/notificationService';
 import { realtimeChannelManager } from '../realtime/realtimeChannelManager';
@@ -185,6 +185,44 @@ const DEFAULT_SHIFTS: ShiftMaster[] = [
     version: 1,
     created_at: '2026-10-16T05:07:19.21577+00:00',
     updated_at: '2026-10-16T05:12:25.393446+00:00',
+  },
+  {
+    id: '5f36464f-1920-45b4-b692-0d49294a76fa',
+    tenant_id: '0c621892-e938-4707-9957-13534ea32c19',
+    shift_code: 'NS-01',
+    shift_name: 'Night Shift (7:30 PM - 7:30 AM)',
+    description: '12-hour overnight shift (19:30 - 07:30 next morning) with 12:00 PM attendance date cutoff.',
+    shift_type: 'NIGHT_SHIFT',
+    start_time: '19:30',
+    end_time: '07:30',
+    scheduled_duration_minutes: 720,
+    net_working_minutes: 720,
+    cross_midnight: true,
+    attendance_date_cutoff: '12:00',
+    grace_in_minutes: 30,
+    grace_out_minutes: 30,
+    early_out_tolerance_minutes: 15,
+    late_threshold_minutes: 30,
+    min_hours_full_day: 12,
+    min_hours_half_day: 6,
+    break_mode: 'FIXED',
+    breaks: [
+      { id: 'brk-ns-1', name: 'Midnight Meal', start_time: '00:00', end_time: '01:00', duration_minutes: 60, is_paid: true },
+    ],
+    ot_enabled: true,
+    min_ot_threshold_minutes: 30,
+    weekday_ot_rate: 1.0,
+    weekly_off_ot_rate: 1.5,
+    holiday_ot_rate: 2.0,
+    max_ot_daily_minutes: 240,
+    requires_manager_approval: true,
+    requires_hr_approval: false,
+    applies_to: { type: 'ORGANIZATION', ids: [] },
+    effective_from: '2026-01-01',
+    status: 'ACTIVE',
+    version: 1,
+    created_at: '2026-10-30T00:00:00.000000+00:00',
+    updated_at: '2026-10-30T00:00:00.000000+00:00',
   },
 ];
 
@@ -760,6 +798,13 @@ class AttendanceRosterService {
           .select('*')
           .order('created_at', { ascending: true });
       if (!error && data && data.length > 0) {
+        const localShifts = this.getShifts(tenantId);
+        const localMap = new Map<string, ShiftMaster>();
+        localShifts.forEach(s => {
+          if (s.id) localMap.set(s.id, s);
+          if (s.shift_code) localMap.set(s.shift_code.toUpperCase(), s);
+        });
+
         const seenIds = new Set<string>();
         const seenCodes = new Set<string>();
         const mapped: ShiftMaster[] = [];
@@ -771,8 +816,13 @@ class AttendanceRosterService {
           seenIds.add(d.id);
           if (codeKey) seenCodes.add(codeKey);
 
+          const existingLocal = localMap.get(d.id) || (codeKey ? localMap.get(codeKey) : undefined);
           const sTime = (d.start_time || '09:00:00').slice(0, 5);
           const eTime = (d.end_time || '18:00:00').slice(0, 5);
+          const cutoff = (d as any).attendance_date_cutoff
+            ? (d as any).attendance_date_cutoff.slice(0, 5)
+            : (existingLocal?.attendance_date_cutoff || (d.is_overnight ? '12:00' : '06:00'));
+
           mapped.push({
             id: d.id,
             tenant_id: d.organization_id || tenantId,
@@ -785,7 +835,7 @@ class AttendanceRosterService {
             scheduled_duration_minutes: this.calculateDurationMinutes(sTime, eTime, d.is_overnight),
             net_working_minutes: (Number(d.min_full_day_hours) || 8) * 60,
             cross_midnight: Boolean(d.is_overnight),
-            attendance_date_cutoff: '06:00',
+            attendance_date_cutoff: cutoff,
             grace_in_minutes: d.grace_entry_minutes ?? 15,
             grace_out_minutes: d.grace_exit_minutes ?? 15,
             early_out_tolerance_minutes: 15,
@@ -931,6 +981,15 @@ class AttendanceRosterService {
         shifts[idx] = updated;
         setStore(STORAGE_KEYS.SHIFTS, shifts, tenantId);
 
+        if (this._dbShiftsCache) {
+          const matchIdx = this._dbShiftsCache.findIndex(s => s.id === updated.id || s.shift_code === updated.shift_code);
+          if (matchIdx !== -1) {
+            this._dbShiftsCache[matchIdx] = updated;
+          } else {
+            this._dbShiftsCache.unshift(updated);
+          }
+        }
+
         this.logAudit({
           tenant_id: tenantId,
           actor_name: actorName,
@@ -966,6 +1025,10 @@ class AttendanceRosterService {
     shifts.unshift(newShift);
     setStore(STORAGE_KEYS.SHIFTS, shifts, tenantId);
 
+    if (this._dbShiftsCache) {
+      this._dbShiftsCache.unshift(newShift);
+    }
+
     this.logAudit({
       tenant_id: tenantId,
       actor_name: actorName,
@@ -991,11 +1054,16 @@ class AttendanceRosterService {
       const eTime = shift.end_time.length === 5 ? `${shift.end_time}:00` : shift.end_time;
       const shiftUUID = isValidUUID(shift.id) ? shift.id : undefined;
 
+      const cutoffTime = shift.attendance_date_cutoff
+        ? (shift.attendance_date_cutoff.length === 5 ? `${shift.attendance_date_cutoff}:00` : shift.attendance_date_cutoff)
+        : (shift.cross_midnight ? '12:00:00' : '06:00:00');
+
       const record: any = {
         name: shift.shift_name,
         code: shift.shift_code,
         start_time: sTime,
         end_time: eTime,
+        attendance_date_cutoff: cutoffTime,
         grace_entry_minutes: shift.grace_in_minutes || 15,
         grace_exit_minutes: shift.grace_out_minutes || 15,
         min_half_day_hours: shift.min_hours_half_day || 4,
@@ -1006,10 +1074,23 @@ class AttendanceRosterService {
       };
       if (shiftUUID) record.id = shiftUUID;
 
-      const { data, error } = await supabase
+      const client = supabaseAdmin || supabase;
+      let { data, error } = await client
         .from('shifts')
         .upsert(record, { onConflict: 'organization_id,code' })
         .select();
+
+      // If remote Postgres table does not yet have attendance_date_cutoff column (e.g. prior to migration 169)
+      if (error && (error.message?.includes('attendance_date_cutoff') || (error as any).code === 'PGRST204')) {
+        console.warn('[attendanceRosterService] attendance_date_cutoff column not in remote DB yet, retrying upsert without it');
+        delete record.attendance_date_cutoff;
+        const retry = await client
+          .from('shifts')
+          .upsert(record, { onConflict: 'organization_id,code' })
+          .select();
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (error) {
         console.warn('[attendanceRosterService] syncShiftToDb warning:', error);
@@ -1064,11 +1145,12 @@ class AttendanceRosterService {
     }
 
     // Sync deletion to Supabase
-    if (isSupabaseEnabled && supabase) {
+    if (isSupabaseEnabled && (supabaseAdmin || supabase)) {
+      const client = supabaseAdmin || supabase;
       if (isValidUUID(shiftId)) {
-        Promise.resolve(supabase.from('shifts').delete().eq('id', shiftId)).catch(() => {});
+        Promise.resolve(client.from('shifts').delete().eq('id', shiftId)).catch(() => {});
       } else if (target.shift_code) {
-        Promise.resolve(supabase.from('shifts').delete().eq('code', target.shift_code)).catch(() => {});
+        Promise.resolve(client.from('shifts').delete().eq('code', target.shift_code)).catch(() => {});
       }
     }
 

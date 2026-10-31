@@ -92,9 +92,9 @@ class AttendanceIngestionService {
 
   /**
    * Determine session date formatted as YYYY-MM-DD (Asia/Kolkata timezone standard)
-   * Early morning punches (<06:00) during overnight shifts belong to previous day.
+   * Morning punches (before cutoff, default 12:00 noon) during overnight shifts belong to previous day's shift date.
    */
-  public determineSessionDate(punchTimeIso: string, isOvernight = false): string {
+  public determineSessionDate(punchTimeIso: string, isOvernight = false, cutoffTime = '12:00'): string {
     const d = new Date(punchTimeIso);
     const istTimeStr = d.toLocaleTimeString('en-US', {
       timeZone: 'Asia/Kolkata',
@@ -104,7 +104,7 @@ class AttendanceIngestionService {
     });
     const istDateStr = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-    if (isOvernight && istTimeStr < '06:00') {
+    if (isOvernight && istTimeStr < cutoffTime) {
       const prevDate = new Date(d.getTime() - 24 * 60 * 60 * 1000);
       return prevDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     }

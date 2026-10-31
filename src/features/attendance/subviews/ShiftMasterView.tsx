@@ -149,7 +149,7 @@ export const ShiftMasterView: React.FC = () => {
     setStartTime(shift.start_time);
     setEndTime(shift.end_time);
     setCrossMidnight(shift.cross_midnight);
-    setAttendanceDateCutoff(shift.attendance_date_cutoff);
+    setAttendanceDateCutoff(shift.attendance_date_cutoff || (shift.cross_midnight ? '12:00' : '06:00'));
     setGraceInMinutes(shift.grace_in_minutes);
     setGraceOutMinutes(shift.grace_out_minutes);
     setLateThresholdMinutes(shift.late_threshold_minutes);
@@ -432,7 +432,12 @@ export const ShiftMasterView: React.FC = () => {
               { s: 4, label: '4. Break Mode' },
               { s: 5, label: '5. Overtime & Scope' },
             ].map(item => (
-              <div key={item.s} className="flex items-center gap-1.5">
+              <button
+                key={item.s}
+                type="button"
+                onClick={() => setWizardStep(item.s)}
+                className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
+              >
                 <div
                   className={cn(
                     "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
@@ -448,7 +453,7 @@ export const ShiftMasterView: React.FC = () => {
                 <span className={cn("hidden sm:inline font-semibold", wizardStep === item.s ? "text-gray-900 font-bold" : "text-gray-400")}>
                   {item.label}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
 
@@ -460,6 +465,7 @@ export const ShiftMasterView: React.FC = () => {
                 <div>
                   <label className="text-xs font-bold text-gray-700 block mb-1">Shift Name</label>
                   <input
+                    id="shift-name-input"
                     type="text"
                     value={shiftName}
                     onChange={e => setShiftName(e.target.value)}
@@ -469,6 +475,7 @@ export const ShiftMasterView: React.FC = () => {
                 <div>
                   <label className="text-xs font-bold text-gray-700 block mb-1">Shift Code</label>
                   <input
+                    id="shift-code-input"
                     type="text"
                     value={shiftCode}
                     onChange={e => setShiftCode(e.target.value)}
@@ -478,6 +485,7 @@ export const ShiftMasterView: React.FC = () => {
                 <div className="sm:col-span-2">
                   <label className="text-xs font-bold text-gray-700 block mb-1">Description</label>
                   <input
+                    id="shift-desc-input"
                     type="text"
                     value={description}
                     onChange={e => setDescription(e.target.value)}
@@ -504,8 +512,20 @@ export const ShiftMasterView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex justify-end pt-4">
+              <div className="flex justify-end items-center gap-2 pt-4 border-t border-gray-100">
+                {editingShiftId && (
+                  <Button
+                    id="shift-save-btn-step1"
+                    variant="primary"
+                    onClick={handleSaveShift}
+                    disabled={isSaving}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl px-4 gap-1.5"
+                  >
+                    <Check className="w-4 h-4" /> {isSaving ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                )}
                 <Button
+                  id="shift-continue-btn-step1"
                   variant="primary"
                   onClick={() => setWizardStep(2)}
                   className="gap-2 bg-[#07563D] text-white text-xs font-bold rounded-xl"
@@ -524,18 +544,34 @@ export const ShiftMasterView: React.FC = () => {
                 <div>
                   <label className="text-xs font-bold text-gray-700 block mb-1">Shift Start Time (Check-In)</label>
                   <input
+                    id="shift-start-time-input"
                     type="time"
                     value={startTime}
-                    onChange={e => setStartTime(e.target.value)}
+                    onChange={e => {
+                      const newStart = e.target.value;
+                      setStartTime(newStart);
+                      if (newStart && endTime && newStart > endTime) {
+                        setCrossMidnight(true);
+                        setShiftType('NIGHT_SHIFT');
+                      }
+                    }}
                     className="w-full px-3 py-2 text-xs font-mono font-bold rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
                   />
                 </div>
                 <div>
                   <label className="text-xs font-bold text-gray-700 block mb-1">Shift End Time (Check-Out)</label>
                   <input
+                    id="shift-end-time-input"
                     type="time"
                     value={endTime}
-                    onChange={e => setEndTime(e.target.value)}
+                    onChange={e => {
+                      const newEnd = e.target.value;
+                      setEndTime(newEnd);
+                      if (startTime && newEnd && startTime > newEnd) {
+                        setCrossMidnight(true);
+                        setShiftType('NIGHT_SHIFT');
+                      }
+                    }}
                     className="w-full px-3 py-2 text-xs font-mono font-bold rounded-xl border border-gray-200 focus:outline-none focus:border-[#07563D]"
                   />
                 </div>
@@ -543,31 +579,54 @@ export const ShiftMasterView: React.FC = () => {
                 <div className="sm:col-span-2 p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-3">
                   <label className="flex items-center gap-2 text-xs font-bold text-gray-900 cursor-pointer">
                     <input
+                      id="shift-cross-midnight-checkbox"
                       type="checkbox"
                       checked={crossMidnight}
                       onChange={e => setCrossMidnight(e.target.checked)}
                       className="rounded text-[#07563D] focus:ring-[#07563D]"
                     />
-                    This shift spans across midnight (e.g. 22:00 PM to 06:00 AM next day)
+                    This shift spans across midnight (e.g. 19:30 to 07:30, or 22:00 to 06:00 next day)
                   </label>
                   {crossMidnight && (
-                    <div className="pt-2 border-t border-gray-200 text-xs text-indigo-900">
-                      <p className="font-semibold">Attendance Cutoff Hour: 06:00 AM</p>
-                      <p className="text-[11px] text-gray-600 mt-0.5">
-                        Punches after midnight will be automatically grouped into the shift start date's attendance card.
-                      </p>
+                    <div className="pt-2 border-t border-gray-200 text-xs text-indigo-900 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold text-gray-900">Attendance Cutoff Time</p>
+                          <p className="text-[11px] text-gray-600 mt-0.5">
+                            Morning punches before this cutoff will be automatically attributed to the shift start date.
+                          </p>
+                        </div>
+                        <input
+                          id="shift-attendance-cutoff-input"
+                          type="time"
+                          value={attendanceDateCutoff}
+                          onChange={e => setAttendanceDateCutoff(e.target.value)}
+                          className="px-2.5 py-1.5 text-xs font-mono font-bold rounded-lg border border-gray-200 focus:outline-none focus:border-[#07563D]"
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="flex justify-between pt-4">
-                <Button variant="outline" onClick={() => setWizardStep(1)} className="text-xs rounded-xl">
+              <div className="flex justify-between items-center pt-4 border-t border-gray-100">
+                <Button id="shift-back-btn-step2" variant="outline" onClick={() => setWizardStep(1)} className="text-xs rounded-xl">
                   <ArrowLeft className="w-4 h-4 mr-1" /> Back
                 </Button>
-                <Button variant="primary" onClick={() => setWizardStep(3)} className="bg-[#07563D] text-white text-xs font-bold rounded-xl">
-                  Continue <ArrowRight className="w-4 h-4 ml-1" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    id="shift-save-btn-step2"
+                    variant="primary"
+                    onClick={handleSaveShift}
+                    disabled={isSaving}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl px-4 gap-1.5"
+                  >
+                    <Check className="w-4 h-4" /> {isSaving ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                  <Button id="shift-continue-btn-step2" variant="outline" onClick={() => setWizardStep(3)} className="text-xs rounded-xl">
+                    Next <ArrowRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -622,13 +681,24 @@ export const ShiftMasterView: React.FC = () => {
                 <span>8h+ = PRESENT | 4h-7h59 = HALF DAY | &lt;4h = ABSENT</span>
               </div>
 
-              <div className="flex justify-between pt-4">
+              <div className="flex justify-between items-center pt-4 border-t border-gray-100">
                 <Button variant="outline" onClick={() => setWizardStep(2)} className="text-xs rounded-xl">
                   <ArrowLeft className="w-4 h-4 mr-1" /> Back
                 </Button>
-                <Button variant="primary" onClick={() => setWizardStep(4)} className="bg-[#07563D] text-white text-xs font-bold rounded-xl">
-                  Continue <ArrowRight className="w-4 h-4 ml-1" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    id="shift-save-btn-step3"
+                    variant="primary"
+                    onClick={handleSaveShift}
+                    disabled={isSaving}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl px-4 gap-1.5"
+                  >
+                    <Check className="w-4 h-4" /> {isSaving ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                  <Button variant="outline" onClick={() => setWizardStep(4)} className="text-xs rounded-xl">
+                    Next <ArrowRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -663,13 +733,24 @@ export const ShiftMasterView: React.FC = () => {
                 />
               </div>
 
-              <div className="flex justify-between pt-4">
+              <div className="flex justify-between items-center pt-4 border-t border-gray-100">
                 <Button variant="outline" onClick={() => setWizardStep(3)} className="text-xs rounded-xl">
                   <ArrowLeft className="w-4 h-4 mr-1" /> Back
                 </Button>
-                <Button variant="primary" onClick={() => setWizardStep(5)} className="bg-[#07563D] text-white text-xs font-bold rounded-xl">
-                  Continue <ArrowRight className="w-4 h-4 ml-1" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    id="shift-save-btn-step4"
+                    variant="primary"
+                    onClick={handleSaveShift}
+                    disabled={isSaving}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl px-4 gap-1.5"
+                  >
+                    <Check className="w-4 h-4" /> {isSaving ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                  <Button variant="outline" onClick={() => setWizardStep(5)} className="text-xs rounded-xl">
+                    Next <ArrowRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -738,11 +819,13 @@ export const ShiftMasterView: React.FC = () => {
                   <ArrowLeft className="w-4 h-4 mr-1" /> Back
                 </Button>
                 <Button
+                  id="shift-save-btn-step5"
                   variant="primary"
                   onClick={handleSaveShift}
+                  disabled={isSaving}
                   className="bg-[#07563D] hover:bg-[#064e37] text-white text-xs font-bold rounded-xl px-6 gap-1.5"
                 >
-                  <Check className="w-4 h-4" /> Save & Publish Shift
+                  <Check className="w-4 h-4" /> {isSaving ? 'Saving...' : 'Save & Publish Shift'}
                 </Button>
               </div>
             </div>

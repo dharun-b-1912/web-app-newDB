@@ -177,30 +177,58 @@ export function processAttendanceStatus(
     };
   }
 
+  // Determine whether shift is cross-midnight (e.g. 19:30 -> 07:30 or 20:00 -> 05:00)
+  const isOvernightShift = expectedOutMinutes < expectedInMinutes;
+  const scheduledShiftDurationMinutes = isOvernightShift
+    ? (1440 - expectedInMinutes + expectedOutMinutes)
+    : (expectedOutMinutes - expectedInMinutes);
+
   // Calculate gross duration
   let gross = 0;
   if (checkInMinutes !== null && checkOutMinutes !== null) {
     if (checkOutMinutes >= checkInMinutes) {
       gross = checkOutMinutes - checkInMinutes;
     } else {
-      // Night shift spanning midnight (e.g., 22:00 -> 06:00)
+      // Night shift spanning midnight (e.g., 19:30 -> 07:30)
       gross = 1440 - checkInMinutes + checkOutMinutes;
     }
   } else if (checkInMinutes !== null && checkOutMinutes === null) {
     // In-progress active shift: calculate elapsed time from check-in to current time
-    if (currentMinutes > checkInMinutes) {
-      gross = currentMinutes - checkInMinutes;
-    } else if (currentMinutes < checkInMinutes && checkInMinutes > 1200) {
-      // Night shift active cross-midnight
-      gross = 1440 - checkInMinutes + currentMinutes;
+    if (isOvernightShift) {
+      if (isToday) {
+        // Shift started today (evening): elapsed time within today
+        gross = Math.max(0, currentMinutes - checkInMinutes);
+      } else {
+        // Shift started yesterday (or past evening): spans midnight into today
+        const rawElapsed = Math.max(0, (1440 - checkInMinutes) + currentMinutes);
+        // If the morning shift end has passed without checkout, cap unverified elapsed time at scheduled shift duration!
+        const shiftEndWithGrace = expectedOutMinutes + (policy.early_checkout_grace_minutes || 15);
+        if (currentMinutes >= shiftEndWithGrace) {
+          gross = scheduledShiftDurationMinutes;
+        } else {
+          gross = rawElapsed;
+        }
+      }
     } else {
-      gross = 0;
+      // Standard same-day shift
+      if (currentMinutes > checkInMinutes) {
+        const rawElapsed = currentMinutes - checkInMinutes;
+        const shiftEndWithGrace = expectedOutMinutes + (policy.early_checkout_grace_minutes || 15);
+        if (currentMinutes >= shiftEndWithGrace) {
+          gross = scheduledShiftDurationMinutes;
+        } else {
+          gross = rawElapsed;
+        }
+      } else {
+        gross = 0;
+      }
     }
   }
 
-  // Net duration: matches actual logged punch duration (no arbitrary break deduction so SMS matches UI)
+  // Net duration: matches actual logged punch duration
   const net = gross;
-  const requiredMinutes = (policy.required_hours_per_day || 8) * 60; // 480 minutes (8 hours)
+  // Overtime should be evaluated against the scheduled shift duration (or policy minimum), not arbitrary 480m!
+  const shiftBaseMinutes = scheduledShiftDurationMinutes > 0 ? scheduledShiftDurationMinutes : ((policy.required_hours_per_day || 8) * 60);
   const halfDayThresholdMinutes = (policy.half_day_hours_threshold || 4) * 60; // 240 minutes (4 hours)
 
   // Late minutes calculation against shift scheduled start + grace
@@ -222,16 +250,26 @@ export function processAttendanceStatus(
     }
   }
 
-  // Early departure minutes
+  // Early departure minutes (only relevant after checkout)
   let earlyMinutes = 0;
   if (checkOutMinutes !== null) {
-    earlyMinutes = Math.max(0, expectedOutMinutes - (policy.early_checkout_grace_minutes || 15) - checkOutMinutes);
+    const earlyGrace = policy.early_checkout_grace_minutes || 15;
+    if (isOvernightShift) {
+      // For overnight shifts, checkOutMinutes is expected on the next day (e.g. 07:30)
+      if (checkOutMinutes < expectedOutMinutes - earlyGrace) {
+        earlyMinutes = (expectedOutMinutes - earlyGrace) - checkOutMinutes;
+      }
+    } else {
+      earlyMinutes = Math.max(0, expectedOutMinutes - earlyGrace - checkOutMinutes);
+    }
   }
 
-  // Overtime minutes beyond required hours + OT threshold
+  // Overtime minutes:
+  // Overtime is only confirmed after check-out, and only beyond the shift's scheduled duration + OT threshold
   let overtimeMinutes = 0;
-  if (net > requiredMinutes + (policy.overtime_min_minutes || 30)) {
-    overtimeMinutes = net - requiredMinutes;
+  const minOtThreshold = policy.overtime_min_minutes || 30;
+  if (checkOutMinutes !== null && net > shiftBaseMinutes + minOtThreshold) {
+    overtimeMinutes = net - shiftBaseMinutes;
   }
 
   let status: AttendanceStatus = 'Present';
@@ -240,8 +278,36 @@ export function processAttendanceStatus(
     status = 'WFH';
   } else if (checkInMinutes !== null && checkOutMinutes === null) {
     // Case 2: CHECKED IN, BUT NO OUT-PUNCH
-    const shiftEndBufferMins = expectedOutMinutes + (policy.early_checkout_grace_minutes || 15);
-    const isPastShiftEnd = isPastDate || (isToday && currentMinutes >= shiftEndBufferMins);
+    const earlyGrace = policy.early_checkout_grace_minutes || 15;
+    let isPastShiftEnd = false;
+
+    if (isOvernightShift) {
+      // An overnight shift started on attendanceDate does NOT end on attendanceDate!
+      // It ends on (attendanceDate + 1) at expectedOutMinutes + grace.
+      if (isToday) {
+        // Viewing on the evening of the shift start: shift is actively running tonight!
+        isPastShiftEnd = false;
+      } else {
+        // Attendance date is in the past (e.g. yesterday). Check if current time on today is past the morning shift end:
+        // Calculate days difference
+        const attDateObj = attendanceDate ? new Date(`${attendanceDate}T00:00:00Z`) : null;
+        const todayDateObj = new Date(`${todayStr}T00:00:00Z`);
+        const diffDays = attDateObj ? Math.round((todayDateObj.getTime() - attDateObj.getTime()) / (24 * 3600 * 1000)) : 1;
+
+        if (diffDays === 1) {
+          // Exactly yesterday: shift ends this morning at expectedOutMinutes + grace
+          isPastShiftEnd = currentMinutes >= (expectedOutMinutes + earlyGrace);
+        } else if (diffDays > 1) {
+          // More than 1 day ago: definitely past shift end
+          isPastShiftEnd = true;
+        } else {
+          isPastShiftEnd = false;
+        }
+      }
+    } else {
+      const shiftEndBufferMins = expectedOutMinutes + earlyGrace;
+      isPastShiftEnd = isPastDate || (isToday && currentMinutes >= shiftEndBufferMins);
+    }
 
     if (isPastShiftEnd) {
       status = 'Missing Punch';

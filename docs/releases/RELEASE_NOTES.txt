@@ -1,0 +1,32 @@
+============================================================
+JOY PeopleHR — PROD Build (v1.0.4+9)
+============================================================
+Environment : PROD
+Channel     : INTERNAL
+Build Number: 9
+Version     : 1.0.4
+Commit SHA  : c2ee99d (main)
+Release Date: 2026-09-16
+
+HIGHLIGHTS & KEY DELIVERABLES:
+- Unified Multi-Mode Attendance Engine: One employee = One attendance record per day.
+- Attendance Source Locking: Biometric first locks to BIOMETRIC, Mobile first locks to MOBILE.
+- Dynamic Working Timer: Computes duration dynamically from server first_check_in.
+- eSSL AI-FACE MAGNUM Integration: Sub-second real-time ingestion via port 11108.
+- Privacy-Hardened Crashlytics: Zero-PII sanitization for tokens, passwords, biometric templates.
+
+LATEST COMMIT:
+fix(realtime): add 30s grace-period pooling to channels to prevent websocket teardown on navigation
+
+TARGET TEST FOCUS:
+• Unified Multi-Mode Attendance Engine (Biometric + Mobile GPS)
+• Attendance Source Locking Invariant (Single session per day)
+• Dynamic Live Working Timer from hardware timestamp
+• eSSL AI-FACE MAGNUM ADMS Realtime push integration
+
+KNOWN ISSUES / WORKAROUNDS:
+• None
+
+DISTRIBUTION:
+• Managed by Firebase App Distribution (Group: joy-prod)
+============================================================

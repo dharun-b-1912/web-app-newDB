@@ -1,0 +1,51 @@
+Flutter Screen,Flutter Field Label,Dart Variable,Dart Type,JSON Key,Repository Method,Supabase Table,Supabase Column,Operation,Status
+LoginScreen,Work Email,emailController.text,String,email,signInWithPassword,auth.users,email,AUTH,PASS
+LoginScreen,Password,passwordController.text,String,password,signInWithPassword,auth.users,encrypted_password,AUTH,PASS
+ProfileScreen,First Name,profile.firstName,String,first_name,getEmployeeProfile,employees,first_name,SELECT,PASS
+ProfileScreen,Last Name,profile.lastName,String,last_name,getEmployeeProfile,employees,last_name,SELECT,PASS
+ProfileScreen,Employee Code,profile.employeeCode,String,employee_code,getEmployeeProfile,employees,employee_code,SELECT,PASS
+ProfileScreen,Designation,profile.designation,String,designation_id,getEmployeeProfile,employees,designation_id,SELECT,PASS
+ProfileScreen,Department,profile.department,String,department_id,getEmployeeProfile,employees,department_id,SELECT,PASS
+ProfileScreen,Avatar URL,profile.avatarUrl,String,avatar_url,getEmployeeProfile,employee_profiles,avatar_url,SELECT,PASS
+EditProfileScreen,Personal Phone,phoneController.text,String,phone_number,updatePersonalDetails,employee_profiles,phone_number,UPDATE,PASS
+EditProfileScreen,Personal Email,emailController.text,String,personal_email,updatePersonalDetails,employee_profiles,personal_email,UPDATE,PASS
+EditProfileScreen,Address Line 1,addrController.text,String,address_line_1,updateAddress,employee_addresses,address_line_1,UPSERT,PASS
+EditProfileScreen,City,cityController.text,String,city,updateAddress,employee_addresses,city,UPSERT,PASS
+EditProfileScreen,State,stateController.text,String,state,updateAddress,employee_addresses,state,UPSERT,PASS
+EditProfileScreen,Postal Code,pincodeController.text,String,postal_code,updateAddress,employee_addresses,postal_code,UPSERT,PASS
+BankDetailsScreen,Bank Name,bank.bankName,String,bank_name,getBankDetails,employee_bank_details,bank_name,SELECT,PASS WITH ADAPTER
+BankDetailsScreen,Account Number,bank.accountNumber,String,account_number,getBankDetails,employee_bank_details,account_number,SELECT,PASS WITH ADAPTER
+BankDetailsScreen,IFSC Code,bank.ifscCode,String,ifsc_code,getBankDetails,employee_bank_details,ifsc_code,SELECT,PASS WITH ADAPTER
+BankDetailsScreen,PAN Number,statutory.panNumber,String,pan_number,getStatutoryDetails,employee_statutory_details,pan_number,SELECT,PASS
+BankDetailsScreen,Aadhaar Number,statutory.aadhaarNumber,String,aadhaar_number,getStatutoryDetails,employee_statutory_details,aadhaar_number,SELECT,PASS
+BankDetailsScreen,UAN Number,statutory.uan,String,uan,getStatutoryDetails,employee_statutory_details,uan,SELECT,PASS
+AttendanceScreen,Punch Type,punchType,String,punch_type,recordPunch,attendance_punches,punch_type,INSERT,PASS WITH ADAPTER
+AttendanceScreen,Punch Timestamp,timestamp.toIso8601String(),String,punch_time,recordPunch,attendance_punches,punch_time,INSERT,PASS
+AttendanceScreen,Latitude,position.latitude,double,latitude,recordPunch,attendance_punches,latitude,INSERT,PASS
+AttendanceScreen,Longitude,position.longitude,double,longitude,recordPunch,attendance_punches,longitude,INSERT,PASS
+AttendanceScreen,Geofence Verified,isInsideGeofence,bool,is_geofence_verified,recordPunch,attendance_punches,is_geofence_verified,INSERT,PASS
+AttendanceScreen,Daily Total Work,daily.totalWorkMinutes,int,total_work_minutes,getDailyAttendance,attendance_daily,total_work_minutes,SELECT,PASS
+RegularizationScreen,Missing Date,selectedDate.toIso8601String(),String,attendance_date,requestRegularization,attendance_regularizations,attendance_date,INSERT,PASS WITH ADAPTER
+RegularizationScreen,Requested Punch In,punchInTime.toIso8601String(),String,requested_check_in,requestRegularization,attendance_regularizations,requested_check_in,INSERT,PASS WITH ADAPTER
+RegularizationScreen,Regularization Reason,reasonController.text,String,reason,requestRegularization,attendance_regularizations,reason,INSERT,PASS WITH ADAPTER
+LeaveScreen,Available Balance,balance.available,double,balance,getLeaveBalances,leave_balances,balance,SELECT,PASS WITH ADAPTER
+ApplyLeaveModal,Leave Type ID,selectedLeaveTypeId,String,leave_type_id,applyLeave,leave_requests,leave_type_id,INSERT,PASS
+ApplyLeaveModal,Start Date,startDate.toIso8601String(),String,start_date,applyLeave,leave_requests,start_date,INSERT,PASS
+ApplyLeaveModal,End Date,endDate.toIso8601String(),String,end_date,applyLeave,leave_requests,end_date,INSERT,PASS
+ApplyLeaveModal,Total Days,totalDays,double,total_days,applyLeave,leave_requests,total_days,INSERT,PASS
+ApplyLeaveModal,Leave Reason,reasonController.text,String,reason,applyLeave,leave_requests,reason,INSERT,PASS
+DocumentsScreen,Document Type,doc.typeId,String,document_type_id,getDocuments,employee_documents,document_type_id,SELECT,PASS
+UploadDocumentModal,Document Number,docNumberController.text,String,document_number,uploadDocument,employee_documents,document_number,INSERT,PASS
+UploadDocumentModal,Storage File Path,uploadedPath,String,file_path,uploadDocument,employee_documents,file_path,INSERT,PASS
+PayslipsScreen,Payslip Number,slip.payslipNumber,String,payslip_number,getPayslips,payslips,payslip_number,SELECT,PASS WITH ADAPTER
+PayslipsScreen,Net Pay,slip.netPay,double,net_pay,getPayslips,payroll_line_items,net_pay,SELECT,PASS WITH ADAPTER
+PayslipsScreen,Gross Earnings,slip.grossEarnings,double,gross_earnings,getPayslips,payroll_line_items,gross_earnings,SELECT,PASS WITH ADAPTER
+PayslipsScreen,Total Deductions,slip.totalDeductions,double,total_deductions,getPayslips,payroll_line_items,total_deductions,SELECT,PASS WITH ADAPTER
+PayslipsScreen,Earnings Breakdown,slip.earningsJson,Map,earnings_breakdown,getPayslips,payroll_line_items,earnings_breakdown,SELECT,PASS WITH ADAPTER
+PayslipsScreen,Deductions Breakdown,slip.deductionsJson,Map,deductions_breakdown,getPayslips,payroll_line_items,deductions_breakdown,SELECT,PASS WITH ADAPTER
+NotificationCenterScreen,Event Title,notif.title,String,payload->title,getNotifications,notification_events,payload,SELECT,PASS
+NotificationCenterScreen,Is Read,notif.isRead,bool,is_read,markAsRead,notification_events,is_read,UPDATE,PASS
+GrievanceScreen,Case Type,selectedType,String,case_type,submitGrievance,posh_and_grievance_cases,case_type,INSERT,PASS
+GrievanceScreen,Description,descController.text,String,description,submitGrievance,posh_and_grievance_cases,description,INSERT,PASS
+ClaimsScreen,Claim Amount,amountController.text,double,details->amount,submitClaim,employee_requests,details,INSERT,PASS WITH ADAPTER
+HelpdeskScreen,Ticket Subject,subjectController.text,String,details->subject,createTicket,employee_requests,details,INSERT,PASS WITH ADAPTER

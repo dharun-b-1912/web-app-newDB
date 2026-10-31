@@ -7,6 +7,7 @@ import { LeaveEntitlement, LeaveRequest, HolidayCalendar } from '../types/leave'
 import { hrEventBus } from './hrEventBus';
 import { profileService, FullProfileContext } from './profileService';
 import { attendanceRosterService } from './attendance/attendanceRosterService';
+import { attendanceTimeService } from './attendance/attendanceTimeService';
 import { getActiveOrgId } from './attendance/biometricCommandService';
 import { approvalService } from './notification/approvalService';
 import { supabase, isSupabaseEnabled } from '../lib/supabase';
@@ -69,7 +70,10 @@ export interface UserWorkspaceData {
 export const workspaceService = {
   // Aggregate authenticated employee personal workspace data
   async getWorkspaceData(user: User, companyId?: string): Promise<UserWorkspaceData> {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = attendanceTimeService.getOrganizationBusinessDate();
+    const yesterdayDateObj = new Date();
+    yesterdayDateObj.setDate(yesterdayDateObj.getDate() - 1);
+    const yesterdayStr = attendanceTimeService.getOrganizationBusinessDate(yesterdayDateObj);
 
     const [
       allEmployees,
@@ -80,7 +84,7 @@ export const workspaceService = {
       profileContext,
     ] = await Promise.all([
       api.getEmployees(companyId ? { companyId } : undefined).catch(() => []),
-      Promise.resolve(attendanceApi.getDailyAttendance(todayStr)).catch(() => []),
+      attendanceApi.getDailyAttendanceForPeriodAsync(yesterdayStr, todayStr, user.employee_id || user.id).catch(() => []),
       Promise.resolve(leaveApi.getEntitlements()).catch(() => []),
       Promise.resolve(leaveApi.getLeaveRequests()).catch(() => []),
       Promise.resolve(leaveApi.getHolidayCalendars()).catch(() => []),
@@ -103,6 +107,22 @@ export const workspaceService = {
       (a) => a.employee_id === empId && a.date === todayStr
     ) || null;
 
+    // Resolve yesterday's attendance record (for active night shift)
+    const yesterdayAttendance = dailyAttendanceList.find(
+      (a) => a.employee_id === empId && a.date === yesterdayStr
+    ) || null;
+
+    // Check if night shift from yesterday is active (checked in yesterday evening, not checked out, and before 12:00 PM IST)
+    const currentIstHour = (new Date().getUTCHours() + 5.5 + new Date().getUTCMinutes() / 60) % 24;
+    const isNightShiftActive =
+      (!todayAttendance || !todayAttendance.first_check_in) &&
+      yesterdayAttendance &&
+      yesterdayAttendance.first_check_in &&
+      !yesterdayAttendance.last_check_out &&
+      currentIstHour < 12.0;
+
+    const activeAttendance = isNightShiftActive ? yesterdayAttendance : todayAttendance;
+
     // Check active leave today
     const activeLeave = leaveRequests.find(
       (l) => l.employee_id === empId && l.status === 'Approved' && l.from_date <= todayStr && l.to_date >= todayStr
@@ -114,27 +134,40 @@ export const workspaceService = {
 
     if (activeLeave) {
       attendanceState = 'OnLeave';
-    } else if (todayAttendance) {
-      if (todayAttendance.last_check_out && todayAttendance.first_check_in) {
+    } else if (activeAttendance) {
+      if (activeAttendance.last_check_out && activeAttendance.first_check_in) {
         attendanceState = 'CheckedOut';
-        const mins = todayAttendance.net_working_minutes || todayAttendance.gross_working_minutes || 0;
+        const mins = activeAttendance.net_working_minutes || activeAttendance.gross_working_minutes || 0;
         const hrs = Math.floor(mins / 60);
         const remMins = mins % 60;
         workingDuration = `${String(hrs).padStart(2, '0')}h ${String(remMins).padStart(2, '0')}m`;
-      } else if (todayAttendance.first_check_in) {
+      } else if (activeAttendance.first_check_in) {
         attendanceState = 'CheckedIn';
-        const now = new Date();
-        const rawTime = todayAttendance.first_check_in;
-        const timeMatch = rawTime.match(/(\d+):(\d+)(?::\d+)?\s*(AM|PM)?/i);
-        if (timeMatch) {
-          let hours = parseInt(timeMatch[1], 10);
-          const minutes = parseInt(timeMatch[2], 10);
-          const ampm = timeMatch[3];
-          if (ampm && ampm.toUpperCase() === 'PM' && hours < 12) hours += 12;
-          if (ampm && ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
-          const checkInDate = new Date();
-          checkInDate.setHours(hours, minutes, 0, 0);
-          const diffMs = Math.max(0, now.getTime() - checkInDate.getTime());
+        
+        // Calculate duration since check-in across midnight
+        const checkInIso = (activeAttendance as any).created_at || (activeAttendance as any).first_in_iso;
+        let startMs = checkInIso ? new Date(checkInIso).getTime() : NaN;
+
+        if (isNaN(startMs)) {
+          const rawTime = activeAttendance.first_check_in;
+          const timeMatch = rawTime.match(/(\d+):(\d+)(?::\d+)?\s*(AM|PM)?/i);
+          if (timeMatch) {
+            let hours = parseInt(timeMatch[1], 10);
+            const minutes = parseInt(timeMatch[2], 10);
+            const ampm = timeMatch[3];
+            if (ampm && ampm.toUpperCase() === 'PM' && hours < 12) hours += 12;
+            if (ampm && ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
+            const checkInDate = new Date();
+            if (isNightShiftActive) {
+              checkInDate.setDate(checkInDate.getDate() - 1);
+            }
+            checkInDate.setHours(hours, minutes, 0, 0);
+            startMs = checkInDate.getTime();
+          }
+        }
+
+        if (!isNaN(startMs) && startMs < Date.now()) {
+          const diffMs = Math.max(0, Date.now() - startMs);
           const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
           const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
           workingDuration = `${String(diffHrs).padStart(2, '0')}h ${String(diffMins).padStart(2, '0')}m`;
@@ -378,14 +411,14 @@ export const workspaceService = {
     const empId = employee?.id || user.employee_id || user.id;
     const empName = employee ? `${employee.first_name} ${employee.last_name}` : user.name;
 
-    if (isSupabaseEnabled && coords?.latitude !== undefined && coords?.longitude !== undefined) {
+    if (isSupabaseEnabled) {
       const { data: punchRes, error: rpcErr } = await supabase.rpc('fn_record_attendance_punch', {
-        p_latitude: coords.latitude,
-        p_longitude: coords.longitude,
-        p_accuracy: coords.accuracy || 20.0,
+        p_latitude: coords?.latitude ?? null,
+        p_longitude: coords?.longitude ?? null,
+        p_accuracy: coords?.accuracy || 20.0,
         p_punch_type: 'IN',
         p_reason: null,
-        p_device_info: { client: 'WEB_ESS' },
+        p_device_info: { client: 'WEB_MOBILE_ESS' },
       });
 
       if (rpcErr) {
@@ -393,6 +426,7 @@ export const workspaceService = {
       }
     }
 
+    attendanceApi.invalidateCache();
     const record = attendanceApi.checkIn(empId, empName, 'WEB');
     hrEventBus.publish('attendance.recorded', record, { actorId: user.id });
     return record;
@@ -407,14 +441,14 @@ export const workspaceService = {
   ): Promise<AttendanceDaily | null> {
     const empId = employee?.id || user.employee_id || user.id;
 
-    if (isSupabaseEnabled && coords?.latitude !== undefined && coords?.longitude !== undefined) {
+    if (isSupabaseEnabled) {
       const { data: punchRes, error: rpcErr } = await supabase.rpc('fn_record_attendance_punch', {
-        p_latitude: coords.latitude,
-        p_longitude: coords.longitude,
-        p_accuracy: coords.accuracy || 20.0,
+        p_latitude: coords?.latitude ?? null,
+        p_longitude: coords?.longitude ?? null,
+        p_accuracy: coords?.accuracy || 20.0,
         p_punch_type: 'OUT',
         p_reason: reason ? reason.trim() : null,
-        p_device_info: { client: 'WEB_ESS' },
+        p_device_info: { client: 'WEB_MOBILE_ESS' },
       });
 
       if (rpcErr) {
@@ -422,6 +456,7 @@ export const workspaceService = {
       }
     }
 
+    attendanceApi.invalidateCache();
     const record = attendanceApi.checkOut(empId);
     if (record) {
       hrEventBus.publish('attendance.updated', record, { actorId: user.id });

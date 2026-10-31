@@ -1,4 +1,15 @@
-  // server.js
+// server.js
+// Ensure WebSocket exists for Node environments where @supabase/realtime-js checks for it
+if (typeof globalThis.WebSocket === 'undefined') {
+  globalThis.WebSocket = class WebSocket {
+    constructor() {}
+    addEventListener() {}
+    removeEventListener() {}
+    send() {}
+    close() {}
+  };
+}
+
 // ============================================================
 // Joy PeopleHR Enterprise — Node.js Production Web App Server
 // Hardened Security: Anti-Hijacking, Strict CORS & Cookie/Session Headers
@@ -382,7 +393,11 @@ app.post('/api/location/resolve-google-maps', async (req, res) => {
 // ============================================================
 const supabaseAdminClient = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://ysiajemrqakfngasehhi.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzaWFqZW1ycWFrZm5nYXNlaGhpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODQxNDEwOSwiZXhwIjoyMTAzOTkwMTA5fQ.D6xZ3REU8mTG9DmSufj8DnAH6qSyMvbukqyf5z9lvxc'
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzaWFqZW1ycWFrZm5nYXNlaGhpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODQxNDEwOSwiZXhwIjoyMTAzOTkwMTA5fQ.D6xZ3REU8mTG9DmSufj8DnAH6qSyMvbukqyf5z9lvxc',
+  {
+    auth: { persistSession: false, autoRefreshToken: false },
+    realtime: { createSocket: () => null }
+  }
 );
 
 // 1. Save or Update Work Location

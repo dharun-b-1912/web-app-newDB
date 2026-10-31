@@ -188,13 +188,29 @@ serve(async (req: Request) => {
     let dailyAttendanceOutcome: any = null;
     if (employeeId) {
       try {
-        // A. Determine IST Attendance Date (early morning < 06:00 overnight check belongs to previous day)
+        // A. Determine IST Attendance Date (morning checkouts for overnight shift attach to previous day's shift date)
         const punchDateObj = new Date(punch_time);
         const istHoursDecimal = (punchDateObj.getUTCHours() + 5.5 + punchDateObj.getUTCMinutes() / 60) % 24;
         let attendanceDateStr = punchDateObj.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // YYYY-MM-DD
-        if (istHoursDecimal < 6.0) {
-          const prevDay = new Date(punchDateObj.getTime() - 24 * 60 * 60 * 1000);
-          attendanceDateStr = prevDay.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        const prevDay = new Date(punchDateObj.getTime() - 24 * 60 * 60 * 1000);
+        const prevDayDateStr = prevDay.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+        // If punch is in morning before 14:00, check if employee has an open overnight shift on yesterday
+        if (istHoursDecimal < 14.0) {
+          const { data: prevOvernight } = await supabase
+            .from('attendance_daily')
+            .select('id, first_check_in, last_check_out, is_overnight, shift_code')
+            .eq('employee_id', employeeId)
+            .eq('attendance_date', prevDayDateStr)
+            .or('is_overnight.eq.true,shift_code.ilike.%NS%,shift_code.ilike.%NGT%')
+            .is('last_check_out', null)
+            .limit(1);
+
+          if (prevOvernight && prevOvernight.length > 0) {
+            attendanceDateStr = prevDayDateStr;
+          } else if (istHoursDecimal < 6.0) {
+            attendanceDateStr = prevDayDateStr;
+          }
         }
 
         // B. Resolve Adaptive Shift (Contract assignment -> Roster -> Adaptive Candidate Inference)
@@ -339,7 +355,11 @@ serve(async (req: Request) => {
           const inMs = new Date(existingDaily.first_check_in).getTime();
           const outMs = punchDate.getTime();
           const totalWorkMinutes = Math.max(0, Math.floor((outMs - inMs) / 60000));
-          const overtimeMinutes = Math.max(0, totalWorkMinutes - 480);
+          
+          // Determine shift scheduled duration (e.g. 720m for 12h night shift, 540m for 9h day shift)
+          const isOvernight = Boolean(existingDaily.is_overnight || (existingDaily.shift_code && (existingDaily.shift_code.includes('NS') || existingDaily.shift_code.includes('NGT'))));
+          const scheduledDuration = isOvernight ? 720 : (shiftEndMinutes > shiftStartMinutes ? (shiftEndMinutes - shiftStartMinutes) : 540);
+          const overtimeMinutes = Math.max(0, totalWorkMinutes - scheduledDuration);
 
           let finalStatus = existingDaily.status || 'PRESENT';
           let payableStatus = existingDaily.payable_status ?? 1.0;
