@@ -4,11 +4,10 @@
 
 ### English (United States) - en-US / English (India) - en-IN
 ```text
-• Night Shift Cross-Midnight Cutoff: Seamless check-out support across midnight with smart next-day 12:00 PM cutoff lock and automatic date reset.
-• Dynamic Shift Schedule Display: Real-time visibility into assigned shift start and end times directly on the home screen.
-• Enhanced Attendance Stability: Isolated check-in state guards preventing duplicate punches and state discrepancies across mobile and biometric devices.
-• Prominent Location Disclosure: Transparent in-app location disclosure compliant with Google Play Data Safety & background location guidelines.
-• Performance & Bug Fixes: General reliability enhancements, battery-optimized foreground tracking, and Android 15/16 compatibility.
+• Improved night shift attendance for seamless check-ins and check-outs across midnight.
+• View your assigned shift schedule and timings directly on the home screen.
+• Faster and more accurate attendance sync across mobile and biometric devices.
+• Overall performance improvements and bug fixes for a smoother experience.
 ```
 
 ---
