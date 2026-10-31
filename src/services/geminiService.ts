@@ -65,9 +65,33 @@ export async function askWorkForceCopilot(
   const company = context?.companyName || 'Joy PeopleHR Enterprise';
   const org = context?.organizationName || 'Global Enterprise HRMS';
 
+  // Item #5 & #10: Strict User Input Sanitization & Anti-Command Injection
+  const cleanPrompt = (prompt || '')
+    .slice(0, 2000)
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/javascript:/gi, '')
+    .trim();
+
+  if (!cleanPrompt) {
+    return 'Please enter a valid question or query.';
+  }
+
+  // Item #20: Log Admin Actions into Forensic Audit Trail
+  if (isSuperAdmin) {
+    platformAuditService.logEvent({
+      action: `Copilot Query: "${cleanPrompt.slice(0, 80)}"`,
+      event_type: 'COPILOT_ADMIN_QUERY',
+      resource_type: 'AI_COPILOT',
+      actor_role: context?.userRole || 'SUPER_ADMIN',
+      reason: 'Administrative intelligence prompt executed',
+      result: 'Success',
+      severity: 'Low',
+    }).catch(() => {});
+  }
+
   // 1. Check Upstash Redis AI Response Cache (sub-10ms response, 0 API tokens spent)
-  const cleanPrompt = prompt.trim().toLowerCase();
-  const cacheKey = `joy:copilot:${isSuperAdmin ? 'admin' : company.toLowerCase().replace(/[^a-z0-9]/g, '_')}:${hashPrompt(cleanPrompt)}`;
+  const normalizedPrompt = cleanPrompt.toLowerCase();
+  const cacheKey = `joy:copilot:${isSuperAdmin ? 'admin' : company.toLowerCase().replace(/[^a-z0-9]/g, '_')}:${hashPrompt(normalizedPrompt)}`;
   try {
     const cached = await JoyRedis.get<string>(cacheKey);
     if (cached) {

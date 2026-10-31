@@ -400,6 +400,32 @@ const supabaseAdminClient = createClient(
   }
 );
 
+// Universal Server-Side Forensic Admin Action Logger (Item #20: Log admin actions)
+async function logAdminAction({ organizationId, actorId, actorRole, action, entityType, entityId, metadata, req }) {
+  try {
+    const rawIp = (req && (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || ''))
+      .toString().split(',')[0].trim();
+    const userAgent = req?.headers?.['user-agent'] || 'Joy-Server-Gateway';
+
+    await supabaseAdminClient.from('audit_logs').insert([{
+      organization_id: (organizationId && organizationId.length === 36) ? organizationId : '0c621892-e938-4707-9957-13534ea32c19',
+      actor_id: actorId || null,
+      actor_role: actorRole || 'ADMIN',
+      action: action || 'ADMIN_ACTION',
+      entity_type: entityType || 'SYSTEM',
+      entity_id: entityId ? String(entityId) : null,
+      ip_address: rawIp,
+      user_agent: userAgent,
+      new_values: metadata || {},
+      metadata: metadata || {},
+      status: 'SUCCESS',
+      created_at: new Date().toISOString()
+    }]);
+  } catch (err) {
+    console.warn('[AuditLogger] Notice recording admin audit log:', err.message);
+  }
+}
+
 // 1. Save or Update Work Location
 app.post('/api/work-locations/save', async (req, res) => {
   try {
@@ -439,6 +465,16 @@ app.post('/api/work-locations/save', async (req, res) => {
       console.error('[Backend WorkLocations Save Error]:', error);
       return res.status(500).json({ success: false, error: error.message });
     }
+
+    // Item #20: Log Admin Action to Forensic Audit Trail
+    logAdminAction({
+      organizationId: orgId,
+      action: location.id ? 'WORK_LOCATION_UPDATE' : 'WORK_LOCATION_CREATE',
+      entityType: 'WORK_LOCATION',
+      entityId: data.id,
+      metadata: { name: data.name, geofence_radius: data.geofence_radius_meters, is_active: data.is_active },
+      req,
+    });
 
     return res.json({ success: true, location: data });
   } catch (err) {
@@ -487,6 +523,16 @@ app.post('/api/work-locations/assign', async (req, res) => {
       }
     }
 
+    // Item #20: Log Admin Action to Forensic Audit Trail
+    logAdminAction({
+      organizationId: orgId,
+      action: 'WORK_LOCATION_ASSIGN_EMPLOYEE',
+      entityType: 'EMPLOYEE_LOCATION_ASSIGNMENT',
+      entityId: employeeId,
+      metadata: { assignedLocationsCount: validIds.length, locationIds: validIds },
+      req,
+    });
+
     return res.json({ success: true, assignedCount: validIds.length });
   } catch (err) {
     console.error('[Backend WorkLocations Assign Exception]:', err);
@@ -511,6 +557,15 @@ app.delete('/api/work-locations/:id', async (req, res) => {
       console.error('[Backend WorkLocations Delete Error]:', error);
       return res.status(500).json({ success: false, error: error.message });
     }
+
+    // Item #20: Log Admin Action to Forensic Audit Trail
+    logAdminAction({
+      action: 'WORK_LOCATION_DELETE',
+      entityType: 'WORK_LOCATION',
+      entityId: id,
+      metadata: { deletedLocationId: id },
+      req,
+    });
 
     return res.json({ success: true });
   } catch (err) {
