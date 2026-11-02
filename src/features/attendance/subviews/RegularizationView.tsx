@@ -54,7 +54,7 @@ import {
 
 export interface RegularizationViewProps {
   onNavigateSubPath?: (subPath: string) => void;
-  onOpenEmployeeProfile?: (empId: string) => void;
+  onOpenEmployeeProfile?: (empId: string, date?: string) => void;
 }
 
 export const RegularizationView: React.FC<RegularizationViewProps> = ({
@@ -454,8 +454,9 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
                     </td>
                     <td className="p-3 font-bold text-gray-900 whitespace-nowrap">
                       <button
-                        onClick={() => onOpenEmployeeProfile && onOpenEmployeeProfile(req.employee_id)}
+                        onClick={() => onOpenEmployeeProfile && onOpenEmployeeProfile(req.employee_id, req.attendance_date)}
                         className="text-left hover:text-[#07563D] hover:underline cursor-pointer block"
+                        title={`View monthly attendance statement for ${req.employee_name}`}
                       >
                         {req.employee_name}
                       </button>
@@ -648,7 +649,7 @@ export const RegularizationView: React.FC<RegularizationViewProps> = ({
                 Close
               </Button>
 
-              {(selectedRequest.status === 'MANAGER_PENDING' || selectedRequest.status === 'HR_PENDING') ? (
+              {(selectedRequest.status === 'MANAGER_PENDING' || selectedRequest.status === 'HR_PENDING' || (selectedRequest.status as any) === 'PENDING' || (selectedRequest.status as any) === 'Pending Manager') ? (
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"

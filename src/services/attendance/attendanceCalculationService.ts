@@ -327,9 +327,18 @@ class AttendanceCalculationService {
             r.employee_code === employee?.employee_code ||
             (employee?.display_name && r.employee_name && r.employee_name.trim().toLowerCase() === employee.display_name.trim().toLowerCase()))
       );
-      const isRegApproved = regForDate && (regForDate.status === 'Approved' || regForDate.status === 'APPROVED');
-      if (isRegApproved && !rawLastOut) {
-        rawLastOut = regForDate.requested_check_out || regForDate.requested_out_time || '18:30';
+      const isRegApproved = Boolean(
+        (regForDate && (regForDate.status === 'Approved' || regForDate.status === 'APPROVED')) ||
+        rawRec?.is_regularized ||
+        rawRec?.status === 'Regularized'
+      );
+      if (isRegApproved) {
+        if (!rawFirstIn && (regForDate?.requested_check_in || rawRec?.first_check_in)) {
+          rawFirstIn = regForDate?.requested_check_in || rawRec?.first_check_in;
+        }
+        if (!rawLastOut) {
+          rawLastOut = regForDate?.requested_check_out || regForDate?.requested_out_time || rawRec?.last_check_out || '18:30';
+        }
       }
 
       const hasRealPunch = Boolean(rawFirstIn || rawLastOut);

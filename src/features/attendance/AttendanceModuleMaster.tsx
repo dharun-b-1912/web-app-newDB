@@ -668,7 +668,10 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
         return (
           <RegularizationView
             onNavigateSubPath={sub => handleSelectTab(sub)}
-            onOpenEmployeeProfile={id => setSelectedEmployeeProfileId(id)}
+            onOpenEmployeeProfile={(id, date) => {
+              setSelectedEmployeeProfileId(id);
+              if (date) setSelectedProfileDate(date);
+            }}
           />
         );
       case 'exceptions':

@@ -1687,6 +1687,9 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
       ? await attendanceApi.getDailyAttendanceForPeriodAsync(periodStart, periodEnd)
       : attendanceApi.getDailyAttendance();
     const allLeaveRequests = leaveApi.getLeaveRequests();
+    const allRegularizations = isSupabaseEnabled
+      ? await attendanceApi.getRegularizationsAsync().catch(() => [])
+      : attendanceApi.getRegularizations();
 
     const periodStartDate = new Date(periodStart);
     const periodEndDate = new Date(periodEnd);
@@ -1802,7 +1805,21 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
         const currentMins = now.getHours() * 60 + now.getMinutes();
         const isShiftEndedToday = dateStr < todayStr || (dateStr === todayStr && currentMins >= (1080 + 15));
 
-        if (att) {
+        // Check if day has an approved regularization
+        const isApprovedReg = allRegularizations.some(r =>
+          ((r.attendance_date && r.attendance_date === dateStr) || ((r as any).date && (r as any).date === dateStr)) &&
+          (
+            (r.employee_id && empId && r.employee_id.toLowerCase() === empId.toLowerCase()) ||
+            (r.employee_code && empCode && r.employee_code.toLowerCase() === empCode.toLowerCase()) ||
+            (r.employee_name && empName && r.employee_name.toLowerCase() === empName.toLowerCase())
+          ) &&
+          (r.status === 'Approved' || r.status === 'APPROVED')
+        ) || Boolean(att && ((att as any).is_regularized || (att.status as string) === 'Regularized'));
+
+        if (isApprovedReg) {
+          // Regularized day is authoritatively approved by HR as Present & Payable
+          recordedPresent++;
+        } else if (att) {
           if (att.status === 'Absent') {
             if (isShiftEndedToday) {
               recordedAbsent++;
@@ -1821,6 +1838,7 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
             }
           } else if (
             att.status === 'Present' ||
+            (att.status as string) === 'Regularized' ||
             att.status === 'WFH' ||
             att.status === 'Late' ||
             att.status === 'Early Checkout' ||
