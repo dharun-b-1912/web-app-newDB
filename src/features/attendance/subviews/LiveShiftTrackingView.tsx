@@ -305,6 +305,11 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }, []);
 
+  // Selected employee data
+  const activeEmployee = useMemo(() => {
+    return liveEmployees.find((e) => e.employee_id === selectedEmployeeId) || liveEmployees[0] || null;
+  }, [liveEmployees, selectedEmployeeId]);
+
   const trailTotalDistance = useMemo(() => {
     if (!activeEmployee || trails.length === 0) return 0;
 
@@ -432,11 +437,6 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
       loadEmployeeTrails(selectedEmployeeId, selectedDate);
     }
   }, [selectedEmployeeId, selectedDate, loadEmployeeTrails]);
-
-  // Selected employee data
-  const activeEmployee = useMemo(() => {
-    return liveEmployees.find((e) => e.employee_id === selectedEmployeeId) || liveEmployees[0] || null;
-  }, [liveEmployees, selectedEmployeeId]);
 
   // Cluster historical trail breadcrumbs into clear Stays (dwell stops) and Trips (transit)
   const timelineSegments = useMemo<TimelineSegment[]>(() => {
