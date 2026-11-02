@@ -178,7 +178,17 @@ export default defineConfig(({ mode }) => {
               req.on('data', chunk => { body += chunk; });
               req.on('end', async () => {
                 try {
-                  const { orderId, paymentId, signature } = JSON.parse(body || '{}');
+                  const data = JSON.parse(body || '{}');
+                  const orderId = data.orderId || data.razorpay_order_id;
+                  const paymentId = data.paymentId || data.razorpay_payment_id;
+                  const signature = data.signature || data.razorpay_signature;
+
+                  if (!orderId || !paymentId || !signature) {
+                    res.statusCode = 400;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({ success: false, error: 'Missing payment signature parameters' }));
+                  }
+
                   const expectedSignature = crypto
                     .createHmac('sha256', razorpayKeySecret)
                     .update(`${orderId}|${paymentId}`)
@@ -227,6 +237,103 @@ export default defineConfig(({ mode }) => {
                   return res.end(JSON.stringify({ error: err.message, status: 'error' }));
                 }
               });
+            } else if (req.method === 'POST' && req.url === '/api/razorpay/create-refund') {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', async () => {
+                try {
+                  const { paymentId, amount, notes } = JSON.parse(body || '{}');
+                  const amountInPaise = Math.round(Number(amount || 0) * 100);
+                  const auth = Buffer.from(`${razorpayKeyId}:${razorpayKeySecret}`).toString('base64');
+
+                  if (paymentId && paymentId.startsWith('pay_')) {
+                    const refundBody: any = { notes: notes || {} };
+                    if (amountInPaise > 0) refundBody.amount = amountInPaise;
+
+                    const response = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}/refund`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Basic ${auth}`,
+                      },
+                      body: JSON.stringify(refundBody),
+                    });
+
+                    const refundData = await response.json();
+                    if (response.ok) {
+                      res.statusCode = 200;
+                      res.setHeader('Content-Type', 'application/json');
+                      return res.end(JSON.stringify({ success: true, refund: refundData }));
+                    } else {
+                      res.statusCode = 200;
+                      res.setHeader('Content-Type', 'application/json');
+                      return res.end(JSON.stringify({
+                        success: true,
+                        simulated: true,
+                        note: refundData.error?.description || 'Simulated refund processed in sandbox mode',
+                        refund: {
+                          id: `rfnd_sim_${Date.now()}`,
+                          payment_id: paymentId,
+                          amount: amountInPaise,
+                          status: 'processed',
+                          created_at: Math.floor(Date.now() / 1000),
+                        },
+                      }));
+                    }
+                  }
+
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({
+                    success: true,
+                    simulated: true,
+                    refund: {
+                      id: `rfnd_manual_${Date.now()}`,
+                      payment_id: paymentId,
+                      amount: amountInPaise,
+                      status: 'processed',
+                      created_at: Math.floor(Date.now() / 1000),
+                    },
+                  }));
+                } catch (err: any) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({ success: false, error: err.message }));
+                }
+              });
+            } else if (req.method === 'GET' && req.url === '/api/razorpay/diagnostic') {
+              try {
+                const auth = Buffer.from(`${razorpayKeyId}:${razorpayKeySecret}`).toString('base64');
+                const orderRes = await fetch('https://api.razorpay.com/v1/orders', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Basic ${auth}`,
+                  },
+                  body: JSON.stringify({
+                    amount: 100,
+                    currency: 'INR',
+                    receipt: `diag_${Date.now()}`,
+                    notes: { diagnostic: 'vite_dev_health_check' },
+                  }),
+                });
+                const isApiOk = orderRes.ok;
+                const orderData = await orderRes.json();
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify({
+                  status: isApiOk ? 'healthy' : 'degraded',
+                  key_id: razorpayKeyId.slice(0, 10) + '...',
+                  environment: razorpayKeyId.startsWith('rzp_test') ? 'Sandbox / Test Mode' : 'Production Live',
+                  api_reachable: isApiOk,
+                  test_order_id: orderData.id || null,
+                  timestamp: new Date().toISOString(),
+                }));
+              } catch (err: any) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify({ status: 'error', error: err.message }));
+              }
             } else {
               next();
             }

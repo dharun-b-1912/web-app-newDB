@@ -115,6 +115,8 @@ export interface RefundItem {
   refund_number: string;
   invoice_number: string;
   payment_ref: string;
+  gateway_refund_id?: string;
+  payment_method?: string;
   tenant_name: string;
   amount: number;
   reason: string;
@@ -621,11 +623,43 @@ export const platformBillingService = {
 
     const refundNum = `REF-2026-${String(refundDb.length + 1).padStart(5, '0')}`;
     const actor = getActorInfo(params.authorizedBy);
+    const paymentRef = inv.transaction_ref || (inv as any).payment_gateway_ref || 'PAY-REF-ORIGINAL';
+    let gatewayRefundId: string | undefined = undefined;
+
+    // Trigger online Razorpay refund if payment reference is present
+    try {
+      const refundRes = await fetch('/api/razorpay/create-refund', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentId: paymentRef,
+          amount: params.amount,
+          notes: {
+            invoice_number: inv.invoice_number,
+            tenant_name: inv.tenant_name,
+            reason: params.reason,
+            refund_number: refundNum,
+          },
+        }),
+      });
+
+      if (refundRes.ok) {
+        const rData = await refundRes.json();
+        if (rData && rData.refund && rData.refund.id) {
+          gatewayRefundId = rData.refund.id;
+        }
+      }
+    } catch (refErr) {
+      console.warn('[PlatformBillingService] Razorpay online refund API note:', refErr);
+    }
+
     const refund: RefundItem = {
       id: `ref-${Date.now()}`,
       refund_number: refundNum,
       invoice_number: inv.invoice_number,
-      payment_ref: inv.transaction_ref || 'PAY-REF-ORIGINAL',
+      payment_ref: paymentRef,
+      gateway_refund_id: gatewayRefundId,
+      payment_method: inv.payment_method || 'Razorpay (Sandbox)',
       tenant_name: inv.tenant_name,
       amount: params.amount,
       reason: params.reason,
@@ -637,7 +671,7 @@ export const platformBillingService = {
     refundDb.unshift(refund);
     inv.amount_paid = Math.max(0, inv.amount_paid - params.amount);
     inv.balance_due += params.amount;
-    inv.status = 'Partially Paid';
+    inv.status = inv.amount_paid <= 0 ? 'Refunded' : 'Partially Paid';
 
     await platformAuditService.logEvent({
       actor_id: actor.actor_id,
@@ -649,7 +683,7 @@ export const platformBillingService = {
       resource_type: 'Refund',
       resource_id: refund.id,
       severity: 'High',
-      reason: `Issued refund ${refundNum} of ₹${params.amount.toLocaleString('en-IN')} for ${inv.invoice_number}`,
+      reason: `Issued refund ${refundNum} of ₹${params.amount.toLocaleString('en-IN')} for ${inv.invoice_number} (Gateway ref: ${gatewayRefundId || 'N/A'})`,
     });
 
     return refund;

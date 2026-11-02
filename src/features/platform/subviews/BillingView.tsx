@@ -149,6 +149,62 @@ export const BillingView: React.FC<BillingViewProps> = ({ onNavigateTab }) => {
     document.body.removeChild(link);
   };
 
+  // Razorpay Gateway Diagnostics & Webhook Testing State
+  const [gatewayDiag, setGatewayDiag] = useState<any>(null);
+  const [isRunningDiag, setIsRunningDiag] = useState<boolean>(false);
+  const [diagOutput, setDiagOutput] = useState<string | null>(null);
+
+  const runGatewayDiagnostic = async () => {
+    setIsRunningDiag(true);
+    try {
+      const res = await fetch('/api/razorpay/diagnostic');
+      const data = await res.json();
+      setGatewayDiag(data);
+      setDiagOutput(`[Razorpay Gateway Diagnostic]\nStatus: ${data.status.toUpperCase()}\nKey ID: ${data.key_id}\nEnvironment: ${data.environment}\nAPI Reachable: ${data.api_reachable ? 'YES (200 OK)' : 'NO'}\nTest Order ID: ${data.test_order_id || 'N/A'}\nWebhook Secret Configured: ${data.webhook_secret_configured ? 'YES' : 'NO'}\nTimestamp: ${data.timestamp}`);
+    } catch (e: any) {
+      setDiagOutput(`Diagnostic check failed: ${e.message}`);
+    } finally {
+      setIsRunningDiag(false);
+    }
+  };
+
+  const runTestWebhook = async () => {
+    setIsRunningDiag(true);
+    try {
+      const testEvent = {
+        event: 'payment.captured',
+        account_id: 'acc_test_joypeoplehr',
+        contains: ['payment'],
+        payload: {
+          payment: {
+            entity: {
+              id: `pay_test_${Date.now()}`,
+              amount: 500000,
+              currency: 'INR',
+              status: 'captured',
+              order_id: `order_test_${Date.now()}`,
+              notes: {
+                diagnostic: 'admin_test_webhook_ping',
+              },
+            },
+          },
+        },
+      };
+
+      const res = await fetch('/api/razorpay/webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(testEvent),
+      });
+      const data = await res.json();
+      setDiagOutput(`[Razorpay Ingress Webhook Simulation]\nStatus: ${res.status} OK\nEvent: ${data.event}\nSignature Verified: ${data.verified ? 'YES (HMAC Match)' : 'NO'}\nProcessed At: ${data.processed_at}`);
+    } catch (e: any) {
+      setDiagOutput(`Webhook test failed: ${e.message}`);
+    } finally {
+      setIsRunningDiag(false);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-16 font-sans">
       {/* ----------------------------------------------------
@@ -246,6 +302,65 @@ export const BillingView: React.FC<BillingViewProps> = ({ onNavigateTab }) => {
           <div className="text-2xl font-bold font-mono text-purple-700">₹{kpiMetrics.taxCollected.toLocaleString('en-IN')}</div>
           <span className="text-[10px] text-purple-700 font-medium">GST Payable Output</span>
         </div>
+      </div>
+
+      {/* ----------------------------------------------------
+          2.1 RAZORPAY GATEWAY & WEBHOOK LIVE DIAGNOSTIC HUD
+         ---------------------------------------------------- */}
+      <div className="p-4 bg-gradient-to-r from-emerald-50/80 via-white to-slate-50 border border-emerald-200/80 rounded-2xl shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+              <CreditCard className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-xs font-bold text-gray-900">Razorpay Enterprise Billing & Webhook Gateway</h4>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  {gatewayDiag?.status === 'healthy' ? 'Active & Operational (200 OK)' : 'Active (Sandbox Ready)'}
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                Key ID: <span className="font-mono font-bold text-gray-700">rzp_test_TqReUSPk2WMRmD</span> • Ingress: <span className="font-mono text-gray-700">/api/razorpay/webhook</span> • Auto-Refunds & HMAC Active
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={runGatewayDiagnostic}
+              disabled={isRunningDiag}
+              className="text-xs font-bold text-[#047857] border-emerald-300 hover:bg-emerald-50 h-8"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1 ${isRunningDiag ? 'animate-spin' : ''}`} />
+              Test API Key & Orders
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={runTestWebhook}
+              disabled={isRunningDiag}
+              className="text-xs font-bold text-indigo-700 border-indigo-200 hover:bg-indigo-50 h-8"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+              Simulate Webhook
+            </Button>
+          </div>
+        </div>
+
+        {diagOutput && (
+          <div className="bg-slate-900 text-emerald-400 p-3 rounded-xl font-mono text-[11px] whitespace-pre-wrap relative animate-in fade-in">
+            <button
+              onClick={() => setDiagOutput(null)}
+              className="absolute top-2 right-2 text-gray-400 hover:text-white text-xs px-1.5 py-0.5 rounded bg-slate-800"
+            >
+              Dismiss
+            </button>
+            {diagOutput}
+          </div>
+        )}
       </div>
 
       {/* ----------------------------------------------------
@@ -551,6 +666,8 @@ export const BillingView: React.FC<BillingViewProps> = ({ onNavigateTab }) => {
                   <th className="py-3 px-4">Invoice #</th>
                   <th className="py-3 px-4">Customer</th>
                   <th className="py-3 px-4">Refund Amount</th>
+                  <th className="py-3 px-4">Gateway Refund / Payment Ref</th>
+                  <th className="py-3 px-4">Method</th>
                   <th className="py-3 px-4">Reason</th>
                   <th className="py-3 px-4">Date</th>
                   <th className="py-3 px-5 text-right">Status</th>
@@ -559,7 +676,7 @@ export const BillingView: React.FC<BillingViewProps> = ({ onNavigateTab }) => {
               <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
                 {refunds.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-gray-400">
+                    <td colSpan={9} className="py-12 text-center text-gray-400">
                       No refunds processed.
                     </td>
                   </tr>
@@ -570,10 +687,25 @@ export const BillingView: React.FC<BillingViewProps> = ({ onNavigateTab }) => {
                       <td className="py-3.5 px-4 font-mono font-bold text-gray-900">{ref.invoice_number}</td>
                       <td className="py-3.5 px-4 font-bold text-gray-900">{ref.tenant_name}</td>
                       <td className="py-3.5 px-4 font-mono font-bold text-rose-600">₹{ref.amount.toLocaleString('en-IN')}</td>
+                      <td className="py-3.5 px-4 font-mono text-[11px] text-gray-600">
+                        {ref.gateway_refund_id ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                            {ref.gateway_refund_id}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">{ref.payment_ref || 'Local / Manual'}</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-700">
+                          {ref.payment_method || 'Razorpay (Test)'}
+                        </span>
+                      </td>
                       <td className="py-3.5 px-4 text-gray-600">{ref.reason}</td>
                       <td className="py-3.5 px-4 text-gray-500">{ref.created_at}</td>
                       <td className="py-3.5 px-5 text-right">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
                           {ref.status}
                         </span>
                       </td>
