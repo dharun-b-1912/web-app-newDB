@@ -273,6 +273,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [timelineViewMode, setTimelineViewMode] = useState<'smart' | 'raw'>('smart');
   const [stopAddressMap, setStopAddressMap] = useState<Record<string, ResolvedLocationDetails>>({});
+  const [isPingingDevice, setIsPingingDevice] = useState<boolean>(false);
 
   const mapContainerRef = React.useRef<HTMLDivElement>(null);
   const googleMapInstanceRef = React.useRef<any>(null);
@@ -437,6 +438,41 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
       loadEmployeeTrails(selectedEmployeeId, selectedDate);
     }
   }, [selectedEmployeeId, selectedDate, loadEmployeeTrails]);
+
+  // Dispatches on-demand high-priority background GPS wake-up push to employee device
+  const handlePingDevice = async () => {
+    if (!activeEmployee || isPingingDevice) return;
+    setIsPingingDevice(true);
+    showToast({
+      title: 'Pinging Device',
+      message: `Sending silent background GPS wake-up signal to ${activeEmployee.employee_name}...`,
+      type: 'info',
+    });
+    try {
+      const res = await shiftTrackingService.pingEmployeeDevice(activeEmployee.employee_id);
+      if (res.success) {
+        showToast({
+          title: 'Wake-Up Signal Sent',
+          message: 'GPS ping delivered. The map will sync as soon as the phone transmits.',
+          type: 'success',
+        });
+      } else {
+        showToast({
+          title: 'Ping Notice',
+          message: res.message,
+          type: 'warning',
+        });
+      }
+    } catch (err: any) {
+      showToast({
+        title: 'Ping Error',
+        message: err?.message || 'Failed to ping device',
+        type: 'error',
+      });
+    } finally {
+      setIsPingingDevice(false);
+    }
+  };
 
   // Cluster historical trail breadcrumbs into clear Stays (dwell stops) and Trips (transit)
   const timelineSegments = useMemo<TimelineSegment[]>(() => {
@@ -1467,14 +1503,14 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                   </Badge>
                 </div>
               ) : !activeEmployee.has_live_ping ? (
-                <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-900">
+                <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl flex flex-wrap items-center justify-between text-xs text-amber-900 gap-2">
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4 text-amber-600 shrink-0" />
                     <span>
                       {activeEmployee.is_stale && activeEmployee.latitude !== 0 ? (
                         <>
                           <strong>Morning Check-In Point ({activeEmployee.last_pinged_at ? new Date(activeEmployee.last_pinged_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Earlier'}{activeEmployee.minutes_since_ping ? ` • ${Math.floor(activeEmployee.minutes_since_ping / 60)}h ago` : ''}): </strong>
-                          Phone has not transmitted background GPS since check-in. Showing punch location. Have the employee open the JOY PeopleHR app on their phone to sync their current office location.
+                          Phone has not transmitted background GPS recently. Showing check-in point.
                         </>
                       ) : activeEmployee.latitude !== 0 ? (
                         <>
@@ -1489,9 +1525,21 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                       )}
                     </span>
                   </div>
-                  <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-300 font-bold shrink-0">
-                    {activeEmployee.is_stale ? 'Check-In Location' : 'Awaiting GPS'}
-                  </Badge>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={isPingingDevice}
+                      onClick={handlePingDevice}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
+                      title="Send silent high-priority FCM push to wake up device GPS"
+                    >
+                      <Radio className={cn('w-3.5 h-3.5', isPingingDevice && 'animate-spin')} />
+                      <span>{isPingingDevice ? 'Pinging...' : 'Ping Device GPS'}</span>
+                    </button>
+                    <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-300 font-bold shrink-0">
+                      {activeEmployee.is_stale ? 'Check-In Location' : 'Awaiting GPS'}
+                    </Badge>
+                  </div>
                 </div>
               ) : null}
 

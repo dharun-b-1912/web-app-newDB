@@ -641,6 +641,54 @@ class ShiftTrackingService {
   }
 
   /**
+   * Pings an employee's device via silent high-priority FCM wake-up
+   * to immediately acquire their current GPS location even when app is closed.
+   */
+  async pingEmployeeDevice(
+    employeeId: string,
+    orgIdParam?: string
+  ): Promise<{ success: boolean; message: string }> {
+    const orgId = orgIdParam || getActiveOrgId();
+    if (!isSupabaseEnabled || !supabase) {
+      return { success: false, message: 'Database connection offline' };
+    }
+
+    try {
+      // 1. Dispatch high-priority silent background wake-up notification
+      const { data, error } = await supabase.functions.invoke('send-push-notification', {
+        body: {
+          employee_id: employeeId,
+          title: 'JOY PeopleHR System Wakeup',
+          body: '',
+          data: {
+            action: 'FETCH_LOCATION',
+            employee_id: employeeId,
+            organization_id: orgId,
+            silent: true,
+            timestamp: new Date().toISOString(),
+          },
+        },
+      });
+
+      if (!error && data?.success) {
+        return { success: true, message: 'High-priority GPS wake-up delivered to employee device' };
+      }
+
+      // 2. Fallback: Broadcast over Supabase Realtime channel
+      const channel = supabase.channel(`device-wake-up-${employeeId}`);
+      await channel.send({
+        type: 'broadcast',
+        event: 'FETCH_LOCATION',
+        payload: { employee_id: employeeId, organization_id: orgId },
+      });
+
+      return { success: true, message: 'Wake-up command broadcasted to device' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Failed to ping device' };
+    }
+  }
+
+  /**
    * Subscribes to Realtime updates on employee_live_locations
    */
   subscribeLiveUpdates(
