@@ -317,22 +317,28 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
   const trailTotalDistance = useMemo(() => {
     if (!activeEmployee || trails.length === 0) return 0;
 
+    // Filter trails strictly to this active employee to prevent cross-employee trail bleed
+    const empTrails = trails.filter(
+      (t) => t.employee_id === activeEmployee.employee_id && t.latitude && t.longitude && t.latitude !== 0
+    );
+    if (empTrails.length === 0) return 0;
+
     // Only apply road-snapped distance if computed strictly for THIS active employee with genuine waypoints
     if (
       computedRoadDistance &&
       computedRoadDistance.employeeId === activeEmployee.employee_id &&
-      trails.length >= 2
+      empTrails.length >= 2
     ) {
       return computedRoadDistance.meters;
     }
 
-    const last = trails[trails.length - 1];
+    const last = empTrails[empTrails.length - 1];
     if (last && typeof last.cumulative_distance_meters === 'number' && last.cumulative_distance_meters > 0) {
       return last.cumulative_distance_meters;
     }
     // Filter out indoor stationary drift / heartbeat / initial ping noise:
     // Only sum legitimate physical movements (displacement >= 30m and verified speed)
-    return trails.reduce((acc, t) => {
+    return empTrails.reduce((acc, t) => {
       const isInitial = t.metadata?.is_initial === true;
       const isHeartbeat = t.metadata?.is_heartbeat === true;
       const disp = Number(t.displacement_meters) || 0;
@@ -342,6 +348,16 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
       return acc + disp;
     }, 0);
   }, [trails, computedRoadDistance, activeEmployee]);
+
+  // Synchronously switch employee and reset stale trails/distance in the same render pass
+  const handleSelectEmployee = useCallback((empId: string) => {
+    if (selectedEmployeeIdRef.current === empId) return;
+    setSelectedEmployeeId(empId);
+    setTrails([]);
+    setComputedRoadDistance(null);
+    setIsFleetOverview(false);
+    setAutoFollow(true);
+  }, []);
 
   const fitAllEmployeesBounds = useCallback(() => {
     if (!googleMapInstanceRef.current || !window.google?.maps) return;
@@ -381,6 +397,8 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
           }
           const currentEmp = data.find((d) => d.employee_id === prev);
           if (firstLive && currentEmp && !currentEmp.has_live_ping) {
+            setTrails([]);
+            setComputedRoadDistance(null);
             return firstLive.employee_id;
           }
           return prev;
@@ -525,7 +543,11 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
 
   // Cluster historical trail breadcrumbs into clear Stays (dwell stops) and Trips (transit)
   const timelineSegments = useMemo<TimelineSegment[]>(() => {
-    if (!trails || trails.length === 0) {
+    const empTrails = (trails || []).filter(
+      (t) => activeEmployee && t.employee_id === activeEmployee.employee_id
+    );
+
+    if (empTrails.length === 0) {
       if (activeEmployee && activeEmployee.latitude !== 0) {
         const start = activeEmployee.last_pinged_at ? new Date(activeEmployee.last_pinged_at) : new Date();
         const hasLive = Boolean(activeEmployee.has_live_ping);
@@ -548,7 +570,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
     }
 
     const segments: TimelineSegment[] = [];
-    const sorted = [...trails].sort(
+    const sorted = [...empTrails].sort(
       (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
     );
 
@@ -805,7 +827,12 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
     });
     trailMarkersRef.current = [];
 
-    if (!effectEmpId || trails.length === 0) {
+    // Filter trails strictly to this active employee to prevent cross-employee trail bleed
+    const validTrails = (trails || []).filter(
+      (t) => t.employee_id === effectEmpId && t.latitude && t.longitude && t.latitude !== 0
+    );
+
+    if (!effectEmpId || validTrails.length === 0) {
       setComputedRoadDistance(null);
       return () => {
         isEffectCancelled = true;
@@ -814,7 +841,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
 
     // Filter out indoor stationary jitter points (< 25m from previous waypoint)
     const coordinates: { lat: number; lng: number }[] = [];
-    trails.forEach((t) => {
+    validTrails.forEach((t) => {
       if (coordinates.length === 0) {
         coordinates.push({ lat: t.latitude, lng: t.longitude });
       } else {
@@ -959,7 +986,8 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
     }
 
     // Start Waypoint Marker (First recorded ping of the day)
-    const startPt = trails[0];
+    const startPt = validTrails[0];
+    if (!startPt) return;
     const startMarker = new window.google.maps.Marker({
       position: { lat: startPt.latitude, lng: startPt.longitude },
       map: googleMapInstanceRef.current,
@@ -1066,9 +1094,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
           isSelected,
           isFleetOverview,
           () => {
-            setSelectedEmployeeId(emp.employee_id);
-            setIsFleetOverview(false);
-            setAutoFollow(true);
+            handleSelectEmployee(emp.employee_id);
             googleMapInstanceRef.current.panTo({ lat: emp.latitude, lng: emp.longitude });
             googleMapInstanceRef.current.setZoom(17);
           }
@@ -1274,10 +1300,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                   return (
                     <div
                       key={emp.employee_id}
-                      onClick={() => {
-                        setSelectedEmployeeId(emp.employee_id);
-                        setAutoFollow(true);
-                      }}
+                      onClick={() => handleSelectEmployee(emp.employee_id)}
                       className={cn(
                         'p-3 rounded-xl cursor-pointer transition-all flex items-start justify-between gap-2.5 border my-1',
                         isSelected
@@ -1880,7 +1903,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                     return (
                       <button
                         key={emp.employee_id}
-                        onClick={() => setSelectedEmployeeId(emp.employee_id)}
+                        onClick={() => handleSelectEmployee(emp.employee_id)}
                         className={cn(
                           'flex items-center gap-2 px-2.5 py-1.5 rounded-xl border text-left shrink-0 transition-all cursor-pointer',
                           isSelected

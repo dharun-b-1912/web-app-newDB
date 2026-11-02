@@ -50,3 +50,4 @@ BEGIN
         RAISE NOTICE 'pg_cron extension not active. Function public.fn_trigger_shift_device_gps_ping() registered for manual or external webhook triggers.';
     END IF;
 END $$;
+
