@@ -316,22 +316,27 @@ interface SortableHeadProps {
   active: SortField;
   dir: SortDir;
   onSort?: (f: SortField) => void;
+  className?: string;
 }
-const SortableHead: React.FC<SortableHeadProps> = ({ label, field, active, dir, onSort }) => {
+const SortableHead: React.FC<SortableHeadProps> = ({ label, field, active, dir, onSort, className }) => {
   const isActive = active === field;
   return (
     <TableHead
-      className={cn('font-bold cursor-pointer select-none group', onSort && 'hover:bg-gray-100/60 transition-colors')}
+      className={cn(
+        'font-bold cursor-pointer select-none group whitespace-nowrap text-xs uppercase tracking-wider',
+        onSort && 'hover:bg-gray-100/70 transition-colors',
+        className
+      )}
       onClick={() => onSort?.(field)}
     >
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
         <span>{label}</span>
         {onSort && (
-          <span className="ml-0.5 text-gray-400 group-hover:text-gray-600 transition-colors">
+          <span className="text-gray-400 group-hover:text-gray-600 transition-colors">
             {isActive ? (
-              dir === 'asc' ? <ChevronUp className="w-3 h-3 text-[#07563D]" /> : <ChevronDown className="w-3 h-3 text-[#07563D]" />
+              dir === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-[#07563D]" /> : <ChevronDown className="w-3.5 h-3.5 text-[#07563D]" />
             ) : (
-              <ChevronsUpDown className="w-3 h-3 opacity-40" />
+              <ChevronsUpDown className="w-3.5 h-3.5 opacity-40" />
             )}
           </span>
         )}
@@ -447,134 +452,131 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
       </div>
 
       {viewMode === 'table' ? (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-2xs overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50/80">
-                <SortableHead label="Employee" field="name" active={sortField} dir={sortDir} onSort={onSort} />
-                <SortableHead label="Code" field="code" active={sortField} dir={sortDir} onSort={onSort} />
-                <TableHead className="font-bold">Workforce Source</TableHead>
-                <SortableHead label="Department & Role" field="department" active={sortField} dir={sortDir} onSort={onSort} />
-                <TableHead className="font-bold">Branch / Campus</TableHead>
-                <TableHead className="font-bold">Reporting Manager</TableHead>
-                <SortableHead label="Status" field="status" active={sortField} dir={sortDir} onSort={onSort} />
-                <TableHead className="text-right font-bold">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {employees.map((emp) => {
-                const isVendor = checkIsVendor(emp);
-                const managerName = emp.employment?.reporting_manager_name || emp.reporting_manager_name || (emp as any).manager_name || 'Not assigned';
-                const rawLocation = (emp.employment?.work_location || emp.work_location || emp.location || '').trim();
-                const rawBranch = (emp.branch_name || (emp.employment as any)?.branch_name || '').trim();
-                const hasBranch = Boolean(rawBranch);
-                const showLocation = Boolean(rawLocation && rawLocation.toLowerCase() !== rawBranch.toLowerCase());
-                const status = emp.status || (emp as any).employment_status || 'Active';
-                const rawStat = String(status).toUpperCase();
-                const isActive = rawStat === 'ACTIVE' || rawStat === 'PROBATION' || rawStat === 'CONFIRMED';
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-gray-50/95 border-b border-gray-200 sticky top-0 z-10">
+              <SortableHead label="Employee" field="name" active={sortField} dir={sortDir} onSort={onSort} className="py-2.5 px-3 min-w-[160px]" />
+              <SortableHead label="Code" field="code" active={sortField} dir={sortDir} onSort={onSort} className="py-2.5 px-2.5 w-[85px] whitespace-nowrap" />
+              <TableHead className="font-bold whitespace-nowrap py-2.5 px-2.5 w-[95px] text-xs uppercase tracking-wider">Source</TableHead>
+              <SortableHead label="Role & Dept" field="department" active={sortField} dir={sortDir} onSort={onSort} className="py-2.5 px-3 min-w-[140px]" />
+              <TableHead className="font-bold whitespace-nowrap py-2.5 px-2.5 min-w-[110px] text-xs uppercase tracking-wider">Branch</TableHead>
+              <TableHead className="font-bold whitespace-nowrap py-2.5 px-2.5 min-w-[110px] text-xs uppercase tracking-wider">Manager</TableHead>
+              <SortableHead label="Status" field="status" active={sortField} dir={sortDir} onSort={onSort} className="py-2.5 px-2.5 w-[85px] whitespace-nowrap" />
+              <TableHead className="text-right font-bold whitespace-nowrap py-2.5 px-3 w-[50px] text-xs uppercase tracking-wider">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {employees.map((emp) => {
+              const isVendor = checkIsVendor(emp);
+              const managerName = emp.employment?.reporting_manager_name || emp.reporting_manager_name || (emp as any).manager_name || 'Not assigned';
+              const rawLocation = (emp.employment?.work_location || emp.work_location || emp.location || '').trim();
+              const rawBranch = (emp.branch_name || (emp.employment as any)?.branch_name || '').trim();
+              const hasBranch = Boolean(rawBranch);
+              const showLocation = Boolean(rawLocation && rawLocation.toLowerCase() !== rawBranch.toLowerCase());
+              const status = emp.status || (emp as any).employment_status || 'Active';
+              const rawStat = String(status).toUpperCase();
+              const isActive = rawStat === 'ACTIVE' || rawStat === 'PROBATION' || rawStat === 'CONFIRMED';
 
-                return (
-                  <TableRow
-                    key={emp.id}
-                    className="hover:bg-emerald-50/20 transition-colors cursor-pointer"
-                    onClick={() => onSelectEmployee(emp)}
-                  >
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar name={`${emp.first_name} ${emp.last_name}`} src={emp.avatar_url} size="sm" />
-                        <div>
-                          <div className="font-bold text-gray-900 leading-tight">
-                            {emp.first_name} {emp.last_name}
-                          </div>
-                          <div className="text-[11px] text-gray-400">{emp.work_email}</div>
+              return (
+                <TableRow
+                  key={emp.id}
+                  className="hover:bg-emerald-50/25 transition-colors cursor-pointer"
+                  onClick={() => onSelectEmployee(emp)}
+                >
+                  <TableCell className="py-2.5 px-3 min-w-[160px]">
+                    <div className="flex items-center gap-2.5">
+                      <Avatar name={`${emp.first_name} ${emp.last_name}`} src={emp.avatar_url} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-gray-900 leading-tight truncate text-xs sm:text-sm">
+                          {emp.first_name} {emp.last_name}
                         </div>
+                        <div className="text-[11px] text-gray-400 truncate max-w-[150px]">{emp.work_email}</div>
                       </div>
-                    </TableCell>
+                    </div>
+                  </TableCell>
 
-                    <TableCell>
-                      <span className="font-mono text-xs font-bold text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
-                        {emp.employee_code}
+                  <TableCell className="py-2.5 px-2.5 w-[85px] whitespace-nowrap">
+                    <span className="inline-flex items-center font-mono text-[11px] font-bold text-gray-700 bg-gray-100/90 border border-gray-200/80 px-2 py-0.5 rounded whitespace-nowrap tracking-wide select-all shadow-2xs">
+                      {emp.employee_code}
+                    </span>
+                  </TableCell>
+
+                  <TableCell className="py-2.5 px-2.5 w-[95px] whitespace-nowrap">
+                    {isVendor ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 whitespace-nowrap">
+                        <Users className="w-2.5 h-2.5" /> VENDOR
                       </span>
-                    </TableCell>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 whitespace-nowrap">
+                        <UserCheck className="w-2.5 h-2.5" /> DIRECT
+                      </span>
+                    )}
+                  </TableCell>
 
-                    <TableCell>
-                      {isVendor ? (
-                        <div className="space-y-0.5">
-                          <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                            <Users className="w-3 h-3" /> VENDOR
+                  <TableCell className="py-2.5 px-3 min-w-[140px]">
+                    <div className="text-xs font-bold text-gray-900 leading-snug truncate" title={emp.designation_title || ''}>
+                      {emp.designation_title || '—'}
+                    </div>
+                    <div className="text-[11px] text-gray-500 leading-snug truncate" title={emp.department_name || ''}>
+                      {emp.department_name || '—'}
+                    </div>
+                  </TableCell>
+
+                  <TableCell className="py-2.5 px-2.5 min-w-[110px]">
+                    {hasBranch || showLocation ? (
+                      <div className="space-y-0.5">
+                        {hasBranch && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/80 max-w-[130px] truncate" title={rawBranch}>
+                            <Building2 className="w-2.5 h-2.5 text-[#07563D] shrink-0" />
+                            <span className="truncate">{rawBranch}</span>
                           </span>
-                          <p className="text-[10px] text-gray-500 font-medium truncate max-w-[140px]">
-                            {emp.vendor_name || emp.employment?.vendor_name || 'Manpower Provider'}
-                          </p>
-                        </div>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                          <UserCheck className="w-3 h-3" /> DIRECT
-                        </span>
-                      )}
-                    </TableCell>
+                        )}
+                        {showLocation && (
+                          <div
+                            className={cn(
+                              'text-[10px] text-gray-500 flex items-center gap-1 font-medium truncate max-w-[130px]',
+                              !hasBranch && 'text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/80 text-[11px] font-bold inline-flex'
+                            )}
+                            title={rawLocation}
+                          >
+                            <MapPin className={cn('shrink-0', hasBranch ? 'w-2 h-2 text-gray-400' : 'w-2.5 h-2.5 text-[#07563D]')} />
+                            <span className="truncate">{rawLocation}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400 font-normal">—</span>
+                    )}
+                  </TableCell>
 
-                    <TableCell>
-                      <div className="text-xs font-bold text-gray-900">{emp.designation_title}</div>
-                      <div className="text-[11px] text-gray-500">{emp.department_name}</div>
-                    </TableCell>
+                  <TableCell className="py-2.5 px-2.5 min-w-[110px] whitespace-nowrap text-xs text-gray-700 font-medium truncate max-w-[130px]" title={managerName}>
+                    {managerName}
+                  </TableCell>
 
-                    <TableCell>
-                      {hasBranch || showLocation ? (
-                        <div className="space-y-0.5">
-                          {hasBranch && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80">
-                              <Building2 className="w-3 h-3 text-[#07563D] shrink-0" />
-                              <span className="truncate max-w-[170px]">{rawBranch}</span>
-                            </span>
-                          )}
-                          {showLocation && (
-                            <div
-                              className={cn(
-                                'text-[10px] text-gray-400 flex items-center gap-1 font-medium truncate max-w-[190px]',
-                                !hasBranch && 'text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 text-[11px] font-bold inline-flex'
-                              )}
-                              title={rawLocation}
-                            >
-                              <MapPin className={cn('shrink-0', hasBranch ? 'w-2.5 h-2.5 text-gray-400' : 'w-3 h-3 text-[#07563D]')} />
-                              <span className="truncate">{rawLocation}</span>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-400 font-normal">—</span>
-                      )}
-                    </TableCell>
+                  <TableCell className="py-2.5 px-2.5 w-[85px] whitespace-nowrap">
+                    <StatusBadge status={status} />
+                  </TableCell>
 
-                    <TableCell className="text-xs text-gray-700 font-medium">
-                      {managerName}
-                    </TableCell>
-
-                    <TableCell>
-                      <StatusBadge status={status} />
-                    </TableCell>
-
-                    <TableCell className="text-right">
-                      <RowActionMenu
-                        emp={emp}
-                        isActive={isActive}
-                        isToggling={togglingId === emp.id}
-                        onView={() => onSelectEmployee(emp)}
-                        onEdit={() => onEditEmployee ? onEditEmployee(emp) : onSelectEmployee(emp)}
-                        onToggleStatus={() => handleToggleStatus(emp)}
-                        onArchive={() => setConfirmArchiveEmp(emp)}
-                        onViewAttendance={onViewAttendance ? () => onViewAttendance(emp) : undefined}
-                        onViewDocuments={onViewDocuments ? () => onViewDocuments(emp) : undefined}
-                        onManageAccess={onManageAccess ? () => onManageAccess(emp) : undefined}
-                        onStartOffboarding={onStartOffboarding ? () => onStartOffboarding(emp) : undefined}
-                      />
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
+                  <TableCell className="py-2.5 px-3 w-[50px] text-right whitespace-nowrap">
+                    <RowActionMenu
+                      emp={emp}
+                      isActive={isActive}
+                      isToggling={togglingId === emp.id}
+                      onView={() => onSelectEmployee(emp)}
+                      onEdit={() => onEditEmployee ? onEditEmployee(emp) : onSelectEmployee(emp)}
+                      onToggleStatus={() => handleToggleStatus(emp)}
+                      onArchive={() => setConfirmArchiveEmp(emp)}
+                      onViewAttendance={onViewAttendance ? () => onViewAttendance(emp) : undefined}
+                      onViewDocuments={onViewDocuments ? () => onViewDocuments(emp) : undefined}
+                      onManageAccess={onManageAccess ? () => onManageAccess(emp) : undefined}
+                      onStartOffboarding={onStartOffboarding ? () => onStartOffboarding(emp) : undefined}
+                    />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       ) : (
         /* Grid Cards View */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

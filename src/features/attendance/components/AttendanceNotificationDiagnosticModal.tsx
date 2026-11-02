@@ -53,9 +53,9 @@ export const AttendanceNotificationDiagnosticModal: React.FC<
     setTestResult(null);
     try {
       // Trigger diagnostic check-in with the currently authenticated administrator
-      const targetOrgId = user?.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
-      const targetEmpId = user?.employeeId || user?.id || 'admin-test-id';
-      const targetEmpCode = user?.employeeCode || 'ADMIN';
+      const targetOrgId = user?.organization_id || (user as any)?.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+      const targetEmpId = user?.employee_id || (user as any)?.employeeId || user?.id || 'admin-test-id';
+      const targetEmpCode = user?.employee_code || (user as any)?.employeeCode || 'ADMIN';
       const targetEmpName = user?.name || 'Administrator';
 
       const res = await attendanceNotificationService.handleAttendanceEventAccepted({

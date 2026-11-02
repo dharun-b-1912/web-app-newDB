@@ -5,6 +5,18 @@ import path from 'path';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 
+let _supabaseAdminInstance: any = null;
+async function getSupabaseAdmin(env: Record<string, string>) {
+  if (_supabaseAdminInstance) return _supabaseAdminInstance;
+  const { createClient } = await import('@supabase/supabase-js');
+  const supabaseUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL || 'https://ysiajemrqakfngasehhi.supabase.co';
+  const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.VITE_SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzaWFqZW1ycWFrZm5nYXNlaGhpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODQxNDEwOSwiZXhwIjoyMTAzOTkwMTA5fQ.D6xZ3REU8mTG9DmSufj8DnAH6qSyMvbukqyf5z9lvxc';
+  _supabaseAdminInstance = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return _supabaseAdminInstance;
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const smtpHost = env.SMTP_HOST || 's11777.bom1.stableserver.net';
@@ -221,6 +233,170 @@ export default defineConfig(({ mode }) => {
           });
         },
       },
+      {
+        name: 'shift-roster-gateway',
+        configureServer(server) {
+          server.middlewares.use(async (req, res, next) => {
+            if (!req.url || !req.url.startsWith('/api/shift-rosters')) {
+              return next();
+            }
+
+            const parsedUrl = new URL(req.url, 'http://localhost');
+            const pathname = parsedUrl.pathname;
+            const supabaseAdmin = await getSupabaseAdmin(env);
+
+            if (req.method === 'POST' && pathname === '/api/shift-rosters/override') {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', async () => {
+                try {
+                  const payload = JSON.parse(body || '{}');
+                  const {
+                    organizationId,
+                    companyId,
+                    employeeId,
+                    employeeCode,
+                    employeeName,
+                    rosterDate,
+                    shiftId,
+                    shiftCode,
+                    shiftName,
+                    isWeeklyOff,
+                    isHoliday,
+                    isOverride,
+                    remarks,
+                    assignedBy,
+                  } = payload;
+
+                  if (!employeeId || !rosterDate) {
+                    res.statusCode = 400;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({ success: false, error: 'employeeId and rosterDate are required' }));
+                  }
+
+                  const orgId = organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+                  const row = {
+                    organization_id: orgId,
+                    company_id: companyId || null,
+                    employee_id: employeeId,
+                    employee_code: employeeCode || null,
+                    employee_name: employeeName || null,
+                    roster_date: rosterDate,
+                    shift_id: shiftId,
+                    shift_code: shiftCode,
+                    shift_name: shiftName,
+                    is_weekly_off: Boolean(isWeeklyOff),
+                    is_holiday: Boolean(isHoliday),
+                    is_override: isOverride !== false,
+                    assigned_by: assignedBy || 'HR Administrator',
+                    remarks: remarks || null,
+                    updated_at: new Date().toISOString(),
+                  };
+
+                  const { data, error } = await supabaseAdmin
+                    .from('shift_rosters')
+                    .upsert(row, { onConflict: 'organization_id,employee_id,roster_date' })
+                    .select()
+                    .single();
+
+                  if (error) {
+                    console.error('[Vite ShiftRoster Override Error]:', error);
+                    res.statusCode = 500;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({ success: false, error: error.message }));
+                  }
+
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({ success: true, entry: data }));
+                } catch (err: any) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({ success: false, error: err.message }));
+                }
+              });
+            } else if (req.method === 'POST' && pathname === '/api/shift-rosters/bulk') {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', async () => {
+                try {
+                  const { organizationId, companyId, entries } = JSON.parse(body || '{}');
+                  if (!Array.isArray(entries) || entries.length === 0) {
+                    res.statusCode = 400;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({ success: false, error: 'entries array is required' }));
+                  }
+
+                  const orgId = organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+                  const formattedRows = entries.map((entry: any) => ({
+                    organization_id: entry.organization_id || entry.tenant_id || orgId,
+                    company_id: companyId || entry.company_id || null,
+                    employee_id: entry.employee_id,
+                    employee_code: entry.employee_code || null,
+                    employee_name: entry.employee_name || null,
+                    roster_date: entry.roster_date || entry.date,
+                    shift_id: entry.shift_id,
+                    shift_code: entry.shift_code,
+                    shift_name: entry.shift_name,
+                    is_weekly_off: Boolean(entry.is_weekly_off),
+                    is_holiday: Boolean(entry.is_holiday),
+                    is_override: Boolean(entry.is_override),
+                    assigned_by: entry.assigned_by || 'HR Administrator',
+                    remarks: entry.remarks || entry.override_reason || null,
+                    updated_at: new Date().toISOString(),
+                  }));
+
+                  const { data, error } = await supabaseAdmin
+                    .from('shift_rosters')
+                    .upsert(formattedRows, { onConflict: 'organization_id,employee_id,roster_date' })
+                    .select();
+
+                  if (error) {
+                    res.statusCode = 500;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({ success: false, error: error.message }));
+                  }
+
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({ success: true, count: data ? data.length : 0 }));
+                } catch (err: any) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({ success: false, error: err.message }));
+                }
+              });
+            } else if (req.method === 'GET' && pathname === '/api/shift-rosters') {
+              try {
+                const startDate = parsedUrl.searchParams.get('startDate');
+                const endDate = parsedUrl.searchParams.get('endDate');
+                const orgId = parsedUrl.searchParams.get('organizationId') || '0c621892-e938-4707-9957-13534ea32c19';
+
+                let query = supabaseAdmin.from('shift_rosters').select('*').eq('organization_id', orgId);
+                if (startDate) query = query.gte('roster_date', startDate);
+                if (endDate) query = query.lte('roster_date', endDate);
+                query = query.order('roster_date', { ascending: true });
+
+                const { data, error } = await query;
+                if (error) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({ success: false, error: error.message }));
+                }
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify({ success: true, rosters: data || [] }));
+              } catch (err: any) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify({ success: false, error: err.message }));
+              }
+            } else {
+              next();
+            }
+          });
+        },
+      },
     ],
     resolve: {
       alias: {
@@ -230,6 +406,7 @@ export default defineConfig(({ mode }) => {
     },
     optimizeDeps: {
       include: ['react', 'react-dom', 'react/jsx-runtime'],
+      force: true,
     },
     test: {
       globals: true,

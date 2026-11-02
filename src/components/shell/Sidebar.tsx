@@ -583,6 +583,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
         { id: 'attendance-employees', label: 'Employee Attendance', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'attendance-manual', label: 'Manual Punch & Audit', icon: Clock },
         { id: 'live-tracking', label: 'Shift Route & Live GPS Radar', icon: Navigation, badge: 'Live' },
         { id: 'history', label: 'Attendance History & Ledger', icon: History },
         { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
@@ -875,6 +876,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
         { id: 'attendance-employees', label: 'Employee Attendance', icon: Users, badge: employeeCount > 0 ? employeeCount : undefined },
+        { id: 'attendance-manual', label: 'Manual Punch & Audit', icon: Clock },
         { id: 'live-tracking', label: 'Shift Route & Live GPS Radar', icon: Navigation, badge: 'Live' },
         { id: 'history', label: 'Attendance History & Ledger', icon: History },
         { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },
@@ -1065,6 +1067,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeNav, onSelectNav }) => {
       items: [
         { id: 'attendance', label: 'Attendance Dashboard', icon: LayoutDashboard },
         { id: 'attendance-employees', label: 'Employee Attendance', icon: Users },
+        { id: 'attendance-manual', label: 'Manual Punch & Audit', icon: Clock },
         { id: 'live-tracking', label: 'Shift Route & Live GPS Radar', icon: Navigation, badge: 'Live' },
         { id: 'history', label: 'Attendance History & Ledger', icon: History },
         { id: 'late-early', label: 'Late / Early Tracking', icon: Timer },

@@ -73,9 +73,13 @@ import { misRecipientsService } from '../../../services/attendance/misRecipients
 // ============================================================================
 export function formatTo12Hour(time24: string): string {
   if (!time24) return '12:00 PM';
-  const parts = time24.split(':');
+  const trimmed = String(time24).trim();
+  if (/^(0?[1-9]|1[0-2]):[0-5][0-9]\s*(AM|PM)$/i.test(trimmed)) {
+    return trimmed;
+  }
+  const parts = trimmed.split(':');
   let h = parseInt(parts[0], 10);
-  const m = parts[1] ? parts[1].padStart(2, '0') : '00';
+  const m = parts[1] ? parts[1].replace(/[^0-9]/g, '').padStart(2, '0').slice(0, 2) : '00';
   if (isNaN(h)) h = 12;
   const period = h >= 12 ? 'PM' : 'AM';
   let h12 = h % 12;
@@ -747,6 +751,18 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
     }
   };
 
+  // Helper to update and autosave automated schedule settings
+  const handleUpdateScheduleConfig = (update: Partial<AttendanceReportScheduleConfig>) => {
+    const updated = {
+      ...scheduleConfig,
+      ...update,
+    };
+    setScheduleConfig(updated);
+    attendanceReportSchedulerService.saveScheduleConfigAsync(updated).catch(err => {
+      console.warn('[AttendanceModal] Auto-save schedule config error:', err);
+    });
+  };
+
   // Metrics for active scope
   const totalHeadcount = targetRows.length;
   const presentCount = targetRows.filter(
@@ -999,6 +1015,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
         `✓ Automated schedule saved: Morning (${mStr}) & Evening (${eStr})`,
         'success'
       );
+      onClose();
     } catch (err: any) {
       showToast(`Failed to save schedule: ${err.message}`, 'error');
     } finally {
@@ -2074,7 +2091,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                       <input
                         type="checkbox"
                         checked={scheduleConfig.morningEnabled}
-                        onChange={e => setScheduleConfig({ ...scheduleConfig, morningEnabled: e.target.checked })}
+                        onChange={e => handleUpdateScheduleConfig({ morningEnabled: e.target.checked })}
                         className="sr-only peer"
                       />
                       <div className="w-9 h-5 bg-gray-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-600"></div>
@@ -2087,14 +2104,14 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                     <div className="grid grid-cols-2 gap-1.5">
                       {[
                         { label: '09:45 AM', value: '09:45' },
+                        { label: '10:00 AM', value: '10:00' },
                         { label: '10:15 AM', value: '10:15' },
                         { label: '10:30 AM (Standard)', value: '10:30' },
-                        { label: '11:00 AM', value: '11:00' },
                       ].map(t => (
                         <button
                           key={t.value}
                           type="button"
-                          onClick={() => setScheduleConfig({ ...scheduleConfig, morningTime: t.value })}
+                          onClick={() => handleUpdateScheduleConfig({ morningTime: t.value })}
                           className={`py-1.5 px-2 rounded-lg border text-center font-bold text-[11px] transition-all ${
                             scheduleConfig.morningTime === t.value
                               ? 'bg-amber-100 border-amber-400 text-amber-950 shadow-2xs ring-1 ring-amber-400/40'
@@ -2113,8 +2130,8 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                       Adjust Morning Time (12-Hour AM/PM):
                     </div>
                     <TimePicker12
-                      value24={scheduleConfig.morningTime || '10:30'}
-                      onChange={val => setScheduleConfig({ ...scheduleConfig, morningTime: val })}
+                      value24={scheduleConfig.morningTime || '10:00'}
+                      onChange={val => handleUpdateScheduleConfig({ morningTime: val })}
                       colorScheme="morning"
                     />
                   </div>
@@ -2123,7 +2140,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                   <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between">
                     <span className="text-[10px] text-amber-900/80 font-medium">
                       {scheduleConfig.morningEnabled
-                        ? `Dispatches at ${formatTo12Hour(scheduleConfig.morningTime || '10:30')}`
+                        ? `Dispatches at ${formatTo12Hour(scheduleConfig.morningTime || '10:00')}`
                         : 'Morning slot disabled'}
                     </span>
                     <button
@@ -2164,7 +2181,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                       <input
                         type="checkbox"
                         checked={scheduleConfig.eveningEnabled}
-                        onChange={e => setScheduleConfig({ ...scheduleConfig, eveningEnabled: e.target.checked })}
+                        onChange={e => handleUpdateScheduleConfig({ eveningEnabled: e.target.checked })}
                         className="sr-only peer"
                       />
                       <div className="w-9 h-5 bg-gray-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
@@ -2184,7 +2201,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                         <button
                           key={t.value}
                           type="button"
-                          onClick={() => setScheduleConfig({ ...scheduleConfig, eveningTime: t.value })}
+                          onClick={() => handleUpdateScheduleConfig({ eveningTime: t.value })}
                           className={`py-1.5 px-2 rounded-lg border text-center font-bold text-[11px] transition-all ${
                             scheduleConfig.eveningTime === t.value
                               ? 'bg-indigo-100 border-indigo-400 text-indigo-950 shadow-2xs ring-1 ring-indigo-400/40'
@@ -2204,7 +2221,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                     </div>
                     <TimePicker12
                       value24={scheduleConfig.eveningTime || '19:00'}
-                      onChange={val => setScheduleConfig({ ...scheduleConfig, eveningTime: val })}
+                      onChange={val => handleUpdateScheduleConfig({ eveningTime: val })}
                       colorScheme="evening"
                     />
                   </div>
@@ -2250,7 +2267,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                         type="radio"
                         name="schedFreq"
                         checked={scheduleConfig.frequency === 'DAILY'}
-                        onChange={() => setScheduleConfig({ ...scheduleConfig, frequency: 'DAILY' })}
+                        onChange={() => handleUpdateScheduleConfig({ frequency: 'DAILY' })}
                         className="accent-[#07563D]"
                       />
                       <div>
@@ -2270,7 +2287,7 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                         type="radio"
                         name="schedFreq"
                         checked={scheduleConfig.frequency === 'WEEKDAYS'}
-                        onChange={() => setScheduleConfig({ ...scheduleConfig, frequency: 'WEEKDAYS' })}
+                        onChange={() => handleUpdateScheduleConfig({ frequency: 'WEEKDAYS' })}
                         className="accent-[#07563D]"
                       />
                       <div>
@@ -2297,12 +2314,12 @@ export const SendAttendanceReportModal: React.FC<SendAttendanceReportModalProps>
                       {nextRunDetails.nextSlot === 'MORNING' ? '🌅 Morning Turnout' : '🌆 Evening Final'}
                     </span>
                     <span className="text-xs font-semibold text-emerald-800">
-                      ({formatTo12Hour(nextRunDetails.nextRunTime)})
+                      ({nextRunDetails.nextRunTime})
                     </span>
                   </div>
 
                   <div className="text-[10px] text-emerald-700">
-                    Schedule mode: 2 automated dispatches per day (Morning 10:30 AM &amp; Evening 07:00 PM)
+                    Schedule mode: 2 automated dispatches per day (Morning {formatTo12Hour(scheduleConfig.morningTime || '10:00')} &amp; Evening {formatTo12Hour(scheduleConfig.eveningTime || '19:00')})
                   </div>
                 </div>
               </div>

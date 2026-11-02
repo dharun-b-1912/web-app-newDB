@@ -47,8 +47,14 @@ import { cn } from '../../../lib/utils';
 // DYNAMIC WEEK & DATE UTILITIES (ISO compliant, Local Timezone Safe)
 // ============================================================================
 
-export const getMondayOfWeek = (inputDate: Date = new Date()): string => {
-  const d = new Date(inputDate);
+export const getMondayOfWeek = (inputDate: Date | string = new Date()): string => {
+  let d: Date;
+  if (typeof inputDate === 'string') {
+    const [y, m, dt] = inputDate.split('-').map(Number);
+    d = new Date(y, m - 1, dt);
+  } else {
+    d = new Date(inputDate);
+  }
   const day = d.getDay(); // 0 is Sunday, 1 is Monday...
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   const monday = new Date(d.setDate(diff));
@@ -73,10 +79,19 @@ export const ShiftRosterCalendarView: React.FC = () => {
   const [shifts, setShifts] = useState<ShiftMaster[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [conflicts, setConflicts] = useState<RosterConflict[]>([]);
+  const [rosterDataVersion, setRosterDataVersion] = useState(0);
 
   // Navigation & View Mode State
   const [viewMode, setViewMode] = useState<'MATRIX' | 'LIST' | 'CALENDAR' | 'DEPARTMENT'>('MATRIX');
-  const [currentWeekStart, setCurrentWeekStart] = useState<string>(() => getMondayOfWeek());
+  const [currentWeekStart, setCurrentWeekStart] = useState<string>(() => {
+    try {
+      const saved = sessionStorage.getItem('joy_active_roster_week');
+      if (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved)) {
+        return saved;
+      }
+    } catch {}
+    return getMondayOfWeek();
+  });
 
   const activePeriodName = useMemo(() => {
     try {
@@ -174,6 +189,7 @@ export const ShiftRosterCalendarView: React.FC = () => {
       const sDate = activeDays[0] || getMondayOfWeek();
       const eDate = activeDays[6] || getOffsetDate(sDate, 6);
       await attendanceRosterService.fetchRostersFromDb(sDate, eDate);
+      setRosterDataVersion(v => v + 1);
     } catch {}
   }, [activeDays, bulkShiftId]);
 
@@ -185,9 +201,11 @@ export const ShiftRosterCalendarView: React.FC = () => {
   useEffect(() => {
     const unsub1 = hrEventBus.subscribe('roster.*', () => {
       loadData();
+      setRosterDataVersion(v => v + 1);
     });
     const unsub2 = hrEventBus.subscribe('shift.*', () => {
       loadData();
+      setRosterDataVersion(v => v + 1);
     });
 
     return () => {
@@ -242,6 +260,7 @@ export const ShiftRosterCalendarView: React.FC = () => {
   // Navigate Week dynamically
   const handleNavigateWeek = (direction: 'PREV' | 'NEXT') => {
     const nextMonday = getOffsetDate(currentWeekStart, direction === 'PREV' ? -7 : 7);
+    try { sessionStorage.setItem('joy_active_roster_week', nextMonday); } catch {}
     setCurrentWeekStart(nextMonday);
     setBulkStartDate(nextMonday);
     setBulkEndDate(getOffsetDate(nextMonday, 6));
@@ -252,6 +271,7 @@ export const ShiftRosterCalendarView: React.FC = () => {
 
   const handleGoToToday = () => {
     const todayMonday = getMondayOfWeek();
+    try { sessionStorage.setItem('joy_active_roster_week', todayMonday); } catch {}
     setCurrentWeekStart(todayMonday);
     setBulkStartDate(todayMonday);
     setBulkEndDate(getOffsetDate(todayMonday, 6));
@@ -337,10 +357,31 @@ export const ShiftRosterCalendarView: React.FC = () => {
       if (filterStatus === 'CONFLICTS') {
         return conflicts.some(c => c.employee_id === emp.id);
       }
+      if (filterStatus === 'ASSIGNED') {
+        const isAssigned = activeDays.some(dateStr => {
+          const r = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, dateStr, undefined, emp);
+          return r && !r.is_weekly_off && r.shift_code;
+        });
+        if (!isAssigned) return false;
+      }
+      if (filterStatus === 'UNASSIGNED') {
+        const isAssigned = activeDays.some(dateStr => {
+          const r = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, dateStr, undefined, emp);
+          return r && !r.is_weekly_off && r.shift_code;
+        });
+        if (isAssigned) return false;
+      }
+      if (filterStatus === 'NIGHT') {
+        const hasNight = activeDays.some(dateStr => {
+          const r = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, dateStr, undefined, emp);
+          return r && r.shift_code && r.shift_code.includes('NGT') && !r.is_weekly_off;
+        });
+        if (!hasNight) return false;
+      }
 
       return true;
     });
-  }, [employees, searchQuery, filterLocation, filterDepartment, filterStatus, conflicts]);
+  }, [employees, searchQuery, filterLocation, filterDepartment, filterStatus, conflicts, activeDays, rosterDataVersion]);
 
   // Group filtered employees by Department (Hierarchical Tree)
   const groupedByDepartment = useMemo<Record<string, any[]>>(() => {
@@ -474,11 +515,17 @@ export const ShiftRosterCalendarView: React.FC = () => {
         activeCellDrawer.emp.id,
         activeCellDrawer.date,
         overrideShiftId,
-        overrideReason
+        overrideReason,
+        'HR Administrator',
+        activeCellDrawer.emp
       );
+
+      const cellMonday = getMondayOfWeek(activeCellDrawer.date);
+      try { sessionStorage.setItem('joy_active_roster_week', cellMonday); } catch {}
 
       showToast(`✓ Shift override saved to database for ${activeCellDrawer.emp.name || activeCellDrawer.emp.first_name} on ${activeCellDrawer.date}`);
       setActiveCellDrawer(null);
+      setRosterDataVersion(v => v + 1);
       await loadData();
     } catch (err: any) {
       showToast(`Failed saving shift override: ${err?.message || 'Error'}`, 'error');
@@ -688,11 +735,11 @@ export const ShiftRosterCalendarView: React.FC = () => {
   const assignedCount = useMemo(() => {
     return employees.filter(emp => {
       return activeDays.some(dateStr => {
-        const r = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, dateStr);
-        return r && r.shift_code;
+        const r = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, dateStr, undefined, emp);
+        return r && !r.is_weekly_off && r.shift_code;
       });
     }).length;
-  }, [employees, activeDays]);
+  }, [employees, activeDays, rosterDataVersion]);
 
   const unassignedCount = Math.max(0, totalHeadcount - assignedCount);
   const assignedPercent = totalHeadcount > 0 ? ((assignedCount / totalHeadcount) * 100).toFixed(0) : '0';
@@ -701,11 +748,11 @@ export const ShiftRosterCalendarView: React.FC = () => {
   const nightCount = useMemo(() => {
     return employees.filter(emp => {
       return activeDays.some(dateStr => {
-        const r = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, dateStr);
+        const r = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, dateStr, undefined, emp);
         return r && r.shift_code && r.shift_code.includes('NGT') && !r.is_weekly_off;
       });
     }).length;
-  }, [employees, activeDays]);
+  }, [employees, activeDays, rosterDataVersion]);
 
   const activeFiltersCount =
     (filterLocation !== 'ALL' ? 1 : 0) +
@@ -1139,8 +1186,8 @@ export const ShiftRosterCalendarView: React.FC = () => {
                   const isCollapsed = collapsedDepts[deptName] ?? false;
                   const deptAssignedCount = deptEmps.filter(emp => {
                     return activeDays.some(dateStr => {
-                      const r = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, dateStr);
-                      return r && r.shift_code;
+                      const r = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, dateStr, undefined, emp);
+                      return r && !r.is_weekly_off && r.shift_code;
                     });
                   }).length;
                   const deptConflictCount = conflicts.filter(c => deptEmps.some(e => e.id === c.employee_id)).length;
@@ -1212,7 +1259,7 @@ export const ShiftRosterCalendarView: React.FC = () => {
                                   <div className="truncate">
                                     <div
                                       onClick={() => {
-                                        const r = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, activeDays[0]);
+                                        const r = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, activeDays[0], undefined, emp);
                                         setActiveCellDrawer({ emp, date: activeDays[0], roster: r });
                                       }}
                                       className="font-semibold text-gray-900 hover:text-[#07563D] cursor-pointer truncate text-xs"
@@ -1228,7 +1275,7 @@ export const ShiftRosterCalendarView: React.FC = () => {
 
                               {/* Standardized Day Cells */}
                               {activeDays.map(dateStr => {
-                                const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, dateStr);
+                                const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, dateStr, undefined, emp);
                                 const isOff = roster.is_weekly_off;
                                 const isNight = roster.shift_code.includes('NGT');
                                 const isMorning = roster.shift_code.includes('MOR');
@@ -1242,7 +1289,10 @@ export const ShiftRosterCalendarView: React.FC = () => {
                                   >
                                     <div
                                       onClick={() => {
-                                        setOverrideShiftId(roster.shift_id);
+                                        const initialShiftId = shifts.some(s => s.id === roster.shift_id)
+                                          ? roster.shift_id
+                                          : (shifts[0]?.id || '');
+                                        setOverrideShiftId(initialShiftId);
                                         setActiveCellDrawer({ emp, date: dateStr, roster });
                                       }}
                                       className={cn(
@@ -1300,7 +1350,7 @@ export const ShiftRosterCalendarView: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredEmployees.map(emp => {
-                const firstDayRoster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, activeDays[0]);
+                const firstDayRoster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, activeDays[0], undefined, emp);
                 const timing = getShiftDisplayInfo(firstDayRoster);
                 return (
                   <tr key={emp.id} className="hover:bg-gray-50/60">

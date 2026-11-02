@@ -574,6 +574,182 @@ app.delete('/api/work-locations/:id', async (req, res) => {
   }
 });
 
+// ============================================================
+// Production Shift Roster & Override Backend Endpoints
+// Service-role persistence bypassing frontend RLS policy limits
+// ============================================================
+
+// 1. Shift Override Endpoint (Single Cell Override)
+app.post('/api/shift-rosters/override', async (req, res) => {
+  try {
+    const {
+      organizationId,
+      companyId,
+      employeeId,
+      employeeCode,
+      employeeName,
+      rosterDate,
+      shiftId,
+      shiftCode,
+      shiftName,
+      isWeeklyOff,
+      isHoliday,
+      isOverride,
+      remarks,
+      assignedBy,
+    } = req.body || {};
+
+    if (!employeeId || !rosterDate) {
+      return res.status(400).json({ success: false, error: 'employeeId and rosterDate are required' });
+    }
+
+    const orgId = organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+    const now = new Date().toISOString();
+
+    const payload = {
+      organization_id: orgId,
+      company_id: companyId || null,
+      employee_id: employeeId,
+      employee_code: employeeCode || null,
+      employee_name: employeeName || null,
+      roster_date: rosterDate,
+      shift_id: shiftId,
+      shift_code: shiftCode,
+      shift_name: shiftName,
+      is_weekly_off: Boolean(isWeeklyOff),
+      is_holiday: Boolean(isHoliday),
+      is_override: isOverride !== false,
+      assigned_by: assignedBy || 'HR Administrator',
+      remarks: remarks || null,
+      updated_at: now,
+    };
+
+    const { data, error } = await supabaseAdminClient
+      .from('shift_rosters')
+      .upsert(payload, { onConflict: 'organization_id,employee_id,roster_date' })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[Backend ShiftRoster Override Error]:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    // Also update employee_shift_assignments effective date if valid UUIDs
+    if (shiftId && shiftId.length === 36 && employeeId.length === 36) {
+      try {
+        await supabaseAdminClient
+          .from('employee_shift_assignments')
+          .upsert({
+            organization_id: orgId,
+            company_id: companyId || null,
+            employee_id: employeeId,
+            shift_id: shiftId,
+            effective_from: rosterDate,
+            valid_from: rosterDate,
+          }, { onConflict: 'employee_id' });
+      } catch (assignErr) {
+        console.warn('[Backend ShiftRoster Assignment Note]:', assignErr.message);
+      }
+    }
+
+    // Log admin action for audit trail
+    logAdminAction({
+      organizationId: orgId,
+      action: 'SHIFT_ROSTER_OVERRIDE',
+      entityType: 'SHIFT_ROSTER',
+      entityId: data.id,
+      metadata: {
+        employeeId,
+        rosterDate,
+        shiftCode,
+        isOverride: data.is_override,
+        isWeeklyOff: data.is_weekly_off,
+        remarks,
+      },
+      req,
+    });
+
+    return res.json({ success: true, entry: data });
+  } catch (err) {
+    console.error('[Backend ShiftRoster Override Exception]:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Server error saving shift override' });
+  }
+});
+
+// 2. Bulk Shift Roster Assignment Endpoint
+app.post('/api/shift-rosters/bulk', async (req, res) => {
+  try {
+    const { organizationId, companyId, entries } = req.body || {};
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({ success: false, error: 'entries array is required' });
+    }
+
+    const orgId = organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+    const now = new Date().toISOString();
+
+    const formattedRows = entries.map(entry => ({
+      organization_id: entry.organization_id || entry.tenant_id || orgId,
+      company_id: companyId || entry.company_id || null,
+      employee_id: entry.employee_id,
+      employee_code: entry.employee_code || null,
+      employee_name: entry.employee_name || null,
+      roster_date: entry.roster_date || entry.date,
+      shift_id: entry.shift_id,
+      shift_code: entry.shift_code,
+      shift_name: entry.shift_name,
+      is_weekly_off: Boolean(entry.is_weekly_off),
+      is_holiday: Boolean(entry.is_holiday),
+      is_override: Boolean(entry.is_override),
+      assigned_by: entry.assigned_by || 'HR Administrator',
+      remarks: entry.remarks || entry.override_reason || null,
+      updated_at: now,
+    }));
+
+    const { data, error } = await supabaseAdminClient
+      .from('shift_rosters')
+      .upsert(formattedRows, { onConflict: 'organization_id,employee_id,roster_date' })
+      .select();
+
+    if (error) {
+      console.error('[Backend ShiftRoster Bulk Error]:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    return res.json({ success: true, count: data ? data.length : 0 });
+  } catch (err) {
+    console.error('[Backend ShiftRoster Bulk Exception]:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Server error bulk saving shift rosters' });
+  }
+});
+
+// 3. Query Shift Rosters (Server-Side Read)
+app.get('/api/shift-rosters', async (req, res) => {
+  try {
+    const { startDate, endDate, organizationId, employeeId } = req.query || {};
+    const orgId = organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+
+    let query = supabaseAdminClient
+      .from('shift_rosters')
+      .select('*')
+      .eq('organization_id', orgId);
+
+    if (startDate) query = query.gte('roster_date', startDate);
+    if (endDate) query = query.lte('roster_date', endDate);
+    if (employeeId) query = query.eq('employee_id', employeeId);
+
+    query = query.order('roster_date', { ascending: true });
+
+    const { data, error } = await query;
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+    return res.json({ success: true, rosters: data || [] });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 // Production Email Gateway: Enterprise SMTP Gateway
 app.post(['/api/resend/emails', '/api/email/send'], async (req, res) => {

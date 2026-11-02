@@ -111,7 +111,7 @@ export const JoyLoadingSpinner: React.FC<JoyLoadingSpinnerProps> = ({
         <div
           className={`relative z-10 flex items-center justify-center ${sizeMap.emblem} animate-[joyPulse_2s_ease-in-out_infinite]`}
         >
-          <JoyVectorEmblem className="w-full h-full drop-shadow-md" />
+          <img src="/joy-logo-mark.png" alt="Joy Logo" className="w-full h-full object-contain drop-shadow-md" />
         </div>
       </div>
 

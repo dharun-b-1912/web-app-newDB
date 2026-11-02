@@ -159,7 +159,7 @@ export const JoySplashScreen: React.FC<JoySplashScreenProps> = ({
 
           {/* Pure White Squircle Card with Soft Diffuse Drop Shadow */}
           <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-[28px] bg-white border border-slate-100/90 shadow-[0_20px_50px_rgba(2,183,99,0.18),0_4px_12px_rgba(0,0,0,0.03)] flex items-center justify-center p-4 sm:p-5 relative z-10">
-            <JoyVectorEmblem className="w-full h-full object-contain filter drop-shadow-xs" />
+            <img src="/joy-logo-mark.png" alt="Joy PeopleHR Emblem" className="w-full h-full object-contain filter drop-shadow-xs" />
           </div>
         </div>
 

@@ -345,14 +345,16 @@ export async function checkAndRunScheduledReports() {
           const dispJson = await dispRes.json().catch(() => ({}));
           console.log('[AttendanceReportDaemon] Morning dispatch result:', dispJson);
 
-          await sbFetch(`attendance_report_schedules?id=eq.${sched.id}`, {
-            method: 'PATCH',
-            body: {
-              last_morning_status: dispRes.ok && dispJson.success ? 'SUCCESS' : 'ERROR',
-              last_morning_message: dispJson.message || `Morning MIS delivered (Email: ${dispJson.email?.status}, WA: ${dispJson.whatsapp?.successCount || 0} sent)`,
-              updated_at: now.toISOString(),
-            },
-          });
+          if (!dispJson.skipped) {
+            await sbFetch(`attendance_report_schedules?id=eq.${sched.id}`, {
+              method: 'PATCH',
+              body: {
+                last_morning_status: dispRes.ok && dispJson.success ? 'SUCCESS' : 'ERROR',
+                last_morning_message: dispJson.message || `Morning MIS delivered (Email: ${dispJson.email?.status}, WA: ${dispJson.whatsapp?.successCount || 0} sent)`,
+                updated_at: now.toISOString(),
+              },
+            });
+          }
         }
       }
 
@@ -402,14 +404,16 @@ export async function checkAndRunScheduledReports() {
           const dispJson = await dispRes.json().catch(() => ({}));
           console.log('[AttendanceReportDaemon] Evening dispatch result:', dispJson);
 
-          await sbFetch(`attendance_report_schedules?id=eq.${sched.id}`, {
-            method: 'PATCH',
-            body: {
-              last_evening_status: dispRes.ok && dispJson.success ? 'SUCCESS' : 'ERROR',
-              last_evening_message: dispJson.message || `Evening MIS delivered (Email: ${dispJson.email?.status}, WA: ${dispJson.whatsapp?.successCount || 0} sent)`,
-              updated_at: now.toISOString(),
-            },
-          });
+          if (!dispJson.skipped) {
+            await sbFetch(`attendance_report_schedules?id=eq.${sched.id}`, {
+              method: 'PATCH',
+              body: {
+                last_evening_status: dispRes.ok && dispJson.success ? 'SUCCESS' : 'ERROR',
+                last_evening_message: dispJson.message || `Evening MIS delivered (Email: ${dispJson.email?.status}, WA: ${dispJson.whatsapp?.successCount || 0} sent)`,
+                updated_at: now.toISOString(),
+              },
+            });
+          }
         }
       }
     }

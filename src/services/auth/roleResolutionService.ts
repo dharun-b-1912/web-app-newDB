@@ -237,7 +237,7 @@ export const roleResolutionService = {
           try {
             let empQuery = supabase
               .from('employees')
-              .select('id, employee_code, first_name, last_name, display_name, organization_id, company_id, role, designation_id, is_hr_head, work_email, personal_email');
+              .select('id, employee_code, first_name, last_name, display_name, organization_id, company_id, designation_id, work_email, personal_email, designations(id, title, code)');
 
             if (employeeId) {
               empQuery = empQuery.eq('id', employeeId);
@@ -263,9 +263,14 @@ export const roleResolutionService = {
               }
 
               if (rawRoles.length === 0) {
-                if (empRow.role) rawRoles.push(empRow.role);
-                if (empRow.is_hr_head) rawRoles.push('HR_HEAD');
-                if (!empRow.role && !empRow.is_hr_head) rawRoles.push('EMPLOYEE');
+                const desgTitle = String((empRow.designations as any)?.title || '').toLowerCase();
+                if (desgTitle.includes('hr') || desgTitle.includes('head') || desgTitle.includes('director')) {
+                  rawRoles.push('HR_HEAD');
+                } else if (desgTitle.includes('manager') || desgTitle.includes('lead')) {
+                  rawRoles.push('MANAGER');
+                } else {
+                  rawRoles.push('EMPLOYEE');
+                }
               }
               if (empRow.organization_id && !organizationId) organizationId = empRow.organization_id;
               if (empRow.company_id && !companyId) companyId = empRow.company_id;

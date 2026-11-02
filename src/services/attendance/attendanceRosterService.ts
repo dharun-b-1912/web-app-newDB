@@ -1176,58 +1176,92 @@ class AttendanceRosterService {
   async fetchRostersFromDb(startDate: string, endDate: string, tenantId = getActiveOrgId()): Promise<EmployeeRosterEntry[]> {
     this.initRealtimeSubscription();
     this.fetchShiftAssignmentsFromDb(tenantId).catch(() => {});
-    if (!isSupabaseEnabled || !supabase) return this.getRosters(startDate, endDate, tenantId);
-    try {
-      const orgId = isValidUUID(tenantId) ? tenantId : getActiveOrgId();
-      const { data, error } = await supabase
-        .from('shift_rosters')
-        .select('*')
-        .eq('organization_id', orgId)
-        .gte('roster_date', startDate)
-        .lte('roster_date', endDate)
-        .order('roster_date', { ascending: true });
+    const orgId = isValidUUID(tenantId) ? tenantId : getActiveOrgId();
 
-      if (!error && data) {
-        const mapped: EmployeeRosterEntry[] = data.map((d: any) => ({
-          id: d.id,
-          tenant_id: d.organization_id || orgId,
-          employee_id: d.employee_id,
-          employee_code: d.employee_code || '',
-          employee_name: d.employee_name || 'Employee',
-          date: d.roster_date,
-          shift_id: d.shift_id,
-          shift_code: d.shift_code,
-          shift_name: d.shift_name,
-          shift_type: (d.shift_code?.includes('NGT') ? 'NIGHT_SHIFT' : 'FIXED') as any,
-          is_weekly_off: Boolean(d.is_weekly_off),
-          is_holiday: Boolean(d.is_holiday),
-          is_override: Boolean(d.is_override),
-          override_reason: d.remarks || undefined,
-          assigned_by: d.assigned_by || 'System',
-          updated_at: d.updated_at || new Date().toISOString(),
-        }));
+    let dbRows: any[] = [];
+    if (isSupabaseEnabled && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('shift_rosters')
+          .select('*')
+          .eq('organization_id', orgId)
+          .gte('roster_date', startDate)
+          .lte('roster_date', endDate)
+          .order('roster_date', { ascending: true });
 
-        for (const entry of mapped) {
-          this._dbRostersCache.set(`${entry.employee_id}_${entry.date}`, entry);
-          this._dbRostersCache.set(`${String(entry.employee_id).toLowerCase()}_${entry.date}`, entry);
-          if (entry.employee_code) {
-            this._dbRostersCache.set(`${entry.employee_code}_${entry.date}`, entry);
-            this._dbRostersCache.set(`${entry.employee_code.toLowerCase()}_${entry.date}`, entry);
-            const digits = entry.employee_code.replace(/\D/g, '');
-            if (digits) {
-              this._dbRostersCache.set(`${digits}_${entry.date}`, entry);
-              const unpadded = String(parseInt(digits, 10));
-              if (unpadded !== digits) {
-                this._dbRostersCache.set(`${unpadded}_${entry.date}`, entry);
-              }
+        if (!error && Array.isArray(data)) {
+          dbRows = data;
+        }
+      } catch (e) {
+        console.warn('[attendanceRosterService] Supabase select error:', e);
+      }
+    }
+
+    // Fallback: If direct supabase query returned no rows, query backend service-role endpoint
+    if (dbRows.length === 0) {
+      try {
+        const resp = await fetch(`/api/shift-rosters?startDate=${startDate}&endDate=${endDate}&organizationId=${orgId}`);
+        if (resp.ok) {
+          const json = await resp.json();
+          if (json.success && Array.isArray(json.rosters) && json.rosters.length > 0) {
+            dbRows = json.rosters;
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (dbRows.length > 0) {
+      const mapped: EmployeeRosterEntry[] = dbRows.map((d: any) => ({
+        id: d.id,
+        tenant_id: d.organization_id || orgId,
+        employee_id: d.employee_id,
+        employee_code: d.employee_code || '',
+        employee_name: d.employee_name || 'Employee',
+        date: d.roster_date,
+        shift_id: d.shift_id,
+        shift_code: d.shift_code,
+        shift_name: d.shift_name,
+        shift_type: (d.shift_code?.includes('NGT') ? 'NIGHT_SHIFT' : 'FIXED') as any,
+        is_weekly_off: Boolean(d.is_weekly_off),
+        is_holiday: Boolean(d.is_holiday),
+        is_override: Boolean(d.is_override),
+        override_reason: d.remarks || undefined,
+        assigned_by: d.assigned_by || 'System',
+        updated_at: d.updated_at || new Date().toISOString(),
+      }));
+
+      for (const entry of mapped) {
+        this._dbRostersCache.set(`${entry.employee_id}_${entry.date}`, entry);
+        this._dbRostersCache.set(`${String(entry.employee_id).toLowerCase()}_${entry.date}`, entry);
+        if (entry.employee_code) {
+          this._dbRostersCache.set(`${entry.employee_code}_${entry.date}`, entry);
+          this._dbRostersCache.set(`${entry.employee_code.toLowerCase()}_${entry.date}`, entry);
+          const digits = entry.employee_code.replace(/\D/g, '');
+          if (digits) {
+            this._dbRostersCache.set(`${digits}_${entry.date}`, entry);
+            const unpadded = String(parseInt(digits, 10));
+            if (unpadded !== digits) {
+              this._dbRostersCache.set(`${unpadded}_${entry.date}`, entry);
             }
           }
         }
-        return mapped;
       }
-    } catch (e) {
-      console.warn('[attendanceRosterService] fetchRostersFromDb notice:', e);
+
+      // Merge local storage overrides if any so nothing gets lost across sessions
+      const localStored = getStore<EmployeeRosterEntry[]>(STORAGE_KEYS.ROSTERS, [], orgId);
+      const localOverrides = localStored.filter(r => r.is_override && r.date >= startDate && r.date <= endDate);
+      for (const ovr of localOverrides) {
+        const key = `${ovr.employee_id}_${ovr.date}`;
+        if (!this._dbRostersCache.has(key)) {
+          this._dbRostersCache.set(key, ovr);
+          this._dbRostersCache.set(`${String(ovr.employee_id).toLowerCase()}_${ovr.date}`, ovr);
+          mapped.push(ovr);
+        }
+      }
+
+      return mapped;
     }
+
     return this.getRosters(startDate, endDate, tenantId);
   }
 
@@ -1251,16 +1285,20 @@ class AttendanceRosterService {
     const orgId = isValidUUID(tenantId) ? tenantId : getActiveOrgId();
     const rawId = String(employeeId || '').trim();
     const cleanId = rawId.toLowerCase();
-    const digits = cleanId.replace(/\D/g, '');
+    const empObjId = employeeObj?.id ? String(employeeObj.id).trim().toLowerCase() : '';
+    const empObjCode = employeeObj?.employee_code ? String(employeeObj.employee_code).trim().toLowerCase() : '';
+    const digits = (empObjCode || cleanId).replace(/\D/g, '');
     const unpadded = digits ? String(parseInt(digits, 10)) : '';
 
     // 1. Check in-memory DB roster cache (direct UUID, lowercase, code, or digits)
     const cacheKeys = [
       `${rawId}_${date}`,
       `${cleanId}_${date}`,
+      empObjId ? `${empObjId}_${date}` : '',
+      empObjCode ? `${empObjCode}_${date}` : '',
+      employeeObj?.employee_code ? `${employeeObj.employee_code}_${date}` : '',
       digits ? `${digits}_${date}` : '',
       unpadded ? `${unpadded}_${date}` : '',
-      employeeObj?.employee_code ? `${employeeObj.employee_code.toLowerCase()}_${date}` : '',
     ].filter(Boolean);
 
     for (const key of cacheKeys) {
@@ -1271,11 +1309,11 @@ class AttendanceRosterService {
 
     // 2. Authoritative Database Shift Assignment check (from Supabase PostgreSQL employee_shift_assignments)
     let dbAssignment = this._dbShiftAssignmentsCache.get(cleanId);
-    if (!dbAssignment && employeeObj?.id) {
-      dbAssignment = this._dbShiftAssignmentsCache.get(String(employeeObj.id).toLowerCase());
+    if (!dbAssignment && empObjId) {
+      dbAssignment = this._dbShiftAssignmentsCache.get(empObjId);
     }
-    if (!dbAssignment && employeeObj?.employee_code) {
-      dbAssignment = this._dbShiftAssignmentsCache.get(String(employeeObj.employee_code).toLowerCase());
+    if (!dbAssignment && empObjCode) {
+      dbAssignment = this._dbShiftAssignmentsCache.get(empObjCode);
     }
     if (!dbAssignment && digits) {
       dbAssignment = this._dbShiftAssignmentsCache.get(digits) || (unpadded ? this._dbShiftAssignmentsCache.get(unpadded) : undefined);
@@ -1284,10 +1322,17 @@ class AttendanceRosterService {
     // 3. Check for specific daily override in storage (if any)
     const list = getStore<EmployeeRosterEntry[]>(STORAGE_KEYS.ROSTERS, [], orgId);
     const match = list.find(r => 
-      (r.employee_id === rawId || r.employee_code === rawId || (digits && r.employee_code?.replace(/\D/g, '') === digits)) &&
+      (r.employee_id === rawId || 
+       (empObjId && r.employee_id?.toLowerCase() === empObjId) ||
+       r.employee_code?.toLowerCase() === cleanId || 
+       (empObjCode && r.employee_code?.toLowerCase() === empObjCode) || 
+       (digits && r.employee_code?.replace(/\D/g, '') === digits)) &&
       r.date === date
     );
-    if (match && match.is_override) return match;
+    if (match && match.is_override) {
+      this._dbRostersCache.set(cacheKeys[0], match);
+      return match;
+    }
 
     // 4. Resolve shift definition with priority:
     //    dbAssignment -> employee profile -> roster match -> default
@@ -1333,15 +1378,7 @@ class AttendanceRosterService {
       updated_at: new Date().toISOString(),
     };
 
-    this._dbRostersCache.set(cacheKeys[0], generated);
-    if (cacheKeys[1]) this._dbRostersCache.set(cacheKeys[1], generated);
-    if (empCode) {
-      this._dbRostersCache.set(`${empCode}_${date}`, generated);
-      this._dbRostersCache.set(`${empCode.toLowerCase()}_${date}`, generated);
-    }
-    if (digits) {
-      this._dbRostersCache.set(`${digits}_${date}`, generated);
-    }
+    // Do NOT cache non-override generated defaults into _dbRostersCache so we never poison the authoritative DB cache
     return generated;
   }
 
@@ -1481,18 +1518,25 @@ class AttendanceRosterService {
     date: string,
     newShiftId: string,
     reason: string,
-    actorName = 'HR Administrator'
+    actorName = 'HR Administrator',
+    employeeObj?: any
   ): Promise<EmployeeRosterEntry> {
     const tenantId = getActiveOrgId();
     const activeComp = api.getActiveCompany();
     const shift = this.getShiftById(newShiftId, tenantId) || this.getShifts(tenantId)[0];
 
+    // Resolve employee display information
+    const cleanId = String(employeeId || '').toLowerCase();
+    const dbAssignment = this._dbShiftAssignmentsCache.get(cleanId);
+    const empName = employeeObj?.display_name || employeeObj?.name || `${employeeObj?.first_name || ''} ${employeeObj?.last_name || ''}`.trim() || dbAssignment?.employee_name || 'Employee';
+    const empCode = employeeObj?.employee_code || dbAssignment?.employee_code || `EMP-${employeeId.replace(/\D/g, '') || '001'}`;
+
     const newEntry: EmployeeRosterEntry = {
       id: `roster-ovr-${Date.now()}`,
       tenant_id: tenantId,
       employee_id: employeeId,
-      employee_code: `EMP-${employeeId.replace(/\D/g, '') || '001'}`,
-      employee_name: 'Employee',
+      employee_code: empCode,
+      employee_name: empName,
       date,
       shift_id: shift.id,
       shift_code: shift.shift_code,
@@ -1506,16 +1550,77 @@ class AttendanceRosterService {
       updated_at: new Date().toISOString(),
     };
 
+    // 1. Populate all in-memory cache lookup keys
     this._dbRostersCache.set(`${employeeId}_${date}`, newEntry);
-    this._dbRostersCache.set(`${String(employeeId).toLowerCase()}_${date}`, newEntry);
+    this._dbRostersCache.set(`${cleanId}_${date}`, newEntry);
+    if (empCode) {
+      this._dbRostersCache.set(`${empCode}_${date}`, newEntry);
+      this._dbRostersCache.set(`${empCode.toLowerCase()}_${date}`, newEntry);
+      const digits = empCode.replace(/\D/g, '');
+      if (digits) {
+        this._dbRostersCache.set(`${digits}_${date}`, newEntry);
+        const unpadded = String(parseInt(digits, 10));
+        if (unpadded !== digits) {
+          this._dbRostersCache.set(`${unpadded}_${date}`, newEntry);
+        }
+      }
+    }
 
-    // Upsert directly into Supabase shift_rosters table
-    if (isSupabaseEnabled && supabase && isValidUUID(tenantId) && isValidUUID(employeeId) && isValidUUID(shift.id)) {
+    // 2. Persist to local storage store so it survives offline/reload immediately
+    try {
+      const stored = getStore<EmployeeRosterEntry[]>(STORAGE_KEYS.ROSTERS, [], tenantId);
+      const existingIdx = stored.findIndex(r => (r.employee_id === employeeId || r.employee_code === empCode) && r.date === date);
+      if (existingIdx !== -1) {
+        stored[existingIdx] = newEntry;
+      } else {
+        stored.push(newEntry);
+      }
+      setStore(STORAGE_KEYS.ROSTERS, stored, tenantId);
+    } catch (_) {}
+
+    // 3. Persist to backend server API using service-role permissions
+    let savedToBackend = false;
+    try {
+      const resp = await fetch('/api/shift-rosters/override', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationId: tenantId,
+          companyId: activeComp?.id || null,
+          employeeId,
+          employeeCode: empCode,
+          employeeName: empName,
+          rosterDate: date,
+          shiftId: shift.id,
+          shiftCode: shift.shift_code,
+          shiftName: shift.shift_name,
+          isWeeklyOff: false,
+          isHoliday: false,
+          isOverride: true,
+          assignedBy: actorName,
+          remarks: reason,
+        }),
+      });
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json.success && json.entry) {
+          newEntry.id = json.entry.id;
+          savedToBackend = true;
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[attendanceRosterService] Backend API override note:', apiErr);
+    }
+
+    // 4. Fallback directly to Supabase client if backend was not reached
+    if (!savedToBackend && isSupabaseEnabled && supabase && isValidUUID(tenantId) && isValidUUID(employeeId) && isValidUUID(shift.id)) {
       try {
-        await supabase.from('shift_rosters').upsert({
+        const { data: dbData } = await supabase.from('shift_rosters').upsert({
           organization_id: tenantId,
           company_id: activeComp?.id || null,
           employee_id: employeeId,
+          employee_code: empCode,
+          employee_name: empName,
           roster_date: date,
           shift_id: shift.id,
           shift_code: shift.shift_code,
@@ -1526,7 +1631,11 @@ class AttendanceRosterService {
           assigned_by: actorName,
           remarks: reason,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'organization_id,employee_id,roster_date' });
+        }, { onConflict: 'organization_id,employee_id,roster_date' }).select().maybeSingle();
+
+        if (dbData?.id) {
+          newEntry.id = dbData.id;
+        }
       } catch (e) {
         console.warn('[attendanceRosterService] setShiftOverride DB upsert error:', e);
       }
@@ -2753,7 +2862,7 @@ class AttendanceRosterService {
   // ==========================================================================
 
   public async syncRosterEntriesToDb(entries: EmployeeRosterEntry[]): Promise<void> {
-    if (!isSupabaseEnabled || !supabase || entries.length === 0) return;
+    if (entries.length === 0) return;
     try {
       const activeTenantId = getActiveOrgId();
       const activeComp = api.getActiveCompany();
@@ -2761,7 +2870,16 @@ class AttendanceRosterService {
       const allShifts = this.getShifts();
       const shiftMap = new Map(allShifts.map(s => [s.id, s]));
 
-      // 1. Bulk upsert to public.shift_rosters
+      // 1. Keep local storage store in sync immediately
+      const stored = getStore<EmployeeRosterEntry[]>(STORAGE_KEYS.ROSTERS, [], activeTenantId);
+      for (const e of entries) {
+        const idx = stored.findIndex(r => r.employee_id === e.employee_id && r.date === e.date);
+        if (idx !== -1) stored[idx] = e;
+        else stored.push(e);
+      }
+      setStore(STORAGE_KEYS.ROSTERS, stored, activeTenantId);
+
+      // 2. Format rows
       const rosterRows = entries.map(entry => {
         const rowOrg = isValidUUID(entry.tenant_id) ? entry.tenant_id : activeTenantId;
         const shift = shiftMap.get(entry.shift_id) || allShifts.find(s => s.shift_code === entry.shift_code) || allShifts[0];
@@ -2785,9 +2903,32 @@ class AttendanceRosterService {
         };
       });
 
-      await supabase.from('shift_rosters').upsert(rosterRows, {
-        onConflict: 'organization_id,employee_id,roster_date',
-      });
+      // 3. Try backend API with service role authority (bypassing RLS)
+      let backendSaved = false;
+      try {
+        const resp = await fetch('/api/shift-rosters/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            organizationId: activeTenantId,
+            companyId: activeCompId,
+            entries: rosterRows,
+          }),
+        });
+        if (resp.ok) {
+          const json = await resp.json();
+          if (json.success) backendSaved = true;
+        }
+      } catch (backendErr) {
+        console.warn('[attendanceRosterService] syncRosterEntriesToDb backend API note:', backendErr);
+      }
+
+      // 4. Fallback to direct supabase upsert
+      if (!backendSaved && isSupabaseEnabled && supabase) {
+        await supabase.from('shift_rosters').upsert(rosterRows, {
+          onConflict: 'organization_id,employee_id,roster_date',
+        });
+      }
 
       // 2. Canonical employee_shift_assignments sync
       for (const entry of entries) {

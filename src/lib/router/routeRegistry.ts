@@ -302,6 +302,7 @@ export const ROUTE_MANIFEST: RouteDefinition[] = [
   { id: 'late-early', label: 'Late / Early Tracking', canonicalPath: '/attendance/late-early', section: 'CORE ATTENDANCE', aliases: ['/late-early'] },
   { id: 'regularization', label: 'Regularization Desk', canonicalPath: '/attendance/regularization', section: 'CORE ATTENDANCE', aliases: ['/regularization'] },
   { id: 'exceptions', label: 'Exceptions Queue', canonicalPath: '/attendance/exceptions', section: 'CORE ATTENDANCE', aliases: ['/exceptions'] },
+  { id: 'attendance-manual', label: 'Manual Punch & Audit', canonicalPath: '/attendance/manual', section: 'CORE ATTENDANCE', aliases: ['/manual', '/attendance/manual', '/manual-punch', '/attendance-manual', '/manual-records'] },
   { id: 'attendance-reports', label: 'Reports & Scope MIS', canonicalPath: '/attendance/reports', section: 'CORE ATTENDANCE', aliases: ['/attendance-reports', '/attendance/mis', '/reports-scope', '/mis'] },
 
   // ── LEAVE ──

@@ -91,4 +91,10 @@ scratch/
 schema_keys.json
 demo_recording/
 recordings/
+upload_certificate.*
+*.der
+*.pem
+artifacts/
+assets/
+JOY PeopleHR Corporate Logo.png
 

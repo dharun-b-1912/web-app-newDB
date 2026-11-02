@@ -122,27 +122,56 @@ serve(async (req: Request) => {
     const isWeekly = slot === "WEEKLY";
     const isMonthly = slot === "MONTHLY";
 
-    // Deduplication Guard: If this is an automated schedule run and already ran today, skip immediately
+    // Deduplication Guard: If this is an automated schedule run and already ran today or is currently IN_PROGRESS, skip immediately
     if (body.mode === "AUTOMATED_SCHEDULE" && scheduleRow && (isMorning || slot === "EVENING")) {
+      const isEvening = slot === "EVENING";
+      const lastRunAt = isMorning ? scheduleRow.last_morning_run_at : scheduleRow.last_evening_run_at;
+      const lastStatus = isMorning ? scheduleRow.last_morning_status : scheduleRow.last_evening_status;
+
       let alreadyRan = false;
-      if (isMorning) {
-        alreadyRan = scheduleRow.last_morning_run_at?.startsWith(todayStr) && scheduleRow.last_morning_status === "SUCCESS";
-      } else {
-        if (scheduleRow.last_evening_run_at?.startsWith(todayStr) && scheduleRow.last_evening_status === "SUCCESS") {
-          const runDate = new Date(scheduleRow.last_evening_run_at);
+      if (lastRunAt && lastStatus === "SUCCESS") {
+        if (isMorning) {
+          alreadyRan = lastRunAt.startsWith(todayStr);
+        } else {
+          const runDate = new Date(lastRunAt);
           const runIstHour = new Date(runDate.getTime() + istOffset).getUTCHours();
-          alreadyRan = runIstHour >= 16;
+          alreadyRan = lastRunAt.startsWith(todayStr) && runIstHour >= 16;
         }
       }
-      if (alreadyRan) {
+
+      // Concurrency Lock Guard: if already claimed and running in the last 5 minutes, reject parallel duplicate trigger
+      const isCurrentlyRunning = lastStatus === "IN_PROGRESS" &&
+        lastRunAt &&
+        (nowUtc.getTime() - new Date(lastRunAt).getTime()) < 5 * 60 * 1000;
+
+      if (alreadyRan || isCurrentlyRunning) {
+        console.log(`[Deduplication] Automated ${slot} report for ${todayStr} already ${lastStatus}. Aborting parallel execution.`);
         return new Response(
           JSON.stringify({
             success: true,
-            message: `Automated ${slot} report for ${todayStr} already dispatched. Skipping duplicate run.`,
+            skipped: true,
+            message: `Automated ${slot} report for ${todayStr} already ${lastStatus === "IN_PROGRESS" ? "in-progress" : "dispatched"}. Skipping duplicate run.`,
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+
+      // ATOMIC CLAIM LOCK: Mark slot IN_PROGRESS immediately before doing any PDF/Excel generation or network calls
+      const claimUpdate: any = {
+        updated_at: nowUtc.toISOString(),
+      };
+      if (isMorning) {
+        claimUpdate.last_morning_status = "IN_PROGRESS";
+        claimUpdate.last_morning_run_at = nowUtc.toISOString();
+      } else {
+        claimUpdate.last_evening_status = "IN_PROGRESS";
+        claimUpdate.last_evening_run_at = nowUtc.toISOString();
+      }
+
+      await supabase
+        .from("attendance_report_schedules")
+        .update(claimUpdate)
+        .eq("id", scheduleRow.id);
     }
 
     // 2. Dynamically Resolve Tenant Authentic Company Name (Multi-Tenant SaaS)
@@ -1302,103 +1331,110 @@ serve(async (req: Request) => {
           let sentMessageId: string | undefined;
           let sendError: string | undefined;
 
-          // Step B1: Send Genuine WhatsApp Document Attachment FIRST
+          // Step B1: Send via Meta-Approved Utility Template (daily_mis_report_v1) FIRST
+          // Pre-approved Utility template guarantees delivery even when 24h conversation window is closed
+          const matchedRecipient = authorizedRecipients.find((r) => {
+            const p = String(r.phone || "").replace(/\D/g, "");
+            return p === phone || p.endsWith(phone.slice(-10)) || phone.endsWith(p.slice(-10));
+          });
+          const recipientDisplayName = matchedRecipient?.name || "Executive Leadership";
+
           try {
-            const docResp = await fetch(msgUrl, {
+            const templatePayload = {
+              messaging_product: "whatsapp",
+              recipient_type: "individual",
+              to: phone,
+              type: "template",
+              template: {
+                name: "daily_mis_report_v1",
+                language: { code: "en" },
+                components: [
+                  {
+                    type: "header",
+                    parameters: [
+                      {
+                        type: "document",
+                        document: whatsAppUploadMediaId
+                          ? { id: whatsAppUploadMediaId, filename: waPdfFilename }
+                          : { link: publicPdfDocUrl, filename: waPdfFilename },
+                      },
+                    ],
+                  },
+                  {
+                    type: "body",
+                    parameters: [
+                      { type: "text", text: recipientDisplayName },
+                      { type: "text", text: `${slotLabel}` },
+                      { type: "text", text: formattedDateForTemplate },
+                      { type: "text", text: companyName },
+                      { type: "text", text: String(totalHeadcount) },
+                      { type: "text", text: `${presentCount} Staff (${turnoutPct}% Turnout)` },
+                      { type: "text", text: String(lateCount) },
+                      { type: "text", text: String(absentCount) },
+                      { type: "text", text: shiftStatusStr },
+                    ],
+                  },
+                  {
+                    type: "button",
+                    sub_type: "quick_reply",
+                    index: 0,
+                    parameters: [
+                      { type: "payload", payload: `ACK_DAILY_MIS_${todayStr.replace(/-/g, "_")}` },
+                    ],
+                  },
+                ],
+              },
+            };
+
+            const tplResp = await fetch(msgUrl, {
               method: "POST",
               headers: {
                 Authorization: `Bearer ${META_WA_ACCESS_TOKEN}`,
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify({
-                messaging_product: "whatsapp",
-                recipient_type: "individual",
-                to: phone,
-                type: "document",
-                document: docPayload,
-              }),
+              body: JSON.stringify(templatePayload),
             });
-
-            const docData = await docResp.json();
-            if (docResp.ok && docData?.messages?.[0]?.id) {
-              sentMessageId = docData.messages[0].id;
-              console.log(`[EdgeFunction] Direct Document Attachment delivered successfully to ${phone}: ${sentMessageId}`);
+            const tplData = await tplResp.json();
+            if (tplResp.ok && tplData?.messages?.[0]?.id) {
+              sentMessageId = tplData.messages[0].id;
+              console.log(`[EdgeFunction] HSM Template delivered successfully to ${phone}: ${sentMessageId}`);
             } else {
-              console.warn(`[EdgeFunction] Direct document returned error, trying HSM template fallback:`, docData);
-              sendError = JSON.stringify(docData?.error || docData);
+              console.warn("[EdgeFunction] HSM Template returned notice, trying direct document fallback:", tplData);
+              sendError = JSON.stringify(tplData?.error || tplData);
             }
-          } catch (docErr: any) {
-            console.warn(`[EdgeFunction] Direct document exception, trying HSM template fallback:`, docErr.message);
+          } catch (tplErr: any) {
+            console.warn("[EdgeFunction] HSM Template exception, trying direct document fallback:", tplErr.message);
+            sendError = tplErr.message;
           }
 
-          // Step B2: Fallback to Meta-approved HSM template daily_mis_report_v1 if direct document send did not return messageId
+          // Step B2: Fallback to Direct Document Attachment only if template dispatch was rejected
           if (!sentMessageId) {
             try {
-              const templatePayload = {
-                messaging_product: "whatsapp",
-                recipient_type: "individual",
-                to: phone,
-                type: "template",
-                template: {
-                  name: "daily_mis_report_v1",
-                  language: { code: "en" },
-                  components: [
-                    {
-                      type: "header",
-                      parameters: [
-                        {
-                          type: "document",
-                          document: whatsAppUploadMediaId
-                            ? { id: whatsAppUploadMediaId, filename: waPdfFilename }
-                            : { link: docPayload.link, filename: waPdfFilename },
-                        },
-                      ],
-                    },
-                    {
-                      type: "body",
-                      parameters: [
-                        { type: "text", text: "Executive Leadership" },
-                        { type: "text", text: `${slotLabel}` },
-                        { type: "text", text: formattedDateForTemplate },
-                        { type: "text", text: companyName },
-                        { type: "text", text: String(totalHeadcount) },
-                        { type: "text", text: `${presentCount} Staff (${turnoutPct}% Turnout)` },
-                        { type: "text", text: String(lateCount) },
-                        { type: "text", text: String(absentCount) },
-                        { type: "text", text: shiftStatusStr },
-                      ],
-                    },
-                    {
-                      type: "button",
-                      sub_type: "quick_reply",
-                      index: 0,
-                      parameters: [
-                        { type: "payload", payload: `ACK_DAILY_MIS_${todayStr.replace(/-/g, "_")}` },
-                      ],
-                    },
-                  ],
-                },
-              };
-
-              const tplResp = await fetch(msgUrl, {
+              const docResp = await fetch(msgUrl, {
                 method: "POST",
                 headers: {
                   Authorization: `Bearer ${META_WA_ACCESS_TOKEN}`,
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify(templatePayload),
+                body: JSON.stringify({
+                  messaging_product: "whatsapp",
+                  recipient_type: "individual",
+                  to: phone,
+                  type: "document",
+                  document: docPayload,
+                }),
               });
-              const tplData = await tplResp.json();
-              if (tplResp.ok && tplData?.messages?.[0]?.id) {
-                sentMessageId = tplData.messages[0].id;
-                console.log(`[EdgeFunction] HSM Template delivered successfully to ${phone}: ${sentMessageId}`);
+
+              const docData = await docResp.json();
+              if (docResp.ok && docData?.messages?.[0]?.id) {
+                sentMessageId = docData.messages[0].id;
+                console.log(`[EdgeFunction] Direct Document Attachment delivered as fallback to ${phone}: ${sentMessageId}`);
               } else {
-                console.warn("[EdgeFunction] HSM Template returned error:", tplData);
-                sendError = JSON.stringify(tplData?.error || tplData);
+                console.warn(`[EdgeFunction] Direct document fallback error:`, docData);
+                sendError = JSON.stringify(docData?.error || docData);
               }
-            } catch (tplErr: any) {
-              console.warn("[EdgeFunction] HSM Template exception:", tplErr.message);
-              sendError = tplErr.message;
+            } catch (docErr: any) {
+              console.warn(`[EdgeFunction] Direct document fallback exception:`, docErr.message);
             }
           }
 

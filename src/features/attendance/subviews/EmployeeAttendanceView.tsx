@@ -405,7 +405,10 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
       });
 
       const roster = attendanceRosterService.getRosterForEmployeeOnDate(emp.id, selectedDate, undefined, emp);
-      const targetShiftId = (record as any)?.shift_id || emp.shift_id || emp.employment?.shift_id || roster.shift_id;
+      // Daily roster override has absolute authoritative precedence
+      const targetShiftId = roster?.is_override
+        ? roster.shift_id
+        : ((record as any)?.shift_id || roster?.shift_id || emp.shift_id || emp.employment?.shift_id);
       let shift = attendanceRosterService.getShiftById(targetShiftId);
       if (!shift) {
         const isNS01 = (record as any)?.shift_code === 'NS-01' || roster.shift_code === 'NS-01' || targetShiftId === '5f36464f-1920-45b4-b692-0d49294a76fa';
