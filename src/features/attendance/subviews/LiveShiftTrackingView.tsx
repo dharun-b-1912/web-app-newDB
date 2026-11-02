@@ -52,6 +52,9 @@ import {
   getEmployeeAvatarUrl,
 } from '../../../utils/snapchatAvatarHelper';
 
+// Enterprise Travel Conveyance Reimbursement Rate (₹6.00 / km standard field travel rate)
+export const TRAVEL_REIMBURSEMENT_RATE_PER_KM = 6.0;
+
 export interface TimelineSegment {
   id: string;
   type: 'stay' | 'trip';
@@ -1688,9 +1691,9 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                       <span className="text-sm font-black text-gray-900">
                         {trailTotalDistance > 0
                           ? `${(trailTotalDistance / 1000).toFixed(2)} km`
-                          : activeEmployee.has_live_ping
+                          : activeEmployee.has_live_ping && activeEmployee.cumulative_distance_meters > 0
                           ? `${(activeEmployee.cumulative_distance_meters / 1000).toFixed(2)} km`
-                          : '--'}
+                          : '0.00 km'}
                       </span>
                     </div>
                     <div className="w-px h-6 bg-gray-200" />
@@ -1709,9 +1712,9 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                       <span className="text-[10px] text-gray-500 font-semibold block uppercase">Estimated Travel Pay</span>
                       <span className="text-sm font-black text-emerald-700">
                         {trailTotalDistance > 0
-                          ? `₹${((trailTotalDistance / 1000) * 6).toFixed(0)}`
-                          : activeEmployee.has_live_ping
-                          ? `₹${((activeEmployee.cumulative_distance_meters / 1000) * 6).toFixed(0)}`
+                          ? `₹${((trailTotalDistance / 1000) * TRAVEL_REIMBURSEMENT_RATE_PER_KM).toFixed(0)}`
+                          : activeEmployee.has_live_ping && activeEmployee.cumulative_distance_meters > 0
+                          ? `₹${((activeEmployee.cumulative_distance_meters / 1000) * TRAVEL_REIMBURSEMENT_RATE_PER_KM).toFixed(0)}`
                           : '₹0'}
                       </span>
                     </div>
@@ -1875,7 +1878,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                   <div>
                     <span className="text-[10px] text-gray-400 font-semibold block uppercase">Travel Allowance</span>
                     <span className="font-extrabold text-blue-700">
-                      ₹{((trailTotalDistance / 1000) * 6).toFixed(0)}
+                      ₹{((trailTotalDistance / 1000) * TRAVEL_REIMBURSEMENT_RATE_PER_KM).toFixed(0)}
                     </span>
                   </div>
                 </div>
