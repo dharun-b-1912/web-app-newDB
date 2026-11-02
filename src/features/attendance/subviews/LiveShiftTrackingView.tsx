@@ -377,6 +377,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
   // Load trails for selected employee on the selected calendar date
   const loadEmployeeTrails = useCallback(async (empId: string, dateStr?: string) => {
     setIsLoadingTrails(true);
+    setComputedRoadDistanceMeters(0);
     try {
       const targetDate = dateStr || selectedDate;
       const trailData = await shiftTrackingService.getEmployeeTrails(empId, targetDate);
@@ -703,7 +704,10 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
     });
     trailMarkersRef.current = [];
 
-    if (trails.length === 0) return;
+    if (trails.length === 0) {
+      setComputedRoadDistanceMeters(0);
+      return;
+    }
 
     // Filter out indoor stationary jitter points (< 25m from previous waypoint)
     const coordinates: { lat: number; lng: number }[] = [];
@@ -844,8 +848,11 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
         bottom: 60,
         left: 60,
       });
-    } else if (coordinates.length === 1 && googleMapInstanceRef.current) {
-      googleMapInstanceRef.current.panTo(coordinates[0]);
+    } else {
+      setComputedRoadDistanceMeters(0);
+      if (coordinates.length === 1 && googleMapInstanceRef.current) {
+        googleMapInstanceRef.current.panTo(coordinates[0]);
+      }
     }
 
     // Start Waypoint Marker (First recorded ping of the day)
