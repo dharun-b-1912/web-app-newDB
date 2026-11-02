@@ -964,6 +964,132 @@ class WorkLocationService {
     return created;
   }
 
+  /**
+   * Authoritatively fetches mobile GPS punch records from canonical Supabase table `attendance_punches`.
+   * Merges real mobile attendance marks into the local location events ledger.
+   */
+  async fetchLiveAttendanceLocationEvents(tenantId = getActiveOrgId()): Promise<AttendanceLocationEvent[]> {
+    if (!isSupabaseEnabled || !supabase) {
+      return this.getLocationEvents(tenantId);
+    }
+
+    try {
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+      // Query today's and recent GPS punches with associated employee and location metadata
+      const { data, error } = await supabase
+        .from('attendance_punches')
+        .select(`
+          id,
+          organization_id,
+          employee_id,
+          punch_time,
+          punch_type,
+          verification_mode,
+          latitude,
+          longitude,
+          accuracy_meters,
+          distance_meters,
+          work_location_id,
+          location_authorized,
+          unauthorized_checkout,
+          unauthorized_checkout_reason,
+          punch_source,
+          created_at,
+          employees (
+            id,
+            employee_code,
+            display_name,
+            first_name,
+            last_name
+          ),
+          work_locations (
+            id,
+            name
+          )
+        `)
+        .eq('organization_id', tenantId)
+        .not('latitude', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      if (error) {
+        console.warn('[WorkLocationService] Supabase attendance_punches query notice:', error.message);
+        return this.getLocationEvents(tenantId);
+      }
+
+      if (data && data.length > 0) {
+        const mappedEvents: AttendanceLocationEvent[] = data.map((p: any) => {
+          const emp = p.employees;
+          const empName = emp ? (emp.display_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.employee_code) : 'Employee';
+          const empCode = emp?.employee_code || p.employee_id;
+          const locName = p.work_locations?.name || (p.location_authorized ? 'Assigned Location' : 'External Location');
+
+          const isOut = String(p.punch_type).toUpperCase().includes('OUT');
+          let eventType: LocationEventType = isOut ? 'PUNCH_CHECK_OUT' : 'PUNCH_CHECK_IN';
+          if (p.location_authorized === false || p.unauthorized_checkout === true) {
+            eventType = 'OUTSIDE_GEOFENCE';
+          }
+
+          let geofenceStatus: GeofenceStatus = p.location_authorized ? 'INSIDE' : 'OUTSIDE';
+          if (p.accuracy_meters && p.accuracy_meters > 50) {
+            geofenceStatus = 'GPS_INACCURATE';
+          }
+
+          let verStatus: LocationVerificationStatus = 'ASSIGNED_LOCATION';
+          if (!p.location_authorized) {
+            verStatus = 'DIFFERENT_LOCATION';
+          }
+
+          return {
+            id: p.id,
+            tenant_id: p.organization_id || tenantId,
+            organization_id: p.organization_id || tenantId,
+            employee_id: p.employee_id,
+            employee_name: empName,
+            employee_code: empCode,
+            work_location_id: p.work_location_id,
+            work_location_name: locName,
+            event_type: eventType,
+            geofence_status: geofenceStatus,
+            verification_status: verStatus,
+            face_status: p.verification_mode === 'FACE' ? 'FACE_MATCH' : 'FACE_NOT_AVAILABLE',
+            latitude: Number(p.latitude) || 0,
+            longitude: Number(p.longitude) || 0,
+            accuracy_meters: Number(p.accuracy_meters) || 10,
+            distance_meters: Number(p.distance_meters) || 0,
+            location_reason: p.unauthorized_checkout_reason || undefined,
+            device_timestamp: p.punch_time || p.created_at,
+            server_timestamp: p.created_at,
+            source: p.punch_source || 'MOBILE_GPS',
+            device_info: { verification_mode: p.verification_mode },
+            created_at: p.created_at,
+          };
+        });
+
+        // Merge with existing local events to avoid duplicates
+        const existing = this.loadStore<AttendanceLocationEvent[]>(STORAGE_KEY_EVENTS, [], tenantId);
+        const existingMap = new Map<string, AttendanceLocationEvent>();
+        mappedEvents.forEach((ev) => existingMap.set(ev.id, ev));
+        existing.forEach((ev) => {
+          if (!existingMap.has(ev.id)) existingMap.set(ev.id, ev);
+        });
+
+        const merged = Array.from(existingMap.values()).sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+
+        this.saveStore(STORAGE_KEY_EVENTS, merged.slice(0, 1000), tenantId);
+        return merged;
+      }
+    } catch (err) {
+      console.error('[WorkLocationService] Error fetching live attendance punches:', err);
+    }
+
+    return this.getLocationEvents(tenantId);
+  }
+
   getLocationEvents(tenantId = getActiveOrgId()): AttendanceLocationEvent[] {
     return this.loadStore<AttendanceLocationEvent[]>(STORAGE_KEY_EVENTS, [], tenantId);
   }

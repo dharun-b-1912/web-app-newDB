@@ -98,6 +98,9 @@ export const ALL_MODULE_IDS: ModuleId[] = [
   'mobile-clocking',
   'location-logs',
   'location-exceptions',
+  'live-tracking',
+  'tracking',
+  'shift-tracking',
   // Work & Overtime
   'overtime',
   'overtime-requests',
@@ -340,7 +343,7 @@ const MANAGER_MODULE_IDS: ModuleId[] = [
   'shifts', 'adaptive-shifts', 'roster', 'shift-calendar', 'policies', 'permission-governance',
   'biometric', 'biometric-devices', 'attendance-rules', 'biometric-rules', 'rules-engine', 'device-enrollment', 'device-sync', 'punch-mapping', 'device-logs',
   'face-attendance', 'face-enrollment', 'face-devices', 'face-logs', 'face-exceptions',
-  'gps', 'gps-attendance', 'geofences', 'staff-mapping', 'mobile-clocking', 'location-logs', 'location-exceptions',
+  'gps', 'gps-attendance', 'geofences', 'staff-mapping', 'mobile-clocking', 'location-logs', 'location-exceptions', 'live-tracking', 'tracking', 'shift-tracking',
   'overtime', 'overtime-requests', 'wfh', 'breaks-workhours',
   'payroll-inputs', 'payable-days', 'lop-desk', 'ot-pay-inputs', 'payroll-freeze',
   'calculation-audit', 'attendance-corrections', 'approval-history', 'attendance-activity-logs',
@@ -694,6 +697,10 @@ export function canViewModule(user: User | null, module: ModuleId | string): boo
     module.startsWith('gps') ||
     module.startsWith('geofence') ||
     module.startsWith('face-') ||
+    module.includes('tracking') ||
+    module === 'live-tracking' ||
+    module === 'tracking' ||
+    module === 'shift-tracking' ||
     module === 'late-early' ||
     module === 'regularization' ||
     module === 'exceptions' ||

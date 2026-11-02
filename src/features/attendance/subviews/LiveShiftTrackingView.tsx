@@ -45,8 +45,12 @@ import {
   resolveLocationDetails,
   ResolvedLocationDetails,
   createGoogleMapInstance,
+  computeRoadRouteViaRoutesApi,
   GOOGLE_MAPS_API_KEY,
 } from '../../../services/location/googleMapsService';
+import {
+  getEmployeeAvatarUrl,
+} from '../../../utils/snapchatAvatarHelper';
 
 export interface TimelineSegment {
   id: string;
@@ -74,21 +78,31 @@ export function formatDurationDiff(start: Date, end: Date): string {
   return `${hours}h ${remaining > 0 ? `${remaining}m` : ''}`;
 }
 
-export const getEmployeeAvatar = (name?: string, avatarUrl?: string) => {
-  if (avatarUrl && avatarUrl.trim() !== '') return avatarUrl;
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Staff')}&background=07563D&color=fff&bold=true`;
+export const getEmployeeAvatar = (
+  empOrName?: any,
+  avatarUrl?: string,
+  gender?: string
+) => {
+  if (typeof empOrName === 'object' && empOrName !== null) {
+    return getEmployeeAvatarUrl(empOrName);
+  }
+  return getEmployeeAvatarUrl({
+    employee_name: empOrName,
+    avatar_url: avatarUrl,
+    gender,
+  });
 };
 
 /**
- * Creates a custom Google Maps OverlayView that binds the employee avatar,
- * radar pulse waves, and live status badge directly to the employee's exact
- * geographic coordinates (lat, lng).
- * This ensures the pin stays anchored to the physical location even when HR pans, zooms, or drags the map.
+ * Creates a custom Google Maps OverlayView that binds the employee's genuine profile photo,
+ * circular pin with drop pointer, and live status badge directly
+ * to the employee's exact geographic coordinates (lat, lng).
  */
 function createEmployeeRadarOverlay(
   map: any,
   emp: EmployeeLiveLocation,
   isSelected: boolean,
+  isFleetOverview: boolean,
   onClick: () => void
 ) {
   if (!window.google?.maps?.OverlayView) return null;
@@ -103,36 +117,59 @@ function createEmployeeRadarOverlay(
     container.style.zIndex = isSelected ? '999' : '100';
     container.style.userSelect = 'none';
 
+    const hasLivePing = Boolean(emp.has_live_ping);
     const isMoving = Boolean(emp.is_moving || emp.status === 'moving');
-    const avatarUrl = getEmployeeAvatar(emp.employee_name, emp.avatar_url);
+    const isStale = Boolean(emp.is_stale);
+    const avatarUrl = getEmployeeAvatarUrl(emp);
     const speedStr = emp.speed > 0 ? `${Math.round(emp.speed)} km/h` : 'Travelling';
-    const pingColor = isMoving ? 'rgba(59, 130, 246, 0.4)' : 'rgba(16, 185, 129, 0.35)';
-    const pingColorInner = isMoving ? 'rgba(96, 165, 250, 0.5)' : 'rgba(52, 211, 153, 0.45)';
+    const pingColor = !hasLivePing
+      ? 'rgba(148, 163, 184, 0.25)'
+      : isMoving
+      ? 'rgba(59, 130, 246, 0.4)'
+      : 'rgba(16, 185, 129, 0.35)';
+    const pingColorInner = !hasLivePing
+      ? 'rgba(203, 213, 225, 0.35)'
+      : isMoving
+      ? 'rgba(96, 165, 250, 0.5)'
+      : 'rgba(52, 211, 153, 0.45)';
+    const dotColor = !hasLivePing ? (isStale ? '#f59e0b' : '#94a3b8') : isMoving ? '#3b82f6' : '#10b981';
+    const firstName = emp.employee_name?.split(' ')[0] || emp.employee_code || 'Staff';
+    const timeStr = emp.last_pinged_at
+      ? new Date(emp.last_pinged_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '';
+
+    // In Fleet Overview mode or when selected, show name & status pill
+    const showNameTag = isSelected || isFleetOverview;
 
     container.innerHTML = `
-      <div style="position: relative; width: 0; height: 0;">
-        ${isSelected ? `
-          <div style="position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); margin-bottom: 6px; padding: 5px 12px; background: rgba(3, 7, 18, 0.94); border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 9999px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 11px; font-weight: 700; color: white; backdrop-filter: blur(8px); pointer-events: auto;">
-            <span style="width: 8px; height: 8px; border-radius: 50%; background: ${isMoving ? '#60a5fa' : '#34d399'}; box-shadow: 0 0 8px ${isMoving ? '#60a5fa' : '#34d399'};"></span>
-            <span style="font-weight: 800; letter-spacing: -0.01em;">${emp.employee_name}</span>
-            <span style="font-size: 10px; font-family: monospace; background: rgba(6, 78, 59, 0.85); color: #6ee7b7; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.4);">${emp.employee_code || emp.employee_id}</span>
-            ${isMoving
-              ? `<span style="font-size: 10px; color: #93c5fd; background: rgba(30, 58, 138, 0.85); padding: 2px 8px; border-radius: 9999px; border: 1px solid rgba(59, 130, 246, 0.4); display: flex; align-items: center; gap: 3px;">🚗 ${speedStr}</span>`
-              : `<span style="font-size: 10px; color: #6ee7b7;">• Live GPS</span>`
+      <div style="position: relative; width: 0; height: 0; filter: drop-shadow(0 6px 14px rgba(0,0,0,0.35));">
+        ${showNameTag ? `
+          <div style="position: absolute; bottom: ${isSelected ? 54 : 44}px; left: 50%; transform: translateX(-50%); margin-bottom: 4px; padding: 3px 9px; background: rgba(15, 23, 42, 0.94); border: 1.5px solid rgba(255, 255, 255, 0.3); border-radius: 9999px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 11px; font-weight: 800; color: white; backdrop-filter: blur(6px); pointer-events: auto; z-index: 20;">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: ${dotColor}; box-shadow: 0 0 6px ${dotColor};"></span>
+            <span style="letter-spacing: -0.01em;">${firstName}</span>
+            <span style="font-size: 9px; font-family: monospace; background: rgba(6, 78, 59, 0.85); color: #6ee7b7; padding: 1px 4px; border-radius: 3px; border: 1px solid rgba(16, 185, 129, 0.4);">${emp.employee_code || ''}</span>
+            ${isMoving && hasLivePing
+              ? `<span style="font-size: 9px; color: #93c5fd; background: rgba(30, 58, 138, 0.9); padding: 1px 5px; border-radius: 9999px;">🚗 ${speedStr}</span>`
+              : hasLivePing
+              ? `<span style="font-size: 9px; color: #6ee7b7;">• Live</span>`
+              : isStale
+              ? `<span style="font-size: 9px; color: #fde047;">• Check-In (${timeStr})</span>`
+              : `<span style="font-size: 9px; color: #cbd5e1;">• Saved</span>`
             }
-            ${emp.battery_level != null ? `<span style="font-size: 10px; font-family: monospace; color: #d1d5db; border-left: 1px solid rgba(255,255,255,0.25); padding-left: 7px;">🔋 ${emp.battery_level}%</span>` : ''}
+            ${emp.battery_level != null ? `<span style="font-size: 9px; color: #e2e8f0; border-left: 1px solid rgba(255,255,255,0.25); padding-left: 5px;">🔋${emp.battery_level}%</span>` : ''}
           </div>
         ` : ''}
 
-        <div style="position: absolute; top: 0; left: 0; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; pointer-events: auto;">
-          ${isSelected ? `
-            <div style="position: absolute; width: 84px; height: 84px; border-radius: 50%; background: ${pingColor}; animation: radarPing 2.2s cubic-bezier(0, 0, 0.2, 1) infinite; pointer-events: none;"></div>
-            <div style="position: absolute; width: 62px; height: 62px; border-radius: 50%; background: ${pingColorInner}; animation: radarPulse 1.6s ease-in-out infinite; pointer-events: none;"></div>
+        <!-- Profile Photo Pin Marker with Drop Pointer -->
+        <div style="position: absolute; top: 0; left: 0; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; pointer-events: auto;">
+          ${(isSelected || isFleetOverview) && hasLivePing ? `
+            <div style="position: absolute; top: 35%; left: 50%; transform: translate(-50%, -50%); width: ${isSelected ? 76 : 56}px; height: ${isSelected ? 76 : 56}px; border-radius: 50%; background: ${pingColor}; animation: radarPing 2.2s cubic-bezier(0, 0, 0.2, 1) infinite; pointer-events: none;"></div>
+            <div style="position: absolute; top: 35%; left: 50%; transform: translate(-50%, -50%); width: ${isSelected ? 56 : 42}px; height: ${isSelected ? 56 : 42}px; border-radius: 50%; background: ${pingColorInner}; animation: radarPulse 1.6s ease-in-out infinite; pointer-events: none;"></div>
           ` : ''}
-          <div style="position: relative; width: ${isSelected ? 46 : 36}px; height: ${isSelected ? 46 : 36}px; border-radius: 50%; border: ${isSelected ? '3px' : '2px'} solid white; box-shadow: 0 4px 16px rgba(0,0,0,0.45); overflow: hidden; background: white;">
+          <div style="position: relative; width: ${isSelected ? 48 : 38}px; height: ${isSelected ? 48 : 38}px; border-radius: 50%; border: ${isSelected ? '3px solid #10b981' : '2.5px solid white'}; box-shadow: 0 4px 12px rgba(0,0,0,0.3); overflow: hidden; background: #f8fafc;">
             <img src="${avatarUrl}" alt="${emp.employee_name}" style="width: 100%; height: 100%; object-fit: cover; display: block;" />
           </div>
-          <span style="position: absolute; bottom: 0; right: 0; width: ${isSelected ? 11 : 9}px; height: ${isSelected ? 11 : 9}px; border-radius: 50%; border: 2px solid white; background: ${isMoving ? '#3b82f6' : '#10b981'};"></span>
+          <div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 7px solid ${isSelected ? '#10b981' : 'white'}; margin-top: -2px;"></div>
         </div>
       </div>
     `;
@@ -173,11 +210,12 @@ function createEmployeeOverlay(
   map: any,
   emp: EmployeeLiveLocation,
   isSelected: boolean,
+  isFleetOverview: boolean,
   onClick: () => void
 ) {
   if (window.google?.maps?.OverlayView) {
     try {
-      const overlay = createEmployeeRadarOverlay(map, emp, isSelected, onClick);
+      const overlay = createEmployeeRadarOverlay(map, emp, isSelected, isFleetOverview, onClick);
       if (overlay) return overlay;
     } catch (err) {
       console.warn('[LiveShiftTrackingView] OverlayView creation error, using Marker fallback:', err);
@@ -190,7 +228,7 @@ function createEmployeeOverlay(
     map,
     title: `${emp.employee_name} (${emp.employee_code || emp.employee_id})`,
     icon: {
-      url: getEmployeeAvatar(emp.employee_name, emp.avatar_url),
+      url: getEmployeeAvatarUrl(emp, { size: isSelected ? 48 : 36 }),
       scaledSize: new window.google.maps.Size(isSelected ? 44 : 34, isSelected ? 44 : 34),
       origin: new window.google.maps.Point(0, 0),
       anchor: new window.google.maps.Point(isSelected ? 22 : 17, isSelected ? 22 : 17),
@@ -217,7 +255,31 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isLoadingTrails, setIsLoadingTrails] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'live' | 'moving' | 'offline'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'live' | 'moving' | 'on_leave' | 'offline'>('ALL');
+  const [computedRoadDistanceMeters, setComputedRoadDistanceMeters] = useState<number>(0);
+  const [isJsMapReady, setIsJsMapReady] = useState<boolean>(false);
+  const [isFleetOverview, setIsFleetOverview] = useState<boolean>(false);
+
+  // Google Maps settings
+  const [mapType, setMapType] = useState<'m' | 'k' | 'h'>('m'); // Roadmap, Satellite, Hybrid
+  const [mapZoom, setMapZoom] = useState<number>(16);
+  const [resolvedAddress, setResolvedAddress] = useState<string>('');
+  const [locationDetails, setLocationDetails] = useState<ResolvedLocationDetails | null>(null);
+  const [isGeocoding, setIsGeocoding] = useState<boolean>(false);
+  const [showGeofence, setShowGeofence] = useState<boolean>(true);
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
+  const [timelineViewMode, setTimelineViewMode] = useState<'smart' | 'raw'>('smart');
+  const [stopAddressMap, setStopAddressMap] = useState<Record<string, ResolvedLocationDetails>>({});
+
+  const mapContainerRef = React.useRef<HTMLDivElement>(null);
+  const googleMapInstanceRef = React.useRef<any>(null);
+  const markersRef = React.useRef<any[]>([]);
+  const routePolylineRef = React.useRef<any>(null);
+  const directionsRendererRef = React.useRef<any>(null);
+  const trailMarkersRef = React.useRef<any[]>([]);
+  const geofenceCircleRef = React.useRef<any>(null);
+  const selectedEmployeeIdRef = React.useRef<string | null>(null);
+  selectedEmployeeIdRef.current = selectedEmployeeId;
 
   // Calendar / Date selection state (defaults to today YYYY-MM-DD)
   const [selectedDate, setSelectedDate] = useState<string>(() => {
@@ -241,6 +303,9 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
   }, []);
 
   const trailTotalDistance = useMemo(() => {
+    if (computedRoadDistanceMeters > 0) {
+      return computedRoadDistanceMeters;
+    }
     if (trails.length === 0) return 0;
     const last = trails[trails.length - 1];
     if (last && typeof last.cumulative_distance_meters === 'number' && last.cumulative_distance_meters > 0) {
@@ -257,27 +322,31 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
       }
       return acc + disp;
     }, 0);
-  }, [trails]);
+  }, [trails, computedRoadDistanceMeters]);
 
-  // Google Maps settings
-  const [mapType, setMapType] = useState<'m' | 'k' | 'h'>('m'); // Roadmap, Satellite, Hybrid
-  const [mapZoom, setMapZoom] = useState<number>(16);
-  const [resolvedAddress, setResolvedAddress] = useState<string>('');
-  const [locationDetails, setLocationDetails] = useState<ResolvedLocationDetails | null>(null);
-  const [isGeocoding, setIsGeocoding] = useState<boolean>(false);
-  const [showGeofence, setShowGeofence] = useState<boolean>(true);
-
-  const mapContainerRef = React.useRef<HTMLDivElement>(null);
-  const googleMapInstanceRef = React.useRef<any>(null);
-  const markersRef = React.useRef<any[]>([]);
-  const routePolylineRef = React.useRef<any>(null);
-  const directionsRendererRef = React.useRef<any>(null);
-  const trailMarkersRef = React.useRef<any[]>([]);
-  const geofenceCircleRef = React.useRef<any>(null);
-  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
-  const [timelineViewMode, setTimelineViewMode] = useState<'smart' | 'raw'>('smart');
-  const [stopAddressMap, setStopAddressMap] = useState<Record<string, ResolvedLocationDetails>>({});
-  const [isJsMapReady, setIsJsMapReady] = useState<boolean>(false);
+  const fitAllEmployeesBounds = useCallback(() => {
+    if (!googleMapInstanceRef.current || !window.google?.maps) return;
+    const bounds = new window.google.maps.LatLngBounds();
+    let count = 0;
+    liveEmployees.forEach((emp) => {
+      // Only fit bounds around employees actively transmitting live GPS today
+      if (emp.has_live_ping && !emp.is_on_leave && emp.latitude && emp.longitude && emp.latitude !== 0) {
+        bounds.extend(new window.google.maps.LatLng(emp.latitude, emp.longitude));
+        count++;
+      }
+    });
+    if (count > 0) {
+      googleMapInstanceRef.current.fitBounds(bounds, {
+        top: 80,
+        right: 80,
+        bottom: 80,
+        left: 80,
+      });
+      if (count === 1) {
+        googleMapInstanceRef.current.setZoom(16);
+      }
+    }
+  }, [liveEmployees]);
 
   // Load live employees
   const loadLiveLocations = useCallback(async (silent: boolean = false) => {
@@ -286,17 +355,24 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
       const data = await shiftTrackingService.getLiveLocations();
       setLiveEmployees(data);
       if (data.length > 0) {
-        const firstLive = data.find((d) => d.has_live_ping);
-        if (!selectedEmployeeId || (firstLive && !data.find((d) => d.employee_id === selectedEmployeeId)?.has_live_ping)) {
-          setSelectedEmployeeId(firstLive ? firstLive.employee_id : data[0].employee_id);
-        }
+        setSelectedEmployeeId((prev) => {
+          const firstLive = data.find((d) => d.has_live_ping);
+          if (!prev) {
+            return firstLive ? firstLive.employee_id : data[0].employee_id;
+          }
+          const currentEmp = data.find((d) => d.employee_id === prev);
+          if (firstLive && currentEmp && !currentEmp.has_live_ping) {
+            return firstLive.employee_id;
+          }
+          return prev;
+        });
       }
     } catch (err) {
       console.error('[LiveShiftTrackingView] Load error:', err);
     } finally {
       if (!silent) setIsLoading(false);
     }
-  }, [selectedEmployeeId]);
+  }, []);
 
   // Load trails for selected employee on the selected calendar date
   const loadEmployeeTrails = useCallback(async (empId: string, dateStr?: string) => {
@@ -315,14 +391,15 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
   useEffect(() => {
     loadLiveLocations();
 
-    // Subscribe to live telemetry push on employee_live_locations
+    // Subscribe to live telemetry push on employee_live_locations & attendance_punches
     const unsubLive = shiftTrackingService.subscribeLiveUpdates('', () => {
       loadLiveLocations(true);
     });
 
     // Subscribe to real-time breadcrumb trail additions
     const unsubTrails = shiftTrackingService.subscribeTrailUpdates('', (newTrail) => {
-      if (selectedEmployeeId && newTrail.employee_id === selectedEmployeeId) {
+      const currentSelected = selectedEmployeeIdRef.current;
+      if (currentSelected && newTrail.employee_id === currentSelected) {
         setTrails((prev) => {
           if (prev.some((t) => t.id === newTrail.id)) return prev;
           return [...prev, newTrail];
@@ -334,7 +411,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
       unsubLive();
       unsubTrails();
     };
-  }, [loadLiveLocations, selectedEmployeeId]);
+  }, [loadLiveLocations]);
 
   useEffect(() => {
     if (selectedEmployeeId) {
@@ -350,14 +427,15 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
   // Cluster historical trail breadcrumbs into clear Stays (dwell stops) and Trips (transit)
   const timelineSegments = useMemo<TimelineSegment[]>(() => {
     if (!trails || trails.length === 0) {
-      if (activeEmployee && activeEmployee.has_live_ping && activeEmployee.latitude !== 0) {
+      if (activeEmployee && activeEmployee.latitude !== 0) {
         const start = activeEmployee.last_pinged_at ? new Date(activeEmployee.last_pinged_at) : new Date();
+        const hasLive = Boolean(activeEmployee.has_live_ping);
         return [
           {
             id: 'active-stay-origin',
             type: 'stay',
             title: locationDetails?.title || 'Workplace Station',
-            subtitle: 'Stationary at desk • Live GPS Signal Active',
+            subtitle: hasLive ? 'Stationary at desk • Live GPS Signal Active' : 'Last Known Location',
             startTime: start,
             endTime: new Date(),
             startLatLng: { lat: activeEmployee.latitude, lng: activeEmployee.longitude },
@@ -498,7 +576,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
 
   // Reverse-geocode active employee's GPS coordinates into Place name and Street Address
   useEffect(() => {
-    if (activeEmployee && activeEmployee.has_live_ping && activeEmployee.latitude !== 0) {
+    if (activeEmployee && activeEmployee.latitude !== 0) {
       setIsGeocoding(true);
       resolveLocationDetails(activeEmployee.latitude, activeEmployee.longitude)
         .then((details) => {
@@ -514,9 +592,9 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
         });
     } else {
       setLocationDetails(null);
-      setResolvedAddress('No live GPS signal — waiting for mobile device transmission');
+      setResolvedAddress('No GPS coordinates reported yet');
     }
-  }, [activeEmployee?.latitude, activeEmployee?.longitude, activeEmployee?.has_live_ping]);
+  }, [activeEmployee?.latitude, activeEmployee?.longitude]);
 
   // Initialize and synchronize interactive Google Maps JavaScript API instance
   useEffect(() => {
@@ -659,74 +737,100 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
       }
     }
 
-    // If 2 or more genuine transit waypoints exist, render Google Maps Directions road-snapped route
+    // If 2 or more genuine transit waypoints exist, render Google Routes API road-snapped route
     if (coordinates.length >= 2) {
-      const directionsService = new window.google.maps.DirectionsService();
       const origin = coordinates[0];
       const destination = coordinates[coordinates.length - 1];
-
-      // Sample intermediate waypoints (Google Directions API client supports up to 23 intermediate waypoints)
       const intermediatePoints = coordinates.slice(1, -1);
-      let sampledWaypoints: any[] = [];
-      if (intermediatePoints.length <= 23) {
-        sampledWaypoints = intermediatePoints.map((pt) => ({
-          location: new window.google.maps.LatLng(pt.lat, pt.lng),
-          stopover: false,
-        }));
-      } else {
-        const step = intermediatePoints.length / 23;
-        for (let i = 0; i < 23; i++) {
-          const pt = intermediatePoints[Math.floor(i * step)];
-          sampledWaypoints.push({
+
+      let isCancelled = false;
+
+      // 1. Try modern Google Routes API v2 (active on your Google Cloud project)
+      computeRoadRouteViaRoutesApi(origin, destination, intermediatePoints).then((routesResult) => {
+        if (isCancelled || !googleMapInstanceRef.current) return;
+
+        if (routesResult && routesResult.polylinePoints.length > 0) {
+          setComputedRoadDistanceMeters(routesResult.distanceMeters);
+
+          // Clear previous directions renderer if any
+          if (directionsRendererRef.current) {
+            directionsRendererRef.current.setMap(null);
+            directionsRendererRef.current = null;
+          }
+          if (routePolylineRef.current) {
+            routePolylineRef.current.setMap(null);
+            routePolylineRef.current = null;
+          }
+
+          // Draw high-resolution road-following polyline
+          const polyline = new window.google.maps.Polyline({
+            path: routesResult.polylinePoints,
+            geodesic: true,
+            strokeColor: '#059669', // Emerald 600
+            strokeOpacity: 0.92,
+            strokeWeight: 5,
+            map: googleMapInstanceRef.current,
+          });
+          routePolylineRef.current = polyline;
+
+          // Fit bounds to the road route
+          const bounds = new window.google.maps.LatLngBounds();
+          routesResult.polylinePoints.forEach((pt) => bounds.extend(pt));
+          googleMapInstanceRef.current.fitBounds(bounds, {
+            top: 60,
+            right: 60,
+            bottom: 60,
+            left: 60,
+          });
+        } else {
+          // Fallback: try legacy directions service if configured, or straight line
+          const directionsService = new window.google.maps.DirectionsService();
+          let sampledWaypoints = intermediatePoints.slice(0, 23).map((pt) => ({
             location: new window.google.maps.LatLng(pt.lat, pt.lng),
             stopover: false,
-          });
-        }
-      }
+          }));
 
-      directionsService.route(
-        {
-          origin: new window.google.maps.LatLng(origin.lat, origin.lng),
-          destination: new window.google.maps.LatLng(destination.lat, destination.lng),
-          waypoints: sampledWaypoints,
-          travelMode: window.google.maps.TravelMode.DRIVING,
-          optimizeWaypoints: false,
-        },
-        (result: any, status: any) => {
-          if (status === 'OK' && result && googleMapInstanceRef.current) {
-            if (!directionsRendererRef.current) {
-              directionsRendererRef.current = new window.google.maps.DirectionsRenderer({
-                map: googleMapInstanceRef.current,
-                suppressMarkers: true,
-                preserveViewport: false,
-                polylineOptions: {
-                  strokeColor: '#059669', // Emerald 600
-                  strokeOpacity: 0.9,
-                  strokeWeight: 4,
-                },
-              });
+          directionsService.route(
+            {
+              origin: new window.google.maps.LatLng(origin.lat, origin.lng),
+              destination: new window.google.maps.LatLng(destination.lat, destination.lng),
+              waypoints: sampledWaypoints,
+              travelMode: window.google.maps.TravelMode.DRIVING,
+              optimizeWaypoints: false,
+            },
+            (result: any, status: any) => {
+              if (isCancelled || !googleMapInstanceRef.current) return;
+              if (status === 'OK' && result) {
+                if (!directionsRendererRef.current) {
+                  directionsRendererRef.current = new window.google.maps.DirectionsRenderer({
+                    map: googleMapInstanceRef.current,
+                    suppressMarkers: true,
+                    preserveViewport: false,
+                    polylineOptions: {
+                      strokeColor: '#059669',
+                      strokeOpacity: 0.9,
+                      strokeWeight: 4,
+                    },
+                  });
+                }
+                directionsRendererRef.current.setDirections(result);
+              } else {
+                if (googleMapInstanceRef.current && !routePolylineRef.current) {
+                  const polyline = new window.google.maps.Polyline({
+                    path: coordinates,
+                    geodesic: true,
+                    strokeColor: '#059669',
+                    strokeOpacity: 0.85,
+                    strokeWeight: 4,
+                    map: googleMapInstanceRef.current,
+                  });
+                  routePolylineRef.current = polyline;
+                }
+              }
             }
-            directionsRendererRef.current.setDirections(result);
-            if (routePolylineRef.current) {
-              routePolylineRef.current.setMap(null);
-              routePolylineRef.current = null;
-            }
-          } else {
-            // Fallback to straight-line polyline if directions route unavailable or off-road
-            if (googleMapInstanceRef.current && !routePolylineRef.current) {
-              const polyline = new window.google.maps.Polyline({
-                path: coordinates,
-                geodesic: true,
-                strokeColor: '#059669', // Emerald 600
-                strokeOpacity: 0.85,
-                strokeWeight: 4,
-                map: googleMapInstanceRef.current,
-              });
-              routePolylineRef.current = polyline;
-            }
-          }
+          );
         }
-      );
+      });
 
       // Fit map bounds to show complete historical route AND live position
       const bounds = new window.google.maps.LatLngBounds();
@@ -820,9 +924,27 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
     });
     markersRef.current = [];
 
-    // Create marker overlay for each employee with coordinates (only if they have authentic live GPS)
+    // Create marker overlay for each employee with coordinates (live GPS or last known position)
     liveEmployees.forEach((emp) => {
-      if (!emp.has_live_ping || !emp.latitude || !emp.longitude || emp.latitude === 0) return;
+      // Rule 1: Employees on leave NEVER have radar markers on the company map (privacy & labor compliance)
+      if (emp.is_on_leave || emp.status === 'on_leave') return;
+
+      // Rule 2: Must have valid coordinates
+      if (!emp.latitude || !emp.longitude || emp.latitude === 0) return;
+
+      // Rule 3: Only employees actively transmitting live GPS today appear on the live radar!
+      // In Fleet Overview mode, offline staff are NEVER plotted to avoid showing stale locations.
+      if (!emp.has_live_ping) {
+        if (isFleetOverview || emp.employee_id !== activeEmployee?.employee_id) return;
+      }
+
+      // Rule 4: Filter pins according to selected tab (unless in Fleet Overview mode, which shows all active live fleet):
+      if (!isFleetOverview) {
+        if (statusFilter === 'live' && !emp.has_live_ping) return;
+        if (statusFilter === 'moving' && (!emp.has_live_ping || (!emp.is_moving && emp.status !== 'moving'))) return;
+        if (statusFilter === 'on_leave') return;
+        if (statusFilter === 'offline' && emp.has_live_ping && emp.employee_id !== activeEmployee?.employee_id) return;
+      }
 
       const isSelected = emp.employee_id === activeEmployee?.employee_id;
 
@@ -831,8 +953,10 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
           googleMapInstanceRef.current,
           emp,
           isSelected,
+          isFleetOverview,
           () => {
             setSelectedEmployeeId(emp.employee_id);
+            setIsFleetOverview(false);
             setAutoFollow(true);
             googleMapInstanceRef.current.panTo({ lat: emp.latitude, lng: emp.longitude });
             googleMapInstanceRef.current.setZoom(17);
@@ -846,7 +970,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
         console.warn('[LiveShiftTrackingView] Overlay creation error:', err);
       }
     });
-  }, [liveEmployees, activeEmployee?.employee_id, isJsMapReady]);
+  }, [liveEmployees, activeEmployee?.employee_id, isJsMapReady, statusFilter, isFleetOverview]);
 
   // Filtered list
   const filteredEmployees = useMemo(() => {
@@ -859,9 +983,10 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
 
       const matchesStatus =
         statusFilter === 'ALL' ||
-        (statusFilter === 'live' && emp.has_live_ping) ||
+        (statusFilter === 'live' && emp.has_live_ping && !emp.is_on_leave) ||
         (statusFilter === 'moving' && emp.has_live_ping && (emp.is_moving || emp.status === 'moving')) ||
-        (statusFilter === 'offline' && !emp.has_live_ping);
+        (statusFilter === 'on_leave' && (emp.is_on_leave || emp.status === 'on_leave')) ||
+        (statusFilter === 'offline' && !emp.has_live_ping && !emp.is_on_leave);
 
       return matchesSearch && matchesStatus;
     });
@@ -870,11 +995,13 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
   // Summary counts
   const counts = useMemo(() => {
     const total = liveEmployees.length;
-    const liveTracking = liveEmployees.filter((e) => e.has_live_ping).length;
+    const onLeave = liveEmployees.filter((e) => e.is_on_leave || e.status === 'on_leave').length;
+    const liveTracking = liveEmployees.filter((e) => e.has_live_ping && !e.is_on_leave && e.status !== 'clocked_out').length;
     const moving = liveEmployees.filter((e) => e.has_live_ping && (e.is_moving || e.status === 'moving')).length;
     const stationary = liveEmployees.filter((e) => e.has_live_ping && !e.is_moving && e.status !== 'clocked_out').length;
-    const offline = liveEmployees.filter((e) => !e.has_live_ping).length;
-    return { total, liveTracking, moving, stationary, offline };
+    const clockedOut = liveEmployees.filter((e) => e.status === 'clocked_out').length;
+    const offline = liveEmployees.filter((e) => !e.has_live_ping && !e.is_on_leave && e.status !== 'clocked_out').length;
+    return { total, liveTracking, moving, stationary, clockedOut, onLeave, offline };
   }, [liveEmployees]);
 
   const handleRefresh = async () => {
@@ -958,10 +1085,19 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
         </div>
 
         <div className="p-3.5 bg-white border border-gray-200 rounded-xl shadow-2xs">
-          <span className="text-gray-500 font-semibold">Awaiting Device GPS</span>
-          <div className="text-2xl font-black text-gray-500 mt-1">{counts.offline}</div>
+          <div className="flex items-center justify-between">
+            <span className="text-gray-500 font-semibold">On Leave / Awaiting</span>
+            {counts.onLeave > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
+                {counts.onLeave} on Leave
+              </span>
+            )}
+          </div>
+          <div className="text-2xl font-black text-gray-700 mt-1">
+            {counts.offline}
+          </div>
           <span className="text-[11px] text-gray-500 font-bold flex items-center gap-1 mt-1">
-            <ShieldCheck className="w-3.5 h-3.5 text-gray-400" /> Total Staff: {counts.total}
+            <ShieldCheck className="w-3.5 h-3.5 text-gray-400" /> Total Staff: {counts.total} ({counts.liveTracking} Live)
           </span>
         </div>
       </div>
@@ -985,7 +1121,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
 
             {/* Filter Pills */}
             <div className="flex gap-1 overflow-x-auto pb-1 text-[11px]">
-              {(['ALL', 'live', 'moving', 'offline'] as const).map((status) => (
+              {(['ALL', 'live', 'moving', 'on_leave', 'offline'] as const).map((status) => (
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
@@ -1002,6 +1138,8 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                     ? `Live GPS (${counts.liveTracking})`
                     : status === 'moving'
                     ? `Moving (${counts.moving})`
+                    : status === 'on_leave'
+                    ? `On Leave (${counts.onLeave})`
                     : `Awaiting GPS (${counts.offline})`}
                 </button>
               ))}
@@ -1017,6 +1155,8 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                 filteredEmployees.map((emp) => {
                   const isSelected = emp.employee_id === activeEmployee?.employee_id;
                   const hasLive = Boolean(emp.has_live_ping);
+                  const isOnLeave = Boolean(emp.is_on_leave || emp.status === 'on_leave');
+                  const isClockedOut = emp.status === 'clocked_out';
                   const isMoving = hasLive && (emp.is_moving || emp.status === 'moving');
                   const distKm = (emp.cumulative_distance_meters / 1000).toFixed(1);
 
@@ -1037,20 +1177,22 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                       <div className="flex items-start gap-2.5">
                         <div className="relative shrink-0">
                           <img
-                            src={getEmployeeAvatar(emp.employee_name, emp.avatar_url)}
+                            src={getEmployeeAvatar(emp, emp.avatar_url, emp.gender)}
                             alt={emp.employee_name || 'Staff'}
                             className={cn(
-                              'w-9 h-9 rounded-xl object-cover border',
+                              'w-9 h-9 rounded-xl object-cover border bg-gray-50',
                               isSelected
                                 ? 'border-emerald-500 ring-2 ring-emerald-300'
                                 : hasLive
                                 ? 'border-emerald-400'
+                                : isOnLeave
+                                ? 'border-purple-200 opacity-75'
                                 : 'border-gray-200 opacity-80'
                             )}
                             onError={(e) => {
                               const target = e.currentTarget;
                               target.onerror = null;
-                              target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(emp.employee_name || 'Staff')}&background=07563D&color=fff&bold=true`;
+                              target.src = getEmployeeAvatar(emp, emp.avatar_url, emp.gender);
                             }}
                           />
                           <span
@@ -1060,6 +1202,10 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                                 ? 'bg-blue-500 animate-pulse'
                                 : hasLive
                                 ? 'bg-emerald-500'
+                                : isOnLeave
+                                ? 'bg-purple-500'
+                                : isClockedOut
+                                ? 'bg-amber-400'
                                 : 'bg-gray-300'
                             )}
                           />
@@ -1077,7 +1223,17 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                             {emp.department_name || 'Field Operations'}
                           </div>
                           <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-500 font-medium">
-                            {hasLive ? (
+                            {isOnLeave ? (
+                              <span className="text-purple-700 font-medium flex items-center gap-1">
+                                <span>🌴</span>
+                                {emp.leave_reason || 'Approved Leave Today'}
+                              </span>
+                            ) : isClockedOut ? (
+                              <span className="text-gray-500 font-medium flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-gray-400" />
+                                Shift ended / Clocked out
+                              </span>
+                            ) : hasLive ? (
                               <>
                                 <span className="flex items-center gap-1">
                                   <Footprints className="w-3 h-3 text-emerald-600" />
@@ -1093,10 +1249,15 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                                   {emp.battery_level != null ? `${emp.battery_level}%` : '--'}
                                 </span>
                               </>
+                            ) : emp.is_stale && emp.latitude !== 0 ? (
+                              <span className="text-amber-800 font-medium flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-amber-600" />
+                                Check-in point ({emp.minutes_since_ping ? `${Math.floor(emp.minutes_since_ping / 60)}h ago` : 'Morning'})
+                              </span>
                             ) : (
                               <span className="text-gray-400 italic flex items-center gap-1">
                                 <Radio className="w-3 h-3 text-gray-300" />
-                                Awaiting GPS signal
+                                Awaiting mobile check-in
                               </span>
                             )}
                           </div>
@@ -1104,7 +1265,15 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                       </div>
 
                       <div className="text-right shrink-0">
-                        {isMoving ? (
+                        {isOnLeave ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                            🌴 On Leave
+                          </span>
+                        ) : isClockedOut ? (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                            Clocked Out
+                          </span>
+                        ) : isMoving ? (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                             <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
                             {emp.speed ? `${Math.round(emp.speed)} km/h` : 'Moving'}
@@ -1114,13 +1283,20 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
                             Live GPS
                           </span>
+                        ) : emp.is_stale && emp.latitude !== 0 ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                            Check-In Point
+                          </span>
                         ) : (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500 border border-gray-200">
-                            Awaiting App
+                            Awaiting Punch
                           </span>
                         )}
                         <div className="text-[9px] text-gray-400 mt-1">
-                          {hasLive && emp.last_pinged_at
+                          {isOnLeave
+                            ? 'On Leave'
+                            : emp.last_pinged_at
                             ? new Date(emp.last_pinged_at).toLocaleTimeString([], {
                                 hour: '2-digit',
                                 minute: '2-digit',
@@ -1145,13 +1321,13 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                 <div className="flex items-center gap-3">
                   <div className="relative shrink-0">
                     <img
-                      src={getEmployeeAvatar(activeEmployee.employee_name, activeEmployee.avatar_url)}
+                      src={getEmployeeAvatar(activeEmployee, activeEmployee.avatar_url, activeEmployee.gender)}
                       alt={activeEmployee.employee_name || 'Staff'}
-                      className="w-12 h-12 rounded-2xl object-cover border-2 border-emerald-600 shadow-sm"
+                      className="w-12 h-12 rounded-2xl object-cover border-2 border-emerald-600 shadow-sm bg-gray-50"
                       onError={(e) => {
                         const target = e.currentTarget;
                         target.onerror = null;
-                        target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(activeEmployee.employee_name || 'Staff')}&background=07563D&color=fff&bold=true`;
+                        target.src = getEmployeeAvatar(activeEmployee, activeEmployee.avatar_url, activeEmployee.gender);
                       }}
                     />
                     <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white" />
@@ -1170,7 +1346,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                     </div>
                     <div className="flex flex-col gap-1 mt-1 text-xs">
                       <div className="flex items-center gap-3 text-gray-500">
-                        {activeEmployee.has_live_ping ? (
+                        {activeEmployee.latitude !== 0 ? (
                           <>
                             <span className="font-mono text-emerald-700 font-bold">
                               Lat: {activeEmployee.latitude.toFixed(5)}, Lng: {activeEmployee.longitude.toFixed(5)}
@@ -1193,7 +1369,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                           </>
                         ) : (
                           <span className="text-amber-800 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                            No Mobile GPS Signal Today • Awaiting Device Transmission
+                            No Mobile GPS Signal Reported Yet
                           </span>
                         )}
                       </div>
@@ -1237,22 +1413,64 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                 </div>
               </div>
 
-              {/* Informational Alert if Selected Employee is Offline */}
-              {!activeEmployee.has_live_ping && (
-                <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-900">
-                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">Awaiting Mobile GPS Signal: </span>
+              {/* Informational Alert if Selected Employee is on Leave, Clocked Out, or has no active live ping today */}
+              {(activeEmployee.is_on_leave || activeEmployee.status === 'on_leave') ? (
+                <div className="p-3 bg-purple-50/90 border border-purple-200 rounded-xl flex items-center justify-between text-xs text-purple-900">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base shrink-0">🌴</span>
                     <span>
-                      <strong>{activeEmployee.employee_name}</strong> has not transmitted live GPS telemetry from the mobile app today.
-                      No coordinates or pins will be shown until their device connects and transmits its physical position.
+                      <strong>On Leave Today: </strong>
+                      {activeEmployee.employee_name} has an active leave record ({activeEmployee.leave_reason || 'Approved Leave'}). Real-time GPS tracking is suspended for leave privacy.
                     </span>
                   </div>
+                  <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-300 font-bold shrink-0">
+                    Shift Inactive
+                  </Badge>
                 </div>
-              )}
+              ) : activeEmployee.status === 'clocked_out' ? (
+                <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-between text-xs text-gray-700">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-gray-500 shrink-0" />
+                    <span>
+                      <strong>Shift Completed: </strong>
+                      {activeEmployee.employee_name} has clocked out for today. Real-time GPS telemetry terminates automatically upon checkout.
+                    </span>
+                  </div>
+                  <Badge variant="outline" className="bg-gray-200 text-gray-700 border-gray-300 font-bold shrink-0">
+                    Clocked Out
+                  </Badge>
+                </div>
+              ) : !activeEmployee.has_live_ping ? (
+                <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-900">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      {activeEmployee.is_stale && activeEmployee.latitude !== 0 ? (
+                        <>
+                          <strong>Morning Check-In Point ({activeEmployee.last_pinged_at ? new Date(activeEmployee.last_pinged_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Earlier'}{activeEmployee.minutes_since_ping ? ` • ${Math.floor(activeEmployee.minutes_since_ping / 60)}h ago` : ''}): </strong>
+                          Phone has not transmitted background GPS since check-in. Showing punch location. Have the employee open the JOY PeopleHR app on their phone to sync their current office location.
+                        </>
+                      ) : activeEmployee.latitude !== 0 ? (
+                        <>
+                          <strong>Last Known Position: </strong>
+                          Recorded earlier. Awaiting live mobile GPS transmission for today.
+                        </>
+                      ) : (
+                        <>
+                          <strong>Awaiting Mobile Clock-In: </strong>
+                          No device GPS coordinates received yet today. Real-time GPS stream activates when the employee clocks in.
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-300 font-bold shrink-0">
+                    {activeEmployee.is_stale ? 'Check-In Location' : 'Awaiting GPS'}
+                  </Badge>
+                </div>
+              ) : null}
 
-              {/* Google Map Container: Render Map ONLY if live GPS exists; otherwise Standby Radar Box */}
-              {activeEmployee.has_live_ping && activeEmployee.latitude !== 0 ? (
+              {/* Google Map Container: Render Map if employee has valid coordinates */}
+              {activeEmployee.latitude !== 0 ? (
                 <div className="relative h-96 rounded-2xl overflow-hidden border border-gray-200 bg-slate-900 shadow-inner group">
                   {/* Interactive Google Maps JavaScript API Canvas */}
                   <div
@@ -1332,7 +1550,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                           />
                           <div className="relative w-11 h-11 rounded-full border-2 border-white shadow-xl overflow-hidden bg-white">
                             <img
-                              src={getEmployeeAvatar(activeEmployee.employee_name, activeEmployee.avatar_url)}
+                              src={getEmployeeAvatar(activeEmployee, activeEmployee.avatar_url, activeEmployee.gender)}
                               alt={activeEmployee.employee_name || 'Staff'}
                               className="w-full h-full object-cover"
                             />
@@ -1343,12 +1561,45 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                   )}
 
                   {/* Map Controls Floating Overlay */}
-                  <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/95 backdrop-blur-xs p-1.5 rounded-xl shadow-lg border border-gray-200 text-xs">
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/95 backdrop-blur-xs p-1.5 rounded-xl shadow-lg border border-gray-200 text-xs flex-wrap">
+                    {/* View All Staff / Fleet Radar Toggle */}
+                    <button
+                      onClick={() => {
+                        setIsFleetOverview((prev) => {
+                          const next = !prev;
+                          if (next) {
+                            setAutoFollow(false);
+                            fitAllEmployeesBounds();
+                          } else if (activeEmployee && activeEmployee.latitude !== 0) {
+                            googleMapInstanceRef.current?.panTo({
+                              lat: activeEmployee.latitude,
+                              lng: activeEmployee.longitude,
+                            });
+                            googleMapInstanceRef.current?.setZoom(17);
+                          }
+                          return next;
+                        });
+                      }}
+                      className={cn(
+                        'px-2.5 py-1 rounded-md font-bold cursor-pointer transition-all flex items-center gap-1.5',
+                        isFleetOverview
+                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm ring-1 ring-emerald-400'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      )}
+                      title="View all employees simultaneously on one company map (Snap Map style)"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      <span>View All Live ({liveEmployees.filter((e) => e.has_live_ping && !e.is_on_leave && e.latitude !== 0).length})</span>
+                    </button>
+
+                    <div className="w-px h-4 bg-gray-200 mx-0.5" />
+
                     <button
                       onClick={() => {
                         setAutoFollow((prev) => {
                           const next = !prev;
                           if (next && googleMapInstanceRef.current && activeEmployee && activeEmployee.latitude !== 0) {
+                            setIsFleetOverview(false);
                             googleMapInstanceRef.current.panTo({
                               lat: activeEmployee.latitude,
                               lng: activeEmployee.longitude,
@@ -1376,7 +1627,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                       title="Toggle Authorized Office Geofence Circle (100m)"
                     >
                       <ShieldCheck className="w-3.5 h-3.5" />
-                      <span>Office Geofence (100m)</span>
+                      <span>Office Geofence</span>
                     </button>
                     <div className="w-px h-4 bg-gray-200 mx-0.5" />
                     <button
@@ -1409,14 +1660,14 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                     <div className="w-px h-4 bg-gray-200 mx-1" />
                     <button
                       onClick={() => setMapZoom((z) => Math.min(20, z + 1))}
-                      className="p-1 rounded hover:bg-gray-100 text-gray-700"
+                      className="p-1 rounded hover:bg-gray-100 text-gray-700 cursor-pointer"
                       title="Zoom in"
                     >
                       <ZoomIn className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => setMapZoom((z) => Math.max(12, z - 1))}
-                      className="p-1 rounded hover:bg-gray-100 text-gray-700"
+                      className="p-1 rounded hover:bg-gray-100 text-gray-700 cursor-pointer"
                       title="Zoom out"
                     >
                       <ZoomOut className="w-3.5 h-3.5" />
@@ -1428,7 +1679,9 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                     <div>
                       <span className="text-[10px] text-gray-500 font-semibold block uppercase">Total Distance</span>
                       <span className="text-sm font-black text-gray-900">
-                        {activeEmployee.has_live_ping
+                        {trailTotalDistance > 0
+                          ? `${(trailTotalDistance / 1000).toFixed(2)} km`
+                          : activeEmployee.has_live_ping
                           ? `${(activeEmployee.cumulative_distance_meters / 1000).toFixed(2)} km`
                           : '--'}
                       </span>
@@ -1448,7 +1701,9 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                     <div>
                       <span className="text-[10px] text-gray-500 font-semibold block uppercase">Estimated Travel Pay</span>
                       <span className="text-sm font-black text-emerald-700">
-                        {activeEmployee.has_live_ping
+                        {trailTotalDistance > 0
+                          ? `₹${((trailTotalDistance / 1000) * 6).toFixed(0)}`
+                          : activeEmployee.has_live_ping
                           ? `₹${((activeEmployee.cumulative_distance_meters / 1000) * 6).toFixed(0)}`
                           : '₹0'}
                       </span>
@@ -1503,13 +1758,13 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                       >
                         <div className="relative shrink-0">
                           <img
-                            src={getEmployeeAvatar(emp.employee_name, emp.avatar_url)}
+                            src={getEmployeeAvatar(emp, emp.avatar_url, emp.gender)}
                             alt={emp.employee_name || 'Staff'}
-                            className="w-7 h-7 rounded-full object-cover border border-white"
+                            className="w-7 h-7 rounded-full object-cover border border-white bg-gray-50"
                             onError={(e) => {
                               const target = e.currentTarget;
                               target.onerror = null;
-                              target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(emp.employee_name || 'Staff')}&background=07563D&color=fff&bold=true`;
+                              target.src = getEmployeeAvatar(emp, emp.avatar_url, emp.gender);
                             }}
                           />
                           <span

@@ -34,6 +34,13 @@ function setLocalApprovals(data: ApprovalRequestItem[]): void {
   }
 }
 
+function generateSafeUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'uuid_' + Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+}
+
 export const approvalService = {
   /**
    * Fetch pending or historical approval requests.
@@ -403,7 +410,7 @@ export const approvalService = {
     // 4. Publish Outbox Notification Event for Requester
     const eventType = params.decision === 'Approved' ? 'leave.request.approved' : 'leave.request.rejected';
     const notifEvent: WorkForceEvent = {
-      eventId: crypto.randomUUID(),
+      eventId: generateSafeUUID(),
       eventType,
       category: 'APPROVAL',
       severity: params.decision === 'Approved' ? 'SUCCESS' : 'WARNING',
@@ -429,7 +436,7 @@ export const approvalService = {
    * Seed or create a new approval request (used by leave/expense/document modules).
    */
   async createApprovalRequest(request: Omit<ApprovalRequestItem, 'id' | 'created_at' | 'updated_at' | 'status'>): Promise<ApprovalRequestItem> {
-    const id = crypto.randomUUID();
+    const id = generateSafeUUID();
     const timestamp = new Date().toISOString();
     const newRecord: ApprovalRequestItem = {
       ...request,
@@ -461,7 +468,7 @@ export const approvalService = {
 
     // Notify Approvers
     const notifEvent: WorkForceEvent = {
-      eventId: crypto.randomUUID(),
+      eventId: generateSafeUUID(),
       eventType: 'leave.request.created',
       category: 'APPROVAL',
       severity: 'INFO',

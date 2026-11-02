@@ -6,6 +6,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../../hooks/useAuth';
 import {
   attendanceNotificationService,
   AttendanceNotificationDispatchLog,
@@ -19,6 +20,7 @@ interface AttendanceNotificationDiagnosticModalProps {
 export const AttendanceNotificationDiagnosticModal: React.FC<
   AttendanceNotificationDiagnosticModalProps
 > = ({ isOpen, onClose }) => {
+  const { user } = useAuth();
   const [logs, setLogs] = useState<AttendanceNotificationDispatchLog[]>([]);
   const [searchFilter, setSearchFilter] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -50,12 +52,17 @@ export const AttendanceNotificationDiagnosticModal: React.FC<
     setIsSendingTest(true);
     setTestResult(null);
     try {
-      // Trigger diagnostic check-in with JCS-099 (Arjun Kumar) mapped to JCS-017 (Dharun B)
+      // Trigger diagnostic check-in with the currently authenticated administrator
+      const targetOrgId = user?.organizationId || '0c621892-e938-4707-9957-13534ea32c19';
+      const targetEmpId = user?.employeeId || user?.id || 'admin-test-id';
+      const targetEmpCode = user?.employeeCode || 'ADMIN';
+      const targetEmpName = user?.name || 'Administrator';
+
       const res = await attendanceNotificationService.handleAttendanceEventAccepted({
-        organizationId: '0c621892-e938-4707-9957-13534ea32c19',
-        employeeId: 'e0000000-0000-4000-8000-fcad91430e98',
-        employeeCode: 'JCS-099',
-        employeeName: 'Arjun Kumar',
+        organizationId: targetOrgId,
+        employeeId: targetEmpId,
+        employeeCode: targetEmpCode,
+        employeeName: targetEmpName,
         eventType: type === 'CHECK_IN' ? 'attendance.check_in.accepted' : 'attendance.check_out.accepted',
         punchType: type,
         source: 'MOBILE',

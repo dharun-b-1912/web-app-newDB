@@ -199,9 +199,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               type={authContext === 'admin' || authContext === 'platform' || authContext === 'vendor' ? 'email' : 'text'}
               placeholder={
                 authContext === 'admin'
-                  ? 'dharun@joypeople.com'
+                  ? 'admin@company.com'
                   : authContext === 'platform'
-                  ? 'admin@joypeople.com'
+                  ? 'admin@company.com'
                   : authContext === 'vendor'
                   ? 'vendor@company.com'
                   : 'name@company.com or +91 98765 43210'

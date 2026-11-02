@@ -49,6 +49,7 @@ import { hrEventBus } from '../../../services/hrEventBus';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { LiveShiftTrackingView } from './LiveShiftTrackingView';
+import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
 
 export interface GpsMobileChannelViewProps {
   currentTab?: string;
@@ -63,6 +64,16 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
 }) => {
   const { showToast } = useToast();
   const [activeSubTab, setActiveSubTab] = useState<'attendance' | 'geofences' | 'mapping' | 'mobile' | 'logs' | 'exceptions' | 'tracking'>(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      const sub = sp.get('subTab') || sp.get('tab');
+      if (sub === 'tracking' || sub === 'live-tracking' || sub === 'shift-tracking') return 'tracking';
+      if (sub === 'geofences') return 'geofences';
+      if (sub === 'staff-mapping' || sub === 'mapping') return 'mapping';
+      if (sub === 'mobile-clocking' || sub === 'mobile') return 'mobile';
+      if (sub === 'location-logs' || sub === 'logs') return 'logs';
+      if (sub === 'location-exceptions' || sub === 'exceptions') return 'exceptions';
+    }
     if (currentTab === 'tracking' || currentTab === 'live-tracking' || currentTab === 'shift-tracking') return 'tracking';
     if (currentTab === 'geofences') return 'geofences';
     if (currentTab === 'staff-mapping') return 'mapping';
@@ -181,8 +192,11 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
       }
     }
 
-    const evts = workLocationService.getLocationEvents();
-    setLocationEvents(evts);
+    workLocationService.fetchLiveAttendanceLocationEvents().then((liveEvts) => {
+      setLocationEvents(liveEvts);
+    }).catch(() => {
+      setLocationEvents(workLocationService.getLocationEvents());
+    });
 
     api.getDepartments().then((depts) => {
       if (depts && depts.length > 0) {
@@ -215,7 +229,34 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
   useEffect(() => {
     loadData();
     const unsub = hrEventBus.subscribe('attendance.*', () => loadData());
-    return () => unsub();
+    const unsubLoc = hrEventBus.subscribe('location.*', () => {
+      setLocationEvents(workLocationService.getLocationEvents());
+    });
+
+    // Realtime Supabase channel for attendance punches from mobile devices
+    let channel: any = null;
+    if (isSupabaseEnabled && supabase) {
+      channel = supabase
+        .channel('gps_channel_attendance_punches')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'attendance_punches' },
+          () => {
+            workLocationService.fetchLiveAttendanceLocationEvents().then((liveEvts) => {
+              setLocationEvents(liveEvts);
+            });
+          }
+        )
+        .subscribe();
+    }
+
+    return () => {
+      unsub();
+      unsubLoc();
+      if (channel && supabase) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, [loadData]);
 
   // Acquire GPS only when user enters mobile clocking subtab, not during general navigation
@@ -225,17 +266,17 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
     }
   }, [activeSubTab, liveGps, fetchLiveHardwareGps]);
 
-  useEffect(() => {
-    if (currentTab === 'geofences') setActiveSubTab('geofences');
-    else if (currentTab === 'staff-mapping') setActiveSubTab('mapping');
-    else if (currentTab === 'mobile-clocking') setActiveSubTab('mobile');
-    else if (currentTab === 'location-logs') setActiveSubTab('logs');
-    else if (currentTab === 'location-exceptions') setActiveSubTab('exceptions');
-    else if (currentTab === 'gps' || currentTab === 'gps-attendance') setActiveSubTab('attendance');
-  }, [currentTab]);
-
   const handleTabSwitch = (tab: 'attendance' | 'geofences' | 'mapping' | 'mobile' | 'logs' | 'exceptions' | 'tracking') => {
     setActiveSubTab(tab);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (tab === 'attendance') {
+        url.searchParams.delete('subTab');
+      } else {
+        url.searchParams.set('subTab', tab);
+      }
+      window.history.replaceState({}, '', url.pathname + url.search);
+    }
   };
 
   // Reason Modal State for Unassigned / Client Site / Unverified GPS

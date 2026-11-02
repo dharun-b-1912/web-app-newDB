@@ -123,6 +123,9 @@ export type ModuleId =
   | 'mobile-clocking'
   | 'location-logs'
   | 'location-exceptions'
+  | 'live-tracking'
+  | 'tracking'
+  | 'shift-tracking'
   // Work & Overtime
   | 'overtime'
   | 'overtime-requests'

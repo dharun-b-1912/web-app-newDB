@@ -247,3 +247,122 @@ export async function createGoogleMapInstance(
 
   return map;
 }
+
+/**
+ * Decodes an encoded polyline string (Google Maps algorithm) into an array of LatLng coordinates.
+ */
+export function decodePolyline(encoded: string): { lat: number; lng: number }[] {
+  const points: { lat: number; lng: number }[] = [];
+  let index = 0;
+  const len = encoded.length;
+  let lat = 0;
+  let lng = 0;
+  while (index < len) {
+    let b: number;
+    let shift = 0;
+    let result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+
+    points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+  }
+  return points;
+}
+
+export interface ComputedRouteResult {
+  distanceMeters: number;
+  durationSeconds: number;
+  polylinePoints: { lat: number; lng: number }[];
+}
+
+/**
+ * Computes road-following routes via Google Routes API (v2).
+ * Works natively on all modern Google Cloud projects without requiring the legacy Directions API.
+ */
+export async function computeRoadRouteViaRoutesApi(
+  origin: { lat: number; lng: number },
+  destination: { lat: number; lng: number },
+  intermediates?: { lat: number; lng: number }[]
+): Promise<ComputedRouteResult | null> {
+  try {
+    const intermediatesPayload = (intermediates || []).slice(0, 25).map((pt) => ({
+      location: {
+        latLng: {
+          latitude: pt.lat,
+          longitude: pt.lng,
+        },
+      },
+    }));
+
+    const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+        'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline',
+      },
+      body: JSON.stringify({
+        origin: {
+          location: {
+            latLng: {
+              latitude: origin.lat,
+              longitude: origin.lng,
+            },
+          },
+        },
+        destination: {
+          location: {
+            latLng: {
+              latitude: destination.lat,
+              longitude: destination.lng,
+            },
+          },
+        },
+        intermediates: intermediatesPayload.length > 0 ? intermediatesPayload : undefined,
+        travelMode: 'DRIVE',
+        routingPreference: 'TRAFFIC_UNAWARE',
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn('[RoutesAPI] computeRoutes HTTP error:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    if (data.routes && data.routes.length > 0) {
+      const primaryRoute = data.routes[0];
+      const encoded = primaryRoute.polyline?.encodedPolyline;
+      const polylinePoints = encoded ? decodePolyline(encoded) : [];
+
+      let durationSeconds = 0;
+      if (typeof primaryRoute.duration === 'string') {
+        durationSeconds = parseInt(primaryRoute.duration.replace('s', ''), 10) || 0;
+      }
+
+      return {
+        distanceMeters: primaryRoute.distanceMeters || 0,
+        durationSeconds,
+        polylinePoints,
+      };
+    }
+  } catch (err) {
+    console.warn('[RoutesAPI] computeRoutes exception:', err);
+  }
+  return null;
+}

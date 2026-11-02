@@ -796,7 +796,9 @@ export const AttendanceModuleMaster: React.FC<AttendanceModuleMasterProps> = ({
               ((tab.id === 'attendance-employees' || tab.id === 'employees') &&
                 (activeTab === 'employees' || activeTab === 'attendance-employees' || activeTab === 'daily' || activeTab === 'employee-attendance')) ||
               ((tab.id === 'attendance-dashboard' || tab.id === 'dashboard') &&
-                (activeTab === 'dashboard' || activeTab === 'attendance-dashboard' || activeTab === 'attendance'));
+                (activeTab === 'dashboard' || activeTab === 'attendance-dashboard' || activeTab === 'attendance')) ||
+              (tab.id === 'gps' &&
+                (activeTab === 'gps' || activeTab === 'gps-attendance' || activeTab === 'live-tracking' || activeTab === 'tracking' || activeTab === 'shift-tracking' || activeTab === 'geofences' || activeTab === 'staff-mapping' || activeTab === 'mobile-clocking' || activeTab === 'location-logs' || activeTab === 'location-exceptions'));
             return (
               <button
                 key={tab.id}
