@@ -654,23 +654,25 @@ class ShiftTrackingService {
     }
 
     try {
-      // 1. Dispatch high-priority silent background wake-up notification
-      const { data, error } = await supabase.functions.invoke('send-push-notification', {
+      // 1. Dispatch high-priority silent background wake-up notification via send-push
+      const { data, error } = await supabase.functions.invoke('send-push', {
         body: {
           employee_id: employeeId,
+          silent: true,
           title: 'JOY PeopleHR System Wakeup',
           body: '',
           data: {
             action: 'FETCH_LOCATION',
             employee_id: employeeId,
             organization_id: orgId,
-            silent: true,
+            silent: 'true',
+            source: 'hr_portal_sync',
             timestamp: new Date().toISOString(),
           },
         },
       });
 
-      if (!error && data?.success) {
+      if (!error && (data?.success || data?.sent > 0)) {
         return { success: true, message: 'High-priority GPS wake-up delivered to employee device' };
       }
 
@@ -686,6 +688,25 @@ class ShiftTrackingService {
     } catch (err: any) {
       return { success: false, message: err?.message || 'Failed to ping device' };
     }
+  }
+
+  /**
+   * Automatically wakes up multiple stale shift devices in parallel without manual HR clicks
+   */
+  async batchPingDevices(
+    employeeIds: string[],
+    orgIdParam?: string
+  ): Promise<{ dispatched: number; total: number }> {
+    if (!employeeIds || employeeIds.length === 0) return { dispatched: 0, total: 0 };
+    const orgId = orgIdParam || getActiveOrgId();
+    let dispatched = 0;
+    await Promise.allSettled(
+      employeeIds.map(async (empId) => {
+        const res = await this.pingEmployeeDevice(empId, orgId);
+        if (res.success) dispatched++;
+      })
+    );
+    return { dispatched, total: employeeIds.length };
   }
 
   /**

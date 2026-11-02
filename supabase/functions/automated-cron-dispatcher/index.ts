@@ -200,6 +200,105 @@ serve(async (req: Request) => {
       }
     }
 
+    // -------------------------------------------------------------
+    // Task 6: Automatic Shift Device GPS Wake-up Ping
+    // Automatically detects clocked-in staff whose devices haven't pinged in > 15m
+    // and dispatches silent high-priority wake-up signals via FCM
+    // -------------------------------------------------------------
+    if (
+      actionParam === "all" ||
+      actionParam === "gps_ping" ||
+      actionParam === "shift_gps_wake" ||
+      actionParam === "shift_tracking_heartbeat"
+    ) {
+      const taskStart = Date.now();
+      try {
+        const todayStr = dateParam || new Date().toISOString().split("T")[0];
+        const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+
+        // 1. Fetch staff checked in today
+        const { data: activePunches, error: punchErr } = await supabase
+          .from("attendance_punches")
+          .select("employee_id, organization_id, punch_type, punch_time")
+          .gte("punch_time", `${todayStr}T00:00:00`)
+          .order("punch_time", { ascending: true });
+
+        if (punchErr) throw punchErr;
+
+        // Determine who is currently clocked in (latest punch is 'IN')
+        const empPunchMap = new Map<string, { punch_type: string; org_id: string }>();
+        (activePunches || []).forEach((p: any) => {
+          empPunchMap.set(p.employee_id, {
+            punch_type: p.punch_type,
+            org_id: p.organization_id,
+          });
+        });
+
+        const clockedInEmpIds: string[] = [];
+        empPunchMap.forEach((val, empId) => {
+          if (val.punch_type === "IN") {
+            clockedInEmpIds.push(empId);
+          }
+        });
+
+        // 2. Filter out staff who already sent fresh telemetry within the last 15 minutes
+        let staleEmployeeIds = [...clockedInEmpIds];
+        if (clockedInEmpIds.length > 0) {
+          const { data: freshLocations } = await supabase
+            .from("employee_live_locations")
+            .select("employee_id, updated_at")
+            .in("employee_id", clockedInEmpIds)
+            .gte("updated_at", fifteenMinutesAgo);
+
+          const freshSet = new Set((freshLocations || []).map((fl: any) => fl.employee_id));
+          staleEmployeeIds = clockedInEmpIds.filter((id) => !freshSet.has(id));
+        }
+
+        // 3. For each stale employee on shift, trigger the silent push notification
+        const pingResults: any[] = [];
+        for (const empId of staleEmployeeIds) {
+          const orgId = empPunchMap.get(empId)?.org_id;
+          try {
+            await supabase.functions.invoke("send-push", {
+              body: {
+                employee_id: empId,
+                silent: true,
+                data: {
+                  action: "FETCH_LOCATION",
+                  employee_id: empId,
+                  organization_id: orgId,
+                  silent: "true",
+                  source: "cron_auto_sync",
+                  timestamp: new Date().toISOString(),
+                },
+              },
+            });
+            pingResults.push({ employee_id: empId, status: "DISPATCHED" });
+          } catch (pingErr: any) {
+            pingResults.push({ employee_id: empId, status: "ERROR", error: pingErr.message });
+          }
+        }
+
+        executionResults.push({
+          job_name: "auto_ping_stale_shift_devices",
+          status: "SUCCESS",
+          duration_ms: Date.now() - taskStart,
+          details: {
+            clocked_in_count: clockedInEmpIds.length,
+            stale_devices_found: staleEmployeeIds.length,
+            pings_dispatched: pingResults,
+          },
+        });
+      } catch (err: any) {
+        executionResults.push({
+          job_name: "auto_ping_stale_shift_devices",
+          status: "FAILED",
+          duration_ms: Date.now() - taskStart,
+          error: err.message || "Failed to auto-ping stale shift devices",
+        });
+      }
+    }
+
     const overallDuration = Date.now() - startTimeOverall;
     const hasFailures = executionResults.some((r) => r.status === "FAILED");
 

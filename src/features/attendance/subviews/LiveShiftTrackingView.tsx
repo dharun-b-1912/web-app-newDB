@@ -274,6 +274,9 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
   const [timelineViewMode, setTimelineViewMode] = useState<'smart' | 'raw'>('smart');
   const [stopAddressMap, setStopAddressMap] = useState<Record<string, ResolvedLocationDetails>>({});
   const [isPingingDevice, setIsPingingDevice] = useState<boolean>(false);
+  // Option 2: Automatic Background GPS Wake-up Dispatcher (10m cooldown per device)
+  const autoPingCooldownRef = React.useRef<Map<string, number>>(new Map());
+  const [autoSyncingDevicesCount, setAutoSyncingDevicesCount] = useState<number>(0);
 
   const mapContainerRef = React.useRef<HTMLDivElement>(null);
   const googleMapInstanceRef = React.useRef<any>(null);
@@ -473,6 +476,52 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
       setIsPingingDevice(false);
     }
   };
+
+  // Option 2: Automatic Background GPS Wake-up Dispatcher
+  // Scans all checked-in staff on screen load; silently requests background GPS from stale devices
+  useEffect(() => {
+    if (!liveEmployees || liveEmployees.length === 0) return;
+
+    const now = Date.now();
+    const staleToPing = liveEmployees.filter((emp) => {
+      // Must be currently clocked in on shift today
+      const isClockedInToday = emp.status !== 'clocked_out' && !emp.is_on_leave && emp.latitude !== 0;
+      // Stale or missing live telemetry (last ping > 15m ago or only initial check-in punch)
+      const isStale = !emp.has_live_ping || emp.is_stale === true || (emp.minutes_since_ping && emp.minutes_since_ping > 15);
+      if (!isClockedInToday || !isStale) return false;
+
+      // 10-minute cooldown per device to prevent battery depletion
+      const lastPingTime = autoPingCooldownRef.current.get(emp.employee_id) || 0;
+      return now - lastPingTime > 10 * 60 * 1000;
+    });
+
+    if (staleToPing.length === 0) return;
+
+    // Record cooldown timestamp
+    staleToPing.forEach((emp) => {
+      autoPingCooldownRef.current.set(emp.employee_id, now);
+    });
+
+    setAutoSyncingDevicesCount(staleToPing.length);
+
+    shiftTrackingService
+      .batchPingDevices(staleToPing.map((e) => e.employee_id))
+      .then((res) => {
+        if (res.dispatched > 0) {
+          showToast({
+            title: 'Auto-Sync Active',
+            message: `Quietly requesting background GPS from ${res.dispatched} field device${res.dispatched > 1 ? 's' : ''}...`,
+            type: 'info',
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn('[LiveShiftTrackingView] Auto-sync ping error:', err);
+      })
+      .finally(() => {
+        setTimeout(() => setAutoSyncingDevicesCount(0), 4000);
+      });
+  }, [liveEmployees, showToast]);
 
   // Cluster historical trail breadcrumbs into clear Stays (dwell stops) and Trips (transit)
   const timelineSegments = useMemo<TimelineSegment[]>(() => {
@@ -1511,6 +1560,9 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                         <>
                           <strong>Morning Check-In Point ({activeEmployee.last_pinged_at ? new Date(activeEmployee.last_pinged_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Earlier'}{activeEmployee.minutes_since_ping ? ` • ${Math.floor(activeEmployee.minutes_since_ping / 60)}h ago` : ''}): </strong>
                           Phone has not transmitted background GPS recently. Showing check-in point.
+                          {autoPingCooldownRef.current.has(activeEmployee.employee_id) && (
+                            <span className="ml-1 text-emerald-700 font-medium">(Auto-sync signal dispatched in background)</span>
+                          )}
                         </>
                       ) : activeEmployee.latitude !== 0 ? (
                         <>
@@ -1526,6 +1578,12 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
                     </span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {autoSyncingDevicesCount > 0 && (
+                      <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-100 border border-emerald-300 text-[11px] font-semibold text-emerald-800 shadow-2xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                        Auto-Sync Active
+                      </span>
+                    )}
                     <button
                       type="button"
                       disabled={isPingingDevice}

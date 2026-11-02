@@ -151,15 +151,26 @@ serve(async (req) => {
       employee_id,
       auth_user_id,
       topic,
-      title,
-      body: messageBody,
+      title: inputTitle,
+      body: inputMessageBody,
       route,
       data: extraData,
+      silent: inputSilent,
     } = body;
 
-    if (!title || !messageBody) {
+    const isSilent = Boolean(
+      inputSilent === true ||
+      extraData?.silent === true ||
+      extraData?.silent === "true" ||
+      extraData?.action === "FETCH_LOCATION"
+    );
+
+    const title = inputTitle || (isSilent ? "JOY PeopleHR Background Wakeup" : "");
+    const messageBody = inputMessageBody ?? (isSilent ? "" : "");
+
+    if (!isSilent && (!title || !messageBody)) {
       return new Response(
-        JSON.stringify({ error: "title and body are required" }),
+        JSON.stringify({ error: "title and body are required for non-silent notifications" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -262,13 +273,34 @@ serve(async (req) => {
     const uniqueTokens = [...new Set(tokens)].filter((t) => t && t.length > 10);
 
     for (const tok of uniqueTokens) {
-      const tokenResult = await sendFCMMessage({
+      const fcmPayload: FCMTarget = {
         token: tok,
-        notification: { title, body: messageBody },
         data: stringData,
-        android: androidConfig,
-        apns: apnsConfig,
-      });
+        android: {
+          priority: "HIGH",
+        },
+      };
+
+      if (!isSilent) {
+        fcmPayload.notification = { title, body: messageBody };
+        fcmPayload.android = androidConfig;
+        fcmPayload.apns = apnsConfig;
+      } else {
+        // Silent background wake-up for iOS requires content-available: 1
+        fcmPayload.apns = {
+          payload: {
+            aps: {
+              alert: { title: "", body: "" },
+              sound: "",
+              badge: 0,
+              // @ts-ignore iOS background push key
+              "content-available": 1,
+            },
+          },
+        };
+      }
+
+      const tokenResult = await sendFCMMessage(fcmPayload);
       results.push({ target: `token:${tok.substring(0, 15)}...`, ...tokenResult });
     }
 
