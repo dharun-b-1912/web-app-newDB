@@ -259,7 +259,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
   const [isLoadingTrails, setIsLoadingTrails] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'live' | 'moving' | 'on_leave' | 'offline'>('ALL');
-  const [computedRoadDistanceMeters, setComputedRoadDistanceMeters] = useState<number>(0);
+  const [computedRoadDistance, setComputedRoadDistance] = useState<{ employeeId: string; meters: number } | null>(null);
   const [isJsMapReady, setIsJsMapReady] = useState<boolean>(false);
   const [isFleetOverview, setIsFleetOverview] = useState<boolean>(false);
 
@@ -306,10 +306,17 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
   }, []);
 
   const trailTotalDistance = useMemo(() => {
-    if (computedRoadDistanceMeters > 0) {
-      return computedRoadDistanceMeters;
+    if (!activeEmployee || trails.length === 0) return 0;
+
+    // Only apply road-snapped distance if computed strictly for THIS active employee with genuine waypoints
+    if (
+      computedRoadDistance &&
+      computedRoadDistance.employeeId === activeEmployee.employee_id &&
+      trails.length >= 2
+    ) {
+      return computedRoadDistance.meters;
     }
-    if (trails.length === 0) return 0;
+
     const last = trails[trails.length - 1];
     if (last && typeof last.cumulative_distance_meters === 'number' && last.cumulative_distance_meters > 0) {
       return last.cumulative_distance_meters;
@@ -325,7 +332,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
       }
       return acc + disp;
     }, 0);
-  }, [trails, computedRoadDistanceMeters]);
+  }, [trails, computedRoadDistance, activeEmployee]);
 
   const fitAllEmployeesBounds = useCallback(() => {
     if (!googleMapInstanceRef.current || !window.google?.maps) return;
@@ -380,11 +387,14 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
   // Load trails for selected employee on the selected calendar date
   const loadEmployeeTrails = useCallback(async (empId: string, dateStr?: string) => {
     setIsLoadingTrails(true);
-    setComputedRoadDistanceMeters(0);
+    setComputedRoadDistance(null);
+    setTrails([]);
     try {
       const targetDate = dateStr || selectedDate;
       const trailData = await shiftTrackingService.getEmployeeTrails(empId, targetDate);
-      setTrails(trailData);
+      if (selectedEmployeeIdRef.current === empId) {
+        setTrails(trailData);
+      }
     } catch (err) {
       console.error('[LiveShiftTrackingView] Trail error:', err);
     } finally {
@@ -689,6 +699,9 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
   useEffect(() => {
     if (!googleMapInstanceRef.current || !window.google?.maps) return;
 
+    let isEffectCancelled = false;
+    const effectEmpId = activeEmployee?.employee_id;
+
     // Clear previous route polyline
     if (routePolylineRef.current) {
       routePolylineRef.current.setMap(null);
@@ -707,9 +720,11 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
     });
     trailMarkersRef.current = [];
 
-    if (trails.length === 0) {
-      setComputedRoadDistanceMeters(0);
-      return;
+    if (!effectEmpId || trails.length === 0) {
+      setComputedRoadDistance(null);
+      return () => {
+        isEffectCancelled = true;
+      };
     }
 
     // Filter out indoor stationary jitter points (< 25m from previous waypoint)
@@ -750,14 +765,13 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
       const destination = coordinates[coordinates.length - 1];
       const intermediatePoints = coordinates.slice(1, -1);
 
-      let isCancelled = false;
-
       // 1. Try modern Google Routes API v2 (active on your Google Cloud project)
       computeRoadRouteViaRoutesApi(origin, destination, intermediatePoints).then((routesResult) => {
-        if (isCancelled || !googleMapInstanceRef.current) return;
+        if (isEffectCancelled || !googleMapInstanceRef.current) return;
+        if (selectedEmployeeIdRef.current !== effectEmpId) return;
 
         if (routesResult && routesResult.polylinePoints.length > 0) {
-          setComputedRoadDistanceMeters(routesResult.distanceMeters);
+          setComputedRoadDistance({ employeeId: effectEmpId, meters: routesResult.distanceMeters });
 
           // Clear previous directions renderer if any
           if (directionsRendererRef.current) {
@@ -806,7 +820,8 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
               optimizeWaypoints: false,
             },
             (result: any, status: any) => {
-              if (isCancelled || !googleMapInstanceRef.current) return;
+              if (isEffectCancelled || !googleMapInstanceRef.current) return;
+              if (selectedEmployeeIdRef.current !== effectEmpId) return;
               if (status === 'OK' && result) {
                 if (!directionsRendererRef.current) {
                   directionsRendererRef.current = new window.google.maps.DirectionsRenderer({
@@ -852,7 +867,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
         left: 60,
       });
     } else {
-      setComputedRoadDistanceMeters(0);
+      setComputedRoadDistance(null);
       if (coordinates.length === 1 && googleMapInstanceRef.current) {
         googleMapInstanceRef.current.panTo(coordinates[0]);
       }
@@ -909,6 +924,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
     }
 
     return () => {
+      isEffectCancelled = true;
       if (routePolylineRef.current) {
         routePolylineRef.current.setMap(null);
         routePolylineRef.current = null;
@@ -922,7 +938,7 @@ export const LiveShiftTrackingView: React.FC<LiveShiftTrackingViewProps> = ({
       });
       trailMarkersRef.current = [];
     };
-  }, [trails, activeEmployee?.latitude, activeEmployee?.longitude, activeEmployee?.has_live_ping, isJsMapReady]);
+  }, [trails, activeEmployee?.employee_id, activeEmployee?.latitude, activeEmployee?.longitude, activeEmployee?.has_live_ping, isJsMapReady]);
 
   // Render profile avatar markers for all employees on the Google Map
   useEffect(() => {
