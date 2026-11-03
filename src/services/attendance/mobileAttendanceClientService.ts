@@ -63,46 +63,71 @@ export interface MobileAttendancePunchResponse {
 
 class MobileAttendanceClientService {
   /**
-   * Acquire live GPS position directly from browser/device hardware Geolocation API
+   * Acquire live GPS position directly from browser/device hardware Geolocation API.
+   * Uses smart two-tier fallback: high-accuracy GPS first, with automatic standard-accuracy
+   * network fallback for indoor mobile devices and desktop/laptop browsers.
    */
   async getCurrentPosition(): Promise<MobileGpsEvidence> {
     return new Promise((resolve, reject) => {
       if (typeof window === 'undefined' || !navigator.geolocation) {
-        reject(new Error('GPS hardware geolocation is not supported on this device.'));
+        reject(new Error('GPS hardware geolocation is not supported on this device or browser.'));
         return;
       }
 
+      const buildEvidence = (pos: GeolocationPosition, provider = 'HARDWARE_GPS'): MobileGpsEvidence => ({
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracyMeters: Math.round(pos.coords.accuracy * 10) / 10,
+        altitude: pos.coords.altitude || undefined,
+        speed: pos.coords.speed || undefined,
+        heading: pos.coords.heading || undefined,
+        deviceTimestamp: new Date(pos.timestamp).toISOString(),
+        mockLocationDetected: false,
+        provider: provider as any,
+        deviceId: typeof navigator !== 'undefined' ? navigator.userAgent : 'Browser Client',
+        appVersion: 'Joy PeopleHR v2.4.0',
+      });
+
+      // Pass 1: Try high accuracy (GPS satellites / precise positioning)
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          resolve({
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracyMeters: Math.round(pos.coords.accuracy * 10) / 10,
-            altitude: pos.coords.altitude || undefined,
-            speed: pos.coords.speed || undefined,
-            heading: pos.coords.heading || undefined,
-            deviceTimestamp: new Date(pos.timestamp).toISOString(),
-            mockLocationDetected: false,
-            provider: 'HARDWARE_GPS',
-            deviceId: navigator.userAgent,
-            appVersion: 'Joy PeopleHR v2.4.0',
-          });
-        },
+        (pos) => resolve(buildEvidence(pos, 'HARDWARE_GPS')),
         (err) => {
-          let message = 'Location access is required for GPS attendance.';
+          // If permission explicitly denied, do not retry — report actionable instructions
           if (err.code === err.PERMISSION_DENIED) {
-            message = 'GPS location permission denied. Please allow location access in your browser/device settings.';
-          } else if (err.code === err.POSITION_UNAVAILABLE) {
-            message = 'GPS signal unavailable. Please ensure location services are enabled.';
-          } else if (err.code === err.TIMEOUT) {
-            message = 'GPS acquisition timed out. Please check signal and try again.';
+            reject(
+              new Error(
+                'Location permission was denied. Please click the lock or settings icon in your browser address bar and set Location to "Allow".'
+              )
+            );
+            return;
           }
-          reject(new Error(message));
+
+          // Pass 2: Fallback to standard accuracy (Wi-Fi / Cellular / IP positioning)
+          navigator.geolocation.getCurrentPosition(
+            (fallbackPos) => resolve(buildEvidence(fallbackPos, 'NETWORK_FALLBACK')),
+            (fallbackErr) => {
+              let message = 'Location access is required for attendance geofencing.';
+              if (fallbackErr.code === fallbackErr.PERMISSION_DENIED) {
+                message =
+                  'Location permission denied. In Safari / Chrome, tap the address bar settings icon and enable Location.';
+              } else if (fallbackErr.code === fallbackErr.POSITION_UNAVAILABLE) {
+                message = 'GPS signal unavailable. Please ensure location services are enabled on your device.';
+              } else if (fallbackErr.code === fallbackErr.TIMEOUT) {
+                message = 'Location request timed out. Please tap "Refresh GPS" to try again.';
+              }
+              reject(new Error(message));
+            },
+            {
+              enableHighAccuracy: false,
+              timeout: 10000,
+              maximumAge: 60000,
+            }
+          );
         },
         {
           enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 10000,
+          timeout: 7000,
+          maximumAge: 15000,
         }
       );
     });

@@ -846,8 +846,26 @@ export const GpsMobileChannelView: React.FC<GpsMobileChannelViewProps> = ({
                       )}
                     </>
                   ) : (
-                    <div className="p-3 bg-amber-950/40 border border-amber-800/60 rounded-xl text-amber-300 text-xs">
-                      {gpsError || 'Acquiring high-accuracy hardware GPS signal...'}
+                    <div className="p-3.5 bg-amber-950/40 border border-amber-800/60 rounded-xl text-amber-200 text-xs space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-1">
+                          <p className="font-semibold text-amber-300">
+                            {gpsError || 'Acquiring GPS / location coordinates...'}
+                          </p>
+                          <p className="text-[11px] text-amber-400/80">
+                            Browsers require direct permission. Tap the button below to prompt access.
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => fetchLiveHardwareGps()}
+                          disabled={isAcquiringGps}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-1 px-3 shrink-0"
+                        >
+                          <RefreshCw className={cn("w-3 h-3 mr-1", isAcquiringGps && "animate-spin")} />
+                          {isAcquiringGps ? 'Locating...' : 'Allow GPS'}
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>

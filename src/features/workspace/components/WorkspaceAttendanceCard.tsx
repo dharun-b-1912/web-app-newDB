@@ -89,19 +89,47 @@ export const WorkspaceAttendanceCard: React.FC<Props> = ({
       }
     };
 
-    navigator.geolocation.getCurrentPosition(
-      updatePosition,
-      (err) => setGpsError(err.message || 'GPS Signal Unavailable'),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
-    );
+    const requestLocation = () => {
+      navigator.geolocation.getCurrentPosition(
+        updatePosition,
+        () => {
+          // Fallback to standard accuracy for desktop/indoor devices
+          navigator.geolocation.getCurrentPosition(
+            updatePosition,
+            (fallbackErr) => {
+              let msg = 'Location access is required.';
+              if (fallbackErr.code === fallbackErr.PERMISSION_DENIED) {
+                msg = 'Location permission blocked. Allow in browser settings.';
+              } else if (fallbackErr.code === fallbackErr.POSITION_UNAVAILABLE) {
+                msg = 'Location unavailable. Turn on device GPS.';
+              }
+              setGpsError(msg);
+            },
+            { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+          );
+        },
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 15000 }
+      );
+    };
 
-    const watchId = navigator.geolocation.watchPosition(
-      updatePosition,
-      (err) => setGpsError(err.message),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
-    );
+    requestLocation();
 
-    return () => navigator.geolocation.clearWatch(watchId);
+    let watchId: number | undefined;
+    try {
+      watchId = navigator.geolocation.watchPosition(
+        updatePosition,
+        (err) => {
+          if (err.code === err.PERMISSION_DENIED) {
+            setGpsError('Location permission blocked.');
+          }
+        },
+        { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 }
+      );
+    } catch {}
+
+    return () => {
+      if (watchId !== undefined) navigator.geolocation.clearWatch(watchId);
+    };
   }, [assignedLocations]);
 
   // Live timer when CheckedIn
@@ -234,6 +262,10 @@ export const WorkspaceAttendanceCard: React.FC<Props> = ({
                 {isInsideAnyLocation ? (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-400/20 text-emerald-300 border border-emerald-400/40">
                     ● Inside {matchedLocationName}
+                  </span>
+                ) : gpsError ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/20 text-rose-200 border border-rose-500/40">
+                    ● {gpsError}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-black bg-amber-400/20 text-amber-300 border border-amber-400/40">

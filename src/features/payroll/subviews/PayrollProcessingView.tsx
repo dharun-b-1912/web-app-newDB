@@ -162,10 +162,11 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
   }, []);
 
   const handleStartRunWizard = () => {
-    setWizardPeriod('August 2026');
-    setWizardStart('2026-08-01');
-    setWizardEnd('2026-08-31');
-    setWizardPayoutDate('2026-08-31');
+    // Default to October 2026 (completed cycle for payout on/before Nov 7)
+    setWizardPeriod('October 2026');
+    setWizardStart('2026-10-01');
+    setWizardEnd('2026-10-31');
+    setWizardPayoutDate('2026-11-07');
     setWizardStep(1);
     setIsWizardOpen(true);
   };
@@ -959,6 +960,37 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
             {/* STEP 1: PERIOD */}
             {wizardStep === 1 && (
               <div className="space-y-3">
+                {/* Target Payroll Period Pills */}
+                <div>
+                  <label className="block text-gray-700 font-bold mb-1 text-[11px] uppercase tracking-wider">Quick Select Target Payroll Month</label>
+                  <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                    {[
+                      { name: 'October 2026', start: '2026-10-01', end: '2026-10-31', payout: '2026-11-07', label: 'October 2026 (Payout: Nov 07)' },
+                      { name: 'November 2026', start: '2026-11-01', end: '2026-11-30', payout: '2026-11-30', label: 'November 2026 (Payout: Nov 30)' },
+                      { name: 'September 2026', start: '2026-09-01', end: '2026-09-30', payout: '2026-09-30', label: 'September 2026' },
+                    ].map(p => (
+                      <button
+                        key={p.name}
+                        type="button"
+                        onClick={() => {
+                          setWizardPeriod(p.name);
+                          setWizardStart(p.start);
+                          setWizardEnd(p.end);
+                          setWizardPayoutDate(p.payout);
+                        }}
+                        className={cn(
+                          "px-2.5 py-1 text-xs font-bold rounded-lg border transition-colors",
+                          wizardPeriod === p.name
+                            ? "bg-emerald-800 text-white border-emerald-800 shadow-2xs"
+                            : "bg-white text-gray-700 border-gray-200 hover:bg-emerald-50 hover:border-emerald-200"
+                        )}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-gray-700 font-bold mb-1">Pay Period Name</label>
@@ -1004,18 +1036,26 @@ export const PayrollProcessingView: React.FC<PayrollProcessingViewProps> = ({
             )}
 
             {/* STEP 2: ATTENDANCE SYNC */}
-            {wizardStep === 2 && (
-              <div className="space-y-3 p-3 bg-emerald-50 rounded-xl border border-emerald-200">
-                <div className="font-bold text-emerald-900">Attendance & Leave Ledger Sync</div>
-                <p className="text-emerald-700 text-[11px]">
-                  Real-time synchronization with Biometric punches, Attendance Policies, and approved Leave records. LOP days will be deducted strictly from the active ledger.
-                </p>
-                <div className="flex items-center justify-between text-xs font-semibold text-emerald-900 pt-2 border-t border-emerald-200">
-                  <span>Attendance Status: Finalized</span>
-                  <span>100% Synced</span>
+            {wizardStep === 2 && (() => {
+              const isPeriodFinalized = Boolean(runs.find(r => r.pay_period === wizardPeriod && (r.status === 'Finalized' || r.is_locked)));
+              return (
+                <div className="space-y-3 p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+                  <div className="font-bold text-emerald-900 flex items-center justify-between">
+                    <span>Attendance & Leave Ledger Sync</span>
+                    <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-bold", isPeriodFinalized ? "bg-emerald-200 text-emerald-900" : "bg-amber-100 text-amber-900")}>
+                      {isPeriodFinalized ? '✓ Attendance Finalized' : 'Live Dynamic Ledger (Open)'}
+                    </span>
+                  </div>
+                  <p className="text-emerald-700 text-[11px]">
+                    Real-time synchronization with Biometric punches, manual overrides, and approved Leave records. LOP days will be deducted strictly from the authoritative attendance ledger.
+                  </p>
+                  <div className="flex items-center justify-between text-xs font-semibold text-emerald-900 pt-2 border-t border-emerald-200">
+                    <span>Status: {isPeriodFinalized ? 'Locked & Verified for Payroll' : 'Active Attendance Ledger'}</span>
+                    <span>100% Synced</span>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* STEP 3: EARNINGS & OT */}
             {wizardStep === 3 && (

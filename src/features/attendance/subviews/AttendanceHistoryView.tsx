@@ -15,6 +15,9 @@ import {
   Lock,
   Unlock,
   ShieldAlert,
+  FileSpreadsheet,
+  UserCheck,
+  PlusCircle,
 } from 'lucide-react';
 import { attendanceApi } from '../../../services/attendanceApi';
 import { api } from '../../../services/api';
@@ -24,6 +27,8 @@ import { attendanceRosterService } from '../../../services/attendance/attendance
 import { AttendanceDaily } from '../../../types/attendance';
 import { cn } from '../../../lib/utils';
 import { EmployeeAttendanceStatementModal } from '../components/EmployeeAttendanceStatementModal';
+import { ManualAttendanceOverrideModal } from '../components/ManualAttendanceOverrideModal';
+import { AttendanceBulkUploadModal } from '../components/AttendanceBulkUploadModal';
 import { hrEventBus } from '../../../services/hrEventBus';
 import { supabase, isSupabaseEnabled } from '../../../lib/supabase';
 
@@ -115,6 +120,14 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
   const [workforceSegment, setWorkforceSegment] = useState<'ALL' | 'DIRECT' | 'VENDOR'>('ALL');
   const [statementEmpId, setStatementEmpId] = useState<string | null>(null);
 
+  // Manual Attendance Override & Excel Bulk Upload State
+  const [selectedOverrideCell, setSelectedOverrideCell] = useState<{
+    employee: any;
+    dateStr: string;
+    existingRecord?: any;
+  } | null>(null);
+  const [showBulkUploadModal, setShowBulkUploadModal] = useState<boolean>(false);
+
   // Vendor detection helper
   const checkIsVendor = (emp: any): boolean => {
     const source = emp.employment_source || emp.employment?.employment_source;
@@ -192,20 +205,47 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
     const loadedShifts = attendanceRosterService.getShifts();
     setShifts(loadedShifts);
 
-    const records = attendanceApi.getDailyAttendance();
-    setDailyRecords(records);
+    const startDate = `${monthKey}-01`;
+    const endDate = `${monthKey}-${String(daysInMonth).padStart(2, '0')}`;
 
-    if (isSupabaseEnabled) {
-      const startDate = `${monthKey}-01`;
-      const endDate = `${monthKey}-${String(daysInMonth).padStart(2, '0')}`;
-      attendanceApi
-        .getDailyAttendanceForPeriodAsync(startDate, endDate)
-        .then(periodRecords => {
-          if (Array.isArray(periodRecords)) {
-            setDailyRecords(periodRecords);
+    if (isSupabaseEnabled && supabase) {
+      // 1. Authoritative Backend SQL Attendance Sync (No mock/localStorage fallback)
+      Promise.resolve(
+        supabase
+          .from('attendance_daily')
+          .select('*')
+          .gte('attendance_date', startDate)
+          .lte('attendance_date', endDate)
+      )
+        .then(({ data: dbRecords, error: dbErr }) => {
+          if (!dbErr && dbRecords) {
+            setDailyRecords(dbRecords.map(r => ({
+              ...r,
+              date: r.attendance_date,
+            })));
+          } else {
+            setDailyRecords([]);
           }
         })
-        .catch(() => {});
+        .catch(() => setDailyRecords([]));
+
+      // 2. Authoritative Backend SQL Payroll Period Lock Status
+      Promise.resolve(
+        supabase
+          .from('payroll_periods')
+          .select('is_locked, status')
+          .eq('month', currentMonthIndex + 1)
+          .eq('year', currentYear)
+          .maybeSingle()
+      )
+        .then(({ data: periodData }) => {
+          if (periodData) {
+            setIsPayrollLocked(Boolean(periodData.is_locked || periodData.status === 'LOCKED' || periodData.status === 'FINALIZED'));
+          } else {
+            setIsPayrollLocked(false);
+          }
+        })
+        .catch(() => setIsPayrollLocked(false));
     }
   };
 
@@ -519,6 +559,52 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
     window.print();
   };
 
+  const handleToggleFinalize = async () => {
+    const nextLocked = !isPayrollLocked;
+    setIsPayrollLocked(nextLocked);
+
+    // 1. Broadcast to HR event bus (payroll, attendance, and compliance listeners)
+    hrEventBus.emit('attendance.finalized', {
+      monthKey,
+      periodName: `${monthName} ${currentYear}`,
+      totalStaff: scopedEmployees.length,
+      totalPresent: monthStats.totalPresentDays,
+      totalPaidDays: monthStats.totalPaidDays,
+      isLocked: nextLocked,
+    });
+    hrEventBus.emit('payroll.period.updated', {
+      monthKey,
+      periodName: `${monthName} ${currentYear}`,
+      status: nextLocked ? 'LOCKED' : 'APPROVED',
+      isLocked: nextLocked,
+    });
+
+    // 2. Authoritative Backend SQL Persistence into payroll_runs table
+    try {
+      if (isSupabaseEnabled && supabase) {
+        const compId = employees[0]?.company_id || '2030277f-a6a1-427f-beaf-4fc677a3bae2';
+        const orgId = employees[0]?.organization_id || '0c621892-e938-4707-9957-13534ea32c19';
+        await supabase.from('payroll_runs').upsert({
+          organization_id: orgId,
+          company_id: compId,
+          month: currentMonthIndex + 1,
+          year: currentYear,
+          total_employees: scopedEmployees.length,
+          status: nextLocked ? 'LOCKED' : 'APPROVED',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'company_id,year,month' });
+      }
+    } catch (err) {
+      console.warn('[AttendanceHistory] Supabase payroll_runs lock notice:', err);
+    }
+
+    if (nextLocked) {
+      showToast(`✓ Finalized and locked ${monthName} ${currentYear} attendance! Synced directly with SQL payroll ledger (${monthStats.totalPaidDays} paid days).`);
+    } else {
+      showToast(`Attendance ledger for ${monthName} ${currentYear} unlocked. Changes can now be made.`);
+    }
+  };
+
   const getStatusBadge = (code: string, isMissing?: boolean) => {
     if (code === 'MP' || isMissing) {
       return (
@@ -552,7 +638,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
   return (
     <div className="space-y-3">
       {/* 1. FLAT PAGE HEADER WITH CONTROLS */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-200">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-gray-200">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-bold text-gray-900 tracking-tight">Attendance History</h2>
@@ -568,13 +654,13 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
         </div>
 
         {/* Action controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0 shrink-0">
           {/* Segmented View Mode Toggle */}
-          <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 text-xs font-semibold">
+          <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 text-xs font-semibold shrink-0">
             <button
               onClick={() => setViewMode('matrix')}
               className={cn(
-                "px-2.5 py-1 rounded-md transition-colors",
+                "px-2.5 py-1 rounded-md transition-colors whitespace-nowrap",
                 viewMode === 'matrix' ? "bg-white text-gray-900 shadow-2xs font-bold" : "text-gray-600 hover:text-gray-900"
               )}
             >
@@ -583,7 +669,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
             <button
               onClick={() => setViewMode('detailed')}
               className={cn(
-                "px-2.5 py-1 rounded-md transition-colors",
+                "px-2.5 py-1 rounded-md transition-colors whitespace-nowrap",
                 viewMode === 'detailed' ? "bg-white text-gray-900 shadow-2xs font-bold" : "text-gray-600 hover:text-gray-900"
               )}
             >
@@ -593,7 +679,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
           <button
             onClick={handleExport}
-            className="h-8 px-2.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1.5"
+            className="h-8 px-2.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors shadow-2xs"
           >
             <Download className="w-3.5 h-3.5 text-gray-500" />
             <span>Export</span>
@@ -601,7 +687,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
           <button
             onClick={handlePrint}
-            className="h-8 px-2.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1.5"
+            className="h-8 px-2.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors shadow-2xs"
           >
             <Printer className="w-3.5 h-3.5 text-gray-500" />
             <span>Print</span>
@@ -609,17 +695,30 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
           <button
             onClick={() => {
-              setIsPayrollLocked(!isPayrollLocked);
-              showToast(isPayrollLocked ? `Unlocked ${monthName} ${currentYear} attendance ledger.` : `Finalized and locked ${monthName} ${currentYear} attendance ledger for payroll calculation.`);
+              if (isPayrollLocked) {
+                showToast(`Month ${monthName} ${currentYear} is locked. Unlock the month first to perform bulk upload.`, 'warning');
+                return;
+              }
+              setShowBulkUploadModal(true);
             }}
+            className="h-8 px-3 text-xs font-semibold text-emerald-900 bg-emerald-50/90 hover:bg-emerald-100 border border-emerald-300 rounded-lg flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors shadow-2xs"
+            title="Bulk import attendance records by Employee ID from Excel"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Bulk Upload Excel</span>
+          </button>
+
+          <button
+            onClick={handleToggleFinalize}
             className={cn(
-              "h-8 px-3 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors",
+              "h-8 px-3.5 text-xs font-bold rounded-lg flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors shadow-2xs",
               isPayrollLocked
                 ? "bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300"
-                : "bg-[#07563D] hover:bg-[#064e37] text-white shadow-2xs"
+                : "bg-emerald-800 hover:bg-emerald-900 text-white"
             )}
+            title={isPayrollLocked ? "Click to unlock this month's attendance for modifications" : "Finalize and lock attendance ledger for payroll calculation"}
           >
-            {isPayrollLocked ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+            {isPayrollLocked ? <Unlock className="w-3.5 h-3.5 text-amber-700" /> : <Lock className="w-3.5 h-3.5 text-emerald-200" />}
             <span>{isPayrollLocked ? 'Unlock Month' : 'Finalize Attendance'}</span>
           </button>
         </div>
@@ -865,6 +964,11 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
           <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-violet-600" /><strong>WFH</strong> Remote</span>
           <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-600" /><strong>!</strong> Missing</span>
           <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-gray-400" /><strong>WO</strong> Off</span>
+          <span className="text-gray-300">|</span>
+          <span className="text-[11px] text-emerald-800 font-semibold flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+            <span>Click any day cell to record manual attendance & override</span>
+          </span>
         </div>
       </div>
 
@@ -993,16 +1097,27 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                               {/* Matrix Days 1..31 */}
                               {daysArray.map(d => {
                                 const daySummary = row.dayMap[d.dayNum];
+                                const matchingDaily = dailyRecords.find(r =>
+                                  (r.employee_id === row.emp.id || (r.employee_code && row.emp.employee_code && r.employee_code.toLowerCase() === row.emp.employee_code.toLowerCase())) &&
+                                  r.date === d.dateStr
+                                );
                                 return (
                                   <td
                                     key={d.dayNum}
                                     onClick={() => {
-                                      onOpenEmployeeProfile?.(row.emp.id, d.dateStr);
-                                      setStatementEmpId(row.emp.id);
+                                      if (isPayrollLocked) {
+                                        showToast(`Attendance for ${monthName} ${currentYear} is finalized and locked for payroll. Click "Unlock Month" in the top bar to make adjustments.`, 'warning');
+                                        return;
+                                      }
+                                      setSelectedOverrideCell({
+                                        employee: row.emp,
+                                        dateStr: d.dateStr,
+                                        existingRecord: matchingDaily || daySummary,
+                                      });
                                     }}
-                                    title={`${row.empName} (${d.dateStr})\nStatus: ${daySummary.statusLabel}\nShift: ${daySummary.shift_code} (${daySummary.expected_in} - ${daySummary.expected_out})\nIn: ${daySummary.first_check_in || '—'} | Out: ${daySummary.last_check_out || '—'}\nNet: ${formatMinutesToHoursStr(daySummary.net_working_minutes)}${daySummary.late_minutes > 0 ? `\nLate: +${formatDeviationDuration(daySummary.late_minutes, { showBoth: daySummary.late_minutes >= 60 })}` : ''}${daySummary.overtime_minutes > 0 ? `\nOT: +${formatDeviationDuration(daySummary.overtime_minutes, { showBoth: daySummary.overtime_minutes >= 60 })}` : ''}`}
+                                    title={`${row.empName} (${d.dateStr})\nClick to record manual attendance or override status\nStatus: ${daySummary.statusLabel}\nShift: ${daySummary.shift_code} (${daySummary.expected_in} - ${daySummary.expected_out})\nIn: ${daySummary.first_check_in || '—'} | Out: ${daySummary.last_check_out || '—'}\nNet: ${formatMinutesToHoursStr(daySummary.net_working_minutes)}${daySummary.late_minutes > 0 ? `\nLate: +${formatDeviationDuration(daySummary.late_minutes, { showBoth: daySummary.late_minutes >= 60 })}` : ''}${daySummary.overtime_minutes > 0 ? `\nOT: +${formatDeviationDuration(daySummary.overtime_minutes, { showBoth: daySummary.overtime_minutes >= 60 })}` : ''}`}
                                     className={cn(
-                                      "p-0.5 text-center border-r border-gray-100 cursor-pointer hover:bg-gray-100/60 select-none",
+                                      "p-0.5 text-center border-r border-gray-100 cursor-pointer hover:bg-emerald-50 hover:ring-1 hover:ring-emerald-400 select-none transition-all",
                                       d.isSunday && "bg-gray-50/40",
                                       d.isToday && "bg-emerald-50/50"
                                     )}
@@ -1123,13 +1238,34 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
                         <td className="p-2.5">
                           {getStatusBadge(daySummary.statusCode)}
                         </td>
-                        <td className="p-2.5 text-right pr-4">
+                        <td className="p-2.5 text-right pr-4 whitespace-nowrap space-x-2">
+                          <button
+                            onClick={() => {
+                              if (isPayrollLocked) {
+                                showToast(`Attendance for ${monthName} ${currentYear} is finalized and locked for payroll. Click "Unlock Month" in the top bar to make adjustments.`, 'warning');
+                                return;
+                              }
+                              const matchingDaily = dailyRecords.find(r =>
+                                (r.employee_id === row.emp.id || (r.employee_code && row.emp.employee_code && r.employee_code.toLowerCase() === row.emp.employee_code.toLowerCase())) &&
+                                r.date === d.dateStr
+                              );
+                              setSelectedOverrideCell({
+                                employee: row.emp,
+                                dateStr: d.dateStr,
+                                existingRecord: matchingDaily || daySummary,
+                              });
+                            }}
+                            className="text-xs text-emerald-700 hover:text-emerald-900 font-bold hover:underline"
+                          >
+                            Override
+                          </button>
+                          <span className="text-gray-300">·</span>
                           <button
                             onClick={() => {
                               onOpenEmployeeProfile?.(row.emp.id, d.dateStr);
                               setStatementEmpId(row.emp.id);
                             }}
-                            className="text-xs text-[#07563D] hover:underline font-semibold"
+                            className="text-xs text-gray-600 hover:text-gray-900 font-semibold hover:underline"
                           >
                             Inspect
                           </button>
@@ -1152,6 +1288,31 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
           onClose={() => setStatementEmpId(null)}
           onNavigateEmployee={id => setStatementEmpId(id)}
           onNavigateSubPath={onNavigateSubPath}
+        />
+      )}
+
+      {/* Manual Attendance & Missed Punch Override Modal */}
+      {selectedOverrideCell && (
+        <ManualAttendanceOverrideModal
+          isOpen={Boolean(selectedOverrideCell)}
+          onClose={() => setSelectedOverrideCell(null)}
+          employee={selectedOverrideCell.employee}
+          dateStr={selectedOverrideCell.dateStr}
+          existingRecord={selectedOverrideCell.existingRecord}
+          onSuccess={() => loadData()}
+        />
+      )}
+
+      {/* Excel Bulk Attendance Upload & Reconciliation Modal */}
+      {showBulkUploadModal && (
+        <AttendanceBulkUploadModal
+          isOpen={showBulkUploadModal}
+          onClose={() => setShowBulkUploadModal(false)}
+          employees={employees}
+          currentYear={currentYear}
+          currentMonthIndex={currentMonthIndex}
+          dailyRecords={dailyRecords}
+          onSuccess={() => loadData()}
         />
       )}
     </div>

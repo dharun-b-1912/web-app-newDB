@@ -1814,44 +1814,52 @@ async deletePayrollRun(runId: string, tenantId = getActiveOrgId()): Promise<bool
             (r.employee_name && empName && r.employee_name.toLowerCase() === empName.toLowerCase())
           ) &&
           (r.status === 'Approved' || r.status === 'APPROVED')
-        ) || Boolean(att && ((att as any).is_regularized || (att.status as string) === 'Regularized'));
+        ) || Boolean(att && ((att as any).is_regularized || String(att.status).toUpperCase() === 'REGULARIZED'));
+
+        const statusNorm = String(att?.status || '').toUpperCase().trim();
 
         if (isApprovedReg) {
           // Regularized day is authoritatively approved by HR as Present & Payable
           recordedPresent++;
         } else if (att) {
-          if (att.status === 'Absent') {
+          if (statusNorm === 'ABSENT' || statusNorm === 'A' || statusNorm === 'LOP') {
             if (isShiftEndedToday) {
               recordedAbsent++;
             } else {
               recordedPresent++;
             }
-          } else if (att.status === 'Half Day') {
+          } else if (statusNorm === 'HALF_DAY' || statusNorm === 'HALF DAY' || statusNorm === 'HD') {
             recordedHalfDays++;
             recordedPresent += 0.5;
             recordedAbsent += 0.5;
-          } else if (att.status === 'Missing Punch') {
+          } else if (statusNorm === 'MISSING PUNCH' || statusNorm === 'MISSING_PUNCH' || statusNorm === 'MP') {
             if (isShiftEndedToday) {
               recordedAbsent++;
             } else {
               recordedPresent++;
             }
           } else if (
-            att.status === 'Present' ||
-            (att.status as string) === 'Regularized' ||
-            att.status === 'WFH' ||
-            att.status === 'Late' ||
-            att.status === 'Early Checkout' ||
-            att.status === 'Checked Out' ||
-            att.status === 'Overtime' ||
+            statusNorm === 'PRESENT' ||
+            statusNorm === 'P' ||
+            statusNorm === 'REGULARIZED' ||
+            statusNorm === 'WFH' ||
+            statusNorm === 'WORK_FROM_HOME' ||
+            statusNorm === 'ON_DUTY' ||
+            statusNorm === 'OD' ||
+            statusNorm === 'LATE' ||
+            statusNorm === 'EARLY CHECKOUT' ||
+            statusNorm === 'EARLY_CHECKOUT' ||
+            statusNorm === 'CHECKED OUT' ||
+            statusNorm === 'CHECKED_OUT' ||
+            statusNorm === 'OVERTIME' ||
             hasRealPunch
           ) {
             recordedPresent++;
-          } else if (att.status === 'On Leave') {
+          } else if (statusNorm === 'ON_LEAVE' || statusNorm === 'ON LEAVE' || statusNorm === 'PAID_LEAVE' || statusNorm === 'LEAVE' || statusNorm === 'PL') {
             paidLeaveDays++;
-          } else if (att.status === 'Holiday') {
+          } else if (statusNorm === 'HOLIDAY') {
             recordedPresent++;
-          } else if (att.status === 'Weekly Off' && !hasRealPunch) {
+          } else if ((statusNorm === 'WEEKLY_OFF' || statusNorm === 'WEEKLY OFF' || statusNorm === 'WO') && !hasRealPunch) {
             weeklyOffDays++;
           } else {
             // 'Not Checked In' or null or unknown

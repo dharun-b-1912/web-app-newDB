@@ -565,8 +565,13 @@ export const attendanceApi = {
             resolvedStatus = 'Holiday';
           } else if (d.status === 'WEEKLY_OFF' || d.status === 'Weekly Off') {
             resolvedStatus = 'Weekly Off';
+          } else if (d.is_regularized || d.check_in_source === 'MANUAL' || d.source === 'MANUAL') {
+            resolvedStatus = (d.status === 'ABSENT' || d.status === 'Absent') ? 'Absent' :
+                             (d.status === 'HALF_DAY' || d.status === 'Half Day') ? 'Half Day' :
+                             (d.status === 'ON_LEAVE' || d.status === 'On Leave') ? 'On Leave' :
+                             (d.status === 'WORK_FROM_HOME' || d.status === 'WFH') ? 'WFH' : 'Present';
           } else if (d.status === 'PRESENT' || rawFirstIn) {
-            resolvedStatus = calc.status || 'Present';
+            resolvedStatus = (calc.status === 'Absent' && d.status === 'PRESENT') ? 'Present' : (calc.status || 'Present');
           } else if (d.status === 'ABSENT') {
             if (netMins >= 120 && netMins < 240) {
               resolvedStatus = 'Half Day';

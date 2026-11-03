@@ -708,15 +708,7 @@ export const ManualAttendanceView: React.FC<ManualAttendanceViewProps> = ({
         updated_at: new Date().toISOString(),
       };
 
-      if (punchAction === 'CHECK_IN') {
-        dailyPayload.check_in_source = 'MANUAL';
-      } else if (punchAction === 'CHECK_OUT') {
-        dailyPayload.check_in_source = existingDaily?.check_in_source || 'MOBILE';
-        dailyPayload.check_out_source = 'MANUAL';
-      } else if (punchAction === 'BOTH') {
-        dailyPayload.check_in_source = 'MANUAL';
-        dailyPayload.check_out_source = 'MANUAL';
-      }
+      // Note: punch_source is stored on attendance_punches, not attendance_daily
 
       let canonicalDailyId = existingDaily?.id;
       if (existingDaily) {
