@@ -321,12 +321,31 @@ export const AttendanceBulkUploadModal: React.FC<AttendanceBulkUploadModalProps>
       wsInstructions['!cols'] = [{ wch: 100 }];
 
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, `${monthName} ${currentYear}`);
+      XLSX.utils.book_append_sheet(wb, ws, `${monthName} ${selectedYear}`);
       XLSX.utils.book_append_sheet(wb, wsInstructions, 'Instructions & Legend');
 
-      const targetFileName = `JOY_Monthly_Attendance_${monthName}_${currentYear}_Template.xlsx`;
-      XLSX.writeFile(wb, targetFileName);
-      showToast(`Downloaded ${monthName} ${currentYear} attendance timesheet with ${employees.length} employees (unrecorded days left clean for entry)!`);
+      const targetFileName = `JOY_Monthly_Attendance_${monthName}_${selectedYear}_Template.xlsx`;
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([excelBuffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8',
+      });
+
+      // Cross-platform bulletproof download for macOS Safari, Chrome, Windows, Linux
+      if (typeof window !== 'undefined') {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = targetFileName;
+        link.setAttribute('download', targetFileName);
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(url);
+        }, 200);
+      }
+
+      showToast(`Downloaded ${monthName} ${selectedYear} attendance timesheet with ${employees.length} employees (unrecorded days left clean for entry)!`);
     } catch (err: any) {
       console.error('Download template error:', err);
       showToast('Failed to generate template.', 'error');
@@ -336,13 +355,15 @@ export const AttendanceBulkUploadModal: React.FC<AttendanceBulkUploadModalProps>
   // Helper: Normalize Status (Returns null for empty cells so they are never fabricated as 'P')
   const normalizeStatus = (raw: string): { status: ParsedAttendanceRow['normalizedStatus']; payable: number } | null => {
     const s = (raw || '').toUpperCase().trim();
-    if (!s || s === '-' || s === '—' || s === 'NA' || s === 'N/A' || s === 'NULL' || s === 'UNDEFINED') {
+    if (!s || s === '-' || s === '—' || s === 'NA' || s === 'N/A' || s === 'NULL' || s === 'UNDEFINED' || s === '0' || s === 'REST') {
+      if (s === '0') return { status: 'ABSENT', payable: 0.0 };
+      if (s === 'REST') return { status: 'WEEKLY_OFF', payable: 1.0 };
       return null;
     }
-    if (s === 'A' || s === 'ABSENT' || s === '0' || s === 'LOP' || s === 'AB') {
+    if (s === 'A' || s === 'ABSENT' || s === 'LOP' || s === 'AB' || s === 'NO' || s === 'N') {
       return { status: 'ABSENT', payable: 0.0 };
     }
-    if (s === 'HD' || s === 'HALF DAY' || s === 'HALF_DAY' || s === '0.5' || s === 'HF') {
+    if (s === 'HD' || s === 'HALF DAY' || s === 'HALF_DAY' || s === '0.5' || s === 'HF' || s === 'H') {
       return { status: 'HALF_DAY', payable: 0.5 };
     }
     if (s === 'OD' || s === 'ON DUTY' || s === 'DUTY') {
@@ -351,19 +372,19 @@ export const AttendanceBulkUploadModal: React.FC<AttendanceBulkUploadModalProps>
     if (s === 'WFH' || s === 'REMOTE' || s === 'WORK FROM HOME') {
       return { status: 'WORK_FROM_HOME', payable: 1.0 };
     }
-    if (s === 'PL' || s === 'LEAVE' || s === 'L' || s === 'PAID LEAVE') {
+    if (s === 'PL' || s === 'LEAVE' || s === 'L' || s === 'PAID LEAVE' || s === 'CL' || s === 'SL' || s === 'EL') {
       return { status: 'ON_LEAVE', payable: 1.0 };
     }
-    if (s === 'WO' || s === 'OFF' || s === 'WEEKLY OFF') {
+    if (s === 'WO' || s === 'OFF' || s === 'WEEKLY OFF' || s === 'WEEK OFF' || s === 'HOLIDAY' || s === 'HL' || s === 'PH') {
       return { status: 'WEEKLY_OFF', payable: 1.0 };
     }
-    if (s === 'P' || s === 'PRESENT' || s === '1' || s === 'PR') {
+    if (s === 'P' || s === 'PRESENT' || s === '1' || s === 'PR' || s === 'FD' || s === 'FULL DAY' || s === 'YES' || s === 'Y' || s === 'P/P') {
       return { status: 'PRESENT', payable: 1.0 };
     }
     return null;
   };
 
-  // 2. Parse Uploaded Excel File (Supports BOTH Monthly Matrix & Flat Row List)
+  // 2. Parse Uploaded Excel File (Universal Monthly Matrix & Flat Row List Parser)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -388,95 +409,199 @@ export const AttendanceBulkUploadModal: React.FC<AttendanceBulkUploadModalProps>
           return;
         }
 
-        // Pre-build employee lookup maps
+        // Auto-detect target month and year from File Name, Sheet Name, and Header Rows
+        const monthNames = [
+          'january', 'february', 'march', 'april', 'may', 'june',
+          'july', 'august', 'september', 'october', 'november', 'december'
+        ];
+        const combinedContextText = (
+          file.name + ' ' + firstSheetName + ' ' +
+          rawAoA.slice(0, 5).map(r => (Array.isArray(r) ? r.join(' ') : '')).join(' ')
+        ).toLowerCase();
+
+        let effectiveMonthIndex = selectedMonthIndex;
+        let effectiveYear = selectedYear;
+
+        monthNames.forEach((m, idx) => {
+          if (combinedContextText.includes(m)) {
+            effectiveMonthIndex = idx;
+          }
+        });
+        const detectedYrMatch = combinedContextText.match(/\b(202[4-9])\b/);
+        if (detectedYrMatch) {
+          effectiveYear = parseInt(detectedYrMatch[1], 10);
+        }
+
+        if (effectiveMonthIndex !== selectedMonthIndex || effectiveYear !== selectedYear) {
+          setSelectedMonthIndex(effectiveMonthIndex);
+          setSelectedYear(effectiveYear);
+        }
+
+        const effectiveMonthKey = `${effectiveYear}-${String(effectiveMonthIndex + 1).padStart(2, '0')}`;
+        const effectiveDaysInMonth = new Date(effectiveYear, effectiveMonthIndex + 1, 0).getDate();
+
+        // Pre-build comprehensive employee lookup maps
         const codeMap = new Map<string, any>();
         const idMap = new Map<string, any>();
         const nameMap = new Map<string, any>();
 
         employees.forEach(emp => {
-          if (emp.id) idMap.set(emp.id.toLowerCase(), emp);
+          if (emp.id) idMap.set(emp.id.toLowerCase().trim(), emp);
           if (emp.employee_code) {
-            codeMap.set(emp.employee_code.toLowerCase().trim(), emp);
-            codeMap.set(emp.employee_code.toLowerCase().replace(/[^a-z0-9]/g, ''), emp);
+            const rawCode = emp.employee_code.toLowerCase().trim();
+            codeMap.set(rawCode, emp);
+            codeMap.set(rawCode.replace(/[^a-z0-9]/g, ''), emp);
+            const digits = rawCode.replace(/\D/g, '');
+            if (digits) {
+              codeMap.set(digits, emp);
+              codeMap.set(String(parseInt(digits, 10)), emp);
+            }
           }
-          const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name;
-          if (fullName) nameMap.set(fullName.toLowerCase().trim(), emp);
+          const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim().toLowerCase();
+          if (fullName) {
+            nameMap.set(fullName, emp);
+            nameMap.set(fullName.replace(/[^a-z0-9]/g, ''), emp);
+          }
+          if (emp.display_name) {
+            const dn = emp.display_name.trim().toLowerCase();
+            nameMap.set(dn, emp);
+            nameMap.set(dn.replace(/[^a-z0-9]/g, ''), emp);
+          }
         });
 
-        // Step A: Detect whether this is a Monthly Matrix or Flat List
+        // Scan rows 0 to 12 to find the Matrix Day Header Row
         let matrixHeaderRowIdx = -1;
-        for (let i = 0; i < Math.min(10, rawAoA.length); i++) {
-          const r = rawAoA[i];
-          if (r && Array.isArray(r)) {
-            const hasEmpHeader = r.some(c => {
-              const str = String(c).toLowerCase();
-              return str.includes('emp id') || str.includes('employee id') || str.includes('employee code');
-            });
-            const hasDayHeaders = r.some(c => {
-              const str = String(c);
-              return str.includes('[') || /\d{4}-\d{2}-\d{2}/.test(str) || /\d{2}\s*\(/.test(str);
-            });
-            if (hasEmpHeader && hasDayHeaders) {
-              matrixHeaderRowIdx = i;
-              break;
+        let bestDayCols: { colIndex: number; dateStr: string }[] = [];
+
+        for (let i = 0; i < Math.min(12, rawAoA.length); i++) {
+          const row = rawAoA[i];
+          if (!row || !Array.isArray(row)) continue;
+
+          const dayCols: { colIndex: number; dateStr: string }[] = [];
+
+          row.forEach((cell, colIdx) => {
+            const str = String(cell || '').trim();
+            if (!str) return;
+
+            // Pattern 1: ISO date [YYYY-MM-DD] or YYYY-MM-DD
+            const isoMatch = str.match(/(\d{4}-\d{2}-\d{2})/);
+            if (isoMatch) {
+              dayCols.push({ colIndex: colIdx, dateStr: isoMatch[1] });
+              return;
             }
+
+            // Pattern 2: DD/MM/YYYY or DD-MM-YYYY
+            const dmyMatch = str.match(/^0?(\d{1,2})[\/\-]0?(\d{1,2})[\/\-](\d{4})/);
+            if (dmyMatch) {
+              const d = dmyMatch[1].padStart(2, '0');
+              const m = dmyMatch[2].padStart(2, '0');
+              const y = dmyMatch[3];
+              dayCols.push({ colIndex: colIdx, dateStr: `${y}-${m}-${d}` });
+              return;
+            }
+
+            // Pattern 3: "01 Oct (Thu)" or "1 Oct" or "01-Oct"
+            const monthShortNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+            const dayMonthMatch = str.match(/^0?(\d{1,2})\s*[\-\s]?([A-Za-z]{3})/i);
+            if (dayMonthMatch) {
+              const dayInt = parseInt(dayMonthMatch[1], 10);
+              const mStr = dayMonthMatch[2].toLowerCase();
+              const mIdx = monthShortNames.indexOf(mStr);
+              if (dayInt >= 1 && dayInt <= 31 && mIdx !== -1) {
+                dayCols.push({
+                  colIndex: colIdx,
+                  dateStr: `${effectiveYear}-${String(mIdx + 1).padStart(2, '0')}-${String(dayInt).padStart(2, '0')}`,
+                });
+                return;
+              }
+            }
+
+            // Pattern 4: Plain day number "1", "01", "2" ... "31" or "1 (Mon)" or "Day 01"
+            const plainDayMatch = str.match(/^(?:day\s*)?0?(\d{1,2})(?:\s*\(.*\))?$/i);
+            if (plainDayMatch) {
+              const dayInt = parseInt(plainDayMatch[1], 10);
+              if (dayInt >= 1 && dayInt <= effectiveDaysInMonth) {
+                dayCols.push({
+                  colIndex: colIdx,
+                  dateStr: `${effectiveMonthKey}-${String(dayInt).padStart(2, '0')}`,
+                });
+              }
+            }
+          });
+
+          if (dayCols.length >= 3 && dayCols.length > bestDayCols.length) {
+            bestDayCols = dayCols;
+            matrixHeaderRowIdx = i;
           }
         }
 
         const rows: ParsedAttendanceRow[] = [];
 
-        if (matrixHeaderRowIdx !== -1) {
+        if (matrixHeaderRowIdx !== -1 && bestDayCols.length >= 3) {
           // ==========================================
           // FORMAT A: MONTHLY MATRIX SHEET DETECTED
           // ==========================================
           setDetectedFormat('MATRIX');
-          const headerRow = rawAoA[matrixHeaderRowIdx];
+          const dayColIndices = new Set(bestDayCols.map(d => d.colIndex));
 
-          // Extract date mapping for day columns
-          const dayCols: { colIndex: number; dateStr: string }[] = [];
-          headerRow.forEach((col, idx) => {
-            const s = String(col);
-            const dateMatch = s.match(/(\d{4}-\d{2}-\d{2})/);
-            if (dateMatch) {
-              dayCols.push({ colIndex: idx, dateStr: dateMatch[1] });
-            } else {
-              // Day number fallback e.g. "01 (Sun)"
-              const dayNumMatch = s.match(/^0?(\d{1,2})\s*\(/);
-              if (dayNumMatch) {
-                const dayInt = parseInt(dayNumMatch[1], 10);
-                if (dayInt >= 1 && dayInt <= 31) {
-                  const fallbackDateStr = `${monthKey}-${String(dayInt).padStart(2, '0')}`;
-                  dayCols.push({ colIndex: idx, dateStr: fallbackDateStr });
-                }
-              }
-            }
-          });
-
-          // Iterate through employee data rows starting after headerRowIdx
           let processedRowNum = 1;
           for (let rIdx = matrixHeaderRowIdx + 1; rIdx < rawAoA.length; rIdx++) {
             const rowData = rawAoA[rIdx];
             if (!rowData || !Array.isArray(rowData)) continue;
 
-            const rawEmp = String(rowData[0] || '').trim();
-            if (!rawEmp || rawEmp.toLowerCase().includes('total') || rawEmp.toLowerCase().includes('summary')) continue;
+            // Search all non-day columns for employee identification
+            let matched: any = null;
+            let rawEmp = '';
 
-            // Match employee
-            const cleanedCode = rawEmp.toLowerCase();
-            const alphanumericCode = cleanedCode.replace(/[^a-z0-9]/g, '');
-            const matched =
-              codeMap.get(cleanedCode) ||
-              codeMap.get(alphanumericCode) ||
-              idMap.get(cleanedCode) ||
-              nameMap.get(cleanedCode);
+            for (let cIdx = 0; cIdx < rowData.length; cIdx++) {
+              if (dayColIndices.has(cIdx)) continue;
+              const cellText = String(rowData[cIdx] || '').trim();
+              if (!cellText) continue;
 
-            // For each day column, extract cell value — strictly skipping empty cells
-            dayCols.forEach(dayCol => {
+              const clean = cellText.toLowerCase();
+              const alnum = clean.replace(/[^a-z0-9]/g, '');
+
+              const candidate =
+                codeMap.get(clean) ||
+                codeMap.get(alnum) ||
+                idMap.get(clean) ||
+                nameMap.get(clean) ||
+                nameMap.get(alnum);
+
+              if (candidate) {
+                matched = candidate;
+                rawEmp = cellText;
+                break;
+              }
+            }
+
+            // Fallback: check rowData[0] or rowData[1]
+            if (!matched) {
+              rawEmp = String(rowData[0] || rowData[1] || '').trim();
+              if (!rawEmp || rawEmp.toLowerCase().includes('total') || rawEmp.toLowerCase().includes('summary') || rawEmp.toLowerCase().includes('instructions')) {
+                continue;
+              }
+              const clean = rawEmp.toLowerCase();
+              const alnum = clean.replace(/[^a-z0-9]/g, '');
+              matched =
+                codeMap.get(clean) ||
+                codeMap.get(alnum) ||
+                idMap.get(clean) ||
+                nameMap.get(clean) ||
+                nameMap.get(alnum);
+            }
+
+            // Skip empty rows with no punches
+            const hasAnyCell = bestDayCols.some(dc => Boolean(String(rowData[dc.colIndex] || '').trim()));
+            if (!hasAnyCell) continue;
+
+            // Process each day column
+            bestDayCols.forEach(dayCol => {
               const cellVal = String(rowData[dayCol.colIndex] || '').trim();
-              if (!cellVal) return; // Clean skip: cell was left empty, no punch to create
+              if (!cellVal) return; // Skip empty cells (no punch to create)
 
               const norm = normalizeStatus(cellVal);
-              if (!norm) return; // Clean skip: empty or non-status marker
+              if (!norm) return;
               const { status: normStatus, payable } = norm;
 
               let isValid = true;
@@ -484,14 +609,14 @@ export const AttendanceBulkUploadModal: React.FC<AttendanceBulkUploadModalProps>
 
               if (!matched) {
                 isValid = false;
-                validationError = `Employee ID '${rawEmp}' not found in workforce.`;
+                validationError = `Employee '${rawEmp}' not found in active workforce.`;
               }
 
               const workMins = normStatus === 'ABSENT' || normStatus === 'WEEKLY_OFF' ? 0 : 540;
 
               rows.push({
                 rowNum: processedRowNum++,
-                rawEmpId: rawEmp,
+                rawEmpId: matched?.employee_code || rawEmp || 'Staff',
                 matchedEmployee: matched,
                 dateStr: dayCol.dateStr,
                 rawStatus: cellVal,
@@ -511,79 +636,94 @@ export const AttendanceBulkUploadModal: React.FC<AttendanceBulkUploadModalProps>
           // FORMAT B: FLAT ROW-BY-ROW LIST
           // ==========================================
           setDetectedFormat('LIST');
-          const rawJson: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
-          if (rawJson.length > 0) {
-            const firstRowKeys = Object.keys(rawJson[0]);
-            const findKey = (candidates: string[]) =>
-              firstRowKeys.find(k => candidates.some(c => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(c.toLowerCase().replace(/[^a-z0-9]/g, ''))));
-
-            const empIdKey = findKey(['employeeid', 'empid', 'employeecode', 'empcode', 'staffid', 'code']) || firstRowKeys[0];
-            const dateKey = findKey(['date', 'attendancedate', 'day', 'workdate']) || firstRowKeys[2];
-            const statusKey = findKey(['status', 'attendancestatus', 'presentabsent', 'mark']) || firstRowKeys[3];
-            const inKey = findKey(['intime', 'checkin', 'in', 'punchin', 'start']) || 'In Time (HH:MM)';
-            const outKey = findKey(['outtime', 'checkout', 'out', 'punchout', 'end']) || 'Out Time (HH:MM)';
-            const reasonKey = findKey(['reason', 'remarks', 'remark', 'note', 'comment']) || 'Reason / Remarks';
-
-            rawJson.forEach((row, idx) => {
-              const rawEmp = String(row[empIdKey] || '').trim();
-              if (!rawEmp) return;
-
-              const rawSt = String(row[statusKey] || '').trim();
-              if (!rawSt) return; // Skip empty rows
-
-              const norm = normalizeStatus(rawSt);
-              if (!norm) return;
-              const { status: normStatus, payable } = norm;
-
-              const cleanedCode = rawEmp.toLowerCase();
-              const alphanumericCode = cleanedCode.replace(/[^a-z0-9]/g, '');
-              const matched =
-                codeMap.get(cleanedCode) ||
-                codeMap.get(alphanumericCode) ||
-                idMap.get(cleanedCode) ||
-                nameMap.get(cleanedCode);
-
-              const rawDate = row[dateKey];
-              let normalizedDateStr = String(rawDate).trim();
-              if (/^\d{4}-\d{2}-\d{2}$/.test(normalizedDateStr)) {
-                // Already ISO
-              } else if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(normalizedDateStr)) {
-                const parts = normalizedDateStr.split(/[-/]/);
-                normalizedDateStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-              } else {
-                normalizedDateStr = new Date().toISOString().split('T')[0];
+          // Find the row containing Flat List headers (Date, Status, Employee)
+          let flatHeaderIdx = 0;
+          for (let i = 0; i < Math.min(10, rawAoA.length); i++) {
+            const r = rawAoA[i];
+            if (Array.isArray(r)) {
+              const joined = r.join(' ').toLowerCase();
+              if ((joined.includes('date') || joined.includes('day')) && (joined.includes('status') || joined.includes('attendance') || joined.includes('punch'))) {
+                flatHeaderIdx = i;
+                break;
               }
+            }
+          }
 
-              const rawIn = String(row[inKey] || '09:30').trim();
-              const rawOut = String(row[outKey] || '18:30').trim();
-              const reasonStr = String(row[reasonKey] || 'Excel Bulk Upload Attendance').trim();
+          const headerRow = rawAoA[flatHeaderIdx] || [];
+          const findColIdx = (candidates: string[]) =>
+            headerRow.findIndex((col: any) =>
+              candidates.some(c => String(col).toLowerCase().replace(/[^a-z0-9]/g, '').includes(c.toLowerCase().replace(/[^a-z0-9]/g, '')))
+            );
 
-              const workMins = normStatus === 'ABSENT' || normStatus === 'WEEKLY_OFF' ? 0 : 540;
+          const empCol = Math.max(0, findColIdx(['employeeid', 'empid', 'employeecode', 'empcode', 'staffid', 'code', 'employee']));
+          const dateCol = Math.max(0, findColIdx(['date', 'attendancedate', 'day', 'workdate']));
+          const statusCol = Math.max(0, findColIdx(['status', 'attendancestatus', 'presentabsent', 'mark']));
+          const inCol = findColIdx(['intime', 'checkin', 'in', 'punchin', 'start']);
+          const outCol = findColIdx(['outtime', 'checkout', 'out', 'punchout', 'end']);
+          const reasonCol = findColIdx(['reason', 'remarks', 'remark', 'note', 'comment']);
 
-              let isValid = true;
-              let validationError: string | undefined;
+          for (let idx = flatHeaderIdx + 1; idx < rawAoA.length; idx++) {
+            const row = rawAoA[idx];
+            if (!row || !Array.isArray(row)) continue;
 
-              if (!matched) {
-                isValid = false;
-                validationError = `Employee ID '${rawEmp}' not found in active workforce.`;
-              }
+            const rawEmp = String(row[empCol] || '').trim();
+            if (!rawEmp || rawEmp.toLowerCase().includes('total')) continue;
 
-              rows.push({
-                rowNum: idx + 2,
-                rawEmpId: rawEmp,
-                matchedEmployee: matched,
-                dateStr: normalizedDateStr,
-                rawStatus: rawSt,
-                normalizedStatus: normStatus,
-                payableStatus: payable,
-                inTime: rawIn || '09:30',
-                outTime: rawOut || '18:30',
-                reason: reasonStr,
-                workMinutes: workMins,
-                isValid,
-                validationError,
-              });
+            const rawSt = String(row[statusCol] || '').trim();
+            if (!rawSt) continue;
+
+            const norm = normalizeStatus(rawSt);
+            if (!norm) continue;
+            const { status: normStatus, payable } = norm;
+
+            const cleanedCode = rawEmp.toLowerCase();
+            const alphanumericCode = cleanedCode.replace(/[^a-z0-9]/g, '');
+            const matched =
+              codeMap.get(cleanedCode) ||
+              codeMap.get(alphanumericCode) ||
+              idMap.get(cleanedCode) ||
+              nameMap.get(cleanedCode);
+
+            const rawDate = row[dateCol];
+            let normalizedDateStr = String(rawDate || '').trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(normalizedDateStr)) {
+              // ISO
+            } else if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(normalizedDateStr)) {
+              const parts = normalizedDateStr.split(/[-/]/);
+              normalizedDateStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+            } else {
+              normalizedDateStr = `${effectiveMonthKey}-01`;
+            }
+
+            const rawIn = inCol !== -1 ? String(row[inCol] || '09:30').trim() : '09:30';
+            const rawOut = outCol !== -1 ? String(row[outCol] || '18:30').trim() : '18:30';
+            const reasonStr = reasonCol !== -1 ? String(row[reasonCol] || 'Excel Bulk Upload Attendance').trim() : 'Excel Bulk Upload Attendance';
+
+            const workMins = normStatus === 'ABSENT' || normStatus === 'WEEKLY_OFF' ? 0 : 540;
+
+            let isValid = true;
+            let validationError: string | undefined;
+
+            if (!matched) {
+              isValid = false;
+              validationError = `Employee ID '${rawEmp}' not found in active workforce.`;
+            }
+
+            rows.push({
+              rowNum: idx + 1,
+              rawEmpId: rawEmp,
+              matchedEmployee: matched,
+              dateStr: normalizedDateStr,
+              rawStatus: rawSt,
+              normalizedStatus: normStatus,
+              payableStatus: payable,
+              inTime: rawIn || '09:30',
+              outTime: rawOut || '18:30',
+              reason: reasonStr,
+              workMinutes: workMins,
+              isValid,
+              validationError,
             });
           }
         }
