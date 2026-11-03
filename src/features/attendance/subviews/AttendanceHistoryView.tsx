@@ -127,6 +127,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
     existingRecord?: any;
   } | null>(null);
   const [showBulkUploadModal, setShowBulkUploadModal] = useState<boolean>(false);
+  const [isResolvingExceptions, setIsResolvingExceptions] = useState<boolean>(false);
 
   // Vendor detection helper
   const checkIsVendor = (emp: any): boolean => {
@@ -202,11 +203,13 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
       }
     }).catch(() => {});
 
-    const loadedShifts = attendanceRosterService.getShifts();
-    setShifts(loadedShifts);
-
     const startDate = `${monthKey}-01`;
     const endDate = `${monthKey}-${String(daysInMonth).padStart(2, '0')}`;
+
+    // Refresh roster definitions and shift assignments from Supabase PostgreSQL
+    attendanceRosterService.fetchShiftsFromDb().then(s => setShifts(s)).catch(() => {});
+    attendanceRosterService.fetchShiftAssignmentsFromDb().catch(() => {});
+    attendanceRosterService.fetchRostersFromDb(startDate, endDate).catch(() => {});
 
     if (isSupabaseEnabled && supabase) {
       // 1. Authoritative Backend SQL Attendance Sync (No mock/localStorage fallback)
@@ -222,6 +225,9 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
             setDailyRecords(dbRecords.map(r => ({
               ...r,
               date: r.attendance_date,
+              late_minutes: r.late_minutes ?? r.late_entry_minutes ?? 0,
+              net_working_minutes: r.net_working_minutes ?? r.total_work_minutes ?? 0,
+              early_checkout_minutes: r.early_checkout_minutes ?? r.early_exit_minutes ?? 0,
             })));
           } else {
             setDailyRecords([]);
@@ -336,6 +342,7 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
   // Compute day-by-day attendance for each employee across the entire month
   const matrixData = useMemo<MatrixEmployeeRow[]>(() => {
+    const todayLocalStr = getLocalDateString();
     return scopedEmployees.map(emp => {
       const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.display_name || emp.name || 'Employee';
       const empCode = emp.employee_code || `WF-${emp.id}`;
@@ -375,56 +382,83 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
         let statusCode = 'P';
         let statusLabel = 'Present';
 
-        if (roster.is_weekly_off) {
-          statusCode = 'WO';
-          statusLabel = 'Weekly Off';
-        } else if (record) {
-          if (record.status === 'On Leave') {
+        const rawStatus = String(record?.status || '').toUpperCase().trim();
+        const isPastDate = d.dateStr < todayLocalStr;
+
+        if (record) {
+          // Normalize Supabase status & punch indicators
+          const hasPunches = Boolean(record.first_check_in || record.last_check_out);
+          const isSinglePunch = !d.isToday && Boolean(record.first_check_in) && !record.last_check_out && !record.is_regularized;
+          const lateMins = Number(record.late_minutes || record.late_entry_minutes || 0);
+          const earlyMins = Number(record.early_checkout_minutes || record.early_exit_minutes || 0);
+          const otMins = Number(record.overtime_minutes || 0);
+          const workedMins = Number(record.net_working_minutes || record.total_work_minutes || 0);
+
+          if (rawStatus.includes('LEAVE') || rawStatus === 'L' || rawStatus === 'PL' || rawStatus === 'CL' || rawStatus === 'SL') {
             statusCode = 'L';
             statusLabel = 'On Leave';
             totalLeave++;
-          } else if (record.status === 'WFH') {
+          } else if (rawStatus.includes('WFH') || rawStatus.includes('REMOTE')) {
             statusCode = 'WFH';
             statusLabel = 'Work From Home';
             totalWfh++;
             totalPresent++;
-          } else if (record.status === 'Half Day') {
+          } else if (rawStatus.includes('HALF') || rawStatus === 'HD') {
             statusCode = 'HD';
             statusLabel = 'Half Day';
             totalHalfDay++;
             totalPresent++;
-          } else if (record.status === 'Missing Punch' || (!d.isToday && record.first_check_in && !record.last_check_out)) {
+          } else if (rawStatus === 'MISSING_PUNCH' || rawStatus === 'MISSING PUNCH' || rawStatus === 'MP' || isSinglePunch) {
             statusCode = 'MP';
             statusLabel = 'Missing Punch';
             totalMissingPunch++;
             totalPresent++;
-          } else if (record.status === 'Absent') {
+          } else if (rawStatus === 'ABSENT' || rawStatus === 'A' || rawStatus === 'LOP') {
             statusCode = 'A';
             statusLabel = 'Absent';
             totalAbsent++;
-          } else if (record.late_minutes > 0 || record.status === 'Late') {
+          } else if (lateMins > 0 || rawStatus === 'LATE' || rawStatus === 'LP') {
             statusCode = 'LP';
             statusLabel = 'Late Present';
             totalLate++;
             totalPresent++;
-          } else if (record.status === 'Present' || record.status === 'Checked Out' || (d.isToday && record.first_check_in)) {
+          } else if (
+            rawStatus === 'PRESENT' || 
+            rawStatus === 'P' || 
+            rawStatus === 'CHECKED_OUT' || 
+            rawStatus === 'CHECKED OUT' || 
+            (d.isToday && Boolean(record.first_check_in)) ||
+            (record.payable_status != null && Number(record.payable_status) >= 1)
+          ) {
             statusCode = 'P';
             statusLabel = 'Present';
             totalPresent++;
-          } else {
+          } else if (rawStatus.includes('WEEK') || rawStatus === 'WO' || rawStatus === 'REST') {
             statusCode = 'WO';
-            statusLabel = 'Rest Day';
+            statusLabel = 'Weekly Off';
+          } else if (hasPunches || (record.payable_status != null && Number(record.payable_status) > 0)) {
+            // Employee has punch activity or paid credit
+            statusCode = 'P';
+            statusLabel = 'Present';
+            totalPresent++;
+          } else if (roster.is_weekly_off) {
+            statusCode = 'WO';
+            statusLabel = 'Weekly Off';
+          } else {
+            statusCode = 'P';
+            statusLabel = 'Present';
+            totalPresent++;
           }
 
-          if (record.early_checkout_minutes > 0) totalEarly++;
-          if (record.overtime_minutes > 0) totalOtMinutes += record.overtime_minutes;
-          if (record.net_working_minutes > 0) totalWorkedMinutes += record.net_working_minutes;
+          if (earlyMins > 0) totalEarly++;
+          if (otMins > 0) totalOtMinutes += otMins;
+          if (workedMins > 0) totalWorkedMinutes += workedMins;
         } else {
           // No record exists in database for this day
           if (roster.is_weekly_off) {
             statusCode = 'WO';
             statusLabel = 'Weekly Off';
-          } else if (isCurrentMonth && d.dayNum < new Date().getDate()) {
+          } else if (isPastDate) {
             statusCode = 'A';
             statusLabel = 'Absent (No Punch)';
             totalAbsent++;
@@ -557,6 +591,57 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleAutoResolveMissingPunches = async () => {
+    if (isPayrollLocked) {
+      showToast(`Cannot modify attendance: ${monthName} ${currentYear} is locked for payroll. Click "Unlock Month" first.`, 'warning');
+      return;
+    }
+
+    const missingRecords = dailyRecords.filter(r => 
+      !r.last_check_out && r.first_check_in && !r.is_regularized
+    );
+
+    if (missingRecords.length === 0) {
+      showToast(`No missing punch exceptions found for ${monthName} ${currentYear}.`, 'info');
+      return;
+    }
+
+    const confirmResolve = window.confirm(
+      `Resolve all ${missingRecords.length} missing punch exceptions for ${monthName} ${currentYear}?\n\nThis will record standard shift checkout times (18:30) and credit full 1.0 Paid Day.`
+    );
+    if (!confirmResolve) return;
+
+    setIsResolvingExceptions(true);
+    try {
+      if (isSupabaseEnabled && supabase) {
+        let count = 0;
+        for (const rec of missingRecords) {
+          const checkoutTime = `${rec.date || rec.attendance_date}T13:00:00.000Z`;
+          const { error: uErr } = await supabase
+            .from('attendance_daily')
+            .update({
+              last_check_out: checkoutTime,
+              status: 'PRESENT',
+              payable_status: 1.0,
+              is_regularized: true,
+              total_work_minutes: 540,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', rec.id);
+
+          if (!uErr) count++;
+        }
+        showToast(`✓ Successfully resolved ${count} missing punch exceptions for ${monthName} ${currentYear}!`, 'success');
+      }
+      loadData();
+    } catch (err: any) {
+      console.error('Failed to auto-resolve missing punches:', err);
+      showToast(`Failed to resolve exceptions: ${err.message || 'Unknown error'}`, 'error');
+    } finally {
+      setIsResolvingExceptions(false);
+    }
   };
 
   const handleToggleFinalize = async () => {
@@ -948,6 +1033,14 @@ export const AttendanceHistoryView: React.FC<AttendanceHistoryViewProps> = ({
               >
                 <AlertTriangle className="w-3 h-3 text-rose-600" />
                 <span>{monthStats.totalMissingPunches} Exceptions</span>
+              </button>
+              <button
+                onClick={handleAutoResolveMissingPunches}
+                disabled={isResolvingExceptions}
+                className="px-2 py-0.5 text-[11px] font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
+                title="Auto-resolve missing checkout punches with standard shift checkout"
+              >
+                {isResolvingExceptions ? 'Resolving...' : `⚡ Auto-Resolve (${monthStats.totalMissingPunches})`}
               </button>
             </>
           )}
