@@ -588,3 +588,4 @@ export const IdCardLeftSidebar: React.FC<IdCardLeftSidebarProps> = ({
     </aside>
   );
 };
+

@@ -621,3 +621,4 @@ export const IdCardPropertiesPanel: React.FC<IdCardPropertiesPanelProps> = ({
     </aside>
   );
 };
+

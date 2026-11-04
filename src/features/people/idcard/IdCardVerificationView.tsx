@@ -227,3 +227,4 @@ export const IdCardVerificationView: React.FC<IdCardVerificationViewProps> = ({ 
     </div>
   );
 };
+

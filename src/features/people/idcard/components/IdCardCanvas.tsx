@@ -486,3 +486,4 @@ export const IdCardCanvas: React.FC<IdCardCanvasProps> = ({
     </div>
   );
 };
+

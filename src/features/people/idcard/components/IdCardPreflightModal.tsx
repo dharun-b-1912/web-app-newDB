@@ -121,3 +121,4 @@ export const IdCardPreflightModal: React.FC<IdCardPreflightModalProps> = ({
     </div>
   );
 };
+

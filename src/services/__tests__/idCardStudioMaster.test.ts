@@ -204,3 +204,4 @@ describe('Joy PeopleHR ID Card Studio Master Test Suite', () => {
     expect(photoIssue).toBeDefined();
   });
 });
+

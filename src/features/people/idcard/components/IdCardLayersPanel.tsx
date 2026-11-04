@@ -217,3 +217,4 @@ export const IdCardLayersPanel: React.FC<IdCardLayersPanelProps> = ({
     </div>
   );
 };
+

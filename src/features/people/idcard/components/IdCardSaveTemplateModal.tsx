@@ -145,3 +145,4 @@ export const IdCardSaveTemplateModal: React.FC<IdCardSaveTemplateModalProps> = (
     </div>
   );
 };
+

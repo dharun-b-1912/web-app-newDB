@@ -469,3 +469,4 @@ export const IdCardPhotoManagerModal: React.FC<IdCardPhotoManagerModalProps> = (
     </div>
   );
 };
+
