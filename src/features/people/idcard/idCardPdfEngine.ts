@@ -325,74 +325,227 @@ export function substituteField(templateStr: string, r: IdCardPersonRecord): str
   return s;
 }
 
+export function getWcagContrast(hex1: string, hex2: string): number {
+  try {
+    const [r1, g1, b1] = hex2rgb(hex1);
+    const [r2, g2, b2] = hex2rgb(hex2);
+    const lum = (r: number, g: number, b: number) => {
+      const a = [r, g, b].map(v => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+      });
+      return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
+    };
+    const l1 = lum(r1, g1, b1);
+    const l2 = lum(r2, g2, b2);
+    const brightest = Math.max(l1, l2);
+    const darkest = Math.min(l1, l2);
+    return (brightest + 0.05) / (darkest + 0.05);
+  } catch {
+    return 21;
+  }
+}
+
+export function findUnderlyingBg(el: CardElement, side?: CardSideData | null): string {
+  if (!side || !Array.isArray(side.els)) {
+    return '#ffffff';
+  }
+  const elIndex = side.els.indexOf(el);
+  const elementsBelow = elIndex > 0 ? side.els.slice(0, elIndex) : [];
+  for (let i = elementsBelow.length - 1; i >= 0; i--) {
+    const b = elementsBelow[i];
+    if (b && b.type === 'rect' && !b.hidden && b.fill) {
+      if (el.x >= b.x && el.x <= b.x + b.w && el.y >= b.y && el.y <= b.y + b.h) {
+        return b.fill;
+      }
+    }
+  }
+  return side.bg && side.bg !== 'transparent' ? side.bg : '#ffffff';
+}
+
 export function drawTextElement(
   ctx: CanvasRenderingContext2D,
   el: TextElement,
   r: IdCardPersonRecord,
   g: CardGeometry,
-  collectIssues?: PreflightIssue[]
+  collectIssues?: PreflightIssue[],
+  backgroundHex = '#ffffff'
 ) {
   let txt = substituteField(el.text, r);
   if (el.uppercase) {
     txt = txt.toUpperCase();
   }
 
-  let size = el.size * (72 / 72);
-  const setF = (sz: number) => {
-    ctx.font = `${el.weight || 400} ${sz}px "${el.font || 'IBM Plex Sans'}", sans-serif`;
+  // 1. Authoritative Physical Scaling: 1 pt = MM / 72 mm (approx 0.3528 mm)
+  const ptToMm = MM / 72;
+  const targetBoxW = el.w > 0 ? el.w : 30;
+  const targetBoxH = el.h > 0 ? el.h : 6;
+
+  let sizePt = el.size || 10;
+  const minSizePt = el.minSize || 5.0;
+  const fontFam = `"${el.font || 'IBM Plex Sans'}", sans-serif`;
+
+  const setFont = (szPt: number) => {
+    const szMm = szPt * ptToMm;
+    ctx.font = `${el.weight || 400} ${szMm}px ${fontFam}`;
+    return szMm;
   };
-  setF(size);
 
-  if (el.fit) {
-    const longest = Math.max(...txt.split('\n').map(l => ctx.measureText(l).width));
-    if (longest > el.w) {
-      size = Math.max(size * 0.55, (size * el.w) / longest);
-    }
-    setF(size);
-  }
+  let currentSzMm = setFont(sizePt);
 
-  const lines: string[] = [];
-  for (const para of txt.split('\n')) {
-    let cur = '';
-    for (const wd of para.split(' ')) {
-      const t = cur ? cur + ' ' + wd : wd;
-      if (cur && ctx.measureText(t).width > el.w) {
-        lines.push(cur);
-        cur = wd;
-      } else {
-        cur = t;
+  // Helper: word-wrap paragraphs given a font size in pt
+  const breakLines = (szPt: number): string[] => {
+    setFont(szPt);
+    const lines: string[] = [];
+    for (const para of txt.split('\n')) {
+      if (!para) {
+        lines.push('');
+        continue;
       }
+      let cur = '';
+      for (const wd of para.split(' ')) {
+        const candidate = cur ? `${cur} ${wd}` : wd;
+        if (cur && ctx.measureText(candidate).width > targetBoxW) {
+          lines.push(cur);
+          cur = wd;
+        } else {
+          cur = candidate;
+        }
+      }
+      if (cur) lines.push(cur);
     }
-    lines.push(cur);
+    return lines;
+  };
+
+  // 2. Text layout & overflow engine
+  const overflowMode = el.overflowMode || (el.fit !== false ? 'shrink' : 'wrap');
+  let lines = breakLines(sizePt);
+  const lhMultiplier = el.lineHeight || 1.25;
+  let lh = currentSzMm * lhMultiplier;
+  let totalTextHeight = lines.length * lh;
+  let longestLine = Math.max(...lines.map(l => ctx.measureText(l).width), 0);
+
+  if (overflowMode === 'shrink' || el.fit) {
+    // If text exceeds width OR exceeds height, scale down until it fits
+    let attempts = 0;
+    while (
+      (longestLine > targetBoxW || (el.h > 0 && totalTextHeight > targetBoxH)) &&
+      sizePt > minSizePt &&
+      attempts < 10
+    ) {
+      attempts++;
+      const wRatio = targetBoxW / Math.max(longestLine, 0.1);
+      const hRatio = targetBoxH / Math.max(totalTextHeight, 0.1);
+      const scaleDown = Math.min(wRatio, hRatio);
+      sizePt = Math.max(minSizePt, sizePt * Math.max(0.7, scaleDown));
+      currentSzMm = setFont(sizePt);
+      lines = breakLines(sizePt);
+      lh = currentSzMm * lhMultiplier;
+      totalTextHeight = lines.length * lh;
+      longestLine = Math.max(...lines.map(l => ctx.measureText(l).width), 0);
+    }
   }
 
-  const lh = size * (el.lineHeight || 1.3);
-  const widest = Math.max(...lines.map(l => ctx.measureText(l).width));
-  ctx.fillStyle = el.color;
+  // 3. Max lines & Ellipsis truncation
+  if (el.maxLines && lines.length > el.maxLines) {
+    lines = lines.slice(0, el.maxLines);
+    let last = lines[lines.length - 1];
+    while (ctx.measureText(last + '...').width > targetBoxW && last.length > 3) {
+      last = last.slice(0, -1);
+    }
+    lines[lines.length - 1] = last.trim() + '...';
+    totalTextHeight = lines.length * lh;
+  } else if (overflowMode === 'ellipsis') {
+    lines = lines.map(line => {
+      if (ctx.measureText(line).width <= targetBoxW) return line;
+      let l = line;
+      while (ctx.measureText(l + '...').width > targetBoxW && l.length > 3) {
+        l = l.slice(0, -1);
+      }
+      return l.trim() + '...';
+    });
+  }
+
+  // 4. Vertical Alignment inside el.h
+  let startY = el.y;
+  if (el.h && el.h > totalTextHeight) {
+    if (el.verticalAlign === 'middle') {
+      startY = el.y + (el.h - totalTextHeight) / 2;
+    } else if (el.verticalAlign === 'bottom') {
+      startY = el.y + (el.h - totalTextHeight);
+    }
+  }
+
+  // 5. Render Text
+  ctx.fillStyle = el.color || '#111827';
   ctx.textBaseline = 'top';
-  ctx.textAlign = el.align;
-  const ax = el.align === 'center' ? el.x + el.w / 2 : el.align === 'right' ? el.x + el.w : el.x;
+  ctx.textAlign = el.align || 'left';
+  const ax =
+    el.align === 'center'
+      ? el.x + targetBoxW / 2
+      : el.align === 'right'
+      ? el.x + targetBoxW
+      : el.x;
 
-  lines.forEach((l, i) => ctx.fillText(l, ax, el.y + i * lh + (lh - size) / 2));
-  const hh = lines.length * lh;
-  el._box = { x: el.x, y: el.y, w: el.w, h: hh };
+  lines.forEach((l, i) => {
+    ctx.fillText(l, ax, startY + i * lh);
+  });
 
+  // Track physical bounding box for collision detection & resize handles
+  const effectiveBoxH = Math.max(targetBoxH, totalTextHeight);
+  el._box = { x: el.x, y: el.y, w: targetBoxW, h: effectiveBoxH };
+
+  // 6. Preflight Audits
   if (collectIssues) {
+    const widest = Math.max(...lines.map(l => ctx.measureText(l).width), 0);
     const x0 =
-      el.align === 'center' ? el.x + el.w / 2 - widest / 2 : el.align === 'right' ? el.x + el.w - widest : el.x;
+      el.align === 'center'
+        ? el.x + targetBoxW / 2 - widest / 2
+        : el.align === 'right'
+        ? el.x + targetBoxW - widest
+        : el.x;
     const x1 = x0 + widest;
     const y0 = el.y;
-    const y1 = el.y + hh;
+    const y1 = el.y + totalTextHeight;
 
     const label = el.text.split('\n')[0].slice(0, 24) || 'Text';
 
+    // A. Boundary & Cut Line Check
     if (x0 < -0.01 || y0 < -0.01 || x1 > g.w + 0.01 || y1 > g.h + 0.01) {
-      collectIssues.push({ key: 'cut:' + el.id, lv: 'fix', t: `"${label}" runs past the cut line` });
-    } else if (x0 < g.safe - 0.01 || y0 < g.safe - 0.01 || x1 > g.w - g.safe + 0.01 || y1 > g.h - g.safe + 0.01) {
-      collectIssues.push({ key: 'safe:' + el.id, lv: 'check', t: `"${label}" is inside the ${g.safe} mm safe margin edge` });
+      collectIssues.push({
+        key: `cut:${el.id}`,
+        lv: 'fix',
+        t: `"${label}" extends past the cut line (${x1.toFixed(1)} x ${y1.toFixed(1)} mm)`,
+        elementId: el.id,
+        category: 'layout',
+      });
+    } else if (
+      x0 < g.safe - 0.01 ||
+      y0 < g.safe - 0.01 ||
+      x1 > g.w - g.safe + 0.01 ||
+      y1 > g.h - g.safe + 0.01
+    ) {
+      collectIssues.push({
+        key: `safe:${el.id}`,
+        lv: 'check',
+        t: `"${label}" enters the ${g.safe} mm safe margin`,
+        elementId: el.id,
+        category: 'layout',
+      });
     }
-    if (widest > el.w + 0.2) {
-      collectIssues.push({ key: 'fit:' + el.id, lv: 'check', t: `"${label}" is wider than its box` });
+
+    // B. Contrast check
+    if (el.color && backgroundHex) {
+      const contrast = getWcagContrast(el.color, backgroundHex);
+      if (contrast < 3.0) {
+        collectIssues.push({
+          key: `contrast:${el.id}`,
+          lv: 'fix',
+          t: `"${label}" has low contrast (${contrast.toFixed(1)}:1) against background`,
+          elementId: el.id,
+          category: 'contrast',
+        });
+      }
     }
   }
 }
@@ -447,19 +600,32 @@ export function drawImageElement(
       });
     }
   } else if (isPreview) {
-    // Modern stylized silhouette placeholder
-    ctx.fillStyle = '#cbd5e1';
-    ctx.fillRect(el.x, el.y, el.w, el.h);
-    ctx.fillStyle = '#94a3b8';
-    const cx = el.x + el.w / 2;
-    const cy = el.y + el.h * 0.38;
-    const rad = Math.min(el.w, el.h) * 0.2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, rad, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(cx, el.y + el.h * 0.92, el.w * 0.36, el.h * 0.3, 0, Math.PI, 0);
-    ctx.fill();
+    if (el.src === 'logo') {
+      // Modern corporate emblem / badge placeholder for logo
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(el.x, el.y, el.w, el.h);
+      ctx.fillStyle = '#64748b';
+      const cx = el.x + el.w / 2;
+      const cy = el.y + el.h / 2;
+      const s = Math.min(el.w, el.h) * 0.32;
+      ctx.fillRect(cx - s, cy - s * 0.7, s * 2, s * 1.4);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(cx - s * 0.5, cy - s * 0.3, s, s * 0.7);
+    } else {
+      // Modern stylized silhouette placeholder for employee photo
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillRect(el.x, el.y, el.w, el.h);
+      ctx.fillStyle = '#94a3b8';
+      const cx = el.x + el.w / 2;
+      const cy = el.y + el.h * 0.38;
+      const rad = Math.min(el.w, el.h) * 0.2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cx, el.y + el.h * 0.92, el.w * 0.36, el.h * 0.3, 0, Math.PI, 0);
+      ctx.fill();
+    }
   }
   ctx.restore();
 
@@ -556,6 +722,144 @@ export function drawQrElement(
   ctx.fillRect(el.x + 2, el.y + el.h - 6, 4, 4);
 }
 
+export function drawBackgroundArtwork(
+  ctx: CanvasRenderingContext2D,
+  side: CardSideData,
+  g: CardGeometry,
+  collectIssues?: PreflightIssue[]
+) {
+  const b = g.bleed;
+  const tw = g.w + 2 * b;
+  const th = g.h + 2 * b;
+
+  // 1. Draw base solid background color
+  if (side.bg && side.bg !== 'transparent') {
+    ctx.fillStyle = side.bg;
+    ctx.fillRect(-b, -b, tw, th);
+  } else {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(-b, -b, tw, th);
+  }
+
+  // 2. Draw uploaded background image with advanced transformation & fitting
+  if (side.bgImg && side.artwork?.visible !== false) {
+    const art = side.artwork || {
+      fit: 'cover' as const,
+      x: 0,
+      y: 0,
+      scale: 1.0,
+      rotation: 0,
+      opacity: 1.0,
+    };
+
+    ctx.save();
+    // Clip to bleed box so background never bleeds outside card bleed margin
+    ctx.beginPath();
+    ctx.rect(-b, -b, tw, th);
+    ctx.clip();
+
+    // Apply background image opacity
+    if (typeof art.opacity === 'number' && art.opacity < 1) {
+      ctx.globalAlpha = Math.max(0, art.opacity);
+    }
+
+    // Apply rotation around card center
+    if (art.rotation && art.rotation !== 0) {
+      const cx = g.w / 2;
+      const cy = g.h / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate((art.rotation * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+    }
+
+    const iw = side.bgImg.naturalWidth || side.bgImg.width || 800;
+    const ih = side.bgImg.naturalHeight || side.bgImg.height || 600;
+    const userScale = typeof art.scale === 'number' && art.scale > 0 ? art.scale : 1.0;
+
+    let dw = tw;
+    let dh = th;
+
+    if (art.fit === 'contain') {
+      const s = Math.min(tw / iw, th / ih) * userScale;
+      dw = iw * s;
+      dh = ih * s;
+    } else if (art.fit === 'stretch') {
+      dw = tw * userScale;
+      dh = th * userScale;
+    } else if (art.fit === 'original') {
+      // Physical scale at 300 DPI base
+      const s = (25.4 / 300) * userScale;
+      dw = iw * s;
+      dh = ih * s;
+    } else {
+      // Default: 'cover'
+      const s = Math.max(tw / iw, th / ih) * userScale;
+      dw = iw * s;
+      dh = ih * s;
+    }
+
+    // Centered base position + user millimeter offsets
+    const userX = typeof art.x === 'number' ? art.x : 0;
+    const userY = typeof art.y === 'number' ? art.y : 0;
+    const dx = -b + (tw - dw) / 2 + userX;
+    const dy = -b + (th - dh) / 2 + userY;
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    // Check if non-destructive crop is defined
+    if (art.crop && art.crop.w > 0 && art.crop.h > 0) {
+      // Calculate source crop coordinates from natural image dimensions
+      const sx = Math.max(0, (art.crop.x / g.w) * iw);
+      const sy = Math.max(0, (art.crop.y / g.h) * ih);
+      const sw = Math.min(iw - sx, (art.crop.w / g.w) * iw);
+      const sh = Math.min(ih - sy, (art.crop.h / g.h) * ih);
+      ctx.drawImage(side.bgImg, sx, sy, sw, sh, dx, dy, dw, dh);
+    } else {
+      ctx.drawImage(side.bgImg, dx, dy, dw, dh);
+    }
+
+    // Effective DPI calculation for preflight
+    const effectiveDpi = Math.round(iw / (dw / 25.4));
+    if (collectIssues) {
+      collectIssues.push({
+        key: 'bgdpi',
+        lv: effectiveDpi < 150 ? 'fix' : effectiveDpi < 250 ? 'check' : 'ok',
+        dpi: effectiveDpi,
+        t: `Background artwork print resolution (${effectiveDpi} DPI)`,
+        category: 'print',
+      });
+    }
+
+    ctx.restore();
+  }
+
+  // 3. Draw background overlay if configured (strictly over background, under foreground)
+  const overlayOp = side.artwork?.overlayOpacity;
+  if (typeof overlayOp === 'number' && overlayOp > 0) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, Math.max(0, overlayOp));
+
+    if (side.artwork?.overlayGradient?.enabled) {
+      const grad = side.artwork.overlayGradient;
+      const angleRad = ((grad.angle || 0) * Math.PI) / 180;
+      const x1 = -b + (tw / 2) * (1 - Math.cos(angleRad));
+      const y1 = -b + (th / 2) * (1 - Math.sin(angleRad));
+      const x2 = -b + (tw / 2) * (1 + Math.cos(angleRad));
+      const y2 = -b + (th / 2) * (1 + Math.sin(angleRad));
+      const lg = ctx.createLinearGradient(x1, y1, x2, y2);
+      lg.addColorStop(0, grad.startColor || '#000000');
+      lg.addColorStop(1, grad.endColor || '#000000');
+      ctx.fillStyle = lg;
+    } else {
+      ctx.fillStyle = side.artwork?.overlayColor || '#000000';
+    }
+
+    ctx.fillRect(-b, -b, tw, th);
+    ctx.restore();
+  }
+}
+
 export function drawCardSide(
   ctx: CanvasRenderingContext2D,
   side: CardSideData,
@@ -576,16 +880,8 @@ export function drawCardSide(
   ctx.scale(scale, scale);
   ctx.translate(b, b);
 
-  // 1. Draw card background with bleed extension
-  if (side.bgImg) {
-    ctx.drawImage(side.bgImg, -b, -b, g.w + 2 * b, g.h + 2 * b);
-  } else if (side.bg && side.bg !== 'transparent') {
-    ctx.fillStyle = side.bg;
-    ctx.fillRect(-b, -b, g.w + 2 * b, g.h + 2 * b);
-  } else {
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(-b, -b, g.w + 2 * b, g.h + 2 * b);
-  }
+  // 1. Draw card background with advanced artwork & overlay
+  drawBackgroundArtwork(ctx, side, g, collectIssues);
 
   // 2. Draw card elements
   for (const el of side.els) {
@@ -612,7 +908,8 @@ export function drawCardSide(
     } else if (el.type === 'image') {
       drawImageElement(ctx, el, r, g, logo, photos, collectIssues, isPreview);
     } else if (el.type === 'text') {
-      drawTextElement(ctx, el, r, g, collectIssues);
+      const underlyingBg = findUnderlyingBg(el, side);
+      drawTextElement(ctx, el, r, g, collectIssues, underlyingBg);
     } else if (el.type === 'qr') {
       drawQrElement(ctx, el, r);
     }

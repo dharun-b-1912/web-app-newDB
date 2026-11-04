@@ -30,6 +30,9 @@ export interface BaseElement {
   _box?: { x: number; y: number; w: number; h: number };
 }
 
+export type TextOverflowMode = 'shrink' | 'wrap' | 'ellipsis';
+export type TextVerticalAlign = 'top' | 'middle' | 'bottom';
+
 export interface TextElement extends BaseElement {
   type: 'text';
   text: string;
@@ -42,6 +45,10 @@ export interface TextElement extends BaseElement {
   lineHeight?: number; // multiplier e.g. 1.2
   fit: boolean; // Auto-shrink text if longer than width
   uppercase?: boolean;
+  overflowMode?: TextOverflowMode;
+  maxLines?: number;
+  minSize?: number; // in pt (e.g. 5pt)
+  verticalAlign?: TextVerticalAlign;
 }
 
 export interface ImageElement extends BaseElement {
@@ -81,10 +88,49 @@ export interface QrElement extends BaseElement {
 
 export type CardElement = TextElement | ImageElement | RectElement | QrElement;
 
+export type BackgroundFitMode = 'cover' | 'contain' | 'stretch' | 'original';
+
+export interface BackgroundCropSettings {
+  x: number; // in mm offset inside card
+  y: number; // in mm offset inside card
+  w: number; // in mm
+  h: number; // in mm
+}
+
+export interface BackgroundArtworkSettings {
+  fit: BackgroundFitMode;
+  x: number; // offset X in mm relative to card (0 = centered or aligned)
+  y: number; // offset Y in mm relative to card (0 = centered or aligned)
+  scale: number; // zoom multiplier (1.0 = 100%)
+  rotation: number; // 0 - 360 deg
+  opacity: number; // 0.0 - 1.0 (default 1.0)
+  locked?: boolean;
+  visible?: boolean;
+  crop?: BackgroundCropSettings;
+  overlayColor?: string; // hex color overlay
+  overlayOpacity?: number; // 0.0 - 1.0
+  overlayGradient?: {
+    enabled: boolean;
+    type: 'linear' | 'radial';
+    angle?: number;
+    startColor: string;
+    endColor: string;
+    opacity?: number;
+  };
+  fileSize?: number; // in bytes
+  naturalWidth?: number; // in px
+  naturalHeight?: number; // in px
+  format?: string; // 'PNG' | 'JPEG' | 'WEBP'
+  dpi?: number;
+  dataUrl?: string;
+  storageUrl?: string;
+}
+
 export interface CardSideData {
-  bg: string; // hex
+  bg: string; // fallback solid hex background
   bgImg: HTMLImageElement | null;
   bgName: string;
+  artwork?: BackgroundArtworkSettings;
   els: CardElement[];
 }
 
@@ -151,6 +197,27 @@ export interface PreflightIssue {
   side?: CardSide;
   dpi?: number;
   recs?: number[];
+  elementId?: string;
+  category?: 'layout' | 'contrast' | 'collision' | 'missing' | 'print';
+}
+
+export interface CardColorPalette {
+  main: string;
+  acc: string;
+  ink: string;
+  sub: string;
+  tag: string;
+  tagText?: string;
+  background?: string;
+  label: string;
+}
+
+export interface TemplateDefinition {
+  front: CardElement[];
+  back: CardElement[];
+  frontBg?: string;
+  backBg?: string;
+  palette?: CardColorPalette;
 }
 
 export type ExportLayout = 'card' | 'sheet';

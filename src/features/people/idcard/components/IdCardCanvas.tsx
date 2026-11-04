@@ -72,8 +72,8 @@ export const IdCardCanvas: React.FC<IdCardCanvasProps> = ({
     rot: 0,
   });
 
-  // Base Scale: 1 mm = 4.5 pixels at zoom 1.0 (high resolution preview)
-  const baseScale = 4.5 * zoom;
+  // Base Scale: 1 mm = 6.0 pixels for portrait or 4.8 pixels for landscape at zoom 1.0
+  const baseScale = (geometry.orientation === 'portrait' ? 6.0 : 4.8) * zoom;
   const b = geometry.bleed;
   const totalW = (geometry.w + 2 * b) * baseScale;
   const totalH = (geometry.h + 2 * b) * baseScale;

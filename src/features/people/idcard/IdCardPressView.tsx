@@ -16,6 +16,7 @@ import {
   CR80_PORTRAIT,
   ElementType,
   MatchedPhotoRecord,
+  BackgroundArtworkSettings,
 } from './idCardTypes';
 import {
   fetchEmployeesForIdCards,
@@ -38,6 +39,7 @@ import { IdCardPhotoManagerModal } from './components/IdCardPhotoManagerModal';
 import { IdCardBulkExportModal } from './components/IdCardBulkExportModal';
 import { IdCardPreflightModal } from './components/IdCardPreflightModal';
 import { IdCardSaveTemplateModal } from './components/IdCardSaveTemplateModal';
+import { Sparkles, Layers } from 'lucide-react';
 
 interface IdCardPressViewProps {
   onBackToPeople?: () => void;
@@ -63,13 +65,13 @@ export const IdCardPressView: React.FC<IdCardPressViewProps> = ({ onBackToPeople
   // 3. Card Sides Content
   const initialTemplates = getTemplateByName('corporate', 'landscape');
   const [frontSide, setFrontSide] = useState<CardSideData>({
-    bg: '#ffffff',
+    bg: initialTemplates.frontBg || '#ffffff',
     bgImg: null,
     bgName: '',
     els: initialTemplates.front,
   });
   const [backSide, setBackSide] = useState<CardSideData>({
-    bg: '#ffffff',
+    bg: initialTemplates.backBg || '#ffffff',
     bgImg: null,
     bgName: '',
     els: initialTemplates.back,
@@ -77,6 +79,7 @@ export const IdCardPressView: React.FC<IdCardPressViewProps> = ({ onBackToPeople
 
   // 4. Studio Canvas & Selection
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [inspectorTab, setInspectorTab] = useState<'properties' | 'layers'>('properties');
   const [zoom, setZoom] = useState<number>(1.0);
   const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
   const [showGuides, setShowGuides] = useState<boolean>(true);
@@ -243,8 +246,8 @@ export const IdCardPressView: React.FC<IdCardPressViewProps> = ({ onBackToPeople
     const templates = getTemplateByName('corporate', newOrientation === 'portrait' ? 'portrait' : 'landscape');
 
     setGeometry(targetGeo);
-    const newFront = { ...frontSide, els: templates.front };
-    const newBack = { ...backSide, els: templates.back };
+    const newFront = { ...frontSide, els: templates.front, bg: templates.frontBg || frontSide.bg };
+    const newBack = { ...backSide, els: templates.back, bg: templates.backBg || backSide.bg };
     setFrontSide(newFront);
     setBackSide(newBack);
     setSelectedElementId(null);
@@ -254,8 +257,8 @@ export const IdCardPressView: React.FC<IdCardPressViewProps> = ({ onBackToPeople
   // Apply Template Category
   const handleApplyTemplate = (category: 'corporate' | 'campus' | 'minimal' | 'worker' | 'contractor' | 'security') => {
     const templates = getTemplateByName(category, geometry.orientation === 'portrait' ? 'portrait' : 'landscape');
-    const newFront = { ...frontSide, els: templates.front };
-    const newBack = { ...backSide, els: templates.back };
+    const newFront = { ...frontSide, els: templates.front, bg: templates.frontBg || frontSide.bg };
+    const newBack = { ...backSide, els: templates.back, bg: templates.backBg || backSide.bg };
     setFrontSide(newFront);
     setBackSide(newBack);
     setSelectedElementId(null);
@@ -273,6 +276,168 @@ export const IdCardPressView: React.FC<IdCardPressViewProps> = ({ onBackToPeople
       setBackSide(next);
       pushHistory(frontSide, next, geometry);
     }
+  };
+
+  // Advanced Artwork Management Handlers
+  const handleUploadSideArtwork = async (side: 'front' | 'back', file: File) => {
+    const validFormats = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!validFormats.includes(file.type)) {
+      alert('Please upload a valid high-resolution JPG, PNG, or WebP image.');
+      return;
+    }
+    if (file.size > 30 * 1024 * 1024) {
+      alert('Artwork image exceeds 30 MB limit. Please use an optimized print asset.');
+      return;
+    }
+
+    try {
+      const img = await loadImageFromFile(file);
+      const iw = img.naturalWidth || img.width;
+      const ih = img.naturalHeight || img.height;
+      const cardTargetW = geometry.orientation === 'portrait' ? 54.0 : 85.6;
+      const dpi = Math.round(iw / (cardTargetW / 25.4));
+      const format = file.type.includes('png') ? 'PNG' : file.type.includes('webp') ? 'WEBP' : 'JPEG';
+
+      const defaultArtwork: BackgroundArtworkSettings = {
+        fit: 'cover',
+        x: 0,
+        y: 0,
+        scale: 1.0,
+        rotation: 0,
+        opacity: 1.0,
+        locked: false,
+        visible: true,
+        naturalWidth: iw,
+        naturalHeight: ih,
+        fileSize: file.size,
+        format,
+        dpi,
+      };
+
+      if (side === 'front') {
+        const next: CardSideData = {
+          ...frontSide,
+          bgImg: img,
+          bgName: file.name,
+          artwork: defaultArtwork,
+        };
+        setFrontSide(next);
+        pushHistory(next, backSide, geometry);
+      } else {
+        const next: CardSideData = {
+          ...backSide,
+          bgImg: img,
+          bgName: file.name,
+          artwork: defaultArtwork,
+        };
+        setBackSide(next);
+        pushHistory(frontSide, next, geometry);
+      }
+    } catch (err) {
+      console.error('Failed to load artwork file:', err);
+      alert('Could not read image file. Please verify it is a valid graphic asset.');
+    }
+  };
+
+  const handleRemoveSideArtwork = (side: 'front' | 'back') => {
+    if (!confirm(`Remove ${side.toUpperCase()} background artwork? Foreground elements will be preserved.`)) {
+      return;
+    }
+    if (side === 'front') {
+      const next: CardSideData = {
+        ...frontSide,
+        bgImg: null,
+        bgName: '',
+        artwork: undefined,
+      };
+      setFrontSide(next);
+      pushHistory(next, backSide, geometry);
+    } else {
+      const next: CardSideData = {
+        ...backSide,
+        bgImg: null,
+        bgName: '',
+        artwork: undefined,
+      };
+      setBackSide(next);
+      pushHistory(frontSide, next, geometry);
+    }
+  };
+
+  const handleUpdateArtworkSettings = (side: 'front' | 'back', settings: Partial<BackgroundArtworkSettings>) => {
+    if (side === 'front') {
+      const currentArt = frontSide.artwork || { fit: 'cover', x: 0, y: 0, scale: 1.0, rotation: 0, opacity: 1.0 };
+      const next: CardSideData = {
+        ...frontSide,
+        artwork: { ...currentArt, ...settings },
+      };
+      setFrontSide(next);
+      pushHistory(next, backSide, geometry);
+    } else {
+      const currentArt = backSide.artwork || { fit: 'cover', x: 0, y: 0, scale: 1.0, rotation: 0, opacity: 1.0 };
+      const next: CardSideData = {
+        ...backSide,
+        artwork: { ...currentArt, ...settings },
+      };
+      setBackSide(next);
+      pushHistory(frontSide, next, geometry);
+    }
+  };
+
+  const handleCopyArtworkSettings = (fromSide: 'front' | 'back', toSide: 'front' | 'back') => {
+    const src = fromSide === 'front' ? frontSide : backSide;
+    if (!src.bgImg || !src.artwork) {
+      alert(`The ${fromSide} side has no uploaded artwork to copy.`);
+      return;
+    }
+    if (toSide === 'back') {
+      const next: CardSideData = {
+        ...backSide,
+        bg: src.bg,
+        bgImg: src.bgImg,
+        bgName: src.bgName,
+        artwork: { ...src.artwork },
+      };
+      setBackSide(next);
+      pushHistory(frontSide, next, geometry);
+    } else {
+      const next: CardSideData = {
+        ...frontSide,
+        bg: src.bg,
+        bgImg: src.bgImg,
+        bgName: src.bgName,
+        artwork: { ...src.artwork },
+      };
+      setFrontSide(next);
+      pushHistory(next, backSide, geometry);
+    }
+  };
+
+  const handleClearSideElements = (side: 'front' | 'back') => {
+    if (!confirm(`Clear all foreground elements on ${side.toUpperCase()} side? Your uploaded background artwork will stay untouched.`)) {
+      return;
+    }
+    if (side === 'front') {
+      const next: CardSideData = {
+        ...frontSide,
+        els: [],
+      };
+      setFrontSide(next);
+      setSelectedElementId(null);
+      pushHistory(next, backSide, geometry);
+    } else {
+      const next: CardSideData = {
+        ...backSide,
+        els: [],
+      };
+      setBackSide(next);
+      setSelectedElementId(null);
+      pushHistory(frontSide, next, geometry);
+    }
+  };
+
+  const handleRemoveLogo = () => {
+    setLogoImg(null);
   };
 
   // Logo Upload
@@ -425,8 +590,14 @@ export const IdCardPressView: React.FC<IdCardPressViewProps> = ({ onBackToPeople
           frontSide={frontSide}
           backSide={backSide}
           onUpdateSideBg={handleUpdateSideBg}
+          onUploadSideArtwork={handleUploadSideArtwork}
+          onRemoveSideArtwork={handleRemoveSideArtwork}
+          onUpdateArtworkSettings={handleUpdateArtworkSettings}
+          onCopyArtworkSettings={handleCopyArtworkSettings}
+          onClearSideElements={handleClearSideElements}
           logoImg={logoImg}
           onUploadLogo={handleUploadLogo}
+          onRemoveLogo={handleRemoveLogo}
           employees={employees}
           activeEmployeeIndex={activeEmployeeIndex}
           onSelectEmployeeIndex={setActiveEmployeeIndex}
@@ -441,7 +612,10 @@ export const IdCardPressView: React.FC<IdCardPressViewProps> = ({ onBackToPeople
           sideData={currentSideData}
           activeEmployee={activeEmp}
           selectedElementId={selectedElementId}
-          onSelectElement={setSelectedElementId}
+          onSelectElement={id => {
+            setSelectedElementId(id);
+            if (id) setInspectorTab('properties');
+          }}
           onUpdateElement={handleUpdateElement}
           onDeleteElement={handleDeleteElement}
           onDuplicateElement={handleDuplicateElement}
@@ -455,28 +629,63 @@ export const IdCardPressView: React.FC<IdCardPressViewProps> = ({ onBackToPeople
           onToggleGuides={() => setShowGuides(!showGuides)}
         />
 
-        {/* Right Layers Panel */}
-        <IdCardLayersPanel
-          elements={currentSideData.els}
-          selectedElementId={selectedElementId}
-          onSelectElement={setSelectedElementId}
-          onReorderElements={setCurSideElements}
-          onUpdateElement={handleUpdateElement}
-          onDeleteElement={handleDeleteElement}
-          onDuplicateElement={handleDuplicateElement}
-          onAddElement={handleAddElement}
-          activeSide={activeSide}
-        />
+        {/* Right Consolidated Tabbed Inspector (Properties | Layers) */}
+        <div className="w-80 bg-[#13171c] border-l border-[#252d37] flex flex-col h-full overflow-hidden select-none shrink-0">
+          {/* Inspector Tab Switcher */}
+          <div className="flex items-center h-11 border-b border-[#252d37] bg-[#181d24] px-2.5 gap-1.5 shrink-0">
+            <button
+              onClick={() => setInspectorTab('properties')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                inspectorTab === 'properties'
+                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40 shadow-sm'
+                  : 'text-gray-400 hover:text-white hover:bg-[#202731]'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Properties</span>
+            </button>
+            <button
+              onClick={() => setInspectorTab('layers')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                inspectorTab === 'layers'
+                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40 shadow-sm'
+                  : 'text-gray-400 hover:text-white hover:bg-[#202731]'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Layers ({currentSideData.els.length})</span>
+            </button>
+          </div>
 
-        {/* Right Precision Properties Panel */}
-        <IdCardPropertiesPanel
-          selectedElement={selectedElement}
-          onUpdateElement={handleUpdateElement}
-          onDeleteElement={handleDeleteElement}
-          onDuplicateElement={handleDuplicateElement}
-          geometry={geometry}
-          onAlignElement={handleAlignElement}
-        />
+          {/* Inspector Body */}
+          <div className="flex-1 overflow-hidden flex flex-col">
+            {inspectorTab === 'properties' ? (
+              <IdCardPropertiesPanel
+                selectedElement={selectedElement}
+                onUpdateElement={handleUpdateElement}
+                onDeleteElement={handleDeleteElement}
+                onDuplicateElement={handleDuplicateElement}
+                geometry={geometry}
+                onAlignElement={handleAlignElement}
+              />
+            ) : (
+              <IdCardLayersPanel
+                elements={currentSideData.els}
+                selectedElementId={selectedElementId}
+                onSelectElement={id => {
+                  setSelectedElementId(id);
+                  if (id) setInspectorTab('properties');
+                }}
+                onReorderElements={setCurSideElements}
+                onUpdateElement={handleUpdateElement}
+                onDeleteElement={handleDeleteElement}
+                onDuplicateElement={handleDuplicateElement}
+                onAddElement={handleAddElement}
+                activeSide={activeSide}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Modals */}
@@ -503,6 +712,10 @@ export const IdCardPressView: React.FC<IdCardPressViewProps> = ({ onBackToPeople
         isOpen={isPreflightOpen}
         onClose={() => setIsPreflightOpen(false)}
         issues={preflightReport.issues}
+        onSelectElement={id => {
+          setSelectedElementId(id);
+          setInspectorTab('properties');
+        }}
       />
 
       <IdCardSaveTemplateModal

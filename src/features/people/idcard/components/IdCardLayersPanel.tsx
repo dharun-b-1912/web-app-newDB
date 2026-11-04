@@ -82,7 +82,7 @@ export const IdCardLayersPanel: React.FC<IdCardLayersPanelProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#13171c] border-l border-[#252d37] w-72 text-[#e6eaee] text-xs select-none">
+    <div className="flex flex-col h-full bg-[#13171c] w-full text-[#e6eaee] text-xs select-none">
       {/* Quick Add Elements Header */}
       <div className="p-3 border-b border-[#252d37] bg-[#181d24]">
         <div className="flex items-center justify-between mb-2">

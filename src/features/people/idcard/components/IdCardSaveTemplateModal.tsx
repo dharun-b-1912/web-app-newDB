@@ -44,8 +44,18 @@ export const IdCardSaveTemplateModal: React.FC<IdCardSaveTemplateModalProps> = (
         description: description.trim(),
         orientation: geometry.orientation,
         geometry,
-        front: frontSide,
-        back: backSide,
+        front: {
+          bg: frontSide.bg,
+          bgName: frontSide.bgName,
+          artwork: frontSide.artwork,
+          els: frontSide.els,
+        },
+        back: {
+          bg: backSide.bg,
+          bgName: backSide.bgName,
+          artwork: backSide.artwork,
+          els: backSide.els,
+        },
         isDefault,
         createdAt: new Date().toISOString(),
       };

@@ -11,12 +11,14 @@ interface IdCardPreflightModalProps {
   isOpen: boolean;
   onClose: () => void;
   issues: PreflightIssue[];
+  onSelectElement?: (id: string) => void;
 }
 
 export const IdCardPreflightModal: React.FC<IdCardPreflightModalProps> = ({
   isOpen,
   onClose,
   issues,
+  onSelectElement,
 }) => {
   if (!isOpen) return null;
 
@@ -80,31 +82,47 @@ export const IdCardPreflightModal: React.FC<IdCardPreflightModalProps> = ({
 
           {/* Issue List */}
           <div className="space-y-2">
-            {issues.map((iss, idx) => (
-              <div
-                key={`${iss.key}_${idx}`}
-                className={`p-3 rounded-xl border flex items-start gap-3 text-xs ${
-                  iss.lv === 'fix'
-                    ? 'bg-rose-950/30 border-rose-800/40 text-rose-200'
-                    : iss.lv === 'check'
-                    ? 'bg-amber-950/30 border-amber-800/40 text-amber-200'
-                    : 'bg-emerald-950/20 border-emerald-800/30 text-emerald-300'
-                }`}
-              >
-                {iss.lv === 'fix' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />}
-                {iss.lv === 'check' && <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />}
-                {iss.lv === 'ok' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
+            {issues.map((iss, idx) => {
+              const isClickable = !!(iss.elementId && onSelectElement);
+              return (
+                <div
+                  key={`${iss.key}_${idx}`}
+                  onClick={() => {
+                    if (isClickable && iss.elementId) {
+                      onSelectElement(iss.elementId);
+                      onClose();
+                    }
+                  }}
+                  className={`p-3 rounded-xl border flex items-start gap-3 text-xs transition-colors ${
+                    isClickable ? 'cursor-pointer hover:brightness-125' : ''
+                  } ${
+                    iss.lv === 'fix'
+                      ? 'bg-rose-950/30 border-rose-800/40 text-rose-200'
+                      : iss.lv === 'check'
+                      ? 'bg-amber-950/30 border-amber-800/40 text-amber-200'
+                      : 'bg-emerald-950/20 border-emerald-800/30 text-emerald-300'
+                  }`}
+                >
+                  {iss.lv === 'fix' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />}
+                  {iss.lv === 'check' && <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />}
+                  {iss.lv === 'ok' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
 
-                <div className="flex-1">
-                  <div className="font-semibold">{iss.t}</div>
-                  {iss.dpi && (
-                    <div className="text-[10px] font-mono mt-0.5 opacity-80">
-                      Calculated image resolution: {iss.dpi} DPI (Standard minimum: 300 DPI)
+                  <div className="flex-1">
+                    <div className="font-semibold flex items-center justify-between">
+                      <span>{iss.t}</span>
+                      {isClickable && (
+                        <span className="text-[10px] uppercase font-bold text-blue-400 underline ml-2">Inspect</span>
+                      )}
                     </div>
-                  )}
+                    {iss.dpi && (
+                      <div className="text-[10px] font-mono mt-0.5 opacity-80">
+                        Calculated image resolution: {iss.dpi} DPI (Standard minimum: 300 DPI)
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

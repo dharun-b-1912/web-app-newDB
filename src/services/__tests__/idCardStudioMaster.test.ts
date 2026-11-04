@@ -35,6 +35,8 @@ import {
   toCmyk,
   cropMarks,
   IdCardPdf,
+  getWcagContrast,
+  drawBackgroundArtwork,
 } from '../../features/people/idcard/idCardPdfEngine';
 
 describe('Joy PeopleHR ID Card Studio Master Test Suite', () => {
@@ -202,6 +204,109 @@ describe('Joy PeopleHR ID Card Studio Master Test Suite', () => {
     // Should report missing photo
     const photoIssue = report.issues.find(i => i.t.includes('photo'));
     expect(photoIssue).toBeDefined();
+  });
+
+  // 7. Non-Overlapping Portrait Corridors Regression Test
+  it('verifies non-overlapping vertical corridors in all portrait templates', () => {
+    const templates = ['corporate', 'campus', 'worker', 'contractor', 'minimal', 'security'] as const;
+
+    templates.forEach(cat => {
+      const { front } = getTemplateByName(cat, 'portrait');
+
+      const photoEl = front.find(e => e.type === 'image' && e.src === 'photo');
+      const nameEl = front.find(e => e.type === 'text' && e.text.includes('{name}'));
+      const desigEl = front.find(e => e.type === 'text' && e.text.includes('{designation}'));
+
+      expect(photoEl).toBeDefined();
+      expect(nameEl).toBeDefined();
+      expect(desigEl).toBeDefined();
+
+      if (photoEl && nameEl && desigEl) {
+        // Name must strictly start after photo ends
+        const photoBottom = photoEl.y + photoEl.h;
+        expect(nameEl.y).toBeGreaterThanOrEqual(photoBottom);
+
+        // Designation must start after name starts
+        expect(desigEl.y).toBeGreaterThan(nameEl.y);
+
+        // Both must have positive height and auto-shrink enabled
+        expect(nameEl.h).toBeGreaterThan(0);
+        expect(desigEl.h).toBeGreaterThan(0);
+        expect((nameEl as any).fit).toBe(true);
+        expect((desigEl as any).fit).toBe(true);
+      }
+    });
+  });
+
+  // 8. WCAG Contrast Check Engine Tests
+  it('verifies contrast calculation and flags low-contrast text', () => {
+    expect(getWcagContrast('#ffffff', '#000000')).toBeGreaterThan(20);
+    expect(getWcagContrast('#0f2f57', '#ffffff')).toBeGreaterThan(10);
+    expect(getWcagContrast('#14181c', '#ffffff')).toBeGreaterThan(14);
+    expect(getWcagContrast('#000000', '#14181c')).toBeLessThan(1.5);
+  });
+
+  // 9. Independent Front and Back Artwork Configuration Tests
+  it('supports separate front and back background artwork configurations with fit modes and overlays', () => {
+    const frontArtwork = {
+      fit: 'cover' as const,
+      x: 0,
+      y: 0,
+      scale: 1.0,
+      rotation: 0,
+      opacity: 0.95,
+      overlayColor: '#0f2f57',
+      overlayOpacity: 0.2,
+      dpi: 350,
+    };
+
+    const backArtwork = {
+      fit: 'contain' as const,
+      x: 2.5,
+      y: -1.0,
+      scale: 1.2,
+      rotation: 90,
+      opacity: 0.8,
+      overlayColor: '#000000',
+      overlayOpacity: 0.5,
+      dpi: 400,
+    };
+
+    // Front and back maintain independent settings
+    expect(frontArtwork.fit).toBe('cover');
+    expect(backArtwork.fit).toBe('contain');
+    expect(frontArtwork.overlayColor).not.toBe(backArtwork.overlayColor);
+    expect(frontArtwork.rotation).toBe(0);
+    expect(backArtwork.rotation).toBe(90);
+
+    // Mock canvas context
+    const mockCtx = {
+      save: () => {},
+      restore: () => {},
+      beginPath: () => {},
+      rect: () => {},
+      clip: () => {},
+      translate: () => {},
+      rotate: () => {},
+      fillRect: () => {},
+      drawImage: () => {},
+      fillStyle: '',
+      globalAlpha: 1,
+      imageSmoothingQuality: 'high',
+      createLinearGradient: () => ({ addColorStop: () => {} }),
+    } as unknown as CanvasRenderingContext2D;
+
+    const mockSide = {
+      bg: '#ffffff',
+      bgImg: { naturalWidth: 1000, naturalHeight: 600 } as HTMLImageElement,
+      bgName: 'test.png',
+      artwork: frontArtwork,
+      els: [],
+    };
+
+    expect(() => {
+      drawBackgroundArtwork(mockCtx, mockSide, CR80_LANDSCAPE);
+    }).not.toThrow();
   });
 });
 

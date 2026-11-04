@@ -55,7 +55,7 @@ export const IdCardPropertiesPanel: React.FC<IdCardPropertiesPanelProps> = ({
 }) => {
   if (!selectedElement) {
     return (
-      <aside className="w-80 bg-[#13171c] border-l border-[#252d37] p-5 flex flex-col justify-between text-gray-400 select-none overflow-y-auto">
+      <aside className="w-full bg-[#13171c] p-5 flex flex-col justify-between text-gray-400 select-none overflow-y-auto h-full">
         <div className="flex flex-col items-center text-center py-10">
           <div className="w-12 h-12 rounded-full bg-[#1c2229] border border-[#2c3642] flex items-center justify-center mb-3 text-blue-400">
             <Sparkles className="w-6 h-6" />
@@ -97,7 +97,7 @@ export const IdCardPropertiesPanel: React.FC<IdCardPropertiesPanelProps> = ({
   const el = selectedElement;
 
   return (
-    <aside className="w-80 bg-[#13171c] border-l border-[#252d37] flex flex-col h-full text-[#e6eaee] text-xs select-none overflow-hidden">
+    <aside className="w-full bg-[#13171c] flex flex-col h-full text-[#e6eaee] text-xs select-none overflow-hidden">
       {/* Header with Element Type & Quick Actions */}
       <div className="h-12 border-b border-[#252d37] px-4 flex items-center justify-between shrink-0 bg-[#181d24]">
         <div className="flex items-center gap-2">

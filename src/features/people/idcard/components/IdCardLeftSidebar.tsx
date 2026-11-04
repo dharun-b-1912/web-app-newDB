@@ -11,6 +11,9 @@ import {
   IdCardPersonRecord,
   CR80_LANDSCAPE,
   CR80_PORTRAIT,
+  BackgroundArtworkSettings,
+  BackgroundCropSettings,
+  BackgroundFitMode,
 } from '../idCardTypes';
 import {
   LayoutTemplate,
@@ -25,7 +28,18 @@ import {
   FolderOpen,
   Sparkles,
   Upload,
+  Crop,
+  Trash2,
+  Copy,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  Lock,
+  Unlock,
+  RotateCw,
+  Layers,
 } from 'lucide-react';
+import { IdCardArtworkCropModal } from './IdCardArtworkCropModal';
 
 interface IdCardLeftSidebarProps {
   geometry: CardGeometry;
@@ -34,8 +48,14 @@ interface IdCardLeftSidebarProps {
   frontSide: CardSideData;
   backSide: CardSideData;
   onUpdateSideBg: (side: 'front' | 'back', bg: string, bgImg?: HTMLImageElement | null) => void;
+  onUploadSideArtwork: (side: 'front' | 'back', file: File) => Promise<void>;
+  onRemoveSideArtwork: (side: 'front' | 'back') => void;
+  onUpdateArtworkSettings: (side: 'front' | 'back', settings: Partial<BackgroundArtworkSettings>) => void;
+  onCopyArtworkSettings: (fromSide: 'front' | 'back', toSide: 'front' | 'back') => void;
+  onClearSideElements: (side: 'front' | 'back') => void;
   logoImg: HTMLImageElement | null;
   onUploadLogo: (file: File) => void;
+  onRemoveLogo: () => void;
   employees: IdCardPersonRecord[];
   activeEmployeeIndex: number;
   onSelectEmployeeIndex: (idx: number) => void;
@@ -45,6 +65,7 @@ interface IdCardLeftSidebarProps {
 }
 
 type TabType = 'templates' | 'setup' | 'artwork' | 'workforce';
+type ArtworkSubTab = 'front' | 'back' | 'logo' | 'colors';
 
 export const IdCardLeftSidebar: React.FC<IdCardLeftSidebarProps> = ({
   geometry,
@@ -53,8 +74,14 @@ export const IdCardLeftSidebar: React.FC<IdCardLeftSidebarProps> = ({
   frontSide,
   backSide,
   onUpdateSideBg,
+  onUploadSideArtwork,
+  onRemoveSideArtwork,
+  onUpdateArtworkSettings,
+  onCopyArtworkSettings,
+  onClearSideElements,
   logoImg,
   onUploadLogo,
+  onRemoveLogo,
   employees,
   activeEmployeeIndex,
   onSelectEmployeeIndex,
@@ -63,6 +90,9 @@ export const IdCardLeftSidebar: React.FC<IdCardLeftSidebarProps> = ({
   photoMatchedCount,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('templates');
+  const [artworkSubTab, setArtworkSubTab] = useState<ArtworkSubTab>('front');
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropSide, setCropSide] = useState<'front' | 'back'>('front');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('ALL');
 
@@ -383,93 +413,485 @@ export const IdCardLeftSidebar: React.FC<IdCardLeftSidebarProps> = ({
         )}
 
         {/* ================================================================= */}
-        {/* TAB 3: ARTWORK & LOGOS                                            */}
+        {/* TAB 3: ADVANCED ARTWORK & BACKGROUND MANAGER                      */}
         {/* ================================================================= */}
         {activeTab === 'artwork' && (
           <div className="space-y-4">
-            {/* Company Logo Artwork */}
-            <div className="bg-[#181d24] border border-[#27313d] rounded-xl p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                  Company Brand Logo
-                </span>
-                {logoImg && (
-                  <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" /> Active
-                  </span>
-                )}
-              </div>
+            {/* Sub-tab Navigation */}
+            <div className="grid grid-cols-4 gap-1 bg-[#111418] p-1 rounded-xl border border-[#27313d]">
+              <button
+                type="button"
+                onClick={() => setArtworkSubTab('front')}
+                className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                  artworkSubTab === 'front'
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40 shadow-xs'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Front Side
+              </button>
+              <button
+                type="button"
+                onClick={() => setArtworkSubTab('back')}
+                className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                  artworkSubTab === 'back'
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40 shadow-xs'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Back Side
+              </button>
+              <button
+                type="button"
+                onClick={() => setArtworkSubTab('logo')}
+                className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                  artworkSubTab === 'logo'
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40 shadow-xs'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Logo
+              </button>
+              <button
+                type="button"
+                onClick={() => setArtworkSubTab('colors')}
+                className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                  artworkSubTab === 'colors'
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40 shadow-xs'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Colors
+              </button>
+            </div>
 
-              <div className="flex items-center gap-3">
-                <div className="w-14 h-14 rounded-lg bg-[#111418] border border-[#2c3642] flex items-center justify-center p-1 overflow-hidden shrink-0">
-                  {logoImg ? (
-                    <img src={logoImg.src} alt="Company Logo" className="w-full h-full object-contain" />
+            {/* A & B. FRONT OR BACK ARTWORK MANAGER */}
+            {(artworkSubTab === 'front' || artworkSubTab === 'back') && (() => {
+              const curSide = artworkSubTab;
+              const otherSide = curSide === 'front' ? 'back' : 'front';
+              const sideData = curSide === 'front' ? frontSide : backSide;
+              const art = sideData.artwork || {
+                fit: 'cover' as BackgroundFitMode,
+                x: 0,
+                y: 0,
+                scale: 1.0,
+                rotation: 0,
+                opacity: 1.0,
+                locked: false,
+                visible: true,
+              };
+
+              return (
+                <div className="space-y-3.5">
+                  {/* Image Upload / Active Image Card */}
+                  {!sideData.bgImg ? (
+                    <div className="bg-[#181d24] border border-[#27313d] hover:border-blue-500/50 rounded-2xl p-4 text-center transition-all group">
+                      <div className="w-12 h-12 mx-auto rounded-full bg-[#111418] border border-[#2c3642] flex items-center justify-center text-blue-400 mb-2.5 group-hover:scale-105 transition-transform">
+                        <Upload className="w-5 h-5" />
+                      </div>
+                      <h4 className="text-xs font-bold text-white mb-1">
+                        Upload {curSide.toUpperCase()} Card Artwork
+                      </h4>
+                      <p className="text-[11px] text-gray-400 leading-relaxed mb-3">
+                        Finished front or back ID card design (PNG, JPG, WebP up to 30 MB). Converted directly to CMYK.
+                      </p>
+
+                      <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs cursor-pointer shadow-sm transition-colors">
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Choose Artwork File</span>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={e => {
+                            const f = e.target.files?.[0];
+                            if (f) onUploadSideArtwork(curSide, f);
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
                   ) : (
-                    <ImageIcon className="w-6 h-6 text-gray-600" />
+                    <div className="bg-[#181d24] border border-[#27313d] rounded-2xl p-3.5 space-y-3">
+                      {/* Thumbnail & File Details */}
+                      <div className="flex items-start gap-3">
+                        <div className="w-16 h-20 rounded-lg bg-[#111418] border border-[#2c3642] overflow-hidden shrink-0 relative group">
+                          <img
+                            src={sideData.bgImg.src}
+                            alt={`${curSide} artwork`}
+                            className="w-full h-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCropSide(curSide);
+                              setCropModalOpen(true);
+                            }}
+                            className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity cursor-pointer"
+                            title="Crop and Align"
+                          >
+                            <Crop className="w-4 h-4 text-blue-400" />
+                          </button>
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" /> {curSide.toUpperCase()} ACTIVE
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => onUpdateArtworkSettings(curSide, { visible: art.visible === false ? true : false })}
+                                className="p-1 text-gray-400 hover:text-white transition-colors"
+                                title={art.visible === false ? 'Show Artwork' : 'Hide Artwork'}
+                              >
+                                {art.visible === false ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onUpdateArtworkSettings(curSide, { locked: !art.locked })}
+                                className="p-1 text-gray-400 hover:text-white transition-colors"
+                                title={art.locked ? 'Unlock Position' : 'Lock Position'}
+                              >
+                                {art.locked ? <Lock className="w-3.5 h-3.5 text-blue-400" /> : <Unlock className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="text-xs font-semibold text-white truncate" title={sideData.bgName}>
+                            {sideData.bgName || 'custom-artwork.png'}
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5 mt-1.5 text-[10px] font-mono">
+                            <span className="px-1.5 py-0.5 rounded bg-[#111418] text-gray-300 border border-[#27313d]">
+                              {art.naturalWidth || sideData.bgImg.naturalWidth}×{art.naturalHeight || sideData.bgImg.naturalHeight} px
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-[#111418] text-gray-300 border border-[#27313d]">
+                              {art.format || 'PNG'}
+                            </span>
+                            <span className={`px-1.5 py-0.5 rounded font-bold border ${
+                              (art.dpi || 300) >= 300
+                                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/40'
+                                : 'bg-amber-950/60 text-amber-300 border-amber-800/40'
+                            }`}>
+                              {art.dpi || 300} DPI
+                            </span>
+                          </div>
+
+                          {/* Replace / Remove buttons */}
+                          <div className="flex items-center gap-2 mt-2.5">
+                            <label className="px-2 py-1 rounded-lg bg-[#111418] hover:bg-[#202731] border border-[#2c3642] text-[11px] font-semibold text-gray-300 hover:text-white cursor-pointer transition-colors flex items-center gap-1">
+                              <RefreshCw className="w-3 h-3 text-blue-400" />
+                              <span>Replace</span>
+                              <input
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp"
+                                onChange={e => {
+                                  const f = e.target.files?.[0];
+                                  if (f) onUploadSideArtwork(curSide, f);
+                                }}
+                                className="hidden"
+                              />
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={() => onRemoveSideArtwork(curSide)}
+                              className="px-2 py-1 rounded-lg bg-rose-950/30 hover:bg-rose-900/40 border border-rose-800/40 text-[11px] font-semibold text-rose-300 transition-colors flex items-center gap-1 cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Remove</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Image Fitting Strategy */}
+                      <div className="pt-2 border-t border-[#27313d]">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1.5">
+                          Image Fitting Strategy
+                        </label>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {(['cover', 'contain', 'stretch', 'original'] as BackgroundFitMode[]).map(mode => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => onUpdateArtworkSettings(curSide, { fit: mode })}
+                              className={`py-1.5 px-2 rounded-lg text-[10px] font-bold capitalize transition-all cursor-pointer ${
+                                art.fit === mode
+                                  ? 'bg-blue-600/20 border border-blue-500 text-blue-400 shadow-xs'
+                                  : 'bg-[#111418] border border-[#27313d] text-gray-400 hover:text-white'
+                              }`}
+                            >
+                              {mode}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          {art.fit === 'cover' && 'Fills entire card & bleed. Excess cropped cleanly.'}
+                          {art.fit === 'contain' && 'Displays complete image without cropping.'}
+                          {art.fit === 'stretch' && 'Stretches exactly to card & bleed dimensions.'}
+                          {art.fit === 'original' && 'Preserves natural 1:1 image resolution.'}
+                        </p>
+                      </div>
+
+                      {/* Visual Crop Modal Launcher */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCropSide(curSide);
+                          setCropModalOpen(true);
+                        }}
+                        className="w-full py-2 px-3 rounded-xl bg-blue-950/50 hover:bg-blue-900/60 border border-blue-700/50 text-blue-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <Crop className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Open Precision Crop & Pan Tool</span>
+                      </button>
+
+                      {/* Transform: Zoom, Offsets, Opacity */}
+                      <div className="space-y-2.5 pt-2 border-t border-[#27313d]">
+                        {/* Zoom Slider */}
+                        <div>
+                          <div className="flex justify-between text-[11px] text-gray-400 mb-1">
+                            <span>Artwork Scale</span>
+                            <span className="font-mono text-white">{Math.round((art.scale || 1.0) * 100)}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.5"
+                            max="3.0"
+                            step="0.05"
+                            value={art.scale || 1.0}
+                            onChange={e => onUpdateArtworkSettings(curSide, { scale: parseFloat(e.target.value) })}
+                            className="w-full accent-blue-500 cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Offsets X & Y in mm */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] text-gray-400 block mb-0.5">Offset X (mm)</label>
+                            <input
+                              type="number"
+                              step="0.5"
+                              value={art.x || 0}
+                              onChange={e => onUpdateArtworkSettings(curSide, { x: parseFloat(e.target.value) || 0 })}
+                              className="w-full bg-[#111418] border border-[#27313d] rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-gray-400 block mb-0.5">Offset Y (mm)</label>
+                            <input
+                              type="number"
+                              step="0.5"
+                              value={art.y || 0}
+                              onChange={e => onUpdateArtworkSettings(curSide, { y: parseFloat(e.target.value) || 0 })}
+                              className="w-full bg-[#111418] border border-[#27313d] rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Opacity */}
+                        <div>
+                          <div className="flex justify-between text-[11px] text-gray-400 mb-1">
+                            <span>Image Opacity</span>
+                            <span className="font-mono text-white">{Math.round((art.opacity ?? 1.0) * 100)}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.1"
+                            max="1.0"
+                            step="0.05"
+                            value={art.opacity ?? 1.0}
+                            onChange={e => onUpdateArtworkSettings(curSide, { opacity: parseFloat(e.target.value) })}
+                            className="w-full accent-blue-500 cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Alignment buttons */}
+                        <div className="flex items-center gap-1.5 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => onUpdateArtworkSettings(curSide, { x: 0 })}
+                            className="flex-1 py-1 rounded bg-[#111418] hover:bg-[#202731] border border-[#27313d] text-[10px] text-gray-300 hover:text-white"
+                          >
+                            Center X
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onUpdateArtworkSettings(curSide, { y: 0 })}
+                            className="flex-1 py-1 rounded bg-[#111418] hover:bg-[#202731] border border-[#27313d] text-[10px] text-gray-300 hover:text-white"
+                          >
+                            Center Y
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onUpdateArtworkSettings(curSide, { x: 0, y: 0, scale: 1.0, fit: 'cover' })}
+                            className="py-1 px-2 rounded bg-[#111418] hover:bg-[#202731] border border-[#27313d] text-[10px] text-gray-400 hover:text-white"
+                            title="Reset Position & Fit"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Color Tint Overlay */}
+                      <div className="pt-2 border-t border-[#27313d] space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                            Color Tint Overlay
+                          </label>
+                          <span className="text-[10px] text-gray-400 font-mono">
+                            {Math.round((art.overlayOpacity || 0) * 100)}%
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={art.overlayColor || '#000000'}
+                            onChange={e => onUpdateArtworkSettings(curSide, { overlayColor: e.target.value })}
+                            className="w-7 h-7 rounded cursor-pointer border border-[#2d3744] bg-transparent"
+                          />
+                          <input
+                            type="range"
+                            min="0"
+                            max="0.9"
+                            step="0.05"
+                            value={art.overlayOpacity || 0}
+                            onChange={e => onUpdateArtworkSettings(curSide, { overlayOpacity: parseFloat(e.target.value) })}
+                            className="flex-1 accent-blue-500 cursor-pointer"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Reusable Cross-Side & Clear Actions */}
+                      <div className="pt-2 border-t border-[#27313d] space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => onCopyArtworkSettings(curSide, otherSide)}
+                          className="w-full py-1.5 px-2.5 rounded-lg bg-[#111418] hover:bg-[#202731] border border-[#27313d] text-gray-300 hover:text-white font-semibold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                        >
+                          <Copy className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Copy Settings to {otherSide.toUpperCase()} Side</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => onClearSideElements(curSide)}
+                          className="w-full py-1.5 px-2.5 rounded-lg bg-amber-950/20 hover:bg-amber-900/30 border border-amber-800/30 text-amber-300 font-semibold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                        >
+                          <Layers className="w-3.5 h-3.5" />
+                          <span>Clear Foreground Elements (Keep Artwork)</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* C. COMPANY LOGO SUB-TAB */}
+            {artworkSubTab === 'logo' && (
+              <div className="bg-[#181d24] border border-[#27313d] rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                    Company Brand Logo
+                  </span>
+                  {logoImg && (
+                    <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Active
+                    </span>
                   )}
                 </div>
 
-                <div className="flex-1">
-                  <label className="px-3 py-1.5 rounded-lg bg-[#1c2229] hover:bg-[#28323c] border border-[#2c3642] text-xs font-semibold text-gray-300 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors w-fit">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Upload Logo</span>
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-xl bg-[#111418] border border-[#2c3642] flex items-center justify-center p-1.5 overflow-hidden shrink-0">
+                    {logoImg ? (
+                      <img src={logoImg.src} alt="Company Logo" className="w-full h-full object-contain" />
+                    ) : (
+                      <ImageIcon className="w-7 h-7 text-gray-600" />
+                    )}
+                  </div>
+
+                  <div className="flex-1 space-y-1.5">
+                    <label className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors w-fit shadow-xs">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{logoImg ? 'Replace Logo' : 'Upload Logo'}</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                        onChange={e => {
+                          const f = e.target.files?.[0];
+                          if (f) onUploadLogo(f);
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {logoImg && (
+                      <button
+                        type="button"
+                        onClick={onRemoveLogo}
+                        className="px-2.5 py-1 rounded-lg bg-rose-950/30 hover:bg-rose-900/40 border border-rose-800/40 text-[11px] font-semibold text-rose-300 transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Remove Logo</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-gray-400 pt-1 leading-relaxed">
+                  Transparent PNG or vector SVG recommended. The logo appears dynamically on both card sides according to template placement.
+                </p>
+              </div>
+            )}
+
+            {/* D. SOLID BACKGROUND COLORS SUB-TAB */}
+            {artworkSubTab === 'colors' && (
+              <div className="bg-[#181d24] border border-[#27313d] rounded-2xl p-4 space-y-3.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                  Solid Card Background Colors
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-gray-300 block mb-1">Front Card Color</label>
+                  <div className="flex items-center gap-2">
                     <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                      onChange={e => {
-                        const f = e.target.files?.[0];
-                        if (f) onUploadLogo(f);
-                      }}
-                      className="hidden"
+                      type="color"
+                      value={frontSide.bg || '#ffffff'}
+                      onChange={e => onUpdateSideBg('front', e.target.value, frontSide.bgImg)}
+                      className="w-8 h-8 rounded cursor-pointer border border-[#2d3744] bg-transparent"
                     />
-                  </label>
-                  <p className="text-[10px] text-gray-400 mt-1">Transparent PNG or SVG recommended.</p>
+                    <input
+                      type="text"
+                      value={frontSide.bg || '#ffffff'}
+                      onChange={e => onUpdateSideBg('front', e.target.value, frontSide.bgImg)}
+                      className="flex-1 bg-[#111418] border border-[#2d3744] rounded-lg px-2.5 py-1 text-xs font-mono text-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-gray-300 block mb-1">Back Card Color</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={backSide.bg || '#ffffff'}
+                      onChange={e => onUpdateSideBg('back', e.target.value, backSide.bgImg)}
+                      className="w-8 h-8 rounded cursor-pointer border border-[#2d3744] bg-transparent"
+                    />
+                    <input
+                      type="text"
+                      value={backSide.bg || '#ffffff'}
+                      onChange={e => onUpdateSideBg('back', e.target.value, backSide.bgImg)}
+                      className="flex-1 bg-[#111418] border border-[#2d3744] rounded-lg px-2.5 py-1 text-xs font-mono text-white"
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-
-            {/* Background Colors */}
-            <div className="bg-[#181d24] border border-[#27313d] rounded-xl p-3 space-y-3">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                Card Backgrounds
-              </div>
-
-              <div>
-                <label className="text-[10px] text-gray-400 block mb-1">Front Background Color</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={frontSide.bg || '#ffffff'}
-                    onChange={e => onUpdateSideBg('front', e.target.value, frontSide.bgImg)}
-                    className="w-7 h-7 rounded cursor-pointer border border-[#2d3744] bg-transparent"
-                  />
-                  <input
-                    type="text"
-                    value={frontSide.bg || '#ffffff'}
-                    onChange={e => onUpdateSideBg('front', e.target.value, frontSide.bgImg)}
-                    className="flex-1 bg-[#111418] border border-[#2d3744] rounded px-2 py-1 text-xs font-mono text-white"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] text-gray-400 block mb-1">Back Background Color</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={backSide.bg || '#ffffff'}
-                    onChange={e => onUpdateSideBg('back', e.target.value, backSide.bgImg)}
-                    className="w-7 h-7 rounded cursor-pointer border border-[#2d3744] bg-transparent"
-                  />
-                  <input
-                    type="text"
-                    value={backSide.bg || '#ffffff'}
-                    onChange={e => onUpdateSideBg('back', e.target.value, backSide.bgImg)}
-                    className="flex-1 bg-[#111418] border border-[#2d3744] rounded px-2 py-1 text-xs font-mono text-white"
-                  />
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -585,6 +1007,19 @@ export const IdCardLeftSidebar: React.FC<IdCardLeftSidebarProps> = ({
           </div>
         )}
       </div>
+
+      {/* Visual Crop & Alignment Modal */}
+      <IdCardArtworkCropModal
+        isOpen={cropModalOpen}
+        onClose={() => setCropModalOpen(false)}
+        side={cropSide}
+        img={cropSide === 'front' ? frontSide.bgImg : backSide.bgImg}
+        geometry={geometry}
+        artwork={cropSide === 'front' ? frontSide.artwork : backSide.artwork}
+        onApplyCrop={(crop, fit, scale, x, y) => {
+          onUpdateArtworkSettings(cropSide, { crop, fit, scale, x, y });
+        }}
+      />
     </aside>
   );
 };

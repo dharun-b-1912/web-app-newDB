@@ -18,6 +18,9 @@ import {
   QrElement,
   MatchedPhotoRecord,
   IdCardTemplate,
+  TemplateDefinition,
+  CardColorPalette,
+  CardSide,
   CR80_LANDSCAPE,
   CR80_PORTRAIT,
 } from './idCardTypes';
@@ -26,6 +29,8 @@ import {
   cropMarks,
   renderCmykItem,
   drawCardSide,
+  getWcagContrast,
+  findUnderlyingBg,
 } from './idCardPdfEngine';
 import { supabase } from '../../../lib/supabase';
 
@@ -41,7 +46,11 @@ export const createTextElement = (o: Partial<TextElement> = {}): TextElement => 
   color: '#14181c',
   align: 'left',
   text: '',
-  fit: false,
+  fit: true,
+  overflowMode: 'shrink',
+  maxLines: 2,
+  minSize: 5.0,
+  verticalAlign: 'top',
   x: 0,
   y: 0,
   w: 40,
@@ -109,418 +118,1814 @@ export const createQrElement = (o: Partial<QrElement> = {}): QrElement => ({
 });
 
 // Color Themes for Built-in Templates
-export const STUDIO_PALETTES = {
+export const STUDIO_PALETTES: Record<string, CardColorPalette> = {
   corporate: {
     main: '#0f2f57', // Deep Navy
     acc: '#1d7bd8', // Vivid Blue
-    ink: '#14181c',
-    sub: '#3a444d',
-    tag: '#cfe0f5',
+    ink: '#14181c', // Crisp Dark Text
+    sub: '#475569', // Muted Slate
+    tag: '#e0edff', // Soft Blue Pill
+    tagText: '#0f2f57',
+    background: '#ffffff',
     label: 'EMPLOYEE ID',
   },
   campus: {
     main: '#07563D', // Emerald Green
     acc: '#10b981', // Mint Accent
     ink: '#14181c',
-    sub: '#3a444d',
-    tag: '#d1fae5',
+    sub: '#475569',
+    tag: '#d1fae5', // Soft Mint Pill
+    tagText: '#064e3b',
+    background: '#ffffff',
     label: 'CAMPUS IDENTITY',
   },
   minimal: {
-    main: '#1a1d20', // Jet Black
-    acc: '#e63946', // Crimson
-    ink: '#111111',
-    sub: '#4a4f55',
-    tag: '#f3f4f6',
+    main: '#111827', // Pitch Black
+    acc: '#e11d48', // Crimson
+    ink: '#0f172a',
+    sub: '#475569',
+    tag: '#f1f5f9',
+    tagText: '#0f172a',
+    background: '#ffffff',
     label: 'IDENTITY CARD',
   },
   worker: {
     main: '#1e293b', // Slate Navy
-    acc: '#f59e0b', // High-vis Amber
+    acc: '#d97706', // High-vis Amber
     ink: '#0f172a',
     sub: '#475569',
     tag: '#fef3c7',
+    tagText: '#92400e',
+    background: '#ffffff',
     label: 'PLANT & LOGISTICS PASS',
   },
   contractor: {
     main: '#134e4a', // Dark Teal
-    acc: '#0ea5e9', // Sky Cyan
+    acc: '#0284c7', // Sky Cyan
     ink: '#0f172a',
-    sub: '#334155',
+    sub: '#475569',
     tag: '#ccfbf1',
+    tagText: '#115e59',
+    background: '#ffffff',
     label: 'AUTHORIZED CONTRACTOR',
   },
   security: {
     main: '#7f1d1d', // Dark Ruby
     acc: '#dc2626', // Red
     ink: '#111827',
-    sub: '#374151',
+    sub: '#4b5563',
     tag: '#fee2e2',
+    tagText: '#991b1b',
+    background: '#ffffff',
     label: 'SECURITY ACCESS PASS',
   },
 };
 
 // ============================================================================
 // 1. DEDICATED PORTRAIT TEMPLATES (CR80: 54 mm × 85.6 mm)
+// Strictly defined non-overlapping vertical corridors:
+// Header: 0 - 20 mm | Photo: 22.5 - 51 mm | Name: 53 - 59.5 mm | Designation: 60 - 65 mm | ID: 65.5 - 70 mm | Branch: 70.5 - 74.5 mm | Valid: 75.5 - 80.5 mm | Bottom: 82.6 - 85.6 mm
 // ============================================================================
 
-export function makePortraitCorporateTemplate(): { front: CardElement[]; back: CardElement[] } {
+export function makePortraitCorporateTemplate(): TemplateDefinition {
   const p = STUDIO_PALETTES.corporate;
   const W = 54.0;
   const f: CardElement[] = [
-    // Top banner
-    createRectElement({ x: 0, y: 0, w: W, h: 22, fill: p.main }),
+    // Top header band (0 - 20 mm)
+    createRectElement({ x: 0, y: 0, w: W, h: 20, fill: p.main }),
     createImageElement({ src: 'logo', x: 4.5, y: 4.5, w: 9, h: 9, fit: 'contain', radius: 0 }),
-    createTextElement({ text: '{org}', x: 15.5, y: 4.8, w: 34, size: 8.5, weight: 700, color: '#ffffff', fit: true }),
-    createTextElement({ text: p.label, x: 15.5, y: 10, w: 34, size: 5.5, weight: 600, color: p.tag }),
-    // Photo
-    createImageElement({ src: 'photo', x: 13, y: 26, w: 28, h: 34, shape: 'rounded', radius: 2, border: 0.8, borderColor: p.main }),
-    // Name & Title
-    createTextElement({ text: '{name}', x: 3, y: 62.5, w: 48, size: 11.5, weight: 700, color: p.ink, align: 'center', fit: true }),
-    createTextElement({ text: '{designation}', x: 3, y: 68.5, w: 48, size: 7.8, weight: 600, color: p.main, align: 'center', fit: true }),
-    // ID and Dept
-    createTextElement({ text: 'ID: {idno}  •  {department}', x: 3, y: 74, w: 48, size: 6.8, weight: 500, color: p.sub, align: 'center', fit: true }),
-    createTextElement({ text: 'Branch: {branch}', x: 3, y: 78, w: 48, size: 6.2, weight: 400, color: p.sub, align: 'center', fit: true }),
-    // Bottom accent strip
+    createTextElement({
+      text: '{org}',
+      x: 15,
+      y: 4.5,
+      w: 35.5,
+      h: 6.5,
+      size: 8.0,
+      weight: 700,
+      color: '#ffffff',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: p.label,
+      x: 15,
+      y: 11.5,
+      w: 35.5,
+      h: 4.0,
+      size: 5.2,
+      weight: 600,
+      color: p.tag,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+
+    // Photo Corridor (22.5 - 51 mm)
+    createImageElement({
+      src: 'photo',
+      x: 14,
+      y: 22.5,
+      w: 26,
+      h: 28.5,
+      shape: 'rounded',
+      radius: 2,
+      border: 0.8,
+      borderColor: p.main,
+    }),
+
+    // Name & Title Corridors (53 - 65 mm)
+    createTextElement({
+      text: '{name}',
+      x: 3,
+      y: 53.0,
+      w: 48,
+      h: 6.5,
+      size: 10.5,
+      weight: 700,
+      color: p.ink,
+      align: 'center',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{designation}',
+      x: 3,
+      y: 60.0,
+      w: 48,
+      h: 5.0,
+      size: 7.2,
+      weight: 600,
+      color: p.main,
+      align: 'center',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+
+    // Credentials & Location (65.5 - 74.5 mm)
+    createTextElement({
+      text: 'ID: {idno}  •  {department}',
+      x: 3,
+      y: 65.5,
+      w: 48,
+      h: 4.5,
+      size: 6.2,
+      weight: 500,
+      color: p.sub,
+      align: 'center',
+      fit: true,
+      maxLines: 1,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'Branch: {branch}',
+      x: 3,
+      y: 70.5,
+      w: 48,
+      h: 4.0,
+      size: 5.8,
+      weight: 400,
+      color: p.sub,
+      align: 'center',
+      fit: true,
+      maxLines: 1,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+
+    // Validity Pill Corridor (75.5 - 80.5 mm)
+    createRectElement({ x: 13, y: 75.5, w: 28, h: 4.8, fill: p.tag, radius: 2.4 }),
+    createTextElement({
+      text: 'VALID: {valid}',
+      x: 13,
+      y: 75.9,
+      w: 28,
+      h: 4.0,
+      size: 5.5,
+      weight: 700,
+      color: p.tagText || p.main,
+      align: 'center',
+      fit: true,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+
+    // Bottom accent strip into bleed
     createRectElement({ x: 0, y: 82.6, w: W, h: 3, fill: p.acc }),
   ];
 
   const b: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: W, h: 8, fill: p.main }),
-    createTextElement({ text: 'IF FOUND, PLEASE RETURN TO:', x: 4, y: 11, w: 46, size: 6.5, weight: 700, color: p.main }),
-    createTextElement({ text: '{org}\n{address}', x: 4, y: 15, w: 46, size: 6.5, color: p.sub }),
-    createTextElement({ text: 'Emergency: {phone}\nEmail: {email}', x: 4, y: 25, w: 46, size: 6.5, weight: 500, color: p.ink }),
-    createTextElement({ text: 'Blood Group: {blood}  |  DOB: {dob}\nDate of Joining: {doj}\nCard Valid Till: {valid}', x: 4, y: 34, w: 46, size: 6.5, color: p.sub }),
+    createTextElement({
+      text: 'IF FOUND, PLEASE RETURN TO:',
+      x: 4,
+      y: 10,
+      w: 46,
+      h: 4,
+      size: 6.2,
+      weight: 700,
+      color: p.main,
+    }),
+    createTextElement({
+      text: '{org}\n{address}',
+      x: 4,
+      y: 14.5,
+      w: 46,
+      h: 9,
+      size: 6.0,
+      color: p.sub,
+      maxLines: 2,
+      overflowMode: 'wrap',
+    }),
+    createTextElement({
+      text: 'Emergency: {phone}\nEmail: {email}',
+      x: 4,
+      y: 24.5,
+      w: 46,
+      h: 8.5,
+      size: 6.0,
+      weight: 500,
+      color: p.ink,
+      maxLines: 2,
+    }),
+    createTextElement({
+      text: 'Blood Group: {blood}  |  DOB: {dob}\nDate of Joining: {doj}\nCard Valid Till: {valid}',
+      x: 4,
+      y: 34,
+      w: 46,
+      h: 12,
+      size: 6.0,
+      color: p.sub,
+      maxLines: 3,
+    }),
     // QR Code for verification
-    createQrElement({ x: 18, y: 49, w: 18, h: 18, qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}' }),
-    createTextElement({ text: 'Scan to verify active credentials', x: 4, y: 69, w: 46, size: 5.5, weight: 500, color: p.sub, align: 'center' }),
+    createQrElement({
+      x: 19,
+      y: 48,
+      w: 16,
+      h: 16,
+      qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}',
+    }),
+    createTextElement({
+      text: 'Scan to verify active credentials',
+      x: 4,
+      y: 65.5,
+      w: 46,
+      h: 4,
+      size: 5.2,
+      weight: 500,
+      color: p.sub,
+      align: 'center',
+    }),
     // Signature
-    createRectElement({ x: 12, y: 76, w: 30, h: 0.25, fill: p.sub }),
-    createTextElement({ text: 'Authorized Signatory', x: 4, y: 77.2, w: 46, size: 5.5, color: p.sub, align: 'center' }),
+    createRectElement({ x: 12, y: 73, w: 30, h: 0.25, fill: p.sub }),
+    createTextElement({
+      text: 'Authorized Signatory',
+      x: 4,
+      y: 74,
+      w: 46,
+      h: 4,
+      size: 5.2,
+      color: p.sub,
+      align: 'center',
+    }),
     createRectElement({ x: 0, y: 82.6, w: W, h: 3, fill: p.acc }),
   ];
 
-  return { front: f, back: b };
+  return { front: f, back: b, frontBg: '#ffffff', backBg: '#ffffff', palette: p };
 }
 
-export function makePortraitWorkerTemplate(): { front: CardElement[]; back: CardElement[] } {
+export function makePortraitWorkerTemplate(): TemplateDefinition {
   const p = STUDIO_PALETTES.worker;
   const W = 54.0;
   const f: CardElement[] = [
-    // Top safety header
-    createRectElement({ x: 0, y: 0, w: W, h: 20, fill: p.main }),
-    createRectElement({ x: 0, y: 18, w: W, h: 3, fill: p.acc }),
-    createImageElement({ src: 'logo', x: 4, y: 3.5, w: 9, h: 9, fit: 'contain', radius: 0 }),
-    createTextElement({ text: '{org}', x: 15, y: 4, w: 35, size: 8, weight: 700, color: '#ffffff', fit: true }),
-    createTextElement({ text: 'SAFETY COMPLIANCE PASS', x: 15, y: 9.5, w: 35, size: 5.2, weight: 700, color: p.acc }),
-    // Photo
-    createImageElement({ src: 'photo', x: 12, y: 25, w: 30, h: 34, shape: 'rect', border: 1, borderColor: p.main }),
+    // Top safety header (0 - 20 mm)
+    createRectElement({ x: 0, y: 0, w: W, h: 18, fill: p.main }),
+    createRectElement({ x: 0, y: 18, w: W, h: 2.5, fill: p.acc }),
+    createImageElement({ src: 'logo', x: 4, y: 4, w: 8.5, h: 8.5, fit: 'contain', radius: 0 }),
+    createTextElement({
+      text: '{org}',
+      x: 14.5,
+      y: 4,
+      w: 36,
+      h: 6.5,
+      size: 7.8,
+      weight: 700,
+      color: '#ffffff',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'SAFETY COMPLIANCE PASS',
+      x: 14.5,
+      y: 11,
+      w: 36,
+      h: 4,
+      size: 5.0,
+      weight: 700,
+      color: p.acc,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+
+    // Photo Corridor (22.5 - 51 mm)
+    createImageElement({
+      src: 'photo',
+      x: 14,
+      y: 22.5,
+      w: 26,
+      h: 28.5,
+      shape: 'rect',
+      border: 1,
+      borderColor: p.main,
+    }),
     // Blood group badge
-    createRectElement({ x: 34, y: 26, w: 8, h: 5.5, fill: '#dc2626', radius: 1 }),
-    createTextElement({ text: '{blood}', x: 34, y: 27, w: 8, size: 6, weight: 800, color: '#ffffff', align: 'center' }),
-    // Name & ID
-    createTextElement({ text: '{name}', x: 3, y: 62.5, w: 48, size: 11, weight: 800, color: p.ink, align: 'center', fit: true }),
-    createTextElement({ text: '{designation}', x: 3, y: 68.5, w: 48, size: 8, weight: 600, color: p.sub, align: 'center', fit: true }),
-    createTextElement({ text: 'BADGE ID: {idno}', x: 3, y: 74, w: 48, size: 7.5, weight: 800, color: p.main, align: 'center' }),
-    createTextElement({ text: 'Shift / Dept: {department}', x: 3, y: 78.5, w: 48, size: 6.5, color: p.sub, align: 'center', fit: true }),
+    createRectElement({ x: 32, y: 23.5, w: 7, h: 4.8, fill: '#dc2626', radius: 1 }),
+    createTextElement({
+      text: '{blood}',
+      x: 32,
+      y: 24,
+      w: 7,
+      h: 4,
+      size: 5.8,
+      weight: 800,
+      color: '#ffffff',
+      align: 'center',
+      verticalAlign: 'middle',
+    }),
+
+    // Name & ID (53 - 75 mm)
+    createTextElement({
+      text: '{name}',
+      x: 3,
+      y: 53.0,
+      w: 48,
+      h: 6.5,
+      size: 10.5,
+      weight: 800,
+      color: p.ink,
+      align: 'center',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{designation}',
+      x: 3,
+      y: 60.0,
+      w: 48,
+      h: 5.0,
+      size: 7.5,
+      weight: 600,
+      color: p.sub,
+      align: 'center',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'BADGE ID: {idno}',
+      x: 3,
+      y: 65.5,
+      w: 48,
+      h: 4.5,
+      size: 6.5,
+      weight: 800,
+      color: p.main,
+      align: 'center',
+      fit: true,
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'Shift / Dept: {department}',
+      x: 3,
+      y: 70.5,
+      w: 48,
+      h: 4.0,
+      size: 5.8,
+      color: p.sub,
+      align: 'center',
+      fit: true,
+      verticalAlign: 'middle',
+    }),
+
+    // Validity pill
+    createRectElement({ x: 13, y: 75.5, w: 28, h: 4.8, fill: p.tag, radius: 2.4 }),
+    createTextElement({
+      text: 'VALID: {valid}',
+      x: 13,
+      y: 75.9,
+      w: 28,
+      h: 4.0,
+      size: 5.5,
+      weight: 700,
+      color: p.tagText || p.main,
+      align: 'center',
+      fit: true,
+      verticalAlign: 'middle',
+    }),
+
     createRectElement({ x: 0, y: 83.6, w: W, h: 2, fill: p.acc }),
   ];
 
   const b: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: W, h: 8, fill: p.main }),
-    createTextElement({ text: 'EMERGENCY / SAFETY INSTRUCTIONS', x: 4, y: 11, w: 46, size: 6.5, weight: 800, color: p.main }),
-    createTextElement({ text: 'Wear PPE at all times within active bays.\nReport incidents immediately to Safety Desk.\nBlood: {blood}  |  DOB: {dob}', x: 4, y: 16, w: 46, size: 6.5, color: p.sub }),
-    createTextElement({ text: 'Emergency Plant Line: {phone}\nCampus: {branch}\nValid Till: {valid}', x: 4, y: 28, w: 46, size: 6.5, weight: 600, color: p.ink }),
-    createQrElement({ x: 18, y: 46, w: 18, h: 18, qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}' }),
-    createTextElement({ text: 'Safety Clearance Token', x: 4, y: 66, w: 46, size: 6, weight: 600, color: p.sub, align: 'center' }),
-    createRectElement({ x: 12, y: 75, w: 30, h: 0.25, fill: p.sub }),
-    createTextElement({ text: 'Safety Officer Signatory', x: 4, y: 76.5, w: 46, size: 5.5, color: p.sub, align: 'center' }),
+    createTextElement({
+      text: 'EMERGENCY / SAFETY INSTRUCTIONS',
+      x: 4,
+      y: 10,
+      w: 46,
+      h: 4,
+      size: 6.2,
+      weight: 800,
+      color: p.main,
+    }),
+    createTextElement({
+      text: 'Wear PPE at all times within active bays.\nReport incidents immediately to Safety Desk.\nBlood: {blood}  |  DOB: {dob}',
+      x: 4,
+      y: 14.5,
+      w: 46,
+      h: 12,
+      size: 6.0,
+      color: p.sub,
+      maxLines: 3,
+    }),
+    createTextElement({
+      text: 'Emergency Plant Line: {phone}\nCampus: {branch}\nValid Till: {valid}',
+      x: 4,
+      y: 28,
+      w: 46,
+      h: 12,
+      size: 6.0,
+      weight: 600,
+      color: p.ink,
+      maxLines: 3,
+    }),
+    createQrElement({
+      x: 19,
+      y: 45,
+      w: 16,
+      h: 16,
+      qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}',
+    }),
+    createTextElement({
+      text: 'Safety Clearance Token',
+      x: 4,
+      y: 63,
+      w: 46,
+      h: 4,
+      size: 5.5,
+      weight: 600,
+      color: p.sub,
+      align: 'center',
+    }),
+    createRectElement({ x: 12, y: 72, w: 30, h: 0.25, fill: p.sub }),
+    createTextElement({
+      text: 'Safety Officer Signatory',
+      x: 4,
+      y: 73,
+      w: 46,
+      h: 4,
+      size: 5.2,
+      color: p.sub,
+      align: 'center',
+    }),
     createRectElement({ x: 0, y: 83.6, w: W, h: 2, fill: p.acc }),
   ];
 
-  return { front: f, back: b };
+  return { front: f, back: b, frontBg: '#ffffff', backBg: '#ffffff', palette: p };
 }
 
-export function makePortraitContractorTemplate(): { front: CardElement[]; back: CardElement[] } {
+export function makePortraitContractorTemplate(): TemplateDefinition {
   const p = STUDIO_PALETTES.contractor;
   const W = 54.0;
   const f: CardElement[] = [
+    // Header (0 - 20 mm)
     createRectElement({ x: 0, y: 0, w: W, h: 20, fill: p.main }),
-    createImageElement({ src: 'logo', x: 4, y: 4, w: 9, h: 9, fit: 'contain', radius: 0 }),
-    createTextElement({ text: '{org}', x: 15, y: 4.5, w: 35, size: 8, weight: 700, color: '#ffffff', fit: true }),
-    createTextElement({ text: 'CONTRACT WORKFORCE', x: 15, y: 10, w: 35, size: 5.5, weight: 600, color: p.acc }),
-    createImageElement({ src: 'photo', x: 13, y: 25, w: 28, h: 34, shape: 'rounded', radius: 2, border: 1, borderColor: p.main }),
-    createTextElement({ text: '{name}', x: 3, y: 62.5, w: 48, size: 11, weight: 700, color: p.ink, align: 'center', fit: true }),
-    createTextElement({ text: '{designation}', x: 3, y: 68.5, w: 48, size: 8, weight: 500, color: p.main, align: 'center', fit: true }),
-    createTextElement({ text: 'Agency: {contractor}', x: 3, y: 73.5, w: 48, size: 7, weight: 600, color: p.sub, align: 'center', fit: true }),
-    createTextElement({ text: 'Pass ID: {idno}  •  Valid: {valid}', x: 3, y: 78, w: 48, size: 6.5, weight: 700, color: p.acc, align: 'center' }),
+    createImageElement({ src: 'logo', x: 4, y: 4, w: 8.5, h: 8.5, fit: 'contain', radius: 0 }),
+    createTextElement({
+      text: '{org}',
+      x: 14.5,
+      y: 4,
+      w: 36,
+      h: 6.5,
+      size: 7.8,
+      weight: 700,
+      color: '#ffffff',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'CONTRACT WORKFORCE',
+      x: 14.5,
+      y: 11,
+      w: 36,
+      h: 4,
+      size: 5.2,
+      weight: 600,
+      color: p.acc,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+
+    // Photo Corridor (22.5 - 51 mm)
+    createImageElement({
+      src: 'photo',
+      x: 14,
+      y: 22.5,
+      w: 26,
+      h: 28.5,
+      shape: 'rounded',
+      radius: 2,
+      border: 1,
+      borderColor: p.main,
+    }),
+
+    // Details Corridors (53 - 75 mm)
+    createTextElement({
+      text: '{name}',
+      x: 3,
+      y: 53.0,
+      w: 48,
+      h: 6.5,
+      size: 10.5,
+      weight: 700,
+      color: p.ink,
+      align: 'center',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{designation}',
+      x: 3,
+      y: 60.0,
+      w: 48,
+      h: 5.0,
+      size: 7.5,
+      weight: 500,
+      color: p.main,
+      align: 'center',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'Agency: {contractor}',
+      x: 3,
+      y: 65.5,
+      w: 48,
+      h: 4.5,
+      size: 6.5,
+      weight: 600,
+      color: p.sub,
+      align: 'center',
+      fit: true,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'Pass ID: {idno}',
+      x: 3,
+      y: 70.5,
+      w: 48,
+      h: 4.0,
+      size: 6.0,
+      weight: 600,
+      color: p.sub,
+      align: 'center',
+      fit: true,
+      verticalAlign: 'middle',
+    }),
+
+    // Validity pill
+    createRectElement({ x: 13, y: 75.5, w: 28, h: 4.8, fill: p.tag, radius: 2.4 }),
+    createTextElement({
+      text: 'VALID: {valid}',
+      x: 13,
+      y: 75.9,
+      w: 28,
+      h: 4.0,
+      size: 5.5,
+      weight: 700,
+      color: p.tagText || p.main,
+      align: 'center',
+      fit: true,
+      verticalAlign: 'middle',
+    }),
+
     createRectElement({ x: 0, y: 82.6, w: W, h: 3, fill: p.acc }),
   ];
 
   const b: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: W, h: 8, fill: p.main }),
-    createTextElement({ text: 'CONTRACTOR SERVICE POLICIES', x: 4, y: 11, w: 46, size: 6.5, weight: 700, color: p.main }),
-    createTextElement({ text: 'Valid only on specified facility premises.\nNon-transferable. Must be displayed on lanyard.', x: 4, y: 15, w: 46, size: 6.5, color: p.sub }),
-    createTextElement({ text: 'Contract Agency: {contractor}\nWorksite: {branch}\nSupervisor Contact: {phone}', x: 4, y: 25, w: 46, size: 6.5, weight: 600, color: p.ink }),
-    createQrElement({ x: 18, y: 45, w: 18, h: 18, qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}' }),
-    createTextElement({ text: 'Verification QR', x: 4, y: 65, w: 46, size: 5.5, color: p.sub, align: 'center' }),
-    createRectElement({ x: 12, y: 75, w: 30, h: 0.25, fill: p.sub }),
-    createTextElement({ text: 'Contract Administrator', x: 4, y: 76.2, w: 46, size: 5.5, color: p.sub, align: 'center' }),
+    createTextElement({
+      text: 'CONTRACTOR SERVICE POLICIES',
+      x: 4,
+      y: 10,
+      w: 46,
+      h: 4,
+      size: 6.2,
+      weight: 700,
+      color: p.main,
+    }),
+    createTextElement({
+      text: 'Valid only on specified facility premises.\nNon-transferable. Must be displayed on lanyard.',
+      x: 4,
+      y: 14.5,
+      w: 46,
+      h: 8.5,
+      size: 6.0,
+      color: p.sub,
+      maxLines: 2,
+    }),
+    createTextElement({
+      text: 'Contract Agency: {contractor}\nWorksite: {branch}\nSupervisor Contact: {phone}',
+      x: 4,
+      y: 24,
+      w: 46,
+      h: 12,
+      size: 6.0,
+      weight: 600,
+      color: p.ink,
+      maxLines: 3,
+    }),
+    createQrElement({
+      x: 19,
+      y: 44,
+      w: 16,
+      h: 16,
+      qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}',
+    }),
+    createTextElement({
+      text: 'Verification QR',
+      x: 4,
+      y: 62,
+      w: 46,
+      h: 4,
+      size: 5.2,
+      color: p.sub,
+      align: 'center',
+    }),
+    createRectElement({ x: 12, y: 72, w: 30, h: 0.25, fill: p.sub }),
+    createTextElement({
+      text: 'Contract Administrator',
+      x: 4,
+      y: 73,
+      w: 46,
+      h: 4,
+      size: 5.2,
+      color: p.sub,
+      align: 'center',
+    }),
     createRectElement({ x: 0, y: 82.6, w: W, h: 3, fill: p.acc }),
   ];
 
-  return { front: f, back: b };
+  return { front: f, back: b, frontBg: '#ffffff', backBg: '#ffffff', palette: p };
 }
 
-export function makePortraitCampusTemplate(): { front: CardElement[]; back: CardElement[] } {
+export function makePortraitCampusTemplate(): TemplateDefinition {
   const p = STUDIO_PALETTES.campus;
   const W = 54.0;
   const f: CardElement[] = [
-    createRectElement({ x: 0, y: 0, w: W, h: 34, fill: p.main }),
-    createImageElement({ src: 'logo', x: 4.5, y: 4.5, w: 8, h: 8, fit: 'contain', radius: 0 }),
-    createTextElement({ text: '{org}', x: 14.5, y: 5, w: 35, size: 8.5, weight: 700, color: '#ffffff', fit: true }),
-    // Circular Photo with Halo
-    createImageElement({ src: 'photo', x: 13, y: 16, w: 28, h: 28, shape: 'circle', border: 1.5, borderColor: '#ffffff' }),
-    createTextElement({ text: '{name}', x: 3, y: 48, w: 48, size: 11.5, weight: 700, color: p.ink, align: 'center', fit: true }),
-    createTextElement({ text: '{designation}', x: 3, y: 54, w: 48, size: 8, weight: 600, color: p.main, align: 'center', fit: true }),
-    // Valid badge
-    createRectElement({ x: 14, y: 60, w: 26, h: 5, fill: p.tag, radius: 2.5 }),
-    createTextElement({ text: 'VALID: {valid}', x: 14, y: 61, w: 26, size: 6, weight: 700, color: p.main, align: 'center' }),
-    createTextElement({ text: 'ID: {idno}  |  {department}', x: 3, y: 68, w: 48, size: 7, color: p.sub, align: 'center', fit: true }),
-    createTextElement({ text: '{branch}', x: 3, y: 73, w: 48, size: 6.5, color: p.sub, align: 'center', fit: true }),
+    // Emerald Top Block (0 - 26 mm)
+    createRectElement({ x: 0, y: 0, w: W, h: 26, fill: p.main }),
+    createImageElement({ src: 'logo', x: 4.5, y: 3.5, w: 8, h: 8, fit: 'contain', radius: 0 }),
+    createTextElement({
+      text: '{org}',
+      x: 14,
+      y: 4.0,
+      w: 36,
+      h: 6.5,
+      size: 8.0,
+      weight: 700,
+      color: '#ffffff',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: p.label,
+      x: 14,
+      y: 10.5,
+      w: 36,
+      h: 4.0,
+      size: 5.2,
+      weight: 600,
+      color: p.tag,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+
+    // Circular Photo with Halo Halo sitting centered (14 - 40 mm)
+    createImageElement({
+      src: 'photo',
+      x: 14,
+      y: 14,
+      w: 26,
+      h: 26,
+      shape: 'circle',
+      border: 1.5,
+      borderColor: '#ffffff',
+    }),
+
+    // Identity Corridors (43 - 75 mm) - ZERO vertical overlap!
+    createTextElement({
+      text: '{name}',
+      x: 3,
+      y: 43.0,
+      w: 48,
+      h: 6.5,
+      size: 10.5,
+      weight: 700,
+      color: p.ink,
+      align: 'center',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{designation}',
+      x: 3,
+      y: 50.5,
+      w: 48,
+      h: 5.0,
+      size: 7.2,
+      weight: 600,
+      color: p.main,
+      align: 'center',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+
+    // Valid badge (57.5 - 62.3 mm)
+    createRectElement({ x: 13, y: 57.5, w: 28, h: 4.8, fill: p.tag, radius: 2.4 }),
+    createTextElement({
+      text: 'VALID: {valid}',
+      x: 13,
+      y: 57.9,
+      w: 28,
+      h: 4.0,
+      size: 5.5,
+      weight: 700,
+      color: p.tagText || p.main,
+      align: 'center',
+      fit: true,
+      verticalAlign: 'middle',
+    }),
+
+    // ID & Department (64.0 - 68.5 mm)
+    createTextElement({
+      text: 'ID: {idno}  |  {department}',
+      x: 3,
+      y: 64.0,
+      w: 48,
+      h: 4.5,
+      size: 6.2,
+      weight: 500,
+      color: p.sub,
+      align: 'center',
+      fit: true,
+      maxLines: 1,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+
+    // Branch (69.5 - 73.5 mm)
+    createTextElement({
+      text: '{branch}',
+      x: 3,
+      y: 69.5,
+      w: 48,
+      h: 4.0,
+      size: 5.8,
+      weight: 400,
+      color: p.sub,
+      align: 'center',
+      fit: true,
+      maxLines: 1,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+
+    // Mini QR for tap verification (74.5 - 82.0 mm)
+    createQrElement({
+      x: 23,
+      y: 74.5,
+      w: 8.0,
+      h: 8.0,
+      qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}',
+    }),
+
+    // Bottom strip
     createRectElement({ x: 0, y: 82.6, w: W, h: 3, fill: p.acc }),
   ];
 
   const b: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: W, h: 8, fill: p.main }),
-    createTextElement({ text: 'CAMPUS ACCESS GUIDELINES', x: 4, y: 11, w: 46, size: 6.5, weight: 700, color: p.main }),
-    createTextElement({ text: 'Must be tapped at turnstiles & lab gateways.\nReport lost card to IT Service Desk.', x: 4, y: 15, w: 46, size: 6.5, color: p.sub }),
-    createTextElement({ text: 'Staff Email: {email}\nPhone: {phone}', x: 4, y: 25, w: 46, size: 6.5, weight: 600, color: p.ink }),
-    createQrElement({ x: 18, y: 45, w: 18, h: 18, qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}' }),
-    createTextElement({ text: 'Scan for Realtime Verification', x: 4, y: 66, w: 46, size: 5.5, color: p.sub, align: 'center' }),
-    createRectElement({ x: 12, y: 75, w: 30, h: 0.25, fill: p.sub }),
-    createTextElement({ text: 'Registrar / Admin Head', x: 4, y: 76.5, w: 46, size: 5.5, color: p.sub, align: 'center' }),
+    createTextElement({
+      text: 'CAMPUS ACCESS GUIDELINES',
+      x: 4,
+      y: 10,
+      w: 46,
+      h: 4,
+      size: 6.2,
+      weight: 700,
+      color: p.main,
+    }),
+    createTextElement({
+      text: 'Must be tapped at turnstiles & lab gateways.\nReport lost card to IT Service Desk.',
+      x: 4,
+      y: 14.5,
+      w: 46,
+      h: 8.5,
+      size: 6.0,
+      color: p.sub,
+      maxLines: 2,
+    }),
+    createTextElement({
+      text: 'Staff Email: {email}\nPhone: {phone}',
+      x: 4,
+      y: 24,
+      w: 46,
+      h: 8.5,
+      size: 6.0,
+      weight: 600,
+      color: p.ink,
+      maxLines: 2,
+    }),
+    createQrElement({
+      x: 19,
+      y: 44,
+      w: 16,
+      h: 16,
+      qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}',
+    }),
+    createTextElement({
+      text: 'Scan for Realtime Verification',
+      x: 4,
+      y: 62,
+      w: 46,
+      h: 4,
+      size: 5.2,
+      color: p.sub,
+      align: 'center',
+    }),
+    createRectElement({ x: 12, y: 72, w: 30, h: 0.25, fill: p.sub }),
+    createTextElement({
+      text: 'Registrar / Admin Head',
+      x: 4,
+      y: 73,
+      w: 46,
+      h: 4,
+      size: 5.2,
+      color: p.sub,
+      align: 'center',
+    }),
     createRectElement({ x: 0, y: 82.6, w: W, h: 3, fill: p.acc }),
   ];
 
-  return { front: f, back: b };
+  return { front: f, back: b, frontBg: '#ffffff', backBg: '#ffffff', palette: p };
 }
 
-export function makePortraitMinimalTemplate(): { front: CardElement[]; back: CardElement[] } {
+export function makePortraitMinimalTemplate(): TemplateDefinition {
   const p = STUDIO_PALETTES.minimal;
   const W = 54.0;
   const f: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: W, h: 3, fill: p.acc }),
-    createTextElement({ text: '{org}', x: 6, y: 8, w: 42, size: 7.5, weight: 700, color: p.acc, fit: true }),
-    createImageElement({ src: 'photo', x: 8, y: 16, w: 38, h: 42, radius: 0, shape: 'rect' }),
-    createTextElement({ text: '{name}', x: 6, y: 61, w: 42, size: 12, weight: 800, color: p.ink, fit: true }),
-    createTextElement({ text: '{designation}', x: 6, y: 67.5, w: 42, size: 8, color: p.sub, fit: true }),
-    createRectElement({ x: 6, y: 73.5, w: 42, h: 0.25, fill: p.ink }),
-    createTextElement({ text: 'ID: {idno}  •  {valid}', x: 6, y: 75.5, w: 42, size: 7, weight: 600, color: p.ink, fit: true }),
-    createTextElement({ text: '{department}', x: 6, y: 80, w: 42, size: 6.5, color: p.sub, fit: true }),
+    createTextElement({
+      text: '{org}',
+      x: 5,
+      y: 6,
+      w: 44,
+      h: 5.5,
+      size: 7.2,
+      weight: 700,
+      color: p.acc,
+      fit: true,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+    createImageElement({
+      src: 'photo',
+      x: 14,
+      y: 13.5,
+      w: 26,
+      h: 30,
+      radius: 0,
+      shape: 'rect',
+    }),
+    createTextElement({
+      text: '{name}',
+      x: 5,
+      y: 46.5,
+      w: 44,
+      h: 6.5,
+      size: 11.0,
+      weight: 800,
+      color: p.ink,
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{designation}',
+      x: 5,
+      y: 54.0,
+      w: 44,
+      h: 5.0,
+      size: 7.5,
+      color: p.sub,
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createRectElement({ x: 5, y: 61.0, w: 44, h: 0.25, fill: p.ink }),
+    createTextElement({
+      text: 'ID: {idno}',
+      x: 5,
+      y: 63.0,
+      w: 44,
+      h: 4.5,
+      size: 6.5,
+      weight: 700,
+      color: p.ink,
+      fit: true,
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'Dept: {department}',
+      x: 5,
+      y: 68.5,
+      w: 44,
+      h: 4.0,
+      size: 6.0,
+      color: p.sub,
+      fit: true,
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'Valid: {valid}',
+      x: 5,
+      y: 73.5,
+      w: 44,
+      h: 4.0,
+      size: 5.8,
+      weight: 600,
+      color: p.acc,
+      fit: true,
+      verticalAlign: 'middle',
+    }),
+    createRectElement({ x: 0, y: 82.6, w: W, h: 3, fill: p.main }),
   ];
 
   const b: CardElement[] = [
-    createRectElement({ x: 0, y: 0, w: W, h: 8, fill: p.acc }),
-    createTextElement({ text: 'Return Address:', x: 5, y: 12, w: 44, size: 7, weight: 700, color: p.ink }),
-    createTextElement({ text: '{org}\n{address}', x: 5, y: 17, w: 44, size: 7, color: p.sub }),
-    createTextElement({ text: 'Blood: {blood}  |  DOB: {dob}\nValid: {valid}', x: 5, y: 35, w: 44, size: 7, color: p.ink }),
-    createQrElement({ x: 18, y: 48, w: 18, h: 18, qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}' }),
-    createRectElement({ x: 8, y: 74, w: 38, h: 0.25, fill: p.ink }),
-    createTextElement({ text: 'Authorised Signatory', x: 5, y: 75.5, w: 44, size: 6, color: p.sub, align: 'center' }),
+    createRectElement({ x: 0, y: 0, w: W, h: 6, fill: p.acc }),
+    createTextElement({
+      text: 'Return Address:',
+      x: 5,
+      y: 9,
+      w: 44,
+      h: 4,
+      size: 6.5,
+      weight: 700,
+      color: p.ink,
+    }),
+    createTextElement({
+      text: '{org}\n{address}',
+      x: 5,
+      y: 13.5,
+      w: 44,
+      h: 9,
+      size: 6.0,
+      color: p.sub,
+      maxLines: 2,
+    }),
+    createTextElement({
+      text: 'Blood: {blood}  |  DOB: {dob}\nValid: {valid}',
+      x: 5,
+      y: 24,
+      w: 44,
+      h: 8.5,
+      size: 6.0,
+      color: p.ink,
+      maxLines: 2,
+    }),
+    createQrElement({
+      x: 19,
+      y: 42,
+      w: 16,
+      h: 16,
+      qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}',
+    }),
+    createRectElement({ x: 8, y: 71, w: 38, h: 0.25, fill: p.ink }),
+    createTextElement({
+      text: 'Authorised Signatory',
+      x: 5,
+      y: 72.5,
+      w: 44,
+      h: 4,
+      size: 5.5,
+      color: p.sub,
+      align: 'center',
+    }),
     createRectElement({ x: 0, y: 82.6, w: W, h: 3, fill: p.acc }),
   ];
 
-  return { front: f, back: b };
+  return { front: f, back: b, frontBg: '#ffffff', backBg: '#ffffff', palette: p };
 }
 
-export function makePortraitSecurityTemplate(): { front: CardElement[]; back: CardElement[] } {
+export function makePortraitSecurityTemplate(): TemplateDefinition {
   const p = STUDIO_PALETTES.security;
   const W = 54.0;
   const f: CardElement[] = [
-    createRectElement({ x: 0, y: 0, w: W, h: 22, fill: p.main }),
-    createImageElement({ src: 'logo', x: 4, y: 4, w: 9, h: 9, fit: 'contain', radius: 0 }),
-    createTextElement({ text: '{org}', x: 15, y: 4.5, w: 35, size: 8, weight: 700, color: '#ffffff', fit: true }),
-    createTextElement({ text: 'SECURE RESTRICTED ACCESS', x: 15, y: 10, w: 35, size: 5, weight: 700, color: '#fca5a5' }),
-    createImageElement({ src: 'photo', x: 12, y: 25, w: 30, h: 34, shape: 'rounded', radius: 1, border: 1.5, borderColor: p.acc }),
-    createTextElement({ text: '{name}', x: 3, y: 62.5, w: 48, size: 11.5, weight: 800, color: p.ink, align: 'center', fit: true }),
-    createTextElement({ text: '{designation}', x: 3, y: 68.5, w: 48, size: 8, weight: 600, color: p.main, align: 'center', fit: true }),
-    createRectElement({ x: 8, y: 73.5, w: 38, h: 5.5, fill: p.main, radius: 1 }),
-    createTextElement({ text: 'CLEARANCE: LEVEL 3', x: 8, y: 74.5, w: 38, size: 6.5, weight: 800, color: '#ffffff', align: 'center' }),
+    // Header (0 - 20 mm)
+    createRectElement({ x: 0, y: 0, w: W, h: 20, fill: p.main }),
+    createImageElement({ src: 'logo', x: 4, y: 4, w: 8.5, h: 8.5, fit: 'contain', radius: 0 }),
+    createTextElement({
+      text: '{org}',
+      x: 14.5,
+      y: 4,
+      w: 36,
+      h: 6.5,
+      size: 7.8,
+      weight: 700,
+      color: '#ffffff',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'SECURE RESTRICTED ACCESS',
+      x: 14.5,
+      y: 11,
+      w: 36,
+      h: 4,
+      size: 5.0,
+      weight: 700,
+      color: '#fca5a5',
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+
+    // Photo Corridor (22.5 - 51 mm)
+    createImageElement({
+      src: 'photo',
+      x: 14,
+      y: 22.5,
+      w: 26,
+      h: 28.5,
+      shape: 'rounded',
+      radius: 1,
+      border: 1.5,
+      borderColor: p.acc,
+    }),
+
+    // Details Corridors (53 - 75 mm)
+    createTextElement({
+      text: '{name}',
+      x: 3,
+      y: 53.0,
+      w: 48,
+      h: 6.5,
+      size: 10.5,
+      weight: 800,
+      color: p.ink,
+      align: 'center',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{designation}',
+      x: 3,
+      y: 60.0,
+      w: 48,
+      h: 5.0,
+      size: 7.5,
+      weight: 600,
+      color: p.main,
+      align: 'center',
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createRectElement({ x: 8, y: 66.0, w: 38, h: 5.0, fill: p.main, radius: 1 }),
+    createTextElement({
+      text: 'CLEARANCE: LEVEL 3',
+      x: 8,
+      y: 66.5,
+      w: 38,
+      h: 4.0,
+      size: 6.0,
+      weight: 800,
+      color: '#ffffff',
+      align: 'center',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'ID: {idno}  •  Valid: {valid}',
+      x: 3,
+      y: 73.0,
+      w: 48,
+      h: 4.0,
+      size: 5.8,
+      weight: 600,
+      color: p.sub,
+      align: 'center',
+      fit: true,
+      verticalAlign: 'middle',
+    }),
+
     createRectElement({ x: 0, y: 82.6, w: W, h: 3, fill: p.acc }),
   ];
 
   const b: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: W, h: 8, fill: p.main }),
-    createTextElement({ text: 'SECURITY NOTICE', x: 4, y: 11, w: 46, size: 7, weight: 800, color: p.main }),
-    createTextElement({ text: 'Classified & Restricted Facilities.\nUnauthorised possession is a statutory violation.\nSurrender immediately if lost.', x: 4, y: 16, w: 46, size: 6.5, color: p.sub }),
-    createQrElement({ x: 18, y: 40, w: 18, h: 18, qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}' }),
-    createTextElement({ text: 'Biometric Access Token', x: 4, y: 61, w: 46, size: 6, weight: 700, color: p.main, align: 'center' }),
-    createRectElement({ x: 12, y: 74, w: 30, h: 0.25, fill: p.sub }),
-    createTextElement({ text: 'Chief Security Officer', x: 4, y: 75.5, w: 46, size: 5.5, color: p.sub, align: 'center' }),
+    createTextElement({
+      text: 'SECURITY NOTICE',
+      x: 4,
+      y: 10,
+      w: 46,
+      h: 4,
+      size: 6.5,
+      weight: 800,
+      color: p.main,
+    }),
+    createTextElement({
+      text: 'Classified & Restricted Facilities.\nUnauthorised possession is a statutory violation.\nSurrender immediately if lost.',
+      x: 4,
+      y: 14.5,
+      w: 46,
+      h: 12,
+      size: 6.0,
+      color: p.sub,
+      maxLines: 3,
+    }),
+    createQrElement({
+      x: 19,
+      y: 38,
+      w: 16,
+      h: 16,
+      qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}',
+    }),
+    createTextElement({
+      text: 'Biometric Access Token',
+      x: 4,
+      y: 58,
+      w: 46,
+      h: 4,
+      size: 5.5,
+      weight: 700,
+      color: p.main,
+      align: 'center',
+    }),
+    createRectElement({ x: 12, y: 70, w: 30, h: 0.25, fill: p.sub }),
+    createTextElement({
+      text: 'Chief Security Officer',
+      x: 4,
+      y: 71.5,
+      w: 46,
+      h: 4,
+      size: 5.2,
+      color: p.sub,
+      align: 'center',
+    }),
     createRectElement({ x: 0, y: 82.6, w: W, h: 3, fill: p.acc }),
   ];
 
-  return { front: f, back: b };
+  return { front: f, back: b, frontBg: '#ffffff', backBg: '#ffffff', palette: p };
 }
 
 // ============================================================================
 // 2. DEDICATED LANDSCAPE TEMPLATES (CR80: 85.6 mm × 54 mm)
 // ============================================================================
 
-export function makeLandscapeCorporateTemplate(): { front: CardElement[]; back: CardElement[] } {
+export function makeLandscapeCorporateTemplate(): TemplateDefinition {
   const p = STUDIO_PALETTES.corporate;
   const W = 85.6;
   const f: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: W, h: 14, fill: p.main }),
     createImageElement({ src: 'logo', x: 5, y: 3, w: 8, h: 8, fit: 'contain', radius: 0 }),
-    createTextElement({ text: '{org}', x: 15, y: 3.2, w: 66, size: 10, weight: 700, color: '#ffffff', fit: true }),
-    createTextElement({ text: p.label, x: 15, y: 8.6, w: 66, size: 5.5, weight: 500, color: p.tag }),
-    createImageElement({ src: 'photo', x: 5, y: 18.5, w: 22, h: 28, shape: 'rounded', radius: 1.5 }),
-    createTextElement({ text: '{name}', x: 31, y: 18.5, w: 50, size: 12.5, weight: 700, color: p.ink, fit: true }),
-    createTextElement({ text: '{designation}', x: 31, y: 25, w: 50, size: 8.5, weight: 600, color: p.main, fit: true }),
-    createTextElement({ text: 'ID: {idno}  •  Dept: {department}\nBranch: {branch}\nPhone: {phone}', x: 31, y: 31.5, w: 50, size: 7.2, color: p.sub }),
+    createTextElement({
+      text: '{org}',
+      x: 15,
+      y: 3.0,
+      w: 66,
+      h: 5.5,
+      size: 9.5,
+      weight: 700,
+      color: '#ffffff',
+      fit: true,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: p.label,
+      x: 15,
+      y: 8.5,
+      w: 66,
+      h: 4.0,
+      size: 5.2,
+      weight: 600,
+      color: p.tag,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+    createImageElement({ src: 'photo', x: 5, y: 18.5, w: 22, h: 28, shape: 'rounded', radius: 1.5, border: 0.8, borderColor: p.main }),
+    createTextElement({
+      text: '{name}',
+      x: 31,
+      y: 18.5,
+      w: 50,
+      h: 6.5,
+      size: 11.5,
+      weight: 700,
+      color: p.ink,
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{designation}',
+      x: 31,
+      y: 25.5,
+      w: 50,
+      h: 5.0,
+      size: 8.0,
+      weight: 600,
+      color: p.main,
+      fit: true,
+      maxLines: 1,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'ID: {idno}  •  Dept: {department}\nBranch: {branch}\nPhone: {phone}',
+      x: 31,
+      y: 31.5,
+      w: 50,
+      h: 15.0,
+      size: 6.5,
+      color: p.sub,
+      maxLines: 3,
+      verticalAlign: 'top',
+    }),
     createRectElement({ x: 0, y: 51, w: W, h: 3, fill: p.acc }),
   ];
 
   const b: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: W, h: 8, fill: p.main }),
-    createTextElement({ text: 'If found, please return to:', x: 5, y: 11, w: 50, size: 7, weight: 700, color: p.ink }),
-    createTextElement({ text: '{org}\n{address}', x: 5, y: 16, w: 50, size: 7.2, color: p.sub }),
-    createTextElement({ text: 'Blood Group: {blood}  |  DOB: {dob}\nValid Till: {valid}', x: 5, y: 28, w: 50, size: 7.2, color: p.ink }),
+    createTextElement({
+      text: 'If found, please return to:',
+      x: 5,
+      y: 10,
+      w: 50,
+      h: 4,
+      size: 6.5,
+      weight: 700,
+      color: p.ink,
+    }),
+    createTextElement({
+      text: '{org}\n{address}',
+      x: 5,
+      y: 14.5,
+      w: 50,
+      h: 11,
+      size: 6.2,
+      color: p.sub,
+      maxLines: 2,
+    }),
+    createTextElement({
+      text: 'Blood Group: {blood}  |  DOB: {dob}\nValid Till: {valid}',
+      x: 5,
+      y: 26.5,
+      w: 50,
+      h: 11,
+      size: 6.2,
+      color: p.ink,
+      maxLines: 2,
+    }),
     createQrElement({ x: 62, y: 12, w: 18, h: 18, qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}' }),
-    createTextElement({ text: 'Scan to verify', x: 60, y: 32, w: 22, size: 5.5, color: p.sub, align: 'center' }),
+    createTextElement({ text: 'Scan to verify', x: 60, y: 32, w: 22, h: 4, size: 5.2, color: p.sub, align: 'center' }),
     createRectElement({ x: 5, y: 44, w: 32, h: 0.25, fill: p.ink }),
-    createTextElement({ text: 'Authorised Signatory', x: 5, y: 45.5, w: 40, size: 6, color: p.sub }),
+    createTextElement({ text: 'Authorised Signatory', x: 5, y: 45.5, w: 40, h: 4, size: 5.5, color: p.sub }),
     createRectElement({ x: 0, y: 51, w: W, h: 3, fill: p.acc }),
   ];
 
-  return { front: f, back: b };
+  return { front: f, back: b, frontBg: '#ffffff', backBg: '#ffffff', palette: p };
 }
 
-export function makeLandscapeWorkerTemplate(): { front: CardElement[]; back: CardElement[] } {
+export function makeLandscapeWorkerTemplate(): TemplateDefinition {
   const p = STUDIO_PALETTES.worker;
   const W = 85.6;
   const f: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: 5, h: 54, fill: p.acc }),
     createRectElement({ x: 5, y: 0, w: W - 5, h: 12, fill: p.main }),
     createImageElement({ src: 'logo', x: 8, y: 2, w: 8, h: 8, fit: 'contain', radius: 0 }),
-    createTextElement({ text: '{org}', x: 18, y: 2.5, w: 60, size: 9, weight: 700, color: '#ffffff', fit: true }),
-    createTextElement({ text: 'SAFETY COMPLIANCE PASS', x: 18, y: 7.5, w: 60, size: 5.2, weight: 700, color: p.acc }),
+    createTextElement({
+      text: '{org}',
+      x: 18,
+      y: 2.2,
+      w: 60,
+      h: 5.0,
+      size: 8.5,
+      weight: 700,
+      color: '#ffffff',
+      fit: true,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'SAFETY COMPLIANCE PASS',
+      x: 18,
+      y: 7.2,
+      w: 60,
+      h: 4.0,
+      size: 5.0,
+      weight: 700,
+      color: p.acc,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
     createImageElement({ src: 'photo', x: 9, y: 16, w: 24, h: 30, shape: 'rect', border: 0.8, borderColor: p.main }),
-    createTextElement({ text: '{name}', x: 37, y: 16, w: 45, size: 12, weight: 800, color: p.ink, fit: true }),
-    createTextElement({ text: '{designation}', x: 37, y: 22.5, w: 45, size: 8, weight: 600, color: p.sub, fit: true }),
-    createTextElement({ text: 'ID: {idno}\nDept: {department}\nBlood: {blood}  |  Emergency: {phone}', x: 37, y: 29, w: 45, size: 7.2, color: p.sub }),
+    createTextElement({
+      text: '{name}',
+      x: 37,
+      y: 16,
+      w: 45,
+      h: 6.5,
+      size: 11.5,
+      weight: 800,
+      color: p.ink,
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{designation}',
+      x: 37,
+      y: 23,
+      w: 45,
+      h: 5.0,
+      size: 7.5,
+      weight: 600,
+      color: p.sub,
+      fit: true,
+      maxLines: 1,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'ID: {idno}\nDept: {department}\nBlood: {blood}  |  Emergency: {phone}',
+      x: 37,
+      y: 29,
+      w: 45,
+      h: 15.0,
+      size: 6.5,
+      color: p.sub,
+      maxLines: 3,
+      verticalAlign: 'top',
+    }),
     createRectElement({ x: 37, y: 47, w: 45, h: 3, fill: p.acc }),
   ];
 
   const b: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: W, h: 8, fill: p.main }),
-    createTextElement({ text: 'PLANT SAFETY REGULATIONS', x: 6, y: 11, w: 50, size: 7, weight: 700, color: p.main }),
-    createTextElement({ text: 'Mandatory PPE area badge.\nReport accidents to safety manager immediately.', x: 6, y: 16, w: 50, size: 7, color: p.sub }),
-    createTextElement({ text: 'Emergency: {phone}  |  Blood: {blood}\nValid: {valid}', x: 6, y: 27, w: 50, size: 7, color: p.ink }),
+    createTextElement({
+      text: 'PLANT SAFETY REGULATIONS',
+      x: 6,
+      y: 10,
+      w: 50,
+      h: 4,
+      size: 6.5,
+      weight: 700,
+      color: p.main,
+    }),
+    createTextElement({
+      text: 'Mandatory PPE area badge.\nReport accidents to safety manager immediately.',
+      x: 6,
+      y: 14.5,
+      w: 50,
+      h: 10,
+      size: 6.0,
+      color: p.sub,
+      maxLines: 2,
+    }),
+    createTextElement({
+      text: 'Emergency: {phone}  |  Blood: {blood}\nValid: {valid}',
+      x: 6,
+      y: 26,
+      w: 50,
+      h: 10,
+      size: 6.0,
+      color: p.ink,
+      maxLines: 2,
+    }),
     createQrElement({ x: 62, y: 12, w: 18, h: 18, qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}' }),
     createRectElement({ x: 6, y: 44, w: 32, h: 0.25, fill: p.ink }),
-    createTextElement({ text: 'Safety Officer Signatory', x: 6, y: 45.5, w: 40, size: 6, color: p.sub }),
+    createTextElement({ text: 'Safety Officer Signatory', x: 6, y: 45.5, w: 40, h: 4, size: 5.5, color: p.sub }),
     createRectElement({ x: 0, y: 51, w: W, h: 3, fill: p.acc }),
   ];
 
-  return { front: f, back: b };
+  return { front: f, back: b, frontBg: '#ffffff', backBg: '#ffffff', palette: p };
 }
 
-export function makeLandscapeContractorTemplate(): { front: CardElement[]; back: CardElement[] } {
+export function makeLandscapeContractorTemplate(): TemplateDefinition {
   const p = STUDIO_PALETTES.contractor;
   const W = 85.6;
   const f: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: W, h: 13, fill: p.main }),
     createImageElement({ src: 'logo', x: 5, y: 2.5, w: 8, h: 8, fit: 'contain', radius: 0 }),
-    createTextElement({ text: '{org}', x: 15, y: 3, w: 66, size: 9, weight: 700, color: '#ffffff', fit: true }),
-    createTextElement({ text: 'AUTHORIZED CONTRACTOR', x: 15, y: 8, w: 66, size: 5.5, weight: 600, color: p.acc }),
+    createTextElement({
+      text: '{org}',
+      x: 15,
+      y: 2.5,
+      w: 66,
+      h: 5.0,
+      size: 8.5,
+      weight: 700,
+      color: '#ffffff',
+      fit: true,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'AUTHORIZED CONTRACTOR',
+      x: 15,
+      y: 7.5,
+      w: 66,
+      h: 4.0,
+      size: 5.2,
+      weight: 600,
+      color: p.acc,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
     createImageElement({ src: 'photo', x: 6, y: 17, w: 22, h: 28, shape: 'rounded', radius: 1.5 }),
-    createTextElement({ text: '{name}', x: 32, y: 17, w: 48, size: 12, weight: 700, color: p.ink, fit: true }),
-    createTextElement({ text: '{designation}', x: 32, y: 23, w: 48, size: 8, weight: 500, color: p.main, fit: true }),
-    createTextElement({ text: 'Agency: {contractor}\nID: {idno}  •  Worksite: {branch}\nValid Until: {valid}', x: 32, y: 29.5, w: 48, size: 7.2, color: p.sub }),
+    createTextElement({
+      text: '{name}',
+      x: 32,
+      y: 17,
+      w: 48,
+      h: 6.5,
+      size: 11.5,
+      weight: 700,
+      color: p.ink,
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{designation}',
+      x: 32,
+      y: 24,
+      w: 48,
+      h: 5.0,
+      size: 7.5,
+      weight: 500,
+      color: p.main,
+      fit: true,
+      maxLines: 1,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'Agency: {contractor}\nID: {idno}  •  Worksite: {branch}\nValid Until: {valid}',
+      x: 32,
+      y: 30,
+      w: 48,
+      h: 15.0,
+      size: 6.5,
+      color: p.sub,
+      maxLines: 3,
+      verticalAlign: 'top',
+    }),
     createRectElement({ x: 0, y: 51, w: W, h: 3, fill: p.acc }),
   ];
 
   const b: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: W, h: 8, fill: p.main }),
-    createTextElement({ text: 'CONTRACTOR CONDITIONS OF ENTRY', x: 5, y: 11, w: 52, size: 7, weight: 700, color: p.main }),
-    createTextElement({ text: 'Access restricted to work shifts.\nAgency: {contractor}\nSupervisor: {phone}', x: 5, y: 16, w: 52, size: 7, color: p.sub }),
-    createTextElement({ text: 'Blood: {blood}  |  DOB: {dob}', x: 5, y: 30, w: 52, size: 7, color: p.ink }),
+    createTextElement({
+      text: 'CONTRACTOR CONDITIONS OF ENTRY',
+      x: 5,
+      y: 10,
+      w: 52,
+      h: 4,
+      size: 6.5,
+      weight: 700,
+      color: p.main,
+    }),
+    createTextElement({
+      text: 'Access restricted to work shifts.\nAgency: {contractor}\nSupervisor: {phone}',
+      x: 5,
+      y: 14.5,
+      w: 52,
+      h: 12,
+      size: 6.0,
+      color: p.sub,
+      maxLines: 3,
+    }),
+    createTextElement({
+      text: 'Blood: {blood}  |  DOB: {dob}',
+      x: 5,
+      y: 28,
+      w: 52,
+      h: 6,
+      size: 6.0,
+      color: p.ink,
+      maxLines: 1,
+    }),
     createQrElement({ x: 62, y: 12, w: 18, h: 18, qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}' }),
     createRectElement({ x: 5, y: 44, w: 32, h: 0.25, fill: p.ink }),
-    createTextElement({ text: 'Contract Administrator', x: 5, y: 45.5, w: 40, size: 6, color: p.sub }),
+    createTextElement({ text: 'Contract Administrator', x: 5, y: 45.5, w: 40, h: 4, size: 5.5, color: p.sub }),
     createRectElement({ x: 0, y: 51, w: W, h: 3, fill: p.acc }),
   ];
 
-  return { front: f, back: b };
+  return { front: f, back: b, frontBg: '#ffffff', backBg: '#ffffff', palette: p };
 }
 
-export function makeLandscapeCampusTemplate(): { front: CardElement[]; back: CardElement[] } {
+export function makeLandscapeCampusTemplate(): TemplateDefinition {
   const p = STUDIO_PALETTES.campus;
   const W = 85.6;
   const f: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: 28, h: 54, fill: p.main }),
     createImageElement({ src: 'photo', x: 3, y: 8, w: 22, h: 22, shape: 'circle', border: 1, borderColor: '#ffffff' }),
-    createTextElement({ text: '{idno}', x: 1, y: 33, w: 26, size: 8, weight: 700, color: '#ffffff', align: 'center', fit: true }),
-    createTextElement({ text: 'Valid: {valid}', x: 1, y: 40, w: 26, size: 6, color: p.tag, align: 'center' }),
+    createTextElement({
+      text: '{idno}',
+      x: 1,
+      y: 33,
+      w: 26,
+      h: 5.0,
+      size: 7.5,
+      weight: 700,
+      color: '#ffffff',
+      align: 'center',
+      fit: true,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'Valid: {valid}',
+      x: 1,
+      y: 39,
+      w: 26,
+      h: 4.0,
+      size: 5.5,
+      color: p.tag,
+      align: 'center',
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
     createImageElement({ src: 'logo', x: 33, y: 5, w: 8, h: 8, fit: 'contain', radius: 0 }),
-    createTextElement({ text: '{org}', x: 43, y: 6, w: 38, size: 9, weight: 700, color: p.main, fit: true }),
-    createTextElement({ text: p.label, x: 43, y: 11, w: 38, size: 5.5, weight: 600, color: p.acc }),
-    createTextElement({ text: '{name}', x: 33, y: 20, w: 48, size: 12.5, weight: 700, color: p.ink, fit: true }),
-    createTextElement({ text: '{designation}', x: 33, y: 26.5, w: 48, size: 8.5, weight: 500, color: p.sub }),
-    createTextElement({ text: '{department}\nPhone: {phone}\nBlood: {blood}', x: 33, y: 33, w: 48, size: 7.2, color: p.sub }),
+    createTextElement({
+      text: '{org}',
+      x: 43,
+      y: 5.5,
+      w: 38,
+      h: 5.0,
+      size: 8.5,
+      weight: 700,
+      color: p.main,
+      fit: true,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: p.label,
+      x: 43,
+      y: 10.5,
+      w: 38,
+      h: 4.0,
+      size: 5.2,
+      weight: 600,
+      color: p.acc,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{name}',
+      x: 33,
+      y: 18,
+      w: 48,
+      h: 6.5,
+      size: 11.5,
+      weight: 700,
+      color: p.ink,
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{designation}',
+      x: 33,
+      y: 25,
+      w: 48,
+      h: 5.0,
+      size: 7.5,
+      weight: 500,
+      color: p.sub,
+      maxLines: 1,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{department}\nPhone: {phone}\nBlood: {blood}',
+      x: 33,
+      y: 31,
+      w: 48,
+      h: 15.0,
+      size: 6.5,
+      color: p.sub,
+      maxLines: 3,
+      verticalAlign: 'top',
+    }),
     createRectElement({ x: 28, y: 51, w: W - 28, h: 3, fill: p.acc }),
   ];
 
   const b: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: W, h: 8, fill: p.main }),
-    createTextElement({ text: 'CAMPUS VERIFICATION & ACCESS', x: 5, y: 11, w: 52, size: 7, weight: 700, color: p.main }),
-    createTextElement({ text: '{org}\n{address}', x: 5, y: 16, w: 52, size: 7, color: p.sub }),
-    createTextElement({ text: 'Emergency: {phone}  |  Blood: {blood}\nValid: {valid}', x: 5, y: 28, w: 52, size: 7, color: p.ink }),
+    createTextElement({
+      text: 'CAMPUS VERIFICATION & ACCESS',
+      x: 5,
+      y: 10,
+      w: 52,
+      h: 4,
+      size: 6.5,
+      weight: 700,
+      color: p.main,
+    }),
+    createTextElement({
+      text: '{org}\n{address}',
+      x: 5,
+      y: 14.5,
+      w: 52,
+      h: 10,
+      size: 6.2,
+      color: p.sub,
+      maxLines: 2,
+    }),
+    createTextElement({
+      text: 'Emergency: {phone}  |  Blood: {blood}\nValid: {valid}',
+      x: 5,
+      y: 26,
+      w: 52,
+      h: 10,
+      size: 6.2,
+      color: p.ink,
+      maxLines: 2,
+    }),
     createQrElement({ x: 62, y: 12, w: 18, h: 18, qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}' }),
     createRectElement({ x: 5, y: 44, w: 32, h: 0.25, fill: p.ink }),
-    createTextElement({ text: 'Registrar / Admin Head', x: 5, y: 45.5, w: 40, size: 6, color: p.sub }),
+    createTextElement({ text: 'Registrar / Admin Head', x: 5, y: 45.5, w: 40, h: 4, size: 5.5, color: p.sub }),
     createRectElement({ x: 0, y: 51, w: W, h: 3, fill: p.acc }),
   ];
 
-  return { front: f, back: b };
+  return { front: f, back: b, frontBg: '#ffffff', backBg: '#ffffff', palette: p };
 }
 
-export function makeLandscapeMinimalTemplate(): { front: CardElement[]; back: CardElement[] } {
+export function makeLandscapeMinimalTemplate(): TemplateDefinition {
   const p = STUDIO_PALETTES.minimal;
   const W = 85.6;
   const f: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: 3, h: 54, fill: p.acc }),
     createImageElement({ src: 'photo', x: 9, y: 8, w: 24, h: 30, radius: 0, shape: 'rect' }),
-    createTextElement({ text: '{org}', x: 38, y: 8, w: 42, size: 7, weight: 700, color: p.acc, fit: true }),
-    createTextElement({ text: '{name}', x: 38, y: 13.5, w: 42, size: 12.5, weight: 800, color: p.ink, fit: true }),
-    createTextElement({ text: '{designation}', x: 38, y: 20.5, w: 42, size: 8, color: p.sub }),
-    createTextElement({ text: 'ID: {idno}\nPhone: {phone}\nValid: {valid}', x: 38, y: 28.5, w: 42, size: 7.2, color: p.ink }),
+    createTextElement({
+      text: '{org}',
+      x: 38,
+      y: 8,
+      w: 42,
+      h: 5.0,
+      size: 7.0,
+      weight: 700,
+      color: p.acc,
+      fit: true,
+      maxLines: 1,
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{name}',
+      x: 38,
+      y: 13.5,
+      w: 42,
+      h: 6.5,
+      size: 11.5,
+      weight: 800,
+      color: p.ink,
+      fit: true,
+      maxLines: 2,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: '{designation}',
+      x: 38,
+      y: 20.5,
+      w: 42,
+      h: 5.0,
+      size: 7.5,
+      color: p.sub,
+      maxLines: 1,
+      overflowMode: 'shrink',
+      verticalAlign: 'middle',
+    }),
+    createTextElement({
+      text: 'ID: {idno}\nPhone: {phone}\nValid: {valid}',
+      x: 38,
+      y: 27.5,
+      w: 42,
+      h: 14.0,
+      size: 6.5,
+      color: p.ink,
+      maxLines: 3,
+      verticalAlign: 'top',
+    }),
     createRectElement({ x: 9, y: 44, w: 70, h: 0.25, fill: p.ink }),
-    createTextElement({ text: p.label, x: 9, y: 46, w: 70, size: 5.5, weight: 600, color: p.sub }),
+    createTextElement({
+      text: p.label,
+      x: 9,
+      y: 45.5,
+      w: 70,
+      h: 4.0,
+      size: 5.2,
+      weight: 600,
+      color: p.sub,
+      verticalAlign: 'middle',
+    }),
   ];
 
   const b: CardElement[] = [
     createRectElement({ x: 0, y: 0, w: W, h: 8, fill: p.acc }),
-    createTextElement({ text: 'Return to:', x: 5, y: 11, w: 50, size: 7, weight: 700, color: p.ink }),
-    createTextElement({ text: '{org}\n{address}', x: 5, y: 16, w: 50, size: 7, color: p.sub }),
-    createTextElement({ text: 'Blood: {blood}  |  DOB: {dob}\nValid: {valid}', x: 5, y: 28, w: 50, size: 7, color: p.ink }),
+    createTextElement({
+      text: 'Return to:',
+      x: 5,
+      y: 10,
+      w: 50,
+      h: 4,
+      size: 6.5,
+      weight: 700,
+      color: p.ink,
+    }),
+    createTextElement({
+      text: '{org}\n{address}',
+      x: 5,
+      y: 14.5,
+      w: 50,
+      h: 10,
+      size: 6.2,
+      color: p.sub,
+      maxLines: 2,
+    }),
+    createTextElement({
+      text: 'Blood: {blood}  |  DOB: {dob}\nValid: {valid}',
+      x: 5,
+      y: 26,
+      w: 50,
+      h: 10,
+      size: 6.2,
+      color: p.ink,
+      maxLines: 2,
+    }),
     createQrElement({ x: 62, y: 12, w: 18, h: 18, qrData: 'https://app.joypeoplehr.com/verify-id-card?emp={idno}' }),
     createRectElement({ x: 5, y: 44, w: 32, h: 0.25, fill: p.ink }),
-    createTextElement({ text: 'Authorised Signatory', x: 5, y: 45.5, w: 40, size: 6, color: p.sub }),
+    createTextElement({ text: 'Authorised Signatory', x: 5, y: 45.5, w: 40, h: 4, size: 5.5, color: p.sub }),
     createRectElement({ x: 0, y: 51, w: W, h: 3, fill: p.acc }),
   ];
 
-  return { front: f, back: b };
+  return { front: f, back: b, frontBg: '#ffffff', backBg: '#ffffff', palette: p };
 }
 
 // Master Template Selector
 export function getTemplateByName(
   category: 'corporate' | 'campus' | 'minimal' | 'worker' | 'contractor' | 'security',
   orientation: 'landscape' | 'portrait'
-): { front: CardElement[]; back: CardElement[] } {
+): TemplateDefinition {
   if (orientation === 'portrait') {
     switch (category) {
       case 'worker':
@@ -598,8 +2003,14 @@ export async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Failed to load image from ' + file.name));
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Failed to load image from ' + file.name));
+    };
     img.src = url;
   });
 }
@@ -899,49 +2310,125 @@ export function runPreflightChecks(
   photosMap: Map<string, HTMLImageElement>
 ): { issues: PreflightIssue[]; fixCount: number; checkCount: number } {
   const issues: PreflightIssue[] = [];
-  const add = (lv: 'ok' | 'check' | 'fix', t: string) => issues.push({ key: `gen_${issues.length}`, lv, t });
+  const add = (
+    lv: 'ok' | 'check' | 'fix',
+    t: string,
+    elementId?: string,
+    category?: 'layout' | 'contrast' | 'collision' | 'missing' | 'print'
+  ) => issues.push({ key: `gen_${issues.length}`, lv, t, elementId, category });
 
   // 1. Bleed & Dimensions Check
   if (geometry.bleed < 2) {
-    add('check', `Bleed is ${geometry.bleed} mm. Most commercial printers ask for 3.0 mm bleed.`);
+    add('check', `Bleed is ${geometry.bleed} mm. Most commercial printers ask for 3.0 mm bleed.`, undefined, 'print');
   } else {
-    add('ok', `Bleed verified at ${geometry.bleed} mm on all edges for ${geometry.orientation.toUpperCase()} orientation.`);
+    add('ok', `Bleed verified at ${geometry.bleed} mm on all edges for ${geometry.orientation.toUpperCase()} orientation.`, undefined, 'print');
   }
 
   // 2. Safe zone check
   if (geometry.safe < 2) {
-    add('check', `Safe zone is ${geometry.safe} mm. Important text close to edge may be clipped.`);
+    add('check', `Safe zone is ${geometry.safe} mm. Important text close to edge may be clipped.`, undefined, 'layout');
   } else {
-    add('ok', `Safe area is set to ${geometry.safe} mm inside cut edge.`);
+    add('ok', `Safe area is set to ${geometry.safe} mm inside cut edge.`, undefined, 'layout');
   }
 
-  // 3. Photos Check
+  // 3. Collision and Safe Zone and Contrast Check per Side
+  (['front', 'back'] as CardSide[]).forEach(sideKey => {
+    const side = sides[sideKey];
+    const sideName = sideKey.toUpperCase();
+
+    // Check individual elements
+    side.els.forEach((el, idx) => {
+      if (el.hidden) return;
+
+      // Safe margin check for text
+      if (el.type === 'text') {
+        const outLeft = el.x < geometry.safe - 0.5;
+        const outRight = el.x + el.w > geometry.w - geometry.safe + 0.5;
+        const outTop = el.y < geometry.safe - 0.5;
+        const outBottom = el.y + el.h > geometry.h - geometry.safe + 0.5;
+
+        if (outLeft || outRight || outTop || outBottom) {
+          add(
+            'check',
+            `[${sideName}] Text "${el.text.slice(0, 18)}" extends past the ${geometry.safe}mm safe margin area.`,
+            el.id,
+            'layout'
+          );
+        }
+
+        // Contrast check
+        const underlyingBg = findUnderlyingBg(el, side);
+        const contrast = getWcagContrast(el.color, underlyingBg);
+        if (contrast < 3.0) {
+          add(
+            'fix',
+            `[${sideName}] Poor contrast (${contrast.toFixed(1)}:1) for text "${el.text.slice(0, 18)}" over ${underlyingBg}. Minimum 4.5:1 required.`,
+            el.id,
+            'contrast'
+          );
+        } else if (contrast < 4.5) {
+          add(
+            'check',
+            `[${sideName}] Borderline contrast (${contrast.toFixed(1)}:1) for text "${el.text.slice(0, 18)}".`,
+            el.id,
+            'contrast'
+          );
+        }
+      }
+
+      // Check for overlap against subsequent non-rect elements
+      if (el.type === 'text') {
+        for (let j = idx + 1; j < side.els.length; j++) {
+          const other = side.els[j];
+          if (other.hidden || other.type === 'rect') continue;
+
+          // Check AABB collision
+          const overlapX = el.x < other.x + other.w && el.x + el.w > other.x;
+          const overlapY = el.y < other.y + other.h && el.y + el.h > other.y;
+
+          if (overlapX && overlapY) {
+            const overlapHeight = Math.min(el.y + el.h, other.y + other.h) - Math.max(el.y, other.y);
+            if (overlapHeight > 1.2) {
+              const otherName = other.type === 'text' ? `"${(other as TextElement).text.slice(0, 15)}"` : other.type;
+              add(
+                'check',
+                `[${sideName}] Potential overlap between "${el.text.slice(0, 15)}" and ${otherName}.`,
+                el.id,
+                'collision'
+              );
+            }
+          }
+        }
+      }
+    });
+  });
+
+  // 4. Photos Check
   const hasPhotoEl = Object.values(sides).some(s => s.els.some(e => e.type === 'image' && e.src === 'photo'));
   if (hasPhotoEl) {
     const missing = records.filter(r => !r.__img && (!r.photo || !photosMap.has(r.photo.toLowerCase())));
     if (missing.length > 0) {
-      add('check', `${missing.length} employee card(s) have no photo attached. (Photo placeholder will print empty).`);
+      add('check', `${missing.length} employee card(s) have no photo attached. (Corporate placeholder will be used).`);
     } else {
       add('ok', `All ${records.length} employee cards have verified photos attached.`);
     }
   }
 
-  // 4. Logo Check
+  // 5. Logo Check
   const hasLogoEl = Object.values(sides).some(s => s.els.some(e => e.type === 'image' && e.src === 'logo'));
   if (hasLogoEl && !logoImg) {
-    add('check', 'A company logo spot is configured on the card, but no logo artwork is uploaded.');
+    add('check', 'A company logo spot is on the card. (Vector corporate emblem placeholder active).');
   } else if (hasLogoEl && logoImg) {
     add('ok', 'Company corporate logo artwork is loaded and ready.');
   }
 
-  // 5. QR Code Check
+  // 6. QR Code Check
   const hasQrEl = Object.values(sides).some(s => s.els.some(e => e.type === 'qr'));
   if (hasQrEl) {
     add('ok', 'Verification QR code element verified with real-time digital credentials URL.');
   }
 
-  // 6. Mandatory Text Fields Check
-  const requiredFields = ['{name}', '{idno}'];
+  // 7. Mandatory Text Fields Check
   let foundName = false;
   let foundId = false;
 
@@ -955,10 +2442,10 @@ export function runPreflightChecks(
   });
 
   if (!foundName) {
-    add('fix', 'Card layout has no {name} placeholder! Employee name will be missing.');
+    add('fix', 'Card layout has no {name} placeholder! Employee name will be missing.', undefined, 'missing');
   }
   if (!foundId) {
-    add('check', 'Card layout has no {idno} placeholder. Employee badge code will be omitted.');
+    add('check', 'Card layout has no {idno} placeholder. Employee badge code will be omitted.', undefined, 'missing');
   }
 
   const fixCount = issues.filter(i => i.lv === 'fix').length;
