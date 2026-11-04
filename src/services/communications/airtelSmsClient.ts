@@ -134,6 +134,7 @@ export class AirtelSmsClient {
         sourceAddress: senderId,
         dltTemplateId: dltTemplateId,
         messageType: messageType,
+        priority: req.priority || 'HIGH',
       };
 
       if (entityId) {

@@ -268,6 +268,7 @@ async function sendAirtelSmsDirect(recipientPhone, messageText, dltTemplateId) {
       message: messageText,
       sourceAddress: AIRTEL_DEFAULT_SENDER_ID,
       messageType: 'SERVICE_IMPLICIT',
+      priority: 'HIGH',
       dltTemplateId: dltTemplateId,
       entityId: AIRTEL_DLT_PE_ID,
     });

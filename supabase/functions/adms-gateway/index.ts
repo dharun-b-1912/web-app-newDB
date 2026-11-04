@@ -50,6 +50,7 @@ async function sendAirtelSms(recipientPhone: string, message: string, templateId
         message: message,
         sourceAddress: creds.senderId,
         messageType: 'SERVICE_IMPLICIT',
+        priority: 'HIGH',
         dltTemplateId: templateId,
         entityId: creds.peId,
       }),
